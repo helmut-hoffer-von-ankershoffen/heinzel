@@ -61,6 +61,52 @@ describe("Mounted footer measurements", () => {
       buttons.indexOf(within(footer).getByRole("button", { name: /System health/ })),
     );
   });
+  it("shows generic meter details without repeating their summary above the pane bullets", async () => {
+    mockApi({
+      ...answers,
+      "/api/system/ui/status": [
+        {
+          id: "external:resources",
+          module: "external",
+          plugin: "example-provider",
+          order: 10,
+          refresh: 60,
+          problem: null,
+          slots: { footer: true },
+          item: {
+            text: "Computer resources (CPU 12%, Memory 35%, Load scaled 8%)",
+            tone: "neutral",
+            meters: [
+              { label: "CPU", value: 12, tone: "ok" },
+              { label: "Memory", value: 35, tone: "ok" },
+              { label: "Load scaled", value: 8, tone: "ok" },
+            ],
+            detail: [
+              { text: "CPU: 12%", tone: "ok" },
+              { text: "Memory: 35%", tone: "ok" },
+              { text: "Load scaled: 8%", tone: "ok" },
+            ],
+          },
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const footer = await screen.findByRole("contentinfo");
+    const trigger = await within(footer).findByRole("button", {
+      name: "Computer resources (CPU 12%, Memory 35%, Load scaled 8%); CPU: 12%; Memory: 35%; Load scaled: 8%, off",
+    });
+    await user.click(trigger);
+    const pane = await screen.findByRole("region", {
+      name: "Computer resources (CPU 12%, Memory 35%, Load scaled 8%)",
+    });
+    expect(
+      within(pane).queryByText("Computer resources (CPU 12%, Memory 35%, Load scaled 8%)", { selector: "p" }),
+    ).not.toBeInTheDocument();
+    expect(within(pane).getByText("CPU: 12%")).toBeInTheDocument();
+    expect(within(pane).getByText("Memory: 35%")).toBeInTheDocument();
+    expect(within(pane).getByText("Load scaled: 8%")).toBeInTheDocument();
+  });
   it("keeps the mounted durable Heinzel control visible alongside resources and health at 375px", async () => {
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
       const id = this.getAttribute("data-footer-content");
