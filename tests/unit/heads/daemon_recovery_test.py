@@ -236,3 +236,53 @@ def test_receipt_entry_replacement_during_read_is_refused(monkeypatch, tmp_path)
     monkeypatch.setattr(head.os, "stat", replace_entry)
     with pytest.raises(HeinzelError, match="changed"):
         head._standard_receipt(data)
+
+
+@pytest.mark.parametrize("target", ["data", "receipt"])
+def test_foreign_owned_data_or_receipt_is_refused(monkeypatch, tmp_path, target):
+    import os
+
+    from heinzel import HeinzelError
+
+    data = tmp_path / "data"
+    data.mkdir(mode=0o755)
+    receipt = data / "standard-app.json"
+    receipt.write_bytes(b"secret")
+    receipt.chmod(0o600)
+    foreign_inode = (data if target == "data" else receipt).stat().st_ino
+    original = os.fstat
+
+    def foreign_owner(descriptor):
+        info = original(descriptor)
+        if info.st_ino == foreign_inode:
+            fields = list(info)
+            fields[4] = os.getuid() + 1
+            return os.stat_result(fields)
+        return info
+
+    monkeypatch.setattr(head.os, "fstat", foreign_owner)
+    with pytest.raises(HeinzelError):
+        head._standard_receipt(data)
+
+
+def test_directory_entry_replacement_during_read_is_refused(monkeypatch, tmp_path):
+    import os
+
+    from heinzel import HeinzelError
+
+    data = tmp_path / "data"
+    data.mkdir(mode=0o755)
+    receipt = data / "standard-app.json"
+    receipt.write_bytes(b"secret")
+    receipt.chmod(0o600)
+    original = os.stat
+
+    def replace_directory(path, *args, **kwargs):
+        if path == "standard-app.json":
+            data.rename(tmp_path / "previous")
+            data.mkdir(mode=0o755)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(head.os, "stat", replace_directory)
+    with pytest.raises(HeinzelError, match="directory changed"):
+        head._standard_receipt(data)
