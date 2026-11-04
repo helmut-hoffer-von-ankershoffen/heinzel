@@ -19,7 +19,8 @@ pytestmark = pytest.mark.e2e
 
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("engine", ["chromium", "webkit"])
-def test_mounted_generic_agent_chat(make_kernel, tmp_path, monkeypatch, engine):
+@pytest.mark.parametrize("late_page", [False, True])
+def test_mounted_generic_agent_chat(make_kernel, tmp_path, monkeypatch, engine, late_page):
     web_build.ensure_built()
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(BROWSER_CACHE))
@@ -112,6 +113,7 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
                 "e2e/generic-agent-chat.mjs",
                 urls[0],
                 engine,
+                "late-page" if late_page else "normal",
             ],
             cwd=REPO,
             capture_output=True,
