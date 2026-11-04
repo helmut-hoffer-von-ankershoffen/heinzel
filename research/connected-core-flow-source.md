@@ -15,11 +15,17 @@ callback contacts any channel. Model turns retain current activity projection an
 
 ## Remaining original requirements
 
-Generic channel delivery, exact transport posting consent, owner-linked actor verification, durable settlement and
-reply consumption are outstanding. The original channel consumer used CurrentUser.local("cli") around automatic
-confirm; that identity elevation was deliberately not imported. No channel reply can issue approval here. A safe
-consumer must carry the original exact per-write trusted approval boundary and cannot treat plugin/model text as
-a trusted decision. Per-helper channel consent and transport source continuity still require implementation.
+Generic channel posting now has exact per-helper/per-item human consent, captured transport source/destination
+binding, a durable attempt-before-effect outbox, owner-linked reply verification and host-only captured-write outcome
+consumption. The daemon identity is preserved; the original `CurrentUser.local("cli")` elevation remains excluded.
+Complete serialized write terms must fit the channel preview; no content is silently truncated. Missing posting or
+write acknowledgements and interrupted decision claims never trigger automatic replay. Settlement can retry closing
+only the same posted request. Compatible transports must implement `delivery_target` and conditional `post_reviewed`
+/ `deliver_reviewed`; existing implementations fail closed. No concrete plugin is imported or changed.
+
+Remaining channel requirements include owner-facing selection/onboarding UI, schedule-bound standing notice consent,
+provider implementations of the conditional posting contract, installed published SDK compatibility, real human review
+and actual delivery acceptance. Exact per-item offline confirmation does not establish those outcomes.
 
 The original web history/search interface, captured-write activity views, new-file provider acceptance, tracker
 capability extensions and full connected helper onboarding remain outstanding. No concrete provider implementation
@@ -28,6 +34,20 @@ design, not implemented by this continuation. This is source preparation, not fu
 
 ## Validation boundary
 
-Offline fixtures only. No real provider, sign-in, live installation, public push, PR, merge or release. Focused test
-results and independent security review belong to the eventual PR body; ordinary gate access yields to current CI
-and startup repair.
+Offline fixtures only; this remains default-off source preparation. No real provider, sign-in, live installation,
+public push, PR, merge or release. Focused test results and independent security review belong to the eventual PR body;
+ordinary gate access yields to current CI and startup repair.
+
+## Channel consumer regression evidence
+
+An ordinary gated focused run passed 76 tests across channel contracts, public SDK exports, channel consent and
+reply consumption, captured-write host checks and installed-source chat fixtures. These are offline transports and
+providers. The authenticated-head fixture posts nothing before separate posting confirmation, writes nothing merely
+because an approval request was posted, then records one captured mutation for the pinned owner reply and none for
+replays. Source/actor/digest/request/time/destination/scope/revision drift, stale drafts, unknown effects, settlement
+failures, interrupted claims, fresh owner-service reconstruction and concurrent consumers are covered.
+
+Full source mypy and Pyright passed; generated command/API references and web schema were regenerated. The full
+application/browser suite, hosted CI, publication/installation of this new SDK, independent security review and real
+provider/human delivery acceptance were not run for this continuation. Original UI, tracker and Turing obligations
+above remain open. This evidence is source preparation, never a claim of accepted release or live delivery.

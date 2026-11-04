@@ -810,6 +810,20 @@ class SourceDiscovery:
         self._captured[entry.name] = capture
         return capture
 
+    def service_capture[T](self, kernel: Kernel, record: ModuleRecord, contract: type[T]) -> CapturedEntry:
+        """Find the host-owned source for an exact registered ordinary service.
+
+        Raises:
+            HeinzelError: If its source or registration cannot be verified.
+        """
+        matches = [capture for capture in self._captured.values() if any(item is record for item in capture.records)]
+        if len(matches) != 1:
+            msg = "The selected service has no reviewed source capture"
+            raise HeinzelError(msg)
+        capture = matches[0]
+        capture.service(kernel, record, contract)
+        return capture
+
     def binding[T](self, kernel: Kernel, capability: str, contract: type[T]) -> SourceBinding[T]:
         """Bind the host-selected record to the exact catalog-owned captured provider.
 

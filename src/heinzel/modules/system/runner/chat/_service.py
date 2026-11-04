@@ -444,7 +444,7 @@ class ChatService:
                     or set(found.arguments) != {"session_id", "request_id", "review"}
                     or not isinstance(found.arguments.get("review"), dict)
                 ):
-                    msg = "This write review no longer matches its original action"
+                    msg = "This review no longer matches its original action"
                     raise HeinzelError(msg)
                 return chat
             preview = issuer.review("heinzel", "execute-captured-write", base)
@@ -469,6 +469,56 @@ class ChatService:
                     arguments=arguments,
                     command="Review inserting or appending this text, or creating a new slide with it. "
                     "Check the exact target, section/tab and base revision. Current content is not shown.",
+                )
+            )
+            return self._store.load(personal_chat.id)
+
+    def propose_channel_item(self, durable_session: str, request_id: str) -> ChatSession:
+        """Stage the exact owner-private channel posting for a human decision, without granting it.
+
+        Raises:
+            HeinzelError: If the owner, current proposal or existing action cannot be verified.
+        """
+        if not self._kernel.provides(ApprovalIssuer):
+            msg = "Channel posting review is unavailable"
+            raise HeinzelError(msg)
+        issuer = self._kernel.resolve(ApprovalIssuer)
+        base: dict[str, JsonValue] = {"session_id": durable_session, "request_id": request_id}
+        with self._store.proposal_request_lock():
+            prior = self._store.find_proposal("heinzel", "deliver-channel-item", durable_session, request_id)
+            if prior is not None:
+                chat, found = prior
+                # Returning the original owner-bound action does not reissue or consume a proof. The issuer
+                # still rechecks current intent when a pending action is confirmed.
+                if (
+                    chat.personal_session_id != durable_session
+                    or set(found.arguments) != {"session_id", "request_id", "review"}
+                    or not isinstance(found.arguments.get("review"), dict)
+                ):
+                    msg = "This review no longer matches its original action"
+                    raise HeinzelError(msg)
+                return chat
+            preview = issuer.review("heinzel", "deliver-channel-item", base)
+            arguments: dict[str, JsonValue] = {**base, "review": preview}
+            personal_chat = self._store.find_personal_chat(durable_session)
+            if personal_chat is None:
+                personal_chat = self._store.create(
+                    ChatContext(
+                        kind="text",
+                        ref=durable_session,
+                        owner_id=self._store.personal_owner(),
+                        detail="Review channel posting for this personal agent.",
+                    ),
+                    personal_session_id=durable_session,
+                )
+            self._store.propose(
+                ProposedCall(
+                    session=personal_chat.id,
+                    module="heinzel",
+                    operation="deliver-channel-item",
+                    tool="heinzel_deliver_channel_item",
+                    arguments=arguments,
+                    command="Review exact channel posting account, destination, scope and full message",
                 )
             )
             return self._store.load(personal_chat.id)
@@ -893,6 +943,7 @@ class ChatService:
                 "approve-model-grant",
                 "accept-agent-contract",
                 "execute-captured-write",
+                "deliver-channel-item",
                 "approve-connected-read",
                 "approve-connected-read-set",
                 "approve-agent-schedule",
@@ -920,7 +971,9 @@ class ChatService:
                 with confirmation.using(found.module, found.operation, arguments):
                     value = self._kernel.invoke(operation, **arguments)
             text = (
-                "The notification was queued; it may be held by local policy and is not confirmed shown."
+                f"The channel reported {value}. This does not approve the captured write."
+                if found.module == "heinzel" and found.operation == "deliver-channel-item"
+                else "The notification was queued; it may be held by local policy and is not confirmed shown."
                 if found.module == "heinzel" and found.operation == "queue-agent-notification" and value == "recorded"
                 else "The notification outcome is uncertain; it was not repeated."
                 if found.module == "heinzel" and found.operation == "queue-agent-notification"
@@ -938,7 +991,12 @@ class ChatService:
                 else redact_emails(dumps(to_jsonable_python(value, fallback=str)))
             )  # The resulting action message may later be sent to a model.
             found.status, found.result = (
-                ("uncertain" if found.operation == "queue-agent-notification" and value == "uncertain" else "done"),
+                (
+                    "uncertain"
+                    if (found.operation == "queue-agent-notification" and value == "uncertain")
+                    or (found.operation == "deliver-channel-item" and value == "unknown")
+                    else "done"
+                ),
                 text[:RESULT_LIMIT],
             )
         except HeinzelError as exc:
@@ -968,6 +1026,7 @@ class ChatService:
                 "approve-model-grant",
                 "accept-agent-contract",
                 "execute-captured-write",
+                "deliver-channel-item",
                 "approve-connected-read",
                 "approve-connected-read-set",
                 "approve-agent-schedule",
@@ -1106,6 +1165,7 @@ class ChatService:
                         "approve-model-grant",
                         "accept-agent-contract",
                         "execute-captured-write",
+                        "deliver-channel-item",
                         "approve-connected-read",
                         "approve-connected-read-set",
                         "approve-agent-schedule",

@@ -90,6 +90,10 @@ class SessionRepository(Protocol):
         """Verify an active writer is scoped to this principal's main journal."""
         ...
 
+    def channel_writer(self, session_id: str) -> AbstractContextManager[SessionWriter]:
+        """Serialize channel claim/recovery without nesting captured-write main/control locks."""
+        ...
+
     def control_writer(self, session_id: str) -> AbstractContextManager[SessionWriter]:
         """Own only the short control append; never acquire or wait for the main writer here."""
         ...

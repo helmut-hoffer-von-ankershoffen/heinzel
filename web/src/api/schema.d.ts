@@ -394,6 +394,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/channel-item-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the recorded posting outcome without retrying it.
+         * @description Read the recorded posting outcome without retrying it.
+         */
+        get: operations["heinzel_channel_item_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/chat": {
         parameters: {
             query?: never;
@@ -588,6 +608,26 @@ export interface paths {
         get: operations["heinzel_connected_read_state"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/deliver-channel-item": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post one exact human-confirmed message; posting consent does not approve the draft.
+         * @description Post one exact human-confirmed message; posting consent does not approve the draft.
+         */
+        post: operations["heinzel_deliver_channel_item"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1108,6 +1148,26 @@ export interface paths {
          * @description Persist a local draft without writing to a provider or granting authority.
          */
         post: operations["heinzel_propose_captured_write"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/propose-channel-item": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage exact posting terms for separate human consent; no message is sent.
+         * @description Stage exact posting terms for separate human consent; no message is sent.
+         */
+        post: operations["heinzel_propose_channel_item"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2988,6 +3048,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/runner/chat/propose-channel-item": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage exact owner-private channel posting terms for separate human confirmation.
+         * @description Stage exact owner-private channel posting terms for separate human confirmation.
+         */
+        post: operations["system_runner_chat_propose_channel_item"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/runner/chat/propose-connected-read-review": {
         parameters: {
             query?: never;
@@ -4713,6 +4793,111 @@ export interface components {
             state: "shown" | "ready" | "closed" | "blocked" | "missing" | "off" | "unknown";
         };
         /**
+         * ChannelApprovalRequest
+         * @description One decision for the owner, bound to exact arguments by digest and limited in time.
+         */
+        ChannelApprovalRequest: {
+            /**
+             * Action
+             * @description What would happen, in a few plain words.
+             */
+            action: string;
+            /**
+             * Arguments Sha256
+             * @description Digest of the exact arguments.
+             */
+            arguments_sha256: string;
+            /**
+             * Expires At
+             * Format: date-time
+             * @description After this, a reply is ignored and the request must be re-issued.
+             */
+            expires_at: string;
+            /**
+             * Helper
+             * @description The helper asking.
+             */
+            helper: string;
+            /**
+             * Link
+             * @description Where to read the full draft, when it lives elsewhere.
+             */
+            link?: string | null;
+            /**
+             * Preview
+             * @description The exact draft or terms to be approved, as plain text.
+             */
+            preview: string;
+            /**
+             * Request Id
+             * @description Stable identity of this pending approval.
+             */
+            request_id: string;
+        };
+        /**
+         * ChannelDeliveryTerms
+         * @description An inert exact per-item transport proposal, including the full preview and linked owner.
+         */
+        ChannelDeliveryTerms: {
+            /** Actor */
+            actor?: string | null;
+            approval?: components["schemas"]["ChannelApprovalRequest"] | null;
+            /** Binding Id */
+            binding_id: string;
+            /** Channel */
+            channel: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "notice" | "approval";
+            notice?: components["schemas"]["ChannelNotice"] | null;
+            /** Owner */
+            owner: string;
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+            target: components["schemas"]["ChannelTarget"];
+            /** Write Request */
+            write_request?: string | null;
+            /** Write Review */
+            write_review?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+        };
+        /**
+         * ChannelNotice
+         * @description One notice for the owner; `key` is stable across retries, so a channel can send it at most once.
+         */
+        ChannelNotice: {
+            /**
+             * Body
+             * @description Plain text; helper-written, may repeat untrusted source text.
+             */
+            body: string;
+            /**
+             * Helper
+             * @description The helper's name, shown as the sender.
+             */
+            helper: string;
+            /**
+             * Key
+             * @description Stable idempotency key for this notice.
+             */
+            key: string;
+            /**
+             * Route
+             * @description Path in the web app that opens this helper's chat, such as /heinzel?chat=hz-…
+             */
+            route: string;
+            /**
+             * Title
+             * @description Short headline.
+             */
+            title: string;
+        };
+        /**
          * ChannelReport
          * @description The update channel, and what a switch changes.
          */
@@ -4732,6 +4917,18 @@ export interface components {
              * @description What the switch changes; said before anything happens.
              */
             statement: string;
+        };
+        /**
+         * ChannelTarget
+         * @description Exact signed-in posting destination and scope; observed by the host, never selected by model text.
+         */
+        ChannelTarget: {
+            /** Account */
+            account: string;
+            /** Destination */
+            destination: string;
+            /** Scope */
+            scope: string;
         };
         /**
          * ChatAction
@@ -13894,6 +14091,19 @@ export interface components {
              */
             when_busy: "follow_up" | "steer";
         };
+        /** heinzel_deliver_channel_item_Input */
+        heinzel_deliver_channel_item_Input: {
+            /** Approval Proof */
+            approval_proof: string;
+            /** Request Id */
+            request_id: string;
+            /** Review */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Session Id */
+            session_id: string;
+        };
         /** heinzel_discard_captured_write_Input */
         heinzel_discard_captured_write_Input: {
             /** Request Id */
@@ -14048,6 +14258,18 @@ export interface components {
         /** heinzel_propose_captured_write_Input */
         heinzel_propose_captured_write_Input: {
             proposal: components["schemas"]["CapturedWriteProposal"];
+        };
+        /** heinzel_propose_channel_item_Input */
+        heinzel_propose_channel_item_Input: {
+            /** Channel */
+            channel: string;
+            notice?: components["schemas"]["ChannelNotice"] | null;
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+            /** Write Request */
+            write_request?: string | null;
         };
         /** heinzel_propose_check_in_Input */
         heinzel_propose_check_in_Input: {
@@ -14403,7 +14625,11 @@ export type SchemaCapturedWriteStatus = components['schemas']['CapturedWriteStat
 export type SchemaCardWidget = components['schemas']['CardWidget'];
 export type SchemaCatchUp = components['schemas']['CatchUp'];
 export type SchemaChannel = components['schemas']['Channel'];
+export type SchemaChannelApprovalRequest = components['schemas']['ChannelApprovalRequest'];
+export type SchemaChannelDeliveryTerms = components['schemas']['ChannelDeliveryTerms'];
+export type SchemaChannelNotice = components['schemas']['ChannelNotice'];
 export type SchemaChannelReport = components['schemas']['ChannelReport'];
+export type SchemaChannelTarget = components['schemas']['ChannelTarget'];
 export type SchemaChatAction = components['schemas']['ChatAction'];
 export type SchemaChatContext = components['schemas']['ChatContext'];
 export type SchemaChatCosts = components['schemas']['ChatCosts'];
@@ -14664,6 +14890,7 @@ export type SchemaHeinzelApproveConnectedReadSetInput = components['schemas']['h
 export type SchemaHeinzelApproveModelGrantInput = components['schemas']['heinzel_approve_model_grant_Input'];
 export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel_associate_artifact_Input'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
+export type SchemaHeinzelDeliverChannelItemInput = components['schemas']['heinzel_deliver_channel_item_Input'];
 export type SchemaHeinzelDiscardCapturedWriteInput = components['schemas']['heinzel_discard_captured_write_Input'];
 export type SchemaHeinzelExecuteCapturedWriteInput = components['schemas']['heinzel_execute_captured_write_Input'];
 export type SchemaHeinzelIndexedConversationSearchInput = components['schemas']['heinzel_indexed_conversation_search_Input'];
@@ -14674,6 +14901,7 @@ export type SchemaHeinzelPrepareSuggestedSourceInput = components['schemas']['he
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
 export type SchemaHeinzelProposeAgentScheduleInput = components['schemas']['heinzel_propose_agent_schedule_Input'];
 export type SchemaHeinzelProposeCapturedWriteInput = components['schemas']['heinzel_propose_captured_write_Input'];
+export type SchemaHeinzelProposeChannelItemInput = components['schemas']['heinzel_propose_channel_item_Input'];
 export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
 export type SchemaHeinzelProposeConnectedReadInput = components['schemas']['heinzel_propose_connected_read_Input'];
 export type SchemaHeinzelProposeConnectedReadSetInput = components['schemas']['heinzel_propose_connected_read_set_Input'];
@@ -15295,6 +15523,38 @@ export interface operations {
             };
         };
     };
+    heinzel_channel_item_status: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_chat: {
         parameters: {
             query?: never;
@@ -15609,6 +15869,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConnectedReadState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_deliver_channel_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_deliver_channel_item_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
                 };
             };
             /** @description Validation Error */
@@ -16442,6 +16735,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_propose_channel_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_channel_item_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelDeliveryTerms"];
                 };
             };
             /** @description Validation Error */
@@ -19027,6 +19353,40 @@ export interface operations {
                 /** @description Owner-scoped personal conversation. */
                 durable_session: string;
                 /** @description Identity of the captured write draft. */
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_propose_channel_item: {
+        parameters: {
+            query: {
+                /** @description Owner-scoped personal conversation. */
+                durable_session: string;
+                /** @description Identity of the channel posting draft. */
                 request_id: string;
             };
             header?: never;

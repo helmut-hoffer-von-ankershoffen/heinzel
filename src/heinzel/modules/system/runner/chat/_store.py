@@ -180,6 +180,7 @@ class ChatStore(McpChatSessions):
                 "approve-model-grant",
                 "accept-agent-contract",
                 "execute-captured-write",
+                "deliver-channel-item",
                 "approve-connected-read",
                 "approve-connected-read-set",
                 "approve-agent-schedule",
@@ -187,7 +188,9 @@ class ChatStore(McpChatSessions):
             }:
                 # The review remains visible in the action, not in model-visible transcript text.
                 action.command = (
-                    "Review notification"
+                    "Review exact channel posting account, destination, scope and full message"
+                    if action.operation == "deliver-channel-item"
+                    else "Review notification"
                     if action.operation == "queue-agent-notification"
                     else "Review connected read"
                     if action.operation in {"approve-connected-read", "approve-connected-read-set"}
@@ -217,6 +220,7 @@ class ChatStore(McpChatSessions):
                 "approve-model-grant",
                 "accept-agent-contract",
                 "execute-captured-write",
+                "deliver-channel-item",
                 "approve-connected-read",
                 "approve-connected-read-set",
                 "approve-agent-schedule",
@@ -581,6 +585,7 @@ class StoreGate(ActionGate):
             "approve-model-grant",
             "accept-agent-contract",
             "execute-captured-write",
+            "deliver-channel-item",
             "approve-connected-read",
             "approve-connected-read-set",
             "approve-agent-schedule",

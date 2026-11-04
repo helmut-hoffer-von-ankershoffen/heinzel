@@ -308,6 +308,17 @@ class PersonalSessionRepository:
         return writer.active and writer.session == session_id and writer.store.root == self._store("main").root
 
     @contextmanager
+    def channel_writer(self, session_id: str) -> Generator[SessionWriter]:
+        """Serialize channel outcome recovery independently of captured-write main/control locks.
+
+        Yields:
+            An owner-private lock held across one reply's claim, action and settlement.
+        """
+        self._owned(session_id)
+        with self._store("channel-processing").writer(session_id) as writer:
+            yield writer
+
+    @contextmanager
     def control_writer(self, session_id: str) -> Generator[SessionWriter]:
         """Wait only for this short control journal, never for a main turn writer.
 

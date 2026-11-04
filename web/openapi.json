@@ -2054,6 +2054,232 @@
         "title": "Channel",
         "type": "object"
       },
+      "ChannelApprovalRequest": {
+        "additionalProperties": false,
+        "description": "One decision for the owner, bound to exact arguments by digest and limited in time.",
+        "properties": {
+          "action": {
+            "description": "What would happen, in a few plain words.",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Action",
+            "type": "string"
+          },
+          "arguments_sha256": {
+            "description": "Digest of the exact arguments.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Arguments Sha256",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "After this, a reply is ignored and the request must be re-issued.",
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "helper": {
+            "description": "The helper asking.",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Helper",
+            "type": "string"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where to read the full draft, when it lives elsewhere.",
+            "title": "Link"
+          },
+          "preview": {
+            "description": "The exact draft or terms to be approved, as plain text.",
+            "maxLength": 4000,
+            "title": "Preview",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Stable identity of this pending approval.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "helper",
+          "action",
+          "preview",
+          "arguments_sha256",
+          "expires_at"
+        ],
+        "title": "ChannelApprovalRequest",
+        "type": "object"
+      },
+      "ChannelDeliveryTerms": {
+        "additionalProperties": false,
+        "description": "An inert exact per-item transport proposal, including the full preview and linked owner.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChannelApprovalRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "binding_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "channel": {
+            "pattern": "^[a-z][a-z0-9-]{0,63}$",
+            "title": "Channel",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "notice",
+              "approval"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChannelNotice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ChannelTarget"
+          },
+          "write_request": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write Request"
+          },
+          "write_review": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write Review"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "owner",
+          "channel",
+          "kind",
+          "binding_id",
+          "target"
+        ],
+        "title": "ChannelDeliveryTerms",
+        "type": "object"
+      },
+      "ChannelNotice": {
+        "additionalProperties": false,
+        "description": "One notice for the owner; `key` is stable across retries, so a channel can send it at most once.",
+        "properties": {
+          "body": {
+            "description": "Plain text; helper-written, may repeat untrusted source text.",
+            "maxLength": 500,
+            "title": "Body",
+            "type": "string"
+          },
+          "helper": {
+            "description": "The helper's name, shown as the sender.",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Helper",
+            "type": "string"
+          },
+          "key": {
+            "description": "Stable idempotency key for this notice.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "route": {
+            "description": "Path in the web app that opens this helper's chat, such as /heinzel?chat=hz-…",
+            "maxLength": 2048,
+            "title": "Route",
+            "type": "string"
+          },
+          "title": {
+            "description": "Short headline.",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "helper",
+          "title",
+          "body",
+          "route"
+        ],
+        "title": "ChannelNotice",
+        "type": "object"
+      },
       "ChannelReport": {
         "description": "The update channel, and what a switch changes.",
         "properties": {
@@ -2079,6 +2305,37 @@
           "statement"
         ],
         "title": "ChannelReport",
+        "type": "object"
+      },
+      "ChannelTarget": {
+        "additionalProperties": false,
+        "description": "Exact signed-in posting destination and scope; observed by the host, never selected by model text.",
+        "properties": {
+          "account": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Account",
+            "type": "string"
+          },
+          "destination": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Destination",
+            "type": "string"
+          },
+          "scope": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "destination",
+          "scope"
+        ],
+        "title": "ChannelTarget",
         "type": "object"
       },
       "ChatAction": {
@@ -17902,6 +18159,41 @@
         "title": "heinzel_chat_Input",
         "type": "object"
       },
+      "heinzel_deliver_channel_item_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "minLength": 1,
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_deliver_channel_item_Input",
+        "type": "object"
+      },
       "heinzel_discard_captured_write_Input": {
         "additionalProperties": false,
         "properties": {
@@ -18242,6 +18534,55 @@
           "proposal"
         ],
         "title": "heinzel_propose_captured_write_Input",
+        "type": "object"
+      },
+      "heinzel_propose_channel_item_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "pattern": "^[a-z][a-z0-9-]{0,63}$",
+            "title": "Channel",
+            "type": "string"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChannelNotice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "write_request": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write Request"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "channel"
+        ],
+        "title": "heinzel_propose_channel_item_Input",
         "type": "object"
       },
       "heinzel_propose_check_in_Input": {
@@ -19740,6 +20081,59 @@
         ]
       }
     },
+    "/heinzel/channel-item-status": {
+      "get": {
+        "description": "Read the recorded posting outcome without retrying it.",
+        "operationId": "heinzel_channel_item_status",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Channel Item Status",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read the recorded posting outcome without retrying it.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/chat": {
       "post": {
         "description": "Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.",
@@ -20235,6 +20629,49 @@
           }
         },
         "summary": "Inspect the latest recorded connected-read state for this session.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/deliver-channel-item": {
+      "post": {
+        "description": "Post one exact human-confirmed message; posting consent does not approve the draft.",
+        "operationId": "heinzel_deliver_channel_item",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_deliver_channel_item_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Deliver Channel Item",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post one exact human-confirmed message; posting consent does not approve the draft.",
         "tags": [
           "heinzel"
         ]
@@ -21499,6 +21936,48 @@
           }
         },
         "summary": "Persist a local draft without writing to a provider or granting authority.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/propose-channel-item": {
+      "post": {
+        "description": "Stage exact posting terms for separate human consent; no message is sent.",
+        "operationId": "heinzel_propose_channel_item",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_channel_item_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelDeliveryTerms"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage exact posting terms for separate human consent; no message is sent.",
         "tags": [
           "heinzel"
         ]
@@ -25352,6 +25831,62 @@
           }
         },
         "summary": "Stage exact owner-private captured write terms for separate human confirmation.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-channel-item": {
+      "post": {
+        "description": "Stage exact owner-private channel posting terms for separate human confirmation.",
+        "operationId": "system_runner_chat_propose_channel_item",
+        "parameters": [
+          {
+            "description": "Owner-scoped personal conversation.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "Owner-scoped personal conversation.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Identity of the channel posting draft.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "Identity of the channel posting draft.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage exact owner-private channel posting terms for separate human confirmation.",
         "tags": [
           "system"
         ]

@@ -32,6 +32,8 @@ from heinzel.modules.heinzel._autonomous_schedule import (
 from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
 from heinzel.modules.heinzel._captured_write_host import CapturedWriteHost, review_payload
 from heinzel.modules.heinzel._captured_write_operations import register_captured_write_operations
+from heinzel.modules.heinzel._channel_delivery import ChannelDelivery
+from heinzel.modules.heinzel._channel_operations import register_channel_operations
 from heinzel.modules.heinzel._connected_grants import (
     ConnectedGrant,
     ConnectedGrantProposal,
@@ -174,6 +176,11 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         )
 
     def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        if module == "heinzel" and operation == "deliver-channel-item":
+            if self.kernel is None:
+                msg = "Channel review is unavailable"
+                raise HeinzelError(msg)
+            return self.kernel.resolve(ChannelDelivery).review(*self._model_args(arguments))
         if module == "heinzel" and operation == "execute-captured-write":
             session, request = self._model_args(arguments)
             return self._write_host().review(session, request)
@@ -272,6 +279,11 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         return self.kernel.resolve(NotificationDelivery).recover(session, request, write_receipt=False) == "recorded"
 
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if module == "heinzel" and operation == "deliver-channel-item":
+            if self.kernel is None or arguments.get("review") != self.review(module, operation, arguments):
+                msg = "The reviewed channel posting changed"
+                raise HeinzelError(msg)
+            return self.kernel.resolve(ChannelDelivery).issue(*self._model_args(arguments), provenance)
         if module == "heinzel" and operation == "execute-captured-write":
             if arguments.get("review") != self.review(module, operation, arguments):
                 msg = "The reviewed write draft is unavailable or changed"
@@ -916,6 +928,7 @@ def _register_review_services(module: Module) -> None:
     _register_autonomous_schedule_operations(module)
     _register_history_search(module)
     register_captured_write_operations(module)
+    register_channel_operations(module)
 
 
 def _check_history(kernel: Kernel) -> None:

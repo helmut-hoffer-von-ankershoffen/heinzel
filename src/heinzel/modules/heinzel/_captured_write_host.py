@@ -74,12 +74,24 @@ def _expected(draft: CapturedWriteDraft) -> CapturedWriteReview:
 class CapturedWriteHost:
     """Owner-bound state machine; the host selects and source-binds the provider before admitting writes."""
 
-    def __init__(self, crud: SessionCrud, current: CurrentUser, provider: CapturedWriteService) -> None:
+    def __init__(
+        self,
+        crud: SessionCrud,
+        current: CurrentUser,
+        provider: CapturedWriteService,
+        *,
+        channel_confirmation: ApprovalConfirmation | None = None,
+    ) -> None:
         self.crud, self.user, self.provider = crud, current, provider
+        self._channel_confirmation = channel_confirmation
 
     def _owner(self, draft: CapturedWriteDraft, *, drafting: bool = False) -> None:
         heads = {"cli", "api-bearer", "web-session", "web-device"} | ({"daemon"} if drafting else set[str]())
         context = self.user.context()
+        if self._channel_confirmation is not None and self._channel_confirmation.matches(
+            "heinzel", "execute-captured-write", review_payload(draft)
+        ):
+            heads.add("daemon")
         if (
             context.principal != self.user.owner()
             or context.principal.id != self.crud.repository.principal_id

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from heinzel import ChannelApprovalReply, ChannelNotice, ChannelReceipt, Module, NotificationChannel
+from heinzel import ChannelApprovalReply, ChannelNotice, ChannelReceipt, ChannelTarget, Module, NotificationChannel
 
 pytestmark = pytest.mark.unit
 
@@ -60,3 +60,11 @@ def test_notice_bounds_are_enforced(field, value):
     values = {"key": "k", "helper": "Mira", "title": "Break", "body": "Stand up", "route": "/heinzel"}
     with pytest.raises(ValidationError):
         ChannelNotice.model_validate(values | {field: value})
+
+
+def test_legacy_notice_channels_cannot_post_without_a_reviewed_destination_contract():
+    legacy = _Channel()
+    notice = ChannelNotice(key="one", helper="Mira", title="Review", body="Exact", route="/heinzel")
+    target = ChannelTarget(account="own-account", destination="own-inbox", scope="post-own")
+    assert legacy.delivery_target() is None
+    assert legacy.deliver_reviewed(notice, target).status == "refused"

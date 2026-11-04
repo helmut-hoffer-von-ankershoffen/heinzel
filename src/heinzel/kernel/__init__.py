@@ -39,6 +39,7 @@ from heinzel.kernel._channels import (
     ChannelReceipt,
     ChannelReplyConsumer,
     ChannelReplySource,
+    ChannelTarget,
     NotificationChannel,
     VerifiedChannelReply,
 )
@@ -402,6 +403,7 @@ __all__ = [
     "ChannelReceipt",
     "ChannelReplyConsumer",
     "ChannelReplySource",
+    "ChannelTarget",
     "Chat",
     "ChatDraftTemplate",
     "Check",

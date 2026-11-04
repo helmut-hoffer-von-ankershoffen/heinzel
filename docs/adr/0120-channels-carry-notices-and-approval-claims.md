@@ -25,12 +25,30 @@ Chosen option: **ordinary service contracts**, because plugins can register impl
 - Notification and approval messages are bounded typed values. Receipts distinguish delivered, queued, refused and
   unknown; an unknown outcome cannot justify an automatic retry.
 - Kernel service discovery returns registered subclasses in stable order, retaining normal singleton resolution.
-- An approval reply is only a claim. Before any future channel consumer issues a one-use approval, it must bind the
-  authenticated owner and linked actor, channel and posted reference, exact full preview digest, pending request,
-  issue/expiry times and current source revision, then record settlement durably. Text grants no authority.
-- This foundation exports the ports and discovery only. It registers no channel, native-notification replacement,
-  credential expansion, background delivery or reply-to-confirmation job. Per-helper channel consent, durable delivery
-  and verified reply consumption remain outstanding; a plugin can use the contracts without gaining those effects.
+- Each posting needs its own owner/helper-bound proposal and separate CLI or paired-web human confirmation. The
+  exact source capture, signed-in actor, posting account, destination, scope and complete message are shown together.
+  Consenting to post an approval request does not approve the captured write. No global setting grants posting rights.
+- Channels expose `delivery_target` and conditional `post_reviewed` / `deliver_reviewed`. The supplied destination
+  must be bound at the actual transport mutation; source checks before/after a call alone cannot prevent a target race.
+  Legacy implementations default to refusal and must adopt this contract before host posting can work.
+- Before posting, the host consumes a one-use exact human proof into its private durable outbox. The attempt precedes
+  the transport effect. Missing acknowledgements, exceptions and source/destination drift are unknown and never
+  automatically reposted. Refused/queued/delivered remain distinct observations; even refused items are not replayed.
+- A posted approval carries the complete bounded serialized captured-write review (including target, account, scope,
+  section and base revision), its argument digest and expiry. Oversized reviews are refused rather than truncated.
+- An approval reply remains a claim. The host polls only consented recorded references, then verifies captured channel
+  source, linked actor, destination, exact request/digest, posting time, reply time and current expiry. It re-observes the
+  pending captured-write source/account/scope/revision before claiming that decision in the owner's private journal.
+- The daemon keeps its real authentication context. A private host-scoped exact-draft confirmation lets this consumer
+  use the existing captured-write human issuer and single-use execution path; there is no `CurrentUser.local("cli")`
+  elevation, model self-approval or exposed operation accepting a verified outcome.
+- An owner/session channel-processing lock serializes reply claim, execution and recovery. A crash after a claim never
+  repeats the write. Recovery closes it as uncertain; durable settlement retries only closing the same posted request.
+  Provider acknowledgement remains separate evidence and no uncertain result is upgraded by guessing.
+- `connected_channels` defaults off, independently of `captured_writes`. The core registers the generic consumer and
+  a daemon polling job, but no concrete channel, credentials, scopes, notification replacement or plugin dependency.
+  Existing chat history retains proposal-only semantics. This is partial source preparation; schedule/onboarding UI,
+  live provider acceptance and the remaining connected-helper journeys are separate obligations.
 
 ### Consequences
 
@@ -39,5 +57,6 @@ Chosen option: **ordinary service contracts**, because plugins can register impl
 
 ### Confirmation
 
-Focused channel tests check registry discovery, singleton behavior and message bounds. No consumer may treat a typed
-reply as authority; complete owner-bound transport confirmation requires its own security review and real acceptance.
+Focused offline tests check separate posting consent, full exact preview, authenticated-head behavior, linked actor,
+request/digest/time checks, installed source continuity, stale captured-write terms, uncertainty and replay. The full
+journey still requires independent security review, released compatible SDK/plugins and real human/provider acceptance.

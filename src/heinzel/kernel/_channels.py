@@ -20,6 +20,14 @@ class _Message(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class ChannelTarget(_Message):
+    """Exact signed-in posting destination and scope; observed by the host, never selected by model text."""
+
+    account: str = Field(min_length=1, max_length=256)
+    destination: str = Field(min_length=1, max_length=256)
+    scope: str = Field(min_length=1, max_length=256)
+
+
 class ChannelNotice(_Message):
     """One notice for the owner; `key` is stable across retries, so a channel can send it at most once."""
 
@@ -75,9 +83,21 @@ class NotificationChannel(ABC):
     name: str
     """Stable lower-case identity, shown when a schedule is reviewed; the owner picks channels by this name."""
 
+    def delivery_target(self) -> ChannelTarget | None:
+        """Observe the exact posting account, destination and scope; None disables host delivery."""
+        return None
+
     @abstractmethod
     def available(self) -> bool:
         """Whether this channel is signed in and usable now, without network side effects beyond a status check."""
+
+    def deliver_reviewed(self, notice: ChannelNotice, target: ChannelTarget) -> ChannelReceipt:  # noqa: ARG002 - public override signature
+        """Conditionally post only to the exact reviewed account, destination and scope.
+
+        Implementations must bind/check the supplied target at the actual transport mutation, not merely before it.
+        Legacy delivery is never an automatic fallback; it has no destination precondition.
+        """
+        return ChannelReceipt(channel=self.name, status="refused", detail="Reviewed destination posting is unavailable")
 
     @abstractmethod
     def deliver(self, notice: ChannelNotice) -> ChannelReceipt:
@@ -90,9 +110,20 @@ class ApprovalChannel(ABC):
     name: str
     """Stable lower-case identity; the owner links their identity on it before a reply can count."""
 
+    def delivery_target(self) -> ChannelTarget | None:
+        """Observe the exact posting account, destination and scope; None disables host delivery."""
+        return None
+
     @abstractmethod
     def owner_actor(self) -> str | None:
         """The owner's stable user id on this channel from its own sign-in, or None when not signed in."""
+
+    def post_reviewed(self, request: ChannelApprovalRequest, target: ChannelTarget) -> ChannelReceipt:  # noqa: ARG002 - public override signature
+        """Conditionally post the full exact preview only to the reviewed account, destination and scope.
+
+        Bind/check the supplied target at the actual transport mutation. Never fall back to a newly selected target.
+        """
+        return ChannelReceipt(channel=self.name, status="refused", detail="Reviewed destination posting is unavailable")
 
     @abstractmethod
     def post(self, request: ChannelApprovalRequest) -> ChannelReceipt:
