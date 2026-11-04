@@ -177,7 +177,7 @@ def _systemd_environment(raw: str) -> dict[str, str]:
     try:
         entries = shlex.split(raw)
     except ValueError as exc:
-        msg = "The loaded daemon environment is malformed; nothing was changed."
+        msg = "The loaded daemon environment is malformed; no further change was authorized."
         raise HeinzelError(msg) from exc
     values: dict[str, str] = {}
     for entry in entries:
@@ -189,5 +189,5 @@ def _systemd_environment(raw: str) -> dict[str, str]:
 
 
 def _refuse() -> Never:
-    msg = "The daemon manager identity or selected profile cannot be verified; nothing was changed."
+    msg = "The daemon manager identity or selected profile cannot be verified; no further change was authorized."
     raise HeinzelError(msg)

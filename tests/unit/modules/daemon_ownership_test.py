@@ -91,3 +91,48 @@ def test_malformed_loaded_launchd_pid_never_becomes_a_stopped_service(settings, 
     )
     with pytest.raises(HeinzelError, match="identity or selected profile"):
         launchd_owned(output, unit, executable, environment)
+
+
+@pytest.mark.parametrize("drift", ["fragment", "dropin", "argv", "profile", "pid", "queued", "control", "duplicate"])
+def test_loaded_systemd_identity_refuses_foreign_fragments_profiles_and_uncertain_execution(settings, tmp_path, drift):
+    import shlex
+
+    from heinzel.modules.system.daemon._ownership import systemd_owned
+
+    executable = tmp_path / "hz"
+    units = (tmp_path / "hz-daemon.service", tmp_path / "hz-daemon.timer")
+    profile = profile_environment(settings, DaemonSettings(unit_dir=tmp_path), Config.empty())
+    environment = tick_environment(executable, profile)
+    common = (
+        "LoadState=loaded\nDropInPaths=\nActiveState=inactive\nUnitFileState=disabled\nMainPID=0\nControlPID=0\nJob=\n"
+    )
+    service = (
+        f"Id={units[0].name}\nFragmentPath={units[0]}\n{common}"
+        f"ExecStart={{ path={executable} ; argv[]={executable} system daemon tick ; ignore_errors=no ; }}\n"
+        f"WorkingDirectory={profile['HOME']}\nEnvironment="
+        + shlex.join([f"{key}={value}" for key, value in environment.items()])
+        + "\n"
+    )
+    timer = f"Id={units[1].name}\nFragmentPath={units[1]}\n{common}Triggers=hz-daemon.service\n"
+    actual = systemd_owned(service, timer, units, executable, environment)
+    assert actual.registered
+    assert not actual.active
+    assert not actual.enabled
+    if drift == "fragment":
+        service = service.replace(f"FragmentPath={units[0]}", "FragmentPath=/foreign")
+    elif drift == "dropin":
+        service = service.replace("DropInPaths=", "DropInPaths=/foreign/drop-in.conf")
+    elif drift == "argv":
+        service = service.replace("daemon tick ;", "daemon tick --job=other:write ;")
+    elif drift == "profile":
+        service = service.replace(str(settings.state_dir), "/foreign/state")
+    elif drift == "pid":
+        service = service.replace("MainPID=0", "MainPID=unknown")
+    elif drift == "queued":
+        service = service.replace("Job=", "Job=41/start")
+    elif drift == "control":
+        service = service.replace("ControlPID=0", "ControlPID=417")
+    else:
+        service += "LoadState=loaded\n"
+    with pytest.raises(HeinzelError, match="identity or selected profile"):
+        systemd_owned(service, timer, units, executable, environment)
