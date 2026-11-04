@@ -467,7 +467,8 @@ class ChatService:
                     operation="execute-captured-write",
                     tool="heinzel_execute_captured_write",
                     arguments=arguments,
-                    command="Current section text is not shown; review the full replacement and base revision.",
+                    command="Review inserting or appending this text, or creating a new slide with it. "
+                    "Check the exact target, section/tab and base revision. Current content is not shown.",
                 )
             )
             return self._store.load(personal_chat.id)

@@ -1,6 +1,8 @@
 """Exact human chat confirmation of an installed source-bound offline conditional writer."""
 
+import json
 import sys
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -290,4 +292,28 @@ def test_read_only_protocol_registration_and_exact_captured_declaration_are_sepa
     assert selected.registration.modes == frozenset({"read"})
     assert not hasattr(selected.registration.factory, "replace_section")
     assert selected.service.supported_operations == frozenset({"insert-draft"})
+    assert state["writes"] == 0
+
+
+def test_human_action_label_describes_insertion_and_normalizes_saved_legacy_wording(captured_client):
+    from heinzel.modules.system.runner.chat import ChatStore
+
+    client, kernel, current, session, proposal, state, _source = captured_client
+    response = client.post("/api/heinzel/propose-captured-write", headers=AUTH, json={"proposal": proposal})
+    assert response.status_code == 200, response.text
+    staged, action = stage(client, session)
+    contract = json.loads((Path(__file__).parents[2] / "web/src/test/capturedWriteReview.json").read_text())
+    assert action["command"] == contract["command"]
+    assert "full replacement" not in action["command"]
+    assert action["arguments"]["review"]["reference"] == proposal["reference"]
+    assert action["arguments"]["review"]["section"] == proposal["section"]
+    assert proposal["content"] not in json.dumps(staged["messages"])
+    with current.local("cli"):
+        store = kernel.resolve(ChatStore)
+        saved = store.load(staged["id"])
+        saved.actions[0].command = "Current section text is not shown; review the full replacement and base revision."
+        store.save(saved)
+        reopened = store.load(saved.id)
+        assert reopened.actions[0].command == contract["command"]
+        assert proposal["content"] not in json.dumps([m.model_dump(mode="json") for m in reopened.messages])
     assert state["writes"] == 0

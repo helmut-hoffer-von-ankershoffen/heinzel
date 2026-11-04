@@ -193,7 +193,8 @@ class ChatStore(McpChatSessions):
                     if action.operation in {"approve-connected-read", "approve-connected-read-set"}
                     else "Review agent schedule"
                     if action.operation == "approve-agent-schedule"
-                    else "Current section text is not shown; review the full replacement and base revision."
+                    else "Review inserting or appending this text, or creating a new slide with it. "
+                    "Check the exact target, section/tab and base revision. Current content is not shown."
                     if action.operation == "execute-captured-write"
                     else "Review agent contract"
                     if action.operation == "accept-agent-contract"
