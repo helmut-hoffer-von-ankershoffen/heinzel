@@ -202,6 +202,65 @@ def _inspect(
     return result
 
 
+def preserved_wheel_constraints(prefix: Path, requirements: list[str]) -> tuple[str, ...]:
+    """Capture hash-bound wheel sources of unchanged index requirements; the caller supplies continuity authority.
+
+    This does not approve an installation. Only a previously verified startup checkpoint may authorize carrying
+    these sources into a mutation. New or replaced requirements must be excluded by the caller.
+
+    Raises:
+        HeinzelError: If selected metadata is ambiguous or its wheel identity is inconsistent.
+    """
+    try:
+        return _preserved_wheel_constraints(prefix, requirements)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        msg = "The unchanged tool wheel sources cannot be preserved safely; no package change was started."
+        raise HeinzelError(msg) from exc
+
+
+def _preserved_wheel_constraints(prefix: Path, requirements: list[str]) -> tuple[str, ...]:
+    wanted = [Requirement(item) for item in requirements]
+    names: set[str] = {canonicalize_name(item.name) for item in wanted}
+    found = _selected_metadata(_locations(prefix), names, set())
+    result = []
+    for requirement in wanted:
+        if requirement.url is not None:
+            continue
+        name = canonicalize_name(requirement.name)
+        matches = found.get(name, [])
+        if len(matches) != 1:
+            raise ValueError
+        version, direct = matches[0]
+        if Version(version) not in requirement.specifier:
+            raise ValueError
+        if direct is None:
+            continue
+        if set(direct) != {"url", "archive_info"} or not isinstance(direct.get("archive_info"), dict):
+            raise ValueError
+        url = direct.get("url")
+        if not isinstance(url, str):
+            raise TypeError
+        source = urlsplit(url)
+        hashes = parse_qs(source.fragment).get("sha256", [])
+        if (
+            source.scheme != "file"
+            or source.netloc
+            or source.query
+            or not source.path.startswith("/")
+            or source.username
+            or source.password
+            or len(hashes) != 1
+            or not re.fullmatch(r"[a-f0-9]{64}", hashes[0])
+            or source.fragment != f"sha256={hashes[0]}"
+        ):
+            raise ValueError
+        wheel_name, wheel_version, _, _ = parse_wheel_filename(unquote(source.path.rsplit("/", 1)[-1]))
+        if wheel_name != name or wheel_version != Version(version) or not _archive_source_matches(url, direct):
+            raise ValueError
+        result.append(f"{name} @ {url}")
+    return tuple(result)
+
+
 def validate_constraint_policy(requirements: list[str], constraints: tuple[str, ...]) -> None:
     """Refuse ambiguous selected sources and impossible pinned wheel versions before any tool mutation.
 
