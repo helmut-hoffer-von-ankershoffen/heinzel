@@ -70,6 +70,7 @@ class Notice(BaseModel):
     urgent: bool = Field(default=False, description="Whether it may interrupt outside working hours.")
     at: AwareDatetime = Field(description="When it was recorded.")
     due: AwareDatetime = Field(description="When it may pop up: `at`, or the next start of your working hours.")
+    expires: AwareDatetime | None = Field(default=None, description="Exclusive deadline for showing this notice.")
     popup: bool = Field(description="Whether it is shown as a desktop notification at all; false: in the list only.")
     held: str | None = Field(default=None, description="Why it isn't shown as a desktop notification; none if it is.")
     helper: NoticeHelper | None = Field(default=None, description="The personal Heinzel behind this notice, if any.")
@@ -112,8 +113,13 @@ class Notifications:
         command: str,
         key: str,
         helper: NoticeHelper | None = None,
+        expires: datetime | None = None,
     ) -> bool:
         """Atomically persist one notice and its durable key, or recognize the previously recorded key."""
+        raise NotImplementedError
+
+    def withdraw(self, key: str) -> bool:
+        """Suppress pending notices with this key, without forgetting their durable replay receipt."""
         raise NotImplementedError
 
     def forget_once(self, key: str) -> bool:

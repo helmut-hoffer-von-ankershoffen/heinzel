@@ -118,6 +118,30 @@ def test_helper_metadata_survives_reload_and_durable_deduplication_without_chang
     assert Notice.model_validate(legacy).helper is None
 
 
+def test_expiry_and_withdrawal_stop_a_stale_claim_and_keep_the_replay_key(make, clock):
+    service = make(working_hours=False)
+    arguments = {"route": "/", "command": "hz org agenda", "key": "calendar:fixture"}
+    assert service.emit_once(
+        NoticeKind.HEINZEL, "Meeting", "Soon", expires=clock.now + timedelta(minutes=5), **arguments
+    )
+    pending = service.due()[0]
+    restarted = make(working_hours=False)
+    assert restarted.withdraw(arguments["key"])
+    assert restarted.deliver([pending.id], Delivery.WEB) == []
+    assert restarted.emit_once(NoticeKind.HEINZEL, "Meeting", "Soon", **arguments)
+    assert restarted.due() == []
+    assert len(restarted.recent()) == 1
+
+    arguments["key"] = "calendar:another"
+    assert restarted.emit_once(
+        NoticeKind.HEINZEL, "Meeting", "Soon", expires=clock.now + timedelta(minutes=5), **arguments
+    )
+    pending = restarted.due()[0]
+    clock.now += timedelta(minutes=5)
+    assert restarted.due() == []
+    assert restarted.deliver([pending.id], Delivery.DAEMON) == []
+
+
 @pytest.mark.parametrize("sound", [False, True])
 def test_native_delivery_forwards_the_recorded_identity_and_selected_sound_setting(make, monkeypatch, sound):
     service = make(working_hours=False, sound=sound)

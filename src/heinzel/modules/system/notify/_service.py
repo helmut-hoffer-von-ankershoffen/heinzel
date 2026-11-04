@@ -212,6 +212,7 @@ class NotifyService(Notifications):
         command: str,
         key: str,
         helper: NoticeHelper | None = None,
+        expires: datetime | None = None,
     ) -> bool:
         """Persist a notice and replay key together, independent of repeat policy and display retention."""
         if not self.settings.wants(kind):
@@ -231,6 +232,7 @@ class NotifyService(Notifications):
                     key=key,
                     at=now,
                     due=decision.due,
+                    expires=expires,
                     popup=decision.popup,
                     held=decision.held,
                     helper=helper,
@@ -242,6 +244,21 @@ class NotifyService(Notifications):
         except OSError:
             logger.warning("can't record a durable notice in %s", self.store.directory, exc_info=True)
             return False
+
+    def withdraw(self, key: str) -> bool:
+        """Suppress pending matching notices atomically while retaining their replay keys."""
+
+        def suppress(notices: list[Notice]) -> None:
+            for index, notice in enumerate(notices):
+                if notice.key == key and notice.delivered_by is None:
+                    notices[index] = notice.model_copy(update={"popup": False, "held": "withdrawn"})
+
+        try:
+            self.store.change(self._clock(), suppress)
+        except OSError:
+            logger.warning("can't withdraw a notice in %s", self.store.directory, exc_info=True)
+            return False
+        return True
 
     def forget_once(self, key: str) -> bool:
         """Remove a completed outbox receipt while preserving its display notice."""
@@ -279,7 +296,15 @@ class NotifyService(Notifications):
         shown = sum(
             1 for n in notices if n.delivered_at is not None and now - policy.RATE_WINDOW < n.delivered_at <= now
         )
-        waiting = [n for n in notices if n.popup and n.delivered_by is None and n.due <= now and now - n.due <= STALE]
+        waiting = [
+            n
+            for n in notices
+            if n.popup
+            and n.delivered_by is None
+            and n.due <= now
+            and now - n.due <= STALE
+            and (n.expires is None or now < n.expires)
+        ]
         return waiting[: max(0, self.settings.per_hour - shown)]
 
     def deliver(self, ids: Sequence[str], by: Delivery) -> list[Notice]:
@@ -289,7 +314,12 @@ class NotifyService(Notifications):
         def mark(notices: list[Notice]) -> list[Notice]:
             marked: list[Notice] = []
             for index, notice in enumerate(notices):
-                if notice.id in wanted and notice.delivered_by is None:
+                if (
+                    notice.id in wanted
+                    and notice.delivered_by is None
+                    and notice.popup
+                    and (notice.expires is None or now < notice.expires)
+                ):
                     notices[index] = notice.model_copy(update={"delivered_by": by, "delivered_at": now})
                     marked.append(notices[index])
             return marked
