@@ -30,6 +30,13 @@ class Format(StrEnum):
     JSON = "json"
 
 
+def has_terminal() -> bool:
+    """Check terminal availability on demand while retaining the command's existing prompt boundary."""
+    from heinzel.heads.cli._setup import has_terminal as terminal_available  # noqa: PLC0415 - only when executing a command
+
+    return terminal_available()
+
+
 def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prologue and epilogue
     kernel: Kernel,
     operation: OperationLet,
@@ -74,7 +81,7 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
     )
 
     def run(**kwargs: Any) -> None:  # noqa: ANN401 - forwarded to the operation
-        from heinzel.heads.cli._setup import ConsolePrompter, has_terminal  # noqa: PLC0415 - prompts only run with a command
+        from heinzel.heads.cli._setup import ConsolePrompter  # noqa: PLC0415 - prompts only run with a command
 
         chosen = kwargs.pop(FORMAT_PARAMETER)
         as_json = kwargs.pop(JSON_PARAMETER) or (chosen or Format(kernel.settings.output_format)) is Format.JSON
