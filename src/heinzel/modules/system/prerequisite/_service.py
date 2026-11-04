@@ -146,6 +146,18 @@ class ToolPrerequisites(PrerequisiteService):
         except InvalidVersion:
             return None
 
+    def _apple_launcher(self, let: PrerequisiteLet, candidate: str) -> bool | None:
+        """Whether this is a declared system launcher, or unknown when physical identity cannot be read."""
+        if self.host.platform != "darwin" or not any(
+            owner.name == let.name and owner.requires_apple_developer_tools
+            for _, owner in self.kernel.lets(PrerequisiteLet)
+        ):
+            return False
+        try:
+            return self.host.same_file(candidate, f"/usr/bin/{let.name}")
+        except OSError:
+            return None
+
     def _observe(
         self, record: ModuleRecord, let: PrerequisiteLet, candidate: str, *, run: bool
     ) -> PrerequisiteCheck | None:
@@ -153,25 +165,20 @@ class ToolPrerequisites(PrerequisiteService):
         definition = definition_of(record, let)
         if not candidate.startswith("/") or not self.host.is_executable(candidate):
             return None
-        apple_launcher = (
-            self.host.platform == "darwin"
-            and any(
-                owner.name == let.name and owner.requires_apple_developer_tools
-                for _, owner in self.kernel.lets(PrerequisiteLet)
-            )
-            and self.host.canonical_path(candidate) == self.host.canonical_path(f"/usr/bin/{let.name}")
-        )
-        if not run:
-            detail = (
-                "The Apple developer-tool launcher is not verified. "
-                "Run `hz system prerequisite check` to check it without installing anything."
-                if apple_launcher
-                else "Found; `hz system prerequisite check` verifies its version."
-            )
+        apple_launcher = self._apple_launcher(let, candidate)
+        if apple_launcher is None or not run:
+            if apple_launcher is None:
+                detail = "The executable's filesystem identity could not be verified. "
+                detail += "Check file access, then run `hz system prerequisite check` again."
+            elif apple_launcher:
+                detail = "The Apple developer-tool launcher is not verified. "
+                detail += "Run `hz system prerequisite check` to check it without installing anything."
+            else:
+                detail = "Found; `hz system prerequisite check` verifies its version."
             return PrerequisiteCheck(
                 requirement=definition,
-                status="failed" if apple_launcher else "available",
-                path=None if apple_launcher else candidate,
+                status="available" if apple_launcher is False else "failed",
+                path=candidate if apple_launcher is False else None,
                 detail=detail,
             )
         if apple_launcher and not self._developer_tools_ready():

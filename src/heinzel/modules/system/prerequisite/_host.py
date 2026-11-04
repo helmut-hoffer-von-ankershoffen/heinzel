@@ -28,9 +28,9 @@ def _is_executable(path: str) -> bool:
     return candidate.is_file() and os.access(candidate, os.X_OK)
 
 
-def _canonical_path(path: str) -> str:
-    """Resolve filesystem aliases for identity checks without starting the executable."""
-    return os.path.realpath(path)
+def _same_file(path: str, reference: str) -> bool:
+    """Compare physical file identity without execution; the service handles filesystem lookup failures."""
+    return Path(path).samefile(reference)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -42,7 +42,7 @@ class ToolHost:
     execute: ProcessExecute = run_bounded_process
     which: Callable[[str, str], str | None] = _which
     is_executable: Callable[[str], bool] = _is_executable
-    canonical_path: Callable[[str], str] = _canonical_path
+    same_file: Callable[[str, str], bool] = _same_file
     brew_locations: tuple[str, ...] = BREW_LOCATIONS
 
     @classmethod

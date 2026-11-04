@@ -141,9 +141,10 @@ Set `requires_apple_developer_tools=True` when the program's `/usr/bin/<name>` o
 launcher, rather than the real program. The owning declaration supplies this metadata; ordinary system tools need
 no such flag. Once any enabled owner marks a launcher, the safety guard also applies to other owners of the same
 executable, including checks scoped to one owner. A probed check verifies the selected developer tools before
-launching that system copy. The guard compares canonical filesystem paths, covering dot components and symlink
-aliases while keeping the selected command path for execution and reports. A check with `probe=False` starts no
-process, including `xcode-select`, and leaves that launcher unverified unless another executable copy is found.
+launching that system copy. The guard compares physical file identity, covering dot components, symlinks, hardlinks
+and case aliases while keeping the selected command path for execution and reports. If identity cannot be read,
+the tool stays unverified and that uncertainty permits neither a probe nor installation. A check with `probe=False`
+starts no process, including `xcode-select`, and leaves that launcher unverified unless another executable copy is found.
 The flag is exported in prerequisite metadata and its
 guidance appears in the plugin page.
 Relative Homebrew candidates are rejected so inspection and execution cannot refer to different working directories.

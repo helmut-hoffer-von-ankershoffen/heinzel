@@ -4,6 +4,7 @@ import os
 import shutil
 from collections.abc import Callable
 from pathlib import Path
+from typing import Never
 
 import pytest
 
@@ -39,15 +40,25 @@ def engine(machine: Machine, kernel_factory: Callable[..., Kernel], **modules: M
 
 
 def aliased_apple_launcher(
-    tmp_path: Path, *, fallback: bool = False, developer_tools: bool = False
+    tmp_path: Path, *, fallback: bool = False, developer_tools: bool = False, alias_kind: str = "symlink"
 ) -> tuple[ToolHost, list[list[str]], Path, Path]:
-    """Real private files and a symlink, with every executable call intercepted."""
+    """Real private files and filesystem aliases, with every executable call intercepted."""
     system, alias, alternative = tmp_path / "system" / "tool", tmp_path / "alias" / "tool", tmp_path / "real" / "tool"
-    for directory in (system.parent, alias.parent, alternative.parent):
+    for directory in (system.parent, alternative.parent):
         directory.mkdir()
     system.write_text("tool 3.0")
     system.chmod(0o755)
-    alias.symlink_to(system)
+    if alias_kind == "case":
+        alias = tmp_path / "SYSTEM" / "tool"
+        if not alias.is_file():
+            pytest.skip("The private fixture filesystem is case sensitive.")
+    else:
+        alias.parent.mkdir()
+        if alias_kind == "hardlink":
+            alias.hardlink_to(system)
+        else:
+            alias.symlink_to(system)
+    assert Path(alias).samefile(system)
     if fallback:
         alternative.write_text("tool 4.0")
         alternative.chmod(0o755)
@@ -60,15 +71,15 @@ def aliased_apple_launcher(
             return ProcessOutcome(0 if developer_tools else 2, "", "")
         return ProcessOutcome(0, Path(command[0]).read_text(), "")
 
-    def canonical_path(path: str) -> str:
+    def same_file(path: str, reference: str) -> bool:
         # The virtual system launcher maps to a private file; no host tool is inspected or executed.
-        return os.path.realpath(system if path == "/usr/bin/tool" else path)
+        return Path(path).samefile(system if reference == "/usr/bin/tool" else reference)
 
     host = ToolHost(
         platform="darwin",
         environment={"PATH": str(alias.parent), "HOME": str(tmp_path)},
         execute=execute,
-        canonical_path=canonical_path,
+        same_file=same_file,
         brew_locations=(str(alternative.parent / "brew"),) if fallback else (),
     )
     return host, commands, alias, alternative
@@ -194,12 +205,13 @@ def test_normalized_path_aliases_cannot_bypass_the_apple_launcher_guard(make_ker
     assert machine.commands == ([["/usr/bin/xcode-select", "-p"]] if probe else [])
 
 
+@pytest.mark.parametrize("alias_kind", ["symlink", "hardlink", "case"])
 @pytest.mark.parametrize("fallback", [False, True])
 @pytest.mark.parametrize("probe", [False, True])
-def test_real_symlink_aliases_cannot_bypass_launcher_checks_or_final_lookup(
-    make_kernel, tmp_path, fallback: bool, probe: bool
+def test_real_file_aliases_cannot_bypass_launcher_checks_or_final_lookup(
+    make_kernel, tmp_path, fallback: bool, probe: bool, alias_kind: str
 ):
-    host, commands, alias, alternative = aliased_apple_launcher(tmp_path, fallback=fallback)
+    host, commands, alias, alternative = aliased_apple_launcher(tmp_path, fallback=fallback, alias_kind=alias_kind)
     assert host.which("tool", host.search_path) == str(alias)
 
     report = ToolPrerequisites(
@@ -221,8 +233,11 @@ def test_real_symlink_aliases_cannot_bypass_launcher_checks_or_final_lookup(
     assert commands == expected
 
 
-def test_a_verified_launcher_keeps_its_selected_symlink_path_for_execution_and_reporting(make_kernel, tmp_path):
-    host, commands, alias, _ = aliased_apple_launcher(tmp_path, developer_tools=True)
+@pytest.mark.parametrize("alias_kind", ["symlink", "hardlink", "case"])
+def test_a_verified_launcher_keeps_its_selected_alias_path_for_execution_and_reporting(
+    make_kernel, tmp_path, alias_kind: str
+):
+    host, commands, alias, _ = aliased_apple_launcher(tmp_path, developer_tools=True, alias_kind=alias_kind)
 
     report = ToolPrerequisites(
         make_kernel(example=owner(tool(requires_apple_developer_tools=True))), Progress(), host
@@ -231,6 +246,37 @@ def test_a_verified_launcher_keeps_its_selected_symlink_path_for_execution_and_r
     assert report.ready
     assert report.checks[0].path == host.which("tool", host.search_path) == str(alias)
     assert commands == [["/usr/bin/xcode-select", "-p"], [str(alias), "--version"]]
+
+
+@pytest.mark.parametrize("problem", [FileNotFoundError, PermissionError, OSError])
+@pytest.mark.parametrize("probe", [False, True])
+def test_unreadable_launcher_identity_never_permits_a_probe_or_install(make_kernel, problem, probe: bool):
+    machine = Machine(present={"/usr/bin/tool": "tool 3.0", BREW: ""})
+
+    def unavailable(*paths: str) -> Never:
+        del paths
+        msg = "Identity is unavailable."
+        raise problem(msg)
+
+    host = ToolHost(
+        platform="darwin",
+        environment=machine.environment,
+        execute=machine.execute,
+        which=machine.which,
+        is_executable=lambda path: path in machine.files,
+        same_file=unavailable,
+        brew_locations=(BREW,),
+    )
+    service = ToolPrerequisites(make_kernel(example=owner(tool(requires_apple_developer_tools=True))), Progress(), host)
+
+    report = service.check(probe=probe)
+
+    assert not report.ready
+    [check] = report.checks
+    assert (check.status, check.path, check.automatic) == ("failed", None, False)
+    assert "identity" in check.detail
+    assert service.install().checks[0].status == "failed"
+    assert machine.commands == []
 
 
 @pytest.mark.parametrize("probe", [False, True])
@@ -252,15 +298,15 @@ def test_final_lookup_rechecks_a_launcher_alias_shadowed_by_another_tools_direct
             return ProcessOutcome(2, "", "")
         return ProcessOutcome(0, Path(command[0]).read_text(), "")
 
-    def canonical_path(path: str) -> str:
-        candidate = system / Path(path).name if path in {"/usr/bin/first", "/usr/bin/second"} else path
-        return os.path.realpath(candidate)
+    def same_file(path: str, reference: str) -> bool:
+        target = system / Path(reference).name if reference in {"/usr/bin/first", "/usr/bin/second"} else reference
+        return Path(path).samefile(target)
 
     host = ToolHost(
         platform="darwin",
         environment={"PATH": str(initial), "HOME": str(tmp_path)},
         execute=execute,
-        canonical_path=canonical_path,
+        same_file=same_file,
         brew_locations=(str(later / "brew"),),
     )
     report = ToolPrerequisites(
@@ -953,13 +999,23 @@ def test_the_real_defaults_find_only_executable_files_on_the_given_path(tmp_path
     assert not host.is_executable(str(tmp_path / "absent"))
 
 
-def test_host_identity_resolves_dot_components_and_real_symlinks_without_running_them(tmp_path):
-    target, alias = tmp_path / "program", tmp_path / "alias"
+def test_host_identity_compares_real_files_and_links_without_running_them(tmp_path):
+    target, alias, hardlink, copy = (tmp_path / name for name in ("program", "alias", "hardlink", "copy"))
     target.write_text("private file, never executed")
+    copy.write_text(target.read_text())
     alias.symlink_to(target)
+    hardlink.hardlink_to(target)
     host = ToolHost(environment={"PATH": str(tmp_path)})
 
-    assert host.canonical_path(f"{tmp_path}/./alias") == str(target.resolve())
+    assert host.same_file(f"{tmp_path}/./alias", str(target))
+    assert host.same_file(str(hardlink), str(target))
+    assert not host.same_file(str(copy), str(target))
+    case_alias = tmp_path / "PROGRAM"
+    if case_alias.is_file():
+        assert host.same_file(str(case_alias), str(target))
+    else:
+        case_alias.write_text(target.read_text())
+        assert not host.same_file(str(case_alias), str(target))
 
 
 def test_a_home_that_does_not_exist_does_not_stop_a_probe_from_running(tmp_path):

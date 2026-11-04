@@ -63,8 +63,9 @@ owner's own setup step**, because ownership belongs to the module while installi
   succeeds and meets the minimum version: an exit-zero package manager, a stale path or Apple's developer-tool stub
   (never run while the Command Line Tools are missing, since that would open a GUI installer) do not count.
   Only owner-declared Apple system launchers need that guard; ordinary `/usr/bin` programs are probed normally.
-  Canonical filesystem identity covers normalized paths and symlink aliases; execution and reports keep the selected
-  command spelling. The host supplies the identity lookup so described test machines never inspect the real machine.
+  Physical file identity covers normalized paths, symlinks, hardlinks and case aliases; execution and reports keep the
+  selected command spelling. The host supplies the identity lookup so described test machines never inspect the real machine.
+  A failed identity lookup leaves the executable unverified and grants no probe or installation permission.
   `probe=False` starts no process, including developer-tools diagnosis. It reports an otherwise unmatched declared
   launcher as unverified and unmet, without permission to install; another executable copy can still satisfy it.
   Conflicting recipes for one executable are reported and nothing is installed for it; a predicate that fails is a
