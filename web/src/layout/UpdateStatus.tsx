@@ -111,11 +111,6 @@ export function UpdateStatus() {
           </p>
         )}
         {status?.reason && <p className="text-xs text-muted-foreground">{status.reason}</p>}
-        {canUpdate && (
-          <Button size="sm" variant="outline" onClick={() => void run(false)}>
-            {available ? t("updates.action") : t("updates.manualAction")}
-          </Button>
-        )}
         {problem && (
           <p role="alert" className="text-bad">
             {problem}
@@ -125,6 +120,12 @@ export function UpdateStatus() {
         {recovery && (
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(true)}>
             {t("updates.verify")}
+          </Button>
+        )}
+        {/* The primary action stays at the bottom when late automatic-update facts grow this above-anchored pane. */}
+        {canUpdate && (
+          <Button size="sm" variant="outline" onClick={() => void run(false)}>
+            {available ? t("updates.action") : t("updates.manualAction")}
           </Button>
         )}
       </div>
