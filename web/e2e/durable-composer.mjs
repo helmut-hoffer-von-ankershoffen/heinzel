@@ -13,9 +13,12 @@ const page = await context.newPage();
 const updateVersion = "0.7.31";
 let restarted = false;
 let updated = false;
+const updateRequests = { install: 0, restart: 0, lifecycle: 0, frontend: 0, verified: 0 };
 const submissions = [];
 const answerRequested = Promise.withResolvers();
 const finishAnswer = Promise.withResolvers();
+const autoFactsRequested = Promise.withResolvers();
+const publishAutoFacts = Promise.withResolvers();
 
 function sessionUrlFor(id) {
   const address = new URL(sessionUrl);
@@ -71,6 +74,7 @@ await page.route("**/api/heinzel/answer-chat", async (route) => {
   });
 });
 await page.route("**/api/system/update", async (route) => {
+  updateRequests.install++;
   updated = true;
   return route.fulfill({
     json: {
@@ -85,23 +89,29 @@ await page.route("**/api/system/update", async (route) => {
     },
   });
 });
-await page.route("**/api/lifecycle", (route) =>
-  route.fulfill({
+await page.route("**/api/lifecycle", (route) => {
+  updateRequests.lifecycle++;
+  return route.fulfill({
     json: {
       instance: restarted ? "fixture-new-instance" : "fixture-old-instance",
       version: restarted ? updateVersion : "0.7.30",
       restartable: true,
     },
-  }),
-);
+  });
+});
 await page.route("**/api/restart", (route) => {
+  updateRequests.restart++;
   restarted = true;
   return route.fulfill({ json: { restarting: true, instance: "fixture-old-instance" } });
 });
-await page.route("**/api/lifecycle/verify", (route) =>
-  route.fulfill({ json: { instance: "fixture-new-instance", version: updateVersion, matches: true, mismatched: [] } }),
-);
+await page.route("**/api/lifecycle/verify", (route) => {
+  updateRequests.verified++;
+  return route.fulfill({
+    json: { instance: "fixture-new-instance", version: updateVersion, matches: true, mismatched: [] },
+  });
+});
 await page.route("**/api/frontend", async (route) => {
+  updateRequests.frontend++;
   const response = await fetchOnce(route);
   const frontend = await response.json();
   return route.fulfill({ response, json: { ...frontend, version: updateVersion } });
@@ -124,17 +134,99 @@ try {
   assert.equal(await secondComposer.inputValue(), "", "another durable session must not inherit the first draft");
   assert.equal(await page.evaluate((key) => sessionStorage.getItem(key), secondKey), null);
 
+  const autoFacts = await page.evaluate(async () => {
+    const response = await fetch("/api/auto-update", {
+      headers: { Authorization: `Bearer ${sessionStorage.getItem("hz.token") ?? ""}` },
+    });
+    if (!response.ok) throw new Error("The isolated automatic-update facts were unavailable");
+    return response.json();
+  });
+  const autoExplanation =
+    "Automatic updates stay off in this isolated browser fixture while the manual update is verified.";
+  await page.route("**/api/auto-update", async (route) => {
+    autoFactsRequested.resolve();
+    await publishAutoFacts.promise;
+    return route.fulfill({ json: { ...autoFacts, held: autoExplanation, development: autoExplanation } });
+  });
   await page.goto(sessionUrlFor(firstSession));
   await page.getByLabel("Message your Heinzel").waitFor();
   assert.equal(await page.getByLabel("Message your Heinzel").inputValue(), "First session draft survives the update");
   assert.equal(await page.evaluate((key) => sessionStorage.getItem(key), secondKey), null);
   await page.getByRole("button", { name: "Updates available" }).click();
-  await page.getByRole("button", { name: "Update now" }).waitFor();
+  const updateButton = page.getByRole("button", { name: "Update now" });
+  await updateButton.waitFor();
+  await autoFactsRequested.promise;
   const reloaded = page.waitForEvent("load", { timeout: 30_000 });
-  await page.getByRole("button", { name: "Update now" }).click();
-  await reloaded;
+  try {
+    const press = async () => {
+      await updateButton.hover();
+      const before = await updateButton.boundingBox();
+      assert.ok(before);
+      await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+      await updateButton.evaluate((button, explanation) => {
+        const geometry = () => {
+          const { x, y, width, height } = button.getBoundingClientRect();
+          return { x, y, width, height };
+        };
+        window.durablePressGeometry = null;
+        const observer = new MutationObserver(() => {
+          if (!document.body.textContent.includes(explanation)) return;
+          observer.disconnect();
+          const delivery = geometry();
+          requestAnimationFrame(() => {
+            const frame = geometry();
+            requestAnimationFrame(() => {
+              window.durablePressGeometry = { delivery, frame, settled: geometry() };
+            });
+          });
+        });
+        observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+      }, autoExplanation);
+      await page.mouse.down();
+      publishAutoFacts.resolve();
+      await page.getByText(autoExplanation, { exact: true }).waitFor();
+      await page.waitForFunction(() => window.durablePressGeometry !== null);
+      const frames = await page.evaluate(() => window.durablePressGeometry);
+      await page.mouse.up();
+      for (const [phase, bounds] of Object.entries(frames))
+        assert.deepEqual(
+          bounds,
+          before,
+          `Late automatic-update facts must not move the pressed action during ${phase}`,
+        );
+    };
+    await Promise.all([reloaded, press()]);
+  } catch (error) {
+    // Fixed facts only: never emit composer text, session storage contents, tokens or arbitrary server errors.
+    const state = await page.evaluate(() => {
+      const saved = sessionStorage.getItem("hz.update.receipt");
+      let receipt = "absent";
+      try {
+        const stage = saved && JSON.parse(saved).stage;
+        if (["uncertain", "installed", "reloading"].includes(stage)) receipt = stage;
+        else if (saved) receipt = "invalid";
+      } catch {
+        receipt = "invalid";
+      }
+      return {
+        receipt,
+        modal: !!document.querySelector('[role="dialog"],[role="alertdialog"]'),
+        terminal: !!document.querySelector(".xterm"),
+        preservationBlocked: document.body.textContent.includes(
+          "Close the terminal or editor before updating; its open work will stay here.",
+        ),
+      };
+    });
+    const composer = (await page.getByLabel("Message your Heinzel").count()) > 0;
+    console.error(
+      `DURABLE_UPDATE_STATE:${JSON.stringify({ ...state, composer, updated, restarted, requests: updateRequests })}`,
+    );
+    throw error;
+  }
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
   await page.waitForFunction(() => sessionStorage.getItem("hz.update.receipt") === null, null, { timeout: 15_000 });
+  assert.equal(updateRequests.install, 1, "One physical gesture must install exactly once");
+  assert.equal(updateRequests.restart, 1, "One physical gesture must restart exactly once");
   assert.equal(await page.getByLabel("Message your Heinzel").inputValue(), "First session draft survives the update");
 
   await page.goto(sessionUrlFor(secondSession));
@@ -184,6 +276,8 @@ try {
   );
 } finally {
   finishAnswer.resolve();
+  publishAutoFacts.resolve();
+  await page.unrouteAll({ behavior: "wait" });
   await context.close();
   await browser.close();
 }
