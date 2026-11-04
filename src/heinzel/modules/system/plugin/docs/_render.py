@@ -302,8 +302,13 @@ def _prerequisites(modules: Iterable[ModuleDoc]) -> list[str]:
         if not p.condition:
             needed = "when you ask for it" if p.when == "feature" else "always"
         minimum = f" (version {p.minimum_version} or newer)" if p.minimum_version else ""
+        macos = p.macos
+        if p.requires_apple_developer_tools:
+            macos += (
+                " The /usr/bin launcher needs Apple's Command Line Tools; a check without probes leaves it unverified."
+            )
         lines.append(
-            f"| `{p.executable}`{minimum} | {_cell(p.purpose)} | {needed} | {_cell(p.macos)} | {_cell(p.linux)} "
+            f"| `{p.executable}`{minimum} | {_cell(p.purpose)} | {needed} | {_cell(macos)} | {_cell(p.linux)} "
             f"| `{p.check}` |"
         )
     return [*lines, ""]

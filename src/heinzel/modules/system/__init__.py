@@ -54,6 +54,7 @@ module.prerequisite(
     purpose="Clones team repositories and plugin sources and keeps shared state in version control.",
     when="install",
     macos=Homebrew("git"),
+    requires_apple_developer_tools=True,
     linux=ManualInstall(
         "Install Git with your distribution's package manager, e.g. `sudo apt install git` or `sudo dnf install git`.",
         "https://git-scm.com/downloads/linux",

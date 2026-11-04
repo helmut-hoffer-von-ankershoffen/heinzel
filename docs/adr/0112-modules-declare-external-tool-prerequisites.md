@@ -50,6 +50,9 @@ owner's own setup step**, because ownership belongs to the module while installi
   `needed` predicate, evaluated only by checks and installs, takes settings or the capability view and returns whether
   the person's selection needs the tool; `condition` explains it in words and is what documentation shows. Exports
   never evaluate the predicate, probe a tool or run a package manager.
+  `requires_apple_developer_tools` defaults to false; an owner sets it for a tool whose `/usr/bin/<name>` on macOS is
+  an Apple developer-tool launcher. This portable metadata keeps the generic engine free of vendor-name tables.
+  One enabled owner's launcher flag applies to all owners of that executable, including owner-scoped checks.
 - **Selection.** A context includes its own declarations and those of the narrower contexts (`install` < `setup` <
   `feature`). A `feature` declaration without a predicate is requested only by `--context feature`; one with a predicate joins
   `setup` when it holds. Declared text is one plain line, links are ASCII HTTPS, and nothing but the executable's
@@ -59,6 +62,9 @@ owner's own setup step**, because ownership belongs to the module while installi
   Checks run bounded local version probes (`--version`), no network, no account. A tool is ready only when its probe
   succeeds and meets the minimum version: an exit-zero package manager, a stale path or Apple's developer-tool stub
   (never run while the Command Line Tools are missing, since that would open a GUI installer) do not count.
+  Only owner-declared Apple system launchers need that guard; ordinary `/usr/bin` programs are probed normally.
+  `probe=False` starts no process, including developer-tools diagnosis. It reports an otherwise unmatched declared
+  launcher as unverified and unmet, without permission to install; another executable copy can still satisfy it.
   Conflicting recipes for one executable are reported and nothing is installed for it; a predicate that fails is a
   finding, never permission to install.
 - **Install.** On macOS with Homebrew present, `install` runs fixed `brew install --formula|--cask` argument lists
@@ -70,6 +76,8 @@ owner's own setup step**, because ownership belongs to the module while installi
   other systems, it changes nothing and returns the owner's instructions with the outcome `manual`; no installation
   script is run and no package manager is bootstrapped. Existing incompatible versions get update guidance;
   upgrades are a separate decision. Package-manager-less Linux installation is out of scope.
+  Homebrew discovery accepts only absolute executable paths, so changing to the process home before execution cannot
+  select a different package manager from the one inspected.
 - **The installer.** After resolving the profile and before downloading wheels, `uvx heinzel` / `hz-install` checks
   the `install` context of the Core-only kernel. It names the missing tools and their owners and, on macOS with
   Homebrew, installs them (running the installer is the person's yes; `--no-tools`, `--dry-run` and `--python` only
@@ -93,6 +101,7 @@ owner's own setup step**, because ownership belongs to the module while installi
   that shows notifications. Plugins declare theirs (for example a VPN's CLI when sharing is selected); Core names none.
   `launchctl`, `osascript` and `systemctl` are operating-system facilities, and build tools (Node, pnpm) are not
   runtime prerequisites.
+  The Git declaration marks its Apple system launcher as requiring developer tools; `gh` has no such launcher.
 
 ### Consequences
 

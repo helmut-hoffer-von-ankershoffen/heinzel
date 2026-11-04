@@ -77,6 +77,9 @@ class PrerequisiteDoc(BaseModel):
     when: str = Field(description="`install`, `setup` or `feature`: how early the module asks for it.")
     condition: str = Field(description="When a selection makes it necessary; empty when it always is.")
     minimum_version: str | None = Field(description="The oldest compatible version, when the module names one.")
+    requires_apple_developer_tools: bool = Field(
+        default=False, description="Whether its /usr/bin launcher on macOS needs Apple's developer tools."
+    )
     macos: str = Field(description="What hz does on macOS: the Homebrew command, or the owner's instructions.")
     linux: str = Field(description="What to do by hand on Linux; hz installs nothing there.")
     check: str = Field(

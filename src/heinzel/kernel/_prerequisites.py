@@ -88,6 +88,7 @@ class PrerequisiteLet(Let):
     when: PrerequisiteContext = "setup"
     version_args: tuple[str, ...] = ("--version",)
     minimum_version: str | None = None
+    requires_apple_developer_tools: bool = False
     condition: str = ""
     needed: Callable[..., bool] | None = None
 
@@ -95,6 +96,7 @@ class PrerequisiteLet(Let):
         _check_identity(self)
         _check_probe(self)
         _check_condition(self)
+        _check_launcher_flag(self.requires_apple_developer_tools)
 
 
 def _check_identity(let: PrerequisiteLet) -> None:
@@ -114,6 +116,17 @@ def _check_identity(let: PrerequisiteLet) -> None:
     if let.when not in PREREQUISITE_CONTEXTS:
         msg = "A prerequisite context must be install, setup or feature."
         raise ValueError(msg)
+
+
+def _check_launcher_flag(value: object) -> None:
+    """Reject a non-boolean launcher flag.
+
+    Raises:
+        TypeError: If the flag is not a boolean.
+    """
+    if not isinstance(value, bool):
+        msg = "A prerequisite's Apple developer-tools requirement must be a boolean."
+        raise TypeError(msg)
 
 
 def _check_probe(let: PrerequisiteLet) -> None:
@@ -159,6 +172,9 @@ class PrerequisiteDefinition(BaseModel):
     macos: Homebrew | ManualInstall | None = Field(description="macOS package recipe or manual guidance.")
     linux: ManualInstall = Field(description="Instructions Linux users carry out themselves.")
     minimum_version: str | None = Field(default=None, description="Oldest compatible version, when declared.")
+    requires_apple_developer_tools: bool = Field(
+        default=False, description="Whether the tool's /usr/bin launcher on macOS needs Apple's developer tools."
+    )
 
 
 class PrerequisiteCheck(BaseModel):
@@ -203,6 +219,7 @@ class PrerequisiteService(ServiceContract):
         """Check applicable tools locally without installation or authentication.
 
         With `probe` false nothing is started: a tool counts when an executable file is found, without its version.
+        A declared Apple developer-tool launcher stays unverified; checking it requires an explicit probed check.
         """
         raise NotImplementedError
 

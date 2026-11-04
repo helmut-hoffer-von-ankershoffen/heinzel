@@ -457,6 +457,7 @@ class Module:
         when: PrerequisiteContext = "setup",
         version_args: tuple[str, ...] = ("--version",),
         minimum_version: str | None = None,
+        requires_apple_developer_tools: bool = False,
         condition: str = "",
         needed: Callable[..., bool] | None = None,
     ) -> PrerequisiteLet:
@@ -464,9 +465,11 @@ class Module:
 
         `needed` is an optional injected read-only predicate; `condition` explains it without executing it when
         exporting documentation. This declaration neither starts a program nor replaces the module's setup step.
+        `requires_apple_developer_tools` marks the tool's macOS /usr/bin launcher; other copies need no such guard.
 
         Raises:
             ValueError: If the declaration is invalid or this module already declares the executable.
+            TypeError: If the Apple developer-tools flag is not a boolean.
         """
         prerequisite = PrerequisiteLet(
             name=name,
@@ -477,6 +480,7 @@ class Module:
             when=when,
             version_args=version_args,
             minimum_version=minimum_version,
+            requires_apple_developer_tools=requires_apple_developer_tools,
             condition=condition,
             needed=needed,
         )

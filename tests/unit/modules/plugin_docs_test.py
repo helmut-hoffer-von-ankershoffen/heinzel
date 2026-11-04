@@ -69,6 +69,7 @@ def weather() -> tuple[Module, Module]:
         needed=lambda: False,
         condition="The barometer feed is selected.",
         minimum_version="2.1",
+        requires_apple_developer_tools=True,
         macos=Homebrew("stormglass"),
         linux=ManualInstall("Install it with your package manager.", "https://example.test/stormglass"),
     )
@@ -173,6 +174,7 @@ def test_the_page_names_every_kind_of_let(documentation):
         "2.1",
     )
     assert prerequisite.macos == "`brew install stormglass`"
+    assert prerequisite.requires_apple_developer_tools is True
     assert prerequisite.linux == "Install it with your package manager. https://example.test/stormglass"
     assert prerequisite.check == "hz system prerequisite check --owner weather --context feature"
     assert module.health_checks
@@ -398,6 +400,7 @@ def test_the_page_renders_every_section(documentation):
     assert row == (
         "| `stormglass` (version 2.1 or newer) | Reads the barometer \\| the weather station. "
         "| The barometer feed is selected. | `brew install stormglass` "
+        "The /usr/bin launcher needs Apple's Command Line Tools; a check without probes leaves it unverified. "
         "| Install it with your package manager. https://example.test/stormglass "
         "| `hz system prerequisite check --owner weather --context feature` |"
     )

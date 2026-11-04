@@ -16,8 +16,6 @@ from heinzel.kernel import ProcessExecute, ProcessOutcome, run_bounded_process, 
 
 BREW_LOCATIONS = ("/opt/homebrew/bin/brew", "/usr/local/bin/brew", "/home/linuxbrew/.linuxbrew/bin/brew")
 """Where Homebrew installs itself; its directory is often missing from the `PATH` of a launchd or GUI process."""
-APPLE_SHIMS = "/usr/bin/"
-"""Apple's developer-tool stubs: running one without the Command Line Tools opens a GUI installer."""
 OUTPUT_LIMIT = 65536
 
 
@@ -82,9 +80,9 @@ class ToolHost:
         return home if home.is_dir() else Path(home.anchor or "/")
 
     def find_brew(self) -> str | None:
-        """Homebrew's executable on `PATH` or in its standard locations; None when it is not installed."""
+        """Homebrew's absolute executable on `PATH` or in its standard locations; None without a safe candidate."""
         found = self.which("brew", self.search_path)
         for candidate in ([found] if found else []) + list(self.brew_locations):
-            if self.is_executable(candidate):
+            if Path(candidate).is_absolute() and self.is_executable(candidate):
                 return candidate
         return None

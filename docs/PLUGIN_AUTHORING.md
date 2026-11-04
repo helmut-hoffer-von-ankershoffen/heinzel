@@ -133,10 +133,18 @@ runs `vpn-tool --version` (`version_args` must contain exactly one flag: `--vers
 without any suffix arguments or bare subcommand), accepts a copy that answers and meets `minimum_version`, and
 verifies every result against the final process `PATH`. A directory choice that shadows another required tool leaves
 that tool unmet.
-On macOS it installs a missing `Homebrew` formula or cask after
-the person agreed. Linux, a missing Homebrew and a `ManualInstall` only show your steps. Text and links are one plain
-line each. Do not sign anyone in from a prerequisite: keep sign-in in
-your own setup step.
+On macOS it installs a missing `Homebrew` formula or cask after the person agreed. Linux, a missing Homebrew and a
+`ManualInstall` only show your steps. Text and links are one plain line each. Do not sign anyone in from a
+prerequisite: keep sign-in in your own setup step.
+
+Set `requires_apple_developer_tools=True` when the program's `/usr/bin/<name>` on macOS is an Apple developer-tool
+launcher, rather than the real program. The owning declaration supplies this metadata; ordinary system tools need
+no such flag. Once any enabled owner marks a launcher, the safety guard also applies to other owners of the same
+executable, including checks scoped to one owner. A probed check verifies the selected developer tools before
+launching that system copy. A check with `probe=False` starts no process, including `xcode-select`, and leaves that
+launcher unverified unless another executable copy is found. The flag is exported in prerequisite metadata and its
+guidance appears in the plugin page.
+Relative Homebrew candidates are rejected so inspection and execution cannot refer to different working directories.
 
 A step that has prerequisites runs after they are ready; `hz setup` checks them first. Removing your plugin never
 removes the program. `hz system plugin docs build` writes a Prerequisites table from the same declaration, so the page

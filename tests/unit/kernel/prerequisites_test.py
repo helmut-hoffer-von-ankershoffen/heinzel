@@ -112,6 +112,16 @@ def test_a_conditional_declaration_keeps_its_wording_and_predicate():
     assert let.minimum_version == "2.1"
 
 
+def test_the_owner_declares_whether_its_apple_system_launcher_needs_developer_tools():
+    assert declare().requires_apple_developer_tools is False
+    assert declare(requires_apple_developer_tools=True).requires_apple_developer_tools is True
+
+
+def test_the_launcher_flag_must_be_a_boolean():
+    with pytest.raises(TypeError, match="boolean"):
+        declare(requires_apple_developer_tools="yes")
+
+
 @pytest.mark.parametrize("package", ["", "Git", "git;rm", "-flag", "a/b/c/d", "git "])
 def test_a_homebrew_recipe_names_a_formula_or_cask(package: str):
     with pytest.raises(ValueError, match="formula or cask"):

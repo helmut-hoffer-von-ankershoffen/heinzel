@@ -21,7 +21,7 @@ from heinzel import (
     Progress,
 )
 from heinzel.kernel import PREREQUISITE_CONTEXTS, PREREQUISITE_READY
-from heinzel.modules.system.prerequisite._host import APPLE_SHIMS, ToolHost
+from heinzel.modules.system.prerequisite._host import ToolHost
 
 PROBE_TIMEOUT = 10.0
 INSTALL_TIMEOUT = 900.0
@@ -51,6 +51,7 @@ def definition_of(record: ModuleRecord, let: PrerequisiteLet) -> PrerequisiteDef
         macos=let.macos,
         linux=let.linux,
         minimum_version=let.minimum_version,
+        requires_apple_developer_tools=let.requires_apple_developer_tools,
     )
 
 
@@ -122,7 +123,7 @@ class ToolPrerequisites(PrerequisiteService):
         """Whether Apple's Command Line Tools exist, asked once; their stubs open a GUI installer otherwise."""
         if self._developer_tools is None:
             try:
-                self._developer_tools = self.host.run(["xcode-select", "-p"], PROBE_TIMEOUT).returncode == 0
+                self._developer_tools = self.host.run(["/usr/bin/xcode-select", "-p"], PROBE_TIMEOUT).returncode == 0
             except OSError:
                 self._developer_tools = False
         return self._developer_tools
@@ -130,10 +131,7 @@ class ToolPrerequisites(PrerequisiteService):
     def _candidates(self, let: PrerequisiteLet) -> list[str]:
         found = self.host.which(let.name, self.host.search_path)
         homebrew = [str(Path(location).parent / let.name) for location in self.host.brew_locations]
-        candidates = [path for path in dict.fromkeys(([found] if found else []) + homebrew) if path.startswith("/")]
-        if self.host.platform == "darwin":
-            return [path for path in candidates if not path.startswith(APPLE_SHIMS) or self._developer_tools_ready()]
-        return candidates
+        return [path for path in dict.fromkeys(([found] if found else []) + homebrew) if path.startswith("/")]
 
     def _version(self, let: PrerequisiteLet, executable: str) -> Version | None:
         try:
@@ -155,15 +153,29 @@ class ToolPrerequisites(PrerequisiteService):
         definition = definition_of(record, let)
         if not candidate.startswith("/") or not self.host.is_executable(candidate):
             return None
-        if self.host.platform == "darwin" and candidate.startswith(APPLE_SHIMS) and not self._developer_tools_ready():
-            return None
+        apple_launcher = (
+            self.host.platform == "darwin"
+            and candidate == f"/usr/bin/{let.name}"
+            and any(
+                owner.name == let.name and owner.requires_apple_developer_tools
+                for _, owner in self.kernel.lets(PrerequisiteLet)
+            )
+        )
         if not run:
+            detail = (
+                "The Apple developer-tool launcher is not verified. "
+                "Run `hz system prerequisite check` to check it without installing anything."
+                if apple_launcher
+                else "Found; `hz system prerequisite check` verifies its version."
+            )
             return PrerequisiteCheck(
                 requirement=definition,
-                status="available",
-                path=candidate,
-                detail="Found; `hz system prerequisite check` verifies its version.",
+                status="failed" if apple_launcher else "available",
+                path=None if apple_launcher else candidate,
+                detail=detail,
             )
+        if apple_launcher and not self._developer_tools_ready():
+            return None
         if (version := self._version(let, candidate)) is None:
             return None
         if let.minimum_version is not None and version < Version(let.minimum_version):
@@ -178,9 +190,13 @@ class ToolPrerequisites(PrerequisiteService):
 
     def _probe(self, record: ModuleRecord, let: PrerequisiteLet, *, run: bool) -> PrerequisiteCheck:
         too_old: PrerequisiteCheck | None = None
+        unverified: PrerequisiteCheck | None = None
         for candidate in self._candidates(let):
             check = self._observe(record, let, candidate, run=run)
             if check is None:
+                continue
+            if check.status == "failed":
+                unverified = unverified or check
                 continue
             if check.status == "incompatible":
                 too_old = too_old or check
@@ -188,7 +204,7 @@ class ToolPrerequisites(PrerequisiteService):
             found = self.host.which(let.name, self.host.search_path)
             self.host.add_to_path(str(Path(candidate).parent), first=found is not None and found != candidate)
             return check
-        return too_old or self._missing(definition_of(record, let))
+        return too_old or unverified or self._missing(definition_of(record, let))
 
     def _final_paths(
         self, entries: list[Entry], checks: list[PrerequisiteCheck], *, run: bool

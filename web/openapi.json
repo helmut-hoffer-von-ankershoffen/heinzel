@@ -9929,6 +9929,12 @@
             "title": "Purpose",
             "type": "string"
           },
+          "requires_apple_developer_tools": {
+            "default": false,
+            "description": "Whether the tool's /usr/bin launcher on macOS needs Apple's developer tools.",
+            "title": "Requires Apple Developer Tools",
+            "type": "boolean"
+          },
           "title": {
             "description": "Human-readable tool name.",
             "title": "Title",
@@ -10001,6 +10007,12 @@
             "description": "What the module uses it for.",
             "title": "Purpose",
             "type": "string"
+          },
+          "requires_apple_developer_tools": {
+            "default": false,
+            "description": "Whether its /usr/bin launcher on macOS needs Apple's developer tools.",
+            "title": "Requires Apple Developer Tools",
+            "type": "boolean"
           },
           "title": {
             "description": "The tool's name for people, e.g. `GitHub CLI`.",

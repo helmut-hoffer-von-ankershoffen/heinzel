@@ -33,6 +33,8 @@ def test_the_baseline_is_git_and_gh_declared_by_the_essential_system_module(make
         assert (let.when, let.macos, let.needed) == ("install", Homebrew(package), None)
         assert isinstance(let.linux, ManualInstall)
         assert let.linux.url.startswith("https://")
+    assert found["system", "git"].requires_apple_developer_tools is True
+    assert found["system", "gh"].requires_apple_developer_tools is False
 
 
 def test_gh_names_its_separate_sign_in_so_installing_it_never_implies_one(make_kernel):

@@ -44,7 +44,7 @@ def test_a_working_executable_on_the_path_is_available_with_its_version(make_ker
     [check] = engine(machine, make_kernel, example=owner(tool())).check().checks
 
     assert (check.status, check.version, check.path) == ("available", "2.39.5", "/usr/bin/tool")
-    assert machine.commands == [["xcode-select", "-p"], ["/usr/bin/tool", "--version"]]
+    assert machine.commands == [["/usr/bin/tool", "--version"]]
 
 
 def test_looking_without_a_probe_starts_nothing_and_knows_no_version(make_kernel):
@@ -56,13 +56,16 @@ def test_looking_without_a_probe_starts_nothing_and_knows_no_version(make_kernel
     assert machine.commands == []
 
 
-def test_looking_without_a_probe_still_reports_a_missing_tool_and_skips_apple_stubs(make_kernel):
+def test_looking_without_a_probe_leaves_a_declared_apple_stub_unverified(make_kernel):
     machine = Machine(present={"/usr/bin/tool": "tool 1.0"})
     machine.developer_tools = False
 
-    [check] = engine(machine, make_kernel, example=owner(tool())).check(probe=False).checks
+    [check] = (
+        engine(machine, make_kernel, example=owner(tool(requires_apple_developer_tools=True))).check(probe=False).checks
+    )
 
-    assert check.status == "missing"
+    assert check.status == "failed"
+    assert machine.commands == []
 
 
 def test_a_probe_gets_the_owners_arguments_and_no_credentials(make_kernel):
@@ -73,6 +76,112 @@ def test_a_probe_gets_the_owners_arguments_and_no_credentials(make_kernel):
 
     assert machine.commands[-1] == ["/usr/bin/tool", "-V"]
     assert "HZ_CREDENTIAL_SERVICE_TOKEN" not in machine.environments[-1]
+
+
+def test_a_normal_system_tool_needs_no_developer_tools_and_is_never_reinstalled(make_kernel):
+    machine = Machine(present={"/usr/bin/curl": "curl 8.7.1", BREW: ""})
+    machine.developer_tools = False
+
+    report = engine(machine, make_kernel, example=owner(tool("curl", macos=Homebrew("curl")))).install()
+
+    [check] = report.checks
+    assert (report.ready, check.status, check.path, check.automatic) == (True, "available", "/usr/bin/curl", False)
+    assert machine.commands == [["/usr/bin/curl", "--version"]]
+
+
+@pytest.mark.parametrize("developer_tools", [False, True])
+def test_a_no_process_check_leaves_an_apple_developer_shim_unverified(make_kernel, developer_tools: bool):
+    machine = Machine(present={"/usr/bin/git": "git 2.39", BREW: ""})
+    machine.developer_tools = developer_tools
+
+    report = engine(machine, make_kernel, example=owner(tool("git", requires_apple_developer_tools=True))).check(
+        probe=False
+    )
+
+    assert machine.commands == []
+    [check] = report.checks
+    assert not report.ready
+    assert (check.status, check.path, check.automatic) == ("failed", None, False)
+    assert "not verified" in check.detail
+
+
+def test_a_no_process_check_can_select_a_real_copy_instead_of_a_declared_apple_launcher(make_kernel):
+    machine = Machine(present={"/usr/bin/tool": "launcher", "/opt/homebrew/bin/tool": "tool 3.0"})
+
+    report = engine(machine, make_kernel, example=owner(tool(requires_apple_developer_tools=True))).check(probe=False)
+
+    [check] = report.checks
+    assert report.ready
+    assert (check.status, check.path, check.version) == ("available", "/opt/homebrew/bin/tool", None)
+    assert machine.which("tool", machine.environment["PATH"]) == check.path
+    assert machine.commands == []
+
+
+def test_a_developer_tool_declaration_does_not_require_apple_tools_for_a_non_system_copy(make_kernel):
+    machine = Machine(present={"/opt/homebrew/bin/tool": "tool 3.0"})
+    machine.developer_tools = False
+
+    report = engine(machine, make_kernel, example=owner(tool(requires_apple_developer_tools=True))).check()
+
+    assert report.ready
+    assert machine.commands == [["/opt/homebrew/bin/tool", "--version"]]
+
+
+@pytest.mark.parametrize("probe", [False, True])
+def test_another_owner_cannot_bypass_a_declared_apple_launcher_guard(make_kernel, probe: bool):
+    machine = Machine(present={"/usr/bin/tool": "tool 3.0"})
+    machine.developer_tools = False
+    service = engine(
+        machine,
+        make_kernel,
+        guarded=owner(tool(requires_apple_developer_tools=True), name="guarded"),
+        ordinary=owner(tool(), name="ordinary"),
+    )
+
+    report = service.check("ordinary", probe=probe)
+
+    assert not report.ready
+    assert report.checks[0].status == ("missing" if probe else "failed")
+    assert machine.commands == ([["/usr/bin/xcode-select", "-p"]] if probe else [])
+
+
+def test_relative_homebrew_lookup_cannot_execute_a_different_home_directory_file(make_kernel, tmp_path, monkeypatch):
+    checkout, home = tmp_path / "checkout", tmp_path / "home"
+    for directory in (checkout, home):
+        (directory / "bin").mkdir(parents=True)
+        (directory / "bin" / "brew").write_text("fake package manager")
+        (directory / "bin" / "brew").chmod(0o755)
+    monkeypatch.chdir(checkout)
+    executions: list[Path] = []
+
+    def execute(command: list[str], **options: object) -> ProcessOutcome:
+        executions.append(Path(options["cwd"]) / command[0])  # type: ignore[arg-type]
+        return ProcessOutcome(0, "", "")
+
+    host = ToolHost(
+        platform="darwin", environment={"PATH": "bin", "HOME": str(home)}, brew_locations=(), execute=execute
+    )
+    assert host.which("brew", host.search_path) == "bin/brew"
+
+    report = ToolPrerequisites(make_kernel(example=owner(tool())), Progress(), host).install()
+
+    assert executions == []
+    [check] = report.checks
+    assert (check.status, check.automatic) == ("manual", False)
+    assert host.find_brew() is None
+
+
+def test_homebrew_discovery_skips_a_relative_candidate_and_keeps_an_absolute_fallback(tmp_path, monkeypatch):
+    relative, absolute = tmp_path / "bin" / "brew", tmp_path / "fallback" / "brew"
+    for executable in (relative, absolute):
+        executable.parent.mkdir()
+        executable.write_text("fake package manager")
+        executable.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+    host = ToolHost(environment={"PATH": "bin"}, brew_locations=(str(absolute),))
+
+    assert host.which("brew", host.search_path) == "bin/brew"
+    assert host.find_brew() == str(absolute)
 
 
 @pytest.mark.parametrize("output", ["no version here", "tool 1", ""])
@@ -470,34 +579,37 @@ def test_apple_stubs_are_never_run_without_the_command_line_tools(make_kernel):
     machine = Machine(present={"/usr/bin/tool": "tool 2.39"})
     machine.developer_tools = False
 
-    [check] = engine(machine, make_kernel, example=owner(tool())).check().checks
+    [check] = engine(machine, make_kernel, example=owner(tool(requires_apple_developer_tools=True))).check().checks
 
     assert check.status == "missing"
-    assert machine.commands == [["xcode-select", "-p"]]
+    assert machine.commands == [["/usr/bin/xcode-select", "-p"]]
 
 
 def test_apple_stubs_run_once_the_command_line_tools_exist(make_kernel):
     machine = Machine(present={"/usr/bin/tool": "tool 2.39", "/usr/bin/other": "other 1.0"})
-    both = owner(tool(), tool("other", None))
+    both = owner(tool(requires_apple_developer_tools=True), tool("other", None, requires_apple_developer_tools=True))
 
     report = engine(machine, make_kernel, example=both).check()
 
     assert [c.status for c in report.checks] == ["available", "available"]
-    assert [c[0] for c in machine.commands].count("xcode-select") == 1
+    assert [c[0] for c in machine.commands].count("/usr/bin/xcode-select") == 1
 
 
 def test_a_missing_xcode_select_counts_as_no_command_line_tools(make_kernel):
     machine = Machine(present={"/usr/bin/tool": "tool 2.39"})
     machine.unstartable.add("xcode-select")
 
-    assert engine(machine, make_kernel, example=owner(tool())).check().checks[0].status == "missing"
+    assert (
+        engine(machine, make_kernel, example=owner(tool(requires_apple_developer_tools=True))).check().checks[0].status
+        == "missing"
+    )
 
 
 def test_on_linux_usr_bin_is_an_ordinary_directory(make_kernel):
     machine = Machine("linux", present={"/usr/bin/tool": "tool 2.39"})
 
-    assert engine(machine, make_kernel, example=owner(tool())).check().ready is True
-    assert all(c[0] != "xcode-select" for c in machine.commands)
+    assert engine(machine, make_kernel, example=owner(tool(requires_apple_developer_tools=True))).check().ready is True
+    assert all(Path(c[0]).name != "xcode-select" for c in machine.commands)
 
 
 def test_owners_that_disagree_on_a_recipe_fail_closed(make_kernel):
@@ -641,7 +753,9 @@ def test_the_export_never_probes_runs_or_evaluates(make_kernel):
         raise AssertionError
 
     machine = Machine(present={BREW: ""})
-    declaration = tool(when="feature", needed=explode, condition="Chosen.", minimum_version="1.2")
+    declaration = tool(
+        when="feature", needed=explode, condition="Chosen.", minimum_version="1.2", requires_apple_developer_tools=True
+    )
 
     [definition] = engine(machine, make_kernel, example=owner(declaration)).definitions()
 
@@ -653,6 +767,7 @@ def test_the_export_never_probes_runs_or_evaluates(make_kernel):
     )
     assert definition.plugin == "heinzel-test"
     assert definition.macos == Homebrew("tool")
+    assert definition.requires_apple_developer_tools is True
     assert machine.commands == []
     assert "needed" not in definition.model_dump()
 

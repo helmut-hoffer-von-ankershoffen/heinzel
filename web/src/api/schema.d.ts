@@ -9116,6 +9116,12 @@ export interface components {
              */
             purpose: string;
             /**
+             * Requires Apple Developer Tools
+             * @description Whether the tool's /usr/bin launcher on macOS needs Apple's developer tools.
+             * @default false
+             */
+            requires_apple_developer_tools: boolean;
+            /**
              * Title
              * @description Human-readable tool name.
              */
@@ -9167,6 +9173,12 @@ export interface components {
              * @description What the module uses it for.
              */
             purpose: string;
+            /**
+             * Requires Apple Developer Tools
+             * @description Whether its /usr/bin launcher on macOS needs Apple's developer tools.
+             * @default false
+             */
+            requires_apple_developer_tools: boolean;
             /**
              * Title
              * @description The tool's name for people, e.g. `GitHub CLI`.

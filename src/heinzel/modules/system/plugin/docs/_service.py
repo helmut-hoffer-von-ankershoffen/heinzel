@@ -502,6 +502,7 @@ def _prerequisite(record: ModuleRecord, let: PrerequisiteLet) -> PrerequisiteDoc
         when=let.when,
         condition=let.condition,
         minimum_version=let.minimum_version,
+        requires_apple_developer_tools=let.requires_apple_developer_tools,
         macos=macos,
         linux=let.linux.text,
         check=f"hz system prerequisite check --owner {record.qualname}"
