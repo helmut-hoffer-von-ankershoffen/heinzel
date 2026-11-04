@@ -756,7 +756,7 @@ class Installation:
         added: str | tuple[str, ...],
         options: Mapping[str, object] | None = None,
     ) -> str:
-        """Remove exact-version guards only from the independently verified post-mutation generation.
+        """Remove version and verified wheel-source guards from the independently verified post-mutation generation.
 
         uv also records the resolver options a run was given (`[tool.options]`, such as `exclude-newer`); `options`
         names exactly those this mutation added, and they go too. Anything else in the receipt stays as it is.
