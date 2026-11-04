@@ -191,8 +191,25 @@ def test_concurrent_setup_and_worker_cycles_cannot_pass_the_sdk_fence(calendar):
     assert all(item.unit.exists() for item in descriptors)
 
 
-def test_copied_recovery_with_sdk_absent_cleans_all_profiles_and_refuses_loaded_worker(calendar, tmp_path, monkeypatch):
-    installation, _, descriptors, manager, profiles = calendar
+def _change_after_journal(change, descriptors, manager):
+    manager.active.clear()
+    if change == "unknown-worker":
+        manager.active.add(
+            supervisor.LABEL + "." + "f" * 24
+            if descriptors[0].platform == "darwin"
+            else "hz-calendar-reminders-" + "f" * 24 + ".service"
+        )
+    elif change == "extra-definition":
+        original = descriptors[0].unit
+        prefix = supervisor.LABEL + "." if original.suffix == ".plist" else "hz-calendar-reminders-"
+        extra = original.with_name(prefix + "f" * 24 + original.suffix)
+        extra.write_bytes(original.read_bytes())
+    else:
+        descriptors[0].unit.write_text("changed definition after journal capture")
+
+
+def _calendar_record(calendar, tmp_path, monkeypatch):
+    installation, owner, descriptors, _manager, _profiles = calendar
     directory = tmp_path / "recovery"
     directory.mkdir(mode=0o700)
     uv = directory / "uv"
@@ -202,6 +219,7 @@ def test_copied_recovery_with_sdk_absent_cleans_all_profiles_and_refuses_loaded_
     executable = VerifiedUV(uv, hashlib.sha256(captured.content).hexdigest(), captured.identity)
     state = tmp_path / "state"
     paths = (
+        host_maintenance_lock(installation.prefix),
         *(path for item in descriptors for path in item.locks),
         state / "ui/lifecycle.lock",
         state / "daemon/lifecycle.lock",
@@ -209,7 +227,7 @@ def test_copied_recovery_with_sdk_absent_cleans_all_profiles_and_refuses_loaded_
     )
     from heinzel.kernel import _uninstall_journal as journal_module
 
-    monkeypatch.setattr(journal_module, "sys", SimpleNamespace(platform=descriptors[0].platform))
+    monkeypatch.setattr(journal_module, "sys", SimpleNamespace(platform=owner.platform))
     with MaintenanceLocks(paths):
         record = RemovalJournal(
             executable,
@@ -219,14 +237,24 @@ def test_copied_recovery_with_sdk_absent_cleans_all_profiles_and_refuses_loaded_
             captured=RemovalCapture(
                 tuple(file for item in descriptors for file in item.files),
                 installation.tool_entrypoints(),
-                {item.name: item.manager_facts() for item in descriptors} if descriptors[0].platform == "linux" else {},
+                {item.name: item.manager_facts() for item in descriptors} if owner.platform == "linux" else {},
                 gate=host_maintenance_gate(installation.prefix),
                 locks=paths,
                 labels=tuple(item.name for item in descriptors),
                 integrations=descriptors,
+                scopes=owner.discovery_scopes(),
             ),
         )
         record.begin()
+    return record
+
+
+@pytest.mark.parametrize("late_change", [None, "unknown-worker", "extra-definition", "changed-definition"])
+def test_copied_recovery_with_sdk_absent_cleans_all_profiles_and_refuses_loaded_worker(
+    calendar, tmp_path, monkeypatch, late_change
+):
+    installation, _owner, descriptors, manager, profiles = calendar
+    record = _calendar_record(calendar, tmp_path, monkeypatch)
     assert [item["name"] for item in record.value["integrations"]] == [item.name for item in descriptors]
     assert all(item["arguments"][-1] == "calendar-reminder-worker" for item in record.value["integrations"])
     assert all(item["files"][0]["content"] for item in record.value["integrations"])
@@ -239,6 +267,15 @@ def test_copied_recovery_with_sdk_absent_cleans_all_profiles_and_refuses_loaded_
         module.recover(record.directory, module.EXPECTED_AUTHORITY)
     assert calls == []
     assert all(item.unit.exists() for item in descriptors)
+    if late_change:
+        _change_after_journal(late_change, descriptors, manager)
+        with pytest.raises(ValueError, match=r"inventory|scope|changed|still loaded"):
+            module.recover(record.directory, module.EXPECTED_AUTHORITY)
+        assert calls == []
+        assert installation.prefix.exists()
+        assert all(item.unit.exists() for item in descriptors)
+        assert record.gate.exists()
+        return
     for path in installation.tool_entrypoints():
         path.unlink()
     shutil.rmtree(installation.prefix)
@@ -353,3 +390,103 @@ def test_gate_publication_refuses_a_redirected_parent_before_writing(journal):
     assert not (saved / record.gate.name).exists()
     assert installation.prefix.exists()
     assert unit.exists()
+
+
+@pytest.mark.parametrize("change", ["replace", "remove"])
+def test_gate_change_at_durable_removing_boundary_has_no_native_or_cleanup_effect(journal, monkeypatch, change):
+    from heinzel.modules.system._uninstall import _apply_removal
+
+    record, installation, unit = journal
+    record.gate.unlink()
+    foreign = '{"token":"foreign-at-removing"}\n'
+    original = record.phase
+    effects = []
+
+    def phase(value):
+        original(value)
+        if value == "removing":
+            if change == "replace":
+                private_write(record.gate, foreign)
+            else:
+                record.gate.unlink()
+
+    monkeypatch.setattr(record, "phase", phase)
+    monkeypatch.setattr(installation, "uninstall_offline", lambda **kwargs: effects.append("uv"))
+    service = SimpleNamespace(stop=lambda *args: None, finish=lambda: effects.append("cleanup"))
+    with pytest.raises(HeinzelError, match="needs inspection"):
+        _apply_removal(
+            installation,
+            installation.startup_fingerprint(),
+            installation.test_remover,
+            (service, service, record, (), lambda: None),
+            None,
+        )
+    assert effects == []
+    assert installation.prefix.exists()
+    assert unit.exists()
+    if change == "replace":
+        assert record.gate.read_text() == foreign
+    else:
+        assert not record.gate.exists()
+
+
+@pytest.mark.parametrize("late_change", ["unknown-worker", "extra-definition", "replaced-directory"])
+@pytest.mark.parametrize("initial_directory", ["empty", "absent"])
+def test_empty_calendar_scope_remains_complete_in_copied_recovery(
+    calendar, tmp_path, monkeypatch, late_change, initial_directory
+):
+    installation, owner, descriptors, manager, profiles = calendar
+    directory = descriptors[0].unit.parent
+    for item in descriptors:
+        item.unit.unlink()
+    manager.units.clear()
+    manager.active.clear()
+    if initial_directory == "absent":
+        directory.rmdir()
+    record = _calendar_record((installation, owner, (), manager, profiles), tmp_path, monkeypatch)
+    scope = record.value["discovery_scopes"][0]
+    assert scope["identity"] is None if initial_directory == "absent" else scope["identity"]
+    if late_change == "unknown-worker":
+        manager.active.add(
+            owner.discovery_scopes()[0].manager_prefix + "f" * 24 + (".service" if owner.platform == "linux" else "")
+        )
+    elif late_change == "extra-definition":
+        directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+        (directory / (owner.discovery_scopes()[0].file_prefix + "foreign")).write_text("unrecorded definition")
+    else:
+        if directory.exists():
+            directory.rename(directory.with_name(directory.name + "-retained"))
+        directory.mkdir(mode=0o700)
+    module = copy_module(record)
+    monkeypatch.setattr(module, "_linux_identity", lambda: (1, 2, 3))
+    monkeypatch.setattr(module, "_manager", lambda command, platform: manager.command(command).stdout)
+    calls = []
+    monkeypatch.setattr(module.subprocess, "run", successful_uv(installation, calls))
+    with pytest.raises(ValueError, match=r"inventory|scope|directory changed|still loaded"):
+        module.recover(record.directory, module.EXPECTED_AUTHORITY)
+    assert calls == []
+    assert installation.prefix.exists()
+    assert record.gate.exists()
+    assert directory.exists() or initial_directory == "absent"
+    assert all((Path(profile.environment["HZ_DATA_DIR"]) / "retained").exists() for profile in profiles)
+
+
+@pytest.mark.parametrize("late_change", ["unknown-worker", "extra-definition"])
+def test_post_removal_recovery_retains_all_files_when_namespace_grows(calendar, tmp_path, monkeypatch, late_change):
+    installation, _owner, descriptors, manager, _profiles = calendar
+    record = _calendar_record(calendar, tmp_path, monkeypatch)
+    for path in installation.tool_entrypoints():
+        path.unlink()
+    shutil.rmtree(installation.prefix)
+    record.phase("removed")
+    _change_after_journal(late_change, descriptors, manager)
+    module = copy_module(record)
+    monkeypatch.setattr(module, "_linux_identity", lambda: (1, 2, 3))
+    monkeypatch.setattr(module, "_manager", lambda command, platform: manager.command(command).stdout)
+    calls = []
+    monkeypatch.setattr(module.subprocess, "run", successful_uv(installation, calls))
+    with pytest.raises(ValueError, match=r"inventory|scope|still loaded"):
+        module.recover(record.directory, module.EXPECTED_AUTHORITY)
+    assert calls == []
+    assert all(item.unit.exists() for item in descriptors)
+    assert record.gate.exists()

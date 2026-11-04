@@ -15,8 +15,11 @@ locks, publishes one durable SDK-wide gate, stops all owned jobs and observes qu
 Definitions remain until the SDK is observed gone. Consent, configuration, user data and notification replay state stay.
 
 The copied standalone journal binds full plain-data descriptors, unit bytes/inodes, manager names/facts and physical
-lock identities. It enumerates this inventory after the SDK is absent, never imports a provider and never executes a
-journal-supplied callback. The original final gate check, changed-gate pre-effect refusal, native uv pins, exact runner
+lock identities, plus physical definition directories and complete manager namespaces even for an empty inventory.
+Before effects it rescans those bounded scopes and refuses extra or changed definitions and newly loaded workers.
+It retains this completeness check after the SDK is absent, never imports a provider and never executes a
+journal-supplied callback. The in-process path also revalidates its exact gate after the durable removing phase and
+immediately before invoking native uv. The original final gate check, changed-gate pre-effect refusal, native uv pins, exact runner
 environment, UID/session/Linux bus checks and existing file/output/time budgets remain.
 
 Focused isolated tests exercise both supervisor formats, two active profiles, stop-before-cleanup, foreign profile/unit

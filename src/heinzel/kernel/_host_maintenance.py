@@ -104,6 +104,15 @@ class MaintenanceLocks:
 
 
 @dataclass(frozen=True, slots=True)
+class HostIntegrationScope:
+    """Complete owner namespace to rescan with stdlib-only recovery, including an empty inventory."""
+
+    directory: Path
+    file_prefix: str
+    manager_prefix: str
+
+
+@dataclass(frozen=True, slots=True)
 class HostIntegration:
     """Bounded plain-data ownership of one exact manager registration; no persisted executable callbacks."""
 
@@ -132,6 +141,10 @@ class HostIntegration:
 
 class HostMaintenanceIntegration(ServiceContract):
     """A built-in owner supplies every profile of its persistent integrations without resolving providers."""
+
+    def discovery_scopes(self) -> tuple[HostIntegrationScope, ...]:
+        """Describe bounded definition/manager namespaces even when no integration is currently installed."""
+        raise NotImplementedError
 
     def inventory(self, prefix: Path, binary: Path, manager: HostServiceManager) -> tuple[HostIntegration, ...]:
         """Capture all matching owned definitions, refusing ambiguous or foreign recorded identities."""

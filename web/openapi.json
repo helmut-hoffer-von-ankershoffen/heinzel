@@ -1377,10 +1377,12 @@
         "description": "Whether calendar reads are enabled and what the supervisor reports.",
         "properties": {
           "enabled": {
+            "description": "Whether this profile permits background calendar reads and reminders.",
             "title": "Enabled",
             "type": "boolean"
           },
           "service": {
+            "description": "The local supervisor state for the selected calendar reminder profile.",
             "title": "Service",
             "type": "string"
           }

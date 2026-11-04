@@ -299,6 +299,7 @@ KERNEL = [
     "HealthLet",
     "HeinzelError",
     "HostIntegration",
+    "HostIntegrationScope",
     "HostMaintenanceIntegration",
     "HostServiceManager",
     "How",

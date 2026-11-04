@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import re
 import secrets
 import shlex
 import sys
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from heinzel.kernel._host_maintenance import HostIntegration
+    from heinzel.kernel._host_maintenance import HostIntegration, HostIntegrationScope
 
 from heinzel.kernel import _uninstall_recovery as recovery
 from heinzel.kernel._installation_continuity import tool_python
@@ -29,6 +30,7 @@ class RemovalCapture:
     locks: tuple[Path, ...] = ()
     labels: tuple[str, ...] = ()
     integrations: tuple["HostIntegration", ...] = ()
+    scopes: tuple["HostIntegrationScope", ...] = ()
 
 
 class RemovalJournal:
@@ -74,6 +76,7 @@ class RemovalJournal:
             "manifest": recovery.manifest(prefix),
             "manager_units": manager_units,
             "manager_labels": list(captured.labels),
+            "discovery_scopes": [self._scope(scope) for scope in captured.scopes],
             "integrations": [
                 {
                     "name": item.name,
@@ -134,6 +137,7 @@ class RemovalJournal:
         if len(json.dumps(self.value).encode()) > recovery.MAX_BYTES:
             msg = "The local uninstall recovery record exceeds its budget; no service was stopped."
             raise ValueError(msg)
+        recovery.verify_discovery_scopes(self.value)
         digest = recovery.authority_digest(self.value)
         source = (
             owned_file(Path(recovery.__file__))
@@ -148,6 +152,29 @@ class RemovalJournal:
             os.fsync(stream.fileno())
         recovery.write(self.path, self.value)
         fsync_directory(self.directory)
+
+    @staticmethod
+    def _scope(scope: "HostIntegrationScope") -> dict[str, object]:
+        if any(not re.fullmatch(r"[A-Za-z0-9_.-]+", value) for value in (scope.file_prefix, scope.manager_prefix)):
+            msg = "An integration discovery scope is ambiguous; no service was stopped."
+            raise ValueError(msg)
+        path = scope.directory
+        current: list[int] | None = None
+        if os.path.lexists(path):
+            recovery.physical(path, private=False)
+            info = path.lstat()
+            current = [info.st_dev, info.st_ino, info.st_mode, info.st_uid]
+        else:
+            parent = path.parent
+            while not os.path.lexists(parent):
+                parent = parent.parent
+            recovery.physical(parent, private=False)
+        return {
+            "directory": str(path),
+            "identity": current,
+            "file_prefix": scope.file_prefix,
+            "manager_prefix": scope.manager_prefix,
+        }
 
     def begin(self) -> None:
         """Exclusively publish the cooperative gate durably before stopping any owned job.

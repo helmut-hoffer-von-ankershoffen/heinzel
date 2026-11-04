@@ -13,6 +13,7 @@ from pydantic import TypeAdapter
 from heinzel import HeinzelError
 from heinzel.kernel import (
     HostIntegration,
+    HostIntegrationScope,
     HostMaintenanceIntegration,
     HostServiceManager,
     capture_owned_integration_file,
@@ -32,6 +33,15 @@ class CalendarMaintenance(HostMaintenanceIntegration):
     """Provider-free inventory of every recorded calendar profile sharing the selected SDK."""
 
     platform = str(sys.platform)
+
+    def discovery_scopes(self) -> tuple[HostIntegrationScope, ...]:
+        """Keep the complete calendar namespace available after the SDK and owner module disappear."""
+        home = Path.home()
+        if self.platform == "darwin":
+            return (HostIntegrationScope(home / "Library/LaunchAgents", LABEL, LABEL),)
+        return (
+            HostIntegrationScope(home / ".config/systemd/user", "hz-calendar-reminders-", "hz-calendar-reminders-"),
+        )
 
     def inventory(self, prefix: Path, binary: Path, manager: HostServiceManager) -> tuple[HostIntegration, ...]:
         home, platform = Path.home(), self.platform

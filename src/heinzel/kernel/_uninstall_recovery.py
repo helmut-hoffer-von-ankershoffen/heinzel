@@ -4,6 +4,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import selectors
 import shlex
 import stat
@@ -13,6 +14,7 @@ import tempfile
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
@@ -221,12 +223,122 @@ def _bounded_output(command: list[str], environment: dict[str, str], *, deadline
             process.stdout.close()
 
 
+MAX_DISCOVERY_ENTRIES = 10_000
+MAX_DISCOVERY_SCOPES = 512
+MIN_SYSTEMD_COLUMNS = 4
+
+
+def verify_discovery_scopes(journal: dict[str, Any]) -> None:
+    """Rescan complete hash-bound namespaces without importing an integration owner or executing callbacks.
+
+    Raises:
+        ValueError: If a definition, directory authority or complete inventory changed.
+    """
+    scopes = journal.get("discovery_scopes", [])
+    if len(scopes) > MAX_DISCOVERY_SCOPES:
+        msg = "Integration discovery scope exceeds its budget"
+        raise ValueError(msg)
+    for item in journal.get("integrations", []):
+        if not any(item["name"].startswith(scope["manager_prefix"]) for scope in scopes) or any(
+            not any(
+                Path(row["path"]).parent == Path(scope["directory"])
+                and Path(row["path"]).name.startswith(scope["file_prefix"])
+                for scope in scopes
+            )
+            for row in item["files"]
+        ):
+            msg = "Integration inventory has no complete discovery scope"
+            raise ValueError(msg)
+    for scope in scopes:
+        _verify_definition_scope(scope, journal)
+
+
+def _verify_definition_scope(scope: dict[str, Any], journal: dict[str, Any]) -> None:
+    directory = Path(scope["directory"])
+    expected = {
+        row["path"]: row
+        for item in journal["integrations"]
+        for row in item["files"]
+        if Path(row["path"]).parent == directory and Path(row["path"]).name.startswith(scope["file_prefix"])
+    }
+    if not os.path.lexists(directory):
+        if scope["identity"] is not None or expected:
+            msg = "Integration discovery directory changed"
+            raise ValueError(msg)
+        parent = directory.parent
+        while not os.path.lexists(parent):
+            parent = parent.parent
+        physical(parent, private=False)
+        return
+    physical(directory, private=False)
+    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(descriptor)
+        captured = [info.st_dev, info.st_ino, info.st_mode, info.st_uid]
+        if captured != scope["identity"]:
+            msg = "Integration discovery directory changed"
+            raise ValueError(msg)
+        with os.scandir(descriptor) as entries:
+            names = [entry.name for entry in islice(entries, MAX_DISCOVERY_ENTRIES + 1)]
+        if len(names) > MAX_DISCOVERY_ENTRIES:
+            msg = "Integration discovery inventory exceeds its budget"
+            raise ValueError(msg)
+        selected = {str(directory / name) for name in names if name.startswith(scope["file_prefix"])}
+        if selected - expected.keys() or (os.path.lexists(journal["prefix"]) and expected.keys() - selected):
+            msg = "Integration definition inventory changed"
+            raise ValueError(msg)
+        for name in selected:
+            row = expected[name]
+            path = Path(name)
+            if list(identity(path.lstat())) != row["identity"] or read(path, 256 * 1024, private=False) != row[
+                "content"
+            ].encode("utf-8"):
+                msg = "Integration definition changed"
+                raise ValueError(msg)
+        after = directory.lstat()
+        if [after.st_dev, after.st_ino, after.st_mode, after.st_uid] != captured:
+            msg = "Integration discovery directory changed during inspection"
+            raise ValueError(msg)
+    finally:
+        os.close(descriptor)
+
+
+def _linux_discovery_scopes(journal: dict[str, Any]) -> None:
+    for scope in journal.get("discovery_scopes", []):
+        prefix = scope["manager_prefix"]
+        output = _manager(
+            [
+                "/usr/bin/systemctl",
+                "--user",
+                "list-units",
+                "--all",
+                "--plain",
+                "--no-legend",
+                "--no-pager",
+                prefix + "*",
+            ],
+            "linux",
+        )
+        rows = [line.split() for line in output.splitlines()]
+        known = {item["name"] for item in journal["integrations"] if item["name"].startswith(prefix)}
+        if (
+            len(rows) > MAX_DISCOVERY_ENTRIES
+            or any(
+                len(row) < MIN_SYSTEMD_COLUMNS or not row[0].startswith(prefix) or row[0] not in known for row in rows
+            )
+            or len({row[0] for row in rows}) != len(rows)
+        ):
+            msg = "Integration manager inventory changed; an unknown worker may still be loaded"
+            raise ValueError(msg)
+
+
 def managers_absent(journal: dict[str, Any]) -> None:
     """Resume only after fixed user managers confirm stopped jobs; never send stop/signals.
 
     Raises:
         ValueError: If the user session, bus or stopped evidence cannot be verified.
     """
+    verify_discovery_scopes(journal)
     if journal["platform"] == "darwin":
         _mac_absent(journal)
     elif journal["platform"] == "linux":
@@ -246,11 +358,22 @@ def _mac_absent(journal: dict[str, Any] | None = None) -> None:
     if (
         not lines
         or lines[0].split() != ["PID", "Status", "Label"]
-        or any(len(line.split()) != MANAGER_COLUMNS for line in lines[1:])
+        or any(
+            len(line.split()) != MANAGER_COLUMNS
+            or not re.fullmatch(r"-|[1-9][0-9]{0,9}", line.split()[0])
+            or not re.fullmatch(r"-?[0-9]{1,10}", line.split()[1])
+            for line in lines[1:]
+        )
+        or len({line.split()[-1] for line in lines[1:]}) != len(lines) - 1
     ):
         msg = "Service manager evidence is incomplete"
         raise ValueError(msg)
-    if any(line.split()[-1] in {DAEMON, WEB, *(journal or {}).get("manager_labels", [])} for line in lines[1:]):
+    prefixes = tuple(scope["manager_prefix"] for scope in (journal or {}).get("discovery_scopes", []))
+    if any(
+        line.split()[-1] in {DAEMON, WEB, *(journal or {}).get("manager_labels", [])}
+        or line.split()[-1].startswith(prefixes)
+        for line in lines[1:]
+    ):
         msg = "A service is still loaded; inspect its local manager before recovery"
         raise ValueError(msg)
     if _manager(["/bin/launchctl", "managername"], "darwin").strip() != "Aqua" or _manager(
@@ -337,6 +460,7 @@ def _environment_identity(raw: str, wanted: dict[str, str]) -> bool:
 
 def _linux_absent(journal: dict[str, Any]) -> None:
     before = _linux_identity()
+    _linux_discovery_scopes(journal)
     for unit in sorted({"hz-daemon.service", "hz-daemon.timer", "hz-ui.service", *journal["manager_units"]}):
         output = _manager(
             [
@@ -503,6 +627,8 @@ def _remove_remaining(journal: dict[str, Any], path: Path) -> None:
         journal["phase"] = "removing"
         write(path, journal)
         _require_gate(journal)
+        managers_absent(journal)
+        _require_gate(journal)
         result = subprocess.run(  # noqa: S603 - authority-hashed private binary, pinned tool directories and fixed offline args
             [str(uv), "--offline", "--no-config", "--no-python-downloads", "tool", "uninstall", "heinzel"],
             env=journal["environment"],
@@ -513,6 +639,8 @@ def _remove_remaining(journal: dict[str, Any], path: Path) -> None:
         if result.returncode or os.path.lexists(prefix):
             msg = "Offline uv removal remains incomplete"
             raise ValueError(msg)
+    _require_gate(journal)
+    managers_absent(journal)
     _require_gate(journal)
     _finish_owned_links(journal)
     sync(prefix.parent)

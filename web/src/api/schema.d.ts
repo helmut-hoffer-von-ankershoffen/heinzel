@@ -4274,9 +4274,15 @@ export interface components {
          * @description Whether calendar reads are enabled and what the supervisor reports.
          */
         CalendarReminderStatus: {
-            /** Enabled */
+            /**
+             * Enabled
+             * @description Whether this profile permits background calendar reads and reminders.
+             */
             enabled: boolean;
-            /** Service */
+            /**
+             * Service
+             * @description The local supervisor state for the selected calendar reminder profile.
+             */
             service: string;
         };
         /**

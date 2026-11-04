@@ -121,6 +121,7 @@ from heinzel.kernel._git import (
 )
 from heinzel.kernel._host_maintenance import (
     HostIntegration,
+    HostIntegrationScope,
     HostMaintenanceIntegration,
     HostServiceManager,
     MaintenanceLocks,
@@ -456,6 +457,7 @@ __all__ = [
     "HealthLet",
     "HeinzelError",
     "HostIntegration",
+    "HostIntegrationScope",
     "HostMaintenanceIntegration",
     "HostServiceManager",
     "How",

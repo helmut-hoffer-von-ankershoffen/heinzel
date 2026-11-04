@@ -110,8 +110,8 @@ def calendar_reminders_uninstall(
 class CalendarReminderStatus(BaseModel):
     """Whether calendar reads are enabled and what the supervisor reports."""
 
-    enabled: bool
-    service: str
+    enabled: bool = Field(description="Whether this profile permits background calendar reads and reminders.")
+    service: str = Field(description="The local supervisor state for the selected calendar reminder profile.")
 
 
 @module.operation(name="calendar-reminders-status", heads={"cli", "web"})

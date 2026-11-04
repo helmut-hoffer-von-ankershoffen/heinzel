@@ -150,6 +150,7 @@ def _compose_removal(context: _RemovalContext, on_recovery: Callable[[str], None
     manager = _UninstallManager(daemon)
     inventory = [(owner, owner.inventory(installation.prefix, binary, manager)) for owner in contributions]
     integrations = tuple(item for _, items in inventory for item in items)
+    scopes = tuple(scope for owner in contributions for scope in owner.discovery_scopes())
     if len(integrations) > MAX_INTEGRATIONS or len({item.name for item in integrations}) != len(integrations):
         msg = "The host integration inventory is ambiguous or exceeds its budget."
         raise HeinzelError(msg)
@@ -196,6 +197,7 @@ def _compose_removal(context: _RemovalContext, on_recovery: Callable[[str], None
                     locks=lock_paths,
                     labels=tuple(item.name for item in integrations),
                     integrations=integrations,
+                    scopes=scopes,
                 ),
             )
             if not installation.startup_state_matches() or installation.startup_fingerprint() != before:
@@ -239,6 +241,7 @@ def _apply_removal(
         journal.require_gate()
         journal.phase("stopped")
         journal.phase("removing")
+        journal.require_gate()
         installation.uninstall_offline(expected=before, executable=executable)
         journal.phase("removed")
         for integration in integrations:
