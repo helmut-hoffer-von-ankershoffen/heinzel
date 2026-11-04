@@ -207,7 +207,7 @@ def show(kernel: Kernel, output: Console) -> None:
 def main() -> None:
     """Entry point of the `hz` executable."""
     if sys.argv[1:3] == ["system", "uninstall"]:
-        from heinzel.modules.system._uninstall import main as uninstall_main  # noqa: PLC0415 - offline recovery before discovery
+        from heinzel.heads.cli._uninstall import main as uninstall_main  # noqa: PLC0415 - parse maintenance before discovery
 
         sys.exit(uninstall_main(sys.argv[3:]))
     try:

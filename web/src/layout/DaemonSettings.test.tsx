@@ -11,6 +11,7 @@ import { SettingsDialog } from "./SettingsDialog";
 const running: SchemaDaemonStatus = {
   platform: "darwin",
   installed: true,
+  owned: true,
   loaded: true,
   paused: false,
   version: "1.2.3",

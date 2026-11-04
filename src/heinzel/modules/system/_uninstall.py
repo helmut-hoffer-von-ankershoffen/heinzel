@@ -1,18 +1,15 @@
 """Offline removal of one verified uv installation, with owned service cleanup and retained user work."""
 
-import argparse
 import secrets
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from heinzel import Config, HeinzelError, Kernel, Progress, Settings
-from heinzel.kernel import Installation
+from heinzel.kernel import Installation, OfflineUninstall, UninstallResult
 from heinzel.kernel._installation_mutations import installation_mutation_pending
 from heinzel.kernel._offline_uv import VerifiedUV, stage
 from heinzel.kernel._uninstall_journal import RemovalJournal
-from heinzel.modules.system._models import UninstallResult
 
 if TYPE_CHECKING:
     from heinzel.modules.system.daemon._service import DaemonRemoval, DaemonService
@@ -28,7 +25,7 @@ def uninstall_installation(
 ) -> UninstallResult:
     """Stop only verified owned services and remove the current standard tool, retaining all user work.
 
-    No kernel boot, plugin discovery, update check, bootstrap or package resolution occurs. Unsupported SDK,
+    This coordinator performs no kernel boot, discovery, update check, bootstrap or package resolution. Unsupported SDK,
     desktop-runtime and unmarked installations refuse locally. Failures after mutation retain a durable existing
     installation gate and never try a network rollback. The app may remain stopped for explicit local recovery.
 
@@ -138,25 +135,9 @@ def _apply_removal(
         raise HeinzelError(msg) from error
 
 
-def _show_recovery(command: str) -> None:
-    sys.stderr.write(f"Offline recovery if interrupted: {command}\n")
+class SystemOfflineUninstall(OfflineUninstall):
+    """Built-in maintenance implementation; construction performs no account or provider work."""
 
-
-def main(arguments: list[str]) -> int:
-    """Parse this recovery command before CLI discovery; help itself needs no installed tools or services."""
-    parser = argparse.ArgumentParser(
-        prog="hz system uninstall",
-        description=(
-            "Uninstall the verified Heinzel tool offline, stopping its owned services "
-            "and keeping your data, configuration, agent skills and notifier."
-        ),
-    )
-    parser.add_argument("--json", action="store_true", help="Print the observed result as JSON")
-    args = parser.parse_args(arguments)
-    try:
-        result = uninstall_installation(on_recovery=_show_recovery)
-    except (HeinzelError, OSError, ValueError) as error:
-        sys.stderr.write(f"Heinzel was not fully uninstalled. {error}\n")
-        return 1
-    sys.stdout.write((result.model_dump_json() if args.json else result.message) + "\n")
-    return 0
+    def uninstall(self, *, on_recovery: Callable[[str], None] | None = None) -> UninstallResult:
+        """Apply the existing recordless coordinator and every installation/service/recovery check."""
+        return uninstall_installation(on_recovery=on_recovery)

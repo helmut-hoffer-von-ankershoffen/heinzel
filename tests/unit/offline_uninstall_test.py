@@ -101,25 +101,131 @@ def test_refused_or_uncertain_removal_never_reinstalls_or_reports_success(remova
     assert removable.prefix.exists()
 
 
-def test_cli_uninstall_and_help_dispatch_before_boot_or_background_checks(monkeypatch, capsys):
-    monkeypatch.setattr(cli, "boot", lambda *args: pytest.fail("Offline recovery must not discover plugins"))
-    monkeypatch.setattr(cli, "start_check", lambda *args: pytest.fail("Offline recovery must not check releases"))
-    monkeypatch.setattr(_installation, "_run", lambda *args: pytest.fail("Help must not invoke an installer"))
-    monkeypatch.setattr(sys, "argv", ["hz", "system", "uninstall", "--help"])
+@pytest.mark.parametrize(("arguments", "code"), [(["--help"], 0), (["--unknown"], 2), (["extra"], 2)])
+def test_cli_uninstall_parses_before_any_discovery_or_background_checks(monkeypatch, capsys, arguments, code):
+    from heinzel.heads.cli import _uninstall as head
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Help and invalid arguments must not boot, discover or invoke an installer")
+
+    monkeypatch.setattr(cli, "boot", forbidden)
+    monkeypatch.setattr(head, "boot", forbidden)
+    monkeypatch.setattr(cli, "start_check", forbidden)
+    monkeypatch.setattr(_installation, "_run", forbidden)
+    monkeypatch.setattr(sys, "argv", ["hz", "system", "uninstall", *arguments])
     with pytest.raises(SystemExit) as result:
         cli.main()
-    assert result.value.code == 0
-    assert "offline" in capsys.readouterr().out
-    monkeypatch.setattr(
-        _uninstall,
-        "uninstall_installation",
-        lambda **kwargs: _uninstall.UninstallResult(daemon_removed=True, web_removed=True),
-    )
+    assert result.value.code == code
+    output = capsys.readouterr()
+    assert "offline" in output.out if code == 0 else "unrecognized arguments" in output.err
+
+
+def test_cli_uninstall_uses_only_builtin_port_and_home_configuration(monkeypatch, capsys, tmp_path):
+    from heinzel.heads import bootstrap
+    from heinzel.heads.cli import _uninstall as head
+    from heinzel.kernel import Credentials, Kernel, OfflineUninstall, UninstallResult, _discovery
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Maintenance must not resolve accounts, providers, external plugins, checks or bootstrap")
+
+    # Ordinary boot is forbidden; the maintenance host must request the public built-in-only mode explicitly.
+    monkeypatch.setattr(cli, "boot", forbidden)
+    monkeypatch.setattr(cli, "start_check", forbidden)
+    monkeypatch.setattr(bootstrap, "main", forbidden)
+    monkeypatch.setattr(Credentials, "__init__", forbidden)
+    monkeypatch.setattr(_discovery, "entry_points", forbidden)
+    monkeypatch.setattr(_installation, "_run", forbidden)
+    original_boot, original_resolve = head.boot, Kernel.resolve
+    resolutions, scopes, calls = [], [], []
+
+    def resolve(kernel, kind):
+        resolutions.append(kind)
+        assert kind is OfflineUninstall
+        return original_resolve(kernel, kind)
+
+    def boot(**kwargs):
+        assert kwargs == {"builtin_only": True, "cwd": Path.home()}
+        kernel = original_boot(**kwargs)
+        assert all(record.origin.builtin for record in kernel.modules)
+        assert not kernel._factory_instances
+        scopes.extend(file.path for file in kernel.config.files)
+        return kernel
+
+    def remove(**kwargs):
+        calls.append(kwargs)
+        kwargs["on_recovery"]("fixture-local-recovery")
+        return UninstallResult(daemon_removed=True, web_removed=True)
+
+    # A cwd project configuration cannot redirect the maintenance profile.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "hz.toml").write_text("invalid = [TOML")
+    monkeypatch.setattr(Kernel, "resolve", resolve)
+    monkeypatch.setattr(head, "boot", boot)
+    monkeypatch.setattr(_uninstall, "uninstall_installation", remove)
     monkeypatch.setattr(sys, "argv", ["hz", "system", "uninstall", "--json"])
     with pytest.raises(SystemExit) as result:
         cli.main()
     assert result.value.code == 0
-    assert '"data_retained":true' in capsys.readouterr().out
+    output = capsys.readouterr()
+    assert '"data_retained":true' in output.out
+    assert "fixture-local-recovery" in output.err
+    assert resolutions == [OfflineUninstall]
+    assert len(calls) == 1
+    assert tmp_path / "hz.toml" not in scopes
+
+
+@pytest.mark.parametrize(
+    ("builtin_only", "enabled", "expected"), [(False, True, True), (False, False, False), (True, True, False)]
+)
+def test_public_boot_keeps_ordinary_plugin_policy_and_explicit_maintenance_scope(
+    monkeypatch, tmp_path, builtin_only, enabled, expected
+):
+    from heinzel.kernel import Config, Settings, _boot
+
+    selected, discovered = [], []
+
+    def load(cls, cwd=None):
+        selected.append(cwd)
+        return Config.empty()
+
+    def discover(**kwargs):
+        discovered.append(kwargs["plugins"])
+        return [], {}
+
+    monkeypatch.setattr(Config, "load", classmethod(load))
+    monkeypatch.setattr(_boot, "discover", discover)
+    kwargs = {"builtin_only": True, "cwd": tmp_path} if builtin_only else {}
+    _boot.boot(Settings(plugins_enabled=enabled), **kwargs)
+    assert selected == [tmp_path if builtin_only else None]
+    assert discovered == [expected]
+
+
+@pytest.mark.parametrize("change", ["foreign-origin", "foreign-distribution", "foreign-class", "callback", "rebound"])
+def test_maintenance_port_rejects_foreign_and_rebound_providers(make_kernel, change):
+    from dataclasses import replace
+
+    from heinzel.kernel import OfflineUninstall
+
+    kernel = make_kernel(builtins=True)
+    if change.startswith("foreign-") and change != "foreign-class":
+        record = kernel._records["system"]
+        origin = replace(
+            record.origin, **({"builtin": False} if change == "foreign-origin" else {"distribution": "foreign"})
+        )
+        kernel._records["system"] = replace(record, origin=origin)
+    elif change == "foreign-class":
+
+        class Foreign(_uninstall.SystemOfflineUninstall):
+            pass
+
+        Foreign.__module__ = "foreign.maintenance"
+        kernel._factories[OfflineUninstall] = Foreign
+    elif change == "callback":
+        kernel._factories[OfflineUninstall] = lambda: pytest.fail("A substituted callback must never run")
+    else:
+        kernel.bind(OfflineUninstall, _uninstall.SystemOfflineUninstall())
+    with pytest.raises(HeinzelError, match="expected built-in service"):
+        kernel.resolve_builtin_service(OfflineUninstall, "system")
 
 
 def test_real_exact_runner_does_not_restore_removed_ambient_uv_policy(monkeypatch):

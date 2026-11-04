@@ -12,9 +12,11 @@ from heinzel.kernel import (
     CoreMetadataVerifier,
     DaemonInstallationLifecycle,
     Installation,
+    OfflineUninstall,
     PluginReleases,
     ReleaseSource,
     Settings,
+    UninstallResult,
 )
 from heinzel.modules.system._announced import Announcement, ToolSnapshot, trial_start
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
@@ -26,11 +28,11 @@ from heinzel.modules.system._models import (
     ReleaseCheck,
     ReleaseNotes,
     SystemInfo,
-    UninstallResult,
     UpdateResult,
 )
 from heinzel.modules.system._plugin_releases import plugin_releases
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
+from heinzel.modules.system._uninstall import SystemOfflineUninstall
 from heinzel.modules.system._update import UpdateService
 from heinzel.modules.system.config._service import ConfigService
 
@@ -72,6 +74,7 @@ def render_update(result: UpdateResult) -> RenderableType:
 
 module = Module("system", "Inspect, configure, diagnose and update Heinzelmännchen itself.", essential=True)
 module.service(SystemService)
+module.service(OfflineUninstall, SystemOfflineUninstall)
 module.service(CoreMetadataVerifier, CoreMetadataIdentity)
 
 

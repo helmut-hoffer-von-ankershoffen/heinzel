@@ -54,3 +54,9 @@ The pinned native dependency was also copied into an isolated read-only cache in
 fixture SDK. Real publisher metadata/hash checks and offline native preflight accepted that two-link source, produced
 a distinct one-link protected copy and left cache bytes, mode, link count and modification/change times unchanged.
 This tests the hardlink topology locally; actual Linux execution and real OS-manager acceptance remain pending.
+
+The CLI maintenance path parses help and invalid arguments before discovery. Execution uses a public kernel
+`OfflineUninstall` contract with host-owned built-in-only boot scoped explicitly to the home configuration, then
+requires the exact registered built-in system class and constructed instance. External entry-point enumeration
+and loading are excluded; providers, credentials, update checks and installer bootstrap are never resolved.
+The built-in implementation delegates to the same recordless removal coordinator and existing gate authorities.

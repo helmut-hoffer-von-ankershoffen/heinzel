@@ -10,7 +10,7 @@ related: 0006, 0020, 0108, 0110, 0117
 
 ## Context and Problem Statement
 
-A standard Heinzel installation must be removable without networking, plugin discovery or a running web UI.
+A standard Heinzel installation must be removable without networking, external plugin discovery or a running web UI.
 PATH-selected tools, inherited service-manager buses and a successful stop command alone do not establish authority
 to remove an installation. Its running SDK may disappear before integration cleanup finishes.
 
@@ -35,7 +35,12 @@ External uv paths, including Homebrew paths, are not executed by removal. Group-
 Publisher-pinned license material is copied alongside the private recovery artifacts. No uv Python module is imported,
 and no PATH or cache fallback is accepted.
 
-`hz system uninstall` and its help dispatch before kernel boot, plugin discovery and background update checks.
+`hz system uninstall` parses help and invalid arguments in the CLI head before discovery and background update checks.
+Execution asks public `boot` for a host-owned built-in-only kernel scoped to `Config.load(Path.home())`, then resolves
+only `OfflineUninstall` from the exact registered built-in system class through `resolve_builtin_service` provenance.
+External entry points are never enumerated or loaded. Registration stays lazy: no account, provider, credential,
+update-check or bootstrap service is resolved. The implementation calls the existing recordless removal coordinator;
+heads depend only on the public kernel maintenance contract and typed result, never on concrete module imports.
 Only an existing continuity-verified standard uv tool qualifies. The exact environment runner does not merge ambient
 UV policy. Both target directories and all offline/no-download/no-config flags are explicit. SDK, desktop runtime,
 unmarked, changed and redirected targets refuse with local guidance.

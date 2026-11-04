@@ -51,7 +51,18 @@ daemon._linux_user_manager_identity = lambda: (1,2,3)
 def no_discovery(*args, **kwargs):
     raise AssertionError("Offline uninstall must not discover installed plugins")
 if sys.argv[1:3] == ["system", "uninstall"]:
+    from heinzel.kernel import Credentials, Installation, Kernel, OfflineUninstall, Progress, _discovery
     importlib.metadata.entry_points = no_discovery
+    _discovery.entry_points = no_discovery
+    Credentials.__init__ = no_discovery
+    original_resolve = Kernel.resolve
+    def maintenance_only(kernel, kind):
+        if kind is not OfflineUninstall:
+            # The existing coordinator has no records and reads only its already-bound local objects.
+            assert not kernel.modules, "Only the maintenance port may resolve from the discovered registry"
+            assert kind in {Installation, Progress} and kind in kernel._instances
+        return original_resolve(kernel, kind)
+    Kernel.resolve = maintenance_only
 if os.environ.get("HZ_OFFLINE_INTERRUPT_FIXTURE") == "1":
     from heinzel.kernel import Installation
     def interrupted(*args, **kwargs):

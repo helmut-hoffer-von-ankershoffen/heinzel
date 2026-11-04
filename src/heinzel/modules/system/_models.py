@@ -118,26 +118,3 @@ class AnnouncedUpdate(BaseModel):
     restored: bool = Field(description="Whether hz and every plugin were put back as they were.")
     refused: bool = Field(description="Whether the update installed but didn't start: it is never tried again.")
     message: str = Field(description="What happened, in one plain message.")
-
-
-class UninstallResult(BaseModel):
-    """Observed removal, never a promise that user data or other applications were deleted."""
-
-    removed: Literal[True] = Field(
-        default=True, description="The verified tool environment and its receipt-owned scripts were observed removed."
-    )
-    data_retained: Literal[True] = Field(default=True, description="User data and configuration were retained.")
-    skills_retained: Literal[True] = Field(
-        default=True, description="Agent skills outside the tool environment were retained."
-    )
-    notifier_retained: Literal[True] = Field(
-        default=True, description="The separately installed notifier was retained."
-    )
-    daemon_removed: bool = Field(
-        description="Owned daemon definitions were removed after verified stop and tool removal."
-    )
-    web_removed: bool = Field(description="Owned web integration was removed after verified stop and tool removal.")
-    message: str = Field(
-        default="Heinzel was uninstalled. Your data, configuration, agent skills and notifier were kept.",
-        description="The observed removal and explicit retained-resource scope.",
-    )
