@@ -179,6 +179,8 @@ class ChatStore(McpChatSessions):
             if action.module == "heinzel" and action.operation in {
                 "approve-model-grant",
                 "accept-agent-contract",
+                "execute-captured-write",
+                "deliver-channel-item",
                 "approve-connected-read",
                 "approve-connected-read-set",
                 "approve-agent-schedule",
@@ -186,12 +188,17 @@ class ChatStore(McpChatSessions):
             }:
                 # The review remains visible in the action, not in model-visible transcript text.
                 action.command = (
-                    "Review notification"
+                    "Review exact channel posting account, destination, scope and full message"
+                    if action.operation == "deliver-channel-item"
+                    else "Review notification"
                     if action.operation == "queue-agent-notification"
                     else "Review connected read"
                     if action.operation in {"approve-connected-read", "approve-connected-read-set"}
                     else "Review agent schedule"
                     if action.operation == "approve-agent-schedule"
+                    else "Review inserting or appending this text, or creating a new slide with it. "
+                    "Check the exact target, section/tab and base revision. Current content is not shown."
+                    if action.operation == "execute-captured-write"
                     else "Review agent contract"
                     if action.operation == "accept-agent-contract"
                     else "Review model policy"
@@ -212,6 +219,8 @@ class ChatStore(McpChatSessions):
                 "propose-check-in",
                 "approve-model-grant",
                 "accept-agent-contract",
+                "execute-captured-write",
+                "deliver-channel-item",
                 "approve-connected-read",
                 "approve-connected-read-set",
                 "approve-agent-schedule",
@@ -575,6 +584,8 @@ class StoreGate(ActionGate):
         if call.module == "heinzel" and call.operation in {
             "approve-model-grant",
             "accept-agent-contract",
+            "execute-captured-write",
+            "deliver-channel-item",
             "approve-connected-read",
             "approve-connected-read-set",
             "approve-agent-schedule",

@@ -12,6 +12,7 @@ from pydantic import Field, JsonValue
 
 from heinzel import Config, ConfiguredApiAccess, CurrentUser, HeinzelError, Module, Notifications
 from heinzel.kernel import (
+    CapturedWriteService,
     CheckInChatContext,
     CheckInChatContextSource,
     CheckInHistoryMessage,
@@ -21,12 +22,18 @@ from heinzel.kernel import (
     RunnerSnapshotProvider,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
+from heinzel.kernel._features import feature_enabled
 from heinzel.modules.heinzel._autonomous_schedule import (
     AutonomousSchedules,
     ScheduleBinding,
     ScheduleReviewPage,
     ScheduleReviewView,
 )
+from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
+from heinzel.modules.heinzel._captured_write_host import CapturedWriteHost, review_payload
+from heinzel.modules.heinzel._captured_write_operations import register_captured_write_operations
+from heinzel.modules.heinzel._channel_delivery import ChannelDelivery
+from heinzel.modules.heinzel._channel_operations import register_channel_operations
 from heinzel.modules.heinzel._connected_grants import (
     ConnectedGrant,
     ConnectedGrantProposal,
@@ -40,6 +47,9 @@ from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadS
 from heinzel.modules.heinzel._connected_read_set_reviews import ConnectedReadSetReviews, ReadSetReview
 from heinzel.modules.heinzel._connected_read_sets import ConnectedReadSets, ReadSetProposal, ReadSetSelection
 from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
+from heinzel.modules.heinzel._cross_history import CrossHistoryPage, CrossHistoryRequest, search_owner_history
+from heinzel.modules.heinzel._history_fts import IndexedHistoryPage, indexed_search
+from heinzel.modules.heinzel._history_search import HistorySearchPage, HistorySearchRequest, search_history
 from heinzel.modules.heinzel._input_receipts import InputSnapshotPage, snapshot_history
 from heinzel.modules.heinzel._model_grants import ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
@@ -157,7 +167,26 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         grants = ConnectedReadGrants(self.service, current, self.kernel)
         return ConnectedReadSetApprovals(ConnectedReadSetReviews(sets, grants))
 
+    def _write_host(self) -> CapturedWriteHost:
+        if self.kernel is None:
+            msg = "Captured write review is unavailable"
+            raise HeinzelError(msg)
+        return CapturedWriteHost(
+            self.service, self.kernel.resolve(CurrentUser), self.kernel.resolve(SelectedWriteService)
+        )
+
     def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        if module == "heinzel" and operation == "deliver-channel-item":
+            if self.kernel is None:
+                msg = "Channel review is unavailable"
+                raise HeinzelError(msg)
+            return self.kernel.resolve(ChannelDelivery).review(*self._model_args(arguments))
+        if module == "heinzel" and operation == "execute-captured-write":
+            session, request = self._model_args(arguments)
+            return self._write_host().review(session, request)
+        return self._review_existing(module, operation, arguments)
+
+    def _review_existing(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
         if module == "heinzel" and operation == "queue-agent-notification":
             if self.kernel is None:
                 msg = "Notification review is unavailable"
@@ -250,6 +279,20 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         return self.kernel.resolve(NotificationDelivery).recover(session, request, write_receipt=False) == "recorded"
 
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if module == "heinzel" and operation == "deliver-channel-item":
+            if self.kernel is None or arguments.get("review") != self.review(module, operation, arguments):
+                msg = "The reviewed channel posting changed"
+                raise HeinzelError(msg)
+            return self.kernel.resolve(ChannelDelivery).issue(*self._model_args(arguments), provenance)
+        if module == "heinzel" and operation == "execute-captured-write":
+            if arguments.get("review") != self.review(module, operation, arguments):
+                msg = "The reviewed write draft is unavailable or changed"
+                raise HeinzelError(msg)
+            session, request = self._model_args(arguments)
+            return self._write_host().issue(session, request, provenance)
+        return self._issue_existing(module, operation, arguments, provenance)
+
+    def _issue_existing(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
         if module == "heinzel" and operation == "queue-agent-notification":
             return self._issue_notification(arguments, provenance)
         if module == "heinzel" and operation in {"approve-connected-read", "approve-connected-read-set"}:
@@ -309,6 +352,18 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         )
 
     def applied(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
+        if module == "heinzel" and operation == "execute-captured-write":
+            if self.kernel is None:
+                return False
+            session, request = self._model_args(arguments)
+            host = CapturedWriteHost(self.service, self.kernel.resolve(CurrentUser), CapturedWriteService())
+            return (
+                arguments.get("review") == review_payload(host.current(session, request))
+                and host.status(session, request) == "acknowledged"
+            )
+        return self._applied_existing(module, operation, arguments)
+
+    def _applied_existing(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
         if module == "heinzel" and operation == "queue-agent-notification":
             return self._applied_notification(arguments)
         if module == "heinzel" and operation in {"approve-connected-read", "approve-connected-read-set"}:
@@ -871,6 +926,41 @@ def _register_review_services(module: Module) -> None:
     _register_connected_read_operations(module)
     _register_connected_read_set_operations(module)
     _register_autonomous_schedule_operations(module)
+    _register_history_search(module)
+    register_captured_write_operations(module)
+    register_channel_operations(module)
+
+
+def _check_history(kernel: Kernel) -> None:
+    if not feature_enabled(kernel.settings, "connected_history"):
+        msg = "Connected history is not enabled"
+        raise HeinzelError(msg)
+
+
+def _register_history_search(module: Module) -> None:
+    """Register bounded owner-private conversation search."""
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def search_agent_conversations(
+        service: SessionCrud, kernel: Kernel, request: CrossHistoryRequest
+    ) -> CrossHistoryPage:
+        """Search the current owner's conversations with explicit bounded progress."""
+        _check_history(kernel)
+        return search_owner_history(service, request)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def search_conversation(service: SessionCrud, kernel: Kernel, request: HistorySearchRequest) -> HistorySearchPage:
+        """Search privately by POST so terms do not appear in request URLs; this changes no state."""
+        _check_history(kernel)
+        return search_history(service, request)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def indexed_conversation_search(
+        service: SessionCrud, kernel: Kernel, request: HistorySearchRequest
+    ) -> IndexedHistoryPage:
+        """Search a disposable private text index; its coverage is not a completeness guarantee."""
+        _check_history(kernel)
+        return indexed_search(service, request)
 
 
 def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface

@@ -47,6 +47,11 @@ class PersonalSessionRepository:
         return self.current.principal().id
 
     @property
+    def search_storage_id(self) -> str:
+        """Distinguish independent private owner roots in process-local search caches."""
+        return str(self.current.directory.parent.absolute())
+
+    @property
     def authentication(self) -> Authentication:
         """Read the actual trusted call context, without recording credentials or audience."""
         return self.current.context().authentication
@@ -243,6 +248,49 @@ class PersonalSessionRepository:
         self._owned(session_id)
         return _verified(self._store("control").read(session_id))
 
+    def search_catalog_page(
+        self, *, position: tuple[int, str | None], anchor: tuple[int, str | None] | None, limit: int
+    ) -> tuple[SessionRead, tuple[int, str | None]]:
+        """Read a bounded page of the authenticated owner's reservation catalog.
+
+        Raises:
+            HeinzelError: If the catalog is damaged or the cursor is invalid.
+            FileNotFoundError: If required catalog storage disappears.
+        """
+        try:
+            return self._store("catalog").indexed_page("creations", position=position, anchor=anchor, limit=limit)
+        except (FileNotFoundError, HeinzelError):
+            if position == (0, None) and anchor in (None, (0, None)) and not self._catalog().events:
+                self.verify_reserved_session_stores(())
+                return SessionRead(), (0, None)
+            raise
+
+    def search_body_inventory(
+        self, session_id: str, source: str, *, known: tuple[int, int, int, int] | None
+    ) -> tuple[tuple[int, int, int, int] | None, frozenset[str] | None]:
+        """Inspect retained body IDs under the current owner's selected session.
+
+        Raises:
+            HeinzelError: If the source is invalid or the session is unavailable.
+        """
+        self._owned(session_id)
+        if source not in {"main", "control"}:
+            msg = "Invalid message body source"
+            raise HeinzelError(msg)
+        return self._store(source).body_inventory(session_id, known=known)
+
+    def control_indexed_page(
+        self,
+        session_id: str,
+        *,
+        position: tuple[int, str | None],
+        anchor: tuple[int, str | None] | None,
+        limit: int,
+    ) -> tuple[SessionRead, tuple[int, str | None]]:
+        """Read a bounded indexed page after checking current owner reservation."""
+        self._owned(session_id)
+        return self._store("control").indexed_page(session_id, position=position, anchor=anchor, limit=limit)
+
     @contextmanager
     def main_writer(self, session_id: str, *, wait: bool = False) -> Generator[SessionWriter]:
         """One long turn writer, acquired before the short control writer if both are needed.
@@ -258,6 +306,17 @@ class PersonalSessionRepository:
         """Check the scoped active owner/session writer before dispatching a granted operation."""
         self._owned(session_id)
         return writer.active and writer.session == session_id and writer.store.root == self._store("main").root
+
+    @contextmanager
+    def channel_writer(self, session_id: str) -> Generator[SessionWriter]:
+        """Serialize channel outcome recovery independently of captured-write main/control locks.
+
+        Yields:
+            An owner-private lock held across one reply's claim, action and settlement.
+        """
+        self._owned(session_id)
+        with self._store("channel-processing").writer(session_id) as writer:
+            yield writer
 
     @contextmanager
     def control_writer(self, session_id: str) -> Generator[SessionWriter]:
