@@ -4231,6 +4231,12 @@
             "title": "Loaded",
             "type": "boolean"
           },
+          "owned": {
+            "default": false,
+            "description": "Whether exact selected-profile files, tool and loaded manager identity were verified.",
+            "title": "Owned",
+            "type": "boolean"
+          },
           "paused": {
             "description": "Whether ticks are paused with `hz system daemon pause`.",
             "title": "Paused",

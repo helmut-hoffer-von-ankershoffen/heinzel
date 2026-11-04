@@ -1,6 +1,7 @@
 """Boot: load the configuration, discover every module and build the kernel. What heads call on start-up."""
 
 import email.policy
+from pathlib import Path
 
 from heinzel.kernel._config import KERNEL_SECTION, Config
 from heinzel.kernel._discovery import discover
@@ -13,10 +14,20 @@ _installed_sources = SourceDiscovery(installed=True)
 _host_runtime = (email.policy,)
 
 
-def boot(settings: Settings | None = None, *, source_discovery: "SourceDiscovery | None" = None) -> Kernel:
-    """Discover every module and return a ready kernel."""
+def boot(
+    settings: Settings | None = None,
+    *,
+    source_discovery: "SourceDiscovery | None" = None,
+    builtin_only: bool = False,
+    cwd: Path | None = None,
+) -> Kernel:
+    """Discover modules and register a kernel without constructing their services.
+
+    Hosts may explicitly exclude all plugin entry points and select a configuration scope for local maintenance.
+    The ordinary default still discovers enabled plugins and loads configuration from the current directory.
+    """
     source_discovery = source_discovery or _installed_sources
-    config = Config.load()
+    config = Config.load(cwd)
     settings = settings or config.settings(Settings, KERNEL_SECTION)
-    records, errors = discover(plugins=settings.plugins_enabled, source_discovery=source_discovery)
+    records, errors = discover(plugins=not builtin_only and settings.plugins_enabled, source_discovery=source_discovery)
     return Kernel(settings, records, errors, config, source_discovery=source_discovery)

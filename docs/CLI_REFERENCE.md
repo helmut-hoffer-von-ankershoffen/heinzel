@@ -1739,6 +1739,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `state`: (expert) Note how hz is used on this...
 * `theme`: (expert) Pick how the web app looks: the...
 * `ui`: (expert) List what modules add to the web...
+* `uninstall`: Uninstall the verified Heinzel tool...
 * `update`: Update Heinzelmännchen and its plugins;...
 
 ### `hz system agent`
@@ -3583,6 +3584,22 @@ $ hz system ui widgets [OPTIONS]
 **Options**:
 
 * `--item <str>`: Only this one, by id (`&lt;module&gt;:&lt;name&gt;`), e.g. `clock:primary-zone`.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system uninstall`
+
+Uninstall the verified Heinzel tool offline, keeping your data and configuration.
+
+**Usage**:
+
+```console
+$ hz system uninstall [OPTIONS]
+```
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

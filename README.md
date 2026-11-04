@@ -159,7 +159,10 @@ skills:
 
 Other agents: `hz system agent install` copies the skills into the directories set in `[system.agent] skill_dirs`.
 
-**Uninstall** with `/hz-uninstall` from Claude Code, or:
+**Uninstall offline:** current verified standard installations support `hz system uninstall`. It keeps your data,
+configuration, agent skills and notifier. See [offline removal and recovery](docs/guides/install.md#uninstall-offline).
+
+For other installations, uninstall with `/hz-uninstall` from Claude Code, or:
 
 <!-- docs-test -->
 ```bash
