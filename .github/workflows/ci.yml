@@ -453,8 +453,8 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
-        # Three jobs per OS: the tool-install and CLI tests, and the browser tests in two halves so none competes for or outlasts 3 vCPUs
-        suite: [cli, web-1, web-2]
+        # Core E2E lanes: supervised cold starts, tool-install/CLI, and two browser halves; every lane blocks CI OK.
+        suite: [cli, supervised, web-1, web-2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

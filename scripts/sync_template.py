@@ -19,9 +19,9 @@ PYPROJECT_HEAD = ROOT / "scripts" / "template_pyproject_head.toml.tmpl"
 
 
 def _one_e2e_suite(text: str) -> str:
-    """The core splits its browser E2E files from the rest for CI (SUITE=cli|web); a plugin runs one suite."""
+    """Core separates supervised, CLI and browser E2E lanes; a plugin runs one complete suite."""
     return re.sub(
-        r"# The browser E2E files[^\n]*\n(?:[^\n]*\n)*?test-e2e:[^\n]*\n(?:\t[^\n]*\n)+",
+        r"# Core E2E lanes[^\n]*\n(?:[^\n]*\n)*?test-e2e:[^\n]*\n(?:\t[^\n]*\n)+",
         "test-e2e: ## Run end-to-end tests (needs network), on 3 workers\n"
         '\t@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"\n'
         '\t$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x"\n',
@@ -210,9 +210,9 @@ def ci_workflow() -> str:
     # The template has no changed-path job; keep the E2E matrix as is, without core-only gating.
     text = text.replace("    needs: changes\n", "")
     text = re.sub(r"(?m)^    if: .*needs\.changes\.outputs\.core[^\n]*\n", "", text)
-    # A plugin has no browser E2E files to split off, so its E2E job stays one per OS.
+    # Core supervised/browser partitions do not exist in plugins: keep one complete E2E job per OS.
     text = text.replace("End-to-end ${{ matrix.suite }} (", "End-to-end (")
-    text = re.sub(r"(?m)^        # Three jobs per OS[^\n]*\n        suite: \[cli, web-1, web-2\]\n", "", text)
+    text = re.sub(r"(?m)^        # Core E2E lanes:[^\n]*\n        suite: \[cli, supervised, web-1, web-2\]\n", "", text)
     text = re.sub(r"(?m)^        if: startsWith\(matrix\.suite, 'web'\)\n", "", text)
     text = text.replace("make test-e2e SUITE=${{ matrix.suite }}", "make test-e2e")
     text = text.replace("    needs: notifier\n", "")
