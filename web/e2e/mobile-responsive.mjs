@@ -242,9 +242,16 @@ async function footerPane(page, id, label, ready) {
     );
   }
   const trigger = page.locator(`[data-footer-content="${id}"] button`).first();
-  if (!(await trigger.isVisible())) {
-    await page.locator('[data-footer-content="@more"] button').click();
-  }
+  // A missing status item is still loading, not necessarily in More. Its hidden measurement host and More's
+  // retained button are not actionable. Wait for either the item or its actual overflow path to be visible.
+  const direct = trigger.filter({ visible: true });
+  const more = page
+    .locator(
+      `footer:has([data-footer-part="${id}"][data-footer-hidden="overflow"]) [data-footer-content="@more"] button`,
+    )
+    .filter({ visible: true });
+  await direct.or(more).first().waitFor();
+  if (!(await direct.isVisible())) await more.tap();
   await trigger.tap();
   return page.getByRole("region", { name: label, exact: true }).locator("..");
 }
@@ -307,7 +314,11 @@ try {
           },
         },
       };
+      const statusRequested = Promise.withResolvers();
+      const publishStatus = Promise.withResolvers();
       await page.route("**/api/system/ui/status**", async (route) => {
+        statusRequested.resolve();
+        await publishStatus.promise;
         const selected = new URL(route.request().url()).searchParams.get("item");
         if (selected === entry.id) return route.fulfill({ json: [entry] });
         const response = await fetchOnce(route);
@@ -316,7 +327,16 @@ try {
       });
       await page.goto(url);
       await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
-      const pane = await footerPane(page, entry.id, "Share probe");
+      await statusRequested.promise;
+      const opening = footerPane(page, entry.id, "Share probe");
+      // Observe the held state after opening starts: shell readiness does not publish status items.
+      const held = await page.evaluate(() => ({
+        target: !!document.querySelector('[data-footer-content="probe:share"] button'),
+        more: getComputedStyle(document.querySelector('[data-footer-content="@more"] button')).visibility,
+      }));
+      assert.deepEqual(held, { target: false, more: "hidden" });
+      publishStatus.resolve();
+      const pane = await opening;
       const copy = pane.getByRole("button", { name: "Copy URL", exact: true });
       await assertContained(page, pane, "phone: share pane");
       await page.screenshot({ path: join(shots, `mobile-${section}-${supported ? "supported" : "unsupported"}.png`) });

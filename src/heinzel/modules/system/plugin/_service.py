@@ -556,7 +556,10 @@ class PluginService:
         core, *plugins = requirements
         replaced = distributions_in_spec(spec)
         kept = [r for r in plugins if canonicalize_name(Requirement(r).name) not in replaced]
-        return self._installation.tool_install_command(core, [*kept, spec])
+        # Changing --with already makes uv resolve and install the new plugin. --reinstall also implies --refresh,
+        # needlessly revalidating every dependency against its index. Replacements still force a rebuild (develop
+        # may name an unchanged directory whose contents have changed).
+        return self._installation.tool_install_command(core, [*kept, spec], reinstall=len(kept) != len(plugins))
 
     # Removing, enabling, disabling.
 

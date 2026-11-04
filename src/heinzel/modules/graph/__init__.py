@@ -18,11 +18,19 @@ from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import Module
 from heinzel.modules.graph._models import GraphSettings, State, TeamGraphDocument
-from heinzel.modules.graph._render import render_graph
 from heinzel.modules.graph._service import GraphService, HzGraph
+
+
+def render_graph(document: TeamGraphDocument) -> RenderableType:
+    """The waiting list, the kept-on-time table and the nodes, each with its state, deadline and edges."""
+    from heinzel.modules.graph._render import render_graph  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_graph(document)
+
 
 module = Module("graph", "Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the flow waits.")
 module.settings(GraphSettings)

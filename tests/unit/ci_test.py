@@ -1062,8 +1062,8 @@ def test_linux_electron_sandbox_target_configures_only_the_packaged_helper():
     assert 'python3 desktop/ci/restore_linux_sandbox.py "$$electron_root"' not in recipe
 
 
-@pytest.mark.parametrize("fail", [False, True])
-def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, fail):
+@pytest.mark.parametrize("failure", [None, "sync", "wheel"])
+def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, failure):
     """A failed build cannot start pytest; the suite still performs its own candidate build."""
     tool_dir = tmp_path / "bin"
     tool_dir.mkdir()
@@ -1075,8 +1075,9 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
             uv,
             (
                 '#!/bin/sh\nprintf "build:%s\\n" "$*" >> "$TRACE"\n'
+                'case "$*" in *"scripts/build.py sync") test "$FAIL_PREP" != sync;; *)\n'
                 'for last do :; done\nprintf "dir:%s\\n" "$last" >> "$TRACE"\n'
-                'test "$FAIL_PREP" != 1\n'
+                'test "$FAIL_PREP" != wheel;; esac\n'
             ),
         ),
         (steps, '#!/bin/sh\nprintf "suite:%s\\n" "$@" >> "$TRACE"\n'),
@@ -1093,7 +1094,7 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
         "PATH": f"{tool_dir}:/usr/bin:/bin",
         "TMPDIR": str(tmp_path),
         "TRACE": str(trace),
-        "FAIL_PREP": "1" if fail else "0",
+        "FAIL_PREP": failure or "",
     }
     result = subprocess.run(
         ["make", "--no-print-directory", "test-e2e", f"STEPS={steps}"],
@@ -1105,14 +1106,16 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
         check=False,
     )
     lines = trace.read_text().splitlines()
-    assert lines[0].startswith("build:build --quiet --wheel --out-dir ")
-    assert lines[1].startswith("dir:")
-    directory = Path(lines[1].removeprefix("dir:"))
-    assert directory.is_relative_to(tmp_path)
-    assert not directory.exists()
-    assert (result.returncode == 0) is not fail
-    assert any(line.startswith("suite:e2e-readme=uv run pytest ") for line in lines) is not fail
-    if not fail:
+    assert lines[0] == "build:run --quiet --script scripts/build.py sync"
+    if failure != "sync":
+        assert lines[1].startswith("build:run --quiet --script scripts/build.py --quiet --wheel --out-dir ")
+        assert lines[2].startswith("dir:")
+        directory = Path(lines[2].removeprefix("dir:"))
+        assert directory.is_relative_to(tmp_path)
+        assert not directory.exists()
+    assert (result.returncode == 0) is (failure is None)
+    assert any(line.startswith("suite:e2e-readme=uv run pytest ") for line in lines) is (failure is None)
+    if failure is None:
         [first] = [line for line in lines if line.startswith("suite:e2e-readme=")]
         [second] = [line for line in lines if line.startswith("suite:e2e=")]
         node = "tests/e2e/docs_test.py::test_readme_instructions"
@@ -1169,11 +1172,12 @@ def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
         check=False,
     )
     commands = trace.read_text().splitlines()
-    assert commands[0].startswith("build ")
-    assert len(commands) == (2 if first_fails else 3)
-    assert "--deselect=" not in commands[1]
+    assert commands[0] == "run --quiet --script scripts/build.py sync"
+    assert commands[1].startswith("run --quiet --script scripts/build.py --quiet --wheel ")
+    assert len(commands) == (3 if first_fails else 4)
+    assert "--deselect=" not in commands[2]
     if not first_fails:
-        assert "--deselect=tests/e2e/docs_test.py::test_readme_instructions" in commands[2]
+        assert "--deselect=tests/e2e/docs_test.py::test_readme_instructions" in commands[3]
     assert (result.returncode != 0) is first_fails
 
 
@@ -1483,7 +1487,7 @@ def test_a_pull_request_runs_one_small_macos_job_and_main_runs_the_full_macos_su
     assert on_pull_request == {"macos-smoke"}
     assert on_main == {"setup", "e2e", "notifier", "macos-specific", "electron"}  # and the test matrix's macOS shards
     assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], "push") == [
-        "ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest", "macos-15-intel",
+        "ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest",
     ]  # fmt: skip
     smoke = jobs["macos-smoke"]
     assert (smoke["name"], smoke["runs-on"]) == ("macOS smoke", "macos-latest")
@@ -1510,9 +1514,7 @@ def test_native_macos_matrices_follow_scope_only_on_pull_requests(event, macos_f
     jobs = _ci_jobs()
     native = event != "pull_request" or macos_full
     assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], event, macos_full=macos_full) == (
-        ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest", "macos-15-intel"]
-        if native
-        else ["ubuntu-24.04", "ubuntu-24.04-arm"]
+        ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest"] if native else ["ubuntu-24.04", "ubuntu-24.04-arm"]
     )
     for name in ("e2e", "electron"):
         assert _oses(jobs[name]["strategy"]["matrix"]["os"], event, macos_full=macos_full) == (

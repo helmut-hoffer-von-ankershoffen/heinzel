@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { openChatJourney, revealChat, runDaemonTurn } from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
+import { settleRoutes } from "./route-settlement.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
 const revocations = [];
+let latePage;
 const revocationPath = "/api/heinzel/revoke-connected-read";
 page.on("request", (request) => {
   if (new URL(request.url()).pathname === revocationPath && request.method() === "POST")
@@ -85,7 +87,6 @@ try {
   await schedule.getByText(/approved; the daemon must be running/i).waitFor();
   const session = new URLSearchParams(page.url().split("?")[1]).get("chat");
   assert.ok(session);
-  let latePage;
   if (process.argv[6] === "late-page") {
     const ready = Promise.withResolvers();
     const release = Promise.withResolvers();
@@ -187,6 +188,13 @@ try {
   process.stderr.write(`${diagnostic.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
   process.exitCode = 1;
 } finally {
-  await context.close();
-  await browser.close();
+  try {
+    await settleRoutes(page, latePage?.release);
+  } finally {
+    try {
+      await context.close();
+    } finally {
+      await browser.close();
+    }
+  }
 }

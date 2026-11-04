@@ -9,7 +9,6 @@ from collections.abc import Callable
 from typing import Literal, Never
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from croniter import croniter
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from heinzel import HeinzelError, SessionWriter
@@ -56,6 +55,8 @@ class SuggestedTrigger(BaseModel):
         Raises:
             ValueError: If the expression is malformed.
         """
+        from croniter import croniter  # noqa: PLC0415 - parse only when a schedule is used
+
         if not value.isascii() or len(value.split()) != _CRON_FIELDS or not croniter.is_valid(value):
             msg = "The suggested trigger must be a valid five-field cron expression"
             raise ValueError(msg)

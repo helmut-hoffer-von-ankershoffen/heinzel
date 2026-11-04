@@ -8,6 +8,7 @@ one for each new version. They stay on this machine until you name a private rep
 """
 
 from pydantic import JsonValue
+from rich.console import RenderableType
 
 from heinzel import Check, CurrentUser, HeinzelError, JobInactive, Module
 from heinzel.kernel import Presence
@@ -19,8 +20,22 @@ from heinzel.modules.system.state._models import (
     StateStatus,
     StreamStatus,
 )
-from heinzel.modules.system.state._render import render_pushed, render_status
 from heinzel.modules.system.state._service import LocalPresence, StateService
+
+
+def render_pushed(pushed: Pushed) -> RenderableType:
+    """What went to which branch, or that the branch was current."""
+    from heinzel.modules.system.state._render import render_pushed  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_pushed(pushed)
+
+
+def render_status(status: StateStatus) -> RenderableType:
+    """Where state goes, each stream's lines and what is pending, the last push, and what comes next."""
+    from heinzel.modules.system.state._render import render_status  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_status(status)
+
 
 module = Module("state", "Note how hz is used on this machine and push it to your own state repository.")
 module.settings(StateSettings)

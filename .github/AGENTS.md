@@ -9,6 +9,11 @@
 - Workflows shared with plugins are symlinked into `template/`; the template's `ci.yml` is generated from ours
   (`make fix`).
 
+macOS jobs use Apple-silicon ARM64 hosted runners only (`macos-latest`). Never add Intel macOS runner labels,
+Intel large runners, or Intel self-hosted runners. Keep the shared bootstrap architecture check and the native
+`make ci-macos-arm` check so an unexpected architecture fails closed. Preserve the full ARM Python-version,
+native, browser, Electron and release-acceptance coverage and its limits. Linux coverage is unchanged.
+
 Constraints per workflow:
 
 - `ci.yml`: `CI OK` gates merging. PR portable tests run on Linux with Python oldest and newest plus real

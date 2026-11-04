@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import Module
 from heinzel.modules.system.connector._models import (
@@ -14,8 +15,22 @@ from heinzel.modules.system.connector._models import (
     ConnectorTest,
     Tool,
 )
-from heinzel.modules.system.connector._render import render_report, render_test
 from heinzel.modules.system.connector._service import ConnectorService
+
+
+def render_report(report: ConnectorReport) -> RenderableType:
+    """A table of connectors with their state and what to run next, and one of who serves each capability."""
+    from heinzel.modules.system.connector._render import render_report  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_report(report)
+
+
+def render_test(test: ConnectorTest) -> RenderableType:
+    """Whether the live test passed, how long it took, and each check."""
+    from heinzel.modules.system.connector._render import render_test  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_test(test)
+
 
 module = Module("connector", "Show whether each connector is signed in and serves something, and test one live.")
 module.service(ConnectorService)
