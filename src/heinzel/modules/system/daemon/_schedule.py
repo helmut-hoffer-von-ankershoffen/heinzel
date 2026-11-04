@@ -13,8 +13,6 @@ from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from croniter import CroniterBadDateError, croniter
-
 MAX_SLOTS_PER_TICK = 100
 """`catch_up=all` replays at most this many slots per tick, oldest first; the next tick continues."""
 FIELDS = 5
@@ -51,6 +49,8 @@ def local_zone(localtime: Path = LOCALTIME) -> tzinfo:
 
 def problem(schedule: str) -> str | None:
     """Why a cron expression can't be used, or None if it can."""
+    from croniter import CroniterBadDateError, croniter  # noqa: PLC0415 - parse only when a schedule is used
+
     if not (schedule.startswith("@") or len(schedule.split()) == FIELDS) or not croniter.is_valid(schedule):
         return f"invalid schedule {schedule!r}: use five cron fields (minute hour day month weekday) or @daily"
     try:
@@ -73,6 +73,8 @@ def slots(
     schedule: str, after: datetime, until: datetime, zone: tzinfo, limit: int = MAX_SLOTS_PER_TICK
 ) -> list[datetime]:
     """Slots `s` with `after < s <= until`, oldest first, at most `limit`, each wall-clock time once."""
+    from croniter import croniter  # noqa: PLC0415 - parse only when a schedule is used
+
     found: list[datetime] = []
     iterator = croniter(schedule, _naive(after, zone))
     while len(found) < limit:
@@ -86,6 +88,8 @@ def slots(
 
 def latest(schedule: str, after: datetime, until: datetime, zone: tzinfo) -> datetime | None:
     """The most recent slot with `after < slot <= until`, or None."""
+    from croniter import croniter  # noqa: PLC0415 - parse only when a schedule is used
+
     # croniter's get_prev excludes its start, so start just past `until` to include a slot that falls on it.
     iterator = croniter(schedule, _naive(until, zone) + timedelta(seconds=1))
     slot = _place(iterator.get_prev(datetime), zone)
@@ -96,6 +100,8 @@ def latest(schedule: str, after: datetime, until: datetime, zone: tzinfo) -> dat
 
 def next_slot(schedule: str, now: datetime, zone: tzinfo) -> datetime:
     """The first slot after `now`."""
+    from croniter import croniter  # noqa: PLC0415 - parse only when a schedule is used
+
     iterator = croniter(schedule, _naive(now, zone))
     slot = _place(iterator.get_next(datetime), zone)
     while slot <= now:
