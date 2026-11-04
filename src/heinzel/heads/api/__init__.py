@@ -9,7 +9,8 @@ The default server has no authentication, so it answers only requests that name 
 browser can reach `127.0.0.1` too, directly or through DNS rebinding, and must not be able to call operations.
 Operations that spend money or act unattended (`hz heinzel wake`, `hz system daemon tick`) aren't exposed here.
 
-The web head (`hz ui`) mounts the same endpoints with `head="web"` and a per-session `token`: every request must then
+The web head (`hz ui serve`) mounts the same endpoints with `head="web"` and a per-session `token`:
+every request must then
 carry the token as `Authorization: Bearer <token>` as well, and the operations that list the `web` head are exposed too.
 An explicit private API uses an expiring server-scoped bearer (`hz system serve api --private`), includes declared
 private operations, and shares the kernel's trusted CurrentUser context (ADR 0068). It never treats a bearer as

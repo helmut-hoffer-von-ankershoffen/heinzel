@@ -653,7 +653,12 @@ class Kernel:
             provided = tuple((let.capability, let.adapter) for let in lets if isinstance(let, ProviderLet))
             serves = provided if all(isinstance(let, ADAPTER_ONLY_LETS) for let in lets) else ()
             module = Requester(
-                module=record.qualname, kind="module", name=record.module.name, requires=own, serves=serves
+                module=record.qualname,
+                kind="module",
+                name=record.module.name,
+                requires=own,
+                serves=serves,
+                inspects=record.module.inspects,
             )
             requesters.append(module)
             for let in lets:
@@ -667,6 +672,8 @@ class Kernel:
                             own,
                             publishes=not let.read_only,
                             optional=let.optional,
+                            health_on_demand=let.health_on_demand,
+                            inspects=record.module.inspects,
                         )
                         requesters.append(requester)
                         self._own(owners, let.func, requester, record)

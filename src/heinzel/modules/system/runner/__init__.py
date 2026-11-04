@@ -47,7 +47,7 @@ PROMPT_LIMIT = 6000
 
 # A question spends money, within its cap: the CLI, MCP and the web head (behind its session token) get it, never the
 # unauthenticated REST head (ADR 0039).
-@module.operation(read_only=False, heads={"cli", "mcp", "web"}, requires=["agent-runner:read"])
+@module.operation(read_only=False, heads={"cli", "mcp", "web"}, requires=["agent-runner:read"], health_on_demand=True)
 def ask(
     runner: AgentRunner,
     kernel: Kernel,

@@ -5,7 +5,6 @@ reaches the real launchd or systemd.
 """
 
 import json
-import subprocess
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -139,27 +138,30 @@ def test_install_dry_run_and_uninstall_with_a_fake_service_manager(kernel, setti
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "hz").touch()
-    commands: list[list[str]] = []
+    from tests.fixtures.daemon_manager import RecordedManager, record_tool
 
-    def fake(command):
-        commands.append(list(command))
-        return subprocess.CompletedProcess(command, 0, f"{bin_dir}\n", "")
-
+    manager = RecordedManager(bin_dir)
+    installation = record_tool(tmp_path / "tools/heinzel", bin_dir)
     service = DaemonService(
         kernel,
         settings,
         DaemonSettings(unit_dir=tmp_path / "units"),
-        runner=fake,
+        runner=manager,
         platform="linux",
         which=lambda name: f"/usr/bin/{name}",
+        quiescence_installation=installation,
+        quiescence_probe=manager.probe,
+        linux_manager_identity=lambda: (1, 2, 3),
     )
+    manager.attach(service)
     kernel.bind(DaemonService, service)
     dry = hz(kernel, "system", "daemon", "install", "--interval", "10m", "--dry-run").output
     assert "OnCalendar=*:0/10" in dry
     assert "Would run" in dry
     installed = json.loads(hz(kernel, "system", "daemon", "install", "--json").output)
     assert installed["interval_minutes"] == 5
-    assert ["/usr/bin/systemctl", "--user", "enable", "--now", "hz-daemon.timer"] in commands
+    assert ["/usr/bin/systemctl", "--user", "enable", "hz-daemon.timer"] in manager.commands
+    assert ["/usr/bin/systemctl", "--user", "restart", "hz-daemon.timer"] in manager.commands
     assert "Installed" in hz(kernel, "system", "daemon", "install").output
     removed = json.loads(hz(kernel, "system", "daemon", "uninstall", "--json").output)
     assert len(removed["removed"]) == 2

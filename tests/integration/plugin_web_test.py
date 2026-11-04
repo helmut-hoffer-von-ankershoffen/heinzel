@@ -359,7 +359,7 @@ def test_a_restart_hands_the_port_and_the_token_to_the_process_it_becomes(make_k
         started.set()
 
     monkeypatch.setattr(uvicorn, "Server", Recorded)
-    monkeypatch.setattr(web.sys, "argv", ["hz", "ui", "--port", "0"])
+    monkeypatch.setattr(web.sys, "argv", ["hz", "ui", "serve", "--port", "0"])
     kernel = make_kernel(builtins=True)
     first = threading.Thread(
         target=web.serve,
@@ -374,7 +374,7 @@ def test_a_restart_hands_the_port_and_the_token_to_the_process_it_becomes(make_k
     assert httpx.post(f"http://127.0.0.1:{port}/api/restart", headers=auth, timeout=10).status_code == 202
     first.join(10)
     [(executable, command, environment)] = executed
-    assert command == [executable, "-m", "heinzel", "ui", "--port", "0"]
+    assert command == [executable, "-m", "heinzel", "ui", "serve", "--port", "0"]
     fd, handed = environment[web.RESUME].split(":", 1)
     assert (fd.isdigit(), handed) == (True, token)
 

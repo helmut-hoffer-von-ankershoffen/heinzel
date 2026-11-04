@@ -15,7 +15,9 @@ from heinzel import __version__
 from heinzel.kernel import CurrentUser, HeinzelError, Kernel, Settings
 
 ACCEPTED = 202
-CANT_RESTART = "This server can't restart itself (it isn't `hz ui`, e.g. `make web-dev`); stop it and start it again."
+CANT_RESTART = (
+    "This server can't restart itself (it isn't `hz ui serve`, e.g. `make web-dev`); stop it and start it again."
+)
 MAX_VERIFY_BYTES = 64 * 1024
 _ORIGIN_POLICY = ("hz", "ui_allowed_origins")
 _SECRET = re.compile(
@@ -273,5 +275,5 @@ def add_lifecycle(app: FastAPI, kernel: Kernel, restart: Callable[[], None] | No
         summary="Restart hz ui to load changes a running server can't, such as an added plugin.",
         description="The process runs `hz` again with the same port and token. Poll /lifecycle until its instance "
         "differs from the retiring instance in this reply, then verify the loaded version and target settings. "
-        "A server that isn't `hz ui` (`make web-dev`) answers 400.",
+        "A server that isn't `hz ui serve` (`make web-dev`) answers 400.",
     )
