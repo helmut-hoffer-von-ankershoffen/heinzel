@@ -23,8 +23,13 @@ for (const name of ["ready", "before-quit", "will-quit", "quit", "window-all-clo
 app.on("child-process-gone", (_event, details) => phase(`app child-process-gone ${details.type} ${details.reason}`));
 app.on("web-contents-created", (_event, contents) => {
   phase("page created");
-  for (const name of ["did-start-loading", "will-redirect", "did-fail-load", "did-stop-loading", "did-finish-load", "destroyed"])
+  for (const name of ["did-start-loading", "did-start-navigation", "will-redirect", "did-stop-loading", "did-finish-load", "destroyed"])
     contents.on(name, () => phase(`page ${name}`));
+  // Numeric load results distinguish an unissued request from Chromium cancellation; URLs may contain bearer fragments.
+  for (const name of ["did-fail-load", "did-fail-provisional-load"])
+    contents.on(name, (_event, code, _description, _url, mainFrame) => phase(`page ${name} ${code} ${mainFrame}`));
+  contents.on("render-process-gone", (_event, details) => phase(`page render-process-gone ${details.reason} ${details.exitCode}`));
+  contents.on("unresponsive", () => phase("page unresponsive"));
 });
 
 const spawn = childProcess.spawn;

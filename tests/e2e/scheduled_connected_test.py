@@ -107,9 +107,19 @@ def _assert_read(reads, rolling):
 
 
 @pytest.mark.timeout(600)
-@pytest.mark.parametrize("engine", ["chromium", "webkit"])
-@pytest.mark.parametrize("rolling", [False, True])
-def test_mounted_scheduled_connected_read(make_kernel, tmp_path, monkeypatch, engine, rolling):
+@pytest.mark.parametrize(
+    "journey",
+    [
+        pytest.param((False, "chromium", False), id="False-chromium"),
+        pytest.param((False, "webkit", False), id="False-webkit"),
+        pytest.param((True, "chromium", False), id="True-chromium"),
+        pytest.param((True, "webkit", False), id="True-webkit"),
+        pytest.param((True, "chromium", True), id="late-page-chromium"),
+        pytest.param((True, "webkit", True), id="late-page-webkit"),
+    ],
+)
+def test_mounted_scheduled_connected_read(make_kernel, tmp_path, monkeypatch, journey):
+    rolling, engine, late_page = journey
     web_build.ensure_built()
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(BROWSER_CACHE))
@@ -188,6 +198,7 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
                     engine,
                     str(tmp_path),
                     "rolling" if rolling else "fixed",
+                    "late-page" if late_page else "normal",
                 ],
                 cwd=REPO,
                 capture_output=True,

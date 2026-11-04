@@ -27,6 +27,12 @@ context.on("request", (request) => {
   open.add(request);
   note(`request ${path(request)}${request.isNavigationRequest() ? " (navigation)" : ""}`);
 });
+context.on("response", (response) => {
+  const request = response.request();
+  if (request.isNavigationRequest()) {
+    note(`response ${path(request)} ${response.status()}${response.fromServiceWorker() ? " from the worker" : ""}`);
+  }
+});
 context.on("requestfinished", async (request) => {
   open.delete(request);
   const response = await request.response().catch(() => null);
@@ -52,6 +58,9 @@ const within = (promise, ms) =>
   Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(`no answer in ${ms} ms`), ms))]);
 async function explain(page) {
   note(`still open: ${[...open].map(path).join(", ") || "none"}`);
+  for (const request of open) {
+    if (request.isNavigationRequest()) note(`navigation timing ${path(request)} ${JSON.stringify(request.timing())}`);
+  }
   const server = await fetch(new URL("/", url), { signal: AbortSignal.timeout(5000) }).then(
     (answer) => `server answers / with ${answer.status}`,
     (error) => `server does not answer /: ${error.message}`,
