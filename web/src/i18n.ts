@@ -188,8 +188,7 @@ const en = {
   "pluginsPending.disabled": "{name} was disabled",
   "pluginsPending.theme": "It brings the theme {theme}: after the restart, choose it in Settings → Appearance.",
   "updates.title": "Updates",
-  "updates.availableLabel": "Update available",
-  "updates.currentLabel": "Up to date",
+  "updates.availableLabel": "Updates available",
 
   "settings.previewOnly":
     "These controls change the previews only. They do not change the app\u2019s light/dark mode or real weather.",
@@ -1056,8 +1055,9 @@ const en = {
   "fromClaude.source.code-local": "Claude Code, project (local)",
   "fromClaude.source.code-project": "Claude Code, project",
   "fromClaude.source.code-plugin": "Claude Code, plugin",
-  "updates.action": "Update hz and plugins",
-  "updates.available": "hz {version} is available.",
+  "updates.action": "Update now",
+  "updates.manualAction": "Manually update…",
+  "updates.known": "Known updates: {updates}",
   "updates.installedVersion": "Installed: hz {version}",
   "updates.installedDate": "Last installed: {date}",
   "updates.installedDateUnknown": "Installation date unavailable.",
@@ -1074,10 +1074,7 @@ const en = {
   "autoUpdate.reconnect": "This window reconnects by itself when hz is back.",
   "autoUpdate.ok": "OK",
   "autoUpdate.setting": "Automatic updates",
-  "autoUpdate.byHand":
-    "Update by hand: {plugins}. They come from git, a folder or a URL; automatic updates leave them as they are.",
-  "autoUpdate.settingHelp":
-    "Installs new versions of hz and its plugins by itself, after a 30-second warning you can postpone; never during a chat answer or a running job.",
+  "autoUpdate.byHand": "Manual updates: {plugins}",
 } as const;
 
 export type MessageKey = keyof typeof en;

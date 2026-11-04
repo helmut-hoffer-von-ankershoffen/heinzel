@@ -605,9 +605,10 @@ try {
       await page.screenshot({ path: join(shots, `mobile-${spec.name}-${id.slice(1)}.png`) });
       await dismissFooterPane(page);
     }
-    const updatePane = await footerPane(page, "@updates", "Up to date");
+    const updatePane = await footerPane(page, "@updates", "Updates");
     await assertContained(page, updatePane, `${spec.name}: update pane`);
-    assert.equal(await updatePane.getByText("Up to date", { exact: true }).count(), 1);
+    assert.equal(await updatePane.getByText("Update availability is unavailable.", { exact: true }).count(), 1);
+    await updatePane.getByRole("button", { name: "Manually update…", exact: true }).waitFor();
     await updatePane.getByText("Installed: hz 0.7.30").waitFor();
     await updatePane.getByText(/^Last installed:/).waitFor();
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
@@ -618,14 +619,10 @@ try {
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
-    const availablePane = await footerPane(page, "@updates", "Update available", updateAnswered);
+    const availablePane = await footerPane(page, "@updates", "Updates available", updateAnswered);
     await assertContained(page, availablePane, `${spec.name}: available update pane`);
     await availablePane.getByText(/^Last installed:/).waitFor();
-    await assertTouchTarget(
-      availablePane.getByRole("button", { name: "Update hz and plugins" }),
-      "update action",
-      spec.name,
-    );
+    await assertTouchTarget(availablePane.getByRole("button", { name: "Update now" }), "update action", spec.name);
     assert.equal(updateRequests, 0, `${spec.name}: inspecting the update must not start installation`);
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-update-available.png`) });
     await dismissFooterPane(page);

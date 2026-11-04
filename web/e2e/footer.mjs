@@ -335,7 +335,7 @@ export async function verifyFooter(page, shots, proofItems = false) {
       if (proofItems && width === 240) {
         for (const [id, label, action] of [
           ["@plugins-pending", "Plugins changed, warning", "Restart and apply"],
-          ["@updates", "Update available, warning", "Update hz and plugins"],
+          ["@updates", "Updates available, warning", "Update now"],
         ]) {
           assert.ok(placement.actual.includes(id), `${id} must move into More at ${width}px`);
           const trigger = popup.getByRole("button", { name: label, exact: true });
