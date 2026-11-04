@@ -57,6 +57,22 @@ def test_supervised_is_a_required_matrix_cell_on_the_existing_platforms_and_even
     assert '*) echo "A required job ended with: $result"; exit 1 ;;' in gate["run"]
 
 
+def test_installed_browser_journey_receives_cached_runtimes_and_linux_host_dependencies_before_starting():
+    steps = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]["e2e"]["steps"]
+    [installer] = [step for step in steps if step.get("run") == "make test-browser-deps"]
+    [cache] = [step for step in steps if step.get("name") == "Reuse the browsers this lockfile's Playwright installs"]
+    [run] = [step for step in steps if step.get("run", "").startswith("make test-e2e ")]
+    # The supervised lane now includes Chromium and WebKit. Downloading browsers inside the driver cannot
+    # install WebKit's Linux shared libraries: the existing host-dependency target must run before pytest.
+    assert installer["if"] == cache["if"] == "matrix.suite == 'supervised' || startsWith(matrix.suite, 'web')"
+    assert steps.index(cache) < steps.index(installer) < steps.index(run)
+    makefile = (REPO / "Makefile").read_text()
+    browser_target = makefile.partition("test-browser-deps:")[2].partition("# Core E2E lanes")[0]
+    assert '"$$(uname -s)" = Linux' in browser_target
+    assert "playwright-core install --with-deps chromium webkit" in browser_target
+    assert "continue-on-error" not in installer
+
+
 def test_plugin_generation_keeps_one_complete_suite_without_core_lane_references():
     sync = runpy.run_path(str(REPO / "scripts/sync_template.py"))
     makefile = sync["makefile"]()
