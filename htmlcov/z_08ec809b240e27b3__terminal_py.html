@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_08ec809b240e27b3__updates_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-11-04 13:14 +0000
+            created at 2026-11-04 13:46 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -92,7 +92,7 @@
     <p class="pln"><span class="n"><a id="t8" href="#t8">8</a></span><span class="t"><span class="str">The server may send `{&quot;agent_title&quot;: ...}` on that same authenticated socket for the foreground agent&#x27;s session name.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t9" href="#t9">9</a></span><span class="t"><span class="str">Both directions are bounded: a shell that prints faster than the browser reads is paused by the pseudo-terminal,</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t10" href="#t10">10</a></span><span class="t"><span class="str">and a browser that types faster than the shell reads stops being read. Closing the socket hangs up the shell&#x27;s</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t11" href="#t11">11</a></span><span class="t"><span class="str">whole process group (ADR 0048). When `hz ui` stops, each terminal hangs up its shell the same way and closes its</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t11" href="#t11">11</a></span><span class="t"><span class="str">whole process group (ADR 0048). When `hz ui serve` stops, each terminal hangs up its shell the same way and closes its</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t12" href="#t12">12</a></span><span class="t"><span class="str">socket with &quot;going away&quot; and a reason the app shows (`Stopping`).</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t13" href="#t13">13</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t"><span class="str">POSIX only: on Windows the socket closes with a reason the app shows.</span>&nbsp;</span><span class="r"></span></p>
@@ -130,7 +130,7 @@
     <p class="run"><span class="n"><a id="t46" href="#t46">46</a></span><span class="t"><span class="nam">GOING_AWAY</span> <span class="op">=</span> <span class="num">1001</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t47" href="#t47">47</a></span><span class="t"><span class="nam">STOPPED</span> <span class="op">=</span> <span class="str">&quot;The web app stopped. Run hz ui to start it again.&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t48" href="#t48">48</a></span><span class="t"><span class="nam">RESTARTED</span> <span class="op">=</span> <span class="str">&quot;The web app is restarting. Open the terminal again in a moment.&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t49" href="#t49">49</a></span><span class="t"><span class="str">&quot;&quot;&quot;Close reasons the app shows as they are, so plain text: Ctrl-C stopped `hz ui`, or it restarts (ADR 0047).&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t49" href="#t49">49</a></span><span class="t"><span class="str">&quot;&quot;&quot;Close reasons the app shows as they are, so plain text: Ctrl-C stopped `hz ui serve`, or it restarts (ADR 0047).&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t"><span class="nam">TOKEN_SECONDS</span> <span class="op">=</span> <span class="num">5.0</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t51" href="#t51">51</a></span><span class="t"><span class="nam">READ_BYTES</span> <span class="op">=</span> <span class="num">65536</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t52" href="#t52">52</a></span><span class="t"><span class="nam">OUTPUT_CHUNKS</span> <span class="op">=</span> <span class="num">64</span>&nbsp;</span><span class="r"></span></p>
@@ -536,7 +536,7 @@
             <a class="nav" href="z_08ec809b240e27b3__updates_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-11-04 13:14 +0000
+            created at 2026-11-04 13:46 +0000
         </p>
     </div>
 </footer>
