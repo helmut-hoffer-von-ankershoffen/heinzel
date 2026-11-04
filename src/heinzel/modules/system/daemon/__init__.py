@@ -5,8 +5,15 @@ from typing import Annotated
 from pydantic import Field
 from rich.console import RenderableType
 
-from heinzel import Check, Module
-from heinzel.kernel import DaemonAttestation, DaemonInstallationLifecycle, DaemonOverview, parse_duration
+from heinzel import Check, Kernel, Module
+from heinzel.kernel import (
+    DaemonAttestation,
+    DaemonInstallationLifecycle,
+    DaemonLegacyRecovery,
+    DaemonOverview,
+    DaemonRecoverySelection,
+    parse_duration,
+)
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
     DaemonStatus,
@@ -81,6 +88,17 @@ def _installation_lifecycle(service: DaemonService) -> DaemonInstallationLifecyc
 
 module.service(DaemonOverview, DaemonOverviewService)
 module.service(DaemonAttestation, _attestation)
+
+
+def _legacy_recovery(service: DaemonService, kernel: Kernel) -> DaemonLegacyRecovery:
+    """Expose only the explicit candidate recovery port, never an ordinary operation."""
+    from heinzel.modules.system.daemon._legacy_retirement import LegacyRetirement  # noqa: PLC0415 - explicit recovery only
+
+    recovery = LegacyRetirement(service, kernel.resolve(DaemonRecoverySelection))
+    return DaemonLegacyRecovery(recovery.plan, recovery.retire, recovery.restore_plan, recovery.restore)
+
+
+module.service(DaemonLegacyRecovery, _legacy_recovery)
 module.service(DaemonInstallationLifecycle, _installation_lifecycle)
 
 INTERVAL_PATTERN = r"^[1-9][0-9]*m$|^1h$"
