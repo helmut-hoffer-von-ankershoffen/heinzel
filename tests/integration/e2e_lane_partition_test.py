@@ -12,27 +12,17 @@ from tests._e2e_lanes import REPO, lane_commands
 pytestmark = pytest.mark.integration
 
 
-def collect(groups: dict[str, list[list[str]]]) -> dict[str, Counter[str]]:
-    # All sessions share only the read-only collection interpreter, avoiding repeated interpreter bootstrap cost.
-    # Each pytest.main has its own config/session and uses the actual expanded Makefile selection unchanged.
+def collect() -> Counter[str]:
+    # One complete real collection supplies every parameterized node; repeating whole pytest sessions was costly.
     code = """
-import json, pytest, sys
+import json, pytest
 class Collected:
     def pytest_collection_finish(self, session):
-        self.nodes = [item.nodeid for item in session.items]
-for label, commands in json.loads(sys.argv[1]).items():
-    nodes = []
-    for command in commands:
-        plugin = Collected()
-        selection = command[command.index('-x') + 1:]
-        result = pytest.main(['-m', 'e2e', '--collect-only', '-q', *selection], plugins=[plugin])
-        if result:
-            raise SystemExit(result)
-        nodes.extend(plugin.nodes)
-    print('COLLECTED_GROUP=' + json.dumps([label, nodes]))
+        print('COLLECTED_NODES=' + json.dumps([item.nodeid for item in session.items]))
+raise SystemExit(pytest.main(['-m', 'e2e', '--collect-only', '-q'], plugins=[Collected()]))
 """
     result = subprocess.run(
-        [sys.executable, "-c", code, json.dumps(groups)],
+        [sys.executable, "-c", code],
         cwd=REPO,
         capture_output=True,
         text=True,
@@ -40,21 +30,49 @@ for label, commands in json.loads(sys.argv[1]).items():
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    return {
-        label: Counter(nodes)
-        for line in result.stdout.splitlines()
-        if line.startswith("COLLECTED_GROUP=")
-        for label, nodes in [json.loads(line.partition("=")[2])]
-    }
+    [line] = [line for line in result.stdout.splitlines() if line.startswith("COLLECTED_NODES=")]
+    return Counter(json.loads(line.partition("=")[2]))
+
+
+def selected(nodes: Counter[str], commands: list[list[str]]) -> Counter[str]:
+    """Partition actual collected node IDs using the real recipe's file/node selectors; reject new selector syntax."""
+    files = {node.partition("::")[0] for node in nodes}
+    result: Counter[str] = Counter()
+    for command in commands:
+        assert command[:5] == ["uv", "run", "pytest", "-m", "e2e"]
+        arguments = command[command.index("-x") + 1 :]
+        assert len(arguments) == len(set(arguments))  # repeated file arguments must not hide duplicate collection
+        targets = {arg for arg in arguments if not arg.startswith("-")}
+        ignored = {arg.removeprefix("--ignore=") for arg in arguments if arg.startswith("--ignore=")}
+        deselected = {arg.removeprefix("--deselect=") for arg in arguments if arg.startswith("--deselect=")}
+        assert set(arguments) == targets | {f"--ignore={path}" for path in ignored} | {
+            f"--deselect={node}" for node in deselected
+        }
+        # The existing Make recipes use whole files and one exact README node, with no expression matching.
+        assert targets <= files | nodes.keys()
+        assert ignored <= files
+        assert deselected <= nodes.keys()
+        result.update(
+            {
+                node: count
+                for node, count in nodes.items()
+                if (not targets or node in targets or node.partition("::")[0] in targets)
+                and node.partition("::")[0] not in ignored
+                and node not in deselected
+            }
+        )
+    return result
 
 
 def test_ci_lanes_preserve_every_original_node_once_including_supervised_parameterizations():
     groups = {suite: lane_commands(suite) for suite in ("", "cli", "supervised", "web-1", "web-2")}
     # Before the split, CLI ignored only browser files. Reconstruct that exact original selection.
     groups["original-cli"] = [[arg for arg in groups["cli"][-1] if arg != "--ignore=tests/e2e/ui_service_test.py"]]
-    lanes = collect(groups)
+    baseline = collect()
+    lanes = {label: selected(baseline, commands) for label, commands in groups.items()}
     assert set(lanes) == set(groups)
     default = lanes.pop("")
+    assert default == baseline
     old_cli = lanes.pop("original-cli")
     assert all(count == 1 for count in default.values())
     old_cli.update({"tests/e2e/docs_test.py::test_readme_instructions": 1})
