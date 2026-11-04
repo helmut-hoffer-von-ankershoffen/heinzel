@@ -4544,7 +4544,7 @@ export interface components {
         ChatContext: {
             /**
              * Detail
-             * @description What the opener knows about it, in words (a notification's title and body); email addresses are never shared with the helper.
+             * @description What the opener knows about it, in words (a notification's title and body); email addresses are never shared with the Heinzel.
              * @default
              */
             detail: string;
@@ -9065,7 +9065,7 @@ export interface components {
             request_id: string;
             /**
              * Session Id
-             * @description The owner's agent receiving this suggested identity.
+             * @description The owner's Heinzel receiving this suggested identity.
              */
             session_id: string;
             /**

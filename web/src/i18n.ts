@@ -70,7 +70,7 @@ const en = {
   "durable.schedulePropose": "Propose check-in schedule",
   "durable.schedulePrepare": "Prepare schedule review",
   "durable.scheduleIntentPrepared":
-    "The agent prepared a five-minute schedule proposal. Confirm its action above to create an inactive proposal, then review activation separately.",
+    "A Heinzel prepared a five-minute schedule proposal. Confirm its action above to create an inactive proposal, then review activation separately.",
   "durable.scheduleReview": "Review activation in chat",
   "durable.schedulePauseReview": "Review pause in chat",
   "durable.scheduleResumeReview": "Review resume in chat",
@@ -216,26 +216,26 @@ const en = {
   "settings.preview.weather.heat": "Hot",
   "settings.preview.weather.cold": "Cold",
   "status.about": "About Heinzelmännchen",
-  "status.tagline": "helpers accelerating product teams,",
+  "status.tagline": "Heinzels accelerating product teams,",
   "status.origin": "like the little elves from Cologne",
   "app.name": "Heinzelmännchen",
   "top.copyCommand": "Copy the hz command",
   "top.copyLink": "Copy link to this screen",
   "artifacts.title": "Personal Heinzelmännchen associations",
   "artifacts.note": "You added these links. hz has not checked your access to the files.",
-  "artifacts.none": "No local file associations for this helper.",
-  "artifacts.loadError": "Personal helpers could not be loaded.",
-  "artifacts.choose": "Choose a personal helper",
-  "artifacts.pick": "Choose a helper",
-  "chat.createPersonal": "Create a helper and take this message",
-  "chat.creatingPersonal": "Creating your helper…",
+  "artifacts.none": "No local file associations for this Heinzel.",
+  "artifacts.loadError": "Personal Heinzels could not be loaded.",
+  "artifacts.choose": "Choose a personal Heinzel",
+  "artifacts.pick": "Choose a Heinzel",
+  "chat.createPersonal": "Create a Heinzel and take this message",
+  "chat.creatingPersonal": "Creating your Heinzel…",
   "skillDraft.privacy":
     "Drafts are private. The sharing scope you asked for has not been checked and gives no access. Saving does not share or run files.",
   "skillDraft.retryNote": "Until the save is confirmed, this tab keeps the draft so you can retry.",
   "skillDraft.fileLimits":
     "Use SKILL.md plus text under references/, templates/ or assets/, and Python files under scripts/. Up to 16 files; each at most 24 KiB and the encoded form under 47 KiB.",
   "schedules.intro":
-    "Set how often this helper runs under its accepted terms. Approval is separate. This path uses the selected Claude subscription and has unknown cost. Connected reads need separate approval and are included only when you select them below.",
+    "Set how often this Heinzel runs under its accepted terms. Approval is separate. This path uses the selected Claude subscription and has unknown cost. Connected reads need separate approval and are included only when you select them below.",
   "schedules.suggestedReads":
     "Suggested reads: {reads}. These give no access. Choose an already approved read separately.",
   "scheduledNotify.note":
@@ -243,14 +243,14 @@ const en = {
   "audio.visualizerHelp":
     "You choose the browser source. Audio stays in this tab and is not recorded or uploaded. Browser or operating system audio sharing may be unavailable.",
   "proposal.intro":
-    "You write these terms for later review. They do not start a helper or give approval; limits are not enforced. This preview cannot yet describe MCP, shell, or CLI permissions.",
-  "proposal.askRevise": "Ask your helper in chat to revise these subscription terms.",
+    "You write these terms for later review. They do not start a Heinzel or give approval; limits are not enforced. This preview cannot yet describe MCP, shell, or CLI permissions.",
+  "proposal.askRevise": "Ask your Heinzel in chat to revise these subscription terms.",
   "proposal.confirmError":
     "Could not confirm the proposal. Retry the same request or reload the chat to inspect the latest terms.",
   "readSet.intro":
     "Choose up to four sources to review together. Suggestions give no access. Your approval applies to these sources in direct chat; it does not turn on scheduled access.",
   "readSet.askHelper":
-    "Tell your helper in the chat which information you want to use, and ask it to suggest sources for review.",
+    "Tell your Heinzel in the chat which information you want to use, and ask it to suggest sources for review.",
   "readSet.outcomeUnclear":
     "The outcome needs inspection; confirmation will not be retried. Check the outcome or start a new review below.",
   "readSet.decisionUnclear":
@@ -910,7 +910,7 @@ const en = {
   "chat.costCounted": "cost not reported, counted as {cap}",
   "chat.arguments": "Exactly these arguments:",
   "chat.stopped": "Stopped: {detail}",
-  "chat.proposal": "The agent proposes",
+  "chat.proposal": "The Heinzel proposes",
   "chat.proposalHelp": "This changes something, so it runs only if you confirm, exactly as shown.",
   "chat.confirm": "Confirm",
   "chat.decline": "Decline",
@@ -921,7 +921,7 @@ const en = {
   "chat.reply": "Reply…",
   "chat.capShort": "Your agent runner · at most {cap} per answer",
   "chat.you": "You",
-  "chat.agent": "Agent",
+  "chat.agent": "Heinzel",
   "notify.toggle": "Notify me in this browser",
   "notify.state.on": "On: keep this app open to receive browser notifications.",
   "notify.state.off": "Off: read your notifications inside this app.",

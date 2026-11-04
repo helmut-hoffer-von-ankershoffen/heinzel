@@ -142,7 +142,7 @@ describe("Footer items are icons with a state and a pane", () => {
     window.innerWidth = 1280;
     const { container } = renderAt("/doctor");
     const bar = (await screen.findByRole("contentinfo")) as HTMLElement;
-    expect(within(bar).queryByText("helpers accelerating product teams")).not.toBeInTheDocument();
+    expect(within(bar).queryByText("Heinzels accelerating product teams")).not.toBeInTheDocument();
     expect(within(bar).queryByText("built with AI in Berlin")).not.toBeInTheDocument();
     for (const [tone, word, colour] of [
       ["ok", "OK", "text-ok"],
@@ -264,7 +264,7 @@ describe("Footer items are icons with a state and a pane", () => {
     const pane = await screen.findByRole("region", { name: "v0.4.0" });
     const about = within(pane).getByRole("region", { name: "About Heinzelmännchen" });
     expect(within(about).getByRole("img", { name: "Heinzelmännchen" })).toBeInTheDocument();
-    const tagline = within(about).getByText("helpers accelerating product teams,");
+    const tagline = within(about).getByText("Heinzels accelerating product teams,");
     expect(tagline.parentElement).toHaveClass("text-[10px]");
     expect(within(about).getByText("like the little elves from Cologne")).toBeInTheDocument();
     expect(within(about).queryByText("built with AI in Berlin")).not.toBeInTheDocument();

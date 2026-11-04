@@ -2,7 +2,7 @@
 # (ADR 0082). `make docs-site` builds it into site/; the Docs workflow deploys it. Nothing here is hand-written
 # content: every page is a file in docs/ or at the root, so GitHub and the site show the same thing.
 site_name: Heinzelmännchen
-site_description: An open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.
+site_description: An open-source crew of Heinzels that drafts your team's busywork and asks before anything leaves your machine.
 site_url: https://heinzel.team/
 repo_url: https://github.com/helmut-hoffer-von-ankershoffen/heinzel
 repo_name: heinzel

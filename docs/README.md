@@ -1,6 +1,6 @@
 ---
-title: Heinzelmännchen — helpers for good work
-description: Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.
+title: Heinzelmännchen — Heinzels for good work
+description: Heinzelmännchen is an open-source crew of Heinzels that drafts your team's busywork and asks before anything leaves your machine.
 template: home.html
 hide:
   - navigation
@@ -13,7 +13,7 @@ hide:
 
 # Less busywork.<br>More good work.
 
-<p class="hz-lead">Heinzelmännchen, or heinzels for short, are small AI helpers that draft the busywork nobody chose. They work with your own accounts. You approve everything.</p>
+<p class="hz-lead">Heinzels draft the busywork nobody chose. They work with your own accounts. You approve everything.</p>
 
 <div class="hz-actions" markdown>
 [Install Heinzelmännchen ↗](guides/install.md){ .hz-button }
@@ -23,7 +23,7 @@ hide:
 
 </div>
 <div class="hz-hero-art">
-<picture><source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg"><img src="assets/hero-light.svg" alt="A small crowd of Heinzelmännchen helpers walking together" width="1000" height="360"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg"><img src="assets/hero-light.svg" alt="A small crowd of Heinzels walking together" width="1000" height="360"></picture>
 <div class="hz-art-note"><span class="hz-dot"></span> A crew, not a console.</div>
 </div>
 </div>
@@ -41,7 +41,7 @@ hide:
 <p class="hz-trust-note">The gate checks new code; the security rating covers all analyzed core code.</p>
 </section>
 
-<div class="hz-strip"><span>You keep the decisions.</span><span>Helpers do the drafting.</span><span>Your accounts, your machine.</span></div>
+<div class="hz-strip"><span>You keep the decisions.</span><span>Heinzels do the drafting.</span><span>Your accounts, your machine.</span></div>
 
 <section class="hz-section" markdown>
 <p class="hz-eyebrow">One foundation. Many ways in.</p>
@@ -54,7 +54,7 @@ hide:
 
 ### See the work, together.
 
-Each helper shows what it is doing, in words and with a face. When it waits for you, it says so.
+Each Heinzel shows what it is doing, in words and with a face. When it waits for you, it says so.
 
 [Take your first steps →](guides/first-steps.md)
 </div>
@@ -80,11 +80,11 @@ Plugins add operations, views and notifications. Themes add colors, art and soun
 </section>
 
 <section class="hz-section" markdown>
-<p class="hz-eyebrow">Meet your next few helpers</p>
+<p class="hz-eyebrow">Meet your next few Heinzels</p>
 
 ## Small jobs. A little time back.
 
-Imagined helpers. Real screens, made-up data. Select an image to zoom.
+Imagined Heinzels. Real screens, made-up data. Select an image to zoom.
 
 <!-- hz:home-gallery -->
 
@@ -107,9 +107,9 @@ Every entry shows its source, compatibility and exact revision.
 <section class="hz-section hz-manifesto" markdown>
 <p class="hz-eyebrow">The direction is human</p>
 
-## Let helpers do the drafting.<br>Let people make the decisions.
+## Let Heinzels do the drafting.<br>Let people make the decisions.
 
-The goal: a crew of durable helpers that take over any busywork you can automate, while people approve. Today you get the foundation: kernel, CLI, web, MCP and REST, local drafts on a schedule, and plugins. Helpers working together across a team are not built yet.
+The goal: a crew of durable Heinzels that take over any busywork you can automate, while people approve. Today you get the foundation: kernel, CLI, web, MCP and REST, local drafts on a schedule, and plugins. Heinzels working together across a team are not built yet.
 
 [Read the vision →](VISION.md) · [Inspect the decisions →](adr/README.md)
 </section>

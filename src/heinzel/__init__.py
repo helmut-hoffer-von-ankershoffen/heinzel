@@ -1,4 +1,4 @@
-"""Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork.
+"""Heinzelmännchen is an open-source crew of Heinzels that drafts your team's busywork.
 
 It asks before anything leaves your machine.
 

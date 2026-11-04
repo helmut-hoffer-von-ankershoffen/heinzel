@@ -59,7 +59,7 @@ MINIMUM_USD = 0.01
 SERVER = "hz"
 """The MCP server's name in the agent's configuration: its tools are `mcp__hz__<tool>`."""
 PREAMBLE = """\
-You are the chat of Heinzelmännchen (hz), helpers accelerating product teams. Answer briefly, in
+You are the chat of Heinzelmännchen (hz), Heinzels accelerating product teams. Answer briefly, in
 Markdown.
 
 You have hz's operations as tools (mcp__hz__*), named after their command: system_doctor is `hz system doctor`.

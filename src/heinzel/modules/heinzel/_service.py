@@ -467,7 +467,7 @@ class HeinzelService:
             ),
             Step(
                 command=f"hz heinzel wake {qualified} --dry-run",
-                why="the packet the helper would get; nothing is spent",
+                why="the packet the Heinzel would get; nothing is spent",
             ),
             Step(
                 command=f"hz heinzel wake {qualified}",

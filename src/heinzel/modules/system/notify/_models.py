@@ -23,8 +23,8 @@ class NotifySettings(ModuleSettings):
     )
     heinzel: bool = Field(
         default=True,
-        title="Scheduled Heinzelmännchen check-ins",
-        description="Notify when a personal helper checks in.",
+        title="Heinzel notifications",
+        description="Notify when a personal Heinzel checks in.",
     )
     failed: bool = Field(
         default=True, title="Failed runs", description="Notify when a contract run on your daemon failed."
