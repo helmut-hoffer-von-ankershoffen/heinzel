@@ -4,11 +4,12 @@ date: 2026-11-04
 implementation: built
 decision-makers: maintainer
 amends: 0098
+amends-0098: Runtime previews reuse the public metadata contract
 related: 0047, 0094
 implemented-by: 319
 ---
 
-# 0120: Plugin previews read public inert metadata
+# 0123: Plugin previews read public inert metadata
 
 ## Context and Problem Statement
 

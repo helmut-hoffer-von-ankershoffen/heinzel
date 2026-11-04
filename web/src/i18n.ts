@@ -669,6 +669,7 @@ const en = {
   "plugins.chooseScreenshot": "Choose a screenshot",
   "plugins.privateGallery": "Private-source previews remain in their owning repository.",
   "plugins.unknownGallery": "This installation has no public GitHub source to preview. Open its owning repository.",
+  "plugins.mediaOpenFailed": "The link could not be opened. Copy its address and open it in your browser.",
   "plugins.youtubeOnClick": "YouTube opens only when you choose a soundscape link.",
   "plugins.noScreenshots": "This plugin has not published screenshots yet.",
   "plugins.soundscapes": "Soundscapes",

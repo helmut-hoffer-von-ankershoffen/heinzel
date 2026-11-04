@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
@@ -1013,4 +1013,34 @@ it("never resolves an unknown installed source through another same-name catalog
   expect(screen.getByText(/no public GitHub source to preview/)).toBeInTheDocument();
   expect(calls).toHaveLength(0);
   expect(screen.queryByRole("img")).not.toBeInTheDocument();
+});
+
+it("keeps partial discovery warnings visible while useful screenshots remain available", async () => {
+  const notice = "Soundscape links could not be listed right now.";
+  serve(() => ({ body: { ...GALLERY, notice, soundscapes: [] } }));
+  const user = userEvent.setup();
+  render(
+    <Providers client={queryClient()}>
+      <PluginGallery spec="harbor" name="Harbor" />
+    </Providers>,
+  );
+  await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
+  expect(await screen.findByRole("img", { name: "Harbor in the app" })).toBeInTheDocument();
+  expect(screen.getByText(notice)).toBeInTheDocument();
+});
+
+it("reports a native media handoff failure beside its functional browser link", async () => {
+  serve(() => ({ body: GALLERY }));
+  const user = userEvent.setup();
+  render(
+    <Providers client={queryClient()}>
+      <PluginGallery spec="harbor" name="Harbor" />
+    </Providers>,
+  );
+  await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
+  const link = await screen.findByRole("link", { name: "Open full size: Harbor in the app" });
+  expect(link).toHaveAttribute("data-hz-public-media");
+  fireEvent(link, new CustomEvent("hz-public-media-result", { detail: false }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Copy its address");
+  expect(link).toHaveAttribute("href", GALLERY.screenshots[0]?.url);
 });

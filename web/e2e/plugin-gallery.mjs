@@ -42,7 +42,7 @@ export async function contributeGallery(page) {
       json: {
         title: "Harbor",
         revision,
-        notice: "Fictional owner fixture.",
+        notice: "Screenshots remain available. Soundscape discovery is incomplete in this fixture.",
         screenshots: [
           { surface: "ui", caption: "Harbor UI preview", url: `${imageBase}ui.png` },
           { surface: "cli", caption: "Harbor CLI preview", url: `${imageBase}cli.png` },
@@ -85,6 +85,12 @@ export async function exercisePluginGallery(page, requests, shots, name) {
   await page.keyboard.press("Enter");
   const selected = gallery.getByRole("img", { name: "Harbor CLI preview", exact: true });
   await selected.evaluate((element) => element.decode());
+  assert.equal(
+    await gallery
+      .getByText("Screenshots remain available. Soundscape discovery is incomplete in this fixture.", { exact: true })
+      .count(),
+    1,
+  );
   assert.equal(await cli.getAttribute("aria-pressed"), "true");
   assert.equal(
     await gallery.getByRole("link", { name: "Open full size: Harbor CLI preview" }).getAttribute("href"),

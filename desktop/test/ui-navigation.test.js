@@ -44,6 +44,7 @@ test("the actual navigation handlers block cross-origin main-frame redirects and
   contents.emit("will-redirect", event("https://example.com/embed", false));
   assert.equal(blocked, 2);
   assert.deepEqual(open({ url: "https://example.com/" }), { action: "deny" });
+  assert.deepEqual(open({ url: "https://www.youtube.com/watch?v=abcdefghijk" }), { action: "deny" });
 });
 
 test("quit while lifecycle authentication is pending never constructs a window", async () => {

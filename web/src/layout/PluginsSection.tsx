@@ -31,6 +31,7 @@ import {
   usePlugins,
 } from "@/api/queries";
 import { Loaded } from "@/components/common";
+import { PublicMediaLink } from "@/components/public-media-link";
 import { Button } from "@/components/ui/button";
 import { CodeInput } from "@/components/ui/code-input";
 import { SearchField } from "@/components/ui/search-field";
@@ -1031,19 +1032,14 @@ function GalleryContents({ spec }: { spec: string }) {
             {shot ? (
               <>
                 <figure className="min-w-0">
-                  <a
-                    href={shot.url}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    aria-label={t("plugins.fullSizeFor", { caption: shot.caption })}
-                  >
+                  <PublicMediaLink href={shot.url} label={t("plugins.fullSizeFor", { caption: shot.caption })}>
                     <img
                       src={shot.url}
                       alt={shot.caption}
                       referrerPolicy="no-referrer"
                       className="max-h-96 w-full rounded-md border border-border object-contain"
                     />
-                  </a>
+                  </PublicMediaLink>
                   <figcaption className="mt-2 break-words text-sm text-muted-foreground">
                     <span className="mr-2 font-medium">{shot.surface.toUpperCase()}</span>
                     {shot.caption}
@@ -1076,8 +1072,9 @@ function GalleryContents({ spec }: { spec: string }) {
                 </fieldset>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">{gallery.notice || t("plugins.noScreenshots")}</p>
+              <p className="text-sm text-muted-foreground">{t("plugins.noScreenshots")}</p>
             )}
+            {gallery.notice && <p className="text-sm text-muted-foreground">{gallery.notice}</p>}
             {(gallery.soundscapes?.length ?? 0) > 0 && (
               <div>
                 <h4 className="text-sm font-medium">{t("plugins.soundscapes")}</h4>
@@ -1085,15 +1082,13 @@ function GalleryContents({ spec }: { spec: string }) {
                 <ul className="space-y-1">
                   {gallery.soundscapes?.map((sound) => (
                     <li key={sound.url}>
-                      <a
+                      <PublicMediaLink
                         href={sound.url}
-                        target="_blank"
-                        rel="noreferrer noopener"
                         className="inline-flex min-h-11 items-center gap-2 break-words text-sm underline underline-offset-4"
                       >
                         {sound.title} · {t("plugins.watchSoundscape")}
                         <ExternalLink aria-hidden className="size-3 shrink-0" />
-                      </a>
+                      </PublicMediaLink>
                     </li>
                   ))}
                 </ul>
