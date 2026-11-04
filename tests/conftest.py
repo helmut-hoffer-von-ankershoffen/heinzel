@@ -119,10 +119,14 @@ def _complete_e2e_inventory(config: pytest.Config) -> tuple[str, ...]:
     assert not config.getoption("ignore_glob"), "E2E inventory requires collection without --ignore-glob"
     assert not config.getoption("pyargs"), "E2E inventory requires directory-based collection"
     assert not config.getoption("deselect"), "E2E inventory requires collection without --deselect"
+    assert not config.getoption("lf"), "E2E inventory requires collection without --lf"
+    assert not config.getoption("doctestmodules"), "E2E inventory requires normal non-doctest collection"
     expected = {path.resolve() for path in root.rglob("*.py") if path.match("test_*.py") or path.match("*_test.py")}
     assert config.getini("python_files") == ["test_*.py", "*_test.py"], (
         "E2E inventory requires the normal file patterns"
     )
+    assert config.getini("python_functions") == ["test"], "E2E inventory requires normal function patterns"
+    assert config.getini("python_classes") == ["Test"], "E2E inventory requires normal class patterns"
     assert expected, "E2E inventory requires test files"
     assert config.stash.get(_E2E_FILES, set()) == expected, "E2E inventory file collection is incomplete"
     nodes = config.stash.get(_E2E_NODES, ())
