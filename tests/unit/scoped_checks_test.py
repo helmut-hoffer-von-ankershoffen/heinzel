@@ -1,4 +1,6 @@
 import importlib.util
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -169,3 +171,111 @@ def test_the_pre_push_hook_keeps_the_confidentiality_and_commit_checks():
     assert "id: confidentiality-branch" in config
     assert "id: check-fast" in config
     assert "scoped_checks.py push" in config
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("docs/guides/install.md", {"guides"}),
+        ("docs/guides/install.md.bak", set()),
+        ("docs/ARCHITECTURE.md", set()),
+        ("web/src/main.tsx", set()),
+        ("plugins/example/module.py", set()),
+        ("tests/fixtures/example.py", {"standards"}),
+        ("template/tests/conftest.py", {"standards"}),
+        ("src/heinzel/modules/system/__init__.py", {"standards", "guides"}),
+        (".github/workflows/ci.yml", {"browser_runtime_setup", "ci_supervised", "ci", "e2e_lane_partition"}),
+        ("Makefile", {"browser_runtime_setup", "ci_supervised", "ci", "e2e_lane_partition"}),
+        ("tests/e2e/new_test.py", {"standards", "browser_runtime_setup", "ci_supervised", "ci", "e2e_lane_partition"}),
+    ],
+)
+def test_early_guards_select_only_owning_inputs(path, expected):
+    commands = scoped.early_guard_commands([path])
+    actual = {
+        Path(argument.split("::")[0]).stem.removesuffix("_test")
+        for command in commands
+        for argument in command
+        if argument.startswith("tests/") and (argument.endswith(".py") or "::" in argument)
+    }
+    assert actual == expected
+    for command in commands:
+        if "tests/e2e" in command:
+            assert command[command.index("-m") + 1] == "integration"
+            assert "tests/integration/e2e_lane_partition_test.py" in command
+
+
+@pytest.mark.parametrize("path", ["tests/fixtures/example.py", "docs/guides/install.md", ".github/workflows/ci.yml"])
+def test_push_stops_at_failing_existing_guard_before_any_full_or_scoped_commands(monkeypatch, path):
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: [path])
+    calls = []
+
+    def fail(command, **kwargs):
+        calls.append(command)
+        assert kwargs["check"] is True
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(scoped.subprocess, "run", fail)
+    with pytest.raises(subprocess.CalledProcessError):
+        scoped.main()
+    assert calls == scoped.early_guard_commands([path])[:1]
+
+
+@pytest.mark.parametrize("target", ["check-fast", "preflight"])
+def test_direct_make_stops_before_web_preparation_or_full_checks_when_early_guard_fails(tmp_path, target):
+    """Execute the real Make recipe with a failing guard runner; no product command can run."""
+    executable = tmp_path / "uv"
+    record = tmp_path / "commands"
+    executable.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$EARLY_GUARD_RECORD"\nexit 23\n')
+    executable.chmod(0o700)
+    result = subprocess.run(
+        ["make", "--no-print-directory", target],
+        cwd=REPO,
+        env={**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"], "EARLY_GUARD_RECORD": str(record)},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode != 0
+    commands = record.read_text().splitlines()
+    assert len(commands) == 1
+    assert "scripts/scoped_checks.py early-" in commands[0]
+    assert ("early-preflight --base" in commands[0]) is (target == "preflight")
+
+
+def test_core_early_guards_are_not_copied_into_the_plugin_template():
+    spec = importlib.util.spec_from_file_location("sync_template_early", REPO / "scripts/sync_template.py")
+    assert spec
+    assert spec.loader
+    sync = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sync)
+    assert "scoped_checks.py early-" not in sync.makefile()
+
+
+@pytest.mark.parametrize("mode", ["early-fast", "early-preflight"])
+def test_direct_make_guards_include_branch_and_uncommitted_inputs(monkeypatch, mode):
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", mode, "--base", "HEAD~1"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda base: "a" * 40 if base == "HEAD~1" else None)
+    calls = []
+
+    def changed(mode, base):
+        assert base == "a" * 40
+        return ["docs/guides/install.md"] if mode == "preflight" else ["tests/fixtures/example.py"]
+
+    monkeypatch.setattr(scoped, "changed_paths", changed)
+    monkeypatch.setattr(scoped, "run_early_guards", calls.append)
+    scoped.main()
+    assert calls == [["docs/guides/install.md", "tests/fixtures/example.py"]]
+
+
+def test_early_ci_guards_use_whole_owning_files_so_test_renames_do_not_break_preflight():
+    command, partition = scoped.early_guard_commands([".github/workflows/ci.yml"])
+    assert {argument for argument in command if argument.startswith("tests/")} == {
+        "tests/unit/browser_runtime_setup_test.py",
+        "tests/unit/ci_supervised_test.py",
+        "tests/unit/ci_test.py",
+    }
+    assert "tests/e2e" in partition
+    assert partition[partition.index("-m") + 1] == "integration"

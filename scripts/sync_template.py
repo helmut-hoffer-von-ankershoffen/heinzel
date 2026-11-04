@@ -34,6 +34,9 @@ def makefile() -> str:
     text = (
         (ROOT / "Makefile")
         .read_text(encoding="utf-8")
+        # Core-only guards read core standards, CLI guides and E2E lane inventory.
+        .replace("\t@uv run --quiet --script scripts/scoped_checks.py early-fast\n", "")
+        .replace('\t@uv run --quiet --script scripts/scoped_checks.py early-preflight --base "$(BASE)"\n', "")
         .replace("\tuv run --quiet --script scripts/build.py prepare\n", "")
         .replace("uv run --quiet --script scripts/build.py sync", "uv sync --frozen --all-groups --quiet")
         .replace("uv run --quiet --script scripts/build.py", "uv build")

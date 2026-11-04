@@ -86,6 +86,7 @@ FAST_TYPES ?=
 UNIT_TARGETS ?=
 # Unit tests take every core and have a 5 s budget each; Vitest beside them starved them into timeouts, so it runs after.
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts, generated files, unit tests
+	@uv run --quiet --script scripts/scoped_checks.py early-fast
 	@$(WEB) prepare
 	$(STEPS) \
 		"format=uv run ruff format --check ." \
@@ -100,6 +101,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"unit=uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS)) $(MANAGED_CHECK)
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
+	@uv run --quiet --script scripts/scoped_checks.py early-preflight --base "$(BASE)"
 	@$(WEB) prepare
 	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(WEB_TESTS) \
 		"&tests=$(COVERED) -x && uv run coverage combine --quiet && uv run coverage report --format=total --fail-under=90" \
