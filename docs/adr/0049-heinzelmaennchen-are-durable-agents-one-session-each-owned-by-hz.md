@@ -418,7 +418,7 @@ Not yet: proposed. When implemented:
 
 - `tests/unit/kernel/session_store_test.py`: append with fsync and chain, a truncated or edited line detected and
   contained, unknown kinds skipped, the index rebuilt from spines equal to a direct scan, 500 spines listed in under
-  50 ms, a process killed mid-append leaving a readable chain (`tests/integration/session_store_test.py`).
+  one second (owner-adjusted performance target, 2026-11-04), a process killed mid-append leaving a readable chain (`tests/integration/session_store_test.py`).
 - Turns: every cause's key, resume at each checkpoint with no second spend or
   second `place_draft`, `abandoned` never resumed, caps per turn, per day and per user, `max_wakes_per_tick`, one fetch
   per source per tick (per input at its recheck, from the source cache, statement 20), the context
