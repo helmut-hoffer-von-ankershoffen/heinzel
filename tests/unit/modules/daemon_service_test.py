@@ -1202,6 +1202,9 @@ def test_handover_observes_only_fresh_manager_tick_and_actual_contributions(make
     assert service.status().version_mismatch
     service._continuity_fingerprint = lambda: "a" * 64
     assert not service.status().version_mismatch
+    service.install(FIVE_MINUTES)
+    assert not (service.state_dir / "handover-request.json").exists()
+    assert not service.status().version_mismatch
     service._boot_identity = lambda: "another-boot"
     assert service.handover_observation(result.request_id) is None
 
