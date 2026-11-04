@@ -22,3 +22,6 @@ purpose and ADR; read it before editing.
 - A module owns its session event vocabulary and projection; the kernel stores envelopes (`_session*.py`, ADR 0049).
 - Declare `requires=` on modules, operations and jobs; mark a read-only operation `optional=True` if it degrades
   without its requirements (`_module.py`).
+
+- External tool prerequisites are declared with `module.prerequisite`, implemented by `system.prerequisite` and
+  consumed by install, setup, doctor and plugin pages (`_prerequisites.py`, ADR 0112).

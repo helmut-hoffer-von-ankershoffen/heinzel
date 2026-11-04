@@ -575,6 +575,7 @@ def test_commands_are_sorted(app):
         "modules",
         "notify",
         "plugin",
+        "prerequisite",
         "release",
         "runner",
         "serve",
