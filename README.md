@@ -246,6 +246,10 @@ that says what it may cost before it runs. Modules can also advertise jobs that
 `hz system daemon install` runs in the background on a schedule, under launchd or systemd, with your
 rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)).
 
+In **Settings → This computer → Web server**, choose **Restart web server** and confirm to restart the server
+connected to that window, keeping its profile and address. The page keeps your open work and reconnects automatically;
+it confirms success only after a replacement server answers. An unfinished installation change must complete or recover first.
+
 `hz ui` shows its command help. Use `hz ui serve` to run the web server in the foreground; **Ctrl-C** stops it.
 `hz ui open` opens the owned installed web service, or runs in the foreground when none is installed.
 
