@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -57,6 +58,9 @@ def copy_module(record):
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    # This unit harness imports the copied script rather than launching its recorded interpreter.
+    # Model that runtime identity locally, as the separate root-owned-system-Python cases already do.
+    module.sys = SimpleNamespace(executable=record.value["python"])
     return module
 
 
@@ -429,3 +433,24 @@ def test_completed_journal_with_matching_gate_cannot_replay_a_present_sdk(journa
     assert tool.prefix.is_dir()
     assert unit.is_file()
     assert record.gate.read_text() == record.gate_content
+
+
+@pytest.mark.parametrize("change", ["runtime-identity", "interpreter-content"])
+def test_copied_recovery_keeps_exact_owned_interpreter_checks(journal, tmp_path, monkeypatch, change):
+    record, _tool, _unit = journal
+    module = copy_module(record)
+    if change == "runtime-identity":
+        other = tmp_path / "another-python"
+        other.write_bytes(b"different owned interpreter")
+        other.chmod(0o700)
+        monkeypatch.setattr(module, "sys", SimpleNamespace(executable=str(other)))
+    else:
+        Path(record.value["python"]).write_bytes(b"interpreter changed after capture")
+    monkeypatch.setattr(
+        module, "managers_absent", lambda *_args: pytest.fail("Interpreter refusal precedes manager effects")
+    )
+    monkeypatch.setattr(
+        module.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("Interpreter refusal precedes uv")
+    )
+    with pytest.raises(ValueError, match="original recovery interpreter changed"):
+        module.recover(record.directory, module.EXPECTED_AUTHORITY)
