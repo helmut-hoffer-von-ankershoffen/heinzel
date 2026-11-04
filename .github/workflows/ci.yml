@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: false
       - id: batch
@@ -205,7 +205,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - name: Commit messages, pull request title and branch (conventional, no confidential terms)
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
@@ -226,7 +226,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -257,7 +257,7 @@ jobs:
         with:
           fetch-depth: 0 # every commit, not just the tip
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - name: Scan the history for credentials (gitleaks pinned in scripts/tools.toml, checksum verified)
         run: make secrets
 
@@ -267,19 +267,19 @@ jobs:
     name: make setup (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.core == 'true'
-    # What a contributor runs on a fresh machine, on each platform scripts/tools.toml pins: `make setup` installs
+    # What a contributor runs on Linux architectures and Apple-silicon macOS: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }} # stop waiting for other setup cells on a red PR
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' && '["ubuntu-24.04","ubuntu-24.04-arm"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-latest","macos-15-intel"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' && '["ubuntu-24.04","ubuntu-24.04-arm"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -302,7 +302,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -331,7 +331,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -374,7 +374,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -414,7 +414,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -435,7 +435,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -453,20 +453,20 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
-        # Three jobs per OS: the tool-install and CLI tests, and the browser tests in two halves so none competes for or outlasts 3 vCPUs
-        suite: [cli, web-1, web-2]
+        # Core E2E lanes: supervised cold starts, tool-install/CLI, and two browser halves; every lane blocks CI OK.
+        suite: [cli, supervised, web-1, web-2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # the install-from-git tests clone this repository
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
       - name: Reuse the browsers this lockfile's Playwright installs
-        if: startsWith(matrix.suite, 'web')
+        if: matrix.suite == 'supervised' || startsWith(matrix.suite, 'web')
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -474,7 +474,7 @@ jobs:
             ~/Library/Caches/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
       - name: Install browser runtimes and host dependencies
-        if: startsWith(matrix.suite, 'web')
+        if: matrix.suite == 'supervised' || startsWith(matrix.suite, 'web')
         run: make test-browser-deps
       # Keep the full pytest traceback in CI logs when a browser interaction flakes; the step wrapper's default tail
       # can otherwise hide the test name and the action that timed out.
@@ -497,7 +497,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -516,7 +516,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - run: make notifier
       - name: Real launches leave no process behind (ADR 0043)
         run: make test-notifier
@@ -539,7 +539,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -571,7 +571,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -605,6 +605,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Require Apple silicon for macOS CI
+        if: runner.os == 'macOS'
+        run: make ci-macos-arm
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.19.0
@@ -642,7 +645,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - if: needs.notifier.result == 'success' || needs.macos-smoke.result == 'success'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -677,7 +680,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - name: Build core artifacts for isolated consumer checks
         run: make build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -707,7 +710,7 @@ jobs:
           ref: ${{ vars.PLUGIN_COMPAT_REF || 'main' }}
           path: .plugin-tooling
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - id: plan
         env:
           BASE: ${{ needs.changes.outputs.batch_base || github.event.pull_request.base.sha || github.event.before }}
@@ -748,7 +751,7 @@ jobs:
         with:
           name: plugin-core
           path: candidate
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - id: core
         env:
           CORE_URL: ${{ vars.CORE_ARTIFACT }}
@@ -795,7 +798,14 @@ jobs:
         with:
           name: plugin-core
           path: candidate
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Check out this exact core revision's bootstrap action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .core-bootstrap
+          sparse-checkout: .github/actions/setup-uv
+          persist-credentials: false
+      - uses: ./.core-bootstrap/.github/actions/setup-uv
       - id: plan
         run: |
           make plan CONTRACT=core:plugin-api@1 CORE="$(realpath candidate/*.whl)" > plan.json
@@ -825,7 +835,14 @@ jobs:
         with:
           name: plugin-core
           path: candidate
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Check out this exact core revision's bootstrap action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .core-bootstrap
+          sparse-checkout: .github/actions/setup-uv
+          persist-credentials: false
+      - uses: ./.core-bootstrap/.github/actions/setup-uv
       - name: Test one consumer against the built public contract
         env:
           PLUGIN: ${{ matrix.name }}

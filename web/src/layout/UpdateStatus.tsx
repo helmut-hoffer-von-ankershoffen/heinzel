@@ -5,6 +5,7 @@ import { FooterItem } from "@/components/FooterItem";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
+import { useAutoUpdateStatus } from "@/updates/autoUpdateApi";
 import { finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
 
 /** Inspect the pane first; its update button uses the existing installer and verified lifecycle. */
@@ -15,6 +16,7 @@ export function UpdateStatus() {
     refetchInterval: 60_000,
     retry: false,
   });
+  const plan = useAutoUpdateStatus().data;
   const active = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const [busy, setBusy] = useState(false);
@@ -75,31 +77,33 @@ export function UpdateStatus() {
     };
   }, [run]);
   const status = query.data;
-  const available = status?.available === true;
-  const checked = status?.latest != null;
+  // The auto-update plan is age-filtered and can retain failed checks. These are known updates,
+  // never an exhaustive claim that every installed plugin has been checked or is current.
+  const core = status?.available ? status.latest : plan?.core;
+  const updates = [
+    ...(core ? [`hz ${core}`] : []),
+    ...Object.entries(plan?.plugins ?? {}).map(([name, version]) => `${name} ${version}`),
+  ];
+  const available = updates.length > 0;
   const installed = status?.installed_at ? new Date(status.installed_at) : null;
   const installedDate =
     installed && !Number.isNaN(installed.getTime())
       ? installed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
       : null;
-  // Plugins release independently: a current core must still allow an explicit plugin refresh.
   const canUpdate = status?.supported && !busy && !recovery;
-  const current = checked && status?.supported === true;
-  const label = available ? t("updates.availableLabel") : current ? t("updates.currentLabel") : t("updates.title");
-  const summary =
-    phase ??
-    message ??
-    (available ? t("updates.available", { version: status?.latest ?? "" }) : !checked ? t("updates.unknown") : null);
+  const label = available ? t("updates.availableLabel") : t("updates.title");
+  const summary = phase ?? message ?? (available ? null : t("updates.unknown"));
   return (
     <FooterItem
       label={label}
-      state={problem ? "bad" : available ? "warn" : current ? "ok" : "off"}
+      state={problem ? "bad" : available ? "warn" : "off"}
       icon={busy ? LoaderCircle : Download}
-      className={available && !problem ? "animate-pulse text-bad" : current && !problem ? "text-ok" : undefined}
+      className={available && !problem ? "animate-pulse text-bad" : undefined}
       disabled={busy}
     >
       <div className="space-y-2 px-1.5 pb-1.5">
         {summary && <p role="status">{summary}</p>}
+        {available && <p>{t("updates.known", { updates: updates.join(", ") })}</p>}
         {status && <p>{t("updates.installedVersion", { version: status.current })}</p>}
         {status && (
           <p className="text-xs text-muted-foreground">
@@ -107,11 +111,6 @@ export function UpdateStatus() {
           </p>
         )}
         {status?.reason && <p className="text-xs text-muted-foreground">{status.reason}</p>}
-        {canUpdate && (
-          <Button size="sm" variant="outline" onClick={() => void run(false)}>
-            {t("updates.action")}
-          </Button>
-        )}
         {problem && (
           <p role="alert" className="text-bad">
             {problem}
@@ -121,6 +120,12 @@ export function UpdateStatus() {
         {recovery && (
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(true)}>
             {t("updates.verify")}
+          </Button>
+        )}
+        {/* The primary action stays at the bottom when late automatic-update facts grow this above-anchored pane. */}
+        {canUpdate && (
+          <Button size="sm" variant="outline" onClick={() => void run(false)}>
+            {available ? t("updates.action") : t("updates.manualAction")}
           </Button>
         )}
       </div>

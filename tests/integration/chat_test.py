@@ -1469,7 +1469,9 @@ def test_a_bug_in_a_streamed_operation_ends_the_stream_with_an_error(make_kernel
         raise RuntimeError(msg)
 
     body = web_client(make_kernel(builtins=True, buggy=module), tmp_path).post("/api/stream/buggy/crash", headers=AUTH)
-    assert stream_events(body.text) == [("error", {"error": "crash failed with a bug; the log of `hz ui` says why."})]
+    assert stream_events(body.text) == [
+        ("error", {"error": "crash failed with a bug; the log of `hz ui serve` says why."})
+    ]
 
 
 def test_a_quiet_long_operation_stream_sends_keepalives(make_kernel, tmp_path, monkeypatch):

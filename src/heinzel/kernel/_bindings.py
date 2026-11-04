@@ -195,6 +195,12 @@ class Requester:
     """For a module that only provides adapters, the (capability, adapter) pairs it provides: its requirements are
     needed only while one of them serves someone."""
 
+    health_on_demand: bool = False
+    """Health-only metadata; never relaxes the requester's execution authority."""
+
+    inspects: tuple[Requirement, ...] = ()
+    """Separate inventory authority, consulted only by adapter enumeration, never bound handle injection."""
+
     @property
     def label(self) -> str:
         """How messages and the matrix name it: `digest` for the module, `digest weekly` for an operation or job."""
@@ -239,6 +245,8 @@ class CapabilityUse:
     """Why the requirement is unmet; None when it is met."""
     optional: bool = False
     """Whether the requester does without it when it is unmet, so that is no doctor finding."""
+    health_on_demand: bool = False
+    """Whether this own unpinned requirement permits health-only explicit deferral."""
 
 
 class Adapters[P](Mapping[str, P]):
@@ -404,6 +412,9 @@ class Capabilities:
                     hosts=self.hosts_of(adapter)[0] if adapter else (),
                     problem=problem,
                     optional=requester.optional,
+                    health_on_demand=(
+                        requester.health_on_demand and requirement in requester.requires and requirement.adapter is None
+                    ),
                 )
                 rows.append((requester, use))
         idle = _idle(rows)
@@ -560,6 +571,9 @@ class Capabilities:
             msg = f"{name} asks for every adapter of {capability.name}, but only a registered module's functions can."
             raise HeinzelError(msg)
         requirement, _ = requester.grant(capability.name)
+        inspection = requirement is None
+        if inspection:
+            requirement = next((r for r in requester.inspects if r.capability == capability.name), None)
         modes = (requirement.modes if requirement else frozenset[Mode]()) - {"write"}
         if requirement is None or not modes:
             msg = (
@@ -573,21 +587,26 @@ class Capabilities:
             if adapter is None or problem is not None:
                 continue
             instance = partial(self._instance, adapter, capability)
-            handles[name] = self._handle(requester, capability, requirement, modes, instance)
+            handles[name] = self._handle(requester, capability, requirement, modes, instance, inspection=inspection)
         return Adapters(handles)
 
     @staticmethod
-    def _handle(
+    def _handle(  # noqa: PLR0913 - explicit inspection restriction in addition to existing mode authority
         requester: Requester,
         capability: Capability,
         requirement: Requirement,
         modes: frozenset[Mode],
         instance: Callable[[], object],
+        *,
+        inspection: bool = False,
     ) -> "_Handle":
         """A handle with the methods of `modes`; every other method raises why `requester` can't call it."""
         allowed: dict[str, Callable[..., Any]] = {}
         denied: dict[str, str] = {}
         for name, mode in capability.methods.items():
+            if inspection and (name not in capability.inspection_methods or mode != "read"):
+                denied[name] = f"{requester.label} may only inspect {capability.name}; {name} needs an operation grant."
+                continue
             if mode in modes:
                 allowed[name] = _wrap(instance, capability, name)
                 continue

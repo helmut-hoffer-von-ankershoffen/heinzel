@@ -17,7 +17,6 @@ from heinzel.heads._presence import mark_presence
 from heinzel.heads.cli import _playful
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, show, to_json
-from heinzel.heads.cli._setup import ConsolePrompter, has_terminal
 from heinzel.kernel import CurrentUser, HeinzelError, Kernel, OperationLet, Prompter
 
 FORMAT_PARAMETER = "output_format"
@@ -29,6 +28,13 @@ class Format(StrEnum):
 
     TEXT = "text"
     JSON = "json"
+
+
+def has_terminal() -> bool:
+    """Check terminal availability on demand while retaining the command's existing prompt boundary."""
+    from heinzel.heads.cli._setup import has_terminal as terminal_available  # noqa: PLC0415 - only when executing a command
+
+    return terminal_available()
 
 
 def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prologue and epilogue
@@ -75,6 +81,8 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
     )
 
     def run(**kwargs: Any) -> None:  # noqa: ANN401 - forwarded to the operation
+        from heinzel.heads.cli._setup import ConsolePrompter  # noqa: PLC0415 - prompts only run with a command
+
         chosen = kwargs.pop(FORMAT_PARAMETER)
         as_json = kwargs.pop(JSON_PARAMETER) or (chosen or Format(kernel.settings.output_format)) is Format.JSON
         progress.enabled = not as_json

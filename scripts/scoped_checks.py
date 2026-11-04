@@ -201,20 +201,104 @@ def python_overrides(changed: list[str]) -> list[str]:
     return [*overrides, f"UNIT_TARGETS={' '.join(related)}"]
 
 
+def early_guard_commands(changed: list[str]) -> list[list[str]]:
+    """Existing owning assertions, before preparation; none replace a full-gate step.
+
+    The partition guard collects E2E inventory but selects only integration bodies. Guides parse the CLI tree
+    without invoking documented commands. These checks never start product services or access accounts.
+    """
+    if changed and all(path.startswith("plugins/") for path in changed):
+        return []
+    fixture = any(
+        path.startswith(("tests/", "template/")) or path.endswith((".py", ".sh", ".jinja")) for path in changed
+    )
+    guides = any(
+        (path.startswith("docs/guides/") and path.endswith(".md"))
+        or path == "tests/integration/guides_test.py"
+        or (
+            path.startswith(("src/heinzel/heads/cli/", "src/heinzel/modules/", "src/heinzel/kernel/"))
+            and path.endswith(".py")
+        )
+        for path in changed
+    )
+    ci = any(
+        path
+        in {
+            "Makefile",
+            "pyproject.toml",
+            "uv.lock",
+            "tests/_e2e_lanes.py",
+            "tests/conftest.py",
+            "scripts/scoped_checks.py",
+        }
+        or path.startswith((".github/workflows/", ".github/actions/", "tests/e2e/"))
+        or path
+        in {
+            "tests/unit/browser_runtime_setup_test.py",
+            "tests/unit/ci_test.py",
+            "tests/unit/ci_supervised_test.py",
+            "tests/unit/web_build_test.py",
+            "tests/integration/e2e_lane_partition_test.py",
+        }
+        for path in changed
+    )
+    targets = []
+    if fixture:
+        targets.append("tests/unit/standards_test.py::test_tests_and_template_use_only_variables_something_reads")
+    if guides:
+        targets.append("tests/integration/guides_test.py")
+    if ci:
+        targets += ["tests/unit/browser_runtime_setup_test.py", "tests/unit/ci_supervised_test.py"]
+        targets += ["tests/unit/ci_test.py", "tests/unit/web_build_test.py"]
+    commands = [["uv", "run", "pytest", *targets, "-n", "2", "-x", "-q", "--session-timeout=120"]] if targets else []
+    if ci:
+        commands.append(
+            [
+                "uv",
+                "run",
+                "pytest",
+                "tests/integration/e2e_lane_partition_test.py",
+                "tests/e2e",
+                "-m",
+                "integration",
+                "-n",
+                "2",
+                "-x",
+                "-q",
+                "--session-timeout=120",
+            ]
+        )
+    return commands
+
+
+def run_early_guards(changed: list[str]) -> None:
+    """Fail before the caller can launch an expensive full-check command."""
+    for command in early_guard_commands(changed):
+        subprocess.run(command, check=True, timeout=180)  # noqa: S603 - fixed owning pytest commands
+
+
 def main() -> None:
     """Preserve core checks and common policies while selecting independent owning plugin work."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["fast", "preflight", "push"])
+    parser.add_argument("mode", choices=["fast", "preflight", "push", "early-fast", "early-preflight"])
     parser.add_argument("--base", default="origin/main")
     args = parser.parse_args()
+    early = args.mode.startswith("early-")
+    if early:
+        args.mode = args.mode.removeprefix("early-")
     try:
-        base = resolve_base(args.base) if args.mode in ("preflight", "push") else "HEAD"
+        base = resolve_base(args.base) if early or args.mode in ("preflight", "push") else "HEAD"
     except (ValueError, subprocess.CalledProcessError):
         parser.error("Use a valid commit revision for --base")
-    changed = changed_paths(args.mode, base)
+    changed = changed_paths("preflight" if early else args.mode, base)
+    if early:
+        changed = sorted({*changed, *changed_paths("fast", base)})
+        run_early_guards(changed)
+        return
     base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if args.mode == "push":
         changed = sorted({*changed, *changed_paths("fast", base)})
+        run_early_guards(changed)
         steps = scoped_steps(changed)
         if steps:
             command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]

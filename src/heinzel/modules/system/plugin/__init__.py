@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import CurrentUser, HeinzelError, Kernel, Module, Prompter
 from heinzel.kernel import DaemonInstallationLifecycle, Installation
@@ -20,8 +21,29 @@ from heinzel.modules.system.plugin._models import (
     PluginSettings,
     PluginShowcase,
 )
-from heinzel.modules.system.plugin._render import render_change, render_list, render_search
 from heinzel.modules.system.plugin._service import TEMPLATE, PluginService
+
+
+def render_change(change: PluginChange) -> RenderableType:
+    """For `add` without confirming: what would be installed and the command that confirms; otherwise what was done."""
+    from heinzel.modules.system.plugin._render import render_change  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_change(change)
+
+
+def render_list(plugins: list[PluginInfo]) -> RenderableType:
+    """A table of installed plugins: version, source, whether enabled, and what each brings."""
+    from heinzel.modules.system.plugin._render import render_list  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_list(plugins)
+
+
+def render_search(result: PluginSearch) -> RenderableType:
+    """A table of installable plugins, then any warnings and a reminder that plugins run with your rights."""
+    from heinzel.modules.system.plugin._render import render_search  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_search(result)
+
 
 module = Module("plugin", "Find, add, remove, enable, disable, list and scaffold plugins.")
 module.settings(PluginSettings)
@@ -113,7 +135,7 @@ def add(
 
     Without `confirm` it only reads PyPI or GitHub and answers what `requirement` would be installed, pinned to the
     release or commit it read; the answer includes a receipt that can confirm exactly that candidate once. Existing
-    callers may still confirm by spec. Running servers (`hz ui`, MCP) see the plugin after a restart
+    callers may still confirm by spec. Running servers (`hz ui serve`, MCP) see the plugin after a restart
     (`restart_required`).
     """
     change = service.add(spec, confirm=confirm, operation_id=operation_id)

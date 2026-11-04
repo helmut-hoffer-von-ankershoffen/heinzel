@@ -186,7 +186,7 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
 
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", "0"],
+        [sys.executable, "-m", "heinzel", "ui", "serve", "--port", "0"],
         cwd=REPO,
         env=env,
         stderr=subprocess.PIPE,
@@ -250,7 +250,7 @@ def _start_ui(env: dict[str, str], port: int) -> tuple[subprocess.Popen[str], st
     if env.get("HZ_REOPEN_RECEIPTS"):
         command = [sys.executable, str(REPO / "tests/e2e/_reopen_server.py")]
     ui = subprocess.Popen(
-        [*command, "ui", "--port", str(port), "--no-browser"],
+        [*command, "ui", "serve", "--port", str(port), "--no-browser"],
         cwd=REPO,
         env=env,
         stderr=subprocess.PIPE,
@@ -352,7 +352,7 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
         assert reopened["signedIn"] is True, reopened
         # An unpaired device is refused, and says so.
         revoked = subprocess.run(
-            [sys.executable, "-m", "heinzel", "ui", "--revoke", "all"],
+            [sys.executable, "-m", "heinzel", "ui", "serve", "--revoke", "all"],
             cwd=REPO,
             env=env,
             capture_output=True,
@@ -449,7 +449,7 @@ def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(env
     )
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", "0", "--no-browser"],
+        [sys.executable, "-m", "heinzel", "ui", "serve", "--port", "0", "--no-browser"],
         cwd=REPO,
         env=env,
         stderr=subprocess.PIPE,
@@ -525,7 +525,12 @@ def test_a_plugin_installed_outside_the_running_app_offers_restart_and_apply_in_
     )
     # A throwaway installation of the built wheel: `hz system plugin develop` changes only this environment.
     wheels = tmp_path / "wheels"
-    subprocess.run(["uv", "build", "--quiet", "--wheel", "--out-dir", str(wheels)], cwd=REPO, check=True, timeout=600)
+    subprocess.run(
+        [sys.executable, str(REPO / "scripts/build.py"), "--quiet", "--wheel", "--out-dir", str(wheels)],
+        cwd=REPO,
+        check=True,
+        timeout=600,
+    )
     venv = tmp_path / "venv"
     subprocess.run(["uv", "venv", "--quiet", str(venv)], check=True, timeout=120)
     wheel = next(wheels.glob("*.whl"))
@@ -552,7 +557,7 @@ def test_a_plugin_installed_outside_the_running_app_offers_restart_and_apply_in_
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
     hz = venv / "bin" / "hz"
     ui = subprocess.Popen(
-        [str(hz), "ui", "--port", "0", "--no-browser"],
+        [str(hz), "ui", "serve", "--port", "0", "--no-browser"],
         cwd=tmp_path,
         env=env,
         stderr=subprocess.PIPE,
@@ -715,7 +720,7 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
     # One directory per section: workers running other sections in parallel must not overwrite each other's files.
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots")) / section
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE
+        [sys.executable, "-m", "heinzel", "ui", "serve", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE
     )
     capture = MobileServerOutput(ui)
     token = ""
@@ -781,7 +786,11 @@ def drive_ui_script(env, tmp_path, script):
     )
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+        [sys.executable, "-m", "heinzel", "ui", "serve", "--port", "0"],
+        cwd=REPO,
+        env=env,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     try:
         assert ui.stderr is not None

@@ -1,4 +1,4 @@
-"""The ui module of system: what modules contribute to the web app that `hz ui` serves (ADR 0056).
+"""The ui module of system: what modules contribute to the web app that `hz ui serve` serves (ADR 0056).
 
 Modules add status items (`module.status`), header actions (`module.action`) and Today widgets (`module.widget`) as
 data: pure views over their own read-only operations, in closed shapes the app renders itself. These operations list

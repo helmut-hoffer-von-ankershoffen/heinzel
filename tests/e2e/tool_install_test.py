@@ -162,7 +162,9 @@ def test_sandbox_selects_private_managed_python_without_receipt_options(sandbox,
 @pytest.fixture(scope="module")
 def wheel(tmp_path_factory) -> Path:
     dist = tmp_path_factory.mktemp("dist")
-    subprocess.run(["uv", "build", "--wheel", "--out-dir", str(dist), str(REPO)], check=True, timeout=300)
+    subprocess.run(
+        [sys.executable, str(REPO / "scripts/build.py"), "--wheel", "--out-dir", str(dist)], check=True, timeout=300
+    )
     return next(dist.glob("heinzel-*.whl"))
 
 
@@ -370,7 +372,7 @@ def test_the_web_head_streams_an_independent_plugin_installation(sandbox, tmp_pa
     installed_from_git(sandbox)
     spec, rewrite = dummy_git_source(sandbox, tmp_path)
     ui = subprocess.Popen(
-        [str(sandbox.hz_bin), "ui", "--port", "0"],
+        [str(sandbox.hz_bin), "ui", "serve", "--port", "0"],
         env={**sandbox.env, **rewrite, "BROWSER": "true"},
         stderr=subprocess.PIPE,
         text=True,

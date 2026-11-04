@@ -13,7 +13,7 @@ from rich.console import Console
 from typer.core import TyperGroup
 
 from heinzel.heads.cli._render import message
-from heinzel.kernel import CurrentUser, HeinzelError, Kernel, PersistentWeb, Settings, feature_enabled, parse_duration
+from heinzel.kernel import CurrentUser, HeinzelError, Kernel, PersistentWeb, parse_duration
 
 if TYPE_CHECKING:
     from heinzel.heads.web._devices import Devices
@@ -124,13 +124,13 @@ def serve_group(
     return serve
 
 
-UI_HELP = "Open the web workspace, or manage its optional service after login."
-UI_STOPPED = "Heinzelmännchen stopped. Run `hz ui` to start it again."
-"""What `hz ui` says when Ctrl-C stops it: its normal end, so it exits 0, unlike an interrupted `hz setup` (130)."""
+UI_HELP = "Serve the web workspace explicitly, or manage its optional service after login."
+UI_STOPPED = "Heinzel stopped. Run `hz ui serve` to start it again."
+"""Ctrl-C is a normal web-server stop (exit 0), unlike an interrupted setup (130)."""
 
 
-def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
-    """`hz ui`: the web head on its fixed localhost port, with a token for this session and paired devices."""
+def ui_command(kernel: Kernel, err_console: Console, *, open_existing: bool = False) -> Callable[..., None]:
+    """`hz ui serve`: the web head on its fixed localhost port, with a token for this session and paired devices."""
 
     def ui(  # noqa: PLR0913, PLR0917 - one CLI option per supported foreground and service control
         ctx: typer.Context,
@@ -175,9 +175,9 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
         announce = _ui_announcement(err_console, browser=browser)
 
         try:
-            _supervised_preview(kernel.settings, supervised)
             if (
-                supervised is None
+                open_existing
+                and supervised is None
                 and port is None
                 and web.RESUME not in os.environ
                 and _open_persistent(kernel, browser=browser)
@@ -198,7 +198,9 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
             raise typer.Exit(1) from exc
         except OSError as exc:
             err_console.print(
-                message("Can't listen:", f"{exc}; is `hz ui` running already? Or try another --port, 0 for a free one")
+                message(
+                    "Can't listen:", f"{exc}; is `hz ui serve` running already? Or try another --port, 0 for a free one"
+                )
             )
             raise typer.Exit(1) from exc
         if err_console.is_terminal:
@@ -208,19 +210,13 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
     return ui
 
 
-def _supervised_preview(settings: Settings, generation: str | None) -> None:
-    if generation is not None and not feature_enabled(settings, "persistent_web"):
-        msg = "Persistent web preview is disabled; enable persistent_web in hz.features before starting this service."
-        raise HeinzelError(msg)
-
-
 def _ui_announcement(err_console: Console, *, browser: bool) -> Callable[[str], None]:
     def announce(url: str) -> None:
         # The URL belongs only to this explicit terminal request, never to service-manager logs.
         if not browser:
             typer.echo(url)
             return
-        err_console.print(f"Heinzelmännchen runs at {url}", soft_wrap=True, highlight=False, markup=False)
+        err_console.print(f"Heinzel runs at {url}", soft_wrap=True, highlight=False, markup=False)
         err_console.print("Press Ctrl-C to stop it.", highlight=False, markup=False)
 
     return announce
@@ -248,14 +244,14 @@ def _devices(paired: "Devices", revoke: str | None, err_console: Console) -> Non
     if revoke is not None:
         gone = paired.revoke(revoke)
         if not gone:
-            err_console.print(message("No such device:", f"{revoke}; `hz ui --devices` lists them"))
+            err_console.print(message("No such device:", f"{revoke}; `hz ui serve --devices` lists them"))
             raise typer.Exit(1)
         for device in gone:
-            typer.echo(f"Unpaired {device.id} ({device.name}); it needs a new link from `hz ui` to open the app.")
+            typer.echo(f"Unpaired {device.id} ({device.name}); it needs a new link from `hz ui open` to open the app.")
         return
     listed = paired.paired()
     if not listed:
-        typer.echo("No devices are paired; opening the link `hz ui` prints pairs the browser it opens in.")
+        typer.echo("No devices are paired; opening the link `hz ui open` prints pairs the browser it opens in.")
         return
     for device in listed:
         typer.echo(

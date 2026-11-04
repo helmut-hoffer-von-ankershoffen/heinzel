@@ -628,7 +628,10 @@ class PluginService:
         core, *plugins = requirements
         replaced = distributions_in_spec(spec)
         kept = [r for r in plugins if canonicalize_name(Requirement(r).name) not in replaced]
-        return self._installation.tool_install_command(core, [*kept, spec])
+        # Changing --with already makes uv resolve and install the new plugin. --reinstall also implies --refresh,
+        # needlessly revalidating every dependency against its index. Replacements still force a rebuild (develop
+        # may name an unchanged directory whose contents have changed).
+        return self._installation.tool_install_command(core, [*kept, spec], reinstall=len(kept) != len(plugins))
 
     # Removing, enabling, disabling.
 
@@ -1255,17 +1258,21 @@ class PluginService:
         policy = self._installation.capture_tool_constraint_policy()
         version = self._installation.installed_core_version()
         guard = f"heinzel=={version}"
-        constraints = (*self._installation.tool_constraints(), guard, *holds)
         python = command.index("--python")
         selected = [
             command[python + 2],
             *(command[index + 1] for index, part in enumerate(command) if part == "--with"),
         ]
+        changing = distributions_in_spec(adding) if adding else set(forbidden)
+        unchanged = [item for item in selected if canonicalize_name(Requirement(item).name) not in changing]
+        sources = self._installation.preserved_tool_wheel_constraints(unchanged)
+        transient = (guard, *holds, *sources)
+        constraints = (*self._installation.tool_constraints(), *transient)
         self._installation.validate_install_constraints(selected, constraints)
         if self._installation.startup_fingerprint() != mutation.initial:
             msg = "The plugin installation changed before mutation; inspect and retry."
             raise HeinzelError(msg)
-        self._installation.run(command, failure, activity, environment, additional_constraints=(guard, *holds))
+        self._installation.run(command, failure, activity, environment, additional_constraints=transient)
         generation = self._installation.startup_fingerprint()
         self._installation.verify_installed_requirements(
             selected, expected_version=version, forbidden=forbidden, constraints=constraints
@@ -1274,7 +1281,7 @@ class PluginService:
             msg = "The plugin installation changed during verification; explicit recovery is required."
             raise HeinzelError(msg)
         mutation.generation = self._installation.remove_transient_tool_constraint(
-            expected=generation, original=policy, added=(guard, *holds)
+            expected=generation, original=policy, added=transient
         )
         return None
 

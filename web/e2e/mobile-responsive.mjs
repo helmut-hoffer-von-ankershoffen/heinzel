@@ -243,9 +243,16 @@ async function footerPane(page, id, label, ready) {
     );
   }
   const trigger = page.locator(`[data-footer-content="${id}"] button`).first();
-  if (!(await trigger.isVisible())) {
-    await page.locator('[data-footer-content="@more"] button').click();
-  }
+  // A missing status item is still loading, not necessarily in More. Its hidden measurement host and More's
+  // retained button are not actionable. Wait for either the item or its actual overflow path to be visible.
+  const direct = trigger.filter({ visible: true });
+  const more = page
+    .locator(
+      `footer:has([data-footer-part="${id}"][data-footer-hidden="overflow"]) [data-footer-content="@more"] button`,
+    )
+    .filter({ visible: true });
+  await direct.or(more).first().waitFor();
+  if (!(await direct.isVisible())) await more.tap();
   await trigger.tap();
   return page.getByRole("region", { name: label, exact: true }).locator("..");
 }
@@ -308,7 +315,11 @@ try {
           },
         },
       };
+      const statusRequested = Promise.withResolvers();
+      const publishStatus = Promise.withResolvers();
       await page.route("**/api/system/ui/status**", async (route) => {
+        statusRequested.resolve();
+        await publishStatus.promise;
         const selected = new URL(route.request().url()).searchParams.get("item");
         if (selected === entry.id) return route.fulfill({ json: [entry] });
         const response = await fetchOnce(route);
@@ -317,7 +328,16 @@ try {
       });
       await page.goto(url);
       await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
-      const pane = await footerPane(page, entry.id, "Share probe");
+      await statusRequested.promise;
+      const opening = footerPane(page, entry.id, "Share probe");
+      // Observe the held state after opening starts: shell readiness does not publish status items.
+      const held = await page.evaluate(() => ({
+        target: !!document.querySelector('[data-footer-content="probe:share"] button'),
+        more: getComputedStyle(document.querySelector('[data-footer-content="@more"] button')).visibility,
+      }));
+      assert.deepEqual(held, { target: false, more: "hidden" });
+      publishStatus.resolve();
+      const pane = await opening;
       const copy = pane.getByRole("button", { name: "Copy URL", exact: true });
       await assertContained(page, pane, "phone: share pane");
       await page.screenshot({ path: join(shots, `mobile-${section}-${supported ? "supported" : "unsupported"}.png`) });
@@ -554,6 +574,17 @@ try {
           .click();
       await assertContained(page, settingsDialog, `${spec.name}: settings ${settingsPage.id}`);
       if (settingsPage.id === "plugins") await exercisePluginGallery(page, galleryRequests, shots, spec.name);
+      if (settingsPage.id === "web-server") {
+        const restart = settingsDialog.getByRole("button", { name: "Restart web server", exact: true });
+        await assertTouchTarget(restart, "Restart web server", spec.name);
+        await restart.click();
+        const confirmation = settingsDialog.getByRole("alertdialog", { name: "Restart web server", exact: true });
+        await assertContained(page, confirmation, `${spec.name}: web server restart confirmation`);
+        assert.match(await confirmation.textContent(), /This page reconnects for you/);
+        await page.screenshot({ path: join(shots, `mobile-${spec.name}-web-server-confirmation.png`) });
+        await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
+        await confirmation.waitFor({ state: "hidden" });
+      }
       if (settingsPage.id === "credentials") {
         await settingsDialog
           .locator("option")
@@ -588,9 +619,10 @@ try {
       await page.screenshot({ path: join(shots, `mobile-${spec.name}-${id.slice(1)}.png`) });
       await dismissFooterPane(page);
     }
-    const updatePane = await footerPane(page, "@updates", "Up to date");
+    const updatePane = await footerPane(page, "@updates", "Updates");
     await assertContained(page, updatePane, `${spec.name}: update pane`);
-    assert.equal(await updatePane.getByText("Up to date", { exact: true }).count(), 1);
+    assert.equal(await updatePane.getByText("Update availability is unavailable.", { exact: true }).count(), 1);
+    await updatePane.getByRole("button", { name: "Manually update…", exact: true }).waitFor();
     await updatePane.getByText("Installed: hz 0.7.30").waitFor();
     await updatePane.getByText(/^Last installed:/).waitFor();
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
@@ -601,14 +633,10 @@ try {
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
-    const availablePane = await footerPane(page, "@updates", "Update available", updateAnswered);
+    const availablePane = await footerPane(page, "@updates", "Updates available", updateAnswered);
     await assertContained(page, availablePane, `${spec.name}: available update pane`);
     await availablePane.getByText(/^Last installed:/).waitFor();
-    await assertTouchTarget(
-      availablePane.getByRole("button", { name: "Update hz and plugins" }),
-      "update action",
-      spec.name,
-    );
+    await assertTouchTarget(availablePane.getByRole("button", { name: "Update now" }), "update action", spec.name);
     assert.equal(updateRequests, 0, `${spec.name}: inspecting the update must not start installation`);
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-update-available.png`) });
     await dismissFooterPane(page);

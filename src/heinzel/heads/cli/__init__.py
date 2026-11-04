@@ -33,18 +33,10 @@ from heinzel.heads._exposure import collapses, owns_path, restricts
 from heinzel.heads.cli import _playful, _update
 from heinzel.heads.cli._branding import TAGLINE
 from heinzel.heads.cli._branding import footer as brand_footer
-from heinzel.heads.cli._chat import CHAT, chat_callback
-from heinzel.heads.cli._chat import HELP as CHAT_HELP
 from heinzel.heads.cli._command import command
-from heinzel.heads.cli._discovery import command_tree
-from heinzel.heads.cli._join import HELP as JOIN_HELP
-from heinzel.heads.cli._join import JoinCommand
-from heinzel.heads.cli._overview import show
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
 from heinzel.heads.cli._serve import UI_HELP, serve_group, ui_command
-from heinzel.heads.cli._setup import HELP as SETUP_HELP
-from heinzel.heads.cli._setup import SetupCommands
 from heinzel.heads.cli._update import print_changelog_header, print_notice, start_check
 from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Origin, Progress, boot
 
@@ -80,66 +72,28 @@ class SortedGroup(TyperGroup):
         return sorted(self.commands)
 
 
-def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
+def build(kernel: Kernel, *, plain: bool = False, ui_only: bool = False) -> typer.Typer:
     """Build the `hz` command tree from the modules registered with the kernel.
 
     Args:
         kernel: The booted kernel.
         plain: Help without Rich markup and footer, for the generated reference docs: every command listed, the ones
             for experts marked.
+        ui_only: Build only the UI subtree for direct UI invocations; root discovery uses the complete tree.
     """
-    footer = None if plain else brand_footer(console.width)
-    app = typer.Typer(
-        name="hz",
-        help=PLAIN_HELP if plain else HELP,
-        cls=SortedGroup,
-        no_args_is_help=True,
-        pretty_exceptions_show_locals=False,
-        rich_markup_mode="rich",
-        context_settings={"help_option_names": ["-h", "--help"]},
-    )
+    app, mount = _root(kernel, plain=plain)
+    if ui_only:
+        mount.ui(app)
+        return app
+    from heinzel.heads.cli._chat import CHAT, chat_callback  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._chat import HELP as CHAT_HELP  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._join import HELP as JOIN_HELP  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._join import JoinCommand  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._setup import HELP as SETUP_HELP  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._setup import SetupCommands  # noqa: PLC0415 - only full CLI trees need these commands
 
-    def print_version(value: bool) -> None:
-        _print_version(kernel, value)
-
-    def print_command_tree(ctx: typer.Context, value: bool) -> None:
-        if value:
-            console.print(
-                json.dumps(command_tree(kernel, ctx), indent=2), markup=False, highlight=False, soft_wrap=True
-            )
-            raise typer.Exit
-
-    @app.callback()
-    def main(
-        discovery: Annotated[  # noqa: ARG001 - handled by the eager callback
-            bool,
-            typer.Option(
-                "--command-tree",
-                help="Print every command, argument, option and operation schema as JSON, including expert commands.",
-                callback=print_command_tree,
-                is_eager=True,
-            ),
-        ] = False,
-        version: Annotated[  # noqa: ARG001 - handled by the eager callback
-            bool,
-            typer.Option(
-                "--version",
-                "-V",
-                help="Show the version and repository, Python, platform, installation and plugins, then exit.",
-                callback=print_version,
-                is_eager=True,
-            ),
-        ] = False,
-    ) -> None:
-        logging.basicConfig(
-            level=kernel.settings.log_level,
-            format="%(message)s",
-            handlers=[RichHandler(console=err_console, show_path=False)],
-        )
-
-    progress = ConsoleProgress(err_console, playful=_playful.allowed(kernel.settings, err_console))
-    kernel.bind(Progress, progress)
-    mount = _Mount(kernel, progress, footer, plain=plain, expert=kernel.settings.expert)
+    footer = mount.footer
+    progress = mount.progress
     count = mount(app, None) + Count(commands=3)  # setup, join and ui: everyday, for everyone
     # Top level by the maintainer's decision, the one exception to ADR 0018, and the only way to run a step (ADR 0032).
     setup = SetupCommands(kernel, console, err_console).command()
@@ -177,11 +131,105 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
     return app
 
 
+def _root(kernel: Kernel, *, plain: bool) -> tuple[typer.Typer, "_Mount"]:
+    """Construct the shared root options and logging callback before mounting command schemas."""
+    footer = None if plain else brand_footer(console.width)
+    app = typer.Typer(
+        name="hz",
+        help=PLAIN_HELP if plain else HELP,
+        cls=SortedGroup,
+        no_args_is_help=True,
+        pretty_exceptions_show_locals=False,
+        rich_markup_mode="rich",
+        context_settings={"help_option_names": ["-h", "--help"]},
+    )
+
+    def print_version(value: bool) -> None:
+        _print_version(kernel, value)
+
+    def print_command_tree(ctx: typer.Context, value: bool) -> None:
+        if value:
+            from heinzel.heads.cli._discovery import command_tree  # noqa: PLC0415 - only explicit schema discovery
+
+            console.print(
+                json.dumps(command_tree(kernel, ctx), indent=2), markup=False, highlight=False, soft_wrap=True
+            )
+            raise typer.Exit
+
+    @app.callback()
+    def main(
+        discovery: Annotated[  # noqa: ARG001 - handled by the eager callback
+            bool,
+            typer.Option(
+                "--command-tree",
+                help="Print every command, argument, option and operation schema as JSON, including expert commands.",
+                callback=print_command_tree,
+                is_eager=True,
+            ),
+        ] = False,
+        version: Annotated[  # noqa: ARG001 - handled by the eager callback
+            bool,
+            typer.Option(
+                "--version",
+                "-V",
+                help="Show the version and repository, Python, platform, installation and plugins, then exit.",
+                callback=print_version,
+                is_eager=True,
+            ),
+        ] = False,
+    ) -> None:
+        logging.basicConfig(
+            level=kernel.settings.log_level,
+            format="%(message)s",
+            handlers=[RichHandler(console=err_console, show_path=False)],
+        )
+
+    progress = ConsoleProgress(err_console, playful=_playful.allowed(kernel.settings, err_console))
+    kernel.bind(Progress, progress)
+    mount = _Mount(kernel, progress, footer, plain=plain, expert=kernel.settings.expert)
+    return app, mount
+
+
 def _mount_ui(app: typer.Typer, groups: dict[str, typer.Typer], kernel: Kernel, error: Console) -> None:
     ui = groups.get("ui") or typer.Typer()
-    ui.callback(invoke_without_command=True, no_args_is_help=False, help=UI_HELP)(ui_command(kernel, error))
+
+    @ui.callback(invoke_without_command=True, no_args_is_help=False, help=UI_HELP)
+    def group(
+        ctx: typer.Context,
+        port: Annotated[int | None, typer.Option(hidden=True)] = None,
+        browser: Annotated[bool, typer.Option("--browser/--no-browser", hidden=True)] = True,
+        supervised: Annotated[str | None, typer.Option(hidden=True)] = None,
+    ) -> None:
+        # Published service launchers retain this exact legacy vector until explicitly reinstalled.
+        if supervised is not None:
+            if ctx.invoked_subcommand is not None or port is None or browser:
+                problem = "Use `hz ui serve` for foreground serving."
+                raise typer.BadParameter(problem)
+            error.print("The legacy foreground flags are deprecated; use `hz ui serve`.")
+            ui_command(kernel, error)(ctx, port=port, browser=False, supervised=supervised)
+        elif port is not None or getattr(ctx.get_parameter_source("browser"), "name", None) == "COMMANDLINE":
+            # Published updaters trial and exec the older foreground vector; socket handoff still validates in web.
+            if ctx.invoked_subcommand is not None:
+                problem = "Use `hz ui serve` for foreground serving."
+                raise typer.BadParameter(problem)
+            error.print("The legacy foreground flags are deprecated; use `hz ui serve`.")
+            ui_command(kernel, error)(ctx, port=port, browser=browser)
+        elif ctx.invoked_subcommand is None:
+            typer.echo(ctx.get_help())
+
+    ui.command("serve", help="Run the web server in the foreground; Ctrl-C stops it.")(ui_command(kernel, error))
+    ui.command("open", help="Open the owned web service, or run in the foreground when none is installed.")(
+        ui_command(kernel, error, open_existing=True)
+    )
     if "ui" not in groups:
         app.add_typer(ui, name="ui", cls=SortedGroup, rich_help_panel=CORE_PANEL)
+
+
+def show(kernel: Kernel, output: Console) -> None:
+    """Render the interactive overview on demand, retaining the CLI's existing call boundary."""
+    from heinzel.heads.cli._overview import show as render_overview  # noqa: PLC0415 - only the bare interactive command
+
+    render_overview(kernel, output)
 
 
 def main() -> None:
@@ -200,7 +248,15 @@ def main() -> None:
     if not sys.argv[1:]:
         _banner(kernel)  # the bare `hz`: the start screen follows
     try:
-        build(kernel)()
+        # Root discovery/help/version still build the complete tree. Click parses the same UI group,
+        # including service subcommands and invalid options, for an invocation beginning with `ui`.
+        ui_only = (
+            sys.argv[1:2] == ["ui"]
+            and any(record.module.name == "ui" for record in kernel.children(None))
+            and not any(arg in {"--help", "-h", "--command-tree", "--version", "-V"} for arg in sys.argv[2:])
+        )
+        app = build(kernel, ui_only=True) if ui_only else build(kernel)
+        app()
     finally:
         if check is not None:
             check.wait()
@@ -261,6 +317,13 @@ class _Mount:
                 case ModuleRecord():
                     count += self._module(parent, qualname, entry)
         return count
+
+    def ui(self, app: typer.Typer) -> None:
+        """Mount the complete UI subtree without constructing unrelated operation schemas."""
+        for record in self.kernel.children(None):
+            if record.module.name == "ui":
+                self._module(app, None, record)
+        _mount_ui(app, self.groups, self.kernel, err_console)
 
     def hides(self, *, expert: bool) -> bool:
         """Whether a command or group for experts (when `expert`) is hidden in this tree."""

@@ -63,4 +63,4 @@ deletion cannot be detected after both the original watermark and that line are 
 cannot invent that missing evidence.
 
 Crash tests kill a writer after the spine is durable but before indexing, kill it midway through a line, and check
-process lock contention. A performance test lists 500 indexed sessions in under 50 ms; it runs with the `perf` marker.
+process lock contention. A performance test lists 500 indexed sessions in under one second; it runs with the `perf` marker.

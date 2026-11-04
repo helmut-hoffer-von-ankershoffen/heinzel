@@ -46,7 +46,9 @@ media provider. Scripted clicks, unsafe destinations and popups remain refused.
 
 ## Local unsigned packaging
 
-Node.js 24.19.0 and pnpm 12.15.0 are pinned by repository CI. From this directory, run
+Node.js 24.19.0 and pnpm 12.15.0 are pinned by repository CI, which (`CI=true`) requires exactly that Node.js. Local
+builds accept Node.js 24 or newer and print a notice when it differs from the pin. Set `HZ_DESKTOP_STRICT_NODE=1`
+to require exactly 24.19.0 locally too. From this directory, run
 `pnpm install --node-linker=hoisted --frozen-lockfile`, then `pnpm build` and `pnpm verify:package`. Packaging takes
 the app version from the core `pyproject.toml` without editing either project's version files. The build targets the
 current host by default; CI builds Linux x64 on Ubuntu and macOS arm64 on macOS. To select a target explicitly, use
@@ -57,7 +59,9 @@ ASAR payload.
 These are unsigned local/CI verification artifacts. They are not notarized, published, or suitable for a trusted
 production install. Gatekeeper may block macOS launches, and Linux desktop integration/package-manager installation
 is not included. There is no auto-update, login item, background service, OS permission request, installer/uninstaller,
-or Python runtime provisioning. The shell invokes `hz ui --port 0 --no-browser` without a shell, accepts only its
+or Python runtime provisioning. The shell invokes `hz ui serve --port 0 --no-browser` without a shell, accepts only its
 single verified loopback URL line, passes its fragment only to the owned web UI, and stops only its owned child on
-Quit. This does not install the `hz` CLI or enable background operation; the CLI must already be installed and the
+Quit or on SIGTERM, SIGINT or SIGHUP (the owned service gets SIGINT first and SIGKILL only after a timeout). A signal-initiated
+shutdown exits non-zero when the child exits uncleanly or does not stop; it never waits for a GUI error dialog.
+This does not install the `hz` CLI or enable background operation; the CLI must already be installed and the
 user must launch the app while it is on `PATH`.

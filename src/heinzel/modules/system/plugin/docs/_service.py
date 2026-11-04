@@ -46,7 +46,6 @@ from heinzel.kernel import (
 )
 from heinzel.modules.system.plugin._models import PluginInfo
 from heinzel.modules.system.plugin._service import REPOSITORY, PluginService, short_name
-from heinzel.modules.system.plugin.docs._files import read_recording
 from heinzel.modules.system.plugin.docs._models import (
     AdapterDoc,
     AssetTypeDoc,
@@ -652,6 +651,8 @@ def recording(scene: Scene, directory: Path | None) -> Recording:
     Raises:
         HeinzelError: If a recording is unsafe, oversized or its transcript is not UTF-8 text.
     """
+    from heinzel.modules.system.plugin.docs._files import read_recording  # noqa: PLC0415 - recordings are read only when documenting
+
     base = f"{ASSETS}/{scene.name}"
     if directory is None:
         return Recording(scene=scene.name, animation=None, still=None, video=None)

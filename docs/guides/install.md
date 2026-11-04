@@ -1,9 +1,9 @@
 ---
-title: Install Heinzelmännchen
-description: Install the standard Heinzelmännchen app, start the web workspace, and verify your first session.
+title: Install Heinzel
+description: Install the standard Heinzel app, start the web workspace, and verify your first session.
 ---
 
-# Your first Heinzelmännchen.
+# Install Heinzel.
 
 The standard app installs the core and the default Clock, Resource, Tailscale and theme plugins. It runs on
 **macOS and Linux**. Windows may work, but is not supported. You need no separate Python.
@@ -33,7 +33,18 @@ The first run picks the newest standard release, verifies its hashes, installs t
 the workspace. Later runs open the installed app. On Linux you need a systemd user manager in your session.
 Tailscale sharing is opt-in; installing its plugin does not make your workspace public.
 
-Stop with **Ctrl-C**. Background operation is optional. Run `hz setup` to choose services and AI access.
+First interactive setup asks for missing name, team name and required profile details through normal configuration.
+Existing values are preserved. Setup is complete only when system health is green.
+
+The interactive launcher offers the scheduled daemon, web server after login and native notifier separately;
+each prompt defaults to **Yes**. Decline any choice with **No**. All selected installation runs in the verified
+persistent standard app. Noninteractive, help and machine-readable calls make no automatic service choices.
+Unsupported native notification platforms or desktops are reported; OS permission and visible delivery remain
+separate checks.
+
+`hz ui` displays help. Use `hz ui serve` for foreground serving, stopped with **Ctrl-C**, or `hz ui open` to open
+the installed service and otherwise serve in the foreground. `hz ui install` is available without a preview flag;
+`hz ui status`, `restart` and `uninstall` manage its owned service. Run `hz setup` to configure AI access.
 `hz system doctor` may report missing optional credentials; configure an integration before you rely on it.
 
 [Continue to your first session →](first-steps.md)
@@ -111,3 +122,17 @@ Before any restoration, stop writers using that profile through their supported 
 current hz version. Have the backup and restoration procedure reviewed before changing the preserved state, then run
 `hz system doctor` again before resuming notification delivery. If no coherent backup is available, keep the store
 unchanged and ask for recovery help.
+
+
+On first interactive setup, provide your real name, team and required profile details. Existing values are kept.
+Choose **Set up AI later** to use Heinzel without an AI account; this saves an explicit unconfigured choice for uses
+that run only when asked. Existing provider selections are kept.
+
+Asking or sending a chat still requires configured
+access, and an active scheduled Heinzel still reports missing capabilities. Setup finishes only after actual system
+health is up. A bare noninteractive first use with missing required profile details returns an incomplete result
+without prompting or opening the app.
+
+When upgrading an existing installation, an old explicit foreground vector such as `hz ui --port 0 --no-browser` forwards to
+the same serving implementation with a deprecation hint. New scripts and applications use `hz ui serve`; bare
+`hz ui` remains group help and never starts a listener.

@@ -3,9 +3,17 @@
 from typing import Annotated
 
 from pydantic import Field
+from rich.console import RenderableType
 
-from heinzel import Check, Module
-from heinzel.kernel import DaemonAttestation, DaemonInstallationLifecycle, DaemonOverview, parse_duration
+from heinzel import Check, Kernel, Module
+from heinzel.kernel import (
+    DaemonAttestation,
+    DaemonInstallationLifecycle,
+    DaemonLegacyRecovery,
+    DaemonOverview,
+    DaemonRecoverySelection,
+    parse_duration,
+)
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
     DaemonStatus,
@@ -20,9 +28,37 @@ from heinzel.modules.system.daemon._models import (
     Uninstalled,
 )
 from heinzel.modules.system.daemon._overview import DaemonOverviewService
-from heinzel.modules.system.daemon._render import render_installed, render_jobs, render_logs, render_tick
 from heinzel.modules.system.daemon._service import DaemonService
 from heinzel.modules.system.daemon._status_item import status_item
+
+
+def render_installed(result: Installed) -> RenderableType:
+    """The unit files, highlighted; with `--dry-run` that is all that happens."""
+    from heinzel.modules.system.daemon._render import render_installed  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_installed(result)
+
+
+def render_jobs(jobs: list[JobInfo]) -> RenderableType:
+    """A table of jobs with their schedule, next slot and last run."""
+    from heinzel.modules.system.daemon._render import render_jobs  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_jobs(jobs)
+
+
+def render_logs(lines: list[LogLine]) -> RenderableType:
+    """Log lines, one per row."""
+    from heinzel.modules.system.daemon._render import render_logs  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_logs(lines)
+
+
+def render_tick(report: TickReport) -> RenderableType:
+    """One line per job run, or why nothing ran."""
+    from heinzel.modules.system.daemon._render import render_tick  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_tick(report)
+
 
 module = Module("daemon", "Run modules' jobs in the background, supervised by launchd or systemd.")
 """Jobs run unattended, with your rights, on their schedule once installed (SECURITY.md). Stop them with
@@ -52,6 +88,17 @@ def _installation_lifecycle(service: DaemonService) -> DaemonInstallationLifecyc
 
 module.service(DaemonOverview, DaemonOverviewService)
 module.service(DaemonAttestation, _attestation)
+
+
+def _legacy_recovery(service: DaemonService, kernel: Kernel) -> DaemonLegacyRecovery:
+    """Expose only the explicit candidate recovery port, never an ordinary operation."""
+    from heinzel.modules.system.daemon._legacy_retirement import LegacyRetirement  # noqa: PLC0415 - explicit recovery only
+
+    recovery = LegacyRetirement(service, kernel.resolve(DaemonRecoverySelection))
+    return DaemonLegacyRecovery(recovery.plan, recovery.retire, recovery.restore_plan, recovery.restore)
+
+
+module.service(DaemonLegacyRecovery, _legacy_recovery)
 module.service(DaemonInstallationLifecycle, _installation_lifecycle)
 
 INTERVAL_PATTERN = r"^[1-9][0-9]*m$|^1h$"
@@ -70,9 +117,12 @@ def install(
         str, Field(description="Minutes between ticks, dividing an hour: 1m … 30m, or 1h.", pattern=INTERVAL_PATTERN)
     ] = "5m",
     dry_run: Annotated[bool, Field(description="Only show the unit that would be written.")] = False,
+    notifier: Annotated[
+        bool, Field(description="Also install the native notifier; otherwise choose it separately.")
+    ] = False,
 ) -> Installed:
-    """Install and load the launchd agent or systemd timer that ticks every few minutes."""
-    return service.install(parse_duration(interval), dry_run=dry_run)
+    """Install and load scheduled Heinzels; native notifier installation is a separate choice."""
+    return service.install(parse_duration(interval), dry_run=dry_run, notifier=notifier)
 
 
 @module.operation(read_only=False, heads={"cli", "web"})

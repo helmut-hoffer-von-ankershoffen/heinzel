@@ -186,9 +186,15 @@ class CredentialService:
         return RemovedCredential(**self._info(declared).model_dump(), removed=removed)
 
     def checks(self) -> list[Check]:
-        """The backend, colliding variable names, and each credential: up when stored, degraded when missing."""
-        checks = [self._backend_check()]
-        unique = {(d.service, d.name): d for d in self._sorted()}
+        """Check storage safety and mandatory secrets; owning features check their conditional authentication."""
+        grouped: defaultdict[tuple[str, str], list[DeclaredCredential]] = defaultdict(list)
+        for declared in self._sorted():
+            grouped[declared.service, declared.name].append(declared)
+        # A shared credential remains mandatory if any declaration requires it.
+        unique = {key: next((d for d in group if d.let.required), group[0]) for key, group in grouped.items()}
+        present = {key: self.credentials.has(declared.let) for key, declared in unique.items()}
+        in_use = any(present.values()) or any(d.let.required for d in unique.values())
+        checks = [self._backend_check(in_use=in_use)]
         variables: defaultdict[str, list[str]] = defaultdict(list)
         for declared in unique.values():
             variables[environment_variable(declared.service, declared.name)].append(declared.label)
@@ -204,15 +210,23 @@ class CredentialService:
         )
         checks.extend(
             Check(name=f"credential {declared.label}", status=Status.UP, detail="stored")
-            if self.credentials.has(declared.let)
+            if present[key]
             else self.credentials.attention(declared.let, f"missing: {declared.purpose}")
-            for declared in unique.values()
+            if declared.let.required
+            else Check(
+                name=f"credential {declared.label}",
+                status=Status.UP,
+                detail="not stored; required authentication is checked by the feature in use",
+            )
+            for key, declared in unique.items()
         )
         return checks
 
-    def _backend_check(self) -> Check:
+    def _backend_check(self, *, in_use: bool = True) -> Check:
         backend = self.credentials.backend
         if isinstance(backend, EnvironmentBackend):
+            if not in_use:
+                return Check(name="backend", status=Status.UP, detail="environment fallback; no credentials in use")
             return Check(
                 name="backend",
                 status=Status.DEGRADED,

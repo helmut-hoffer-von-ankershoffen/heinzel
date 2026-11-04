@@ -118,6 +118,11 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0119](0119-interactive-cli-reads-local-overview-records.md) Interactive CLI reads local overview records | proposed · 3 Nov<br>partial | [#492](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/492) |
 | [0123](0123-plugin-previews-read-public-inert-metadata.md) Plugin previews read public inert metadata | proposed · 4 Nov<br>built | [#319](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/319) |
 | [0124](0124-native-public-media-links-require-trusted-clicks.md) Native public media links require trusted clicks | proposed · 4 Nov<br>built | [#319](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/319) |
+| [0125](0125-prepare-locked-isolated-build-dependencies.md) Prepare locked dependencies before isolated local builds | proposed · 4 Nov<br>built |  |
+| [0128](0128-conditional-credential-health.md) Optional credentials do not degrade unused features | proposed · 4 Nov<br>partial |  |
+| [0129](0129-explicit-web-serving-and-separate-service-consent.md) Explicit web serving and separate service consent | proposed · 4 Nov<br>partial |  |
+| [0130](0130-on-demand-health-preserves-runtime-requirements.md) On-demand health preserves runtime requirements | proposed · 4 Nov<br>partial |  |
+| [0132](0132-explicit-legacy-daemon-retirement.md) Retire legacy daemon definitions only through an explicit bound recovery plan | proposed · 4 Nov<br>partial |  |
 
 </div>
 <!-- adr-index:end -->

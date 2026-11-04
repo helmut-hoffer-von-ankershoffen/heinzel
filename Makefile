@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-macos-smoke test-notifier test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check design-check release clean
+.PHONY: ci-macos-arm help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-macos-smoke test-notifier test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check design-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -54,7 +54,7 @@ help: ## Show this help
 
 install: ## Install what the build needs: Python with every dependency group (.venv) and the pinned tools (.tools)
 	@test -f uv.lock || uv lock --quiet
-	@uv sync --frozen --all-groups --quiet && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
+	@uv run --quiet --script scripts/build.py sync && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
 	@$(TOOLS) install build web
 	@$(WEB) install
 	@$(MAKE) --no-print-directory managed-backend-setup
@@ -63,6 +63,9 @@ setup: install ## Install what the build needs, and the git hooks (prek: lint on
 	@uv run --quiet prek install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push >/dev/null
 	@uv run --quiet --script scripts/install_push_hook.py
 	@echo "✓ git hooks: pre-commit, commit-msg, pre-push"
+
+ci-macos-arm: ## Require Apple silicon for a macOS CI job
+	@test "$$(uname -m)" = arm64
 
 doctor: ## What the build needs, what is missing, and the command that fixes it
 	@$(TOOLS) doctor
@@ -83,6 +86,7 @@ FAST_TYPES ?=
 UNIT_TARGETS ?=
 # Unit tests take every core and have a 5 s budget each; Vitest beside them starved them into timeouts, so it runs after.
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts, generated files, unit tests
+	@uv run --quiet --script scripts/scoped_checks.py early-fast
 	@$(WEB) prepare
 	$(STEPS) \
 		"format=uv run ruff format --check ." \
@@ -97,11 +101,12 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"unit=uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS)) $(MANAGED_CHECK)
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
+	@uv run --quiet --script scripts/scoped_checks.py early-preflight --base "$(BASE)"
 	@$(WEB) prepare
 	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(WEB_TESTS) \
 		"&tests=$(COVERED) -x && uv run coverage combine --quiet && uv run coverage report --format=total --fail-under=90" \
 		"&template=TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" \
-		"&build=uv build --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
+		"&build=uv run --quiet --script scripts/build.py --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
 		"&commits=$(MAKE) --no-print-directory commits" $(MANAGED_CHECK)
 	@if [ "$(PREFLIGHT)" = full ]; then $(MAKE) --no-print-directory audit test-e2e; fi
 
@@ -232,23 +237,26 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 		$(WEB) exec playwright-core install chromium webkit; \
 	fi
 
-# The browser E2E files (Playwright, the mounted web app) compete with the tool-install and CLI ones for CPU, so CI runs
-# the two halves as separate jobs. A file counts as browser when it mentions Playwright or the shared browser helpers.
-E2E_WEB := $(sort $(shell grep -lE 'playwright|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
+# Core E2E lanes keep supervised cold starts apart from unrelated Git/frontend builds. Every lane keeps the same
+# per-OS workers and deadlines; the default local target still runs every case. Browser files use shared helpers.
+E2E_SUPERVISED := tests/e2e/ui_service_test.py tests/e2e/ui_service_browser_test.py
+E2E_WEB_CANDIDATES := $(sort $(shell grep -lE 'playwright|_browser_ready|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
+E2E_WEB := $(filter-out $(E2E_SUPERVISED),$(E2E_WEB_CANDIDATES))
 E2E_WORKERS := $(if $(filter Darwin,$(shell uname -s)),2,3)
 E2E_PYTEST := uv run pytest -m e2e -n $(E2E_WORKERS) -q --session-timeout=600 -x
-# The browser files go to two jobs (every other file each), because one job's 600 s of tests left no headroom on a slow
-# 3 vCPU macOS runner: the same code took 8 minutes on main and passed 10 minutes' budget on none of the slow runs.
-E2E_WEB_1 := $(foreach i,$(shell seq 1 2 $(words $(E2E_WEB))),$(word $(i),$(E2E_WEB)))
-E2E_WEB_2 := $(foreach i,$(shell seq 2 2 $(words $(E2E_WEB))),$(word $(i),$(E2E_WEB)))
-E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB), --ignore=$(f)))$(if $(filter web-1,$(SUITE)),$(foreach f,$(E2E_WEB_1), $(f)))$(if $(filter web-2,$(SUITE)),$(foreach f,$(E2E_WEB_2), $(f)))
+# Keep the mounted app sweep in its existing lane when a supervised journey uses a browser helper.
+# Classifying installed-server journeys first keeps their cold starts apart from unrelated browser builds.
+E2E_WEB_1 := $(filter-out $(E2E_SUPERVISED),$(foreach i,$(shell seq 1 2 $(words $(E2E_WEB_CANDIDATES))),$(word $(i),$(E2E_WEB_CANDIDATES))))
+E2E_WEB_2 := $(filter-out $(E2E_SUPERVISED),$(foreach i,$(shell seq 2 2 $(words $(E2E_WEB_CANDIDATES))),$(word $(i),$(E2E_WEB_CANDIDATES))))
+E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB) $(E2E_SUPERVISED), --ignore=$(f)))$(if $(filter supervised,$(SUITE)), $(E2E_SUPERVISED))$(if $(filter web-1,$(SUITE)),$(foreach f,$(E2E_WEB_1), $(f)))$(if $(filter web-2,$(SUITE)),$(foreach f,$(E2E_WEB_2), $(f)))
 
-test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers (2 on macOS); SUITE=cli (tool install, CLI), web-1 or web-2 (browser, half of the files each) runs one part
+test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers (2 on macOS); SUITE=cli (tool install, CLI), supervised (installed server), web-1 or web-2 (browser halves) runs one part
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
-	$(STEPS) $(if $(findstring web,$(SUITE)),,"e2e-readme=$(E2E_PYTEST) tests/e2e/docs_test.py::test_readme_instructions") "e2e=$(E2E_PYTEST)$(E2E_SELECT) --deselect=tests/e2e/docs_test.py::test_readme_instructions"
+	$(STEPS) $(if $(filter supervised web-1 web-2,$(SUITE)),,"e2e-readme=$(E2E_PYTEST) tests/e2e/docs_test.py::test_readme_instructions") "e2e=$(E2E_PYTEST)$(E2E_SELECT) --deselect=tests/e2e/docs_test.py::test_readme_instructions"
 
-e2e-prepare: ## Prepare current build assets before end-to-end procedure deadlines
-	@set -eu; dir="$$(mktemp -d "$${TMPDIR:-/tmp}/heinzel-e2e.XXXXXXXX")"; trap 'rm -rf "$$dir"' EXIT; uv build --quiet --wheel --out-dir "$$dir"
+e2e-prepare: ## Prepare the locked controller and current build assets before end-to-end procedure deadlines
+	@uv run --quiet --script scripts/build.py sync
+	@set -eu; dir="$$(mktemp -d "$${TMPDIR:-/tmp}/heinzel-e2e.XXXXXXXX")"; trap 'rm -rf "$$dir"' EXIT; uv run --quiet --script scripts/build.py --quiet --wheel --out-dir "$$dir"
 
 audit: ## Audit runtime dependencies: known vulnerabilities (pip-audit) and licenses (.license-allowlist)
 	$(STEPS) "licenses=$(MAKE) --no-print-directory licenses" "&vulnerabilities=uv export --quiet --no-dev --no-emit-project --no-emit-package heinzel --format requirements-txt --output-file .audit-requirements.txt && uv run pip-audit --strict --disable-pip -r .audit-requirements.txt; status=\$$?; rm -f .audit-requirements.txt; exit \$$status" "&web-vulnerabilities=$(WEB) pnpm audit --prod"
@@ -330,7 +338,8 @@ terminal-art: ## Redraw Heinzelmännchen for the terminal from web/src/component
 	@uv run --quiet --script scripts/terminal_art.py && uv run --quiet ruff format --quiet src/heinzel/heads/cli/_art_data.py
 
 build: web-build ## Build the core wheel and sdist into dist/ (the web app first)
-	uv build
+	uv run --quiet --script scripts/build.py prepare
+	uv run --quiet --script scripts/build.py
 
 PYPI_DIST ?= dist
 pypi-clean-build-marker: ## Remove uv's generated ignore marker from the PyPI staging directory

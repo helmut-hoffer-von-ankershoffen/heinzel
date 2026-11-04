@@ -162,7 +162,7 @@ def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartabl
             "Restart this UI with hz ui before updating."
             if not restartable
             else "Frontend assets are incomplete, so hz cannot safely update this install. For uv, run `uv tool "
-            "upgrade heinzel`; otherwise use your installer. Then restart `hz ui`."
+            "upgrade heinzel`; otherwise use your installer. Then restart `hz ui serve`."
             if frontend is None
             else "This installation is deliberately pinned or is not a persistent uv tool; update it where installed."
             if not source_allowed

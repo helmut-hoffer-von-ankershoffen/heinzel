@@ -240,7 +240,8 @@ class PluginChange(BaseModel):
     candidate: PluginCandidate | None = Field(description="For `add`: what is installed, to show before confirming.")
     plugins: list[PluginInfo] = Field(description="The plugins installed afterwards (now, if not done).")
     restart_required: bool = Field(
-        description="Whether a running `hz ui` or MCP server must restart to load the change; the web app restarts "
+        description="Whether a running `hz ui serve` or MCP server must restart to load the change; "
+        "the web app restarts "
         "its server with `POST /api/restart`. Every new `hz` command sees it at once."
     )
     next: list[str] = Field(description="Commands to run next, e.g. the one that confirms.")
