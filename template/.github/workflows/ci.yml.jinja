@@ -48,7 +48,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - name: Commit messages, pull request title and branch (conventional, no confidential terms)
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
@@ -67,7 +67,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -88,7 +88,7 @@ jobs:
         with:
           fetch-depth: 0 # every commit, not just the tip
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - name: Scan the history for credentials (gitleaks pinned in scripts/tools.toml, checksum verified)
         run: make secrets
 
@@ -108,7 +108,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -129,7 +129,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -156,7 +156,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -191,7 +191,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -229,7 +229,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -251,7 +251,7 @@ jobs:
         with:
           fetch-depth: 0 # the install-from-git tests clone this repository
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -283,7 +283,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - run: make build
       - name: Check the wheel ships the package
         run: unzip -l dist/*.whl | grep -q '[[ package_name ]]/__init__.py'

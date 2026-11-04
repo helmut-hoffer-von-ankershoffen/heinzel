@@ -1,0 +1,40 @@
+name: Set up pinned uv
+description: Install the tested uv release without a remote version manifest.
+inputs:
+  enable-cache:
+    description: Forward the caller's cache policy.
+    default: auto
+  save-cache:
+    description: Forward the caller's cache write policy.
+    default: auto
+  cache-dependency-glob:
+    description: Files used to invalidate the uv cache.
+    default: |
+      **/*requirements*.txt
+      **/*requirements*.in
+      **/*constraints*.txt
+      **/*constraints*.in
+      **/pyproject.toml
+      **/uv.lock
+      **/*.py.lock
+  python-version:
+    description: Python version selected by the caller.
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Read the reviewed release manifest from this checkout
+      id: manifest
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        printf 'url=data:application/json;base64,%s\n' "$(base64 < "$ACTION_PATH/uv-manifest.json" | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
+    - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      with:
+        version: "0.13.7"
+        manifest-file: ${{ steps.manifest.outputs.url }}
+        enable-cache: ${{ inputs.enable-cache }}
+        save-cache: ${{ inputs.save-cache }}
+        cache-dependency-glob: ${{ inputs.cache-dependency-glob }}
+        python-version: ${{ inputs.python-version }}
