@@ -234,7 +234,7 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 
 # The browser E2E files (Playwright, the mounted web app) compete with the tool-install and CLI ones for CPU, so CI runs
 # the two halves as separate jobs. A file counts as browser when it mentions Playwright or the shared browser helpers.
-E2E_WEB := $(sort $(shell grep -lE 'playwright|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
+E2E_WEB := $(sort $(shell grep -lE 'playwright|_browser_ready|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
 E2E_WORKERS := $(if $(filter Darwin,$(shell uname -s)),2,3)
 E2E_PYTEST := uv run pytest -m e2e -n $(E2E_WORKERS) -q --session-timeout=600 -x
 # The browser files go to two jobs (every other file each), because one job's 600 s of tests left no headroom on a slow

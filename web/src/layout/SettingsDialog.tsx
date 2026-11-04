@@ -36,6 +36,7 @@ import {
 } from "./settingsSections";
 import { ThemePreviews } from "./ThemePreviews";
 import { type Mode, useMode } from "./theme";
+import { WebServerSettings } from "./WebServerSettings";
 
 type Props = {
   section: string | null;
@@ -270,13 +271,15 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
             )}
             {current === "ai" && <AiAccessSetting />}
             {current === "notifications" && <NotificationSettings />}
+            {current === "web-server" && <WebServerSettings />}
             {current === "daemon" && (
               <>
                 {header}
                 <DaemonSettings />
               </>
             )}
-            {(matching.length > 0 || !["appearance", "ai", "notifications", "daemon"].includes(current)) && (
+            {(matching.length > 0 ||
+              !["appearance", "ai", "notifications", "daemon", "web-server"].includes(current)) && (
               <Sections
                 settings={matching}
                 heading={current === "daemon" ? t("daemon.configuration") : page.title}

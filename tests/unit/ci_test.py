@@ -22,6 +22,27 @@ pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
 
+
+def test_browser_service_journey_has_one_browser_shard_and_keeps_cli_service_tests_separate():
+    recipe = "show-browser-allocation:\n\t@printf '%s\\n' '$(E2E_WEB)' '$(E2E_WEB_1)' '$(E2E_WEB_2)'"
+    result = subprocess.run(
+        ["make", "--no-print-directory", "-f", "Makefile", "-f", "-", "show-browser-allocation"],
+        cwd=REPO,
+        input=recipe + "\n",
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=3,
+    )
+    browser, first, second = [set(line.split()) for line in result.stdout.splitlines()]
+    journey = "tests/e2e/ui_service_browser_test.py"
+    assert journey in browser
+    assert (journey in first) != (journey in second)
+    assert "tests/e2e/ui_service_test.py" not in browser
+    assert first.isdisjoint(second)
+    assert first | second == browser
+
+
 _SANDBOX_SCRIPT = REPO / "desktop" / "ci" / "restore_linux_sandbox.py"
 _SANDBOX_SPEC = importlib.util.spec_from_file_location("electron_linux_sandbox", _SANDBOX_SCRIPT)
 assert _SANDBOX_SPEC is not None
