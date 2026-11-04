@@ -26,6 +26,9 @@ def test_lifecycle_is_authenticated_stable_and_replaced_with_the_server(make_ker
         base_url="http://127.0.0.1:8000",
     )
     assert client.get("/api/lifecycle").status_code == 401
+    assert client.post("/api/restart").status_code == 401
+    assert client.post("/api/restart", headers={"Authorization": "Bearer wrong-token"}).status_code == 401
+    assert calls == []
     before = client.get("/api/lifecycle", headers=AUTH)
     assert before.headers["Cache-Control"] == "no-store"
     assert before.json()["restartable"] is True

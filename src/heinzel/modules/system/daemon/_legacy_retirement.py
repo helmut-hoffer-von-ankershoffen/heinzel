@@ -1,8 +1,5 @@
 """Explicit legacy retirement; never called by ordinary lifecycle operations (ADR 0132)."""
 
-
-# ruff: noqa: SLF001 -- sibling implementation of the same daemon authority boundary
-
 import ctypes
 import hashlib
 import json
@@ -71,6 +68,24 @@ def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _object(value: bytes | str) -> dict[str, Any]:
+    """Parse a duplicate-free JSON object without losing its string-keyed type."""
+    return _as_object(json.loads(value, object_pairs_hook=_pairs))
+
+
+def _as_object(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        _refuse()
+    return TypeAdapter(dict[str, Any]).validate_python(value, strict=True)
+
+
+def _objects(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        _refuse()
+    items = TypeAdapter(list[object]).validate_python(value, strict=True)
+    return [_as_object(item) for item in items]
+
+
 @dataclass(frozen=True)
 class _File:
     path: Path
@@ -87,9 +102,9 @@ class _File:
 
 def _file(path: Path) -> _File:
     # Reuse the daemon's physical-parent, no-follow file boundary, not Path.read_bytes().
-    from heinzel.modules.system.daemon._service import _open_verified_handover_file  # noqa: PLC0415 - shared sibling boundary
+    from heinzel.modules.system.daemon._service import verified_handover_file  # noqa: PLC0415 - shared sibling boundary
 
-    with _open_verified_handover_file(path) as handle:
+    with verified_handover_file(path) as handle:
         info = os.fstat(handle.fileno())
         if (
             not stat.S_ISREG(info.st_mode)
@@ -249,7 +264,7 @@ class LegacyRetirement:
 
     def _scope(self) -> None:
         service = self.service
-        if service._platform != "darwin" or service._uid() != os.getuid():
+        if service.recovery_platform != "darwin" or service.recovery_uid() != os.getuid():
             _refuse()  # Other managers need their own proven effective-environment protocol.
         if any(
             key in os.environ
@@ -269,15 +284,15 @@ class LegacyRetirement:
         ):
             _refuse()
         expected = profile_environment(Settings(), DaemonSettings(), Config.empty())
-        if service._profile != expected:
+        if service.recovery_profile != expected:
             _refuse()
 
     def _target(self) -> dict[str, Any]:
         self._scope()
-        standard = _file(Path(self.service._profile["HZ_DATA_DIR"]) / "standard-app.json")
+        standard = _file(Path(self.service.recovery_profile["HZ_DATA_DIR"]) / "standard-app.json")
         if standard.path != self.selection.standard_receipt or standard.content != self.selection.content:
             _refuse()
-        installation = self.service._quiescence_installation
+        installation = self.service.recovery_installation
         if installation is None or not installation.startup_state_matches():
             _refuse()
         import tomllib  # noqa: PLC0415 - receipt parsing only on explicit recovery
@@ -296,23 +311,23 @@ class LegacyRetirement:
             "generation": installation.startup_fingerprint(),
             "version": installation.installed_core_version(),
             "uid": os.getuid(),
-            "profile": dict(self.service._profile),
+            "profile": dict(self.service.recovery_profile),
         }
 
     def _manager(self, executable: Path, *, require_absent: bool = False) -> dict[str, Any]:
         service = self.service
         result = service.owned_manager_command(["/bin/launchctl", "print", f"gui/{os.getuid()}/{LABEL}"])
         if result.returncode:
-            from heinzel.modules.system.daemon._service import _launchctl_records  # noqa: PLC0415 - one shared absence parser
+            from heinzel.modules.system.daemon._service import launchctl_records  # noqa: PLC0415 - one shared absence parser
 
             listing = service.owned_manager_command(["/bin/launchctl", "list"])
-            records = _launchctl_records(listing.stdout) if listing.returncode == 0 else None
+            records = launchctl_records(listing.stdout) if listing.returncode == 0 else None
             if records is None or LABEL in records:
                 _refuse()
             return {"registered": False, "observation": _digest(records)}
         if require_absent:
             _refuse()
-        routing = _loaded(result.stdout, plist_path(service.unit_dir), executable, service._profile["HOME"])
+        routing = _loaded(result.stdout, plist_path(service.unit_dir), executable, service.recovery_profile["HOME"])
         return {
             "registered": True,
             "observation": hashlib.sha256(result.stdout.encode()).hexdigest(),
@@ -323,9 +338,9 @@ class LegacyRetirement:
         service = self.service
         unit = _file(plist_path(service.unit_dir))
         marker = _file(service.state_dir / "install.json")
-        record = json.loads(marker.content, object_pairs_hook=_pairs)
+        record = _object(marker.content)
         fields = {"interval_minutes", "executable", "platform", "installed_at", "version"}
-        if not isinstance(record, dict) or set(record) not in (fields, fields | {"handover_id"}):
+        if set(record) not in (fields, fields | {"handover_id"}):
             _refuse()
         minutes = record["interval_minutes"]
         if (
@@ -356,25 +371,20 @@ class LegacyRetirement:
         request = _file(service.state_dir / "handover-request.json")
         observation = _file(service.state_dir / "handover-observation.json")
         heartbeat = _file(service.state_dir / "heartbeat.json")
-        requested = json.loads(request.content, object_pairs_hook=_pairs)
-        observed_fields = json.loads(observation.content, object_pairs_hook=_pairs)
-        if (
-            len(observation.content) > MAX_HISTORY_OBSERVATION
-            or not isinstance(observed_fields, dict)
-            or set(observed_fields)
-            != {
-                "request_id",
-                "version",
-                "fingerprint",
-                "contributions",
-                "tick_at",
-                "old_unit_signature",
-                "new_unit_signature",
-            }
-        ):
+        requested = _object(request.content)
+        observed_fields = _object(observation.content)
+        if len(observation.content) > MAX_HISTORY_OBSERVATION or set(observed_fields) != {
+            "request_id",
+            "version",
+            "fingerprint",
+            "contributions",
+            "tick_at",
+            "old_unit_signature",
+            "new_unit_signature",
+        }:
             _refuse()
         observed = TypeAdapter(DaemonHandoverObservation).validate_json(observation.content, strict=True)
-        beat = json.loads(heartbeat.content, object_pairs_hook=_pairs)
+        beat = _object(heartbeat.content)
         request_fields = {
             "request_id",
             "boot",
@@ -384,18 +394,20 @@ class LegacyRetirement:
             "birth_ns_dev",
             "birth_ns_ino",
         }
-        if (
-            not isinstance(requested, dict)
-            or set(requested) != request_fields
-            or not isinstance(beat, dict)
-            or set(beat) != {"last_tick", "completed_at", "source", "outcome", "interval_minutes", "version"}
-        ):
+        if set(requested) != request_fields or set(beat) != {
+            "last_tick",
+            "completed_at",
+            "source",
+            "outcome",
+            "interval_minutes",
+            "version",
+        }:
             _refuse()
         request_id = record["handover_id"]
         current = hashlib.sha256()
         for file in (unit, marker):
             current.update(str(file.path).encode() + b"\0" + file.content + b"\0")
-        installation = service._quiescence_installation
+        installation = service.recovery_installation
         if (
             not isinstance(request_id, str)
             or not DIGEST.fullmatch(request_id)
@@ -432,7 +444,7 @@ class LegacyRetirement:
         completed = datetime.fromisoformat(beat["completed_at"])
         if (
             any(value.tzinfo is None for value in (tick, last, completed))
-            or not tick <= last <= completed <= service._clock()
+            or not tick <= last <= completed <= service.recovery_now()
         ):
             _refuse()
         return request, (observation, heartbeat)
@@ -440,7 +452,7 @@ class LegacyRetirement:
     def _evidence(self, files: tuple[_File, ...]) -> tuple[_File, ...]:
         if len(files) == LEGACY_FILE_COUNT:
             return ()
-        record = json.loads(files[1].content, object_pairs_hook=_pairs)
+        record = _object(files[1].content)
         _, evidence = self._completed_history(files[0], files[1], record)
         return evidence
 
@@ -448,7 +460,7 @@ class LegacyRetirement:
         service = self.service
         for name in ("handover-pending.json", "mutation-pending.json", PENDING):
             if name == PENDING and token is not None:
-                if not service._mutation_token_matches(token, PENDING):
+                if not service.recovery_token_matches(token, PENDING):
                     _refuse()
             elif not _absent(service.state_dir / name):
                 _refuse()
@@ -512,17 +524,16 @@ class LegacyRetirement:
         return self.root / digest
 
     def _read(self, digest: str) -> dict[str, Any]:
-        value = json.loads(private_read(self._directory(digest) / "transaction.json"), object_pairs_hook=_pairs)
-        if not isinstance(value, dict) or value.get("digest") != digest or value.get("uid") != os.getuid():
+        value = _object(private_read(self._directory(digest) / "transaction.json"))
+        if value.get("digest") != digest or value.get("uid") != os.getuid():
             _refuse()
-        plan = value.get("plan")
+        plan = _as_object(value.get("plan"))
         if (
-            not isinstance(plan, dict)
-            or not isinstance(plan.get("files"), list)
+            not isinstance(plan.get("files"), list)
             or len(plan["files"]) not in {LEGACY_FILE_COUNT, LEGACY_FILE_COUNT + 1}
             or any(not isinstance(item, dict) for item in plan["files"])
             or not isinstance(plan.get("target"), dict)
-            or plan["target"].get("profile") != dict(self.service._profile)
+            or plan["target"].get("profile") != dict(self.service.recovery_profile)
             or plan["target"].get("uid") != os.getuid()
             or plan.get("action") != "retire-legacy-daemon"
         ):
@@ -531,7 +542,7 @@ class LegacyRetirement:
             value.get("format") != 1
             or value.get("token") != digest
             or _digest(plan) != digest
-            or [file.get("path") for file in plan.get("files", [])]
+            or [file.get("path") for file in plan["files"]]
             != (
                 [str(plist_path(self.service.unit_dir)), str(self.service.state_dir / "install.json")]
                 + (
@@ -558,12 +569,8 @@ class LegacyRetirement:
             }
         ):
             _refuse()
-        backups = value.get("backups")
-        if (
-            not isinstance(backups, list)
-            or len(backups) > len(plan["files"])
-            or any(not isinstance(item, dict) for item in backups)
-        ):
+        backups = _objects(value.get("backups"))
+        if len(backups) > len(plan["files"]):
             _refuse()
         for index, item in enumerate(backups):
             if item.get("path") != str(self._directory(digest) / f"original-{index}") or item.get("sha256") != plan[
@@ -574,7 +581,7 @@ class LegacyRetirement:
             backups
         ) != len(plan["files"]):
             _refuse()
-        if value.get("profile") != dict(self.service._profile):
+        if value.get("profile") != dict(self.service.recovery_profile):
             _refuse()
         return value
 
@@ -595,22 +602,22 @@ class LegacyRetirement:
 
     def _release_gate(self, journal: dict[str, Any]) -> None:
         service = self.service
-        if not service._mutation_token_matches(journal["token"], PENDING):
+        if not service.recovery_token_matches(journal["token"], PENDING):
             _refuse()
         (service.state_dir / PENDING).unlink()
         fsync_dir(service.state_dir)
 
     def _replay_terminal(self, journal: dict[str, Any]) -> DaemonRecoveryResult:
-        if self.service._mutation_token_matches(journal["token"], PENDING):
-            from heinzel.modules.system.daemon._service import _handover_absolute_path  # noqa: PLC0415 - shared lock boundary
+        if self.service.recovery_token_matches(journal["token"], PENDING):
+            from heinzel.modules.system.daemon._service import handover_absolute_path  # noqa: PLC0415 - shared lock boundary
 
             with (
-                self.service._lifecycle_writer(),
-                private_lock(_handover_absolute_path(self.service.state_dir / "tick.lock")),
+                self.service.recovery_writer(),
+                private_lock(handover_absolute_path(self.service.state_dir / "tick.lock")),
             ):
                 if self._read(journal["digest"]) != journal:
                     _refuse()
-                if self.service._mutation_token_matches(journal["token"], PENDING):
+                if self.service.recovery_token_matches(journal["token"], PENDING):
                     self._finish_terminal_gate(journal)
         return self._terminal(journal["digest"], "retired")
 
@@ -627,6 +634,7 @@ class LegacyRetirement:
 
     def retire(self, digest: str) -> DaemonRecoveryResult:
         """Perform only a freshly confirmed plan, retaining an explicit gate on any uncertainty."""
+        journal: dict[str, Any]
         directory = self._directory(digest)
         if not _absent(directory):
             journal = self._read(digest)
@@ -634,9 +642,9 @@ class LegacyRetirement:
                 return self._replay_terminal(journal)
             _refuse()  # No mutation replay; an interrupted transaction needs its own restore confirmation.
         service = self.service
-        from heinzel.modules.system.daemon._service import _handover_absolute_path  # noqa: PLC0415 - shared physical lock path
+        from heinzel.modules.system.daemon._service import handover_absolute_path  # noqa: PLC0415 - shared physical lock path
 
-        with service._lifecycle_writer(), private_lock(_handover_absolute_path(service.state_dir / "tick.lock")):
+        with service.recovery_writer(), private_lock(handover_absolute_path(service.state_dir / "tick.lock")):
             plan = self._plan(check_tick=False)
             facts: dict[str, Any] = plan.model_dump()["facts"]
             if plan.digest != digest:
@@ -649,7 +657,7 @@ class LegacyRetirement:
                 "format": 1,
                 "digest": digest,
                 "uid": os.getuid(),
-                "profile": dict(service._profile),
+                "profile": dict(service.recovery_profile),
                 "token": token,
                 "plan": facts,
                 "state": "intent",
@@ -799,8 +807,8 @@ class LegacyRetirement:
         target = journal["plan"]["target"]
         self._verify_evidence(journal)
         manager = self._manager(Path(target["executable"]))
-        files = []
-        preserved = []
+        files: list[dict[str, Any]] = []
+        preserved: list[dict[str, Any] | None] = []
         for index, original in enumerate(journal["plan"]["files"]):
             path = Path(original["path"])
             backups = journal["backups"]
@@ -827,7 +835,7 @@ class LegacyRetirement:
             else:
                 _refuse()
             files.append({"original": original, "at_original": present, "current": captured.facts()})
-        facts = {
+        facts: dict[str, Any] = {
             "action": "restore-legacy-daemon",
             "transaction": digest,
             "journal": _digest(journal),
@@ -843,9 +851,9 @@ class LegacyRetirement:
     def restore(self, digest: str, confirmation: str) -> DaemonRecoveryResult:
         """Restore only an explicitly confirmed unchanged journal; never undo terminal retirement."""
         service = self.service
-        from heinzel.modules.system.daemon._service import _handover_absolute_path  # noqa: PLC0415 - shared physical lock path
+        from heinzel.modules.system.daemon._service import handover_absolute_path  # noqa: PLC0415 - shared physical lock path
 
-        with service._lifecycle_writer(), private_lock(_handover_absolute_path(service.state_dir / "tick.lock")):
+        with service.recovery_writer(), private_lock(handover_absolute_path(service.state_dir / "tick.lock")):
             plan = self.restore_plan(digest, check_tick=False)
             facts: dict[str, Any] = plan.model_dump()["facts"]
             if plan.digest != confirmation:

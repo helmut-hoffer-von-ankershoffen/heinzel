@@ -1,12 +1,12 @@
 // Automatic updates (ADR 0116): the server owns the plan; this only shows it. Every window polls the same
 // `GET /api/auto-update`, so two windows agree and a reload shows what is left of the countdown.
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { useAutoUpdateSetting } from "./AutoUpdateToggle";
-import { type AutoUpdateStatus, call, KEY } from "./autoUpdateApi";
+import { type AutoUpdateStatus, call, KEY, useAutoUpdateStatus } from "./autoUpdateApi";
 import { updateTransport } from "./controller";
 import { reloadHeld } from "./work";
 
@@ -30,13 +30,7 @@ export function AutoUpdate() {
   const { on } = useAutoUpdateSetting();
   // A setting cached as "off" can be enabled in another window or the CLI without this window knowing. Keep
   // polling every 2 s, also in the background, so each window can show the server's 30-second warning in time.
-  const query = useQuery({
-    queryKey: KEY,
-    queryFn: ({ signal }) => call("GET", "", signal),
-    refetchInterval: 2_000,
-    refetchIntervalInBackground: true,
-    retry: false,
-  });
+  const query = useAutoUpdateStatus(true);
   // A setting change observed by this window asks the server again at once.
   const previous = useRef(on);
   useEffect(() => {

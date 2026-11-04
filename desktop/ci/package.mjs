@@ -3,11 +3,12 @@ import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 import { packager } from "@electron/packager";
+import { checkNode } from "./node-version.mjs";
 import { captureRuntime } from "./runtime-inventory.mjs";
 
-if (process.versions.node !== "24.19.0") {
-  throw new Error(`Electron packaging requires Node.js 24.19.0; found ${process.versions.node}.`);
-}
+const nodeCheck = checkNode();
+if (!nodeCheck.ok) throw new Error(nodeCheck.message);
+if (nodeCheck.warning) process.stderr.write(`${nodeCheck.warning}\n`);
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const args = process.argv.slice(2).filter((argument) => argument !== "--");

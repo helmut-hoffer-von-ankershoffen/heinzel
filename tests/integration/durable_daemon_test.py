@@ -38,10 +38,10 @@ def unrelated_host_daemon(make_kernel, settings, monkeypatch, tmp_path):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("unrelated host unit", encoding="utf-8")
 
-    def reject_host_probe(_self):
+    def reject_host_probe(_self, _command):
         pytest.fail("the replay test must not probe the host service manager")
 
-    monkeypatch.setattr(DaemonService, "_loaded", reject_host_probe)
+    monkeypatch.setattr(DaemonService, "owned_manager_command", reject_host_probe)
 
 
 def bind_check_in_clock(kernel, settings, daemon_clock, review_clock):

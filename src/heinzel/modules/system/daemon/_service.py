@@ -533,6 +533,27 @@ class _MutationScope:
         self.authority.pending_path.unlink()
 
 
+def handover_absolute_path(path: Path) -> Path:
+    """Resolve the existing physical handover path for sibling recovery code."""
+    return _handover_absolute_path(path)
+
+
+@contextmanager
+def verified_handover_file(path: Path) -> Generator[BinaryIO, None, None]:
+    """Open a file through the existing bounded handover authority boundary.
+
+    Yields:
+        The physically verified bounded handover file handle.
+    """
+    with _open_verified_handover_file(path) as handle:
+        yield handle
+
+
+def launchctl_records(output: str) -> dict[str, str] | None:
+    """Parse the same complete service-manager listing used by normal lifecycle checks."""
+    return _launchctl_records(output)
+
+
 class DaemonService:
     """Installs, inspects and pauses the daemon, and runs ticks."""
 
@@ -1096,6 +1117,39 @@ class DaemonService:
             return False
         else:
             return True
+
+    @property
+    def recovery_platform(self) -> str:
+        """The platform selected by this daemon authority."""
+        return self._platform
+
+    @property
+    def recovery_profile(self) -> dict[str, str]:
+        """A copy of the selected profile routing for explicit recovery inspection."""
+        return dict(self._profile)
+
+    @property
+    def recovery_installation(self) -> Installation | None:
+        """The existing installation bound to this daemon's quiescence checks."""
+        return self._quiescence_installation
+
+    def recovery_uid(self) -> int:
+        """Observe the same user identity used by normal daemon authority checks."""
+        return self._uid()
+
+    def recovery_now(self) -> datetime:
+        """Observe this service's clock for completed-history validation."""
+        return self._clock()
+
+    def recovery_token_matches(self, token: str, name: str) -> bool:
+        """Check the exact existing mutation token without modifying its gate."""
+        return self._mutation_token_matches(token, name)
+
+    @contextmanager
+    def recovery_writer(self) -> Generator[None]:
+        """Hold the same lifecycle writer used by ordinary daemon mutations."""
+        with self._lifecycle_writer():
+            yield
 
     def owned_manager_command(self, command: list[str]) -> subprocess.CompletedProcess[str]:
         """Use only the fixed, bounded manager in this verified user session, before and after the request.

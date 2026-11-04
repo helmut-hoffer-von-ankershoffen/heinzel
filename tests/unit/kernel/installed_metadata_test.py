@@ -177,3 +177,42 @@ def test_constraint_version_is_enforced_with_direct_source(tmp_path):
     distribution(tmp_path, "heinzel", "0.9.7", {"url": wheel, "archive_info": {}})
     with pytest.raises(HeinzelError, match="metadata does not match"):
         inspect_requirements(tmp_path, ["heinzel>=0.9"], None, constraints=(f"heinzel @ {wheel}", "heinzel<0.9.7"))
+
+
+def test_preserved_wheels_supply_exact_sources_without_relaxing_index_validation(tmp_path):
+    from heinzel.kernel._installed_metadata import preserved_wheel_constraints
+
+    url = f"file:///fixture/heinzel-0.9.15-py3-none-any.whl#sha256={'a' * 64}"
+    info = distribution(tmp_path, "heinzel", "0.9.15", {"url": url, "archive_info": {}})
+    distribution(tmp_path, "heinzel-other", "1.0.0")
+    constraints = preserved_wheel_constraints(tmp_path, ["heinzel", "heinzel-other"])
+    assert constraints == (f"heinzel @ {url}",)
+    assert inspect_requirements(tmp_path, ["heinzel"], "0.9.15", constraints=constraints) == {"heinzel": "0.9.15"}
+    with pytest.raises(HeinzelError, match="metadata does not match"):
+        inspect_requirements(tmp_path, ["heinzel"], "0.9.15")
+    (info / "direct_url.json").write_text(json.dumps({"url": url.replace("a" * 64, "b" * 64), "archive_info": {}}))
+    with pytest.raises(HeinzelError, match="metadata does not match"):
+        inspect_requirements(tmp_path, ["heinzel"], "0.9.15", constraints=constraints)
+
+
+@pytest.mark.parametrize(
+    "problem", ["unhashed", "wrong-name", "wrong-version", "credentials", "malformed", "duplicate"]
+)
+def test_preserved_wheel_metadata_requires_an_unambiguous_hash_bound_identity(tmp_path, problem):
+    from heinzel.kernel._installed_metadata import preserved_wheel_constraints
+
+    url = f"file:///fixture/heinzel-0.9.15-py3-none-any.whl#sha256={'a' * 64}"
+    if problem == "unhashed":
+        url = url.split("#", maxsplit=1)[0]
+    if problem == "wrong-name":
+        url = url.replace("heinzel-", "heinzel_other-")
+    if problem == "wrong-version":
+        url = url.replace("0.9.15", "0.9.14")
+    if problem == "credentials":
+        url = url.replace("file:///", "file://user:password@host/")
+    direct = {"url": 42} if problem == "malformed" else {"url": url, "archive_info": {}}
+    distribution(tmp_path, "heinzel", "0.9.15", direct)
+    if problem == "duplicate":
+        distribution(tmp_path, "heinzel", "0.9.14", direct)
+    with pytest.raises(HeinzelError, match="cannot be preserved safely"):
+        preserved_wheel_constraints(tmp_path, ["heinzel"])
