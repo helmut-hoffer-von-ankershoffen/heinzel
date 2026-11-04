@@ -305,7 +305,9 @@ describe("ChatPanel", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     await user.click(await screen.findByRole("button", { name: "Decline" }));
-    await waitFor(() => expect(screen.queryByRole("heading", { name: "The Heinzel proposes" })).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "The Heinzel proposes" })).not.toBeInTheDocument(),
+    );
     expect(calls.some((request) => request.url.includes("/chat/decline"))).toBe(true);
     expect(calls.some((request) => request.url.includes("/chat/confirm"))).toBe(false);
   });
