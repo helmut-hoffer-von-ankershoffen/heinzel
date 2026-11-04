@@ -111,3 +111,18 @@ Before any restoration, stop writers using that profile through their supported 
 current hz version. Have the backup and restoration procedure reviewed before changing the preserved state, then run
 `hz system doctor` again before resuming notification delivery. If no coherent backup is available, keep the store
 unchanged and ask for recovery help.
+
+## Uninstall offline
+
+For a verified standard installation of 0.9.16 or later, run `hz system uninstall`.
+It needs no network or running web UI. Your logged-in user service manager must be available: it stops only the installation's verified owned web and daemon jobs, then removes its uv tool
+and command scripts. Your data, configuration, agent skills, notifier and private recovery history stay.
+
+Core installs an exact pinned uv dependency. Removal authenticates its native bytes and stages a private copy before
+stopping any service; it never executes uv from PATH. A missing artifact, changed SDK, foreign service or
+unsupported installation refuses before unsafe removal. Unmarked SDK and desktop runtime installations use their
+own local installer. No purge or network bootstrap runs as part of this command.
+
+If removal is interrupted, follow the concrete offline recovery command printed by the failure. Its private script
+uses the already installed external Python and retained verified remover, so it remains usable after the command's
+SDK is gone. Keep its journal and integration files until recovery reports completion.

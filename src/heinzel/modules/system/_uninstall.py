@@ -1,30 +1,22 @@
 """Offline removal of one verified uv installation, with owned service cleanup and retained user work."""
 
 import argparse
+import secrets
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
-
-from pydantic import BaseModel
+from typing import TYPE_CHECKING
 
 from heinzel import Config, HeinzelError, Kernel, Progress, Settings
 from heinzel.kernel import Installation
 from heinzel.kernel._installation_mutations import installation_mutation_pending
-from heinzel.kernel._tool_uninstall import uv_identity
+from heinzel.kernel._offline_uv import VerifiedUV, stage
+from heinzel.kernel._uninstall_journal import RemovalJournal
+from heinzel.modules.system._models import UninstallResult
 
 if TYPE_CHECKING:
-    from heinzel.modules.system.daemon._service import DaemonService
-    from heinzel.modules.ui._service import WebService
-
-
-class UninstallResult(BaseModel):
-    """Observed removal, never a promise that user data or other applications were deleted."""
-
-    removed: Literal[True] = True
-    data_retained: Literal[True] = True
-    daemon_removed: bool
-    web_removed: bool
-    message: str = "Heinzel was uninstalled. Your data and configuration were kept."
+    from heinzel.modules.system.daemon._service import DaemonRemoval, DaemonService
+    from heinzel.modules.ui._service import WebRemoval, WebService
 
 
 def uninstall_installation(
@@ -32,6 +24,7 @@ def uninstall_installation(
     *,
     daemon: "DaemonService | None" = None,
     web: "WebService | None" = None,
+    on_recovery: Callable[[str], None] | None = None,
 ) -> UninstallResult:
     """Stop only verified owned services and remove the current standard tool, retaining all user work.
 
@@ -49,16 +42,29 @@ def uninstall_installation(
 
     installation = installation or Installation(Progress())
     store, binary = installation.tool_destination()
-    uv_identity(installation.uv)
     if not installation.startup_state_matches():
         msg = (
             "This is not a verified standard Heinzel installation. "
             "Inspect its local installer and services; nothing was removed."
         )
         raise HeinzelError(msg)
-    before = installation.startup_fingerprint()
-    config = Config.load(Path.home())
+    before, config = installation.startup_fingerprint(), Config.load(Path.home())
     settings = config.settings(Settings, "hz")
+    if any(
+        path.resolve().is_relative_to(installation.prefix)
+        for path in (
+            settings.data_dir,
+            settings.state_dir,
+            settings.cache_dir,
+            settings.log_dir,
+        )
+    ):
+        msg = "User work is inside the tool environment; move it with your local installer before uninstalling."
+        raise HeinzelError(msg)
+    if any(file.path.resolve().is_relative_to(installation.prefix) for file in config.files):
+        msg = "Configuration is inside the tool environment; move it with your local installer before uninstalling."
+        raise HeinzelError(msg)
+    executable = stage(installation.prefix, settings.state_dir / "uninstall" / secrets.token_hex(16))
     kernel = Kernel(settings, config=config)  # No records and no discovery: configuration and Progress only.
     kernel.bind(Installation, installation)
     daemon = daemon or DaemonService.for_user(kernel)
@@ -67,9 +73,11 @@ def uninstall_installation(
         Path.home(),
         binary / "hz",
         prefix=installation.prefix,
-        uv=Path(installation.uv).absolute(),
+        uv=WebService.removal_uv_hint(settings.state_dir),
         profile=user_profile(config, settings, Path.home(), installation.prefix, binary / "hz"),
         unsupported=installation_overrides(config),
+        runner=daemon.offline_manager_command,
+        which=lambda name: "/bin/launchctl" if name == "launchctl" else "/usr/bin/systemctl",
     )
     if daemon.state_dir.parent != web.directory.parent or installation.prefix != store / "heinzel":
         msg = "The service profile does not match this Heinzel installation; nothing was removed."
@@ -80,14 +88,54 @@ def uninstall_installation(
     with (
         installation.tool_transaction(),
         web.removal_guard() as remove_web,
-        daemon.offline_removal_guard(binary) as removed_daemon,
+        daemon.offline_removal_guard(binary) as daemon_removal,
     ):
         if not installation.startup_state_matches() or installation.startup_fingerprint() != before:
             msg = "The Heinzel installation changed during inspection; nothing was removed."
             raise HeinzelError(msg)
-        removed_web = remove_web().changed
-        installation.uninstall_offline(expected=before)
-    return UninstallResult(daemon_removed=removed_daemon, web_removed=removed_web)
+        journal = RemovalJournal(
+            executable,
+            prefix=installation.prefix,
+            binary=binary,
+            state=settings.state_dir,
+            captured=((*remove_web.files, *daemon_removal.files), installation.tool_entrypoints()),
+        )
+        if not installation.startup_state_matches() or installation.startup_fingerprint() != before:
+            msg = "The Heinzel installation changed while preparing recovery; no service was stopped."
+            raise HeinzelError(msg)
+        _apply_removal(installation, before, executable, (remove_web, daemon_removal, journal), on_recovery)
+
+    return UninstallResult(daemon_removed=bool(daemon_removal.files), web_removed=bool(remove_web.files))
+
+
+def _apply_removal(
+    installation: Installation,
+    before: str,
+    executable: VerifiedUV,
+    plan: tuple["WebRemoval", "DaemonRemoval", RemovalJournal],
+    on_recovery: Callable[[str], None] | None,
+) -> None:
+    remove_web, daemon_removal, journal = plan
+    if on_recovery is not None:
+        on_recovery(journal.command)
+    try:
+        journal.begin()
+        remove_web.stop()
+        daemon_removal.stop(journal.token)
+        journal.phase("stopped")
+        journal.phase("removing")
+        installation.uninstall_offline(expected=before, executable=executable)
+        journal.phase("removed")
+        remove_web.finish()
+        daemon_removal.finish()
+        journal.complete()
+    except (OSError, ValueError, HeinzelError) as error:
+        msg = f"Offline removal needs inspection. User work was kept. Recovery without the SDK: {journal.command}"
+        raise HeinzelError(msg) from error
+
+
+def _show_recovery(command: str) -> None:
+    sys.stderr.write(f"Offline recovery if interrupted: {command}\n")
 
 
 def main(arguments: list[str]) -> int:
@@ -96,13 +144,13 @@ def main(arguments: list[str]) -> int:
         prog="hz system uninstall",
         description=(
             "Uninstall the verified Heinzel tool offline, stopping its owned services "
-            "and keeping your data and configuration."
+            "and keeping your data, configuration, agent skills and notifier."
         ),
     )
     parser.add_argument("--json", action="store_true", help="Print the observed result as JSON")
     args = parser.parse_args(arguments)
     try:
-        result = uninstall_installation()
+        result = uninstall_installation(on_recovery=_show_recovery)
     except (HeinzelError, OSError, ValueError) as error:
         sys.stderr.write(f"Heinzel was not fully uninstalled. {error}\n")
         return 1

@@ -14,6 +14,7 @@ import sys
 import time
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
@@ -31,6 +32,7 @@ from heinzel.kernel import (
     private_socket_directory,
     private_write,
 )
+from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
 from heinzel.modules.ui._profile import (
     default_profile,
     environment_command,
@@ -83,6 +85,15 @@ class WebChange(BaseModel):
         default_factory=dict, description="Exact integration files, containing no credentials."
     )
     status: WebStatus = Field(description="The independently observed service state.")
+
+
+@dataclass(frozen=True)
+class WebRemoval:
+    """One held, preflighted integration: stopping and final file cleanup are separate operations."""
+
+    files: tuple[OwnedFile, ...]
+    stop: Callable[[], None]
+    finish: Callable[[], WebChange]
 
 
 class WebService:
@@ -170,6 +181,23 @@ class WebService:
                 and (binary / "hz").samefile(installation.prefix / "bin/hz")
             ),
         )
+
+    @staticmethod
+    def removal_uv_hint(state: Path) -> Path:
+        """Read only the historical launcher's uv spelling; removal never executes or resolves this path.
+
+        Raises:
+            HeinzelError: If an existing integration has no bounded absolute historical spelling.
+        """
+        try:
+            record = TypeAdapter(dict[str, JsonValue]).validate_json(private_read(state / "ui/service.json"))
+        except FileNotFoundError:
+            return Path("/usr/bin/uv")  # No record: only absent-integration inspection uses this inert value.
+        value = record.get("uv")
+        if not isinstance(value, str) or not Path(value).is_absolute() or len(value) > 4 * 1024 or "\x00" in value:
+            msg = "The recorded web installation identity changed; it was left untouched."
+            raise HeinzelError(msg)
+        return Path(value)
 
     def _command(self, *arguments: str) -> list[str]:
         manager = "launchctl" if self.platform == "darwin" else "systemctl"
@@ -572,22 +600,39 @@ class WebService:
         )
 
     @contextmanager
-    def removal_guard(self) -> Generator[Callable[[], WebChange], None, None]:
-        """Inspect all owned integration before another removal mutates it; retain the lifecycle lock.
+    def removal_guard(self) -> Generator[WebRemoval, None, None]:
+        """Hold exact integration authority, separating stop from cleanup after verified tool removal.
 
         Yields:
-            The existing verified remover, including when the preview flag is disabled.
+            Captured integration files and separate existing verified stop/cleanup actions.
 
         Raises:
-            HeinzelError: If the filesystem or loaded job is foreign or changed.
+            HeinzelError: If files or the loaded user job are foreign, changed or unavailable.
         """
         with private_lock(self.directory / "lifecycle.lock"):
             record = self._record()
             if not self._integration_absent() and record is None:
                 msg = "The web service is foreign or changed; it was left unchanged."
                 raise HeinzelError(msg)
-            self._manager(record)  # Even absent files cannot authorize removal of an unowned loaded label.
-            yield self._uninstall
+            self._manager(record)
+            files = tuple(owned_file(path) for path in (self.unit, self.launcher, self.marker)) if record else ()
+
+            def stop() -> None:
+                if record:
+                    self._stop_owned(record)
+
+            def finish() -> WebChange:
+                if record and not self._stop_complete(record):
+                    msg = "The web job is not stopped; its integration files were retained."
+                    raise HeinzelError(msg)
+                for captured in files:
+                    remove_owned_file(captured)
+                if files and self.platform == "linux" and self.runner(self._command("daemon-reload")).returncode:
+                    msg = "Web integration was removed but the user manager needs a local reload."
+                    raise HeinzelError(msg)
+                return WebChange(changed=bool(files), status=WebStatus(installed=False, loaded=False, ready=False))
+
+            yield WebRemoval(files, stop, finish)
 
     def uninstall(self) -> WebChange:
         """Remove exact owned integration under one exclusive lifecycle writer.
@@ -670,6 +715,21 @@ class WebService:
         if record is None:
             msg = "The web service is unowned or changed; nothing was removed."
             raise HeinzelError(msg)
+        self._stop_owned(record)
+        self.unit.unlink()
+        self.launcher.unlink()
+        self.marker.unlink()
+        if self.platform == "linux" and self.runner(self._command("daemon-reload")).returncode:
+            msg = "Web integration was removed but systemd reload failed; inspect your user manager."
+            raise HeinzelError(msg)
+        return WebChange(changed=True, status=self.status())
+
+    def _stop_owned(self, record: dict[str, JsonValue]) -> None:
+        """Stop only the exact loaded integration, preserving its files until removal is confirmed.
+
+        Raises:
+            HeinzelError: If loaded ownership or the stopped state cannot be verified.
+        """
         loaded, _ = self._manager(record)
         if loaded:
             command = (
@@ -684,10 +744,3 @@ class WebService:
         if self._record() != record:
             msg = "Web integration changed during removal; its files were retained."
             raise HeinzelError(msg)
-        self.unit.unlink()
-        self.launcher.unlink()
-        self.marker.unlink()
-        if self.platform == "linux" and self.runner(self._command("daemon-reload")).returncode:
-            msg = "Web integration was removed but systemd reload failed; inspect your user manager."
-            raise HeinzelError(msg)
-        return WebChange(changed=True, status=self.status())

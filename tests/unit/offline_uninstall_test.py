@@ -1,5 +1,6 @@
 """Offline uninstall binds one existing tool and never discovers plugins or bootstraps an installer."""
 
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -10,6 +11,8 @@ import pytest
 from heinzel import HeinzelError
 from heinzel.heads import cli
 from heinzel.kernel import _installation
+from heinzel.kernel._offline_uv import VerifiedUV
+from heinzel.kernel._tool_uninstall import owned_file
 from heinzel.modules.system import _uninstall
 from tests.unit.kernel.installation_continuity_test import tool
 
@@ -24,6 +27,8 @@ def removable(tool):
     uv.write_text("#!/bin/sh\nexit 99\n")
     uv.chmod(0o700)
     tool._uv = str(uv)
+    captured = owned_file(uv)
+    tool.test_remover = VerifiedUV(uv, hashlib.sha256(captured.content).hexdigest(), captured.identity)
     tool.record_startup_state(expected=tool.startup_fingerprint())
     return tool
 
@@ -47,8 +52,8 @@ def test_offline_command_removes_only_the_verified_tool_and_owned_links(removabl
         shutil.rmtree(removable.prefix)
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(removable, "_runner", run)
-    removable.uninstall_offline(expected=removable.startup_fingerprint())
+    monkeypatch.setattr(removable, "_exact_runner", run)
+    removable.uninstall_offline(expected=removable.startup_fingerprint(), executable=removable.test_remover)
     assert len(calls) == 1
     assert sentinel.read_text() == "another tool"
     assert user_data.read_text() == "retained user work"
@@ -72,9 +77,9 @@ def test_changed_or_redirected_installation_never_invokes_uv(removable, change, 
         original.symlink_to(saved, target_is_directory=True)
     else:
         (removable.prefix / ".heinzel-startup-state").unlink()
-    monkeypatch.setattr(removable, "_runner", lambda *args: pytest.fail("An unsafe target must not invoke uv"))
+    monkeypatch.setattr(removable, "_exact_runner", lambda *args: pytest.fail("An unsafe target must not invoke uv"))
     with pytest.raises((HeinzelError, OSError)):
-        removable.uninstall_offline(expected=before)
+        removable.uninstall_offline(expected=before, executable=removable.test_remover)
     assert removable.prefix.exists()
 
 
@@ -88,9 +93,9 @@ def test_refused_or_uncertain_removal_never_reinstalls_or_reports_success(remova
             raise subprocess.TimeoutExpired(command, 1)
         return subprocess.CompletedProcess(command, 1 if outcome == "refused" else 0, "", "")
 
-    monkeypatch.setattr(removable, "_runner", run)
+    monkeypatch.setattr(removable, "_exact_runner", run)
     with pytest.raises(HeinzelError, match="removal"):
-        removable.uninstall_offline(expected=removable.startup_fingerprint())
+        removable.uninstall_offline(expected=removable.startup_fingerprint(), executable=removable.test_remover)
     assert len(calls) == 1
     assert calls[0][-3:] == ["tool", "uninstall", "heinzel"]
     assert removable.prefix.exists()
@@ -106,10 +111,59 @@ def test_cli_uninstall_and_help_dispatch_before_boot_or_background_checks(monkey
     assert result.value.code == 0
     assert "offline" in capsys.readouterr().out
     monkeypatch.setattr(
-        _uninstall, "uninstall_installation", lambda: _uninstall.UninstallResult(daemon_removed=True, web_removed=True)
+        _uninstall,
+        "uninstall_installation",
+        lambda **kwargs: _uninstall.UninstallResult(daemon_removed=True, web_removed=True),
     )
     monkeypatch.setattr(sys, "argv", ["hz", "system", "uninstall", "--json"])
     with pytest.raises(SystemExit) as result:
         cli.main()
     assert result.value.code == 0
     assert '"data_retained":true' in capsys.readouterr().out
+
+
+def test_real_exact_runner_does_not_restore_removed_ambient_uv_policy(monkeypatch):
+    import json
+
+    for name in ("UV_REMOVAL_SENTINEL", "DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"):
+        monkeypatch.setenv(name, "/fixture-untrusted")
+    result = _installation._run_exact(
+        [sys.executable, "-I", "-c", "import os,json; print(json.dumps(dict(os.environ)))"],
+        {"UV_TOOL_DIR": "/fixture/tools", "UV_TOOL_BIN_DIR": "/fixture/bin", "PATH": "/usr/bin:/bin"},
+    )
+    assert result.returncode == 0
+    environment = json.loads(result.stdout)
+    assert not {"UV_REMOVAL_SENTINEL", "DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"} & environment.keys()
+    assert environment["UV_TOOL_DIR"] == "/fixture/tools"
+    assert environment["UV_TOOL_BIN_DIR"] == "/fixture/bin"
+
+
+@pytest.mark.parametrize("change", ["replaced", "group-writable-parent", "tampered"])
+def test_private_remover_swap_or_unsafe_copy_refuses_before_uv(removable, monkeypatch, change):
+    uv = removable.test_remover.path
+    if change == "replaced":
+        uv.rename(uv.with_suffix(".old"))
+        uv.write_text("#!/bin/sh\nexit 0\n")
+        uv.chmod(0o700)
+    elif change == "tampered":
+        uv.write_text("#!/bin/sh\nexit 0\n")
+    else:
+        uv.parent.chmod(0o770)
+    monkeypatch.setattr(removable, "_exact_runner", lambda *args: pytest.fail("An unsafe remover must never execute"))
+    with pytest.raises((HeinzelError, OSError)):
+        removable.uninstall_offline(expected=removable.startup_fingerprint(), executable=removable.test_remover)
+
+
+def test_invalid_runtime_remover_preflight_precedes_all_service_actions(removable, monkeypatch):
+    calls = []
+
+    def reject(prefix, directory):
+        calls.append(prefix)
+        message = "untrusted runtime remover"
+        raise HeinzelError(message)
+
+    monkeypatch.setattr(_uninstall, "stage", reject)
+    with pytest.raises(HeinzelError, match="untrusted runtime remover"):
+        _uninstall.uninstall_installation(removable, daemon=object(), web=object())
+    assert calls == [removable.prefix]
+    assert removable.prefix.exists()

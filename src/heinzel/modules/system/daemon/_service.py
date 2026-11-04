@@ -21,7 +21,7 @@ import stat
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, tzinfo
@@ -55,10 +55,9 @@ from heinzel.kernel import (
     DaemonMutationScope,
     Installation,
     ProcessOutcome,
-    subprocess_environment,
     tick_interval,
 )
-from heinzel.kernel._tool_uninstall import OwnedFile, owned_file
+from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
 from heinzel.modules.system.daemon import _process_birth
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._ledger import Ledger
@@ -336,7 +335,7 @@ def _launchctl_records(output: str) -> dict[str, str] | None:
 
 def _manager_environment(command: list[str]) -> dict[str, str]:
     if command[0] != "/usr/bin/systemctl":
-        return subprocess_environment()
+        return {"PATH": "/usr/bin:/bin", "LANG": "C", "HOME": str(Path.home())}
     runtime = f"/run/user/{os.getuid()}"
     return {
         "PATH": "/usr/bin:/bin",
@@ -555,6 +554,15 @@ class _MutationScope:
             raise HeinzelError(msg)
         self._verify(self.expected)
         self.authority.pending_path.unlink()
+
+
+@dataclass(frozen=True)
+class DaemonRemoval:
+    """One held owned daemon plan; its durable coordinator controls stop and final cleanup."""
+
+    files: tuple[OwnedFile, ...]
+    stop: Callable[[str], None]
+    finish: Callable[[], None]
 
 
 class DaemonService:
@@ -1493,9 +1501,37 @@ class DaemonService:
             raise HeinzelError(msg) from exc
         return digest.hexdigest()
 
-    def _offline_probe(self, command: list[str]) -> str | None:
+    def offline_manager_command(self, command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        """Use the fixed verified user manager for offline daemon and web cleanup alike.
+
+        Raises:
+            HeinzelError: If a substituted executable, foreign bus, session change or incomplete answer is seen.
+            OSError: If the fixed manager is unavailable.
+        """
+        command = list(command)
+        expected = "/bin/launchctl" if self._platform == "darwin" else "/usr/bin/systemctl"
+        if self._platform not in {"darwin", "linux"} or not command or command[0] != expected:
+            msg = "The uninstall service-manager command is not the fixed local authority."
+            raise HeinzelError(msg)
+        before: tuple[int, ...] | None = None
+        if self._platform == "linux":
+            before = self._linux_manager_identity()
+            if before is None:
+                msg = "The Linux user manager bus cannot be verified; no service was changed."
+                raise HeinzelError(msg)
+        elif not self._mac_session_verified():
+            msg = "The macOS user service session cannot be verified; no service was changed."
+            raise HeinzelError(msg)
         result = self._quiescence_probe(command)
-        if result.truncated or result.returncode != 0:
+        stable = self._linux_manager_identity() == before if self._platform == "linux" else self._mac_session_verified()
+        if not stable or result.truncated or result.returncode is None:
+            msg = "The uninstall service manager changed or did not finish; integration files were retained."
+            raise HeinzelError(msg)
+        return subprocess.CompletedProcess(command, result.returncode, result.stdout, result.stderr)
+
+    def _offline_probe(self, command: list[str]) -> str | None:
+        result = self.offline_manager_command(command)
+        if result.returncode != 0:
             return None
         return result.stdout
 
@@ -1555,7 +1591,7 @@ class DaemonService:
         paths = [*self._unit_paths(), self.state_dir / "install.json"]
         return [owned_file(path) for path in paths if os.path.lexists(path)]
 
-    def _offline_stop(self, binary: Path, files: list[OwnedFile], loaded: bool) -> None:
+    def _offline_stop(self, binary: Path, files: list[OwnedFile], loaded: bool, token: str) -> None:
         from heinzel.modules.system.daemon._units import LABEL, SYSTEMD_NAME  # noqa: PLC0415 - fixed manager names
 
         if any(owned_file(file.path) != file for file in files) or self._offline_loaded(binary, files) != loaded:
@@ -1577,7 +1613,7 @@ class DaemonService:
             if self._offline_probe(command) is None:
                 msg = "The owned daemon could not be stopped; its files and installation were retained."
                 raise HeinzelError(msg)
-        if not self._quiescent_snapshot(binary):
+        if not self._quiescent_snapshot(binary, token):
             msg = (
                 "The daemon is not proven quiescent; the installation was retained. Inspect its local service manager."
             )
@@ -1608,17 +1644,17 @@ class DaemonService:
         return True
 
     @contextmanager
-    def offline_removal_guard(self, binary: Path) -> Generator[bool, None, None]:
-        """Fence owned daemon removal and one offline tool removal, retaining a gate after uncertain failure.
+    def offline_removal_guard(self, binary: Path) -> Generator[DaemonRemoval, None, None]:
+        """Hold daemon lifecycle/tick authority while a durable coordinator stops and removes one tool.
 
         Yields:
-            Exclusive lifecycle/tick authority after exact owned units are stopped and quiescence is observed.
+            Captured owned definitions and separate stop/final-cleanup actions.
 
         Raises:
-            HeinzelError: If ownership, quiescence or the final cleanup cannot be verified.
-            OSError: If local authority cannot be read or changed safely.
+            HeinzelError: If ownership, quiescence or final cleanup cannot be established.
+            OSError: If physical local authority cannot be inspected.
         """
-        from heinzel.kernel import private_lock, private_read, private_write  # noqa: PLC0415 - removal authority
+        from heinzel.kernel import private_lock  # noqa: PLC0415 - removal authority
 
         with private_lock(self.state_dir / "lifecycle.lock"), private_lock(self.state_dir / "tick.lock"):
             if self._handover_pending():
@@ -1626,30 +1662,24 @@ class DaemonService:
                 raise HeinzelError(msg)
             files = self._offline_files(binary)
             loaded = self._offline_loaded(binary, files)
-            self._offline_stop(binary, files, loaded)
-            gate = self.state_dir / "standard-install-pending.json"
-            token = json.dumps({"token": secrets.token_hex(32)}, indent=2) + "\n"
-            private_write(gate, token)
-            yield bool(files)
-            if self._quiescence_installation is None or not _safely_absent(self._quiescence_installation.prefix):
-                msg = "The Heinzel tool removal is incomplete; its stopped service files were retained."
-                raise HeinzelError(msg)
-            for file in files:
-                if owned_file(file.path) != file:
-                    msg = "A daemon file changed during removal; inspect the stopped integration locally."
+
+            def stop(token: str) -> None:
+                self._offline_stop(binary, files, loaded, token)
+
+            def finish() -> None:
+                if self._quiescence_installation is None or not _safely_absent(self._quiescence_installation.prefix):
+                    msg = "The Heinzel tool removal is incomplete; its stopped service files were retained."
                     raise HeinzelError(msg)
-            for file in files:
-                file.path.unlink()
-            if (
-                self._platform == "linux"
-                and self._offline_probe(["/usr/bin/systemctl", "--user", "daemon-reload"]) is None
-            ):
-                msg = "Heinzel was removed, but the user manager needs a local reload; user data was kept."
-                raise HeinzelError(msg)
-            if private_read(gate) != token:
-                msg = "The uninstall recovery gate changed; inspect this profile locally."
-                raise HeinzelError(msg)
-            gate.unlink()
+                for captured in files:
+                    remove_owned_file(captured)
+                if (
+                    self._platform == "linux"
+                    and self._offline_probe(["/usr/bin/systemctl", "--user", "daemon-reload"]) is None
+                ):
+                    msg = "Heinzel was removed, but the user manager needs a local reload; user data was kept."
+                    raise HeinzelError(msg)
+
+            yield DaemonRemoval(tuple(files), stop, finish)
 
     def uninstall(self) -> Uninstalled:
         """Uninstall under the lifecycle writer lock.

@@ -26,11 +26,11 @@ from heinzel.modules.system._models import (
     ReleaseCheck,
     ReleaseNotes,
     SystemInfo,
+    UninstallResult,
     UpdateResult,
 )
 from heinzel.modules.system._plugin_releases import plugin_releases
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
-from heinzel.modules.system._uninstall import UninstallResult, uninstall_installation
 from heinzel.modules.system._update import UpdateService
 from heinzel.modules.system.config._service import ConfigService
 
@@ -150,7 +150,9 @@ def update(
 
 @module.operation(read_only=False, heads={"cli"}, audience="everyday")
 def uninstall() -> UninstallResult:
-    """Uninstall the verified Heinzel tool offline, stopping owned services and keeping your data and configuration."""
+    """Uninstall the verified Heinzel tool offline, keeping your data and configuration."""
+    from heinzel.modules.system._uninstall import uninstall_installation  # noqa: PLC0415 - only explicit offline removal
+
     return uninstall_installation()
 
 

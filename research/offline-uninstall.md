@@ -1,38 +1,41 @@
-# Offline tool removal boundary
+# Offline removal authority and evidence
 
-The new explicit `hz system uninstall` dispatch enters before kernel boot and
-background release checks. Its help does not inspect an installation. Removal
-constructs an empty kernel for user-scope configuration and progress; it does
-not discover plugins, fetch packages or require the web UI to be running.
+The first checkpoint executed an external uv pathname after inspection. Independent review rejected that race,
+ambient manager buses, environment re-merging and incomplete interruption recovery. That checkpoint is historical;
+it is not acceptance evidence.
 
-The implementation requires the existing standard application's recorded
-installation continuity, physical uv tool destination and receipt-owned script
-links. It uses only an existing owned uv executable with `--offline`,
-`--no-config` and `--no-python-downloads`. A private lifecycle/tick fence and the
-existing durable installation gate cover the mutation. No failed removal
-attempt invokes a network restore or reports success. User configuration and
-data are retained.
+ADR 0131 instead pins the Core runtime dependency `uv==0.13.7`, matching the reviewed bootstrap tool version.
+An installer-only cache cannot cover the immutable published 0.9.15 updater. The dependency is selected from the
+verified SDK's concrete metadata and native executable, without importing uv Python code or searching PATH.
+Opened bounded METADATA, WHEEL, license and executable bytes have publisher pins; RECORD must identify that exact
+native member. Private copied bytes and inode are rechecked, and an offline version probe precedes service effects.
+Missing, redirected, changed, unsafe or unsupported artifacts refuse locally. Group-writable ancestors stay refused.
 
-Owned web removal reuses its existing exact unit, launcher, profile and loaded
-manager checks, independently of the preview flag. Daemon removal compares its
-exact generated unit and install record, loaded argv and actual manager
-quiescence before authorizing tool removal. Foreign loaded labels and altered
-files refuse. Integration cleanup is conditional on observed tool removal.
+The four official [PyPI 0.13.7 wheels](https://pypi.org/pypi/uv/0.13.7/json) were downloaded and their archive hashes
+verified before measuring extracted bytes. Decimal sizes follow; they are measured artifact sizes, not performance
+claims. Earlier 0.13.5 measurements are historical and do not authorize the final dependency.
 
-Nine focused tests currently exercise the offline command shape, selected tool
-and script removal with unrelated data retained, changed script/receipt/prefix
-and missing continuity refusals, uncertain uv outcomes, and pre-discovery CLI
-help/dispatch. These use an injected removal runner, not a real installed
-uninstall. The source also passes mypy and Ruff.
+| Platform | Wheel bytes | Uncompressed wheel bytes | Native uv bytes | Native uv SHA256 |
+| --- | ---: | ---: | ---: | --- |
+| macOS ARM64 | 14454941 | 29009199 | 27864912 | `0f333833a6d011710d3edc0e45b55d3d934aef15bb83a25b29848c241ac513b4` |
+| macOS x86-64 | 17194673 | 39297651 | 38143840 | `b345904c70c5bb715cda5a58cb74b6c53158346e806258e270a774fdaa3d7739` |
+| glibc Linux ARM64 | 16636343 | 33044650 | 31924696 | `553b3a3a31484ef9e4f220085ca672cc71c851f92a92d984646a9d1c814b02c3` |
+| glibc Linux x86-64 | 17202345 | 38666150 | 37512936 | `4b5e59bc557ff2cd70934beb59d0eaa92820702853d49f0066b50aa11a8f0c52` |
 
-This is an incomplete implementation checkpoint, not release evidence. Required
-follow-up is a real installed positive/negative fixture under OS-enforced
-outbound-network denial, owned manager cleanup and failure tests on both
-platforms, generated command documentation, and independent installer/security
-review. No host jobs or user installation have been touched.
+Exact environment execution keeps pinned tool destinations and offline/no-config/no-download flags while excluding
+ambient UV and dynamic-loader policy. Stop and final integration deletion are distinct. A directory-synchronized gate,
+private authority journal and copied standard-library recovery script exist before stopping. Recovery can finish after
+the SDK and command are gone; it never starts or signals jobs and only accepts the captured manager/session, unchanged
+owned files and a remaining SDK that is a subset of its captured manifest. Data, configuration, skills and notifier stay.
 
-Unmarked SDK/uv environments and desktop-managed runtimes currently refuse.
-The new uv executable check also refuses group-writable executable ancestors,
-including some Homebrew Cellar layouts; supported handling needs resolution
-before publication. Interrupted removal leaves a local recovery gate rather
-than guessing whether a partial uninstall can be reversed.
+The installed macOS ARM64 fixture has observed immutable publisher-hash-verified 0.9.15 bytes running their actual
+updater into a genuinely built isolated 0.9.16 candidate, automatically resolving uv 0.13.7. The candidate then removed
+its own SDK/scripts under OS-enforced IP-network denial with poisoned PATH uv, retaining data and an unrelated tool.
+The immutable installed fixture module explicitly doubles service-manager probes; it does not change product code,
+startup continuity, uv mutation or metadata validation. A separate check proves local Unix IPC still works under denial.
+This is not real OS-manager acceptance. Linux network-denial and real isolated user-manager execution are pending.
+
+Focused tests also cover opened-file tampering/architecture/metadata/RECORD/source refusals, exact runner environment,
+service authority failures, stop-before-delete ordering, partial uv refusal, interruption and cleanup/reload/fsync retry.
+The unsupported SDK/desktop and unmarked/profileless legacy-service refusals remain. No live user service was changed.
+Final source review and composition with shared daemon ownership authority remain required before publication.
