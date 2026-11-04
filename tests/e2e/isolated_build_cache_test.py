@@ -35,11 +35,11 @@ def test_wheel_preparation_also_supplies_the_isolated_editable_backend(tmp_path)
     }
     env.pop("VIRTUAL_ENV", None)
 
-    def run(*command, offline=False, check=True):
+    def run(*command, offline=False, check=True, create_lock=False):
         result = subprocess.run(
             command,
             cwd=project,
-            env={**env, **({"UV_OFFLINE": "1"} if offline else {})},
+            env={**env, "UV_FROZEN": "0" if create_lock else "1", **({"UV_OFFLINE": "1"} if offline else {})},
             capture_output=True,
             text=True,
             check=False,
@@ -50,7 +50,8 @@ def test_wheel_preparation_also_supplies_the_isolated_editable_backend(tmp_path)
         return result
 
     # The previous prepare command downloaded wheel backends but left editables absent.
-    run("uv", "lock")
+    # Only create this private fixture's initial lock; every build and install stays frozen.
+    run("uv", "lock", create_lock=True)
     run("uv", "build", "--wheel", "--out-dir", str(tmp_path / "old-wheel"))
     old = run("uv", "run", "--frozen", "python", "-c", "import fixture_build", offline=True, check=False)
     assert old.returncode != 0
