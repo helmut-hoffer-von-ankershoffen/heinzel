@@ -28,7 +28,7 @@ from heinzel.modules.ai._usage import (
     report,
 )
 
-module = Module("ai", "How hz reaches AI, and what it spends: tokens and cost per run.", requires=["ai-access:read"])
+module = Module("ai", "How hz reaches AI, and what it spends: tokens and cost per run.", inspects=["ai-access:read"])
 module.settings(AiSettings)
 module.service(UsageLedger)
 module.service(UsageLog, UsageLedger)  # runs record through the protocol; nothing imports this module

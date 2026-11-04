@@ -41,8 +41,8 @@ def test_confirmed_daemon_persistence_action_is_authenticated_and_runs_on_web_he
     calls = []
     if action == "install":
 
-        def install(interval, *, dry_run=False):
-            calls.append(("install", interval, dry_run))
+        def install(interval, *, dry_run=False, notifier=True):
+            calls.append(("install", interval, dry_run, notifier))
             return Installed(
                 platform="darwin",
                 executable=Path("/usr/local/bin/hz"),
@@ -72,7 +72,7 @@ def test_confirmed_daemon_persistence_action_is_authenticated_and_runs_on_web_he
     assert response.status_code == 200
     for key, value in expected.items():
         assert response.json()[key] == value
-    expected_calls = [("install", timedelta(minutes=5), False)] if action == "install" else [("uninstall",)]
+    expected_calls = [("install", timedelta(minutes=5), False, False)] if action == "install" else [("uninstall",)]
     assert calls == expected_calls
 
     rest = TestClient(api.build(kernel, port=8000), base_url=BASE)

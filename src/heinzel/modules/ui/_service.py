@@ -21,7 +21,6 @@ from heinzel import Config, HeinzelError, Kernel, Settings
 from heinzel.kernel import (
     Installation,
     PrivateControl,
-    feature_enabled,
     installation_mutation_paths,
     installation_mutation_pending,
     private_directory,
@@ -102,7 +101,6 @@ class WebService:
         uv: Path | None = None,
         profile: dict[str, str] | None = None,
         unsupported: tuple[str, ...] = (),
-        selected_preview: bool = True,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -114,7 +112,6 @@ class WebService:
         self.uv = uv or Path(shutil.which("uv") or "/usr/bin/uv")
         self.profile = profile if profile is not None else default_profile(home, state, self.prefix, executable)
         self.unsupported = unsupported
-        self.selected_preview = selected_preview
         self._clock, self._sleep = clock, sleep
         self.platform = platform
         self.runner = runner
@@ -162,7 +159,6 @@ class WebService:
                 config, settings, Path.home(), installation.prefix.resolve(strict=True), binary / "hz"
             ),
             unsupported=installation_overrides(config),
-            selected_preview=feature_enabled(settings, "persistent_web"),
             verify=lambda: (
                 installation.is_tool
                 and installation.startup_state_matches()
@@ -178,7 +174,9 @@ class WebService:
             raise HeinzelError(msg)
         return [executable, *arguments] if self.platform == "darwin" else [executable, "--user", *arguments]
 
-    def _launch_content(self, port: int, generation: str, profile: dict[str, str] | None = None) -> str:
+    def _launch_content(
+        self, port: int, generation: str, profile: dict[str, str] | None = None, *, legacy: bool = False
+    ) -> str:
         guards = "".join(
             f"if [ -e {shlex.quote(str(path))} ] || [ -L {shlex.quote(str(path))} ]; then exit 75; fi\n"
             for path in installation_mutation_paths(self.prefix, self.directory.parent)
@@ -198,6 +196,7 @@ class WebService:
             [
                 str(self.executable),
                 "ui",
+                *([] if legacy else ["serve"]),
                 "--no-browser",
                 "--port",
                 str(port),
@@ -274,7 +273,11 @@ class WebService:
                 or value["uv"] != str(self.uv)
                 or value["unit"] != str(self.unit)
                 or value["content"] != self._content()
-                or value["launcher"] != self._launch_content(port, generation, profile)
+                or value["launcher"]
+                not in {
+                    self._launch_content(port, generation, profile),
+                    self._launch_content(port, generation, profile, legacy=True),
+                }
                 or private_read(self.launcher) != value["launcher"]
             ):
                 return None
@@ -431,9 +434,6 @@ class WebService:
             raise HeinzelError(msg)
         profile = validated_profile(self.profile, self.home, self.directory.parent, self.prefix, self.executable)
         require_installation_profile(profile, self.unsupported)
-        if not self.selected_preview:
-            msg = "Enable persistent_web in the selected user configuration before installing web availability."
-            raise HeinzelError(msg)
         existing = self._record()
         loaded, _ = self._manager(existing)
         if existing is not None:

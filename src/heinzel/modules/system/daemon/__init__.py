@@ -117,9 +117,12 @@ def install(
         str, Field(description="Minutes between ticks, dividing an hour: 1m … 30m, or 1h.", pattern=INTERVAL_PATTERN)
     ] = "5m",
     dry_run: Annotated[bool, Field(description="Only show the unit that would be written.")] = False,
+    notifier: Annotated[
+        bool, Field(description="Also install the native notifier; otherwise choose it separately.")
+    ] = False,
 ) -> Installed:
-    """Install and load the launchd agent or systemd timer that ticks every few minutes."""
-    return service.install(parse_duration(interval), dry_run=dry_run)
+    """Install and load scheduled Heinzels; native notifier installation is a separate choice."""
+    return service.install(parse_duration(interval), dry_run=dry_run, notifier=notifier)
 
 
 @module.operation(read_only=False, heads={"cli", "web"})

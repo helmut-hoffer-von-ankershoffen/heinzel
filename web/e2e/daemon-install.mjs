@@ -72,13 +72,13 @@ try {
     await steps.getByText("Writing the service definition: done").waitFor();
     assert.equal(await dialog.getByRole("button", { name: "Installing the background service" }).isDisabled(), true);
     assert.equal(await dialog.getByRole("button", { name: /Cancel|Close/ }).count(), 0);
-    assert.equal(await dialog.getByRole("progressbar").getAttribute("max"), "5");
+    assert.equal(await dialog.getByRole("progressbar").getAttribute("max"), "4");
     await accessible(dialog);
     await noHorizontalScroll();
     await page.screenshot({ path: join(shots, `install-running-${engine}.png`) });
     writeFileSync(join(directory, "release"), "");
     await dialog.getByText("Installed. Its first check comes within 5 minutes.").waitFor();
-    await steps.getByText("Setting up desktop notifications: done").waitFor();
+    assert.equal(await steps.getByText("Setting up desktop notifications: done").count(), 0);
     await accessible(dialog);
     await page.screenshot({ path: join(shots, `install-done-${engine}.png`) });
     await dialog.getByRole("button", { name: "Close" }).click();

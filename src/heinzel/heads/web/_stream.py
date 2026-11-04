@@ -9,7 +9,8 @@ Every stream sends an event `changed` when the list of notices changed, for the 
 seconds that it shows them, so the daemon holds back, and sends each due notice once as an event `notice`, which the
 app pops up and acknowledges (`POST /api/system/notify/ack`). A tab that can't pop up claims nothing, so the daemon
 still does. A stream ends after a few minutes and the app opens a new one, so a closed tab never holds a connection
-for long. When `hz ui` stops or restarts, every stream ends at once (`Stopping`), so the server doesn't wait for it.
+for long. When `hz ui serve` stops or restarts, every stream ends at once (`Stopping`), so the server doesn't wait
+for it.
 """
 
 import asyncio

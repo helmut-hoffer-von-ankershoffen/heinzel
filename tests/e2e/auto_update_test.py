@@ -63,7 +63,7 @@ def test_countdown_postpone_and_apply_with_a_fake_newer_release(tmp_path):
     server_log = tmp_path / "hz-ui.log"
     log_file = server_log.open("w", encoding="utf-8")
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", str(port), "--no-browser"],
+        [sys.executable, "-m", "heinzel", "ui", "serve", "--port", str(port), "--no-browser"],
         cwd=tmp_path,
         env=env,
         stderr=log_file,
