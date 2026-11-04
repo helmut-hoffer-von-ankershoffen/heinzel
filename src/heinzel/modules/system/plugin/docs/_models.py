@@ -68,6 +68,22 @@ class CredentialDoc(BaseModel):
     command: str = Field(description="How to store it, e.g. `hz system credential set github token`.")
 
 
+class PrerequisiteDoc(BaseModel):
+    """An external program a module needs: what it is for, when, and how it gets onto the machine (ADR 0112)."""
+
+    executable: str = Field(description="The command name, e.g. `gh`.")
+    title: str = Field(description="The tool's name for people, e.g. `GitHub CLI`.")
+    purpose: str = Field(description="What the module uses it for.")
+    when: str = Field(description="`install`, `setup` or `feature`: how early the module asks for it.")
+    condition: str = Field(description="When a selection makes it necessary; empty when it always is.")
+    minimum_version: str | None = Field(description="The oldest compatible version, when the module names one.")
+    macos: str = Field(description="What hz does on macOS: the Homebrew command, or the owner's instructions.")
+    linux: str = Field(description="What to do by hand on Linux; hz installs nothing there.")
+    check: str = Field(
+        description="How to see whether it is usable, e.g. `hz system prerequisite check --owner clock`."
+    )
+
+
 class AdapterDoc(BaseModel):
     """An adapter a plugin brings: a capability it serves (ADR 0028)."""
 
@@ -174,6 +190,9 @@ class ModuleDoc(BaseModel):
     operations: list[OperationDoc] = Field(description="Its operations, in declaration order.")
     settings: list[SettingDoc] = Field(description="Its settings; the table is `[<qualname>]`.")
     credentials: list[CredentialDoc] = Field(description="The credentials it needs.")
+    prerequisites: list[PrerequisiteDoc] = Field(
+        default_factory=list[PrerequisiteDoc], description="The external programs it needs."
+    )
     health_checks: bool = Field(description="Whether `hz system doctor` runs checks of its.")
     info: bool = Field(description="Whether it contributes a section to `hz system info`.")
     setup: SetupDoc | None = Field(description="Its setup step, if any.")

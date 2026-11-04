@@ -51,6 +51,7 @@ def page(doc: PluginPage) -> str:
             lines += _theme(theme)
     lines += _operations(doc)
     lines += _settings(doc.modules)
+    lines += _prerequisites(doc.modules)
     lines += _credentials(doc.modules)
     lines += _adapters(doc)
     lines += _playbooks(doc)
@@ -274,6 +275,38 @@ def _settings(modules: Iterable[ModuleDoc]) -> list[str]:
             lines.append(f"| `{s.key}` | {s.type} | `{s.default}` | `{s.environment}` | {s.description}{note} |")
         lines.append("")
     return lines
+
+
+def _cell(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
+
+
+def _prerequisites(modules: Iterable[ModuleDoc]) -> list[str]:
+    rows = [p for module in modules for p in module.prerequisites]
+    if not rows:
+        return []
+    lines = [
+        "## Prerequisites",
+        "",
+        (
+            "Programs installed outside Python. On macOS `hz setup` installs them with Homebrew after showing "
+            "what is missing and asking; on Linux it shows the steps and installs nothing. Installing a program "
+            "never signs you in, and removing the plugin keeps the program."
+        ),
+        "",
+        "| Program | Used for | Needed | On macOS | On Linux | Check |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for p in rows:
+        needed = _cell(p.condition)
+        if not p.condition:
+            needed = "when you ask for it" if p.when == "feature" else "always"
+        minimum = f" (version {p.minimum_version} or newer)" if p.minimum_version else ""
+        lines.append(
+            f"| `{p.executable}`{minimum} | {_cell(p.purpose)} | {needed} | {_cell(p.macos)} | {_cell(p.linux)} "
+            f"| `{p.check}` |"
+        )
+    return [*lines, ""]
 
 
 def _credentials(modules: Iterable[ModuleDoc]) -> list[str]:

@@ -17,6 +17,7 @@ from heinzel import Config, Kernel, Module, ModuleRecord, Settings
 from heinzel.kernel import Origin, discover
 from heinzel.modules.org import _discovery as discovery
 from heinzel.modules.system import _github
+from heinzel.modules.system.prerequisite._host import ToolHost
 from heinzel.testing import CATEGORIES
 
 TEST_ORIGIN = Origin(distribution="heinzel-test", version="9.9.9", builtin=False)
@@ -39,6 +40,21 @@ def _release_redirect_offline(monkeypatch: pytest.MonkeyPatch) -> None:
         raise OSError(msg)
 
     monkeypatch.setattr(_github, "_head", offline)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_homebrew(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test reaches the Homebrew or the tools of the machine it runs on (ADR 0112).
+
+    The machine the prerequisite engine looks at is a Linux host where every tool is present and prints a version, so
+    results do not depend on what the developer installed and nothing is ever installed. Tests about the engine, the
+    installer or setup describe their own machine (`tests/_prerequisite_machine.py`).
+    """
+    try:
+        from tests._prerequisite_machine import ready_everywhere
+    except ImportError:  # a test that runs a copy of this file elsewhere (e2e scheduling) has no `tests` package
+        return
+    monkeypatch.setattr(ToolHost, "system", classmethod(lambda cls: ready_everywhere()))
 
 
 @pytest.fixture
