@@ -68,7 +68,7 @@ try {
   } else {
     // Held at the service manager: the steps so far are real, the button cannot be pressed again, nothing cancels.
     const steps = dialog.getByRole("list", { name: "Steps" });
-    await steps.getByText("Loading it into launchd: in progress").waitFor();
+    await steps.getByText("Loading the owned service definition: in progress").waitFor();
     await steps.getByText("Writing the service definition: done").waitFor();
     assert.equal(await dialog.getByRole("button", { name: "Installing the background service" }).isDisabled(), true);
     assert.equal(await dialog.getByRole("button", { name: /Cancel|Close/ }).count(), 0);
