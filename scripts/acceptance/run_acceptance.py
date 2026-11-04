@@ -1456,7 +1456,7 @@ def snapshot_files(root):
 
 def ui_app(case, label):
     """Start the installed app the way a user does after installation; returns its foreground session."""
-    return case.foreground([str(case.bin / "hz"), "ui", "serve"], label)
+    return case.foreground([str(case.bin / "hz"), "ui"], label)
 
 
 def run_update(case, label):

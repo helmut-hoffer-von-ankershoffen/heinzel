@@ -204,6 +204,23 @@ def test_complete_noninteractive_profile_is_preserved_and_can_open_without_promp
     assert calls == [["org", "show"], ["system", "config", "show"]]
 
 
+def test_explicit_environment_profile_completes_noninteractive_requirements_without_writes(
+    managed_profile, monkeypatch
+):
+    _kernel, directory, calls = managed_profile
+    for key, value in {
+        "HZ_ORG__NAME": "Mira Example",
+        "HZ_ORG__HANDLE": "mira-example",
+        "HZ_ORG__ROLE": "engineer",
+        "HZ_ORG__TIMEZONE": "Europe/Berlin",
+        "HZ_TEAM__NAME": "Example Team",
+    }.items():
+        monkeypatch.setenv(key, value)
+    bootstrap._require_profile(Path("/fixture/persistent/bin/hz"), {})
+    assert not (directory / "config.toml").exists()
+    assert calls == [["org", "show"], ["system", "config", "show"]]
+
+
 @pytest.mark.parametrize(
     "problem", ["duplicate", "blank-source", "missing-value", "invalid-value", "invalid-schema", "missing-field"]
 )

@@ -63,3 +63,27 @@ Six real ConfigService regressions (missing or blank name/team with otherwise co
 source in 1.17 seconds. Both interactive and noninteractive onboarding now use the same strict profile-gap reader,
 combining the actual missing list with required nonblank names. Duplicate field identities, missing value rows,
 invalid value types and unverified field sources are refused before questions, writes, service setup or UI launch.
+
+## Hosted fixture repair and release harness boundary
+
+Hosted CLI E2E failed because its pipe-driven README launch supplied no profile after onboarding began requiring
+explicit name, team, handle, role and timezone. Its isolated environment now supplies fictional values through the
+supported settings variables. Production defaults and incomplete-profile refusals are unchanged. A focused
+integration contract verifies those exact variables satisfy noninteractive requirements without configuration writes.
+
+The mounted daemon fixture now uses the shared recording manager protocol and a physical temporary uv-tool receipt,
+shim and installation. Manager identity, absence and loaded argv/profile are inspected by the real ownership checks.
+The browser still holds bootstrap, physically double-clicks confirmation, observes four progress steps and disabled
+cancellation, and removes the installed service. The progress assertion follows the current owned-definition step
+label; no deadline or assertion is removed. Chromium and WebKit desktop/refusal cases pass (four cases, 7.50 seconds).
+The profile and daemon ownership/service contracts pass (293 cases, 6.16 seconds). `make lint typecheck` passes,
+including import contracts, generated documentation and API freshness, strict Python types and frontend types.
+
+The full local README procedure stopped at the existing live-daemon quiescence guard before installation. No live
+service was changed or stopped, and this is not a passing README or release acceptance result. Fresh hosted CLI E2E
+remains required.
+
+The premature one-line acceptance change to unconditionally invoke `hz ui serve` is reverted: that shared harness
+must continue accepting published 0.9.15. Before releasing 0.9.16, its canonical serving helper needs a separately
+reviewed version-aware command contract covering both published 0.9.15 and the explicit `ui serve` candidate.
+Neither this compatibility restoration nor these fixture results establish 0.9.16 release acceptance.
