@@ -54,7 +54,7 @@ def test_supervisor_pins_profile_paths_and_never_reports_or_removes_another_prof
     monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path / "profile-a"))
     monkeypatch.setenv("HZ_STATE_DIR", str(tmp_path / "state-a"))
     monkeypatch.setenv("HZ_DATA_DIR", str(tmp_path / "data-a"))
-    monkeypatch.setenv("HZ_SECRET_TOKEN", "must-not-persist")
+    monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_TOKEN", "must-not-persist")
     assert "installed" in supervisor.install()
     first = supervisor.path_for(platform, tmp_path)
     content = first.read_text()
@@ -73,6 +73,7 @@ def test_supervisor_pins_profile_paths_and_never_reports_or_removes_another_prof
         }.items():
             assert f'Environment="{key}={value}"' in content
     assert "must-not-persist" not in content
+    assert "HZ_CREDENTIAL_EXAMPLE_TOKEN" not in content
     monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path / "profile-b"))
     assert supervisor.path_for(platform, tmp_path) != first
     assert supervisor.status() == "not installed"
