@@ -89,7 +89,7 @@ class CapturedOutput:
                     combined = self.buffers[name] + chunk
                     for label, pattern in (
                         ("packages-output", rb"Installed [0-9]+ packages in"),
-                        ("app-install-output", rb"Installing Heinzelm"),
+                        ("app-install-output", rb"Installing Heinzel"),
                         ("executables-output", rb"Installed [0-9]+ executables:"),
                         ("loopback-url-output", rb"http://127\.0\.0\.1:[0-9]+/"),
                     ):

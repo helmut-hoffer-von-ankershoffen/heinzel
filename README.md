@@ -200,7 +200,7 @@ hz system agent install               # install the skills for coding agents
 
 Every operation takes `--json` (or `--format json`; `HZ_OUTPUT_FORMAT=json` makes it the default) for scripts and
 agents; the long-running `serve` commands are the exception. Exit codes: `0` success, `1` an error with a readable message, `2` a usage error, `78` invalid
-configuration; `hz ui` exits `0` when Ctrl-C stops it, an interrupted `hz setup` `130`. All commands: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
+configuration; `hz ui serve` exits `0` when Ctrl-C stops it, an interrupted `hz setup` `130`. All commands: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
 `hz --help` lists the everyday commands; `hz system expert on` lists every command in help, shell completion and the
 web app, and `hz system expert off` goes back. Commands for experts run either way, and MCP and REST always offer
@@ -240,20 +240,29 @@ alongside its CPU, memory and load readings.
 
 Every module is a set of operations, and every operation is a `hz` command, an MCP tool (`hz system serve mcp`)
 and a REST endpoint (`hz system serve api`) at once. Coding agents use whichever suits them: the CLI with `--json`,
-or the MCP tools. People who'd rather click run `hz ui`: a web app on localhost with a
+or the MCP tools. People who'd rather click run `hz ui open`: a web app on localhost with a
 navigation tree of settings, contracts, your team, inventory and the doctor's fixes, and a chat with your agent runner
 that says what it may cost before it runs. Modules can also advertise jobs that
 `hz system daemon install` runs in the background on a schedule, under launchd or systemd, with your
 rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)).
 
-`hz ui` normally stops when its terminal closes. Persistent availability is currently a preview, disabled until
-`persistent_web` is named in your user-level `hz.features` configuration file for lifecycle validation. Then run `hz ui install --port 8737`; `hz ui status` distinguishes a loaded service from a ready web server. Later `hz ui`
-opens that owned service. `hz ui restart` keeps its session through a normal restart; `hz ui uninstall` removes
-only its web login service and keeps data and paired devices. This is separate from scheduled background work and
-Tailscale sharing. After an interrupted automatic update, startup can refuse until supported recovery repairs it;
-status does not call that ready. An existing foreground server must be stopped before installing on its port.
-The service keeps using the configuration files and storage roots selected at installation. Put behavior settings
-in those files; installation refuses process-only `HZ_*` overrides. Reinstall to select a different profile.
+`hz ui` shows its command help. Use `hz ui serve` to run the web server in the foreground; **Ctrl-C** stops it.
+`hz ui open` opens the owned installed web service, or runs in the foreground when none is installed.
+
+For availability after login, run `hz ui install --port 8737`. No preview setting is required.
+`hz ui status` distinguishes a loaded service from a ready web server. `hz ui restart` keeps its session through a
+normal restart; `hz ui uninstall` removes only its web login service and keeps data and paired devices. Scheduled
+Heinzels and Tailscale sharing remain separate choices. An existing foreground server must be stopped before
+installing on its port. After an interrupted update, startup may refuse until supported recovery repairs it;
+status does not call that ready. The service retains the selected configuration files and storage roots. Put
+behavior settings in those files; installation refuses process-only `HZ_*` overrides. Reinstall to change profiles.
+
+In an interactive terminal, bare `uvx heinzel@latest` offers three independent choices: the scheduled daemon,
+web server after login and native notifier. Each defaults to **Yes** and runs only after the persistent standard app
+has been verified. First interactive setup asks for missing name, team name and genuinely required profile fields
+through normal configuration, preserving existing values. Setup is complete only when system health is green. Answer **No** to leave that choice unchanged. Help, explicit commands, machine-readable calls
+and noninteractive use never prompt or select services automatically. Native notification support and OS permission
+are reported separately; an installed notifier does not prove a visible notification.
 
 Built in today:
 

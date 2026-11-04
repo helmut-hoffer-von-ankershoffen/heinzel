@@ -651,21 +651,21 @@ class DaemonService:
 
     # Installing ------------------------------------------------------------------------------------------------------
 
-    def install(self, interval: timedelta, *, dry_run: bool = False) -> Installed:
+    def install(self, interval: timedelta, *, dry_run: bool = False, notifier: bool = True) -> Installed:
         """Install under the lifecycle writer lock, or report a concurrent change.
 
         Raises:
             HeinzelError: If another lifecycle writer is active or installation fails.
         """
         if dry_run:
-            return self._install_locked(interval, dry_run=True)
+            return self._install_locked(interval, dry_run=True, notifier=notifier)
         with lock(self.state_dir / "lifecycle.lock") as acquired:
             if not acquired or self._handover_pending():
                 msg = "The daemon lifecycle is changing or requires recovery; inspect it before installing."
                 raise HeinzelError(msg)
-            return self._install_locked(interval)
+            return self._install_locked(interval, notifier=notifier)
 
-    def _install_locked(self, interval: timedelta, *, dry_run: bool = False) -> Installed:
+    def _install_locked(self, interval: timedelta, *, dry_run: bool = False, notifier: bool = True) -> Installed:
         """Write the unit for this platform and load it; `dry_run` only says what it would write.
 
         Raises:
@@ -692,7 +692,7 @@ class DaemonService:
                 ("unit", "Writing the service definition"),
                 ("load", f"Loading it into {'launchd' if darwin else 'systemd'}"),
                 ("verify", "Checking that it is loaded"),
-                *([("notifier", NOTIFIER_STEP)] if darwin and self._install_notifier else []),
+                *([("notifier", NOTIFIER_STEP)] if darwin and notifier and self._install_notifier else []),
             ],
         )
         self._require_desktop_session(phases)
@@ -721,7 +721,8 @@ class DaemonService:
         )
         (self.state_dir / "handover-pending.json").unlink(missing_ok=True)
         (self.state_dir / "handover-request.json").unlink(missing_ok=True)
-        self._set_up_notifier(phases)
+        if notifier:
+            self._set_up_notifier(phases)
         hint = LOGIN_ITEM_HINT if self._platform == "darwin" and not self._notifier_installed() else None
         return Installed(
             platform=self._platform,

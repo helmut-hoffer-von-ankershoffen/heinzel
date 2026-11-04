@@ -75,7 +75,7 @@ def test_hz_ui_without_a_browser_prints_only_the_url(make_kernel, monkeypatch):
         kwargs["announce"]("http://127.0.0.1:4321/#token=t")
 
     monkeypatch.setattr(web, "serve", serve)
-    result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ui", "--no-browser", "--port", "4321"])
+    result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ui", "serve", "--no-browser", "--port", "4321"])
     assert result.exit_code == 0, result.output
     assert result.stdout == "http://127.0.0.1:4321/#token=t\n"
     assert calls[0]["browser"] is False
@@ -84,9 +84,9 @@ def test_hz_ui_without_a_browser_prints_only_the_url(make_kernel, monkeypatch):
 
 def test_hz_ui_says_where_it_runs_when_it_opens_the_browser(make_kernel, monkeypatch):
     monkeypatch.setattr(web, "serve", lambda kernel, **kwargs: kwargs["announce"]("http://127.0.0.1:1/#token=t"))
-    result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ui"])
+    result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ui", "serve"])
     assert result.exit_code == 0
-    assert "Heinzelmännchen runs at http://127.0.0.1:1/#token=t" in result.stderr
+    assert "Heinzel runs at http://127.0.0.1:1/#token=t" in result.stderr
     assert "Ctrl-C" in result.stderr
 
 
@@ -99,6 +99,42 @@ def test_hz_ui_explains_why_it_cant_start(make_kernel, monkeypatch, problem, say
         raise problem
 
     monkeypatch.setattr(web, "serve", serve)
-    result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ui", "--no-browser"])
+    result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ui", "serve", "--no-browser"])
     assert result.exit_code == 1
     assert says in result.stderr
+
+
+def test_bare_ui_shows_help_without_starting_or_resolving_a_web_service(make_kernel, monkeypatch):
+    from heinzel.kernel import PersistentWeb
+
+    kernel = make_kernel(builtins=True)
+    monkeypatch.setattr(web, "serve", lambda *_args, **_kwargs: pytest.fail("Bare help started a listener"))
+    kernel.bind(PersistentWeb, PersistentWeb(open_local=lambda: pytest.fail("Bare help attached to a service")))
+    result = CliRunner().invoke(build(kernel), ["ui"])
+    assert result.exit_code == 0, result.output
+    assert "serve" in result.stdout
+    assert "install" in result.stdout
+    assert "status" in result.stdout
+    assert "Ctrl-C" not in result.stderr
+
+
+def test_explicit_serve_never_attaches_to_an_existing_service(make_kernel, monkeypatch):
+    from heinzel.kernel import PersistentWeb
+
+    kernel = make_kernel(builtins=True)
+    calls = []
+    kernel.bind(PersistentWeb, PersistentWeb(open_local=lambda: pytest.fail("Foreground serve attached")))
+    monkeypatch.setattr(web, "serve", lambda *_args, **kwargs: calls.append(kwargs))
+    result = CliRunner().invoke(build(kernel), ["ui", "serve", "--no-browser", "--port", "0"])
+    assert result.exit_code == 0, result.output
+    assert calls[0]["port"] == 0
+
+
+@pytest.mark.parametrize("arguments", [["ui", "--port", "0", "--no-browser"], ["ui"]])
+def test_published_updater_vectors_keep_foreground_socket_handoff(make_kernel, monkeypatch, arguments):
+    calls = []
+    monkeypatch.setenv("HEINZEL_UI_RESUME", "fixture-inherited-socket")
+    monkeypatch.setattr(web, "serve", lambda *_args, **kwargs: calls.append(kwargs))
+    result = CliRunner().invoke(build(make_kernel(builtins=True)), arguments)
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1

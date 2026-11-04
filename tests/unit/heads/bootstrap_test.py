@@ -11,15 +11,25 @@ from heinzel.heads import bootstrap, install
 from heinzel.heads._tool_install import ToolTarget
 
 pytestmark = pytest.mark.unit
+WORKSPACE_COMMAND = bootstrap._workspace_command
+COMPLETE_PROFILE = bootstrap._complete_profile
+VERIFY_SETUP = bootstrap._verify_setup
+
+
+@pytest.fixture(autouse=True)
+def managed_workspace(monkeypatch):
+    monkeypatch.setattr(bootstrap, "_workspace_command", lambda *_args: ["ui", "open"])
+    monkeypatch.setattr(bootstrap, "_complete_profile", lambda *_args: None)
+    monkeypatch.setattr(bootstrap, "_verify_setup", lambda *_args: None)
 
 
 @pytest.mark.parametrize("already_installed", [False, True])
 def test_first_use_installs_defaults_and_later_use_opens_without_installing(monkeypatch, tmp_path, already_installed):
     executable = tmp_path / "tools/heinzel/bin/hz"
-    sequence = iter([executable] if already_installed else [None, executable])
+    sequence = [] if already_installed else [None]
     installed, launched = [], []
     monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
-    monkeypatch.setattr(bootstrap, "installed_app", lambda: next(sequence))
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: sequence.pop(0) if sequence else executable)
     monkeypatch.setattr(install, "main", lambda args: installed.append(args) or 0)
     monkeypatch.setattr(bootstrap.os, "execve", lambda *args: launched.append(args))
     bootstrap.main()
@@ -27,7 +37,7 @@ def test_first_use_installs_defaults_and_later_use_opens_without_installing(monk
     [program, args, environment] = launched[0]
     interpreter = str(executable.parent / "python")
     assert program == interpreter
-    assert args == [interpreter, "-I", "-m", "heinzel", "ui"]
+    assert args == [interpreter, "-I", "-m", "heinzel", "ui", "open"]
     assert environment["PATH"].split(bootstrap.os.pathsep)[0] == str(executable.parent)
 
 
@@ -42,7 +52,7 @@ def test_explicit_arguments_keep_existing_cli_behavior(monkeypatch):
     assert called == [True]
 
 
-@pytest.mark.parametrize("arguments", [["ui", "--no-browser"], ["join", "https://github.com/example/team"]])
+@pytest.mark.parametrize("arguments", [["ui", "serve", "--no-browser"], ["join", "https://github.com/example/team"]])
 def test_runtime_arguments_never_open_the_temporary_plugin_free_sdk(monkeypatch, tmp_path, arguments):
     executable = tmp_path / "managed/bin/hz"
     launched = []
@@ -61,7 +71,7 @@ def test_a_failed_install_never_launches_a_partial_app(monkeypatch, capsys):
     with pytest.raises(SystemExit) as result:
         bootstrap.main()
     assert result.value.code == 1
-    assert "Installing Heinzelmännchen and its default plugins" in capsys.readouterr().err
+    assert "Installing Heinzel and its default plugins" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("matching", [False, True])
@@ -207,8 +217,8 @@ def test_an_unverified_existing_app_never_triggers_an_older_profile_reinstallati
 
 def test_first_use_json_stdout_contains_only_the_managed_command_result(monkeypatch, tmp_path, capsys):
     executable = tmp_path / "tools/heinzel/bin/hz"
-    sequence = iter([None, executable])
-    monkeypatch.setattr(bootstrap, "installed_app", lambda: next(sequence))
+    sequence = [None]
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: sequence.pop(0) if sequence else executable)
     monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel", "system", "info", "--json"])
     profile = install.AppProfile(
         format=2,
@@ -246,5 +256,181 @@ def test_first_use_json_stdout_contains_only_the_managed_command_result(monkeypa
     bootstrap.main()
     output = capsys.readouterr()
     assert json.loads(output.out) == {"ok": True}
-    assert "Installing Heinzelmännchen" in output.err
+    assert "Installing Heinzel" in output.err
     assert "heinzel 1.0.0" in output.err
+
+
+@pytest.mark.parametrize("daemon", [False, True])
+@pytest.mark.parametrize("web", [False, True])
+@pytest.mark.parametrize("notifier", [False, True])
+def test_interactive_choices_are_separate_and_run_only_in_verified_persistent_python(
+    monkeypatch, tmp_path, daemon, web, notifier
+):
+    from heinzel.heads.cli._setup import ConsolePrompter
+
+    executable = tmp_path / "persistent-tools/heinzel/bin/hz"
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    events = []
+    questions = []
+    answers = iter([daemon, web, notifier])
+    monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
+    monkeypatch.setattr(bootstrap.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(bootstrap.sys.stdout, "isatty", lambda: True)
+
+    def confirm(_self, question, *, default):
+        assert default is True
+        questions.append(question)
+        return next(answers)
+
+    def verified():
+        events.append("verified")
+        return executable
+
+    def run(command, **kwargs):
+        assert events[-1] in {"verified", "install"}
+        assert command[:4] == [str(executable.parent / "python"), "-I", "-m", "heinzel"]
+        assert kwargs["env"]["PATH"].split(bootstrap.os.pathsep)[0] == str(executable.parent)
+        events.append("install" if "install" in command else "status")
+        calls.append(command[4:])
+        if command[4:6] == ["system", "notify"]:
+            value = {"notifier": None, "shown": False, "problem": "No desktop", "next": []}
+        else:
+            value = {"installed": True, "loaded": True, "ready": True, "executable": str(executable)}
+        return subprocess.CompletedProcess(command, 0, json.dumps(value), "")
+
+    calls = []
+    monkeypatch.setattr(ConsolePrompter, "confirm", confirm)
+    monkeypatch.setattr(bootstrap, "installed_app", verified)
+    monkeypatch.setattr(install, "main", lambda *_args: pytest.fail("Verified installed app must be reused"))
+    monkeypatch.setattr(bootstrap.subprocess, "run", run)
+    monkeypatch.setattr(bootstrap.os, "execve", lambda *_args: events.append("open"))
+    bootstrap.main()
+    assert len(questions) == 3
+    expected = []
+    if daemon:
+        expected.extend(
+            [
+                ["system", "daemon", "install", "--no-notifier", "--json"],
+                ["system", "daemon", "status", "--json"],
+            ]
+        )
+    if web:
+        expected.extend([["ui", "install", "--json"], ["ui", "status", "--json"]])
+    if notifier:
+        expected.append(["system", "notify", "install", "--json"])
+    assert calls == expected
+    assert events[-1] == "open"
+
+
+@pytest.mark.parametrize("arguments", [["ui"], ["ui", "serve"], ["system", "info", "--json"]])
+def test_explicit_runtime_and_json_commands_never_offer_service_installation(monkeypatch, arguments):
+    from heinzel.heads.cli._setup import ConsolePrompter
+
+    monkeypatch.setattr(bootstrap.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(bootstrap.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(ConsolePrompter, "confirm", lambda *_args, **_kwargs: pytest.fail("Unexpected consent prompt"))
+    assert bootstrap._service_choices(arguments) == []
+
+
+@pytest.mark.parametrize(("stdin", "stdout"), [(False, False), (True, False), (False, True)])
+def test_noninteractive_bare_launcher_never_selects_services(monkeypatch, stdin, stdout):
+    from heinzel.heads.cli._setup import ConsolePrompter
+
+    monkeypatch.setattr(bootstrap.sys.stdin, "isatty", lambda: stdin)
+    monkeypatch.setattr(bootstrap.sys.stdout, "isatty", lambda: stdout)
+    monkeypatch.setattr(ConsolePrompter, "confirm", lambda *_args, **_kwargs: pytest.fail("Unexpected consent prompt"))
+    assert bootstrap._service_choices([]) == []
+
+
+@pytest.mark.parametrize("result", [{}, {"installed": True, "loaded": False}, {"installed": 1, "loaded": True}])
+def test_selected_service_requires_observed_installed_and_loaded_before_opening(monkeypatch, tmp_path, result):
+    executable = tmp_path / "persistent/bin/hz"
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: executable)
+    monkeypatch.setattr(
+        bootstrap.subprocess,
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, json.dumps(result), ""),
+    )
+    with pytest.raises(HeinzelError, match="could not be verified"):
+        bootstrap._install_services(executable, [("ui",)], {})
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {"notifier": "heinzel-notifier", "state": "missing", "shown": False},
+        {"notifier": "heinzel-notifier", "state": "outdated", "shown": False},
+        {"notifier": "foreign", "shown": True},
+        [],
+    ],
+)
+def test_notifier_never_claims_an_unverified_companion_is_available(result):
+    with pytest.raises(HeinzelError):
+        bootstrap._notifier_result(result)
+
+
+def test_notifier_permission_and_delivery_are_not_inferred_from_installation(capsys):
+    bootstrap._notifier_result({"notifier": "heinzel-notifier", "state": "installed", "shown": False})
+    assert "needs desktop or notification permission" in capsys.readouterr().err
+    bootstrap._notifier_result({"notifier": "heinzel-notifier", "state": "current", "shown": True})
+    assert "Check the actual notification" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("modern", [False, True])
+def test_offline_command_discovery_preserves_published_older_app_launches(monkeypatch, tmp_path, modern):
+    discover = WORKSPACE_COMMAND
+    commands = [{"command": "hz ui open"}, {"command": "hz ui serve"}] if modern else []
+    document = {"schema_version": 1, "root": {"commands": [{"command": "hz ui", "commands": commands}]}}
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, json.dumps(document), "")
+
+    monkeypatch.setattr(bootstrap.subprocess, "run", run)
+    executable = tmp_path / "persistent/bin/hz"
+    assert discover(executable, {}, []) == (["ui", "open"] if modern else ["ui"])
+    if not modern:
+        with pytest.raises(HeinzelError, match="predates"):
+            discover(executable, {}, [("system", "daemon")])
+    assert all(command[-1] == "--command-tree" for command in calls)
+
+
+def test_selected_web_setup_observes_readiness_before_completion(monkeypatch, tmp_path):
+    responses = iter(
+        [{"installed": True, "loaded": True, "ready": False}, {"installed": True, "loaded": True, "ready": True}]
+    )
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, json.dumps(next(responses)), "")
+
+    monkeypatch.setattr(bootstrap.subprocess, "run", run)
+    monkeypatch.setattr(bootstrap.time, "sleep", lambda _: None)
+    status = bootstrap._service_status(tmp_path / "persistent/bin/hz", ("ui",), {})
+    assert status["ready"] is True
+    assert len(calls) == 2
+    assert all(call[-2:] == ["status", "--json"] for call in calls)
+
+
+def test_selected_web_setup_cannot_complete_after_readiness_deadline(monkeypatch, tmp_path):
+    clock = iter([0, 0, 13])
+    monkeypatch.setattr(bootstrap.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(
+        bootstrap.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, json.dumps({"installed": True, "loaded": True, "ready": False}), ""
+        ),
+    )
+    with pytest.raises(HeinzelError, match="not ready"):
+        bootstrap._service_status(tmp_path / "persistent/bin/hz", ("ui",), {})
+
+
+def test_managed_profile_commands_refuse_changed_installation_before_running(monkeypatch, tmp_path):
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: None)
+    monkeypatch.setattr(bootstrap.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("Unverified target ran"))
+    with pytest.raises(HeinzelError, match="changed before setup"):
+        bootstrap._managed_json(tmp_path / "ephemeral/bin/hz", {}, ["org", "show"])

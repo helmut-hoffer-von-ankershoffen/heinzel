@@ -1,9 +1,9 @@
 ---
-title: Install Heinzelmännchen
-description: Install the standard Heinzelmännchen app, start the web workspace, and verify your first session.
+title: Install Heinzel
+description: Install the standard Heinzel app, start the web workspace, and verify your first session.
 ---
 
-# Your first Heinzelmännchen.
+# Install Heinzel.
 
 The standard app installs the core and the default Clock, Resource, Tailscale and theme plugins. It runs on
 **macOS and Linux**. Windows may work, but is not supported. You need no separate Python.
@@ -33,7 +33,18 @@ The first run picks the newest standard release, verifies its hashes, installs t
 the workspace. Later runs open the installed app. On Linux you need a systemd user manager in your session.
 Tailscale sharing is opt-in; installing its plugin does not make your workspace public.
 
-Stop with **Ctrl-C**. Background operation is optional. Run `hz setup` to choose services and AI access.
+First interactive setup asks for missing name, team name and required profile details through normal configuration.
+Existing values are preserved. Setup is complete only when system health is green.
+
+The interactive launcher offers the scheduled daemon, web server after login and native notifier separately;
+each prompt defaults to **Yes**. Decline any choice with **No**. All selected installation runs in the verified
+persistent standard app. Noninteractive, help and machine-readable calls make no automatic service choices.
+Unsupported native notification platforms or desktops are reported; OS permission and visible delivery remain
+separate checks.
+
+`hz ui` displays help. Use `hz ui serve` for foreground serving, stopped with **Ctrl-C**, or `hz ui open` to open
+the installed service and otherwise serve in the foreground. `hz ui install` is available without a preview flag;
+`hz ui status`, `restart` and `uninstall` manage its owned service. Run `hz setup` to configure AI access.
 `hz system doctor` may report missing optional credentials; configure an integration before you rely on it.
 
 [Continue to your first session →](first-steps.md)

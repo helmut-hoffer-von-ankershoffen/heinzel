@@ -372,7 +372,7 @@ def test_the_web_head_streams_an_independent_plugin_installation(sandbox, tmp_pa
     installed_from_git(sandbox)
     spec, rewrite = dummy_git_source(sandbox, tmp_path)
     ui = subprocess.Popen(
-        [str(sandbox.hz_bin), "ui", "--port", "0"],
+        [str(sandbox.hz_bin), "ui", "serve", "--port", "0"],
         env={**sandbox.env, **rewrite, "BROWSER": "true"},
         stderr=subprocess.PIPE,
         text=True,

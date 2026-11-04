@@ -6,7 +6,7 @@ dependencies and the receipt come back byte for byte, and the installation's con
 binds the folder itself and the content of everything in it, is the one recorded before the update. Each move is an
 atomic rename; an interrupted put-back is finished by `ToolSnapshot.recover` from what is left on disk.
 
-The trial start runs the newly installed `hz ui` on throwaway folders before anything restarts into it.
+The trial start runs the newly installed `hz ui serve` on throwaway folders before anything restarts into it.
 """
 
 import contextlib
@@ -253,11 +253,11 @@ def trial_environment(scratch: Path, environ: Mapping[str, str], config: Path) -
 def trial_start(version: str, timeout: float = TRIAL_SECONDS, command: Sequence[str] | None = None) -> bool:
     """Whether the installed hz starts a web app server that answers with `version`, before this one restarts into it.
 
-    It runs `hz ui` as the restart would, on a free port with its own token, against a throwaway copy of the
+    It runs `hz ui serve` as the restart would, on a free port with its own token, against a throwaway copy of the
     configuration and empty folders (`trial_environment`), asks `/api/lifecycle` once, then stops it and deletes what
     it wrote. Nothing of this server or its live folders is touched, so a failure changes nothing here.
     """
-    command = list(command or [sys.executable, "-m", "heinzel", "ui", "--port", "0", "--no-browser"])
+    command = list(command or [sys.executable, "-m", "heinzel", "ui", "serve", "--port", "0", "--no-browser"])
     with tempfile.TemporaryDirectory(prefix="hz-trial-") as scratch:
         try:
             env = trial_environment(Path(scratch), os.environ, user_config_dir())

@@ -50,7 +50,7 @@ ASAR payload.
 These are unsigned local/CI verification artifacts. They are not notarized, published, or suitable for a trusted
 production install. Gatekeeper may block macOS launches, and Linux desktop integration/package-manager installation
 is not included. There is no auto-update, login item, background service, OS permission request, installer/uninstaller,
-or Python runtime provisioning. The shell invokes `hz ui --port 0 --no-browser` without a shell, accepts only its
+or Python runtime provisioning. The shell invokes `hz ui serve --port 0 --no-browser` without a shell, accepts only its
 single verified loopback URL line, passes its fragment only to the owned web UI, and stops only its owned child on
 Quit. This does not install the `hz` CLI or enable background operation; the CLI must already be installed and the
 user must launch the app while it is on `PATH`.

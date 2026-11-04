@@ -1,5 +1,6 @@
 """An installed uv tool retains authenticated web identity through replacement, exec and crash recovery."""
 
+import subprocess
 from urllib.parse import urlsplit
 
 import httpx
@@ -24,8 +25,7 @@ def supervised(service, tmp_path, sandbox, wheel):
     config = tmp_path / "selected-config/config.toml"
     config.parent.mkdir(mode=0o700)
     config.write_text(
-        '[hz]\nfeatures = ["persistent_web"]\nupdate_check = false\nauto_update = false\nplugins_enabled = false\n'
-        "[system.notify]\nnative = false\n"
+        "[hz]\nupdate_check = false\nauto_update = false\nplugins_enabled = false\n[system.notify]\nnative = false\n"
     )
     service.profile = default_profile(service.home, service.directory.parent, service.prefix, service.executable)
     service.profile.update(
@@ -134,3 +134,27 @@ def test_fresh_installed_server_repeatedly_publishes_authenticated_control(super
         authenticated = client.get(origin + "/api/lifecycle", headers=headers)
         assert authenticated.status_code == 200
         assert authenticated.json()["instance"] == current.instance
+
+
+def test_installed_ui_group_is_inert_and_default_install_retains_profile_refusal(sandbox, wheel):
+    sandbox.run("uv", "tool", "install", "--offline", wheel)
+    help_text = sandbox.hz("ui")
+    assert "serve" in help_text
+    assert "install" in help_text
+    assert "status" in help_text
+    assert "http://127.0.0.1:" not in help_text
+    assert "--supervised" not in help_text
+    assert "--port" in sandbox.hz("ui", "serve", "--help")
+    refused = subprocess.run(
+        [str(sandbox.hz_bin), "ui", "install", "--dry-run", "--json"],
+        env=sandbox.env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert refused.returncode == 1
+    assert "process-only settings" in refused.stderr
+    assert "preview" not in refused.stderr
+    assert not (sandbox.root / "state/ui/service.json").exists()
+    assert not (sandbox.root / "units").exists()

@@ -176,7 +176,7 @@ class SoundService(SoundAssets):
             return None
 
     def _choice(self, available: Available) -> Choice:
-        """What `[system.sound]` configures and what is in effect, read now: a running `hz ui` sees a terminal's pick.
+        """Read current sound configuration so the web server observes terminal changes.
 
         Raises:
             HeinzelError: If a configuration file is not valid TOML.

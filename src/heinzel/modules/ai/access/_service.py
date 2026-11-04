@@ -115,7 +115,7 @@ class AccessService:
 
     @staticmethod
     def bindings() -> Bindings:
-        """The bindings as the files and environment say now, not as at boot: `hz ui` keeps running.
+        """The bindings as the files and environment say now, not as at boot: `hz ui serve` keeps running.
 
         Raises:
             HeinzelError: If a configuration file is not valid TOML.
@@ -180,10 +180,10 @@ class AccessService:
             )
             next_steps = [f"hz ai access use {chosen.name}"]
         elif runner != self._view.bound("agent-runner"):
-            # Bindings are read once at boot: a running `hz ui` or MCP server keeps the runner it started with.
+            # Bindings are read once at boot: a running `hz ui serve` or MCP server keeps the runner it started with.
             note = (
                 f"The agent runner is now {runner or 'none'}, but this hz process started with "
-                f"{self._view.bound('agent-runner') or 'none'}; restart `hz ui` or the MCP server to apply it."
+                f"{self._view.bound('agent-runner') or 'none'}; restart `hz ui serve` or the MCP server to apply it."
             )
         elif chosen.status in {"not installed", "not signed in"} and chosen.fix:
             next_steps = [chosen.fix]

@@ -30,3 +30,9 @@ def test_an_unregistered_name_in_code_is_a_bug():
     settings = Settings()
     with pytest.raises(KeyError):
         feature_enabled(settings, "typo")
+
+
+def test_retired_web_preview_setting_is_harmless_without_hiding_other_unknown_flags():
+    settings = Settings(features={"persistent_web", "misspelled"})
+    assert "persistent_web" not in FEATURES
+    assert unknown_features(settings) == ["misspelled"]

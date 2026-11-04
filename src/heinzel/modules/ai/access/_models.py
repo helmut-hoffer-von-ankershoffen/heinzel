@@ -145,7 +145,7 @@ class AccessSettings(ModuleSettings):
 class Bindings(ModuleSettings):
     """The two bindings AI access reads afresh on every call: `[capabilities] ai_access` and `agent_runner`.
 
-    Read again on each listing, like the theme, because `hz ui` keeps running while a terminal switches.
+    Read again on each listing, like the theme, because `hz ui serve` keeps running while a terminal switches.
     """
 
     ai_access: str | None = "claude-code"
