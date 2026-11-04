@@ -116,7 +116,11 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0117](0117-persistent-web-access-has-an-owned-os-controller.md) Persistent web access has an owned OS controller | proposed · 3 Nov<br>partial | [#485](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/485) |
 | [0118](0118-contribution-declared-footer-retention.md) Contributions declare footer retention priority | proposed · 3 Nov<br>built | [#488](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/488) |
 | [0119](0119-interactive-cli-reads-local-overview-records.md) Interactive CLI reads local overview records | proposed · 3 Nov<br>partial | [#492](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/492) |
+| [0120](0120-channels-carry-notices-and-approval-claims.md) Channels carry notices and approval claims | proposed · 4 Nov<br>partial |  |
+| [0121](0121-confirm-each-captured-write-before-one-attempt.md) Confirm each captured write before one attempt | proposed · 4 Nov<br>partial |  |
+| [0122](0122-preserve-authoritative-chat-history.md) Preserve authoritative chat history independently of model context | proposed · 30 Oct<br>partial |  |
 | [0125](0125-prepare-locked-isolated-build-dependencies.md) Prepare locked dependencies before isolated local builds | proposed · 4 Nov<br>built |  |
+| [0127](0127-publish-a-bounded-standing-draft-append-grant.md) Publish a bounded standing grant for draft append | proposed · 4 Nov<br>partial |  |
 
 </div>
 <!-- adr-index:end -->

@@ -452,13 +452,14 @@ def test_a_setting_that_changes_nothing_that_runs_may_be_proposed(store, service
     assert StoreGate(store, kernel).propose(proposal) == "a1"
 
 
-def test_model_cannot_stage_read_set_human_confirmation(store, service, kernel):
+@pytest.mark.parametrize("operation", ["approve-connected-read-set", "publish-draft-workflow", "share-draft-link"])
+def test_model_cannot_stage_read_set_human_confirmation(store, service, kernel, operation):
     chat = service.open(None)
     proposal = ProposedCall(
         session=chat.id,
         module="heinzel",
-        operation="approve-connected-read-set",
-        tool="heinzel_approve_connected_read_set",
+        operation=operation,
+        tool="heinzel_" + operation.replace("-", "_"),
         arguments={},
         command="hz heinzel approve-connected-read-set",
     )
