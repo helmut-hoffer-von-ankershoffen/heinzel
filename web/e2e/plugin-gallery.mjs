@@ -69,6 +69,11 @@ export async function exercisePluginGallery(page, requests, shots, name) {
   await dialog.getByRole("tab", { name: "Discover", exact: true }).click();
   const button = dialog.getByRole("button", { name: "Screenshots for Harbor", exact: true });
   await button.waitFor();
+  const label = await dialog.getByText("Harbor", { exact: true }).boundingBox();
+  assert.ok(label && label.width >= 48, "Plugin names must remain readable beside their installation controls");
+  const install = await dialog.getByRole("button", { name: "Install", exact: true }).boundingBox();
+  const bounds = await dialog.boundingBox();
+  assert.ok(install && bounds && install.x >= bounds.x && install.x + install.width <= bounds.x + bounds.width);
   assert.equal(requests.metadata, 0, "Gallery metadata must remain lazy");
   assert.equal(requests.images, 0, "No external image request before opening its gallery");
   await button.click();

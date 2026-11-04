@@ -910,7 +910,7 @@ function Discover({
             {slot && !available.some((plugin) => `discover:${plugin.name}` === slot.key) && <li>{slot.node}</li>}
             {available.map((plugin) => (
               <li key={plugin.name} className="border-b border-border/70 last:border-b-0">
-                <div className="flex items-center gap-3 py-3">
+                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 py-3">
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                     {plugin.community ? (
                       <Users aria-hidden className="size-(--icon) text-icon" />
@@ -925,22 +925,21 @@ function Discover({
                     <span className="block truncate text-sm text-muted-foreground">{plugin.description}</span>
                     <RepositoryLine url={repositoryOfEntry(plugin)} />
                   </span>
-                  <span className="flex shrink-0 items-center gap-2">
+                  <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-2">
                     <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
                       {sourceLabel({ source_url: repositoryOfEntry(plugin) }, plugin.private_repository)}
                     </span>
-                    <span aria-hidden className={VERSION} />
-                  </span>
-                  {sourceLink(repositoryOfEntry(plugin), plugin.name)}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={checking === `discover:${plugin.name}`}
-                    aria-expanded={slot?.key === `discover:${plugin.name}`}
-                    onClick={() => onInstall(plugin.install_spec, `discover:${plugin.name}`)}
-                  >
-                    {checking === `discover:${plugin.name}` ? t("plugins.checking") : t("plugins.install")}
-                  </Button>
+                    {sourceLink(repositoryOfEntry(plugin), plugin.name)}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={checking === `discover:${plugin.name}`}
+                      aria-expanded={slot?.key === `discover:${plugin.name}`}
+                      onClick={() => onInstall(plugin.install_spec, `discover:${plugin.name}`)}
+                    >
+                      {checking === `discover:${plugin.name}` ? t("plugins.checking") : t("plugins.install")}
+                    </Button>
+                  </div>
                 </div>
                 <PluginGallery
                   spec={plugin.install_spec}
