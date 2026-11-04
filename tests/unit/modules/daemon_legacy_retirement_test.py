@@ -743,3 +743,16 @@ def test_restore_crash_after_atomic_no_clobber_move_remains_explicitly_recoverab
     renewed = recovery.restore_plan(plan.digest)
     assert recovery.restore(plan.digest, renewed.digest).status == "restored"
     assert manager.registered
+
+
+def test_legacy_recovery_refuses_linux_before_manager_or_file_mutations(legacy, monkeypatch):
+    recovery, service, manager = legacy
+    paths = [*service._unit_paths(), service.state_dir / "install.json"]
+    before = {path: path.read_bytes() for path in paths}
+    monkeypatch.setattr(service, "_platform", "linux")
+    with pytest.raises(HeinzelError, match="unknown or changed"):
+        recovery.plan()
+    assert {path: path.read_bytes() for path in paths} == before
+    assert manager.verbs() == []
+    assert not recovery.root.exists()
+    assert not (service.state_dir / "standard-install-pending.json").exists()
