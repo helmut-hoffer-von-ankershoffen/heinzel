@@ -36,6 +36,9 @@ lock supplies both downloaded artifacts and build constraints without changing i
 - End-to-end preparation performs the same controller bootstrap before building the wheel. Subsequent local
   wheel builds use the prepared cache and the same temporary hash constraints. Public cold-install journeys keep
   their real registry access and ordinary tool receipts.
+- Standalone `make build` prepares only the locked backend cache before building its wheel and source distribution.
+  It does not install the controller. This keeps the fresh-checkout build contract without relying on a restored
+  cache; direct helper builds still require prepared artifacts and resolve Python build dependencies offline.
 - Frontend tool and package fetching follows the existing behavior: the web build hook can still fetch pinned
   pnpm and frontend dependencies. The build process is not a network sandbox.
 - Constraints are scoped to these subprocesses; no index, receipt, build-isolation or application policy changes.
