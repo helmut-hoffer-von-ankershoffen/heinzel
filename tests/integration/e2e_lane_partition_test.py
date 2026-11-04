@@ -39,8 +39,19 @@ def selected(nodes: Counter[str], commands: list[list[str]]) -> Counter[str]:
     files = {node.partition("::")[0] for node in nodes}
     result: Counter[str] = Counter()
     for command in commands:
-        assert command[:5] == ["uv", "run", "pytest", "-m", "e2e"]
-        arguments = command[command.index("-x") + 1 :]
+        assert command[:10] == [
+            "uv",
+            "run",
+            "pytest",
+            "-m",
+            "e2e",
+            "-n",
+            "2" if sys.platform == "darwin" else "3",
+            "-q",
+            "--session-timeout=600",
+            "-x",
+        ]
+        arguments = command[10:]
         assert len(arguments) == len(set(arguments))  # repeated file arguments must not hide duplicate collection
         targets = {arg for arg in arguments if not arg.startswith("-")}
         ignored = {arg.removeprefix("--ignore=") for arg in arguments if arg.startswith("--ignore=")}
@@ -51,6 +62,8 @@ def selected(nodes: Counter[str], commands: list[list[str]]) -> Counter[str]:
         # The existing Make recipes use whole files and one exact README node, with no expression matching.
         assert targets <= files | nodes.keys()
         assert ignored <= files
+        assert not (targets and ignored)  # mixed explicit/ignored paths have additional pytest collection semantics
+        assert not {target.partition("::")[0] for target in targets if "::" in target}.intersection(targets)
         assert deselected <= nodes.keys()
         result.update(
             {
@@ -91,3 +104,30 @@ def test_ci_lanes_preserve_every_original_node_once_including_supervised_paramet
     assert set(lanes["supervised"]) == expected_supervised
     assert not set(lanes["supervised"]).intersection(lanes["cli"])
     assert "tests/e2e/tool_install_test.py::test_a_plugin_from_a_git_repository_is_added_with_confirm" in lanes["cli"]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["tests/e2e/sample_test.py", "tests/e2e/sample_test.py::test_one"],
+        ["tests/e2e/sample_test.py", "tests/e2e/sample_test.py"],
+        ["tests/e2e/sample_test.py", "--ignore=tests/e2e/sample_test.py"],
+        ["--unknown-selector"],
+        ["tests/e2e/missing_test.py"],
+    ],
+)
+def test_partition_rejects_unmodeled_or_duplicate_collection(arguments):
+    prefix = [
+        "uv",
+        "run",
+        "pytest",
+        "-m",
+        "e2e",
+        "-n",
+        "2" if sys.platform == "darwin" else "3",
+        "-q",
+        "--session-timeout=600",
+        "-x",
+    ]
+    with pytest.raises(AssertionError):
+        selected(Counter({"tests/e2e/sample_test.py::test_one": 1}), [prefix + arguments])
