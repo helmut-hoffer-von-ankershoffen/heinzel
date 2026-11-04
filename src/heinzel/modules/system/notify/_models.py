@@ -42,6 +42,12 @@ class NotifySettings(ModuleSettings):
         title="Plugin notices",
         description="Notify when an installed plugin reports something that needs attention.",
     )
+    calendar: bool = Field(
+        default=False,
+        title="Calendar reminders",
+        description="Allow background calendar reads and reminders before meetings start and end; "
+        "set up the worker in Calendar.",
+    )
     sound: bool = Field(
         default=False,
         title="Notification sound",
@@ -90,6 +96,7 @@ class NotifySettings(ModuleSettings):
             "doctor",
             "release",
             "plugin",
+            "calendar",
             "sound",
             "quiet",
             "working_hours",

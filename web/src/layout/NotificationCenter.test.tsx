@@ -20,6 +20,25 @@ const checkIn: SchemaNotice = {
 };
 
 describe("The notification center", () => {
+  it("labels and filters calendar reminders", async () => {
+    mockApi({
+      ...shell,
+      "/api/system/doctor": doctor,
+      "/api/system/daemon/jobs": [],
+      "/api/system/notify/list": {
+        notices: [{ ...checkIn, kind: "calendar", title: "Meeting starts soon" }],
+        waiting: 0,
+        native: "through Heinzel Notifier",
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?panel=notifications");
+    await user.click(await screen.findByRole("tab", { name: "Calendar" }));
+    expect(await screen.findByText("Meeting starts soon")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Drafts" }));
+    expect(screen.queryByText("Meeting starts soon")).not.toBeInTheDocument();
+  });
+
   it("labels and filters scheduled Heinzel check-ins", async () => {
     mockApi({
       ...shell,

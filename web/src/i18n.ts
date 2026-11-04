@@ -756,6 +756,7 @@ const en = {
   "notify.kind.plugin": "Plugins",
   "notify.kind.test": "Tests",
   "notify.kind.heinzel": "Heinzel check-ins",
+  "notify.kind.calendar": "Calendar",
   "notify.today": "Today",
   "notify.earlier": "Earlier",
   "notify.empty": "Nothing yet. Scheduled check-ins, drafts, failed runs and health problems appear here.",

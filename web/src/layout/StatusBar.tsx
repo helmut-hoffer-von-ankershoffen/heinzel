@@ -2,9 +2,8 @@
 // one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
-import { Calendar, CalendarClock, Video } from "lucide-react";
+import { Calendar } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
 import { useChangelog, useInfo } from "@/api/queries";
 import { token } from "@/api/token";
 import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
@@ -18,22 +17,28 @@ import { AutoUpdate } from "@/updates/AutoUpdate";
 import { DurableHeinzelStatus } from "./DurableHeinzelStatus";
 import { HealthStatus } from "./HealthStatus";
 import { PluginsPending } from "./PluginsPending";
-import { CONNECTORS } from "./settingsSections";
 import { UpdateStatus } from "./UpdateStatus";
 
 type Meeting = { title: string; start: string; end: string; conference_url?: string | null };
-type Agenda = { current: Meeting | null; next: Meeting | null; problem: string | null; fix: string | null };
+type Agenda = {
+  timezone?: string | null;
+  current: Meeting | null;
+  next: Meeting | null;
+  problem: string | null;
+  fix: string | null;
+};
 
 /** `GET /api/org/agenda`; answers 404 until the server has it, which shows as no meeting. */
 function useAgenda() {
   return useQuery({
     queryKey: ["org", "agenda"],
-    queryFn: async (): Promise<Agenda | null> => {
+    queryFn: async (): Promise<Agenda> => {
       const request = new Request(new URL("/api/org/agenda", window.location.origin), {
         headers: { Authorization: `Bearer ${token() ?? ""}` },
       });
       const response = await fetch(request);
-      return response.ok ? ((await response.json()) as Agenda) : null;
+      if (!response.ok) throw new Error("Calendar unavailable");
+      return (await response.json()) as Agenda;
     },
     refetchInterval: 60_000,
     retry: false,
@@ -49,16 +54,7 @@ function useNow(): Date {
   return now;
 }
 
-const time = (date: Date) => zoneTime(date);
-
-/** "in 12 min", "in 2 h 5 min", or the time when it's tomorrow or later. */
-function until(start: Date, now: Date): string {
-  const minutes = Math.round((start.getTime() - now.getTime()) / 60_000);
-  if (minutes < 1) return t("status.now");
-  if (start.toDateString() !== now.toDateString()) return time(start);
-  if (minutes < 60) return t("status.inMinutes", { minutes });
-  return t("status.inHours", { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
-}
+const time = (date: Date, zone?: string | null) => zoneTime(date, zone ?? undefined);
 
 const RELEASES = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag";
 
@@ -113,56 +109,81 @@ function ReleaseNotes({ version }: { version: string }) {
   );
 }
 
-/** The meeting now or next as an icon: green with its line and Join in the pane, or red when no calendar is connected. */
-function MeetingItem({ now }: { now: Date }) {
+/** The current and upcoming meetings share one compact entry to the calendar panel. */
+function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
   const agenda = useAgenda();
   const meeting = useShown("org:meeting", "footer");
   const current = agenda.data?.current;
   const next = agenda.data?.next;
+  const running = [current, next].filter((event): event is Meeting =>
+    Boolean(event && new Date(event.start) <= now && now < new Date(event.end)),
+  );
+  const active = running.sort((a, b) => Date.parse(b.start) - Date.parse(a.start))[0];
+  const upcoming = next && new Date(next.start) > now ? next : null;
+  const boundary = [current?.end, next?.start]
+    .filter((value): value is string => Boolean(value))
+    .map(Date.parse)
+    .filter((value) => value > agenda.dataUpdatedAt && value <= now.getTime());
+  useEffect(() => {
+    if (boundary.length) void agenda.refetch();
+  }, [agenda.refetch, boundary.length]);
   if (!meeting) return null;
-  if (current)
-    return (
-      <FooterItem
-        label={t("status.current", { title: current.title, end: time(new Date(current.end)) })}
-        state="ok"
-        icon={Video}
-      >
-        {current.conference_url && (
-          <a
-            href={current.conference_url}
-            target="_blank"
-            rel="noreferrer"
-            className="block rounded-lg px-2.5 py-1.5 text-primary underline"
-          >
-            {t("status.join")}
-          </a>
-        )}
-      </FooterItem>
-    );
-  if (next)
-    return (
-      <FooterItem
-        label={t("status.next", { title: next.title, when: until(new Date(next.start), now) })}
-        state="ok"
-        icon={CalendarClock}
-      />
-    );
-  if (agenda.data?.problem)
-    return (
-      <FooterItem label={t("status.noCalendar")} state="bad" icon={Calendar}>
-        <p className="px-2.5 py-1.5 text-muted-foreground">{agenda.data.fix ?? agenda.data.problem}</p>
-        <Link
-          to={`?settings=${CONNECTORS}`}
-          className="block rounded-lg border-t border-border px-2.5 pt-2 pb-1 text-xs underline hover:text-foreground"
-        >
-          {t("status.connectCalendar")}
-        </Link>
-      </FooterItem>
-    );
-  return null;
+  const label = agenda.isPending
+    ? "Loading calendar"
+    : agenda.isError || agenda.data?.problem
+      ? "Calendar unavailable"
+      : [
+          active ? `In ${active.title} until ${time(new Date(active.end), agenda.data?.timezone)}` : "Not in a meeting",
+          upcoming
+            ? `Next: ${upcoming.title} ${new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: agenda.data?.timezone ?? undefined }).format(new Date(upcoming.start))} at ${time(new Date(upcoming.start), agenda.data?.timezone)}`
+            : "None through tomorrow",
+        ].join(" · ");
+  return (
+    <FooterItem
+      label={label}
+      className="h-auto min-h-8"
+      state={agenda.isError || agenda.data?.problem ? "bad" : "off"}
+      content={
+        <span className="flex max-w-44 items-center gap-1 sm:max-w-72">
+          <Calendar aria-hidden className="size-4 shrink-0" />
+          {agenda.isPending || agenda.isError || agenda.data?.problem ? (
+            <span className="truncate">{label}</span>
+          ) : (
+            <span className="flex min-w-0 flex-col leading-tight">
+              {active ? (
+                <span className="flex min-w-0 gap-1">
+                  <span className="min-w-0 truncate">In {active.title}</span>
+                  <time className="shrink-0 whitespace-nowrap" dateTime={active.end}>
+                    until {time(new Date(active.end), agenda.data?.timezone)}
+                  </time>
+                </span>
+              ) : (
+                <span>Not in a meeting</span>
+              )}
+              {upcoming ? (
+                <span className="flex min-w-0 gap-1">
+                  <span className="min-w-0 truncate">Next: {upcoming.title}</span>
+                  <time className="shrink-0 whitespace-nowrap" dateTime={upcoming.start}>
+                    {new Intl.DateTimeFormat(undefined, {
+                      weekday: "short",
+                      timeZone: agenda.data?.timezone ?? undefined,
+                    }).format(new Date(upcoming.start))}{" "}
+                    {time(new Date(upcoming.start), agenda.data?.timezone)}
+                  </time>
+                </span>
+              ) : (
+                <span>None through tomorrow</span>
+              )}
+            </span>
+          )}
+        </span>
+      }
+      onActivate={onOpen}
+    />
+  );
 }
 
-export function StatusBar() {
+export function StatusBar({ onOpenCalendar = () => {} }: { onOpenCalendar?: () => void }) {
   const info = useInfo();
   const now = useNow();
   return (
@@ -194,8 +215,8 @@ export function StatusBar() {
         <FooterPart id="@health" priority={90} label={t("health.title")}>
           <HealthStatus />
         </FooterPart>
-        <FooterPart id="@meeting" priority={30}>
-          <MeetingItem now={now} />
+        <FooterPart id="@meeting" priority={925}>
+          <MeetingItem now={now} onOpen={onOpenCalendar} />
         </FooterPart>
         <FooterMore />
         <StatusItems slot="footer" except={NATIVE_FOOTER} measured />

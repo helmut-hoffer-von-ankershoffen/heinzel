@@ -286,18 +286,101 @@ describe("Footer items are icons with a state and a pane", () => {
     expect(screen.queryByRole("region", { name: "Thing ok" })).not.toBeInTheDocument();
   });
 
-  it("shows the calendar as a red icon that says so and links to connect one", async () => {
-    mockApi(states);
-    window.innerWidth = 1280;
+  it("opens the calendar panel and explains an unavailable connection", async () => {
+    mockApi({
+      ...states,
+      "/api/org/calendar": {
+        since: "2026-11-02T00:00:00Z",
+        until: "2026-11-09T00:00:00Z",
+        events: [],
+        problem: "No calendar connected.",
+        fix: "hz setup",
+      },
+      "/api/org/calendar-reminders-status": { enabled: true, service: "not installed" },
+    });
     const user = userEvent.setup();
     renderAt("/doctor");
-    const bar = (await screen.findByRole("contentinfo")) as HTMLElement;
-    const calendar = await within(bar).findByRole("button", { name: "No calendar connected, error" });
-    expect(calendar).toHaveClass("text-bad");
-    await user.click(calendar);
-    const pane = await screen.findByRole("region", { name: "No calendar connected" });
-    await user.click(within(pane).getByRole("link", { name: "Connect a calendar…" }));
+    const bar = await screen.findByRole("contentinfo");
+    await user.click(await within(bar).findByRole("button", { name: "Calendar unavailable, error" }));
+    const panel = await screen.findByRole("region", { name: "Calendar" });
+    expect(await within(panel).findByText("No calendar connected.")).toBeInTheDocument();
+    expect(await within(panel).findByText(/Calendar reminders need a background worker/)).toBeInTheDocument();
+    await user.click(within(panel).getByRole("link", { name: "Connect a calendar…" }));
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("shows current and next meeting together and opens the week", async () => {
+    const now = Date.now();
+    const current = {
+      title: "Standup",
+      start: new Date(now - 60_000).toISOString(),
+      end: new Date(now + 300_000).toISOString(),
+    };
+    const next = {
+      title: "Review",
+      start: new Date(now + 600_000).toISOString(),
+      end: new Date(now + 900_000).toISOString(),
+    };
+    mockApi({
+      ...states,
+      "/api/org/agenda": { current, next, problem: null },
+      "/api/org/calendar": {
+        since: new Date(now).toISOString(),
+        until: new Date(now + 604800000).toISOString(),
+        events: [{ ...next, id: "2", all_day: false }],
+        problem: null,
+        fix: null,
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const footer = await screen.findByRole("contentinfo");
+    const calendar = await within(footer).findByRole("button", { name: /In Standup until .*Next: Review .* at/ });
+    await user.click(calendar);
+    const panel = await screen.findByRole("region", { name: "Calendar" });
+    expect(await within(panel).findByText("Review")).toBeInTheDocument();
+  });
+
+  it("only renders safe conference links in the calendar", async () => {
+    const now = Date.now();
+    const base = {
+      start: new Date(now - 60_000).toISOString(),
+      end: new Date(now + 300_000).toISOString(),
+      all_day: false,
+    };
+    mockApi({
+      ...states,
+      "/api/org/calendar": {
+        since: new Date(now).toISOString(),
+        until: new Date(now + 604800000).toISOString(),
+        problem: null,
+        fix: null,
+        events: [
+          { ...base, id: "1", title: "Safe", conference_url: "https://meet.example/test" },
+          { ...base, id: "2", title: "HTTP", conference_url: "http://meet.example/test" },
+          { ...base, id: "3", title: "Missing" },
+          { ...base, id: "4", title: "Script", conference_url: "javascript:alert(1)" },
+          { ...base, id: "5", title: "Credentials", conference_url: "https://user:pass@meet.example/test" },
+          { ...base, id: "6", title: "Backslash", conference_url: "https://meet.example\\evil.test" },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await user.click(
+      await within(await screen.findByRole("contentinfo")).findByRole("button", {
+        name: "Calendar unavailable, error",
+      }),
+    );
+    const panel = await screen.findByRole("region", { name: "Calendar" });
+    const links = await within(panel).findAllByRole("link", { name: "Join meeting" });
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute("href", "https://meet.example/test");
+    expect(links[1]).toHaveAttribute("href", "http://meet.example/test");
+    for (const link of links) {
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link).toHaveAttribute("rel", "noreferrer noopener");
+    }
   });
 
   it("shows the installed changelog and a compact GitHub release link", async () => {

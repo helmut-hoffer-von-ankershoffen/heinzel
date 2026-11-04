@@ -1344,6 +1344,11 @@ $ hz org [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `agenda`: (expert) Show the meeting you are in now...
+* `calendar`: (expert) Show a week from your connected...
+* `calendar-reminder-worker`: (expert) Run the supervised calendar...
+* `calendar-reminders-install`: (expert) Install a supervised worker;...
+* `calendar-reminders-status`: (expert) Show calendar reminder consent...
+* `calendar-reminders-uninstall`: (expert) Stop and remove the supervised...
 * `show`: Show your profile: who you are, your role,...
 * `sync`: Show what your team recommends beside what...
 
@@ -1359,6 +1364,89 @@ $ hz org agenda [OPTIONS]
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz org calendar`
+
+(expert) Show a week from your connected calendar.
+
+**Usage**:
+
+```console
+$ hz org calendar [OPTIONS]
+```
+
+**Options**:
+
+* `--offset <int>`: Weeks before or after this week.  [default: 0]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz org calendar-reminder-worker`
+
+(expert) Run the supervised calendar reminder worker until its periodic restart.
+
+**Usage**:
+
+```console
+$ hz org calendar-reminder-worker [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz org calendar-reminders-install`
+
+(expert) Install a supervised worker; separately enable calendar reminders to consent to background reads.
+
+**Usage**:
+
+```console
+$ hz org calendar-reminders-install [OPTIONS]
+```
+
+**Options**:
+
+* `--confirm / --no-confirm`: Confirm installing a persistent login worker for this profile.  [default: no-confirm]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz org calendar-reminders-status`
+
+(expert) Show calendar reminder consent and the supervised worker&#x27;s state.
+
+**Usage**:
+
+```console
+$ hz org calendar-reminders-status [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz org calendar-reminders-uninstall`
+
+(expert) Stop and remove the supervised calendar reminder worker.
+
+**Usage**:
+
+```console
+$ hz org calendar-reminders-uninstall [OPTIONS]
+```
+
+**Options**:
+
+* `--confirm / --no-confirm`: Confirm removing this profile&#x27;s reminder login worker.  [default: no-confirm]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

@@ -843,3 +843,41 @@ def test_sound_picker_stays_open_and_plays_the_pick_in_mounted_chromium(environm
     result = drive_ui_script(env, tmp_path, "sound-picker.mjs")
 
     assert result == {"stayedOpen": True, "played": True, "switched": True, "closes": ["Escape", "outside"]}
+
+
+@pytest.mark.timeout(600)
+def test_calendar_panel_on_phone_and_desktop_in_both_browsers(environment, tmp_path):
+    """Exercise the private calendar panel using fixture events on both browser engines."""
+    env, _recorded = environment
+    web_build.ensure_built()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    for engine in ("chromium", "webkit"):
+        subprocess.run([*run, "exec", "playwright-core", "install", engine], cwd=REPO, check=True, timeout=600)
+    ui = subprocess.Popen(
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE
+    )
+    capture = MobileServerOutput(ui)
+    try:
+        url = capture.wait_url()
+        result = subprocess.run(
+            [
+                *run,
+                "exec",
+                "node",
+                "e2e/calendar.mjs",
+                url,
+                str(Path(os.environ.get("HZ_SCREENSHOTS", tmp_path)) / "calendar"),
+            ],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+        )
+        assert result.returncode == 0, redact(result.stderr, parse_qs(urlsplit(url).fragment).get("token", [""])[0])
+    finally:
+        ui.terminate()
+        ui.wait(30)
+        capture.close()
+        if ui.stderr is not None:
+            ui.stderr.close()

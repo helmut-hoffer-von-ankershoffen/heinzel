@@ -20,7 +20,7 @@ export function noticePath(notice: Pick<SchemaNotice, "id" | "route">): string {
 
 /** Pop up a notification through the service worker, else from the page; whether it was shown. */
 export async function popUp(
-  notice: Pick<SchemaNotice, "id" | "title" | "body" | "route">,
+  notice: Pick<SchemaNotice, "id" | "title" | "body" | "route" | "expires">,
   navigate: NavigateFunction,
   registration: () => Promise<ServiceWorkerRegistration | null> = workerRegistration,
 ): Promise<boolean> {
@@ -34,6 +34,8 @@ export async function popUp(
   };
   try {
     const worker = await registration();
+    // A suspended tab or delayed service worker must not present a meeting after its boundary.
+    if (notice.expires && !(Date.now() < Date.parse(notice.expires))) return false;
     if (worker) {
       await worker.showNotification(notice.title, options); // its click is the worker's (public/sw.js)
       return true;
