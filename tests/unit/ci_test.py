@@ -81,6 +81,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ),
     },
     "docs.yml": {
+        "sudo sed -i ": "selects the primary signed Ubuntu archive before browser dependency installation",
         "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
         "uv run --quiet --frozen --no-build --group docs playwright install-deps": (
             "Chromium's system libraries, from the runner"
