@@ -56,3 +56,51 @@ selection and preserve plugin aliases when UI is disabled. Independent source
 review found no weakened test/check/threshold/deadline/gate, authentication,
 configuration/profile or API contract; the alias fallback was independently
 reproduced before approval.
+
+## Follow-up: remove unused imports and duplicate input models
+
+A later hosted supervised run on `69defc88b` still missed its unchanged six-second
+readiness contract. The child accumulated 4.041 seconds of user CPU and 0.808
+seconds of system CPU; its sampled import stack included FastAPI. That evidence
+establishes startup work under load, not one proven slow function.
+
+The follow-up keeps the existing CLI parser and full kernel/module discovery.
+It imports setup, join, chat, command discovery and the interactive overview only
+when those workflows run. Prompt support loads when an operation runs. The API
+constructs one strict input model per private mutation and shares it between that
+operation's normal and streaming routes, within one app build. Complete API
+construction still finishes before publication. Constructing the web head's operation API creates 67
+input models instead of 98; both builds register the same 323 API routes.
+
+Two independent installed wheels used the same locked runtime dependencies and
+CPython 3.14.8 on macOS. All 324 baseline Python files matched `69defc88b` exactly.
+Before each process, bytecode was removed only from that disposable environment;
+OS filesystem caches were not flushed. Each launch used empty private directories,
+all built-in modules, no plugins, and update checks/native notifications disabled.
+The process ran the real foreground UI command; the controller verified the built
+HTML over HTTP and the authenticated lifecycle endpoint, then stopped its own
+child with SIGINT. HTML hashes matched in all four runs.
+
+| Order | HTTP ready wall (s) | Child user + system CPU (s) |
+| --- | ---: | ---: |
+| Baseline | 1.945 | 1.632 |
+| Candidate | 1.767 | 1.601 |
+| Candidate | 1.336 | 1.537 |
+| Baseline | 1.393 | 1.576 |
+
+The observed CPU reduction was 31–39 ms in these pairs. The wall difference also
+contains scheduling and I/O variation and is not wholly attributed to the change.
+This foreground comparison does not prove the hosted supervised deadline has
+margin or that its failure is fixed.
+
+An absent runtime record also used to construct a recursive JSON validator before
+failing its private read. Reading first preserves every existing validation for a
+present record. A separate local 100-call comparison constructed 100 validators
+before and zero after, taking 18.4 ms versus 2.3 ms. This saves controller work;
+it does not explain the child's recorded CPU time.
+
+The immutable baseline fails the new unused-import and duplicate-model regressions;
+the installed candidate passes. A representative private operation's complete
+OpenAPI schema is byte-identical across the two wheels. Additional regressions
+retain authentication, field bounds, unknown-field refusal, distinct app input
+types, malformed runtime refusal, full CLI help/options and ordinary workflows.

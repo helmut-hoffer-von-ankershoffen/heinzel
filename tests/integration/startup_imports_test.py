@@ -59,3 +59,43 @@ assert {"psutil", "croniter", "rich.markdown", "rich.syntax"} <= sys.modules.key
 """
     result = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, check=False, timeout=10)
     assert result.returncode == 0, result.stderr
+
+
+def test_direct_ui_preserves_complete_web_without_importing_other_cli_workflows():
+    code = r"""
+import importlib.abc
+import sys
+blocked = {
+    'heinzel.heads.cli._setup', 'heinzel.heads.cli._join', 'heinzel.heads.cli._chat',
+    'heinzel.heads.cli._discovery', 'heinzel.heads.cli._overview',
+}
+class NoUnusedCli(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in blocked:
+            raise AssertionError('Unrelated CLI workflow imported: ' + fullname)
+guard = NoUnusedCli()
+sys.meta_path.insert(0, guard)
+from heinzel.heads import cli
+from heinzel import Settings
+from heinzel.kernel import boot
+import typer
+kernel = boot(Settings(plugins_enabled=False, update_check=False, auto_update=False))
+command = typer.main.get_command(cli.build(kernel, ui_only=True))
+assert 'ui' in command.commands
+from heinzel.heads.web import build
+from fastapi.testclient import TestClient
+app = build(kernel, port=8765, token='fixture-session', static=None)
+assert len(kernel.modules) >= 31
+client = TestClient(app, base_url='http://localhost:8765')
+assert client.get('/api/lifecycle').status_code == 401
+response = client.get('/api/lifecycle', headers={'Authorization': 'Bearer fixture-session'})
+assert response.status_code == 200, response.text
+assert response.json()['instance'] == app.state.lifecycle.instance
+assert not blocked.intersection(sys.modules)
+sys.meta_path.remove(guard)
+full = typer.main.get_command(cli.build(kernel))
+assert {'setup', 'join', 'chat', 'ui'} <= full.commands.keys()
+assert {'heinzel.heads.cli._setup', 'heinzel.heads.cli._join', 'heinzel.heads.cli._chat'} <= sys.modules.keys()
+"""
+    result = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, check=False, timeout=10)
+    assert result.returncode == 0, result.stderr

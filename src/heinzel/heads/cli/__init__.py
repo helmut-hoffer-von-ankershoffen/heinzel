@@ -33,18 +33,10 @@ from heinzel.heads._exposure import collapses, owns_path, restricts
 from heinzel.heads.cli import _playful, _update
 from heinzel.heads.cli._branding import TAGLINE
 from heinzel.heads.cli._branding import footer as brand_footer
-from heinzel.heads.cli._chat import CHAT, chat_callback
-from heinzel.heads.cli._chat import HELP as CHAT_HELP
 from heinzel.heads.cli._command import command
-from heinzel.heads.cli._discovery import command_tree
-from heinzel.heads.cli._join import HELP as JOIN_HELP
-from heinzel.heads.cli._join import JoinCommand
-from heinzel.heads.cli._overview import show
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
 from heinzel.heads.cli._serve import UI_HELP, serve_group, ui_command
-from heinzel.heads.cli._setup import HELP as SETUP_HELP
-from heinzel.heads.cli._setup import SetupCommands
 from heinzel.heads.cli._update import print_changelog_header, print_notice, start_check
 from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Origin, Progress, boot
 
@@ -93,6 +85,13 @@ def build(kernel: Kernel, *, plain: bool = False, ui_only: bool = False) -> type
     if ui_only:
         mount.ui(app)
         return app
+    from heinzel.heads.cli._chat import CHAT, chat_callback  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._chat import HELP as CHAT_HELP  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._join import HELP as JOIN_HELP  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._join import JoinCommand  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._setup import HELP as SETUP_HELP  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._setup import SetupCommands  # noqa: PLC0415 - only full CLI trees need these commands
+
     footer = mount.footer
     progress = mount.progress
     count = mount(app, None) + Count(commands=3)  # setup, join and ui: everyday, for everyone
@@ -150,6 +149,8 @@ def _root(kernel: Kernel, *, plain: bool) -> tuple[typer.Typer, "_Mount"]:
 
     def print_command_tree(ctx: typer.Context, value: bool) -> None:
         if value:
+            from heinzel.heads.cli._discovery import command_tree  # noqa: PLC0415 - only explicit schema discovery
+
             console.print(
                 json.dumps(command_tree(kernel, ctx), indent=2), markup=False, highlight=False, soft_wrap=True
             )
@@ -205,6 +206,8 @@ def main() -> None:
         err_console.print("Check the files `hz system config show` lists and your HZ_* environment variables.")
         sys.exit(EX_CONFIG)
     if not sys.argv[1:] and sys.stdout.isatty() and sys.stdin.isatty():
+        from heinzel.heads.cli._overview import show  # noqa: PLC0415 - only the bare interactive command
+
         show(kernel, console)
         return
     # Discovery stays offline; ordinary invocations check in the background at most once an hour (ADR 0031).
