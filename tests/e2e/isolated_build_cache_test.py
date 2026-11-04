@@ -1,8 +1,10 @@
 """Real Hatchling wheel and editable builds share a complete, hash-verified private backend cache."""
 
 import os
+import re
 import subprocess
 import sys
+import tarfile
 import tomllib
 import zipfile
 from pathlib import Path
@@ -11,6 +13,55 @@ import pytest
 
 pytestmark = pytest.mark.e2e
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_standalone_make_build_prepares_a_cold_cache_for_sdist_and_wheel(tmp_path):
+    project = tmp_path / "project"
+    (project / "scripts").mkdir(parents=True)
+    (project / "src/fixture_build").mkdir(parents=True)
+    source = b'VALUE = "standalone"\n'
+    (project / "src/fixture_build/__init__.py").write_bytes(source)
+    (project / "scripts/build.py").write_bytes((ROOT / "scripts/build.py").read_bytes())
+    (project / "pyproject.toml").write_text(
+        '[project]\nname = "fixture-build"\nversion = "1.0.0"\nrequires-python = ">=3.12"\n'
+        '[dependency-groups]\nbuild = ["hatchling>=1.32.4", "editables>=0.5"]\n'
+        '[build-system]\nrequires = ["hatchling>=1.32.4"]\nbuild-backend = "hatchling.build"\n'
+        '[tool.hatch.build.targets.wheel]\npackages = ["src/fixture_build"]\n'
+    )
+    # Use the actual standalone recipe; this Python-only fixture has no frontend assets to build.
+    recipe = re.search(r"(?m)^build:.*\n(?:\t.*\n)+", (ROOT / "Makefile").read_text())
+    assert recipe is not None
+    (project / "Makefile").write_text(recipe[0] + "\nweb-build:\n\t@:\n")
+    env = {
+        **os.environ,
+        "UV_CACHE_DIR": str(tmp_path / "lock-cache"),
+        "UV_PROJECT_ENVIRONMENT": str(project / ".venv"),
+        "UV_PYTHON": sys.executable,
+        "UV_PYTHON_DOWNLOADS": "never",
+        "UV_NO_CONFIG": "1",
+        "UV_FROZEN": "0",
+    }
+    env.pop("VIRTUAL_ENV", None)
+
+    def run(*command):
+        result = subprocess.run(command, cwd=project, env=env, capture_output=True, text=True, timeout=60, check=False)
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    run("uv", "lock")
+    # Lock resolution cannot accidentally supply build artifacts: build starts with a different, empty cache.
+    env.update(UV_CACHE_DIR=str(tmp_path / "build-cache"), UV_FROZEN="1")
+    run("make", "--no-print-directory", "build")
+    env["UV_OFFLINE"] = "1"
+    run("make", "--no-print-directory", "build")
+    assert not (project / ".venv").exists()
+    [wheel] = (project / "dist").glob("*.whl")
+    with zipfile.ZipFile(wheel) as archive:
+        assert archive.read("fixture_build/__init__.py") == source
+    [sdist] = (project / "dist").glob("*.tar.gz")
+    with tarfile.open(sdist) as archive:
+        member = archive.extractfile("fixture_build-1.0.0/src/fixture_build/__init__.py")
+        assert member is not None
+        assert member.read() == source
 
 
 def test_wheel_preparation_also_supplies_the_isolated_editable_backend(tmp_path):

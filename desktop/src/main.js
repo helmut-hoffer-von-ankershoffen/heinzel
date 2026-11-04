@@ -7,6 +7,7 @@ import { createOwnedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
 import { initializeDesktopIdentity } from "./identity.js";
 import { stopWithReport } from "./shutdown.js";
+import { installSignalQuit } from "./signal-quit.js";
 import { guardUiNavigation, openProductUi } from "./ui-navigation.js";
 
 const identityReady = initializeDesktopIdentity(app, dialog);
@@ -14,6 +15,11 @@ const windows = new WeakSet();
 let quitting = false;
 let stopping = false;
 let permissions;
+const signalQuit = installSignalQuit({
+  proc: process,
+  quit: () => app.quit(),
+  forceExit: (code) => app.exit(code),
+});
 const instance = createInstanceLifecycle({
   app,
   parseConnection: () => null,
@@ -81,17 +87,23 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     if (stopping) return;
     stopping = true;
     permissions?.revoke();
+    let unclean = false;
     void stopWithReport(ownedCli, () => {
-      if (unexpectedExitReported) return;
+      unclean = true;
+      if (signalQuit.received() || unexpectedExitReported) return;
       dialog.showErrorBox(
         "Heinzelmännchen stopped unexpectedly",
         "The local service did not shut down cleanly. Check any work that was in progress before continuing.",
       );
     }).then(() => {
       quitting = true;
-      app.quit();
+      if (!signalQuit.exitIfUnclean(unclean)) app.quit();
     }).catch(() => {
       stopping = false;
+      if (signalQuit.received()) {
+        app.exit(1);
+        return;
+      }
       dialog.showErrorBox(
         "Heinzelmännchen is still running",
         "The local service did not stop. The app will stay open so you can try Quit again.",

@@ -189,7 +189,7 @@ def test_readiness_failure_observes_only_owned_cpu_before_native_sampling(observ
         return 0 if exited or (observation == "exited" and calls >= 3) else None
 
     def status():
-        clock.value = 16.125
+        clock.value = 22.125
         return SimpleNamespace(ready=False, model_dump_json=lambda: '{"ready":false}')
 
     def process(pid):
@@ -234,8 +234,8 @@ def test_readiness_failure_observes_only_owned_cpu_before_native_sampling(observ
             "exited": "exited",
             "exit-during-query": "exited",
         }[observation],
-        "process_wall_seconds": 6.125,
-        "ready_wait_seconds": 6.125,
+        "process_wall_seconds": 12.125,
+        "ready_wait_seconds": 12.125,
     }
     if observation == "valid":
         expected.update(process_user_seconds=1.25, process_system_seconds=0.5)
@@ -285,7 +285,10 @@ def test_cpu_observation_exposes_only_finite_bounded_seconds(value, monkeypatch,
 
 
 @pytest.mark.parametrize("first_ready", [False, True])
-def test_successful_readiness_keeps_existing_gate_without_any_cpu_or_native_query(first_ready, monkeypatch, tmp_path):
+@pytest.mark.parametrize("elapsed", [0.0, 11.999])
+def test_successful_readiness_keeps_existing_gate_without_any_cpu_or_native_query(
+    first_ready, elapsed, monkeypatch, tmp_path
+):
     fixture, _child, clock = owned_fixture(monkeypatch, tmp_path)
     old = SimpleNamespace(ready=first_ready, instance="old")
     current = SimpleNamespace(ready=True, instance="new")
@@ -299,8 +302,36 @@ def test_successful_readiness_keeps_existing_gate_without_any_cpu_or_native_quer
     fixture.service.status = status
     monkeypatch.setattr(psutil, "Process", lambda pid: pytest.fail("Successful startup must not query CPU"))
     monkeypatch.setattr(fixture, "native_state", lambda: pytest.fail("Successful startup must not sample threads"))
-    monkeypatch.setattr(_ui_service.threading, "Event", lambda: SimpleNamespace(wait=waits.append))
+
+    def wait(seconds):
+        waits.append(seconds)
+        clock.value = 10.0 + elapsed
+
+    monkeypatch.setattr(_ui_service.threading, "Event", lambda: SimpleNamespace(wait=wait))
     assert fixture.ready(previous="old") is current
     assert reads == [1, 1]
     assert waits == [0.02]
-    assert clock.value == 10.0
+    assert clock.value == 10.0 + elapsed
+
+
+def test_readiness_still_fails_at_the_twelve_second_deadline(monkeypatch, tmp_path):
+    fixture, _child, clock = owned_fixture(monkeypatch, tmp_path)
+    reads, waits = [], []
+
+    def status():
+        reads.append(clock.value)
+        return SimpleNamespace(ready=False, model_dump_json=lambda: '{"ready":false}')
+
+    def wait(seconds):
+        waits.append(seconds)
+        clock.value += 1.0
+
+    fixture.service.status = status
+    monkeypatch.setattr(_ui_service.threading, "Event", lambda: SimpleNamespace(wait=wait))
+    monkeypatch.setattr(fixture, "wait_channel", lambda: "unavailable")
+    monkeypatch.setattr(fixture, "publication_evidence", lambda **kwargs: {})
+    with pytest.raises(pytest.fail.Exception, match="did not become ready with a new lifecycle instance"):
+        fixture.ready()
+    assert reads == [float(second) for second in range(10, 22)]
+    assert waits == [0.02] * 12
+    assert clock.value - fixture.ready_started == 12.0

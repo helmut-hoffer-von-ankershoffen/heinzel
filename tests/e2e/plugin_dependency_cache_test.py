@@ -84,3 +84,61 @@ def test_a_new_plugin_keeps_fresh_dependency_cache_when_its_server_is_unavailabl
             server.shutdown()
             thread.join(5)
             assert not thread.is_alive()
+
+
+def test_plugin_mutation_keeps_checkpointed_standard_wheel_provenance(tmp_path, fixture_managed_python, make_kernel):
+    import hashlib
+    import types
+
+    from heinzel.modules.system.plugin._service import _PackageMutation
+
+    wheels = tmp_path / "wheels"
+    wheels.mkdir()
+    core = _fixture_wheel(wheels, "1.0.0", ["hz"], name="heinzel")
+    existing = _fixture_wheel(wheels, "1.0.0", [], name="fixture_existing")
+    added = _fixture_wheel(wheels, "1.0.0", [], name="fixture_added", requirements=["heinzel"])
+    selected = {"heinzel": core, "fixture-existing": existing}
+    overrides = tmp_path / "overrides.txt"
+    overrides.write_text(
+        "".join(
+            f"{name} @ {path.as_uri()}#sha256={hashlib.sha256(path.read_bytes()).hexdigest()}\n"
+            for name, path in selected.items()
+        )
+    )
+    sandbox = Sandbox(tmp_path / "sandbox", *fixture_managed_python)
+    sandbox.run("uv", "tool", "install", "heinzel", "--with", "fixture-existing", "--override", overrides)
+    installation = Installation(Progress(), prefix=sandbox.root / "tools/heinzel", uv="uv")
+    generation = installation.remove_tool_overrides(expected=installation.startup_fingerprint(), overrides=selected)
+    installation.record_startup_state(expected=generation)
+    assert installation.requirements() == ["heinzel", "fixture-existing"]
+    before_sources = {
+        path.parent.name: path.read_bytes()
+        for path in installation.prefix.glob("lib/python*/site-packages/*.dist-info/direct_url.json")
+    }
+    service = PluginService(make_kernel(), installation, PluginSettings())
+    requirement = f"fixture-added @ {added.as_uri()}"
+    command = service.add_command(requirement)
+    assert "--reinstall" not in command
+    mutation = _PackageMutation(types.SimpleNamespace(), generation)
+    with installation.tool_transaction():
+        service._run_package_change(
+            command,
+            "Fixture mutation failed",
+            "Installing fixture",
+            sandbox.env,
+            context=(mutation, ()),
+            adding=requirement,
+        )
+    assert mutation.generation == installation.startup_fingerprint()
+    assert installation.requirements() == ["heinzel", "fixture-existing", requirement]
+    assert installation.tool_constraints() == []
+    assert before_sources == {
+        path.parent.name: path.read_bytes()
+        for path in installation.prefix.glob("lib/python*/site-packages/*.dist-info/direct_url.json")
+        if path.parent.name in before_sources
+    }
+    assert installation.installed_versions(["heinzel", "fixture-existing", "fixture-added"]) == {
+        "heinzel": "1.0.0",
+        "fixture-existing": "1.0.0",
+        "fixture-added": "1.0.0",
+    }
