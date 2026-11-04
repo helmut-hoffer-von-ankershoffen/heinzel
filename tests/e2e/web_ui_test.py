@@ -307,8 +307,7 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
     """Pair once with the printed link; Ctrl-C and a new `hz ui` with a new session token keep it signed in."""
     env, _ = environment
     receipts = tmp_path / "navigation-receipts.jsonl"
-    if os.environ.get("HZ_REOPEN_DIAGNOSTICS") == "1":
-        env |= {"HZ_REOPEN_RECEIPTS": str(receipts)}
+    env |= {"HZ_REOPEN_RECEIPTS": str(receipts)}
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(

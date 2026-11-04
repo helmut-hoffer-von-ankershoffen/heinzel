@@ -123,3 +123,25 @@ def test_receipt_larger_than_the_read_budget_is_discarded_as_incomplete(tmp_path
     path.write_bytes(b"x" * (RECEIPT_TAIL_BYTES * 2) + b"\n")
 
     assert receipt_tail(path, 0) == ""
+
+
+def test_required_reopen_journey_always_enables_isolated_receipts_without_an_opt_in():
+    import ast
+
+    source = Path(__file__).parents[2] / "e2e/web_ui_test.py"
+    tree = ast.parse(source.read_text())
+    journey = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts"
+    )
+    # A top-level assignment within the journey cannot depend on an unconfigured CI environment flag.
+    assignments = [node for node in journey.body if isinstance(node, ast.AugAssign)]
+    assert any(
+        isinstance(node.target, ast.Name)
+        and node.target.id == "env"
+        and isinstance(node.value, ast.Dict)
+        and any(isinstance(key, ast.Constant) and key.value == "HZ_REOPEN_RECEIPTS" for key in node.value.keys)
+        for node in assignments
+    )
