@@ -168,7 +168,7 @@ def retain_fixture_source(selected, run):
 def handover_evidence(settings, root):
     """Report only fixed presence/liveness facts, never child output, configuration or identities."""
     directory = settings.state_dir / "daemon"
-    facts = {
+    facts: dict[str, object] = {
         name: (directory / filename).exists()
         for name, filename in (
             ("marker", "install.json"),
@@ -190,6 +190,47 @@ def handover_evidence(settings, root):
         path = root / f"tick-{name}.txt"
         facts[f"{name}_present"] = path.exists()
         facts[f"{name}_nonempty"] = path.exists() and path.stat().st_size > 0
+    phases = root / "tick-phases.jsonl"
+    if phases.exists():
+        allowed = {"tick-enter", "native-notices-enter", "native-notices-return", "tick-main-return", "tick-watchdog"}
+        stacks = {
+            "tick",
+            "_post_notices",
+            "post_native",
+            "lock_until_finished",
+            "_wait",
+            "wait",
+            "communicate",
+            "join",
+            "look",
+            "ensure",
+            "clean",
+            "unregister_strays",
+            "_ui_url",
+        }
+        with phases.open("rb") as stream:
+            raw = stream.read(16_384)
+        records = []
+        for line in raw.splitlines():
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if (
+                isinstance(record, dict)
+                and isinstance(record.get("phase"), str)
+                and isinstance(record.get("stacks"), list)
+            ):
+                records.append(record)
+        facts["phases"] = [record["phase"] for record in records[-16:] if record.get("phase") in allowed]
+        facts["stack_categories"] = sorted(
+            {
+                value
+                for record in records
+                for value in record.get("stacks", [])
+                if isinstance(value, str) and value in stacks
+            }
+        )
     return facts
 
 

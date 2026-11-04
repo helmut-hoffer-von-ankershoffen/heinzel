@@ -71,8 +71,10 @@ def test_manager_double_supplies_only_its_fixed_native_discovery_identity():
 
     def original(service):
         service._which = lambda name: lookups.append(name) or f"/fixture/{name}"
+        service._post_notices = lambda value: value
 
-    namespace = {"original_init": original, "runner": object(), "probe": object()}
+    phases = []
+    namespace = {"original_init": original, "runner": object(), "probe": object(), "phase": phases.append}
     exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), "exec"), namespace)  # noqa: S102 - fixed repository fixture
     service = SimpleNamespace()
     namespace["initialize"](service)
@@ -81,3 +83,43 @@ def test_manager_double_supplies_only_its_fixed_native_discovery_identity():
     assert lookups == ["uv"]
     assert service._runner is namespace["runner"]
     assert service._quiescence_probe is namespace["probe"]
+
+    assert service._post_notices("original-notice-result") == "original-notice-result"
+    assert phases == ["native-notices-enter", "native-notices-return"]
+
+
+def test_handover_phase_projection_retains_only_fixed_categories(tmp_path):
+    settings = SimpleNamespace(state_dir=tmp_path / "state")
+    (tmp_path / "manager.json").write_text('{"pid": null}')
+    (tmp_path / "tick-phases.jsonl").write_text(
+        json.dumps({"phase": "tick-watchdog", "stacks": ["post_native", "lock_until_finished", "secret-value"]})
+        + "\n"
+        + json.dumps({"phase": "secret-phase", "stacks": ["/opt/private", "https://private/?token=secret"]})
+        + "\n"
+    )
+    facts = handover_evidence(settings, tmp_path)
+    assert facts["phases"] == ["tick-watchdog"]
+    assert facts["stack_categories"] == ["lock_until_finished", "post_native"]
+    assert "secret" not in json.dumps(facts)
+    assert "private" not in json.dumps(facts)
+
+
+def test_installed_fixture_watchdog_projects_no_frame_text_or_locals(tmp_path):
+    source = Path(__file__).parents[1] / "fixtures/legacy_recovery_manager.py"
+    nodes = [
+        node
+        for node in ast.parse(source.read_text()).body
+        if (isinstance(node, ast.FunctionDef) and node.name == "phase")
+        or (
+            isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id in {"PHASES", "STACK_PHASES"} for target in node.targets)
+        )
+    ]
+    frame = SimpleNamespace(f_code=SimpleNamespace(co_name="post_native"), f_back=None)
+    namespace = {"ROOT": tmp_path, "json": json, "sys": SimpleNamespace(_current_frames=lambda: {123: frame})}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(source), "exec"), namespace)  # noqa: S102 - fixed repository fixture
+    namespace["phase"]("tick-watchdog", stacks=True)
+    assert json.loads((tmp_path / "tick-phases.jsonl").read_text()) == {
+        "phase": "tick-watchdog",
+        "stacks": ["post_native"],
+    }

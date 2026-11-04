@@ -28,22 +28,22 @@ export function ownedBrowserChildren(table, owner) {
 
 export function nativeFrames(sample) {
   const graph = sample.split("Call graph:")[1]?.split("Total number in stack")[0]?.split("Binary Images:")[0] ?? "";
-  return graph
-    .split("\n")
-    .filter((line) => /^\s*[+!|: ]*\d+ /.test(line))
-    .filter((line) =>
-      /WebKit::|WTF::|IPC::|CFNetwork|CookieStorage|mach_msg|semaphore|dispatch_|CFRunLoop|NSRunLoop|pthread_/.test(
-        line,
-      ),
-    )
-    .map((line) =>
-      line
-        .split(" (in ")[0]
-        .replace(/\[0x[0-9a-f]+\]/gi, "")
-        .trim(),
-    )
-    .filter((line) => !/\/(Users|home|private|var|tmp)\/|Bearer |token=|HZ_/.test(line))
-    .slice(0, 80);
+  const categories = [
+    ["webkit", /WebKit::/],
+    ["wtf", /WTF::/],
+    ["ipc", /IPC::/],
+    ["network", /CFNetwork/],
+    ["cookies", /CookieStorage/],
+    ["mach-message", /mach_msg/],
+    ["semaphore", /semaphore/],
+    ["dispatch", /dispatch_/],
+    ["core-run-loop", /CFRunLoop/],
+    ["native-run-loop", /NSRunLoop/],
+    ["pthread", /pthread_/],
+  ];
+  // Input may contain arbitrary text. Emit only fixed categories, never any portion of a native sample line.
+  const lines = graph.split("\n").filter((line) => line.length <= 1024 && /^\s*[+!|: ]*\d+ /.test(line));
+  return categories.filter(([, pattern]) => lines.some((line) => pattern.test(line))).map(([name]) => name);
 }
 
 export async function explainOwnedBrowser(note, run = execute, platform = process.platform) {

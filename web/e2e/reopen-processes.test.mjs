@@ -25,10 +25,7 @@ Call graph:
 Total number in stack
 Binary Images:
 /private/private-profile`;
-  assert.deepEqual(nativeFrames(sample), [
-    "12 WebKit::NetworkProcess::processDidReceiveMessage",
-    "8 CFRunLoopRunSpecific",
-  ]);
+  assert.deepEqual(nativeFrames(sample), ["webkit", "core-run-loop"]);
   assert.deepEqual(nativeFrames("no call graph token=secret"), []);
 });
 
@@ -63,4 +60,17 @@ test("missing process evidence never replaces the original failure", async () =>
     "darwin",
   );
   assert.deepEqual(notes, ["owned browser process evidence unavailable"]);
+});
+
+test("native projection never emits injected URLs, paths, credentials or oversized sample lines", () => {
+  const sample = `Call graph:
+1 WebKit::request https://example.invalid/?secret=value
+2 IPC::/opt/customer/private-file credential=secret
+3 CFNetwork Bearer confidential-value
+4 CookieStorage password=secret
+5 WTF::${"x".repeat(2000)}
+Binary Images:
+/opt/private`;
+  assert.deepEqual(nativeFrames(sample), ["webkit", "ipc", "network", "cookies"]);
+  assert.ok(nativeFrames(sample).every((category) => /^[a-z-]+$/.test(category)));
 });
