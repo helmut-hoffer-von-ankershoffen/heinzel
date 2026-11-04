@@ -268,3 +268,14 @@ def test_direct_make_guards_include_branch_and_uncommitted_inputs(monkeypatch, m
     monkeypatch.setattr(scoped, "run_early_guards", calls.append)
     scoped.main()
     assert calls == [["docs/guides/install.md", "tests/fixtures/example.py"]]
+
+
+def test_early_ci_guards_use_whole_owning_files_so_test_renames_do_not_break_preflight():
+    command, partition = scoped.early_guard_commands([".github/workflows/ci.yml"])
+    assert {argument for argument in command if argument.startswith("tests/")} == {
+        "tests/unit/browser_runtime_setup_test.py",
+        "tests/unit/ci_supervised_test.py",
+        "tests/unit/ci_test.py",
+    }
+    assert "tests/e2e" in partition
+    assert partition[partition.index("-m") + 1] == "integration"

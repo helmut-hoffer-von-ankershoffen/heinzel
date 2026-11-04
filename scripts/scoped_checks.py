@@ -248,9 +248,7 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
         targets.append("tests/integration/guides_test.py")
     if ci:
         targets += ["tests/unit/browser_runtime_setup_test.py", "tests/unit/ci_supervised_test.py"]
-        targets.append(
-            "tests/unit/ci_test.py::test_browser_service_journey_has_one_browser_shard_and_keeps_cli_service_tests_separate"
-        )
+        targets.append("tests/unit/ci_test.py")
     commands = [["uv", "run", "pytest", *targets, "-n", "2", "-x", "-q", "--session-timeout=120"]] if targets else []
     if ci:
         commands.append(
