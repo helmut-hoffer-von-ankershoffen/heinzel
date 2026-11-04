@@ -48,7 +48,7 @@ def test_ci_and_release_surfaces_use_the_reviewed_bootstrap():
         for job in workflow["jobs"].values():
             for step in job.get("steps", []):
                 assert "astral-sh/setup-uv@" not in step.get("uses", ""), name
-                found |= step.get("uses") == "./.github/actions/setup-uv"
+                found |= step.get("uses", "").endswith("/.github/actions/setup-uv")
         assert found, name
     assert (ROOT / "template/.github/actions/setup-uv/action.yml").resolve() == ACTION / "action.yml"
 
@@ -66,7 +66,10 @@ def test_manifest_output_is_a_complete_offline_data_url(tmp_path):
     )
     prefix = "url=data:application/json;base64,"
     assert output.read_text().startswith(prefix)
-    assert json.loads(base64.b64decode(output.read_text()[len(prefix) :])) == manifest
+    decoded = base64.b64decode(output.read_text()[len(prefix) :]).decode()
+    # Match setup-uv parseManifest: every nonblank line must be a complete JSON record.
+    assert [json.loads(line) for line in decoded.splitlines() if line.strip()] == [manifest]
+    assert decoded.encode() == (ACTION / "uv-manifest.json").read_bytes()
 
 
 @pytest.mark.parametrize("bad_version", ["latest", "latest-known", ">=0.13.0", "0.13.*", "0.13.6"])
@@ -90,3 +93,56 @@ def test_remote_manifest_resolution_is_rejected():
     action["runs"]["steps"][-1]["with"]["manifest-file"] = "https://example.org/latest.ndjson"
     with pytest.raises(AssertionError):
         assert_bootstrap(action, json.loads((ACTION / "uv-manifest.json").read_text()))
+
+
+def assert_local_actions_exist_in_checkout(steps):
+    """Resolve local actions against the repository actually occupying each checkout path."""
+    checkouts = {}
+    for step in steps:
+        uses = step.get("uses", "")
+        if uses.startswith("actions/checkout@"):
+            config = step.get("with", {})
+            destination = config.get("path", "").strip("/")
+            checkouts = {
+                path: value
+                for path, value in checkouts.items()
+                if destination and path != destination and not path.startswith(destination + "/")
+            }
+            checkouts[destination] = config
+        elif uses.startswith("./"):
+            relative = uses[2:]
+            matches = [path for path in checkouts if not path or relative.startswith(path + "/")]
+            assert matches, f"No checkout supplies {uses}"
+            destination = max(matches, key=len)
+            config = checkouts[destination]
+            assert config.get("repository", "${{ github.repository }}") == "${{ github.repository }}", uses
+            action_path = relative[len(destination) :].lstrip("/")
+            assert (ROOT / action_path / "action.yml").is_file(), uses
+            if destination:
+                assert config["ref"] == "${{ github.sha }}"
+                assert config["sparse-checkout"] == action_path
+                assert config["persist-credentials"] is False
+
+
+def test_every_local_action_exists_in_its_active_checkout():
+    for name in SURFACES:
+        workflow = yaml.safe_load((ROOT / f".github/workflows/{name}.yml").read_text())
+        for job in workflow["jobs"].values():
+            assert_local_actions_exist_in_checkout(job.get("steps", []))
+
+
+@pytest.mark.parametrize("job", ["consumer-plan", "consumer-check"])
+def test_foreign_root_checkout_cannot_supply_the_core_bootstrap(job):
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    steps = workflow["jobs"][job]["steps"]
+    for step in steps:
+        if step.get("uses") == "./.core-bootstrap/.github/actions/setup-uv":
+            step["uses"] = "./.github/actions/setup-uv"
+    with pytest.raises(AssertionError):
+        assert_local_actions_exist_in_checkout(steps)
+
+
+def test_pretty_multiline_json_is_not_a_manifest_record():
+    manifest = json.loads((ACTION / "uv-manifest.json").read_text())
+    with pytest.raises(json.JSONDecodeError):
+        [json.loads(line) for line in json.dumps(manifest, indent=2).splitlines() if line.strip()]

@@ -795,7 +795,14 @@ jobs:
         with:
           name: plugin-core
           path: candidate
-      - uses: ./.github/actions/setup-uv
+      - name: Check out this exact core revision's bootstrap action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .core-bootstrap
+          sparse-checkout: .github/actions/setup-uv
+          persist-credentials: false
+      - uses: ./.core-bootstrap/.github/actions/setup-uv
       - id: plan
         run: |
           make plan CONTRACT=core:plugin-api@1 CORE="$(realpath candidate/*.whl)" > plan.json
@@ -825,7 +832,14 @@ jobs:
         with:
           name: plugin-core
           path: candidate
-      - uses: ./.github/actions/setup-uv
+      - name: Check out this exact core revision's bootstrap action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .core-bootstrap
+          sparse-checkout: .github/actions/setup-uv
+          persist-credentials: false
+      - uses: ./.core-bootstrap/.github/actions/setup-uv
       - name: Test one consumer against the built public contract
         env:
           PLUGIN: ${{ matrix.name }}
