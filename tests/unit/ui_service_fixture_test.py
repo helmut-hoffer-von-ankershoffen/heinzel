@@ -99,6 +99,45 @@ def test_python_startup_snapshots_expose_only_bounded_fixed_source_labels():
     assert len(RunningService.startup_frames(many_frames)[0]) == 32
 
 
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        "heinzel/modules/system/plugin/docs/__init__.py",
+        "heinzel/modules/system/plugin/docs/_build.py",
+        "heinzel/modules/heinzel/_session_models.py",
+        "heinzel/modules/graph/_models.py",
+        "heinzel/kernel/_contributions.py",
+        "pydantic/_internal/_model_construction.py",
+        "rich/markdown.py",
+        "markdown_it/parser_inline.py",
+        "runpy.py",
+    ],
+)
+def test_startup_snapshot_identifies_public_import_work_without_returning_path(identifier):
+    report = (
+        "Timeout (0:00:04)!\nThread 0x1234:\n"
+        f'  File "/private/secret-owner/site-packages/{identifier}", line 63 in secret_function\n'
+    )
+    frames = RunningService.startup_frames(report)
+    assert frames == [[(identifier, 63)]]
+    assert "secret" not in repr(frames)
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "private-plugin/_service.py",
+        "heinzel/modules/private-customer/_service.py",
+        "heinzel/modules/graph/private-token.py",
+        "pydantic/private-customer.py",
+        "private-token-heinzel/modules/graph/_models.py",
+    ],
+)
+def test_startup_snapshot_keeps_unknown_plugin_and_similar_source_names_private(filename):
+    report = f'Timeout (0:00:04)!\n  File "/private/secret-owner/{filename}", line 19 in secret_function\n'
+    assert RunningService.startup_frames(report) == [[("other", 19)]]
+
+
 @pytest.mark.parametrize("returncode", [0, 75, -9])
 def test_early_exit_reports_returncode_and_signal_without_child_output(returncode):
     secret = b"private-error-body-must-not-be-logged /private/example #token=secret"

@@ -118,6 +118,85 @@ _STARTUP_MODULES = {
 }
 
 
+# Fixed public identifiers, never names discovered from the installed SDK or a traceback. Builtin discovery
+# imports each registration package and its model/service/render implementation before publishing readiness.
+_STARTUP_BUILTINS = (
+    "ai",
+    "ai/access",
+    "graph",
+    "heinzel",
+    "org",
+    "system",
+    "system/agent",
+    "system/capability",
+    "system/changelog",
+    "system/claude",
+    "system/config",
+    "system/connector",
+    "system/credential",
+    "system/daemon",
+    "system/directory",
+    "system/doctor",
+    "system/expert",
+    "system/layer",
+    "system/lifecycle",
+    "system/notify",
+    "system/plugin",
+    "system/plugin/docs",
+    "system/runner",
+    "system/runner/chat",
+    "system/skill",
+    "system/sound",
+    "system/state",
+    "system/theme",
+    "system/ui",
+    "team",
+    "telemetry",
+    "ui",
+)
+_STARTUP_MODULES.update(
+    f"heinzel/modules/{package}/{filename}"
+    for package in _STARTUP_BUILTINS
+    for filename in ("__init__.py", "_models.py", "_service.py", "_render.py")
+)
+_STARTUP_MODULES.update(
+    {
+        "heinzel/__init__.py",
+        "heinzel/kernel/__init__.py",
+        "heinzel/kernel/_agents.py",
+        "heinzel/kernel/_bindings.py",
+        "heinzel/kernel/_contributions.py",
+        "heinzel/kernel/_lets.py",
+        "heinzel/kernel/_module.py",
+        "heinzel/kernel/_protocols.py",
+        "heinzel/modules/heinzel/_autonomous_schedule.py",
+        "heinzel/modules/heinzel/_session_crud.py",
+        "heinzel/modules/heinzel/_session_models.py",
+        "heinzel/modules/heinzel/_session_operations.py",
+        "heinzel/modules/system/plugin/docs/_build.py",
+        "dataclasses.py",
+        "enum.py",
+        "typing.py",
+        "runpy.py",
+        "pydantic/main.py",
+        "pydantic/fields.py",
+        "pydantic/_internal/_model_construction.py",
+        "pydantic/_internal/_typing_extra.py",
+        "pydantic/_internal/_fields.py",
+        "pydantic/_internal/_decorators.py",
+        "rich/markdown.py",
+        "rich/syntax.py",
+        "pygments/__init__.py",
+        "pygments/lexer.py",
+        "pygments/lexers/__init__.py",
+        "markdown_it/__init__.py",
+        "markdown_it/main.py",
+        "markdown_it/parser_inline.py",
+        "markdown_it/parser_block.py",
+    }
+)
+
+
 def startup_diagnostics(prefix, directory):
     """Capture one early stack only inside this fixture's isolated SDK, never the owner's install."""
     packages = list((prefix / "lib").glob("python*/site-packages"))
