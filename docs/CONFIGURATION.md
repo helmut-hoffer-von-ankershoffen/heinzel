@@ -84,8 +84,8 @@ Plugins add their own tables.
 | `team_repository` | `HZ_HEINZEL__TEAM_REPOSITORY` | `None` | Deprecated: joining or adopting a team with hz now sets your team's checkout. A checkout of your team's state repository, used when no team checkout is set; its contracts are in the workflows folder. Never read from a project's hz.toml. |
 | `schedule_team` | `HZ_HEINZEL__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name; add @sha256: and a hash to run only the version you approved. The others run only when started by hand, so a team's contracts don't run on everyone's daemon. Never read from a project's hz.toml. |
 | `max_usd` | `HZ_HEINZEL__MAX_USD` | `1.0` | The most one run of a contract may cost in US dollars, scheduled or by hand, whatever the contract asks for. A scheduled run's retries share it. Never read from a project's hz.toml. |
-| `session_max_usd` | `HZ_HEINZEL__SESSION_MAX_USD` | `2.0` | The most one saved chat with a helper may cost in US dollars on direct API replies. Never read from a project's hz.toml. |
-| `message_max_usd` | `HZ_HEINZEL__MESSAGE_MAX_USD` | `0.2` | The most one direct API reply in a saved chat with a helper may cost in US dollars. Never read from a project's hz.toml. |
+| `session_max_usd` | `HZ_HEINZEL__SESSION_MAX_USD` | `2.0` | The most one saved chat with a Heinzel may cost in US dollars on direct API replies. Never read from a project's hz.toml. |
+| `message_max_usd` | `HZ_HEINZEL__MESSAGE_MAX_USD` | `0.2` | The most one direct API reply in a saved chat with a Heinzel may cost in US dollars. Never read from a project's hz.toml. |
 | `subscription_budget_mode` | `HZ_HEINZEL__SUBSCRIPTION_BUDGET_MODE` | `'plan-unknown'` | Subscription plans use provider limits and report unknown dollar cost; USD caps govern APIs. With a dollar cap, every turn must stay under the dollar limit, so subscription turns are blocked for now. Choices: usd-cap, plan-unknown. Never read from a project's hz.toml. |
 | `retention_days` | `HZ_HEINZEL__RETENTION_DAYS` | `90` | How long drafts and the inputs they were made from are kept, counted from when they were made; 0 keeps them forever. Receipts are always kept, with a hash of the draft instead of its text. Never read from a project's hz.toml. |
 
@@ -145,7 +145,7 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `enabled` | `HZ_SYSTEM_NOTIFY__ENABLED` | `True` | Keep a list of notices at all; off turns every kind off. Never read from a project's hz.toml. |
 | `draft` | `HZ_SYSTEM_NOTIFY__DRAFT` | `True` | Notify when a draft is ready to read and approve. Never read from a project's hz.toml. |
-| `heinzel` | `HZ_SYSTEM_NOTIFY__HEINZEL` | `True` | Notify when a personal helper checks in. Never read from a project's hz.toml. |
+| `heinzel` | `HZ_SYSTEM_NOTIFY__HEINZEL` | `True` | Notify when a personal Heinzel checks in. Never read from a project's hz.toml. |
 | `failed` | `HZ_SYSTEM_NOTIFY__FAILED` | `True` | Notify when a contract run on your daemon failed. Never read from a project's hz.toml. |
 | `doctor` | `HZ_SYSTEM_NOTIFY__DOCTOR` | `True` | Notify when a health check finds something degraded or down. Never read from a project's hz.toml. |
 | `release` | `HZ_SYSTEM_NOTIFY__RELEASE` | `False` | Notify when a newer release of Heinzelmännchen is out. Never read from a project's hz.toml. |
@@ -191,7 +191,7 @@ Plugins add their own tables.
 | `session_max_usd` | `HZ_SYSTEM_RUNNER_CHAT__SESSION_MAX_USD` | `2.0` | The most one chat may cost in US dollars, all its messages together. One message never costs more than the most per answer. Never read from a project's hz.toml. |
 | `keep_days` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_DAYS` | `30` | How long a chat is kept after its last message, then removed. |
 | `keep_sessions` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_SESSIONS` | `50` | How many chats are kept at most; the oldest beyond that are removed. |
-| `tools` | `HZ_SYSTEM_RUNNER_CHAT__TOOLS` | `'everyday'` | Which operations the chat's helper can use: the everyday ones, or all of them. Every tool is included with every message, so fewer make each message cheaper. Choices: everyday, all. Never read from a project's hz.toml. |
+| `tools` | `HZ_SYSTEM_RUNNER_CHAT__TOOLS` | `'everyday'` | Which operations the chat's Heinzel can use: the everyday ones, or all of them. Every tool is included with every message, so fewer make each message cheaper. Choices: everyday, all. Never read from a project's hz.toml. |
 
 ## `[system.skill]`
 

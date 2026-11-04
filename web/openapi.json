@@ -2558,7 +2558,7 @@
         "properties": {
           "detail": {
             "default": "",
-            "description": "What the opener knows about it, in words (a notification's title and body); email addresses are never shared with the helper.",
+            "description": "What the opener knows about it, in words (a notification's title and body); email addresses are never shared with the Heinzel.",
             "maxLength": 4000,
             "title": "Detail",
             "type": "string"
@@ -11272,7 +11272,7 @@
             "type": "string"
           },
           "session_id": {
-            "description": "The owner's agent receiving this suggested identity.",
+            "description": "The owner's Heinzel receiving this suggested identity.",
             "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
             "title": "Session Id",
             "type": "string"
@@ -20000,7 +20000,7 @@
     }
   },
   "info": {
-    "description": "Helpers accelerating product teams. Every endpoint is also a `hz` command.",
+    "description": "Heinzels accelerating product teams. Every endpoint is also a `hz` command.",
     "title": "Heinzelmännchen"
   },
   "openapi": "3.1.0",
