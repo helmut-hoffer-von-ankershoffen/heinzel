@@ -104,3 +104,49 @@ the installed candidate passes. A representative private operation's complete
 OpenAPI schema is byte-identical across the two wheels. Additional regressions
 retain authentication, field bounds, unknown-field refusal, distinct app input
 types, malformed runtime refusal, full CLI help/options and ordinary workflows.
+
+## Follow-up: CLI presentation footprint
+
+A later hosted run sampled daemon discovery with 2.331 seconds of child CPU over
+6.101 seconds of wall time, with no runtime publication even after sampling. That
+observation includes substantial waiting and a native read; it does not establish
+that the sampled daemon observer is itself the cause.
+
+The candidate defers 45 typed CLI renderer callbacks to their existing
+implementations. Plugin documentation imports its page builder and recording
+reader only when those operations use them. Full discovery and API construction
+remain eager. The exact registered daemon observer class and its built-in service
+identity checks are unchanged.
+
+Comparing installed wheels against `33d3d6a19` after a complete kernel boot, direct
+UI command construction and web app construction showed 18 implementation modules
+absent: 16 CLI renderer modules, the documentation page builder and its file
+helper. Those modules contain 84,259 source bytes. Including the typed delegation
+functions, total loaded application source decreased from 3,202,331 to 3,131,420
+bytes. Normal first-start bytecode writes decreased from 730 to 711.
+
+| Interleaved cold foreground launch | HTTP ready wall (s) | Child user + system CPU (s) |
+| --- | ---: | ---: |
+| Baseline | 1.388 | 1.563 |
+| Candidate | 1.640 | 1.591 |
+| Candidate | 1.352 | 1.594 |
+| Baseline | 1.409 | 1.578 |
+
+These observations do not demonstrate an end-to-end timing improvement. The
+established reduction is imported files, loaded source and bytecode writes. Each
+launch used a disposable installed prefix with bytecode removed before launch,
+empty private application directories, the real built HTML and authenticated
+lifecycle checks. OS caches and host scheduling were not controlled.
+
+All three complete OpenAPI schemas (public API, private API and mounted web API),
+module identities, service factory identities and locked runtime versions matched.
+A cold import guard fails on the immutable baseline and passes on the candidate.
+Runtime annotation/signature checks and delegation tests cover all 45 callbacks;
+the existing module and private API tests also pass.
+
+A separate experiment disabled optional bytecode writes with the isolated Python
+interpreter's `-B` flag. A normal fresh start took 1.549 seconds and created 730
+cache files, followed by a 0.600-second cached start. The no-write sequence took
+1.238 and 1.204 seconds and created no cache files. That first-start gain trades
+away the next-start benefit on a fresh installation. No bytecode policy or
+production launcher change is part of this candidate.
