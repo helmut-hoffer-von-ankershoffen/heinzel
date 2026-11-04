@@ -546,6 +546,27 @@ class DaemonRemoval:
     manager_units: dict[str, dict[str, object]]
 
 
+def handover_absolute_path(path: Path) -> Path:
+    """Resolve the existing physical handover path for sibling recovery code."""
+    return _handover_absolute_path(path)
+
+
+@contextmanager
+def verified_handover_file(path: Path) -> Generator[BinaryIO, None, None]:
+    """Open a file through the existing bounded handover authority boundary.
+
+    Yields:
+        The physically verified bounded handover file handle.
+    """
+    with _open_verified_handover_file(path) as handle:
+        yield handle
+
+
+def launchctl_records(output: str) -> dict[str, str] | None:
+    """Parse the same complete service-manager listing used by normal lifecycle checks."""
+    return _launchctl_records(output)
+
+
 class DaemonService:
     """Installs, inspects and pauses the daemon, and runs ticks."""
 
@@ -719,6 +740,7 @@ class DaemonService:
         log_directory = _handover_absolute_path(self.log_path.parent)
         with suppress(FileNotFoundError):
             private_directory(log_directory, create=False)
+        original_request = self._validated_install_history()
         previous = self.owned_manager_state(executable.parent)
         if previous.pid is not None:
             msg = "An owned daemon tick is still running; nothing was replaced. Inspect status after it finishes."
@@ -765,7 +787,7 @@ class DaemonService:
                 self._replace_install_files(original, candidate)
             self._load_and_verify(phases, commands, executable, wanted)
         except (HeinzelError, OSError) as exc:
-            restored = self._recover_install(original, executable, previous)
+            restored = self._recover_install(original, executable, previous, original_request)
             if restored:
                 pending.unlink()
             detail = (
@@ -778,6 +800,7 @@ class DaemonService:
         if not self._mutation_token_matches(token, "handover-pending.json"):
             msg = "The daemon installation writer changed; explicit recovery is required."
             raise HeinzelError(msg)
+        self._finish_install_history(original_request)
         pending.unlink()
         fsync_dir(pending.parent)
         if notifier:
@@ -792,6 +815,27 @@ class DaemonService:
             dry_run=False,
             hint=hint,
         )
+
+    def _validated_install_history(self) -> str | None:
+        original = self._install_handover_history()
+        if original is not None and not self._handover_marker_valid(self._read_state("install.json")):
+            msg = "The previous handover cannot be verified; explicit recovery is required before reinstalling."
+            raise HeinzelError(msg)
+        return original
+
+    def _finish_install_history(self, original: str | None) -> None:
+        if self._install_handover_history() != original:
+            msg = "The previous handover changed during reinstall; its pending gate was retained."
+            raise HeinzelError(msg)
+        if original is not None:
+            (self.state_dir / "handover-request.json").unlink()
+            fsync_dir(self.state_dir)
+
+    def _install_handover_history(self) -> str | None:
+        try:
+            return private_read(_handover_absolute_path(self.state_dir / "handover-request.json"))
+        except FileNotFoundError:
+            return None
 
     def _replace_install_files(self, original: dict[Path, bytes | None], selected: dict[Path, str]) -> None:
         expected = dict(original)
@@ -847,7 +891,13 @@ class DaemonService:
                 msg = "The manager did not confirm the selected daemon registration and profile."
                 raise HeinzelError(msg)
 
-    def _recover_install(self, original: dict[Path, bytes | None], executable: Path, previous: ManagerState) -> bool:
+    def _recover_install(
+        self,
+        original: dict[Path, bytes | None],
+        executable: Path,
+        previous: ManagerState,
+        original_request: str | None,
+    ) -> bool:
         try:
             current = self.owned_manager_state(executable.parent)
             if current.pid is not None:
@@ -864,7 +914,11 @@ class DaemonService:
                 result = self.owned_manager_command(command)
                 if result.returncode != 0:
                     return False
-            return self._capture_install_files() == original and self.owned_manager_state(executable.parent) == previous
+            return (
+                self._capture_install_files() == original
+                and self.owned_manager_state(executable.parent) == previous
+                and self._install_handover_history() == original_request
+            )
         except (OSError, ValueError, HeinzelError):
             return False
 
@@ -1076,6 +1130,39 @@ class DaemonService:
             return False
         else:
             return True
+
+    @property
+    def recovery_platform(self) -> str:
+        """The platform selected by this daemon authority."""
+        return self._platform
+
+    @property
+    def recovery_profile(self) -> dict[str, str]:
+        """A copy of the selected profile routing for explicit recovery inspection."""
+        return dict(self._profile)
+
+    @property
+    def recovery_installation(self) -> Installation | None:
+        """The existing installation bound to this daemon's quiescence checks."""
+        return self._quiescence_installation
+
+    def recovery_uid(self) -> int:
+        """Observe the same user identity used by normal daemon authority checks."""
+        return self._uid()
+
+    def recovery_now(self) -> datetime:
+        """Observe this service's clock for completed-history validation."""
+        return self._clock()
+
+    def recovery_token_matches(self, token: str, name: str) -> bool:
+        """Check the exact existing mutation token without modifying its gate."""
+        return self._mutation_token_matches(token, name)
+
+    @contextmanager
+    def recovery_writer(self) -> Generator[None]:
+        """Hold the same lifecycle writer used by ordinary daemon mutations."""
+        with self._lifecycle_writer():
+            yield
 
     def owned_manager_command(self, command: list[str]) -> subprocess.CompletedProcess[str]:
         """Use only the fixed, bounded manager in this verified user session, before and after the request.

@@ -57,7 +57,7 @@ class ToolTarget:
         return {"UV_TOOL_DIR": str(self.store), "UV_TOOL_BIN_DIR": str(self.binary)}
 
 
-def resolve_target(uv: str) -> ToolTarget:
+def resolve_target(uv: str, *, create: bool = True) -> ToolTarget:
     """Resolve uv's configured destinations before selecting an existing tool.
 
     Raises:
@@ -78,7 +78,8 @@ def resolve_target(uv: str) -> ToolTarget:
             msg = "Cannot verify uv's tool directories. Choose owned directories and retry."
             raise HeinzelError(msg)
         path = path.resolve()
-        path.mkdir(parents=True, exist_ok=True)
+        if create:
+            path.mkdir(parents=True, exist_ok=True)
         paths.append(path)
     target = ToolTarget(*paths)
     if target.binary == target.prefix or target.prefix in target.binary.parents:
