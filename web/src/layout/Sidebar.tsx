@@ -272,7 +272,7 @@ function ProviderNavigation({ compact = false }: { compact?: boolean }) {
               ? contributionIsActive(
                   effect.path,
                   location,
-                  matchPath({ path: new URL(effect.path, "http://local").pathname, end: true }, location.pathname) !==
+                  matchPath({ path: new URL(effect.path, "https://navigation.invalid").pathname, end: true }, location.pathname) !==
                     null,
                 )
               : false;

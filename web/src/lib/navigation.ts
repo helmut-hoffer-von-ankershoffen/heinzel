@@ -25,7 +25,7 @@ export function contributionIsActive(
   const panel = contributionPanel(path);
   if (panel) return new URLSearchParams(location.search).get("panel") === panel;
 
-  const destination = new URL(path, "http://local");
+  const destination = new URL(path, "https://navigation.invalid");
   if (!destination.search) return routeIsActive;
   const current = new URLSearchParams(location.search);
   return routeIsActive && [...destination.searchParams].every(([key, value]) => current.getAll(key).includes(value));
