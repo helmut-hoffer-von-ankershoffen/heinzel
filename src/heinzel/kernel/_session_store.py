@@ -278,7 +278,23 @@ class SessionStore:
                 session = entry.name
                 if not ID.fullmatch(session) or not entry.is_dir(follow_symlinks=False):
                     continue
-                folder = os.open(session, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root)
+                try:
+                    folder = os.open(session, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root)
+                except PermissionError:
+                    # Unreadable unsafe directories used to be isolated before open. Keep the ordinary path stat-free;
+                    # only classify this failure by no-follow metadata, never conceal a private directory IO failure.
+                    info = os.stat(session, dir_fd=root, follow_symlinks=False)
+                    if not stat.S_ISDIR(info.st_mode) or (
+                        info.st_uid == os.getuid() and stat.S_IMODE(info.st_mode) == PRIVATE_DIR
+                    ):
+                        raise
+                    if session in known:
+                        found.add(session)
+                        index.execute(
+                            "UPDATE sessions SET problem = ?, mtime = -1 WHERE session = ?",
+                            ("Session directory is not private or not owned by you", session),
+                        )
+                    continue
                 try:
                     info = os.fstat(folder)
                     if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != PRIVATE_DIR:
