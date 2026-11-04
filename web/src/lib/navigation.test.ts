@@ -24,5 +24,13 @@ describe("contributed navigation", () => {
     expect(contributionIsActive("/?panel=clock", { ...current, search: "?view=probe" }, true)).toBe(false);
     expect(contributionIsActive("/doctor", current, true)).toBe(true);
     expect(contributionIsActive("/settings", current, false)).toBe(false);
+    expect(contributionIsActive("/doctor?panel=conditions", { ...current, search: "?panel=chat" }, true)).toBe(false);
+    expect(
+      contributionIsActive("/doctor?panel=conditions", { ...current, search: "?panel=conditions&view=probe" }, true),
+    ).toBe(true);
+    expect(contributionIsActive("/doctor?panel=conditions", { ...current, search: "?view=probe" }, true)).toBe(false);
+    expect(contributionIsActive("/doctor?panel=conditions", { ...current, search: "?panel=conditions" }, false)).toBe(
+      false,
+    );
   });
 });

@@ -23,6 +23,10 @@ export function contributionIsActive(
   routeIsActive: boolean,
 ): boolean {
   const panel = contributionPanel(path);
-  if (!panel) return routeIsActive;
-  return new URLSearchParams(location.search).get("panel") === panel;
+  if (panel) return new URLSearchParams(location.search).get("panel") === panel;
+
+  const destination = new URL(path, "http://local");
+  if (!destination.search) return routeIsActive;
+  const current = new URLSearchParams(location.search);
+  return routeIsActive && [...destination.searchParams].every(([key, value]) => current.getAll(key).includes(value));
 }

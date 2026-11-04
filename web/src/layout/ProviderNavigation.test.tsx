@@ -199,6 +199,18 @@ describe("navigation declared by any installed provider", () => {
     expect(screen.getByRole("link", { name: "World Clock" })).not.toHaveAttribute("aria-current");
   });
 
+  it.each([
+    ["/doctor?panel=conditions&view=probe", true],
+    ["/doctor?panel=chat", false],
+    ["/doctor?view=probe", false],
+  ] as const)("matches a concrete provider query target at %s", async (path, selected) => {
+    mockApi(answers);
+    renderAt(path);
+    const link = await screen.findByRole("link", { name: "Local conditions" });
+    if (selected) expect(link).toHaveAttribute("aria-current", "page");
+    else expect(link).not.toHaveAttribute("aria-current");
+  });
+
   it.each(["not installed", "disabled"])(
     "omits absent contributions when a provider is %s, even if old config remains",
     async (state) => {
