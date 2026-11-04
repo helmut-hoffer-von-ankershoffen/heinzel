@@ -52,6 +52,11 @@ def no_discovery(*args, **kwargs):
     raise AssertionError("Offline uninstall must not discover installed plugins")
 if sys.argv[1:3] == ["system", "uninstall"]:
     importlib.metadata.entry_points = no_discovery
+if os.environ.get("HZ_OFFLINE_INTERRUPT_FIXTURE") == "1":
+    from heinzel.kernel import Installation
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt("immutable fixture interruption before uv removal")
+    Installation.uninstall_offline = interrupted
 from heinzel.heads.cli import main
 main()
 """
@@ -155,6 +160,53 @@ os.execvpe(sys.argv[1],sys.argv[1:],os.environ)
 """
 
 
+RECOVERY_FIXTURE = """import importlib.util, json, os, sys
+from pathlib import Path
+assert importlib.util.find_spec("heinzel") is None, "Recovery Python must not have an importable SDK"
+script = Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("copied_recovery", script)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+def manager(command, platform):
+    assert command[0] in {"/bin/launchctl", "/usr/bin/systemctl"}
+    if platform == "linux":
+        if command[-1] == "daemon-reload": return ""
+        return "LoadState=not-found\\nMainPID=0\\nControlPID=0\\nJob=\\n"
+    return {"managername":"Aqua\\n", "manageruid":str(os.getuid())+"\\n", "list":"PID\\tStatus\\tLabel\\n"}[command[1]]
+module._manager = manager
+module._linux_identity = lambda: (1,2,3,4)
+result = module.recover(script.parent)
+assert importlib.util.find_spec("heinzel") is None
+print(json.dumps({"phase":result["phase"]}))
+"""
+
+
+def recover_installed_interruption(selected, settings, environment, result):
+    assert result.returncode != 0
+    assert (selected.root / "tools/heinzel").is_dir()
+    journals = list((settings.state_dir / "uninstall").glob("*/journal.json"))
+    assert len(journals) == 1
+    journal = json.loads(journals[0].read_text())
+    assert journal["phase"] == "removing"
+    assert Path(journal["gate"]).is_file()
+    (selected.root / "interruption-result.txt").write_text(result.stdout + result.stderr)
+    result = subprocess.run(
+        deny_network([journal["python"], "-I", "-c", RECOVERY_FIXTURE, str(journals[0].parent / "recover.py")]),
+        env=environment,
+        cwd=selected.home,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["phase"] == "complete"
+    assert not Path(journal["gate"]).exists()
+    assert Path(journal["uv"]).is_file()
+    assert not (selected.root / "tools/heinzel").exists()
+    return result
+
+
 def deny_network(command: list[str]) -> list[str]:
     if sys.platform == "darwin":
         return [
@@ -177,6 +229,8 @@ def absent_manager(command):
         )
         return ProcessOutcome(0, output, "")
     assert command[0] == "/bin/launchctl"
+    if command[1] == "print":
+        return ProcessOutcome(113, "", "")
     output = {"managername": "Aqua\n", "manageruid": f"{os.getuid()}\n", "list": "PID\tStatus\tLabel\n"}
     return ProcessOutcome(0, output[command[1]], "")
 
@@ -327,10 +381,34 @@ def normal_embedded_uv_paths(selected, environment, candidate):
     assert not (selected.home / ".local/share/uv/tools").exists()
 
 
+def installed_uninstall(selected, environment, change):
+    interpreter = selected.root / "tools/heinzel/bin/python"
+    # Execute the installed isolated module, even when the public hz script itself is the negative target.
+    command = [str(interpreter), "-I", "-m", "offline_uninstall_fixture", "system", "uninstall", "--json"]
+    poisoned = selected.root / "poisoned-bin"
+    poisoned.mkdir()
+    (poisoned / "uv").write_text("#!/bin/sh\necho unsafe-PATH-uv >&2\nexit 98\n")
+    (poisoned / "uv").chmod(0o700)
+    environment = environment | {"PATH": str(poisoned)}
+    if change == "recovery":
+        environment["HZ_OFFLINE_INTERRUPT_FIXTURE"] = "1"
+    result = subprocess.run(
+        deny_network(command),
+        env=environment,
+        cwd=selected.home,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    return result, environment
+
+
 @pytest.mark.long_running
 @pytest.mark.timeout(300)
 @pytest.mark.parametrize(
-    "change", ["none", "old015-upgrade", "tampered-receipt", "foreign-script", "missing-remover", "unsafe-remover"]
+    "change",
+    ["none", "old015-upgrade", "recovery", "tampered-receipt", "foreign-script", "missing-remover", "unsafe-remover"],
 )
 def test_installed_uninstall_needs_no_network_or_discovery_and_keeps_user_work(
     sandbox, wheel, monkeypatch, change, request
@@ -375,27 +453,15 @@ def test_installed_uninstall_needs_no_network_or_discovery_and_keeps_user_work(
     (foreign / "kept.txt").write_text("another tool")
     receipt = selected.root / "tools/heinzel/uv-receipt.toml"
     alter_installation(change, receipt, selected, settings)
-    interpreter = selected.root / "tools/heinzel/bin/python"
-    # Execute the installed isolated module, even when the public hz script itself is the negative target.
-    command = [str(interpreter), "-I", "-m", "offline_uninstall_fixture", "system", "uninstall", "--json"]
-    poisoned = selected.root / "poisoned-bin"
-    poisoned.mkdir()
-    (poisoned / "uv").write_text("#!/bin/sh\necho unsafe-PATH-uv >&2\nexit 98\n")
-    (poisoned / "uv").chmod(0o700)
-    result = subprocess.run(
-        deny_network(command),
-        env=environment | {"PATH": str(poisoned)},
-        cwd=selected.home,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=120,
-    )
+    result, environment = installed_uninstall(selected, environment, change)
+    if change == "recovery":
+        result = recover_installed_interruption(selected, settings, environment, result)
     assert data.read_text() == "retained user work"
     assert (foreign / "kept.txt").read_text() == "another tool"
-    if change in {"none", "old015-upgrade"}:
+    if change in {"none", "old015-upgrade", "recovery"}:
         assert result.returncode == 0, result.stderr
-        assert json.loads(result.stdout)["removed"] is True
+        if change != "recovery":
+            assert json.loads(result.stdout)["removed"] is True
         assert not (selected.root / "tools/heinzel").exists()
         assert not selected.hz_bin.exists()
         calls = [json.loads(line) for line in (selected.root / "manager-calls.jsonl").read_text().splitlines()]

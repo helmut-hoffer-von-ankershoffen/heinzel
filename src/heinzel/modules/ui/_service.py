@@ -94,6 +94,7 @@ class WebRemoval:
     files: tuple[OwnedFile, ...]
     stop: Callable[[], None]
     finish: Callable[[], WebChange]
+    manager_units: dict[str, dict[str, object]]
 
 
 class WebService:
@@ -632,7 +633,16 @@ class WebService:
                     raise HeinzelError(msg)
                 return WebChange(changed=bool(files), status=WebStatus(installed=False, loaded=False, ready=False))
 
-            yield WebRemoval(files, stop, finish)
+            manager_units: dict[str, dict[str, object]] = {}
+            if self.platform == "linux" and files:
+                manager_units[UNIT] = {
+                    "fragment": str(self.unit),
+                    "program": "/bin/sh",
+                    "arguments": f"/bin/sh {self.launcher}",
+                    "directory": str(self.home),
+                    "disabled": True,
+                }
+            yield WebRemoval(files, stop, finish, manager_units)
 
     def uninstall(self) -> WebChange:
         """Remove exact owned integration under one exclusive lifecycle writer.

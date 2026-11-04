@@ -3,8 +3,10 @@
 import hashlib
 import importlib.util
 import json
+import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -43,7 +45,7 @@ def journal(removable, tmp_path):
         prefix=removable.prefix,
         binary=removable.tool_destination()[1],
         state=state,
-        captured=((owned_file(unit),), removable.tool_entrypoints()),
+        captured=((owned_file(unit),), removable.tool_entrypoints(), {}),
     )
     record.begin()
     return record, removable, unit
@@ -110,7 +112,9 @@ def test_partial_uv_refusal_keeps_definitions_and_gate_then_retries_only_remaini
     assert len(calls) == 2
 
 
-@pytest.mark.parametrize("change", ["new-file", "changed-file", "foreign-prefix", "changed-authority", "changed-uv"])
+@pytest.mark.parametrize(
+    "change", ["new-file", "changed-file", "foreign-prefix", "changed-authority", "changed-uv", "changed-definition"]
+)
 def test_recovery_refuses_changed_target_or_authority_before_execution(journal, monkeypatch, change):
     record, tool, unit = journal
     module = copy_module(record)
@@ -125,6 +129,8 @@ def test_recovery_refuses_changed_target_or_authority_before_execution(journal, 
     elif change == "foreign-prefix":
         tool.prefix.rename(tool.prefix.with_name("original"))
         tool.prefix.mkdir()
+    elif change == "changed-definition":
+        unit.write_text("foreign definition")
     elif change == "changed-uv":
         Path(record.value["uv"]).chmod(0o700)
         Path(record.value["uv"]).write_text("changed")
@@ -205,3 +211,109 @@ def test_recovery_after_sdk_removed_retains_a_replaced_foreign_command_link(jour
     assert foreign.read_text() == "retain another command"
     assert unit.exists()
     assert record.gate.exists()
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["none", "fragment", "argv", "profile", "extra-profile", "directory", "enabled", "unknown", "pid", "duplicate"],
+)
+def test_linux_recovery_requires_exact_retained_loaded_identity_and_quiescence(journal, monkeypatch, change):
+    record, tool, _unit = journal
+    module = copy_module(record)
+    unit = "hz-daemon.service"
+    executable = str(tool.prefix / "bin/hz")
+    environment = {"PATH": "/fixture/bin:/usr/bin:/bin", "HOME": "/fixture/home", "HZ_STATE_DIR": "/fixture/state"}
+    expected = {
+        "fragment": "/fixture/hz-daemon.service",
+        "program": executable,
+        "arguments": f"{executable} system daemon tick",
+        "environment": environment,
+        "directory": "/fixture/home",
+        "disabled": True,
+    }
+    values = {
+        "Id": unit,
+        "LoadState": "loaded",
+        "FragmentPath": expected["fragment"],
+        "DropInPaths": "",
+        "ExecStart": f"{{ path={executable} ; argv[]={executable} system daemon tick ; ignore_errors=no ; }}",
+        "Environment": shlex.join([f"{key}={value}" for key, value in environment.items()]),
+        "WorkingDirectory": expected["directory"],
+        "ActiveState": "inactive",
+        "UnitFileState": "disabled",
+        "MainPID": "0",
+        "ControlPID": "0",
+        "Job": "",
+    }
+    authority = {"manager_units": {unit: expected}}
+    mutations = {
+        "fragment": ("FragmentPath", "/foreign/service"),
+        "argv": ("ExecStart", values["ExecStart"] + " argv[]=foreign"),
+        "profile": ("Environment", "PATH=/foreign HOME=/fixture/home HZ_STATE_DIR=/fixture/state"),
+        "extra-profile": ("Environment", values["Environment"] + " HZ_CONFIG=/foreign"),
+        "directory": ("WorkingDirectory", "/foreign"),
+        "enabled": ("UnitFileState", "enabled"),
+        "pid": ("MainPID", "42"),
+    }
+    if change in mutations:
+        key, value = mutations[change]
+        values[key] = value
+    if change == "unknown":
+        authority["manager_units"] = {}
+    output = "".join(f"{key}={value}\n" for key, value in values.items())
+    if change == "duplicate":
+        output += f"Id={unit}\n"
+    monkeypatch.setattr(module, "_linux_identity", lambda: (1, 2, 3, 4))
+    monkeypatch.setattr(
+        module, "_manager", lambda command, platform: output if command[3] == unit else "LoadState=not-found\n"
+    )
+    if change == "none":
+        module._linux_absent(authority)
+    else:
+        with pytest.raises(ValueError, match=r"foreign|ambiguous"):
+            module._linux_absent(authority)
+
+
+def test_linux_recovery_does_not_accept_a_timer_retargeted_to_a_foreign_service(journal):
+    record, _tool, _unit = journal
+    module = copy_module(record)
+    expected = {"fragment": "/fixture/hz-daemon.timer", "triggers": "hz-daemon.service", "disabled": True}
+    values = {
+        "Id": "hz-daemon.timer",
+        "FragmentPath": expected["fragment"],
+        "DropInPaths": "",
+        "Triggers": "hz-daemon.service",
+        "UnitFileState": "disabled",
+    }
+    assert module._loaded_identity(values, expected, "hz-daemon.timer")
+    assert not module._loaded_identity({**values, "Triggers": "foreign.service"}, expected, "hz-daemon.timer")
+    assert not module._loaded_identity({**values, "UnitFileState": "enabled"}, expected, "hz-daemon.timer")
+
+
+def test_recovery_manager_reader_bounds_real_owned_child_output_and_reaps_it(journal, monkeypatch):
+    record, _tool, _unit = journal
+    module = copy_module(record)
+    children = []
+    original = module.subprocess.Popen
+
+    def start(*args, **kwargs):
+        child = original(*args, **kwargs)
+        children.append(child)
+        return child
+
+    monkeypatch.setattr(module.subprocess, "Popen", start)
+    command = [sys.executable, "-I", "-c", "import os,time; os.write(1,b'x'*10000000); time.sleep(10)"]
+    with pytest.raises(ValueError, match="output exceeds its budget"):
+        module._bounded_output(command, {"PATH": "/usr/bin:/bin"})
+    assert len(children) == 1
+    assert children[0].poll() is not None
+
+
+def test_recovery_manager_reader_deadline_kills_only_its_own_unfinished_probe(journal, monkeypatch):
+    import time
+
+    record, _tool, _unit = journal
+    module = copy_module(record)
+    command = [sys.executable, "-I", "-c", "import time; time.sleep(10)"]
+    with pytest.raises(subprocess.TimeoutExpired):
+        module._bounded_output(command, {"PATH": "/usr/bin:/bin"}, deadline=time.monotonic() + 0.05)

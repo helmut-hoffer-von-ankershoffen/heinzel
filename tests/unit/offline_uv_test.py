@@ -9,7 +9,7 @@ from subprocess import CompletedProcess
 import pytest
 
 from heinzel import HeinzelError
-from heinzel.kernel import _installed_metadata, _offline_uv
+from heinzel.kernel import _offline_uv
 
 pytestmark = pytest.mark.unit
 
@@ -122,15 +122,33 @@ def test_unsafe_staging_refuses_before_probe(dependency, tmp_path, monkeypatch):
         _offline_uv.stage(prefix, directory)
 
 
-def test_no_ambient_distribution_search_for_dependency(dependency, monkeypatch):
+def test_no_ambient_distribution_search_or_unbounded_metadata_reader(dependency, monkeypatch):
+    import importlib.metadata
+
     prefix, _metadata, _binary = dependency
-    observed = []
-    original = _installed_metadata.distributions
-
-    def selected(*, path):
-        observed.append(path)
-        return original(path=path)
-
-    monkeypatch.setattr(_installed_metadata, "distributions", selected)
+    for name in ("distributions", "distribution", "entry_points"):
+        monkeypatch.setattr(
+            importlib.metadata, name, lambda *args, **kwargs: pytest.fail("Only bounded concrete metadata reads")
+        )
     _offline_uv._installed_bytes(prefix)
-    assert observed == [[str(prefix / "lib/python3.13/site-packages")]]
+
+
+@pytest.mark.parametrize("change", ["same-bytes-new-inode", "changed-bytes"])
+def test_probe_cannot_replace_the_captured_private_remover(dependency, tmp_path, monkeypatch, change):
+    prefix, _metadata, _binary = dependency
+
+    def swap(command, **kwargs):
+        target = Path(command[0])
+        captured = target.read_bytes()
+        if change == "same-bytes-new-inode":
+            target.rename(target.with_suffix(".old"))
+            target.write_bytes(captured)
+        else:
+            target.chmod(0o700)
+            target.write_bytes(b"replaced after probe")
+        target.chmod(0o500)
+        return CompletedProcess(command, 0, "uv 0.13.7 (fixture)\n", "")
+
+    monkeypatch.setattr(_offline_uv.subprocess, "run", swap)
+    with pytest.raises(HeinzelError, match="private offline remover changed"):
+        _offline_uv.stage(prefix, tmp_path / "private")

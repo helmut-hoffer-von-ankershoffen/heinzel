@@ -4,10 +4,13 @@ import fcntl
 import hashlib
 import json
 import os
+import selectors
+import shlex
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -176,25 +179,58 @@ def _manager(command: list[str], platform: str) -> str:
     environment = {"PATH": "/usr/bin:/bin", "LANG": "C"}
     if platform == "linux":
         environment["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
-    result = subprocess.run(  # noqa: S603 - fixed native manager arguments and exact user-session environment
-        command, env=environment, capture_output=True, text=True, check=True, timeout=5
+    return _bounded_output(command, environment)
+
+
+def _bounded_output(command: list[str], environment: dict[str, str], *, deadline: float | None = None) -> str:
+    deadline = time.monotonic() + 5 if deadline is None else deadline
+    process = subprocess.Popen(  # noqa: S603 - fixed native manager; never a shell or a service PID
+        command, env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
     )
-    if len(result.stdout) > 4 * 1024 * 1024:
-        msg = "Service manager output exceeds its budget"
-        raise ValueError(msg)
-    return result.stdout
+    content = bytearray()
+    try:
+        if process.stdout is None:
+            msg = "Service manager output pipe is unavailable"
+            raise ValueError(msg)
+        descriptor = process.stdout.fileno()
+        os.set_blocking(descriptor, False)
+        with selectors.DefaultSelector() as selector:
+            selector.register(descriptor, selectors.EVENT_READ)
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, 5)
+                if not selector.select(remaining):
+                    raise subprocess.TimeoutExpired(command, 5)
+                chunk = os.read(descriptor, 65536)
+                if not chunk:
+                    break
+                content.extend(chunk)
+                if len(content) > 4 * 1024 * 1024:
+                    msg = "Service manager output exceeds its budget"
+                    raise ValueError(msg)
+        code = process.wait(timeout=max(0.001, deadline - time.monotonic()))
+        if code:
+            raise subprocess.CalledProcessError(code, command)
+        return content.decode("utf-8")
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=1)
+        if process.stdout is not None:
+            process.stdout.close()
 
 
-def managers_absent(platform: str) -> None:
+def managers_absent(journal: dict[str, Any]) -> None:
     """Resume only after fixed user managers confirm stopped jobs; never send stop/signals.
 
     Raises:
         ValueError: If the user session, bus or stopped evidence cannot be verified.
     """
-    if platform == "darwin":
+    if journal["platform"] == "darwin":
         _mac_absent()
-    elif platform == "linux":
-        _linux_absent()
+    elif journal["platform"] == "linux":
+        _linux_absent(journal)
     else:
         msg = "Unsupported recovery platform"
         raise ValueError(msg)
@@ -246,28 +282,89 @@ def _linux_identity() -> tuple[int, ...]:
     return directory.st_dev, directory.st_ino, endpoint.st_dev, endpoint.st_ino
 
 
-def _linux_absent() -> None:
+def _properties(output: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in output.splitlines():
+        key, separator, value = line.partition("=")
+        if not separator or not key or key in values:
+            msg = "Service manager properties are ambiguous"
+            raise ValueError(msg)
+        values[key] = value
+    return values
+
+
+def _loaded_identity(values: dict[str, str], expected: dict[str, Any], unit: str) -> bool:
+    if (
+        values.get("Id") != unit
+        or values.get("FragmentPath") != expected["fragment"]
+        or values.get("DropInPaths") != ""
+    ):
+        return False
+    if expected.get("disabled") and values.get("UnitFileState") != "disabled":
+        return False
+    if "triggers" in expected:
+        return values.get("Triggers") == expected["triggers"] and not values.get("ExecStart")
+    command = values.get("ExecStart", "")
+    prefix = f"{{ path={expected['program']} ; argv[]={expected['arguments']} ; ignore_errors=no ;"
+    if not command.startswith(prefix) or command.count("argv[]=") != 1 or command.count("{ path=") != 1:
+        return False
+    return values.get("WorkingDirectory") == expected["directory"] and (
+        "environment" not in expected or _environment_identity(values.get("Environment", ""), expected["environment"])
+    )
+
+
+def _environment_identity(raw: str, wanted: dict[str, str]) -> bool:
+    environment: dict[str, str] = {}
+    for entry in shlex.split(raw):
+        key, separator, value = entry.partition("=")
+        if not separator or key in environment:
+            return False
+        environment[key] = value
+    return all(environment.get(key) == value for key, value in wanted.items()) and not any(
+        key.startswith("HZ_") and key not in wanted for key in environment
+    )
+
+
+def _linux_absent(journal: dict[str, Any]) -> None:
     before = _linux_identity()
     for unit in ("hz-daemon.service", "hz-daemon.timer", "hz-ui.service"):
         output = _manager(
-            ["/usr/bin/systemctl", "--user", "show", unit, "--property=LoadState,ActiveState,MainPID,ControlPID,Job"],
+            [
+                "/usr/bin/systemctl",
+                "--user",
+                "show",
+                unit,
+                (
+                    "--property=Id,LoadState,FragmentPath,DropInPaths,ExecStart,Triggers,Environment,WorkingDirectory,"
+                    "ActiveState,UnitFileState,MainPID,ControlPID,Job"
+                ),
+            ],
             "linux",
         )
-        values = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
-        if values.get("LoadState") != "not-found" and (
-            values.get("ActiveState") != "inactive"
+        values = _properties(output)
+        if values.get("LoadState") == "not-found":
+            if any(values.get(key, "0") != "0" for key in ("MainPID", "ControlPID")) or values.get("Job", ""):
+                msg = "An absent service has conflicting execution evidence"
+                raise ValueError(msg)
+            continue
+        expected = journal["manager_units"].get(unit)
+        if (
+            values.get("LoadState") != "loaded"
+            or expected is None
+            or not _loaded_identity(values, expected, unit)
+            or values.get("ActiveState") != "inactive"
             or values.get("MainPID") != "0"
             or values.get("ControlPID") != "0"
-            or values.get("Job") not in {"", "0"}
+            or values.get("Job") != ""
         ):
-            msg = "A service is not proven stopped"
+            msg = "A service is foreign or not proven stopped"
             raise ValueError(msg)
     if _linux_identity() != before:
         msg = "The Linux manager socket changed during verification"
         raise ValueError(msg)
 
 
-def _owned_unlink(row: dict[str, Any]) -> None:
+def _verify_owned(row: dict[str, Any]) -> None:
     path = Path(row["path"])
     if not os.path.lexists(path):
         return
@@ -278,9 +375,16 @@ def _owned_unlink(row: dict[str, Any]) -> None:
     ):
         msg = "Integration file changed; it was retained"
         raise ValueError(msg)
+
+
+def _owned_unlink(row: dict[str, Any]) -> None:
+    path = Path(row["path"])
+    if not os.path.lexists(path):
+        return
+    _verify_owned(row)
     descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        if identity(os.stat(path.name, dir_fd=descriptor, follow_symlinks=False)) != identity(info):
+        if list(identity(os.stat(path.name, dir_fd=descriptor, follow_symlinks=False))) != row["identity"]:
             msg = "Integration file was replaced before cleanup"
             raise ValueError(msg)
         os.unlink(path.name, dir_fd=descriptor)
@@ -354,7 +458,7 @@ def _remove_remaining(journal: dict[str, Any], path: Path) -> None:
 def _finish_cleanup(journal: dict[str, Any], path: Path) -> None:
     journal["phase"] = "removed"
     write(path, journal)
-    managers_absent(journal["platform"])
+    managers_absent(journal)
     for row in journal["files"]:
         _owned_unlink(row)
     if journal["platform"] == "linux":
@@ -416,7 +520,9 @@ def recover(directory: Path, expected: str = EXPECTED_AUTHORITY) -> dict[str, An
         msg = "Unknown removal phase; inspect its local recovery record"
         raise ValueError(msg)
     with _locks(journal):
-        managers_absent(journal["platform"])
+        managers_absent(journal)
+        for row in journal["files"]:
+            _verify_owned(row)
         _remove_remaining(journal, path)
         _finish_cleanup(journal, path)
     return journal

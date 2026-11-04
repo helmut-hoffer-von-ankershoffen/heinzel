@@ -76,7 +76,7 @@ def uninstall_installation(
         uv=WebService.removal_uv_hint(settings.state_dir),
         profile=user_profile(config, settings, Path.home(), installation.prefix, binary / "hz"),
         unsupported=installation_overrides(config),
-        runner=daemon.offline_manager_command,
+        runner=lambda command: daemon.owned_manager_command(list(command)),
         which=lambda name: "/bin/launchctl" if name == "launchctl" else "/usr/bin/systemctl",
     )
     if daemon.state_dir.parent != web.directory.parent or installation.prefix != store / "heinzel":
@@ -98,7 +98,11 @@ def uninstall_installation(
             prefix=installation.prefix,
             binary=binary,
             state=settings.state_dir,
-            captured=((*remove_web.files, *daemon_removal.files), installation.tool_entrypoints()),
+            captured=(
+                (*remove_web.files, *daemon_removal.files),
+                installation.tool_entrypoints(),
+                {**remove_web.manager_units, **daemon_removal.manager_units},
+            ),
         )
         if not installation.startup_state_matches() or installation.startup_fingerprint() != before:
             msg = "The Heinzel installation changed while preparing recovery; no service was stopped."

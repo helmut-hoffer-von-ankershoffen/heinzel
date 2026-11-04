@@ -38,4 +38,14 @@ This is not real OS-manager acceptance. Linux network-denial and real isolated u
 Focused tests also cover opened-file tampering/architecture/metadata/RECORD/source refusals, exact runner environment,
 service authority failures, stop-before-delete ordering, partial uv refusal, interruption and cleanup/reload/fsync retry.
 The unsupported SDK/desktop and unmarked/profileless legacy-service refusals remain. No live user service was changed.
-Final source review and composition with shared daemon ownership authority remain required before publication.
+Shared daemon ownership authority is composed; final exact-source installer/security review remains required.
+Loaded Linux recovery units must match journal-bound original fragments, complete argv and selected profile, and be
+inactive with no queued work or PID; unknown/inactive foreign labels refuse. Captured integration files are rechecked
+before uv and before final unlink. Native recovery probes bound output while reading and reap only their own child.
+
+A further installed interruption fixture has executed the copied recovery script through the original external Python
+under OS IP-network denial, with no importable SDK before or after actual uv self-removal. It observed complete recovery,
+retained private uv bytes, cleared its exact gate and retained user data/unrelated tools. Manager probes remain explicit
+immutable doubles. SDK-bin-first bootstrap/tool-root discovery, local plugin develop/list/remove and normal update have
+also passed through the genuine installed mutation/receipt pipeline. Literal remote add/publisher resolution is unverified;
+custom find-links receipt policy was correctly refused and no allowance was added.

@@ -50,7 +50,8 @@ directories synchronized. The immutable recovery authority is hash-bound into th
 phase is mutable. A durable existing installation gate prevents cooperating starts while outcome is uncertain.
 Recovery still works through the captured external Python after the SDK is removed. It never starts or signals jobs:
 fixed user managers must confirm quiescence before retry. A partial SDK must be a subset of the captured opened-file
-manifest; replacement, changed or new entries refuse. After verified SDK removal, recovery also finishes only unchanged original receipt-owned script links.
+manifest; replacement, changed or new entries refuse. Retained loaded Linux units must match hash-bound original
+fragment, argv and selected-profile facts as well as quiescence; an inactive foreign label is insufficient. After verified SDK removal, recovery also finishes only unchanged original receipt-owned script links.
 Cleanup unlinks only unchanged captured integration files,
 synchronizes their directories and completes any user-manager reload before clearing its exact gate.
 
@@ -67,11 +68,13 @@ actual isolated service-manager acceptance remains a separate obligation.
 
 Focused tests cover exact runner environments, private executable replacement and writable ancestors, foreign labels,
 wrong sessions/buses, missing managers, bounded stop failure, stop-before-cleanup ordering, partial uv refusal,
-authority tampering, interrupted phases, unlink/reload/fsync failures and recovery retry without another uv mutation.
+authority tampering, interrupted phases, foreign retained Linux identity, bounded native-probe output/deadline,
+unlink/reload/fsync failures and recovery retry without another uv mutation.
 
 Installed macOS fixtures use the real standard installer and immutable built wheels, including an explicit manager-double
 module; they do not manufacture continuity or relax startup metadata validation. The installed SDK's real CLI dispatch
-and pinned uv run under OS IP-network denial. Separate proof checks that local Unix IPC remains possible. This is not
+and pinned uv run under OS IP-network denial. The immutable 0.9.15 updater has resolved the new runtime dependency,
+and the copied recovery script has performed actual offline tool removal with no importable SDK. Separate proof checks that local Unix IPC remains possible. This is not
 real OS manager acceptance. Linux fixtures use inherited seccomp IP-socket denial; hosted execution and actual isolated
 macOS/Linux user-manager acceptance remain required before claiming those outcomes. The live user manager is excluded.
 

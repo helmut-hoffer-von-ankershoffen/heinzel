@@ -71,14 +71,13 @@ def selection() -> tuple[str, str]:
 
 
 def _installed_bytes(prefix: Path) -> tuple[bytes, list[bytes]]:
-    from heinzel.kernel._installed_metadata import inspect_versions  # noqa: PLC0415 - local static metadata only
-
-    if inspect_versions(prefix, ["uv"]) != {"uv": VERSION}:
-        msg = "The pinned offline remover dependency is missing or ambiguous; no service was stopped."
-        raise HeinzelError(msg)
-    matches = list(prefix.glob(f"lib/python*/site-packages/uv-{VERSION}.dist-info"))
-    if len(matches) != 1:
-        msg = "The pinned offline remover metadata is missing or ambiguous; no service was stopped."
+    matches = list(prefix.glob("lib/python*/site-packages/uv-*.dist-info"))
+    if (
+        len(matches) != 1
+        or matches[0].name != f"uv-{VERSION}.dist-info"
+        or list(prefix.glob("lib/python*/site-packages/uv*.egg-info"))
+    ):
+        msg = "The pinned offline remover dependency is missing, unsupported or ambiguous; no service was stopped."
         raise HeinzelError(msg)
     metadata = matches[0]
     binary_hash, wheel_hash = selection()

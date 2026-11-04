@@ -25,9 +25,9 @@ class RemovalJournal:
         prefix: Path,
         binary: Path,
         state: Path,
-        captured: tuple[tuple[OwnedFile, ...], tuple[Path, ...]],
+        captured: tuple[tuple[OwnedFile, ...], tuple[Path, ...], dict[str, dict[str, object]]],
     ) -> None:
-        files, entrypoints = captured
+        files, entrypoints, manager_units = captured
         self.directory = executable.path.parent
         self.path = self.directory / "journal.json"
         self.gate = state / "daemon/standard-install-pending.json"
@@ -47,10 +47,17 @@ class RemovalJournal:
             "prefix": str(prefix),
             "prefix_identity": [info.st_dev, info.st_ino],
             "manifest": recovery.manifest(prefix),
+            "manager_units": manager_units,
             "uv": str(executable.path),
             "uv_sha256": executable.digest,
             "uv_identity": list(executable.identity),
-            "environment": {"PATH": "/usr/bin:/bin", "UV_TOOL_DIR": str(prefix.parent), "UV_TOOL_BIN_DIR": str(binary)},
+            "environment": {
+                "PATH": "/usr/bin:/bin",
+                "LANG": "C",
+                "UV_NO_CACHE": "1",
+                "UV_TOOL_DIR": str(prefix.parent),
+                "UV_TOOL_BIN_DIR": str(binary),
+            },
             "entrypoints": [str(path) for path in entrypoints],
             "links": [
                 {
