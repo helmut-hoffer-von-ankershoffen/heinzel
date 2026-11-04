@@ -249,6 +249,7 @@ def test_system_info_json(app):
             "ai → ai-access:read": "claude-code → api.anthropic.com",
             "ai.access → ai-access:read": "claude-code → api.anthropic.com",
             "org agenda → calendar:read": "optional: not connected: no adapter bound",
+            "org calendar → calendar:read": "optional: not connected: no adapter bound",
             "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
             "system.runner.chat send → agent-runner:read": "claude-code → api.anthropic.com",
         },
@@ -584,6 +585,7 @@ def test_commands_are_sorted(app):
         "state",
         "theme",
         "ui",
+        "uninstall",
         "update",
     ]
     assert system.list_commands(None) == expected
