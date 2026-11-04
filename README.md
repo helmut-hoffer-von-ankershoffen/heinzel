@@ -49,7 +49,7 @@
 | src/heinzel/kernel/\_metadata\_verifier.py                       |        6 |        2 |        0 |        0 |     67% |     16-17 |
 | src/heinzel/kernel/\_org.py                                      |       31 |        1 |        0 |        0 |     97% |        55 |
 | src/heinzel/kernel/\_playbooks.py                                |      194 |        2 |       64 |        1 |     99% |   293-294 |
-| src/heinzel/kernel/\_private\_control.py                         |      149 |       13 |       38 |        5 |     90% |41-42, 64-65, 128-129, 169-171, 180, 191, 205-\>exit, 207-208 |
+| src/heinzel/kernel/\_private\_control.py                         |      149 |       12 |       38 |        5 |     91% |41-42, 64-65, 128-129, 169-171, 191, 205-\>exit, 207-208 |
 | src/heinzel/kernel/\_prompter.py                                 |      182 |        1 |       56 |        0 |     99% |        66 |
 | src/heinzel/kernel/\_release.py                                  |       99 |        5 |        8 |        0 |     95% |105-106, 113-114, 118 |
 | src/heinzel/kernel/\_runner\_snapshot.py                         |       10 |        2 |        0 |        0 |     80% |     27-28 |
@@ -197,7 +197,7 @@
 | src/heinzel/modules/ui/\_profile.py                              |       56 |        5 |       26 |        5 |     88% |73-\>72, 86, 99, 103, 133-134 |
 | src/heinzel/modules/ui/\_service.py                              |      361 |       43 |      118 |       23 |     86% |52, 143-144, 148-149, 153-154, 177-178, 283, 285, 305-306, 309-310, 373-374, 376-377, 397, 405, 430-431, 441-442, 493-494, 503-504, 509-510, 524-525, 535-536, 548-549, 561-562, 655-\>664, 666-667, 672-673 |
 | src/heinzel/testing.py                                           |      127 |        4 |       32 |        0 |     97% |   244-248 |
-| **TOTAL**                                                        | **40769** | **2587** | **10522** | **1062** | **92%** |           |
+| **TOTAL**                                                        | **40769** | **2586** | **10522** | **1062** | **92%** |           |
 
 130 files skipped due to complete coverage.
 
