@@ -1,7 +1,9 @@
 """A failed genuine handover exposes fixed facts without disclosing retained output or identities."""
 
+import ast
 import json
 import os
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -56,3 +58,26 @@ def test_absent_child_and_output_do_not_trigger_a_process_probe(tmp_path, monkey
 
     monkeypatch.setattr(os, "kill", forbidden)
     assert not any(handover_evidence(settings, tmp_path).values())
+
+
+def test_manager_double_supplies_only_its_fixed_native_discovery_identity():
+    source = Path(__file__).parents[1] / "fixtures/legacy_recovery_manager.py"
+    function = next(
+        node
+        for node in ast.parse(source.read_text()).body
+        if isinstance(node, ast.FunctionDef) and node.name == "initialize"
+    )
+    lookups = []
+
+    def original(service):
+        service._which = lambda name: lookups.append(name) or f"/fixture/{name}"
+
+    namespace = {"original_init": original, "runner": object(), "probe": object()}
+    exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), "exec"), namespace)  # noqa: S102 - fixed repository fixture
+    service = SimpleNamespace()
+    namespace["initialize"](service)
+    assert service._which("launchctl") == "/bin/launchctl"
+    assert service._which("uv") == "/fixture/uv"
+    assert lookups == ["uv"]
+    assert service._runner is namespace["runner"]
+    assert service._quiescence_probe is namespace["probe"]
