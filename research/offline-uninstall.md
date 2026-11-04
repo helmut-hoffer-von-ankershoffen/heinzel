@@ -49,3 +49,8 @@ retained private uv bytes, cleared its exact gate and retained user data/unrelat
 immutable doubles. SDK-bin-first bootstrap/tool-root discovery, local plugin develop/list/remove and normal update have
 also passed through the genuine installed mutation/receipt pipeline. Literal remote add/publisher resolution is unverified;
 custom find-links receipt policy was correctly refused and no allowance was added.
+
+The pinned native dependency was also copied into an isolated read-only cache inode and physically hardlinked into a
+fixture SDK. Real publisher metadata/hash checks and offline native preflight accepted that two-link source, produced
+a distinct one-link protected copy and left cache bytes, mode, link count and modification/change times unchanged.
+This tests the hardlink topology locally; actual Linux execution and real OS-manager acceptance remain pending.

@@ -2,6 +2,8 @@
 
 import base64
 import hashlib
+import os
+import shutil
 import sys
 from pathlib import Path
 from subprocess import CompletedProcess
@@ -152,3 +154,35 @@ def test_probe_cannot_replace_the_captured_private_remover(dependency, tmp_path,
     monkeypatch.setattr(_offline_uv.subprocess, "run", swap)
     with pytest.raises(HeinzelError, match="private offline remover changed"):
         _offline_uv.stage(prefix, tmp_path / "private")
+
+
+def test_publisher_native_hardlinked_cache_source_is_copied_without_mutating_cache(tmp_path):
+    """Exercise normal Linux cache topology using the real pinned native distribution in isolated directories."""
+    source = Path(sys.prefix) / "bin/uv"
+    metadata = list(Path(sys.prefix).glob(f"lib/python*/site-packages/uv-{_offline_uv.VERSION}.dist-info"))
+    assert len(metadata) == 1
+    assert source.is_file()
+    assert not source.is_symlink()
+    prefix, cache = tmp_path / "tool", tmp_path / "cache"
+    (prefix / "bin").mkdir(parents=True)
+    cache.mkdir(mode=0o700)
+    native = cache / "publisher-uv"
+    native.write_bytes(source.read_bytes())
+    native.chmod(0o555)
+    os.link(native, prefix / "bin/uv")
+    copied_metadata = prefix / "lib/python-fixture/site-packages" / metadata[0].name
+    shutil.copytree(metadata[0], copied_metadata)
+    before = native.stat()
+    assert before.st_nlink == 2
+    prepared = _offline_uv.stage(prefix, tmp_path / "private")
+    prepared.verify()
+    assert prepared.path.stat().st_nlink == 1
+    assert prepared.path.stat().st_ino != native.stat().st_ino
+    assert prepared.path.read_bytes() == native.read_bytes() == source.read_bytes()
+    after = native.stat()
+    assert (after.st_mode, after.st_nlink, after.st_mtime_ns, after.st_ctime_ns) == (
+        before.st_mode,
+        before.st_nlink,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    )
