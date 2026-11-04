@@ -80,14 +80,60 @@ class SortedGroup(TyperGroup):
         return sorted(self.commands)
 
 
-def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
+def build(kernel: Kernel, *, plain: bool = False, ui_only: bool = False) -> typer.Typer:
     """Build the `hz` command tree from the modules registered with the kernel.
 
     Args:
         kernel: The booted kernel.
         plain: Help without Rich markup and footer, for the generated reference docs: every command listed, the ones
             for experts marked.
+        ui_only: Build only the UI subtree for direct UI invocations; root discovery uses the complete tree.
     """
+    app, mount = _root(kernel, plain=plain)
+    if ui_only:
+        mount.ui(app)
+        return app
+    footer = mount.footer
+    progress = mount.progress
+    count = mount(app, None) + Count(commands=3)  # setup, join and ui: everyday, for everyone
+    # Top level by the maintainer's decision, the one exception to ADR 0018, and the only way to run a step (ADR 0032).
+    setup = SetupCommands(kernel, console, err_console).command()
+    app.command(name="setup", help=SETUP_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(setup)
+    # The invite line, `uvx heinzel join <team repository>`: the second exception to ADR 0018, by the maintainer.
+    join = JoinCommand(kernel, console, err_console).command()
+    app.command(name="join", help=JOIN_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(join)
+    # Top level too, by the maintainer's decision: the web head is how people who don't live in a terminal start
+    # (ADR 0039, "a web head: a React app served by the API head").
+    _mount_ui(app, mount.groups, kernel, err_console)
+    # `hz chat` at the top level as well, by the maintainer's decision: the chat is what a person talks to, and
+    # without a subcommand it is the interactive chat (ADR 0045).
+    if chat := mount.groups.get(CHAT):
+        chat.callback(invoke_without_command=True, no_args_is_help=False, help=CHAT_HELP)(
+            chat_callback(kernel, console, err_console, progress)
+        )
+        # Only at the top level: one path for one group, so help, docs and messages all say `hz chat`.
+        if runner := mount.groups.get(CHAT.rpartition(".")[0]):
+            runner.registered_groups = [g for g in runner.registered_groups if g.typer_instance is not chat]
+        app.add_typer(chat, name="chat", cls=SortedGroup, rich_help_panel=CORE_PANEL)
+    if system := mount.groups.get("system"):
+        # Starting servers is for experts: agents and scripts are configured once, by someone who knows `hz`.
+        serve = serve_group(SortedGroup, footer, kernel, console, err_console)
+        for info in serve.registered_commands:
+            info.help = mount.help(info.help or inspect.getdoc(info.callback) or "", expert=True)
+        serve.info.help = mount.help(serve.info.help or "", expert=True)
+        system.add_typer(serve, cls=SortedGroup, hidden=mount.hides(expert=True))
+        servers = Count(len(serve.registered_commands), len(serve.registered_commands))
+        count += servers
+        mount.hint(system, mount.counts["system"] + servers)
+    if not plain:  # the generated reference documents the commands to use, not the old ones
+        mount.aliases(app)
+        hidden = 0 if mount.expert else count.expert
+        app.info.epilog = start_screen_footer(kernel, hidden)
+    return app
+
+
+def _root(kernel: Kernel, *, plain: bool) -> tuple[typer.Typer, "_Mount"]:
+    """Construct the shared root options and logging callback before mounting command schemas."""
     footer = None if plain else brand_footer(console.width)
     app = typer.Typer(
         name="hz",
@@ -140,41 +186,7 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
     progress = ConsoleProgress(err_console, playful=_playful.allowed(kernel.settings, err_console))
     kernel.bind(Progress, progress)
     mount = _Mount(kernel, progress, footer, plain=plain, expert=kernel.settings.expert)
-    count = mount(app, None) + Count(commands=3)  # setup, join and ui: everyday, for everyone
-    # Top level by the maintainer's decision, the one exception to ADR 0018, and the only way to run a step (ADR 0032).
-    setup = SetupCommands(kernel, console, err_console).command()
-    app.command(name="setup", help=SETUP_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(setup)
-    # The invite line, `uvx heinzel join <team repository>`: the second exception to ADR 0018, by the maintainer.
-    join = JoinCommand(kernel, console, err_console).command()
-    app.command(name="join", help=JOIN_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(join)
-    # Top level too, by the maintainer's decision: the web head is how people who don't live in a terminal start
-    # (ADR 0039, "a web head: a React app served by the API head").
-    _mount_ui(app, mount.groups, kernel, err_console)
-    # `hz chat` at the top level as well, by the maintainer's decision: the chat is what a person talks to, and
-    # without a subcommand it is the interactive chat (ADR 0045).
-    if chat := mount.groups.get(CHAT):
-        chat.callback(invoke_without_command=True, no_args_is_help=False, help=CHAT_HELP)(
-            chat_callback(kernel, console, err_console, progress)
-        )
-        # Only at the top level: one path for one group, so help, docs and messages all say `hz chat`.
-        if runner := mount.groups.get(CHAT.rpartition(".")[0]):
-            runner.registered_groups = [g for g in runner.registered_groups if g.typer_instance is not chat]
-        app.add_typer(chat, name="chat", cls=SortedGroup, rich_help_panel=CORE_PANEL)
-    if system := mount.groups.get("system"):
-        # Starting servers is for experts: agents and scripts are configured once, by someone who knows `hz`.
-        serve = serve_group(SortedGroup, footer, kernel, console, err_console)
-        for info in serve.registered_commands:
-            info.help = mount.help(info.help or inspect.getdoc(info.callback) or "", expert=True)
-        serve.info.help = mount.help(serve.info.help or "", expert=True)
-        system.add_typer(serve, cls=SortedGroup, hidden=mount.hides(expert=True))
-        servers = Count(len(serve.registered_commands), len(serve.registered_commands))
-        count += servers
-        mount.hint(system, mount.counts["system"] + servers)
-    if not plain:  # the generated reference documents the commands to use, not the old ones
-        mount.aliases(app)
-        hidden = 0 if mount.expert else count.expert
-        app.info.epilog = start_screen_footer(kernel, hidden)
-    return app
+    return app, mount
 
 
 def _mount_ui(app: typer.Typer, groups: dict[str, typer.Typer], kernel: Kernel, error: Console) -> None:
@@ -200,7 +212,14 @@ def main() -> None:
     if not sys.argv[1:]:
         _banner(kernel)  # the bare `hz`: the start screen follows
     try:
-        build(kernel)()
+        # Root discovery/help/version still build the complete tree. Click parses the same UI group,
+        # including service subcommands and invalid options, for an invocation beginning with `ui`.
+        build(
+            kernel,
+            ui_only=sys.argv[1:2] == ["ui"]
+            and any(record.module.name == "ui" for record in kernel.children(None))
+            and not any(arg in {"--help", "-h", "--command-tree", "--version", "-V"} for arg in sys.argv[2:]),
+        )()
     finally:
         if check is not None:
             check.wait()
@@ -261,6 +280,13 @@ class _Mount:
                 case ModuleRecord():
                     count += self._module(parent, qualname, entry)
         return count
+
+    def ui(self, app: typer.Typer) -> None:
+        """Mount the complete UI subtree without constructing unrelated operation schemas."""
+        for record in self.kernel.children(None):
+            if record.module.name == "ui":
+                self._module(app, None, record)
+        _mount_ui(app, self.groups, self.kernel, err_console)
 
     def hides(self, *, expert: bool) -> bool:
         """Whether a command or group for experts (when `expert`) is hidden in this tree."""
