@@ -9,6 +9,7 @@ kept on this machine only (the state directory, bounded, pruned); nothing is sen
 from typing import Annotated
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import Check, Module, Notifications
 from heinzel.modules.system.notify._models import (
@@ -21,8 +22,29 @@ from heinzel.modules.system.notify._models import (
     Opened,
     Tested,
 )
-from heinzel.modules.system.notify._render import render_installed, render_list, render_tested
 from heinzel.modules.system.notify._service import NotifyService
+
+
+def render_installed(result: Installed) -> RenderableType:
+    """What was installed or updated, whether the test went out, and what to do if no notification appeared."""
+    from heinzel.modules.system.notify._render import render_installed  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_installed(result)
+
+
+def render_list(result: NoticeList) -> RenderableType:
+    """One row per notice, newest first, and how notices reach you."""
+    from heinzel.modules.system.notify._render import render_list  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_list(result)
+
+
+def render_tested(result: Tested) -> RenderableType:
+    """What was recorded, and how the native pop-up went."""
+    from heinzel.modules.system.notify._render import render_tested  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_tested(result)
+
 
 module = Module("notify", "Pop up what deserves your attention: in the web app while it is open, else natively.")
 module.settings(NotifySettings)

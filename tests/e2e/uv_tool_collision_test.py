@@ -18,12 +18,14 @@ from tests.e2e._interpreter_diagnostics import interpreter_diagnostics
 pytestmark = pytest.mark.e2e
 
 
-def _fixture_wheel(directory, version, commands):
-    name = "fixture_owned"
+def _fixture_wheel(directory, version, commands, *, name="fixture_owned", requirements=()):
     metadata = f"{name}-{version}.dist-info"
     contents = {
         f"{name}/__init__.py": b'def run():\n    print("fixture")\n',
-        f"{metadata}/METADATA": f"Metadata-Version: 2.1\nName: fixture-owned\nVersion: {version}\n".encode(),
+        f"{metadata}/METADATA": (
+            f"Metadata-Version: 2.1\nName: {name.replace('_', '-')}\nVersion: {version}\n"
+            + "".join(f"Requires-Dist: {requirement}\n" for requirement in requirements)
+        ).encode(),
         f"{metadata}/WHEEL": b"Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
         f"{metadata}/entry_points.txt": (
             "[console_scripts]\n" + "".join(f"{command} = {name}:run\n" for command in commands)
@@ -39,8 +41,8 @@ def _fixture_wheel(directory, version, commands):
     contents[f"{metadata}/RECORD"] = output.getvalue().encode()
     wheel = directory / f"{name}-{version}-py3-none-any.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
-        for name, data in contents.items():
-            archive.writestr(name, data)
+        for filename, data in contents.items():
+            archive.writestr(filename, data)
     return wheel
 
 

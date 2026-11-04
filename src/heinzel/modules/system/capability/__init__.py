@@ -1,5 +1,7 @@
 """The capability module: which adapter serves each capability, and who reads and writes what (ADR 0028)."""
 
+from rich.console import RenderableType
+
 from heinzel import Check, Module
 from heinzel.modules.system.capability._models import (
     AdapterInfo,
@@ -7,8 +9,15 @@ from heinzel.modules.system.capability._models import (
     CapabilityReport,
     CapabilityUse,
 )
-from heinzel.modules.system.capability._render import render_report
 from heinzel.modules.system.capability._service import CapabilityService
+
+
+def render_report(report: CapabilityReport) -> RenderableType:
+    """The bindings, the adapters and the matrix of requester → capability:modes → adapter → hosts."""
+    from heinzel.modules.system.capability._render import render_report  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_report(report)
+
 
 module = Module("capability", "Show which adapters serve which capabilities, and who reads and writes what.")
 module.service(CapabilityService)

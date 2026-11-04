@@ -8,14 +8,29 @@ for `ProfileService` by type to learn who is acting.
 from typing import Annotated
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import Calendar, Check, ConfigEditor, Module, Prompter, Status
 from heinzel.kernel import CapabilityView
 from heinzel.modules.org._agenda import Agenda, local_now, read_agenda, status_item
 from heinzel.modules.org._models import ROLES, OrgSettings, Profile
 from heinzel.modules.org._profile import ProfileService, ask_profile
-from heinzel.modules.org._render import render_agenda, render_profile
 from heinzel.modules.org._sync import SyncItem, SyncReport, SyncService, render_sync
+
+
+def render_agenda(agenda: Agenda) -> RenderableType:
+    """The meeting now and the next one, one line each, or why they can't be read and what to run."""
+    from heinzel.modules.org._render import render_agenda  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_agenda(agenda)
+
+
+def render_profile(profile: Profile) -> RenderableType:
+    """The profile as a table of settings, and what to run when something is missing."""
+    from heinzel.modules.org._render import render_profile  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_profile(profile)
+
 
 module = Module("org", "Your profile, and the team, org and company you work with.")
 module.settings(OrgSettings)
