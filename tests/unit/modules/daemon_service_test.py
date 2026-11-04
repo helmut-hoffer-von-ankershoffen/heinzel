@@ -2,7 +2,9 @@
 
 import json
 import os
+import plistlib
 import select
+import shlex
 import shutil
 import stat
 import subprocess
@@ -32,7 +34,6 @@ from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import Disposition, Wake, unit_dir
 from heinzel.modules.system.daemon._runtime import Outcome, lock, within
-from heinzel.modules.system.daemon._service import MAX_SERVICE_MANAGER_OUTPUT, _launchd_pid, _reported_pid
 from heinzel.modules.system.daemon._units import LABEL, launchd_plist
 
 pytestmark = pytest.mark.unit
@@ -70,15 +71,113 @@ class Runner:
         self.codes = codes or {}
         self.commands: list[list[str]] = []
 
+    def attach(self, service):
+        self.service = service
+        self.registered = None
+        self.active = None
+        self.enabled = None
+        self.loaded_data = None
+        self.pid = None
+
     def __call__(self, command):
         self.commands.append(list(command))
         if command[1:] == ["tool", "dir", "--bin"]:
             return subprocess.CompletedProcess(command, self.codes.get("uv", 0), f"{self.bin_dir}\n", "uv broke")
         verb = next(part for part in command[1:] if not part.startswith("-"))
-        return subprocess.CompletedProcess(command, self.codes.get(verb, 0), "", f"{verb} failed")
+        code = self.codes.get(verb, 0)
+        output = ""
+        if verb == "managername":
+            output = "Aqua\n"
+        elif verb == "manageruid":
+            output = "501\n"
+        elif verb == "list":
+            output = "PID\tStatus\tLabel\n"
+        elif verb == "print":
+            code, output = self._launchd_print(code)
+        elif verb == "show":
+            output = self._systemd_show(command)
+        if not code:
+            self._effect(verb, command)
+        return subprocess.CompletedProcess(command, code, output, f"{verb} failed")
+
+    def _effect(self, verb, command):
+        if verb == "bootstrap":
+            self.registered = True
+            self.loaded_data = plistlib.loads(self.service._unit_paths()[0].read_bytes())
+        if verb == "bootout":
+            self.registered = False
+        if verb == "daemon-reload":
+            self.registered = all(path.exists() for path in self.service._unit_paths())
+        if verb == "enable":
+            self.enabled = True
+        if verb == "disable":
+            self.enabled = False
+            if "--now" in command:
+                self.active = False
+        if verb in {"restart", "start"}:
+            self.active = True
+        if verb == "stop":
+            self.active = False
+
+    def _launchd_print(self, code):
+        if self.registered is None:
+            self.registered = all(path.exists() for path in self.service._unit_paths())
+        code = code or (0 if self.registered else 113)
+        if not code:
+            path = self.service._unit_paths()[0]
+            if self.loaded_data is None:
+                self.loaded_data = plistlib.loads(path.read_bytes())
+            data = self.loaded_data
+            output = (
+                f"path = {path}\nprogram = {data['ProgramArguments'][0]}\narguments = {{\n"
+                + "".join(f"\t{arg}\n" for arg in data["ProgramArguments"])
+                + "}\n"
+                + f"working directory = {data['WorkingDirectory']}\nenvironment = {{\n"
+                + "".join(f"\t{key} => {value}\n" for key, value in data["EnvironmentVariables"].items())
+                + "}\n"
+            )
+        if not code and self.pid is not None:
+            output += f"pid = {self.pid}\n"
+        return code, output if not code else ""
+
+    def _systemd_show(self, command):
+        if self.registered is None:
+            self.registered = all(path.exists() for path in self.service._unit_paths())
+            self.active = self.enabled = self.registered
+        if not self.registered:
+            output = "LoadState=not-found\n"
+        else:
+            unit = command[3]
+            path = next(path for path in self.service._unit_paths() if path.name == unit)
+            executable = self.bin_dir / "hz"
+            from heinzel.modules.system.daemon._ownership import tick_environment
+
+            env = tick_environment(executable, self.service._profile)
+            output = (
+                f"Id={path.name}\nLoadState=loaded\nFragmentPath={path}\nDropInPaths=\n"
+                f"ExecStart={{ path={executable} ; argv[]={executable} system daemon tick ; ignore_errors=no ; }}\n"
+                "Triggers=hz-daemon.service\nEnvironment="
+                + shlex.join([f"{k}={v}" for k, v in env.items()])
+                + f"\nWorkingDirectory={env['HOME']}\nActiveState={'active' if self.active else 'inactive'}\n"
+                + f"UnitFileState={'enabled' if self.enabled else 'disabled'}\nMainPID={self.pid or 0}\n"
+                + "ControlPID=0\nJob=\n"
+            )
+        return output
+
+    def probe(self, command):
+        from heinzel.kernel import ProcessOutcome
+
+        result = self(command)
+        return ProcessOutcome(result.returncode, result.stdout, result.stderr)
 
     def verbs(self) -> list[str]:
-        return [" ".join(c[1:]) for c in self.commands if c[1:] != ["tool", "dir", "--bin"]]
+        return [
+            " ".join(c[1:])
+            for c in self.commands
+            if c[1:] != ["tool", "dir", "--bin"]
+            and next(part for part in c[1:] if not part.startswith("-"))
+            not in {"managername", "manageruid", "list", "print", "show"}
+        ]
 
 
 class Refuses:
@@ -134,12 +233,24 @@ def make(make_kernel, settings, tmp_path, bin_dir):
         notifier=True,
         session="Aqua",
         install_notifier=None,
+        settings_=None,
+        profile_config=None,
     ) -> DaemonService:
-        return DaemonService(
+        from heinzel import Progress
+        from heinzel.kernel import Installation
+
+        prefix = tmp_path / "tool-store/heinzel"
+        installation = (
+            _record_quiescent_tool(prefix, bin_dir)
+            if not prefix.exists()
+            else Installation(Progress(), prefix=prefix, uv="uv")
+        )
+        selected_runner = runner or Runner(bin_dir)
+        service = DaemonService(
             make_kernel(**{m.name: m for m in modules}),
-            settings,
+            settings_ or settings,
             DaemonSettings(unit_dir=tmp_path / "units"),
-            runner=runner or Runner(bin_dir),
+            runner=selected_runner,
             platform=platform,
             uid=lambda: 501,
             clock=clock or Clock(),
@@ -151,7 +262,16 @@ def make(make_kernel, settings, tmp_path, bin_dir):
             install_notifier=install_notifier,
             birth_fence=lambda: None,
             process_birth=lambda: None,
+            quiescence_installation=installation,
+            quiescence_probe=selected_runner.probe
+            if isinstance(selected_runner, Runner)
+            else lambda cmd: pytest.fail(str(cmd)),
+            linux_manager_identity=lambda: (1, 2, 3),
+            profile_config=profile_config,
         )
+        if isinstance(selected_runner, Runner):
+            selected_runner.attach(service)
+        return service
 
     return build
 
@@ -166,18 +286,19 @@ def test_install_on_macos_writes_and_bootstraps_the_launch_agent(make, bin_dir, 
     plist = tmp_path / "units" / f"{LABEL}.plist"
     assert result.files == {plist: plist.read_text(encoding="utf-8")}
     assert f"<string>{bin_dir / 'hz'}</string>" in plist.read_text(encoding="utf-8")
-    assert runner.verbs() == [f"bootout gui/501/{LABEL}", f"bootstrap gui/501 {plist}", f"print gui/501/{LABEL}"]
+    assert runner.verbs() == [f"bootstrap gui/501 {plist}"]
     assert result.commands == [["/bin/launchctl", "bootstrap", "gui/501", str(plist)]]
     assert (result.interval_minutes, result.dry_run) == (10, False)
 
 
-@pytest.mark.macos_specific
-def test_install_hints_at_the_notifier_for_login_items_while_it_is_missing(make):
-    assert make(notifier=False).install(timedelta(minutes=10)).hint == (
+@pytest.mark.parametrize(("platform", "notifier"), [("darwin", False), ("darwin", True), ("linux", False)])
+def test_install_hints_at_the_notifier_for_login_items_while_it_is_missing(make, platform, notifier):
+    expected = (
         "Install the notifier to show Heinzelmännchen with its icon in Login Items: hz system notify install"
+        if platform == "darwin" and not notifier
+        else None
     )
-    assert make(notifier=True).install(timedelta(minutes=10)).hint is None
-    assert make(platform="linux", notifier=False).install(timedelta(minutes=10)).hint is None
+    assert make(platform=platform, notifier=notifier).install(timedelta(minutes=10)).hint == expected
 
 
 def test_install_on_linux_writes_and_enables_the_timer(make, bin_dir, tmp_path):
@@ -187,8 +308,8 @@ def test_install_on_linux_writes_and_enables_the_timer(make, bin_dir, tmp_path):
     assert "OnCalendar=*:0/5" in (tmp_path / "units" / "hz-daemon.timer").read_text(encoding="utf-8")
     assert runner.verbs() == [
         "--user daemon-reload",
-        "--user enable --now hz-daemon.timer",
-        "--user is-active --quiet hz-daemon.timer",
+        "--user enable hz-daemon.timer",
+        "--user restart hz-daemon.timer",
     ]
 
 
@@ -210,17 +331,17 @@ def test_install_refuses_intervals_that_do_not_divide_an_hour(make):
 
 
 def test_install_needs_the_uv_tool_shim(make, bin_dir):
+    service = make()
     (bin_dir / "hz").unlink()
-    with pytest.raises(HeinzelError, match="uv tool install"):
-        make().install(timedelta(minutes=5))
-    assert make().install(timedelta(minutes=5), dry_run=True).executable == bin_dir / "hz"
+    with pytest.raises(HeinzelError, match="selected uv tool cannot be verified"):
+        service.install(timedelta(minutes=5))
 
 
 @pytest.mark.macos_specific
 def test_install_reports_failures_of_uv_and_launchctl(make, bin_dir):
-    with pytest.raises(HeinzelError, match="uv tool dir --bin"):
-        make(runner=Runner(bin_dir, {"uv": 2})).install(timedelta(minutes=5))
-    with pytest.raises(HeinzelError, match="bootstrap failed"):
+    # The selected owned receipt replaces the PATH-resolved uv query.
+    assert make(runner=Runner(bin_dir, {"uv": 2})).install(timedelta(minutes=5))
+    with pytest.raises(HeinzelError, match="did not complete"):
         make(runner=Runner(bin_dir, {"bootstrap": 5})).install(timedelta(minutes=5))
 
 
@@ -274,16 +395,12 @@ def test_install_tells_each_real_step_in_order(make, bin_dir):
     ]
 
 
-@pytest.mark.macos_specific
-def test_install_leaves_out_the_notifier_step_without_one_and_off_macos(make, bin_dir):
-    mac = make(runner=Runner(bin_dir))
-    phased = progress_of(mac)
-    mac.install(timedelta(minutes=5))
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_install_leaves_out_the_notifier_step_without_one_and_off_macos(make, bin_dir, platform):
+    service = make(platform=platform, runner=Runner(bin_dir))
+    phased = progress_of(service)
+    service.install(timedelta(minutes=5))
     assert "notifier" not in {event["id"] for event in phased.events}
-    linux = make(platform="linux", runner=Runner(bin_dir), install_notifier=lambda: pytest.fail("macOS only"))
-    phased = progress_of(linux)
-    linux.install(timedelta(minutes=5))
-    assert {event["id"] for event in phased.events} == {"unit", "load", "verify"}
 
 
 @pytest.mark.macos_specific
@@ -313,7 +430,7 @@ def test_install_outside_the_desktop_session_changes_nothing_and_says_why(make, 
 def test_a_failed_load_removes_the_unit_again_so_nothing_starts_at_login(make, bin_dir, tmp_path):
     service = make(runner=Runner(bin_dir, {"bootstrap": 5}))
     phased = progress_of(service)
-    with pytest.raises(HeinzelError, match=r"bootstrap failed.*put back as it was"):
+    with pytest.raises(HeinzelError, match="previous files and activation were verified restored"):
         service.install(FIVE_MINUTES)
     assert not (tmp_path / "units" / f"{LABEL}.plist").exists()
     assert steps(phased)[-1] == ("load", "failed")
@@ -322,7 +439,7 @@ def test_a_failed_load_removes_the_unit_again_so_nothing_starts_at_login(make, b
 def test_a_unit_the_manager_does_not_list_as_loaded_is_a_failure(make, bin_dir, tmp_path):
     service = make(runner=Runner(bin_dir, {"print": 113}))
     phased = progress_of(service)
-    with pytest.raises(HeinzelError, match="does not list it as loaded"):
+    with pytest.raises(HeinzelError, match="did not complete"):
         service.install(FIVE_MINUTES)
     assert steps(phased)[-1] == ("verify", "failed")
     assert not (tmp_path / "units" / f"{LABEL}.plist").exists()
@@ -333,7 +450,7 @@ def test_a_failed_reinstall_puts_back_the_unit_that_was_there(make, bin_dir, tmp
     plist = tmp_path / "units" / f"{LABEL}.plist"
     before = plist.read_text(encoding="utf-8")
     failing = make(runner=Runner(bin_dir, {"bootstrap": 5}))
-    with pytest.raises(HeinzelError, match="put back"):
+    with pytest.raises(HeinzelError, match="Recovery is uncertain"):
         failing.install(TEN_MINUTES)
     assert plist.read_text(encoding="utf-8") == before
 
@@ -352,7 +469,7 @@ def test_install_needs_a_supported_platform_and_its_tools(make, make_kernel, set
     service = DaemonService(
         make_kernel(), settings, DaemonSettings(unit_dir=tmp_path), runner=Runner(bin_dir), which=lambda _: None
     )
-    with pytest.raises(HeinzelError, match="`uv` is not on PATH"):
+    with pytest.raises(HeinzelError, match="verified uv tool installation"):
         service.install(timedelta(minutes=5))
 
 
@@ -370,7 +487,7 @@ def test_uninstall_without_an_installation_does_nothing(make):
 )
 def test_uninstall_unloads_and_removes_the_unit(make, bin_dir, tmp_path, platform, verbs):
     make(platform=platform).install(timedelta(minutes=5))
-    runner = Runner(bin_dir, {"bootout": 3})  # not loaded: still removed
+    runner = Runner(bin_dir)
     service = make(platform=platform, runner=runner)
     result = service.uninstall()
     assert runner.verbs() == verbs
@@ -434,7 +551,7 @@ def test_health_explains_a_registered_daemon_whose_program_is_gone(make, bin_dir
     (service.state_dir / "install.json").unlink()
     [check, *_] = service.health()
     assert (check.name, check.status) == ("daemon", Status.DEGRADED)
-    assert check.fix == "Run `uvx --from heinzel hz system daemon uninstall`"
+    assert check.fix == "Inspect the user service manager and selected profile before changing the existing files"
 
 
 def test_health_flags_a_daemon_that_stopped_ticking(make, jobs):
@@ -800,12 +917,15 @@ def test_corrupt_state_files_are_ignored(make, settings):
     assert (status.last_tick, status.interval_minutes) == (None, None)
 
 
-def test_status_asks_systemd_whether_the_timer_is_active(make, bin_dir):
-    make(platform="linux").install(timedelta(minutes=5))
-    runner = Runner(bin_dir, {"is-active": 3})
-    status = make(platform="linux", runner=runner).status()
-    assert (status.installed, status.loaded) == (True, False)
-    assert runner.verbs() == ["--user is-active --quiet hz-daemon.timer"]
+def test_status_asks_the_owned_systemd_manager_whether_the_timer_is_active(make, bin_dir):
+    runner = Runner(bin_dir)
+    service = make(platform="linux", runner=runner)
+    service.install(FIVE_MINUTES)
+    runner.active = False
+    runner.commands.clear()
+    status = service.status()
+    assert (status.installed, status.loaded, status.owned) == (True, False, True)
+    assert all(command[0] == "/usr/bin/systemctl" for command in runner.commands)
 
 
 @pytest.mark.parametrize(
@@ -1049,54 +1169,15 @@ def test_a_daemon_started_by_an_older_hz_is_flagged_until_current_service_tick(m
     assert (service.status().version, service.status().version_mismatch) == (__version__, False)
 
 
-@pytest.mark.macos_specific
-def test_launchd_service_pid_is_read_from_its_running_job(make, bin_dir, monkeypatch):
-    service = make(runner=Runner(bin_dir))
-    output = f'{{\n\t"Label" = "{LABEL}";\n\t"PID" = {os.getpid()};\n}}\n'
-    commands = []
-
-    def runner(command):
-        commands.append(command)
-        return subprocess.CompletedProcess(command, 0, output, "")
-
-    monkeypatch.setattr(
-        service,
-        "_runner",
-        runner,
-    )
-    assert service._service_manager_pid() == os.getpid()
-    assert commands[0][-2:] == ["list", LABEL]
-
-
-def test_systemd_service_pid_is_read_from_main_pid(make, bin_dir, monkeypatch):
-    service = make(platform="linux", runner=Runner(bin_dir))
-    monkeypatch.setattr(
-        service,
-        "_runner",
-        lambda command: subprocess.CompletedProcess(command, 0, "417\n", ""),
-    )
-    assert service._service_manager_pid() == 417
-
-
-@pytest.mark.macos_specific
-@pytest.mark.parametrize(
-    "output",
-    [
-        f'{{\n"Label" = "{LABEL}";\n"PID" = "-";\n}}\n',
-        f'{{\n"Label" = "{LABEL}";\n"PID" = 12345678901;\n}}\n',
-        f'{{\n"Label" = "{LABEL}-lookalike";\n"PID" = 12;\n}}\n',
-        f'{{\n"Label" = "{LABEL}";\n"PID" = 12;\n"PID" = 13;\n}}\n',
-        "x" * (MAX_SERVICE_MANAGER_OUTPUT + 1),
-    ],
-    ids=["unrunning", "oversized-pid", "wrong-label", "duplicate-pid", "oversized-output"],
-)
-def test_launchd_pid_parser_fails_closed_on_malformed_or_unbounded_output(output):
-    assert _launchd_pid(output, LABEL) is None
-
-
-@pytest.mark.parametrize("output", ["0", "-1", "12\n99", "12345678901", "x" * (MAX_SERVICE_MANAGER_OUTPUT + 1)])
-def test_systemd_pid_parser_fails_closed_on_malformed_or_unbounded_output(output):
-    assert _reported_pid(output) is None
+@pytest.mark.parametrize(("platform", "pid"), [("darwin", 417), ("linux", 418)])
+def test_service_pid_requires_a_complete_owned_manager_identity(make, bin_dir, platform, pid):
+    runner = Runner(bin_dir)
+    service = make(platform=platform, runner=runner)
+    service.install(FIVE_MINUTES)
+    runner.pid = pid
+    assert service._service_manager_pid() == pid
+    service._unit_paths()[0].write_text("changed definition")
+    assert service._service_manager_pid() is None
 
 
 def test_failed_daemon_replacement_keeps_the_old_version_marker_fail_closed(make, tmp_path, bin_dir):
@@ -1105,7 +1186,7 @@ def test_failed_daemon_replacement_keeps_the_old_version_marker_fail_closed(make
     state = service.state_dir / "install.json"
     state.write_text(state.read_text().replace(__version__, "0.0.1"), encoding="utf-8")
 
-    with pytest.raises(HeinzelError, match="bootstrap failed"):
+    with pytest.raises(HeinzelError, match="did not complete"):
         make(runner=Runner(bin_dir, {"bootstrap": 5})).install(timedelta(minutes=5))
 
     assert json.loads(state.read_text(encoding="utf-8"))["version"] == "0.0.1"
@@ -1141,7 +1222,10 @@ def test_update_handover_keeps_uninstalled_unloaded_and_paused_services_off(make
     assert runner.commands == []
     service.install(timedelta(minutes=5))
     runner.commands.clear()
-    runner.codes["print" if platform == "darwin" else "is-active"] = 3
+    if platform == "darwin":
+        runner.registered = False
+    else:
+        runner.active = False
     stopped = service.capture_handover()
     assert not stopped.active
     assert not service.request_handover(stopped).requested
@@ -1908,7 +1992,8 @@ def test_user_daemon_factory_uses_the_kernel_installation_fingerprint(settings, 
     fake_installation = SimpleNamespace(startup_fingerprint=lambda: marker)
     fake_kernel = SimpleNamespace(resolve=lambda kind: fake_installation if kind is Installation else None)
     fake_config = SimpleNamespace(
-        settings=lambda kind, section: settings if kind is _service.Settings else DaemonSettings(unit_dir=tmp_path)
+        files=(),
+        settings=lambda kind, section: settings if kind is _service.Settings else DaemonSettings(unit_dir=tmp_path),
     )
     monkeypatch.setattr(_service.Config, "load", lambda path: fake_config)
     service = DaemonService.for_user(fake_kernel)
@@ -2092,7 +2177,7 @@ def _record_quiescent_tool(prefix, bin_dir):
     from heinzel import Progress
     from heinzel.kernel import Installation
 
-    (prefix / "bin").mkdir(parents=True)
+    (prefix / "bin").mkdir(parents=True, exist_ok=True)
     (prefix / "bin/hz").write_text("fixture")
     (bin_dir / "hz").unlink(missing_ok=True)
     (bin_dir / "hz").symlink_to(prefix / "bin/hz")
@@ -2334,24 +2419,21 @@ def test_pending_transaction_denies_manager_writers_without_effect(make, bin_dir
 def test_writer_rechecks_pending_after_acquiring_lifecycle_lock(make, bin_dir, monkeypatch, operation):
     from contextlib import contextmanager
 
-    from heinzel.modules.system.daemon import _service
-
     runner = Runner(bin_dir)
     service = make(runner=runner)
     service.install(timedelta(minutes=5))
     unit = service._unit_paths()[0]
     original = unit.read_bytes()
     runner.commands.clear()
-    real_lock = _service.lock
+    real_writer = service._lifecycle_writer
 
     @contextmanager
-    def interleaved(path):
-        with real_lock(path) as acquired:
-            if acquired:
-                (service.state_dir / "standard-install-pending.json").write_text('{"token":"fixture"}')
-            yield acquired
+    def interleaved():
+        with real_writer():
+            (service.state_dir / "standard-install-pending.json").write_text('{"token":"fixture"}')
+            yield
 
-    monkeypatch.setattr(_service, "lock", interleaved)
+    monkeypatch.setattr(service, "_lifecycle_writer", interleaved)
     writer = {
         "install": lambda: service.install(timedelta(minutes=5)),
         "restart": service.restart,
@@ -2359,7 +2441,7 @@ def test_writer_rechecks_pending_after_acquiring_lifecycle_lock(make, bin_dir, m
     }[operation]
     with pytest.raises(HeinzelError, match="requires recovery"):
         writer()
-    assert runner.commands == []
+    assert runner.verbs() == []
     assert unit.read_bytes() == original
     assert (service.state_dir / "standard-install-pending.json").exists()
 
@@ -2387,7 +2469,7 @@ def test_recovery_never_clears_unowned_or_conflicting_transaction(make, bin_dir,
     assert (service.state_dir / "standard-install-pending.json").exists()
     installation = service._quiescence_installation
     prefix = installation.prefix
-    (prefix / "bin").mkdir(parents=True)
+    (prefix / "bin").mkdir(parents=True, exist_ok=True)
     (prefix / "bin/hz").write_text("fixture")
     (selected_bin / "hz").symlink_to(prefix / "bin/hz")
     (prefix / "uv-receipt.toml").write_text(
@@ -2737,3 +2819,140 @@ def test_failed_scheduled_tick_records_failure(make, monkeypatch):
     heartbeat = json.loads((service.state_dir / "heartbeat.json").read_text())
     assert heartbeat["source"] == "scheduled"
     assert heartbeat["outcome"] == "failed"
+
+
+@pytest.mark.parametrize("changed", ["unit", "profile", "loaded-profile", "loaded-argv"])
+def test_daemon_install_refuses_foreign_or_changed_ownership_before_effects(make, bin_dir, settings, tmp_path, changed):
+    runner = Runner(bin_dir)
+    service = make(runner=runner)
+    service.install(FIVE_MINUTES)
+    unit = service._unit_paths()[0]
+    if changed == "unit":
+        unit.write_text(unit.read_text() + "<!-- edited -->\n")
+    if changed == "loaded-profile":
+        runner.loaded_data["EnvironmentVariables"]["HZ_STATE_DIR"] = str(tmp_path / "another-profile")
+    if changed == "loaded-argv":
+        runner.loaded_data["ProgramArguments"].append("--job=other:write")
+    if changed == "profile":
+        service = make(runner=runner, settings_=settings.model_copy(update={"data_dir": tmp_path / "another-data"}))
+    before = service._capture_install_files()
+    runner.commands.clear()
+    with pytest.raises(HeinzelError, match=r"profile|changed|identity"):
+        service.install(TEN_MINUTES)
+    assert service._capture_install_files() == before
+    assert runner.verbs() == []
+    assert not (service.state_dir / "handover-pending.json").exists()
+    assert not service.status().owned
+
+
+def test_a_foreign_loaded_label_without_local_files_is_never_booted_out(make, bin_dir):
+    from heinzel.kernel import ProcessOutcome
+
+    runner = Runner(bin_dir)
+    service = make(runner=runner)
+
+    def foreign(command):
+        if command[1] == "managername":
+            return ProcessOutcome(0, "Aqua\n", "")
+        if command[1] == "manageruid":
+            return ProcessOutcome(0, "501\n", "")
+        if command[1] == "print":
+            return ProcessOutcome(0, "path = /foreign/job.plist\nprogram = /foreign/tool\n", "")
+        pytest.fail(f"A foreign registration must not receive {command}")
+
+    service._quiescence_probe = foreign
+    with pytest.raises(HeinzelError, match=r"identity|profile"):
+        service.install(FIVE_MINUTES)
+    assert all(payload is None for payload in service._capture_install_files().values())
+    assert not (service.state_dir / "handover-pending.json").exists()
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_reinstall_preserves_an_owned_inactive_and_paused_profile(make, bin_dir, platform):
+    runner = Runner(bin_dir)
+    service = make(platform=platform, runner=runner)
+    service.install(FIVE_MINUTES)
+    service.pause()
+    if platform == "darwin":
+        runner.registered = False
+    else:
+        runner.active = runner.enabled = False
+    before = service.owned_manager_state(bin_dir)
+    runner.commands.clear()
+    service.install(TEN_MINUTES)
+    assert service.owned_manager_state(bin_dir) == before
+    assert service.paused
+    assert not service.status().loaded
+    assert service.status().owned
+    assert all(not {"bootstrap", "start", "restart"}.intersection(command) for command in runner.commands)
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_an_executing_owned_tick_is_not_replaced_or_removed(make, bin_dir, platform):
+    runner = Runner(bin_dir)
+    service = make(platform=platform, runner=runner)
+    service.install(FIVE_MINUTES)
+    runner.pid = 417
+    before = service._capture_install_files()
+    runner.commands.clear()
+    for operation in (lambda: service.install(TEN_MINUTES), service.uninstall):
+        with pytest.raises(HeinzelError, match="tick is still running"):
+            operation()
+    assert service._capture_install_files() == before
+    assert runner.verbs() == []
+
+
+def test_a_failed_replacement_restores_the_previous_actual_registration_when_possible(make, bin_dir):
+    runner = Runner(bin_dir)
+    service = make(runner=runner)
+    service.install(FIVE_MINUTES)
+    original = service._capture_install_files()
+    old_manager = service.owned_manager_state(bin_dir)
+    original_probe = service._quiescence_probe
+    failed = False
+
+    def fail_once(command):
+        nonlocal failed
+        if command[1] == "bootstrap" and not failed:
+            from heinzel.kernel import ProcessOutcome
+
+            failed = True
+            return ProcessOutcome(5, "", "fixture bootstrap failure")
+        return original_probe(command)
+
+    service._quiescence_probe = fail_once
+    with pytest.raises(HeinzelError, match="files and activation were verified restored"):
+        service.install(TEN_MINUTES)
+    assert service._capture_install_files() == original
+    assert service.owned_manager_state(bin_dir) == old_manager
+    assert not (service.state_dir / "handover-pending.json").exists()
+
+
+def test_an_edited_definition_is_not_removed_by_daemon_uninstall(make, bin_dir):
+    runner = Runner(bin_dir)
+    service = make(runner=runner)
+    service.install(FIVE_MINUTES)
+    service._unit_paths()[0].write_text("different unit")
+    before = service._capture_install_files()
+    runner.commands.clear()
+    with pytest.raises(HeinzelError, match="another profile or were changed"):
+        service.uninstall()
+    assert service._capture_install_files() == before
+    assert runner.verbs() == []
+
+
+def test_manager_uid_and_fixed_executable_are_required_before_mutation(make, bin_dir):
+    from heinzel.kernel import ProcessOutcome
+
+    runner = Runner(bin_dir)
+    service = make(runner=runner)
+    original = service._quiescence_probe
+    service._quiescence_probe = lambda command: (
+        ProcessOutcome(0, "502\n", "") if command[1] == "manageruid" else original(command)
+    )
+    with pytest.raises(HeinzelError, match="cannot be verified"):
+        service.install(FIVE_MINUTES)
+    with pytest.raises(HeinzelError, match="fixed local user manager"):
+        service.owned_manager_command(["/some/path/launchctl", "bootout", "gui/501/foreign"])
+    assert runner.verbs() == []
+    assert all(payload is None for payload in service._capture_install_files().values())

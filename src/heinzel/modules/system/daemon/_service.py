@@ -21,6 +21,7 @@ import stat
 import subprocess
 import sys
 import time
+import tomllib
 from collections.abc import Callable, Generator
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
@@ -55,7 +56,9 @@ from heinzel.kernel import (
     DaemonMutationScope,
     Installation,
     ProcessOutcome,
-    subprocess_environment,
+    private_directory,
+    private_lock,
+    private_write,
     tick_interval,
 )
 from heinzel.modules.system.daemon import _process_birth
@@ -75,6 +78,14 @@ from heinzel.modules.system.daemon._models import (
     Uninstalled,
     Wake,
 )
+from heinzel.modules.system.daemon._ownership import (
+    ManagerState,
+    launchd_owned,
+    profile_digest,
+    profile_environment,
+    systemd_owned,
+    tick_environment,
+)
 from heinzel.modules.system.daemon._phases import Phases
 from heinzel.modules.system.daemon._runtime import (
     Outcome,
@@ -82,6 +93,7 @@ from heinzel.modules.system.daemon._runtime import (
     TickLog,
     TimeLimit,
     describe,
+    fsync_dir,
     held,
     lock,
     lock_until_finished,
@@ -121,7 +133,6 @@ PLATFORMS = ("darwin", "linux")
 """launchd and systemd read unit files; they hold no secrets."""
 MODULE_SECTION = "system.daemon"
 MAX_SERVICE_MANAGER_OUTPUT = 1_000_000
-MAX_PID_DIGITS = 10
 MAX_HANDOVER_FILE_BYTES = 256 * 1024
 MAX_HANDOVER_CONTRIBUTIONS = 512
 MAX_HANDOVER_TEXT = 512
@@ -153,36 +164,6 @@ class Due:
 def notifier_in_applications() -> bool:
     """Whether Heinzel Notifier.app is in ~/Applications."""
     return (Path.home() / "Applications" / NOTIFIER_APP).exists()
-
-
-def _launchd_pid(output: str, expected_label: str) -> int | None:
-    """Parse one bounded label-specific launchctl property record, or return unknown.
-
-    The service-specific `list` response is not a promised stable data interface, so accept only the exact current
-    Label/PID keys and fail closed when the shape changes.
-    """
-    if len(output) > MAX_SERVICE_MANAGER_OUTPUT:
-        return None
-    labels = re.findall(r'(?m)^\s*"Label"\s*=\s*"([^"\r\n]+)"\s*;\s*$', output)
-    pids = re.findall(r'(?m)^\s*"PID"\s*=\s*([0-9]+)\s*;\s*$', output)
-    if labels != [expected_label] or len(pids) != 1:
-        return None
-    return _positive_pid(pids[0])
-
-
-def _reported_pid(output: str) -> int | None:
-    """Parse a decimal process id from a manager's machine-readable output, or return unknown."""
-    if len(output) > MAX_SERVICE_MANAGER_OUTPUT:
-        return None
-    return _positive_pid(output.strip())
-
-
-def _positive_pid(value: str) -> int | None:
-    """Parse a bounded decimal PID greater than zero."""
-    if not re.fullmatch(rf"[0-9]{{1,{MAX_PID_DIGITS}}}", value):
-        return None
-    pid = int(value)
-    return pid if pid > 0 else None
 
 
 def _platform_boot_identity(platform: str, runner: Runner, linux_path: Path = LINUX_BOOT_ID) -> str | None:
@@ -335,7 +316,7 @@ def _launchctl_records(output: str) -> dict[str, str] | None:
 
 def _manager_environment(command: list[str]) -> dict[str, str]:
     if command[0] != "/usr/bin/systemctl":
-        return subprocess_environment()
+        return {"PATH": "/usr/bin:/bin", "LANG": "C", "HOME": str(Path.home())}
     runtime = f"/run/user/{os.getuid()}"
     return {
         "PATH": "/usr/bin:/bin",
@@ -581,6 +562,7 @@ class DaemonService:
         linux_manager_identity: Callable[[], tuple[int, ...] | None] | None = None,
         desktop_session: Callable[[], str | None] | None = None,
         install_notifier: Callable[[], str | None] | None = None,
+        profile_config: Config | None = None,
     ) -> None:
         """Create the service; `for_user` builds it for the kernel, tests pass the rest.
 
@@ -605,6 +587,7 @@ class DaemonService:
             linux_manager_identity: Physical private manager socket identity, replaceable in tests.
             desktop_session: The macOS launchd session this process runs in (`Aqua` on the desktop), or None when
                 unknown; replaceable in tests so none touches the real launchd.
+            profile_config: Selected user/explicit configuration routing, without project settings or credentials.
             install_notifier: Installs the native notifier as a step of `install` on macOS and returns what went wrong
                 in plain words, or None when it worked; None (the default) leaves that step out.
         """
@@ -631,6 +614,7 @@ class DaemonService:
         self._abandoned: dict[str, threading.Thread] = {}
         self.compile_error: str | None = None
         """Why compiling jobs failed the last time they were listed; None when it worked."""
+        self._profile = profile_environment(settings, daemon, profile_config or Config.empty())
         self.unit_dir = daemon.unit_dir
         self.receipts_dir = settings.data_dir / "receipts"
         self.state_dir = settings.state_dir / "daemon"
@@ -647,34 +631,72 @@ class DaemonService:
             config.settings(DaemonSettings, MODULE_SECTION),
             continuity_fingerprint=installation.startup_fingerprint,
             quiescence_installation=installation,
+            profile_config=config,
         )
 
     # Installing ------------------------------------------------------------------------------------------------------
 
-    def install(self, interval: timedelta, *, dry_run: bool = False) -> Installed:
+    @contextmanager
+    def _lifecycle_writer(self) -> Generator[None]:
+        with ExitStack() as stack:
+            try:
+                stack.enter_context(private_lock(_handover_absolute_path(self.state_dir / "lifecycle.lock")))
+            except HeinzelError as exc:
+                msg = "The daemon lifecycle is changing or its writer cannot be verified; inspect it before retrying."
+                raise HeinzelError(msg) from exc
+            yield
+
+    def install(self, interval: timedelta, *, dry_run: bool = False, notifier: bool = True) -> Installed:
         """Install under the lifecycle writer lock, or report a concurrent change.
 
         Raises:
             HeinzelError: If another lifecycle writer is active or installation fails.
         """
+        self._minutes(interval)
+        self._unit_paths()
         if dry_run:
-            return self._install_locked(interval, dry_run=True)
-        with lock(self.state_dir / "lifecycle.lock") as acquired:
-            if not acquired or self._handover_pending():
+            return self._install_locked(interval, dry_run=True, notifier=notifier)
+        if self._handover_pending():
+            msg = "The daemon lifecycle requires recovery; inspect it before installing."
+            raise HeinzelError(msg)
+        executable = self._shim(dry_run=False)
+        self._capture_install_files()
+        self.owned_manager_state(executable.parent)
+        with self._lifecycle_writer(), private_lock(_handover_absolute_path(self.state_dir / "tick.lock")):
+            if self._handover_pending():
                 msg = "The daemon lifecycle is changing or requires recovery; inspect it before installing."
                 raise HeinzelError(msg)
-            return self._install_locked(interval)
+            return self._install_locked(interval, notifier=notifier)
 
-    def _install_locked(self, interval: timedelta, *, dry_run: bool = False) -> Installed:
-        """Write the unit for this platform and load it; `dry_run` only says what it would write.
+    def _capture_install_files(self) -> dict[Path, bytes | None]:
+        result: dict[Path, bytes | None] = {}
+        for path in (*self._unit_paths(), self.state_dir / "install.json"):
+            if _safely_absent(path):
+                result[path] = None
+                continue
+            with _open_verified_handover_file(path) as handle:
+                info = os.fstat(handle.fileno())
+                if (
+                    not stat.S_ISREG(info.st_mode)
+                    or info.st_uid != os.getuid()
+                    or info.st_mode & 0o022
+                    or info.st_size > MAX_HANDOVER_FILE_BYTES
+                    or info.st_nlink != 1
+                ):
+                    _invalid_handover()
+                result[path] = handle.read(MAX_HANDOVER_FILE_BYTES + 1)
+        return result
+
+    def _install_locked(self, interval: timedelta, *, dry_run: bool = False, notifier: bool = True) -> Installed:
+        """Replace only an exact owned profile, retaining existing activation and truthful recovery.
 
         Raises:
-            HeinzelError: On an unsupported platform or interval, without a uv tool installation, or if loading fails.
+            HeinzelError: If identity is foreign, changes, or loading/recovery cannot be verified.
+            OSError: If the private files cannot be observed or written.
         """
         minutes = self._minutes(interval)
         executable = self._shim(dry_run=dry_run)
         files = self._unit_files(executable, minutes)
-        commands = self._load_commands()
         if dry_run:
             return Installed(
                 platform=self._platform,
@@ -684,6 +706,17 @@ class DaemonService:
                 commands=[],
                 dry_run=True,
             )
+        original = self._capture_install_files()
+        log_directory = _handover_absolute_path(self.log_path.parent)
+        with suppress(FileNotFoundError):
+            private_directory(log_directory, create=False)
+        previous = self.owned_manager_state(executable.parent)
+        if previous.pid is not None:
+            msg = "An owned daemon tick is still running; nothing was replaced. Inspect status after it finishes."
+            raise HeinzelError(msg)
+        existing = any(content is not None for content in original.values())
+        wanted = previous if existing else ManagerState(registered=True, active=True, enabled=True)
+        commands = self._install_commands(previous, wanted)
         darwin = self._platform == "darwin"
         phases = Phases(
             self._kernel.resolve(Progress),
@@ -692,37 +725,55 @@ class DaemonService:
                 ("unit", "Writing the service definition"),
                 ("load", f"Loading it into {'launchd' if darwin else 'systemd'}"),
                 ("verify", "Checking that it is loaded"),
-                *([("notifier", NOTIFIER_STEP)] if darwin and self._install_notifier else []),
+                *([("notifier", NOTIFIER_STEP)] if darwin and notifier and self._install_notifier else []),
             ],
         )
         self._require_desktop_session(phases)
-        private_dir(self.log_path.parent)
-        before = {path: path.read_bytes() if path.exists() else None for path in files}
-        with phases.step("unit", "Writing the service definition"):
-            for path, content in files.items():
-                write_private(path, content, shared_dir=True)  # 0600: launchd and systemd read user units as the user
+        if self._capture_install_files() != original or self.owned_manager_state(executable.parent) != previous:
+            msg = "The daemon changed before installation; nothing was replaced."
+            raise HeinzelError(msg)
+        token = secrets.token_hex(32)
+        pending = _handover_absolute_path(self.state_dir / "handover-pending.json")
+        private_write(pending, json.dumps({"token": token}, indent=2) + "\n")
+        candidate = {
+            **files,
+            self.state_dir / "install.json": json.dumps(
+                {
+                    "interval_minutes": minutes,
+                    "executable": str(executable),
+                    "platform": self._platform,
+                    "installed_at": self._clock().isoformat(),
+                    "version": __version__,
+                    "profile": profile_digest(self._profile),
+                },
+                indent=2,
+            )
+            + "\n",
+        }
         try:
-            self._load_and_verify(phases, commands)
-        except HeinzelError as exc:
-            self._restore_units(before)
-            msg = f"{exc} The service file was put back as it was, so nothing starts at login because of this."
+            with phases.step("unit", "Writing the service definition"):
+                private_directory(log_directory)
+                self._replace_install_files(original, candidate)
+            self._load_and_verify(phases, commands, executable, wanted)
+        except (HeinzelError, OSError) as exc:
+            restored = self._recover_install(original, executable, previous)
+            if restored:
+                pending.unlink()
+            detail = (
+                "The previous files and activation were verified restored."
+                if restored
+                else "Recovery is uncertain; its pending gate was retained. Inspect the user service before retrying."
+            )
+            msg = f"The daemon installation did not complete. {detail}"
             raise HeinzelError(msg) from exc
-        # This marker is used to refuse new schedule approvals when an older daemon may still be running. Write it
-        # only after the service manager accepted the load/reload commands, so a failed replacement stays fail-closed.
-        self._write_state(
-            "install.json",
-            {
-                "interval_minutes": minutes,
-                "executable": str(executable),
-                "platform": self._platform,
-                "installed_at": self._clock().isoformat(),
-                "version": __version__,
-            },
-        )
-        (self.state_dir / "handover-pending.json").unlink(missing_ok=True)
-        (self.state_dir / "handover-request.json").unlink(missing_ok=True)
-        self._set_up_notifier(phases)
-        hint = LOGIN_ITEM_HINT if self._platform == "darwin" and not self._notifier_installed() else None
+        if not self._mutation_token_matches(token, "handover-pending.json"):
+            msg = "The daemon installation writer changed; explicit recovery is required."
+            raise HeinzelError(msg)
+        pending.unlink()
+        fsync_dir(pending.parent)
+        if notifier:
+            self._set_up_notifier(phases)
+        hint = LOGIN_ITEM_HINT if darwin and not self._notifier_installed() else None
         return Installed(
             platform=self._platform,
             executable=executable,
@@ -733,25 +784,80 @@ class DaemonService:
             hint=hint,
         )
 
-    def _load_and_verify(self, phases: Phases, commands: list[list[str]]) -> None:
-        """Hand the written unit to the service manager and check that it lists it as loaded.
+    def _replace_install_files(self, original: dict[Path, bytes | None], selected: dict[Path, str]) -> None:
+        expected = dict(original)
+        for path, content in selected.items():
+            if self._capture_install_files() != expected:
+                msg = "A daemon definition changed before replacement; explicit recovery is required."
+                raise HeinzelError(msg)
+            if path.name == "install.json":
+                private_write(_handover_absolute_path(path), content)
+            else:
+                write_private(path, content, shared_dir=True)
+            expected[path] = content.encode()
+
+    def _install_commands(self, previous: ManagerState, wanted: ManagerState) -> list[list[str]]:
+        if self._platform == "darwin":
+            return [
+                *([["/bin/launchctl", "bootout", f"gui/{self._uid()}/{LABEL}"]] if previous.registered else []),
+                *(
+                    [["/bin/launchctl", "bootstrap", f"gui/{self._uid()}", str(plist_path(self.unit_dir))]]
+                    if wanted.registered
+                    else []
+                ),
+            ]
+        timer = f"{SYSTEMD_NAME}.timer"
+        return [
+            ["/usr/bin/systemctl", "--user", "daemon-reload"],
+            ["/usr/bin/systemctl", "--user", "enable" if wanted.enabled else "disable", timer],
+            ["/usr/bin/systemctl", "--user", "restart" if wanted.active else "stop", timer],
+        ]
+
+    def _load_and_verify(
+        self, phases: Phases, commands: list[list[str]], executable: Path, wanted: ManagerState
+    ) -> None:
+        """Require the actual manager's selected argv/profile and activation after each owned replacement.
 
         Raises:
-            HeinzelError: If a load command fails or the manager does not list the unit as loaded.
+            HeinzelError: If the manager refuses, changes identity, or does not expose the expected registration.
         """
-        darwin = self._platform == "darwin"
-        with phases.step("load", f"Loading it into {'launchd' if darwin else 'systemd'}"):
-            if darwin:  # bootstrap fails on a loaded agent; unload the old one first
-                self._runner(self._command("launchctl", "bootout", f"gui/{self._uid()}/{LABEL}"))
+        with phases.step("load", "Loading the owned service definition"):
             for command in commands:
-                result = self._runner(command)
+                self.owned_manager_state(executable.parent)
+                result = self.owned_manager_command(command)
                 if result.returncode != 0:
-                    msg = f"`{' '.join(command)}` failed: {(result.stderr or result.stdout).strip()}"
+                    msg = "The verified user manager refused the daemon change."
                     raise HeinzelError(msg)
-        with phases.step("verify", "Checking that it is loaded"):
-            if not self._loaded():
-                msg = f"The service manager took the unit but does not list it as loaded: {LOAD_FIX}"
+        with phases.step("verify", "Checking the owned loaded identity"):
+            observed = self.owned_manager_state(executable.parent)
+            if (observed.registered, observed.active, observed.enabled) != (
+                wanted.registered,
+                wanted.active,
+                wanted.enabled,
+            ):
+                msg = "The manager did not confirm the selected daemon registration and profile."
                 raise HeinzelError(msg)
+
+    def _recover_install(self, original: dict[Path, bytes | None], executable: Path, previous: ManagerState) -> bool:
+        try:
+            current = self.owned_manager_state(executable.parent)
+            if current.pid is not None:
+                return False
+            if self._platform == "darwin" and current.registered:
+                stopped = self.owned_manager_command(["/bin/launchctl", "bootout", f"gui/{self._uid()}/{LABEL}"])
+                if stopped.returncode != 0 or self.owned_manager_state(executable.parent).registered:
+                    return False
+            restoring = self._capture_install_files()
+            self._restore_units(original, expected=restoring)
+            for command in self._install_commands(
+                ManagerState(registered=False, active=False, enabled=False), previous
+            ):
+                result = self.owned_manager_command(command)
+                if result.returncode != 0:
+                    return False
+            return self._capture_install_files() == original and self.owned_manager_state(executable.parent) == previous
+        except (OSError, ValueError, HeinzelError):
+            return False
 
     def _launchd_session(self) -> str | None:
         """The launchd session this process runs in (`Aqua` on the desktop), or None when launchctl doesn't say."""
@@ -780,13 +886,24 @@ class DaemonService:
                 )
                 raise HeinzelError(msg)
 
-    def _restore_units(self, before: dict[Path, bytes | None]) -> None:
-        """Put the unit files back as they were before a failed install, so a failure registers nothing."""
+    def _restore_units(self, before: dict[Path, bytes | None], *, expected: dict[Path, bytes | None]) -> None:
+        """Restore captured bytes only while every currently observed entry remains unchanged.
+
+        Raises:
+            HeinzelError: If another writer changed an entry before recovery.
+        """
         for path, content in before.items():
+            if self._capture_install_files() != expected:
+                msg = "The daemon files changed during recovery; no further files were replaced."
+                raise HeinzelError(msg)
             if content is None:
                 path.unlink(missing_ok=True)
+                fsync_dir(path.parent)
+            elif path.name == "install.json":
+                private_write(_handover_absolute_path(path), content.decode())
             else:
-                write_private(path, content.decode("utf-8"), shared_dir=True)
+                write_private(path, content.decode(), shared_dir=True)
+            expected[path] = content
 
     def _set_up_notifier(self, phases: Phases) -> None:
         """Install the native notifier as the last step on macOS; a problem there leaves the daemon installed."""
@@ -810,8 +927,11 @@ class DaemonService:
         Raises:
             HeinzelError: If loading fails.
         """
-        with lock(self.state_dir / "lifecycle.lock") as acquired:
-            if not acquired or self._handover_pending():
+        if self._handover_pending():
+            msg = "The daemon lifecycle requires recovery; inspect it before restarting."
+            raise HeinzelError(msg)
+        with self._lifecycle_writer(), private_lock(_handover_absolute_path(self.state_dir / "tick.lock")):
+            if self._handover_pending():
                 msg = "The daemon lifecycle is changing or requires recovery; inspect it before restarting."
                 raise HeinzelError(msg)
             recorded = self._read_state("install.json")
@@ -831,7 +951,9 @@ class DaemonService:
         if self._platform not in PLATFORMS or not all(path.exists() for path in self._unit_paths()) or self.paused:
             return DaemonHandoverPlan(active=False, platform=self._platform, unit_signature=None)
         signature = self._handover_signature()
-        return DaemonHandoverPlan(self._loaded(), self._platform, signature)
+        binary = self._shim(dry_run=False).parent
+        state = self.owned_manager_state(binary)
+        return DaemonHandoverPlan(state.active, self._platform, signature)
 
     @contextmanager
     def admission_guard(self) -> Generator[None, None, None]:
@@ -945,6 +1067,79 @@ class DaemonService:
         else:
             return True
 
+    def owned_manager_command(self, command: list[str]) -> subprocess.CompletedProcess[str]:
+        """Use only the fixed, bounded manager in this verified user session, before and after the request.
+
+        Raises:
+            HeinzelError: If manager authority changes or the request cannot be observed completely.
+        """
+        expected = "/bin/launchctl" if self._platform == "darwin" else "/usr/bin/systemctl"
+        if self._platform not in PLATFORMS or not command or command[0] != expected:
+            msg = "The daemon request is not addressed to the fixed local user manager."
+            raise HeinzelError(msg)
+        identity = self._linux_manager_identity() if self._platform == "linux" else None
+        if (self._platform == "linux" and identity is None) or (
+            self._platform == "darwin" and not self._mac_session_verified()
+        ):
+            msg = "The daemon's user service manager cannot be verified; nothing was changed."
+            raise HeinzelError(msg)
+        result = self._quiescence_probe(command)
+        stable = (
+            self._linux_manager_identity() == identity if self._platform == "linux" else self._mac_session_verified()
+        )
+        if not stable or result.truncated or result.returncode is None:
+            msg = "The daemon manager request is uncertain; inspect its actual state before retrying."
+            raise HeinzelError(msg)
+        return subprocess.CompletedProcess(command, result.returncode, result.stdout, result.stderr)
+
+    def owned_unit_state(self, binary: Path, *, allow_absent: bool = False) -> bool:
+        """Whether exact safe files, receipt, profile and tool authority agree; absence is explicit."""
+        present = not all(_safely_absent(path) for path in (*self._unit_paths(), self.state_dir / "install.json"))
+        return (present or allow_absent) and self._quiescence_unit_state(binary)
+
+    def owned_manager_state(self, binary: Path) -> ManagerState:
+        """Observe an owned registration and activation, or verified absence, with its current tick PID.
+
+        Raises:
+            HeinzelError: If files, manager argv/profile or user-session authority cannot be verified.
+        """
+        if not self.owned_unit_state(binary, allow_absent=True):
+            msg = "The daemon files belong to another profile or were changed; nothing was changed."
+            raise HeinzelError(msg)
+        executable = binary / "hz"
+        environment = tick_environment(executable, self._profile)
+        if self._platform == "darwin":
+            result = self.owned_manager_command(["/bin/launchctl", "print", f"gui/{self._uid()}/{LABEL}"])
+            if result.returncode != 0:
+                records = self.owned_manager_command(["/bin/launchctl", "list"])
+                listing = _launchctl_records(records.stdout) if records.returncode == 0 else None
+                if listing is None or LABEL in listing:
+                    msg = "The daemon's manager registration is unknown; nothing was changed."
+                    raise HeinzelError(msg)
+                return ManagerState(registered=False, active=False, enabled=False)
+            state = launchd_owned(result.stdout, plist_path(self.unit_dir), executable, environment)
+        else:
+            outputs: list[str] = []
+            for unit in (f"{SYSTEMD_NAME}.service", f"{SYSTEMD_NAME}.timer"):
+                result = self.owned_manager_command(
+                    [
+                        "/usr/bin/systemctl",
+                        "--user",
+                        "show",
+                        unit,
+                        "--property=Id,LoadState,FragmentPath,DropInPaths,ExecStart,Triggers,Environment,WorkingDirectory,ActiveState,UnitFileState,MainPID,ControlPID,Job",
+                    ]
+                )
+                if result.returncode != 0:
+                    msg = "The daemon's user manager unit cannot be inspected; nothing was changed."
+                    raise HeinzelError(msg)
+                outputs.append(result.stdout)
+            state = systemd_owned(outputs[0], outputs[1], systemd_paths(self.unit_dir), executable, environment)
+        if state.registered and not self.owned_unit_state(binary):
+            msg = "A daemon label is loaded without this profile's exact owned files; nothing was changed."
+            raise HeinzelError(msg)
+        return state
+
     def _quiescence_unit_state(self, binary: Path) -> bool:
         paths = self._unit_paths()
         marker = self.state_dir / "install.json"
@@ -960,7 +1155,8 @@ class DaemonService:
             executable = binary / "hz"
             minutes = recorded.get("interval_minutes")
             if (
-                recorded.get("executable") != str(executable)
+                recorded.get("profile") != profile_digest(self._profile)
+                or recorded.get("executable") != str(executable)
                 or recorded.get("platform") != self._platform
                 or type(minutes) is not int
                 or minutes <= 0
@@ -1335,15 +1531,20 @@ class DaemonService:
             raise HeinzelError(msg)
         if not previous.active or previous.platform != self._platform or previous.unit_signature is None:
             return DaemonHandoverRequest(requested=False, reason="The service was not active before the change.")
-        current = self.capture_handover()
+        try:
+            current = self.capture_handover()
+        except (OSError, HeinzelError):
+            return DaemonHandoverRequest(
+                requested=False, reason="The owned service identity changed; no handover was requested."
+            )
         if not current.active or current.unit_signature != previous.unit_signature:
             return DaemonHandoverRequest(
                 requested=False, reason="The service state changed; no handover was requested."
             )
         if self._platform == "darwin":
-            command = self._command("launchctl", "kickstart", f"gui/{self._uid()}/{LABEL}")
+            command = ["/bin/launchctl", "kickstart", f"gui/{self._uid()}/{LABEL}"]
         else:
-            command = self._command("systemctl", "--user", "try-restart", f"{SYSTEMD_NAME}.timer")
+            command = ["/usr/bin/systemctl", "--user", "try-restart", f"{SYSTEMD_NAME}.timer"]
         request_id = secrets.token_hex(32)
         boot = self._current_boot_identity()
         fence = self._current_birth_fence()
@@ -1355,7 +1556,7 @@ class DaemonService:
         if fence is not None:
             data.update({f"birth_{key}": value for key, value in fence.items()})
         self._write_state("handover-request.json", data)
-        result = self._runner(command)
+        result = self.owned_manager_command(command)
         if result.returncode != 0:
             msg = f"The daemon handover request failed: {(result.stderr or result.stdout).strip()}"
             raise HeinzelError(msg)
@@ -1498,42 +1699,92 @@ class DaemonService:
         Raises:
             HeinzelError: If another lifecycle writer is active or uninstall fails.
         """
-        with lock(self.state_dir / "lifecycle.lock") as acquired:
-            if not acquired or self._handover_pending():
+        if self._handover_pending():
+            msg = "The daemon lifecycle requires recovery; inspect it before uninstalling."
+            raise HeinzelError(msg)
+        paths = (*self._unit_paths(), self.state_dir / "install.json")
+        if all(_safely_absent(path) for path in paths):
+            return Uninstalled(removed=[], commands=[])
+        executable = self._shim(dry_run=False)
+        self.owned_manager_state(executable.parent)
+        with (
+            self._lifecycle_writer(),
+            private_lock(_handover_absolute_path(self.state_dir / "tick.lock")),
+        ):
+            if self._handover_pending():
                 msg = "The daemon lifecycle is changing or requires recovery; inspect it before uninstalling."
                 raise HeinzelError(msg)
             return self._uninstall_locked()
 
     def _uninstall_locked(self) -> Uninstalled:
-        """Unload and remove the unit; receipts, logs and the pause flag stay. Nothing to do is not an error.
+        """Stop only an exact owned profile and remove its unchanged definitions; pause/data remain.
 
         Raises:
-            HeinzelError: On an unsupported platform.
+            HeinzelError: If files, manager state or final cleanup cannot be verified.
         """
-        paths = [path for path in self._unit_paths() if path.exists()]
-        if not paths:
-            return Uninstalled(removed=[], commands=[])
+        executable = self._shim(dry_run=False)
+        before = self._capture_install_files()
+        previous = self.owned_manager_state(executable.parent)
+        if previous.pid is not None:
+            msg = "A daemon tick is still running; no service or files were removed."
+            raise HeinzelError(msg)
         phases = Phases(
             self._kernel.resolve(Progress),
-            [("unload", "Stopping the service"), ("remove", "Removing the service definition")],
+            [("unload", "Stopping the owned service"), ("remove", "Removing the owned service definition")],
         )
-        if self._platform == "darwin":
-            commands = [self._command("launchctl", "bootout", f"gui/{self._uid()}/{LABEL}")]
-        else:
-            commands = [self._command("systemctl", "--user", "disable", "--now", f"{SYSTEMD_NAME}.timer")]
-        with phases.step("unload", "Stopping the service"):
-            for command in commands:  # failing because it wasn't loaded is fine: the goal is that it isn't
-                self._runner(command)
-        with phases.step("remove", "Removing the service definition"):
-            for path in paths:
-                path.unlink()
+        commands: list[list[str]] = []
+        token = secrets.token_hex(32)
+        pending = _handover_absolute_path(self.state_dir / "handover-pending.json")
+        private_write(pending, json.dumps({"token": token}, indent=2) + "\n")
+        with phases.step("unload", "Stopping the owned service"):
+            if previous.registered:
+                command = (
+                    ["/bin/launchctl", "bootout", f"gui/{self._uid()}/{LABEL}"]
+                    if self._platform == "darwin"
+                    else ["/usr/bin/systemctl", "--user", "disable", "--now", f"{SYSTEMD_NAME}.timer"]
+                )
+                if self._capture_install_files() != before or self.owned_manager_state(executable.parent) != previous:
+                    msg = "The daemon changed before stopping; its files were retained."
+                    raise HeinzelError(msg)
+                commands.append(command)
+                self.owned_manager_command(command)
+            stopped = self.owned_manager_state(executable.parent)
+            if stopped.active or stopped.pid is not None or (self._platform == "darwin" and stopped.registered):
+                msg = "The daemon is not confirmed stopped; its definitions and recovery gate were retained."
+                raise HeinzelError(msg)
+        removed: list[Path] = []
+        with phases.step("remove", "Removing the owned service definition"):
+            removed = self._remove_install_files(before)
             if self._platform == "linux":
-                reload = self._command("systemctl", "--user", "daemon-reload")
-                self._runner(reload)
-                commands.append(reload)
-        (self.state_dir / "install.json").unlink(missing_ok=True)
-        (self.state_dir / "handover-pending.json").unlink(missing_ok=True)
-        return Uninstalled(removed=paths, commands=commands)
+                command = ["/usr/bin/systemctl", "--user", "daemon-reload"]
+                commands.append(command)
+                if self.owned_manager_command(command).returncode != 0:
+                    msg = "The definitions were removed but manager reload is uncertain; inspect its local state."
+                    raise HeinzelError(msg)
+            if self.owned_manager_state(executable.parent).registered:
+                msg = "The daemon manager registration is not confirmed removed; explicit recovery is required."
+                raise HeinzelError(msg)
+        if not self._mutation_token_matches(token, "handover-pending.json"):
+            msg = "The daemon removal writer changed; explicit recovery is required."
+            raise HeinzelError(msg)
+        pending.unlink()
+        fsync_dir(pending.parent)
+        return Uninstalled(removed=removed, commands=commands)
+
+    def _remove_install_files(self, before: dict[Path, bytes | None]) -> list[Path]:
+        removed: list[Path] = []
+        expected = dict(before)
+        for path, payload in before.items():
+            if self._capture_install_files() != expected:
+                msg = "The owned daemon files changed during removal; explicit recovery is required."
+                raise HeinzelError(msg)
+            if payload is not None:
+                path.unlink()
+                fsync_dir(path.parent)
+                if path.name != "install.json":
+                    removed.append(path)
+            expected[path] = None
+        return removed
 
     # Inspecting ------------------------------------------------------------------------------------------------------
 
@@ -1558,10 +1809,20 @@ class DaemonService:
             or (installed_version is not None and installed_version != __version__)
             or (version is not None and installed_version is not None and version != installed_version)
         )
+        owned = False
+        loaded = False
+        try:
+            executable = self._shim(dry_run=not installed) if installed else None
+            owned = executable is not None and not self._handover_pending() and self.owned_unit_state(executable.parent)
+            if owned and executable is not None:
+                loaded = self.owned_manager_state(executable.parent).active
+        except (OSError, ValueError, HeinzelError):
+            owned = False
         return DaemonStatus(
+            owned=owned,
             platform=self._platform,
             installed=installed,
-            loaded=installed and self._loaded(),
+            loaded=loaded,
             paused=self.paused,
             interval_minutes=int(recorded["interval_minutes"]) if "interval_minutes" in recorded else None,
             executable=Path(str(recorded["executable"])) if "executable" in recorded else None,
@@ -1623,6 +1884,15 @@ class DaemonService:
         if not status.installed:
             checks = [
                 Check(name="daemon", status=Status.UP, detail="not installed; `hz system daemon install` runs jobs")
+            ]
+        elif not status.owned:
+            checks = [
+                Check(
+                    name="daemon",
+                    status=Status.DEGRADED,
+                    detail="the service files or manager identity are not verified for this selected profile",
+                    fix="Inspect the user service manager and selected profile before changing the existing files",
+                )
             ]
         elif not status.loaded:
             checks = [
@@ -2149,27 +2419,12 @@ class DaemonService:
         Any missing, malformed, unsupported or failed query remains unknown and cannot attest this invocation.
         """
         try:
-            if self._platform == "darwin":
-                command = self._command("launchctl", "list", LABEL)
-                parser = "launchd"
-            elif self._platform == "linux":
-                command = self._command(
-                    "systemctl",
-                    "--user",
-                    "show",
-                    f"{SYSTEMD_NAME}.service",
-                    "--property=MainPID",
-                    "--value",
-                )
-                parser = "systemd"
-            else:
-                return None
-            result = self._runner(command)
+            binary = self._shim(dry_run=False).parent
+            state = self.owned_manager_state(binary)
         except (OSError, HeinzelError):
             return None
-        if result.returncode != 0:
-            return None
-        return _launchd_pid(result.stdout, LABEL) if parser == "launchd" else _reported_pid(result.stdout)
+        else:
+            return state.pid if state.registered else None
 
     def _timestamp(self, name: str, key: str) -> datetime | None:
         value = self._read_state(name).get(key)
@@ -2210,18 +2465,26 @@ class DaemonService:
         Raises:
             HeinzelError: If uv fails, or (unless `dry_run`) hz isn't installed as a uv tool.
         """
+        installation = self._quiescence_installation
+        if installation is not None:
+            try:
+                data = tomllib.loads(installation.receipt().decode())
+                entries = [entry for entry in data["tool"]["entrypoints"] if entry.get("name") == "hz"]
+                (entry,) = entries
+                executable = Path(entry["install-path"])
+                installation.verify_tool_destination(installation.prefix.parent, executable.parent)
+            except (OSError, ValueError, KeyError, TypeError, HeinzelError) as exc:
+                msg = "The daemon's selected uv tool cannot be verified; nothing was installed."
+                raise HeinzelError(msg) from exc
+            return executable
+        if not dry_run:
+            msg = "The daemon needs a verified uv tool installation; use `uv tool install heinzel` first."
+            raise HeinzelError(msg)
         result = self._runner(self._command("uv", "tool", "dir", "--bin"))
         if result.returncode != 0:
             msg = f"`uv tool dir --bin` failed: {result.stderr.strip()}"
             raise HeinzelError(msg)
-        shim = Path(result.stdout.strip()) / "hz"
-        if not shim.exists() and not dry_run:
-            msg = (
-                f"{shim} doesn't exist. The daemon runs the uv tool installation of hz: "
-                "`uv tool install git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel`."
-            )
-            raise HeinzelError(msg)
-        return shim
+        return Path(result.stdout.strip()) / "hz"
 
     def _unit_paths(self) -> list[Path]:
         if self._platform == "darwin":
@@ -2234,8 +2497,8 @@ class DaemonService:
     def _unit_files(self, executable: Path, minutes: int) -> dict[Path, str]:
         paths = self._unit_paths()
         if self._platform == "darwin":
-            return {paths[0]: launchd_plist(executable, minutes, self.log_path.parent)}
-        return {paths[0]: systemd_service(executable), paths[1]: systemd_timer(minutes)}
+            return {paths[0]: launchd_plist(executable, minutes, self.log_path.parent, self._profile)}
+        return {paths[0]: systemd_service(executable, self._profile), paths[1]: systemd_timer(minutes)}
 
     def _load_commands(self) -> list[list[str]]:
         if self._platform == "darwin":
