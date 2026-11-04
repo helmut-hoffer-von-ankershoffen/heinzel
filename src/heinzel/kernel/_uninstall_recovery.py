@@ -395,6 +395,7 @@ def _owned_unlink(row: dict[str, Any]) -> None:
 
 def _finish_owned_links(journal: dict[str, Any]) -> None:
     for row in journal["links"]:
+        _require_gate(journal)
         path = Path(row["path"])
         if not os.path.lexists(path):
             continue
@@ -416,7 +417,58 @@ def _finish_owned_links(journal: dict[str, Any]) -> None:
             os.close(directory)
 
 
+def _require_gate(journal: dict[str, Any]) -> None:
+    if read(Path(journal["gate"]), 1024).decode() != journal["gate_content"]:
+        msg = "The installation recovery gate changed"
+        raise ValueError(msg)
+
+
+def _finished_targets(journal: dict[str, Any]) -> None:
+    paths = [Path(journal["prefix"]), *(Path(name) for name in journal["entrypoints"])]
+    paths.extend(Path(row["path"]) for row in journal["files"])
+    for path in paths:
+        physical(path.parent, private=False)
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            continue
+        msg = "The absent recovery gate does not authorize unfinished cleanup"
+        raise ValueError(msg)
+
+
+def _gate_authority(journal: dict[str, Any]) -> bool:
+    try:
+        _require_gate(journal)
+    except FileNotFoundError:
+        if journal["phase"] not in {"removed", "complete"}:
+            msg = "The recovery gate is missing before finished cleanup"
+            raise ValueError(msg) from None
+        _finished_targets(journal)
+        return False
+    if journal["phase"] == "complete":
+        _finished_targets(journal)
+    return True
+
+
+def _resume_finished(journal: dict[str, Any], path: Path) -> None:
+    # A crash after gate unlink may leave phase=removed. This path never invokes uv or any unlink helper.
+    managers_absent(journal)
+    _finished_targets(journal)
+    gate = Path(journal["gate"])
+    try:
+        gate.lstat()
+    except FileNotFoundError:
+        pass
+    else:
+        msg = "The installation recovery gate changed"
+        raise ValueError(msg)
+    sync(gate.parent)
+    journal["phase"] = "complete"
+    write(path, journal)
+
+
 def _remove_remaining(journal: dict[str, Any], path: Path) -> None:
+    _require_gate(journal)
     physical(Path(journal["prefix"]).parent, private=False)
     physical(Path(journal["environment"]["UV_TOOL_BIN_DIR"]), private=False)
     prefix = Path(journal["prefix"])
@@ -440,6 +492,7 @@ def _remove_remaining(journal: dict[str, Any], path: Path) -> None:
             raise ValueError(msg)
         journal["phase"] = "removing"
         write(path, journal)
+        _require_gate(journal)
         result = subprocess.run(  # noqa: S603 - authority-hashed private binary, pinned tool directories and fixed offline args
             [str(uv), "--offline", "--no-config", "--no-python-downloads", "tool", "uninstall", "heinzel"],
             env=journal["environment"],
@@ -450,25 +503,25 @@ def _remove_remaining(journal: dict[str, Any], path: Path) -> None:
         if result.returncode or os.path.lexists(prefix):
             msg = "Offline uv removal remains incomplete"
             raise ValueError(msg)
+    _require_gate(journal)
     _finish_owned_links(journal)
     sync(prefix.parent)
     sync(Path(journal["environment"]["UV_TOOL_BIN_DIR"]))
 
 
 def _finish_cleanup(journal: dict[str, Any], path: Path) -> None:
+    _require_gate(journal)
     journal["phase"] = "removed"
     write(path, journal)
     managers_absent(journal)
     for row in journal["files"]:
+        _require_gate(journal)
         _owned_unlink(row)
     if journal["platform"] == "linux":
         _manager(["/usr/bin/systemctl", "--user", "daemon-reload"], "linux")
     gate = Path(journal["gate"])
-    if os.path.lexists(gate):
-        if read(gate, 1024).decode() != journal["gate_content"]:
-            msg = "The installation recovery gate changed"
-            raise ValueError(msg)
-        gate.unlink()
+    _require_gate(journal)
+    gate.unlink()
     sync(gate.parent)
     journal["phase"] = "complete"
     write(path, journal)
@@ -520,6 +573,9 @@ def recover(directory: Path, expected: str = EXPECTED_AUTHORITY) -> dict[str, An
         msg = "Unknown removal phase; inspect its local recovery record"
         raise ValueError(msg)
     with _locks(journal):
+        if not _gate_authority(journal):
+            _resume_finished(journal, path)
+            return journal
         managers_absent(journal)
         for row in journal["files"]:
             _verify_owned(row)

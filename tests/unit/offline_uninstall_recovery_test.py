@@ -317,3 +317,115 @@ def test_recovery_manager_reader_deadline_kills_only_its_own_unfinished_probe(jo
     command = [sys.executable, "-I", "-c", "import time; time.sleep(10)"]
     with pytest.raises(subprocess.TimeoutExpired):
         module._bounded_output(command, {"PATH": "/usr/bin:/bin"}, deadline=time.monotonic() + 0.05)
+
+
+@pytest.mark.parametrize("phase", ["prepared", "stopped", "removing", "removed", "complete"])
+@pytest.mark.parametrize("gate", ["foreign", "missing", "linked"])
+def test_copied_recovery_rejects_lost_gate_authority_before_any_effect(journal, monkeypatch, phase, gate):
+    record, tool, unit = journal
+    record.phase(phase)
+    module = copy_module(record)
+    links = {path: path.readlink() for path in tool.tool_entrypoints()}
+    foreign = '{"token":"another-unfinished-operation"}\n'
+    if gate == "foreign":
+        record.gate.write_text(foreign)
+    elif gate == "missing":
+        record.gate.unlink()
+    else:
+        target = record.gate.with_suffix(".foreign")
+        target.write_text(record.gate_content)
+        record.gate.unlink()
+        record.gate.symlink_to(target)
+    calls = []
+    monkeypatch.setattr(module, "managers_absent", lambda journal: None)
+    monkeypatch.setattr(module.subprocess, "run", successful_uv(tool, calls))
+    with pytest.raises((ValueError, OSError)):
+        module.recover(record.directory, module.EXPECTED_AUTHORITY)
+    assert calls == [], "A different or missing operation gate must never authorize uv"
+    assert tool.prefix.is_dir()
+    assert unit.read_text() == "owned definition"
+    assert all(path.is_symlink() and path.readlink() == target for path, target in links.items())
+    if gate == "foreign":
+        assert record.gate.read_text() == foreign
+    elif gate == "missing":
+        assert not record.gate.exists()
+    else:
+        assert record.gate.is_symlink()
+
+
+@pytest.mark.parametrize("phase", ["removed", "complete"])
+def test_absent_gate_resumes_only_observed_finished_cleanup_without_destructive_replay(journal, monkeypatch, phase):
+    record, tool, unit = journal
+    module = copy_module(record)
+    calls = []
+    monkeypatch.setattr(module, "managers_absent", lambda journal: None)
+    monkeypatch.setattr(module.subprocess, "run", successful_uv(tool, calls))
+    module.recover(record.directory, module.EXPECTED_AUTHORITY)
+    assert not record.gate.exists()
+    assert not tool.prefix.exists()
+    assert not unit.exists()
+    record.phase(phase)
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: pytest.fail("No uv after finished cleanup"))
+    monkeypatch.setattr(module, "_owned_unlink", lambda *args: pytest.fail("No integration unlink without a gate"))
+    monkeypatch.setattr(module, "_finish_owned_links", lambda *args: pytest.fail("No command unlink without a gate"))
+    assert module.recover(record.directory, module.EXPECTED_AUTHORITY)["phase"] == "complete"
+    assert len(calls) == 1
+
+
+def test_missing_gate_with_sdk_gone_still_retains_unfinished_owned_cleanup(journal, monkeypatch):
+    record, tool, unit = journal
+    record.phase("removed")
+    module = copy_module(record)
+    for path in tool.tool_entrypoints():
+        path.unlink()
+    shutil.rmtree(tool.prefix)
+    record.gate.unlink()
+    monkeypatch.setattr(module, "managers_absent", lambda journal: None)
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: pytest.fail("No uv without gate authority"))
+    with pytest.raises(ValueError, match="unfinished cleanup"):
+        module.recover(record.directory, module.EXPECTED_AUTHORITY)
+    assert unit.read_text() == "owned definition"
+
+
+def test_gate_change_during_manager_verification_still_precedes_uv_and_unlink(journal, monkeypatch):
+    record, tool, unit = journal
+    module = copy_module(record)
+    foreign = '{"token":"another-unfinished-operation"}\n'
+    monkeypatch.setattr(module, "managers_absent", lambda journal: record.gate.write_text(foreign))
+    calls = []
+    monkeypatch.setattr(module.subprocess, "run", successful_uv(tool, calls))
+    with pytest.raises(ValueError, match="gate changed"):
+        module.recover(record.directory, module.EXPECTED_AUTHORITY)
+    assert calls == []
+    assert tool.prefix.is_dir()
+    assert unit.is_file()
+    assert all(path.is_symlink() for path in tool.tool_entrypoints())
+    assert record.gate.read_text() == foreign
+
+
+@pytest.mark.parametrize("phase", ["prepared", "stopped", "removing"])
+def test_absent_gate_never_infers_a_completed_phase_from_missing_targets(journal, monkeypatch, phase):
+    record, tool, _unit = journal
+    module = copy_module(record)
+    monkeypatch.setattr(module, "managers_absent", lambda journal: None)
+    monkeypatch.setattr(module.subprocess, "run", successful_uv(tool, []))
+    module.recover(record.directory, module.EXPECTED_AUTHORITY)
+    record.phase(phase)
+    monkeypatch.setattr(module.subprocess, "run", lambda *args, **kwargs: pytest.fail("No destructive replay"))
+    with pytest.raises(ValueError, match="gate is missing"):
+        module.recover(record.directory, module.EXPECTED_AUTHORITY)
+
+
+def test_completed_journal_with_matching_gate_cannot_replay_a_present_sdk(journal, monkeypatch):
+    record, tool, unit = journal
+    record.phase("complete")
+    module = copy_module(record)
+    calls = []
+    monkeypatch.setattr(module, "managers_absent", lambda journal: None)
+    monkeypatch.setattr(module.subprocess, "run", successful_uv(tool, calls))
+    with pytest.raises(ValueError, match="unfinished cleanup"):
+        module.recover(record.directory, module.EXPECTED_AUTHORITY)
+    assert calls == []
+    assert tool.prefix.is_dir()
+    assert unit.is_file()
+    assert record.gate.read_text() == record.gate_content
