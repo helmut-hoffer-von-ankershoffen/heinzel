@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from heinzel import Config, HeinzelError, Settings
-from heinzel.kernel._config import user_config_dir
+from heinzel.kernel import user_config_dir
 
 LABEL = "io.github.helmut-hoffer-von-ankershoffen.heinzel.calendar-reminders"
 LAUNCHCTL_NO_SERVICE = 113

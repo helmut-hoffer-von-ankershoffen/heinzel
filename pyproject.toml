@@ -1,6 +1,6 @@
 [project]
 name = "heinzel"
-version = "0.9.14"
+version = "0.9.15"
 description = "An open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine."
 readme = "PYPI.md"
 authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
@@ -45,6 +45,8 @@ Changelog = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main
 Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
 
 [dependency-groups]
+# Isolated wheel and editable backends, prepared before builds (ADR 0125); never runtime dependencies.
+build = ["hatchling>=1.32.4", "editables>=0.5", "nodejs-wheel-binaries==24.19.0"]
 # What the unit, integration and e2e tests need, and no more: CI installs only this group for the test matrix.
 test = ["coverage>=7.12", "httpx>=0.28", "hypothesis>=6.140", "jsonschema>=4.26", "markdown>=3.10", "pydantic-ai-slim[openai]==2.61.0", "prek>=0.2", "pytest>=9.0.3,<10", "pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8", "types-psutil>=7.2.2.20260906"]
 # Fuzzing the contract parser (`make fuzz`, weekly in CI); atheris has wheels for x86_64 Linux, Python 3.12 to 3.14.
@@ -233,7 +235,7 @@ example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
 [tool.bumpversion]
-current_version = "0.9.14"
+current_version = "0.9.15"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = false

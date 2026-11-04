@@ -8,6 +8,7 @@ import {
   Cpu,
   Download,
   FileCog,
+  Globe,
   KeyRound,
   type LucideIcon,
   Palette,
@@ -151,6 +152,14 @@ export const PAGES: Page[] = [
     heading: "computer",
     owns: ["system.credential"],
     keywords: "credentials secrets keychain tokens",
+  },
+  {
+    id: "web-server",
+    title: "Web server",
+    icon: Globe,
+    heading: "computer",
+    owns: [],
+    keywords: "restart reconnect browser ui service",
   },
   {
     id: "daemon",

@@ -274,8 +274,8 @@ class RunningService:
 
     def ready(self, previous=None):
         status = None
-        deadline = time.monotonic() + 6
-        self.ready_started = deadline - 6
+        deadline = time.monotonic() + 12
+        self.ready_started = deadline - 12
         self.control_failure = None
         self.control_failure_count = 0
         changed = threading.Event()
@@ -318,7 +318,7 @@ class RunningService:
         }
 
     def publication_evidence(self, *, initial):
-        """Observe only after the unchanged readiness deadline has already failed."""
+        """Observe only after the readiness deadline has already failed."""
         cpu = self.startup_cpu()
         pending = list(islice(self.service.directory.glob(".runtime.json.*"), 4))
         result = {"cpu": cpu, "runtime_present": self.service.runtime.exists(), "pending_writes": len(pending)}

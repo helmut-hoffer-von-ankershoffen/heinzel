@@ -19,9 +19,9 @@ PYPROJECT_HEAD = ROOT / "scripts" / "template_pyproject_head.toml.tmpl"
 
 
 def _one_e2e_suite(text: str) -> str:
-    """The core splits its browser E2E files from the rest for CI (SUITE=cli|web); a plugin runs one suite."""
+    """Core separates supervised, CLI and browser E2E lanes; a plugin runs one complete suite."""
     return re.sub(
-        r"# The browser E2E files[^\n]*\n(?:[^\n]*\n)*?test-e2e:[^\n]*\n(?:\t[^\n]*\n)+",
+        r"# Core E2E lanes[^\n]*\n(?:[^\n]*\n)*?test-e2e:[^\n]*\n(?:\t[^\n]*\n)+",
         "test-e2e: ## Run end-to-end tests (needs network), on 3 workers\n"
         '\t@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"\n'
         '\t$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x"\n',
@@ -31,7 +31,13 @@ def _one_e2e_suite(text: str) -> str:
 
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
-    text = (ROOT / "Makefile").read_text(encoding="utf-8")
+    text = (
+        (ROOT / "Makefile")
+        .read_text(encoding="utf-8")
+        .replace("\tuv run --quiet --script scripts/build.py prepare\n", "")
+        .replace("uv run --quiet --script scripts/build.py sync", "uv sync --frozen --all-groups --quiet")
+        .replace("uv run --quiet --script scripts/build.py", "uv build")
+    )
     # Hook runner is repository tooling, not a plugin test dependency or part of its runtime closure.
     text = text.replace("uv run --quiet prek install", "uv tool run --from prek==0.5.7 prek install")
     text = text.replace(" template-test template-sync docs attributions fuzz demo", "")
@@ -210,9 +216,9 @@ def ci_workflow() -> str:
     # The template has no changed-path job; keep the E2E matrix as is, without core-only gating.
     text = text.replace("    needs: changes\n", "")
     text = re.sub(r"(?m)^    if: .*needs\.changes\.outputs\.core[^\n]*\n", "", text)
-    # A plugin has no browser E2E files to split off, so its E2E job stays one per OS.
+    # Core supervised/browser partitions do not exist in plugins: keep one complete E2E job per OS.
     text = text.replace("End-to-end ${{ matrix.suite }} (", "End-to-end (")
-    text = re.sub(r"(?m)^        # Three jobs per OS[^\n]*\n        suite: \[cli, web-1, web-2\]\n", "", text)
+    text = re.sub(r"(?m)^        # Core E2E lanes:[^\n]*\n        suite: \[cli, supervised, web-1, web-2\]\n", "", text)
     text = re.sub(r"(?m)^        if: startsWith\(matrix\.suite, 'web'\)\n", "", text)
     text = text.replace("make test-e2e SUITE=${{ matrix.suite }}", "make test-e2e")
     text = text.replace("    needs: notifier\n", "")
@@ -256,7 +262,7 @@ def ci_workflow() -> str:
         ),
         text,
     )
-    # The core's CI covers every platform of the shared scripts/tools.toml; a plugin, possibly private and paying for
+    # Core CI covers Linux architectures and Apple-silicon macOS; a plugin, possibly private and paying for
     text = text.replace("    needs: []\n", "")
     # its minutes, sets up on the two most contributors use.
     text = re.sub(
@@ -297,6 +303,7 @@ def pyproject() -> str:
         '"pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8"]',
         dev,
     )
+    dev = re.sub(r"\n# Isolated wheel and editable backends[^\n]*\nbuild = [^\n]*", "", dev)
     # Only Heinzelmännchen itself needs these: the template renderer, its import contracts, its first-party plugin and
     # the type stubs of its own dependencies.
     dev = re.sub(r'\n    "(copier|import-linter|heinzel-[a-z]+>=|types-croniter)[^\n]*', "", dev)

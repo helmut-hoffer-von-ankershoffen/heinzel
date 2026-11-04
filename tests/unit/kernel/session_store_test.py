@@ -390,12 +390,112 @@ def test_a_missing_spine_is_reported_without_losing_its_checkpoint(tmp_path):
         append(sessions)
 
 
-def test_unsafe_directory_permissions_do_not_block_other_sessions_and_restore_cleanly(tmp_path):
+@pytest.mark.parametrize("mode", [0o755, 0o000, 0o300])
+def test_unsafe_directory_permissions_do_not_block_other_sessions_and_restore_cleanly(tmp_path, mode):
     sessions = store(tmp_path)
     append(sessions)
     folder = sessions.root / "one"
-    folder.chmod(0o755)
-    assert append(sessions, session="two").seq == 1
-    assert sessions.heads()[0].problem
-    folder.chmod(0o700)
+    folder.chmod(mode)
+    try:
+        assert append(sessions, session="two").seq == 1
+        assert sessions.heads()[0].problem
+    finally:
+        folder.chmod(0o700)
     assert sessions.read("one").problem is None
+
+
+def test_indexed_listing_validates_open_directories_without_redundant_path_stats(tmp_path, monkeypatch):
+    sessions = store(tmp_path)
+    append(sessions, session="one", data={"state": "waiting"})
+    append(sessions, session="two", data={"state": "asleep"})
+    expected = sessions.heads()
+    original = os.stat
+    spine_stats = []
+
+    def checked(path, *args, **kwargs):
+        if kwargs.get("dir_fd") is not None:
+            assert path not in {"one", "two"}, "Directory metadata must come from its opened no-follow descriptor"
+            if path == "session.jsonl":
+                assert kwargs["follow_symlinks"] is False
+                spine_stats.append(path)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", checked)
+    assert sessions.heads() == expected
+    assert len(spine_stats) == 2  # every spine still gets a fresh descriptor-relative checkpoint stat
+
+
+def test_listing_refuses_a_session_replaced_with_a_symlink_after_enumeration(tmp_path, monkeypatch):
+    sessions = store(tmp_path)
+    append(sessions)
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o700)
+    (outside / "session.jsonl").write_text("untouched")
+    original = os.open
+    attempted = False
+
+    def swapped(path, flags, *args, **kwargs):
+        nonlocal attempted
+        if path == "one" and kwargs.get("dir_fd") is not None:
+            attempted = True
+            assert flags & os.O_DIRECTORY
+            assert flags & os.O_NOFOLLOW
+            (sessions.root / "one").rename(sessions.root / "saved")
+            (sessions.root / "one").symlink_to(outside, target_is_directory=True)
+        return original(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", swapped)
+    with pytest.raises(OSError, match=r"Too many levels of symbolic links|Not a directory"):
+        sessions.heads()
+    assert attempted
+    assert (outside / "session.jsonl").read_text() == "untouched"
+
+
+@pytest.mark.parametrize("mode", [0o000, 0o300])
+def test_unknown_unreadable_unsafe_directories_do_not_block_existing_sessions(tmp_path, mode):
+    sessions = store(tmp_path)
+    append(sessions)
+    folder = sessions.root / "unknown"
+    folder.mkdir(mode=0o700)
+    folder.chmod(mode)
+    try:
+        assert append(sessions, session="two").seq == 1
+        heads = sessions.heads()
+        assert [head.session for head in heads] == ["one", "two"]
+        assert all(head.problem is None for head in heads)
+    finally:
+        folder.chmod(0o700)
+
+
+@pytest.mark.parametrize("replacement", ["private-directory", "symlink", "regular-file"])
+def test_directory_permission_failure_fallback_does_not_hide_private_or_replaced_entries(
+    tmp_path, monkeypatch, replacement
+):
+    sessions = store(tmp_path)
+    append(sessions)
+    original = os.open
+    path = sessions.root / "one"
+
+    def blocked(name, flags, *args, **kwargs):
+        if name == "one" and kwargs.get("dir_fd") is not None:
+            assert flags & os.O_DIRECTORY
+            assert flags & os.O_NOFOLLOW
+            if replacement != "private-directory":
+                path.rename(sessions.root / "saved")
+                if replacement == "symlink":
+                    path.symlink_to(tmp_path / "absent", target_is_directory=True)
+                else:
+                    path.write_text("not a directory")
+                    path.chmod(0o000)
+            msg = "fixture directory open failure"
+            raise PermissionError(msg)
+        return original(name, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", blocked)
+    try:
+        with pytest.raises(PermissionError, match="fixture directory open failure"):
+            sessions.heads()
+    finally:
+        if replacement != "private-directory":
+            path.unlink()
+            (sessions.root / "saved").rename(path)

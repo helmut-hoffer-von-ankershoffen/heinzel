@@ -9,12 +9,19 @@ from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import HeinzelError, Module
-from heinzel.modules.system.plugin.docs._build import build_pages
 from heinzel.modules.system.plugin.docs._models import BuildResult, Documentation
-from heinzel.modules.system.plugin.docs._render import render_documentation
 from heinzel.modules.system.plugin.docs._service import DocsService
+
+
+def render_documentation(documentation: Documentation) -> RenderableType:
+    """The model on a terminal: one table of plugins, then each plugin's operations."""
+    from heinzel.modules.system.plugin.docs._render import render_documentation  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_documentation(documentation)
+
 
 module = Module("docs", "Document installed plugins: what each brings, as a model and as Markdown pages.")
 module.service(DocsService)
@@ -72,6 +79,8 @@ def build(  # noqa: PLR0913, PLR0917 - what to document, where, and how; all wit
         HeinzelError: If `plugin` names no installed plugin, the scenes file is invalid, or with `check` a page is
             out of date (so `make check` fails).
     """
+    from heinzel.modules.system.plugin.docs._build import build_pages  # noqa: PLC0415 - pages are built only by this operation
+
     documentation = service.documentation(plugin=plugin, scenes=_scenes(scenes), builtin=builtin, assets=directory)
     result = build_pages(documentation, directory, index=index, check=check)
     if result.stale:

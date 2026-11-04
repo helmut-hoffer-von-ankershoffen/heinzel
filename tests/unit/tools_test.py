@@ -516,7 +516,7 @@ def test_make_install_installs_the_build_tools_and_puts_them_first_on_path():
     install = re.search(r"^install:.*\n((?:\t.*\n)+)", makefile, re.MULTILINE)
     assert install
     assert "test -f uv.lock || uv lock --quiet" in install[1]
-    assert "uv sync --frozen --all-groups" in install[1]
+    assert "uv run --quiet --script scripts/build.py sync" in install[1]
     assert "$(TOOLS) install" in install[1]
     assert re.search(r"^setup: install\b", makefile, re.MULTILINE)
 

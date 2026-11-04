@@ -14,11 +14,26 @@ from datetime import datetime
 from typing import Annotated
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import Module, TelemetryLog
 from heinzel.modules.telemetry._models import Reported, Synced, SyncedLog, TelemetrySettings
-from heinzel.modules.telemetry._render import render_reported, render_synced
 from heinzel.modules.telemetry._service import TeamTelemetry, TelemetryService
+
+
+def render_reported(reported: Reported) -> RenderableType:
+    """The entry in one line, the log it went to, and what comes next."""
+    from heinzel.modules.telemetry._render import render_reported  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_reported(reported)
+
+
+def render_synced(synced: Synced) -> RenderableType:
+    """Each log copied with its new entries, what couldn't be, and the command that shares them."""
+    from heinzel.modules.telemetry._render import render_synced  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_synced(synced)
+
 
 module = Module(
     "report",

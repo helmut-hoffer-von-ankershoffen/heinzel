@@ -524,7 +524,12 @@ def test_a_plugin_installed_outside_the_running_app_offers_restart_and_apply_in_
     )
     # A throwaway installation of the built wheel: `hz system plugin develop` changes only this environment.
     wheels = tmp_path / "wheels"
-    subprocess.run(["uv", "build", "--quiet", "--wheel", "--out-dir", str(wheels)], cwd=REPO, check=True, timeout=600)
+    subprocess.run(
+        [sys.executable, str(REPO / "scripts/build.py"), "--quiet", "--wheel", "--out-dir", str(wheels)],
+        cwd=REPO,
+        check=True,
+        timeout=600,
+    )
     venv = tmp_path / "venv"
     subprocess.run(["uv", "venv", "--quiet", str(venv)], check=True, timeout=120)
     wheel = next(wheels.glob("*.whl"))

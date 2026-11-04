@@ -15,6 +15,79 @@ from heinzel.modules.system.notify._service import _calendar_keys
 pytestmark = pytest.mark.integration
 
 
+def test_back_to_back_meetings_share_a_deadline_and_recheck_a_rescheduled_next_meeting(
+    make_kernel, settings, monkeypatch
+):
+    from heinzel.modules import org
+
+    class Clock:
+        now = datetime(2026, 11, 4, 10, 24, 59, tzinfo=UTC)
+
+    clock = Clock()
+    boundary = datetime(2026, 11, 4, 10, 30, tzinfo=UTC)
+
+    class Calendar:
+        moved = False
+
+        def events(self, _window):
+            next_start = boundary + timedelta(minutes=45 if Calendar.moved else 0)
+            return [
+                Event(id="current", title="Design review", start=boundary - timedelta(minutes=30), end=boundary),
+                Event(id="next", title="Planning", start=next_start, end=next_start + timedelta(minutes=30)),
+            ]
+
+        def free_busy(self, people, window):
+            return []
+
+    module = Module("fixturecalendar", "Test calendar")
+    module.provides("calendar", modes={"read"})(Calendar)
+    kernel = make_kernel(
+        builtins=True,
+        fixturecalendar=module,
+        config=Config(files=(), data={"capabilities": {"calendar": "fixturecalendar"}}),
+    )
+    monkeypatch.setattr(org, "local_now", lambda _settings: clock.now)
+    client = TestClient(
+        web.build(kernel, port=8000, token="fixture-token", static=None), base_url="http://127.0.0.1:8000"
+    )
+    assert client.get("/api/org/agenda").status_code == 401
+    response = client.get("/api/org/agenda", headers={"Authorization": "Bearer fixture-token"})
+    assert response.status_code == 200
+    assert response.json()["current"]["id"] == "current"
+    assert response.json()["next"]["id"] == "next"
+
+    def service():
+        notify = NotifyService(
+            settings, NotifySettings(calendar=True, native=False, working_hours=False), {}, clock=lambda: clock.now
+        )
+        notify.calendar_valid = lambda instant: _calendar_keys(kernel, instant)
+        return notify
+
+    def read():
+        return kernel.call(agenda)
+
+    notify = service()
+    cycle(read, notify, clock.now, enabled=True)
+    assert notify.recent() == []
+    clock.now += timedelta(seconds=1)
+    cycle(read, notify, clock.now, enabled=True)
+    assert {notice.title for notice in notify.due()} == {"Meeting ends soon", "Meeting starts soon"}
+    assert {notice.at for notice in notify.recent()} == {boundary - timedelta(minutes=5)}
+
+    restarted = service()
+    cycle(read, restarted, clock.now, enabled=True)
+    assert len(restarted.recent()) == 2
+    end_notice = next(notice for notice in restarted.recent() if notice.title == "Meeting ends soon")
+    start_notice = next(notice for notice in restarted.recent() if notice.title == "Meeting starts soon")
+    Calendar.moved = True
+    assert restarted.deliver([start_notice.id], Delivery.WEB) == []
+    delivered = restarted.deliver([end_notice.id], Delivery.WEB)
+    assert [notice.id for notice in delivered] == [end_notice.id]
+    cycle(read, restarted, clock.now, enabled=True)
+    assert next(notice for notice in restarted.recent() if notice.id == start_notice.id).held == "withdrawn"
+    assert len(restarted.recent()) == 2
+
+
 def test_bound_provider_restarts_and_cancellation_suppresses_delivery(make_kernel, settings):
     now = datetime.now(UTC)
     start = now + timedelta(minutes=4)

@@ -213,9 +213,9 @@ def test_installed_first_party_classification_uses_exact_repository_not_reserved
     assert service.installed()[0].first_party is expected
 
 
-def test_add_in_tool_env_reinstalls_with_plugins(make_kernel, tool_env):
+def test_adding_a_new_plugin_changes_requirements_without_refreshing_every_dependency(make_kernel, tool_env):
     assert service_for(make_kernel, tool_env).add_command("git+https://github.com/org/heinzel-new@v1.0.0") == [
-        "uv", "tool", "install", "--reinstall", "--python", PYTHON,
+        "uv", "tool", "install", "--python", PYTHON,
         "heinzel @ git+https://github.com/org/heinzel@v0.1.0",
         "--with", "heinzel-old @ git+https://github.com/org/heinzel-old",
         "--with", "git+https://github.com/org/heinzel-new@v1.0.0",
@@ -226,6 +226,14 @@ def test_add_replaces_older_copy_of_same_plugin(make_kernel, tool_env):
     command = service_for(make_kernel, tool_env).add_command("git+https://github.com/org/heinzel-old@v2.0.0")
     assert command.count("--with") == 1
     assert command[-1] == "git+https://github.com/org/heinzel-old@v2.0.0"
+    assert "--reinstall" in command
+
+
+def test_replacing_a_developed_plugin_still_rebuilds_the_same_source(make_kernel, tool_env, tmp_path):
+    source = f"heinzel-old @ {(tmp_path / 'checkout').as_uri()}"
+    service = service_for(make_kernel, tool_env)
+    service._installation.requirements = lambda: ["heinzel", source]
+    assert "--reinstall" in service.add_command(source)
 
 
 def test_outside_tool_env_uses_uv_pip(make_kernel, tmp_path):
@@ -1876,3 +1884,19 @@ def test_short_names_resolve_for_plugins_a_topic_text_search_cannot_see(make_ker
     topic_queries = [url for url, _token, _timeout in github.requests if "search/repositories" in url]
     assert topic_queries
     assert all("unforeseen" not in url for url in topic_queries)
+
+
+def test_replacing_a_plugin_cannot_inherit_its_previously_checkpointed_wheel_source(make_kernel, tool_env, monkeypatch):
+    service = service_for(
+        make_kernel, tool_env, lambda command, environment=None: subprocess.CompletedProcess(command, 0)
+    )
+    captured = []
+    monkeypatch.setattr(
+        service._installation, "preserved_tool_wheel_constraints", lambda values: captured.append(values) or ()
+    )
+    command = service.add_command("heinzel-old==1.0.0")
+    mutation = _service._PackageMutation(types.SimpleNamespace(), service._installation.startup_fingerprint())
+    service._run_package_change(
+        command, "Fixture change failed", "Fixture mutation", context=(mutation, ()), adding="heinzel-old==1.0.0"
+    )
+    assert captured == [["heinzel @ git+https://github.com/org/heinzel@v0.1.0"]]
