@@ -23,6 +23,18 @@ for (const [name, engine] of [
       page.on("request", (request) => {
         if (request.url().includes("/api/org/calendar")) requests.push(request.url());
       });
+      let installs = 0;
+      await page.route("**/api/org/calendar-reminders-status", (route) =>
+        route.fulfill({ json: { enabled: true, service: "not installed" } }),
+      );
+      await page.route("**/api/stream/org/calendar-reminders-install*", (route) => {
+        installs += 1;
+        assert.equal(new URL(route.request().url()).searchParams.get("confirm"), "true");
+        return route.fulfill({
+          contentType: "text/event-stream",
+          body: 'event: result\ndata: {"data":"Calendar reminder service installed."}\n\n',
+        });
+      });
       const now = Date.now();
       const current = {
         id: "a",
@@ -131,6 +143,20 @@ for (const [name, engine] of [
       );
       assert.deepEqual(violations, []);
       await page.screenshot({ path: join(shots, `${name}-${size}.png`) });
+      assert.ok(!(await panel.textContent()).includes("hz org"), "setup exposed a terminal command");
+      await panel.getByRole("button", { name: "Set up reminder worker" }).click();
+      const confirmation = page.getByRole("alertdialog");
+      await confirmation.waitFor({ state: "visible" });
+      assert.match(await confirmation.textContent(), /at every login/);
+      assert.match(await confirmation.textContent(), /separate consent/);
+      assert.equal(installs, 0);
+      await page.screenshot({ path: join(shots, `${name}-${size}-setup.png`) });
+      await confirmation.getByRole("button", { name: "Cancel" }).click();
+      assert.equal(installs, 0);
+      await panel.getByRole("button", { name: "Set up reminder worker" }).click();
+      await confirmation.getByRole("button", { name: "Run it" }).click();
+      await confirmation.getByText("Done.", { exact: true }).waitFor();
+      assert.equal(installs, 1);
       await context.close();
     }
   } finally {

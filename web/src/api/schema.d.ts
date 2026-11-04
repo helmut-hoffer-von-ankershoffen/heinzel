@@ -1531,6 +1531,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/org/calendar-reminders-install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install a supervised worker; separately enable calendar reminders to consent to background reads.
+         * @description Install a supervised worker; separately enable calendar reminders to consent to background reads.
+         *
+         *     Raises:
+         *         HeinzelError: If persistent setup has not been explicitly confirmed.
+         */
+        post: operations["org_calendar_reminders_install"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org/calendar-reminders-status": {
         parameters: {
             query?: never;
@@ -1545,6 +1568,29 @@ export interface paths {
         get: operations["org_calendar_reminders_status"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/org/calendar-reminders-uninstall": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop and remove the supervised calendar reminder worker.
+         * @description Stop and remove the supervised calendar reminder worker.
+         *
+         *     Raises:
+         *         HeinzelError: If removal has not been explicitly confirmed.
+         */
+        post: operations["org_calendar_reminders_uninstall"];
         delete?: never;
         options?: never;
         head?: never;
@@ -16769,6 +16815,38 @@ export interface operations {
             };
         };
     };
+    org_calendar_reminders_install: {
+        parameters: {
+            query?: {
+                /** @description Confirm installing a persistent login worker for this profile. */
+                confirm?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     org_calendar_reminders_status: {
         parameters: {
             query?: never;
@@ -16785,6 +16863,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalendarReminderStatus"];
+                };
+            };
+        };
+    };
+    org_calendar_reminders_uninstall: {
+        parameters: {
+            query?: {
+                /** @description Confirm removing this profile's reminder login worker. */
+                confirm?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

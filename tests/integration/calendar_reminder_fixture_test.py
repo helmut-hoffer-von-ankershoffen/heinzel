@@ -83,3 +83,26 @@ def test_web_status_is_authenticated_and_reports_worker_state(make_kernel, setti
     response = client.get("/api/org/calendar-reminders-status", headers={"Authorization": "Bearer fixture-token"})
     assert response.status_code == 200
     assert response.json() == {"enabled": True, "service": "not installed"}
+
+
+def test_web_setup_requires_authentication_and_confirmation_and_is_not_public(make_kernel, monkeypatch):
+    from unittest.mock import Mock
+
+    from heinzel.heads import api
+    from heinzel.modules import org
+
+    kernel = make_kernel(builtins=True)
+    install = Mock(return_value="installed")
+    monkeypatch.setattr(org, "install_reminders", install)
+    client = TestClient(
+        web.build(kernel, port=8000, token="fixture-token", static=None), base_url="http://127.0.0.1:8000"
+    )
+    path = "/api/org/calendar-reminders-install"
+    assert client.post(path + "?confirm=true").status_code == 401
+    headers = {"Authorization": "Bearer fixture-token"}
+    assert client.post(path, headers=headers).status_code == 400
+    install.assert_not_called()
+    assert client.post(path + "?confirm=true", headers=headers).status_code == 200
+    install.assert_called_once()
+    public = TestClient(api.build(kernel), base_url="http://127.0.0.1")
+    assert public.post("/org/calendar-reminders-install?confirm=true").status_code == 404

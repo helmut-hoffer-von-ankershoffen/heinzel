@@ -22056,6 +22056,53 @@
         ]
       }
     },
+    "/org/calendar-reminders-install": {
+      "post": {
+        "description": "Install a supervised worker; separately enable calendar reminders to consent to background reads.\n\nRaises:\n    HeinzelError: If persistent setup has not been explicitly confirmed.",
+        "operationId": "org_calendar_reminders_install",
+        "parameters": [
+          {
+            "description": "Confirm installing a persistent login worker for this profile.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Confirm installing a persistent login worker for this profile.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Org Calendar Reminders Install",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Install a supervised worker; separately enable calendar reminders to consent to background reads.",
+        "tags": [
+          "org"
+        ]
+      }
+    },
     "/org/calendar-reminders-status": {
       "get": {
         "description": "Show calendar reminder consent and the supervised worker's state.",
@@ -22073,6 +22120,53 @@
           }
         },
         "summary": "Show calendar reminder consent and the supervised worker's state.",
+        "tags": [
+          "org"
+        ]
+      }
+    },
+    "/org/calendar-reminders-uninstall": {
+      "post": {
+        "description": "Stop and remove the supervised calendar reminder worker.\n\nRaises:\n    HeinzelError: If removal has not been explicitly confirmed.",
+        "operationId": "org_calendar_reminders_uninstall",
+        "parameters": [
+          {
+            "description": "Confirm removing this profile's reminder login worker.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Confirm removing this profile's reminder login worker.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Org Calendar Reminders Uninstall",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop and remove the supervised calendar reminder worker.",
         "tags": [
           "org"
         ]

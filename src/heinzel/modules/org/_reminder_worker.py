@@ -22,5 +22,5 @@ def run(
     end = monotonic() + LIFETIME
     while end - monotonic() > 0:
         began = monotonic()
-        delay = cycle(read, notifications, clock(), enabled=notifications.enabled(NoticeKind.CALENDAR))
+        delay = cycle(read, notifications, clock(), enabled=notifications.enabled(NoticeKind.CALENDAR), clock=clock)
         sleep(max(0.01, min(delay.total_seconds() - (monotonic() - began), end - monotonic())))

@@ -46,7 +46,7 @@ class NotifySettings(ModuleSettings):
         default=False,
         title="Calendar reminders",
         description="Allow background calendar reads and reminders before meetings start and end; "
-        "also run hz org calendar-reminders-install.",
+        "set up the worker in Calendar.",
     )
     sound: bool = Field(
         default=False,

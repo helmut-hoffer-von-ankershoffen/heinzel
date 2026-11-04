@@ -9,7 +9,18 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
-from heinzel import Calendar, Check, ConfigEditor, Kernel, Module, NoticeKind, Notifications, Prompter, Status
+from heinzel import (
+    Calendar,
+    Check,
+    ConfigEditor,
+    HeinzelError,
+    Kernel,
+    Module,
+    NoticeKind,
+    Notifications,
+    Prompter,
+    Status,
+)
 from heinzel.kernel import CapabilityView
 from heinzel.modules.org._agenda import Agenda, CalendarWeek, local_now, read_agenda, read_week, status_item
 from heinzel.modules.org._models import ROLES, OrgSettings, Profile
@@ -17,6 +28,7 @@ from heinzel.modules.org._profile import ProfileService, ask_profile
 from heinzel.modules.org._reminder_service import install as install_reminders
 from heinzel.modules.org._reminder_service import status as reminder_service_status
 from heinzel.modules.org._reminder_service import uninstall as uninstall_reminders
+from heinzel.modules.org._reminder_service import verify_binding
 from heinzel.modules.org._reminder_worker import run as run_reminders
 from heinzel.modules.org._render import render_agenda, render_profile
 from heinzel.modules.org._sync import SyncItem, SyncReport, SyncService, render_sync
@@ -44,15 +56,35 @@ def agenda(calendar: Calendar, view: CapabilityView, settings: OrgSettings) -> A
     return read_agenda(calendar, view, local_now(settings.timezone))
 
 
-@module.operation(name="calendar-reminders-install", read_only=False, heads={"cli"})
-def calendar_reminders_install() -> str:
-    """Install a supervised worker; separately enable calendar reminders to consent to background reads."""
+@module.operation(name="calendar-reminders-install", read_only=False, heads={"cli", "web"})
+def calendar_reminders_install(
+    confirm: Annotated[
+        bool, Field(description="Confirm installing a persistent login worker for this profile.")
+    ] = False,
+) -> str:
+    """Install a supervised worker; separately enable calendar reminders to consent to background reads.
+
+    Raises:
+        HeinzelError: If persistent setup has not been explicitly confirmed.
+    """
+    if not confirm:
+        msg = "Confirm reminder setup to install a login worker. Calendar read consent remains a separate setting."
+        raise HeinzelError(msg)
     return install_reminders()
 
 
-@module.operation(name="calendar-reminders-uninstall", read_only=False, heads={"cli"})
-def calendar_reminders_uninstall() -> str:
-    """Stop and remove the supervised calendar reminder worker."""
+@module.operation(name="calendar-reminders-uninstall", read_only=False, heads={"cli", "web"})
+def calendar_reminders_uninstall(
+    confirm: Annotated[bool, Field(description="Confirm removing this profile's reminder login worker.")] = False,
+) -> str:
+    """Stop and remove the supervised calendar reminder worker.
+
+    Raises:
+        HeinzelError: If removal has not been explicitly confirmed.
+    """
+    if not confirm:
+        msg = "Confirm removing the reminder worker for this profile."
+        raise HeinzelError(msg)
     return uninstall_reminders()
 
 
@@ -72,6 +104,7 @@ def calendar_reminders_status(notifications: Notifications) -> CalendarReminderS
 @module.operation(name="calendar-reminder-worker", read_only=False, heads={"cli"})
 def calendar_reminder_worker(kernel: Kernel, notifications: Notifications) -> None:
     """Run the supervised calendar reminder worker until its periodic restart."""
+    verify_binding()
     run_reminders(lambda: kernel.call(agenda), notifications)
 
 

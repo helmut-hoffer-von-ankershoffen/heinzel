@@ -63,7 +63,7 @@ def plan(events: list[Event], now: datetime, *, provider: str = "") -> list[Remi
         (max(current, key=lambda event: (event.start.astimezone(UTC), event.id), default=None), "end"),
         (min(upcoming, key=lambda event: (event.start.astimezone(UTC), event.id), default=None), "start"),
     ]
-    reminders = []
+    reminders: list[Reminder] = []
     for event, kind in selected:
         if event is None:
             continue
@@ -117,7 +117,14 @@ def withdraw_pending(notifications: Notifications) -> None:
             notifications.withdraw(notice.key)
 
 
-def cycle(read: Callable[[], Agenda], notifications: Notifications, now: datetime, *, enabled: bool) -> timedelta:
+def cycle(
+    read: Callable[[], Agenda],
+    notifications: Notifications,
+    now: datetime,
+    *,
+    enabled: bool,
+    clock: Callable[[], datetime] | None = None,
+) -> timedelta:
     """Refresh, reconcile and attempt delivery; return the delay until the next refresh or deadline."""
     if not enabled:
         withdraw_pending(notifications)
@@ -126,6 +133,10 @@ def cycle(read: Callable[[], Agenda], notifications: Notifications, now: datetim
         agenda = read()
     except Exception:  # noqa: BLE001 - a failed provider cannot keep stale notices deliverable
         logger.warning("calendar reminder source unavailable")
+        withdraw_pending(notifications)
+        return MAX_POLL
+    now = clock() if clock is not None else now
+    if not notifications.enabled(NoticeKind.CALENDAR):
         withdraw_pending(notifications)
         return MAX_POLL
     reminders = reconcile(agenda, notifications, now)

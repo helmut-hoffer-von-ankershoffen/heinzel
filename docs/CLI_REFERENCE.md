@@ -1413,6 +1413,7 @@ $ hz org calendar-reminders-install [OPTIONS]
 
 **Options**:
 
+* `--confirm / --no-confirm`: Confirm installing a persistent login worker for this profile.  [default: no-confirm]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -1445,6 +1446,7 @@ $ hz org calendar-reminders-uninstall [OPTIONS]
 
 **Options**:
 
+* `--confirm / --no-confirm`: Confirm removing this profile&#x27;s reminder login worker.  [default: no-confirm]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

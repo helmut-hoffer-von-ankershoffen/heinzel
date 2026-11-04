@@ -2,6 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
 import { token } from "@/api/token";
+import { OperationDialog } from "@/components/OperationDialog";
+import { isLocalServer } from "@/lib/browser";
+import { requestOperation } from "@/lib/operationRun";
 import { CONNECTORS } from "./settingsSections";
 
 type Event = {
@@ -76,6 +79,7 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
   });
   return (
     <section aria-label="Calendar" className="flex h-full min-h-0 flex-col">
+      <OperationDialog />
       <header className="flex items-center justify-between gap-2 border-b border-border p-3">
         <h2 className="font-semibold">Calendar</h2>
         <button type="button" className="min-h-10 px-2" onClick={onClose} aria-label="Close calendar">
@@ -97,11 +101,58 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
         ) : reminders.data.service === "running" ? (
           "Calendar reminder worker is running."
         ) : reminders.data.service === "not installed" ? (
-          <>
-            Calendar reminders need a worker. Run <code>hz org calendar-reminders-install</code> on this computer.
-          </>
+          <>Calendar reminders need a background worker on this computer.</>
         ) : (
           "Calendar reminders are enabled, but the worker's running state is unavailable."
+        )}
+        {reminders.data && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {isLocalServer() ? (
+              <>
+                <button
+                  type="button"
+                  className="min-h-10 px-2 underline"
+                  onClick={() =>
+                    requestOperation({
+                      method: "POST",
+                      path: `/org/calendar-reminders-${reminders.data.service === "running" ? "uninstall" : "install"}`,
+                      query: { confirm: true },
+                      body: null,
+                      read_only: false,
+                      command: "",
+                      summary:
+                        reminders.data.service === "running"
+                          ? "Remove this profile's calendar reminder worker from login?"
+                          : "Install a calendar reminder worker for this profile at every login? Calendar reads require separate consent in Notification settings.",
+                    })
+                  }
+                >
+                  {reminders.data.service === "running" ? "Remove reminder worker" : "Set up reminder worker"}
+                </button>
+                {reminders.data.service !== "running" && reminders.data.service !== "not installed" && (
+                  <button
+                    type="button"
+                    className="min-h-10 px-2 underline"
+                    onClick={() =>
+                      requestOperation({
+                        method: "POST",
+                        path: "/org/calendar-reminders-uninstall",
+                        query: { confirm: true },
+                        body: null,
+                        read_only: false,
+                        command: "",
+                        summary: "Remove this profile's calendar reminder worker from login?",
+                      })
+                    }
+                  >
+                    Remove reminder worker
+                  </button>
+                )}
+              </>
+            ) : (
+              <p>Open Calendar on this computer to set up its reminder worker.</p>
+            )}
+          </div>
         )}
       </div>
       <div className="flex items-center justify-between gap-2 border-b border-border p-2">

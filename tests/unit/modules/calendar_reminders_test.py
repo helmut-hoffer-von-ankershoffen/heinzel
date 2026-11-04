@@ -110,13 +110,12 @@ def test_service_install_and_uninstall_are_isolated_and_refuse_foreign_units(tmp
 
     def run(command):
         commands.append(command)
-        return subprocess.CompletedProcess(command, 0, "", "")
+        return subprocess.CompletedProcess(command, 0, "state = running", "")
 
     monkeypatch.setattr(service, "_run", run)
     assert "installed" in service.install()
     assert path.read_text() == service.definition(platform, executable)
-    with pytest.raises(HeinzelError):
-        service.install()
+    assert "already running" in service.install()
     assert "removed" in service.uninstall()
     assert not path.exists()
     path.write_text("foreign unit")

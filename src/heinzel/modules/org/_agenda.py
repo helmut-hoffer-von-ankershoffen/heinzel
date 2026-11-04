@@ -87,7 +87,7 @@ class CalendarWeek(BaseModel):
     timezone: str | None = Field(default=None, description="IANA profile time zone when known.")
     since: AwareDatetime = Field(description="The beginning of the week in your time zone.")
     until: AwareDatetime = Field(description="The exclusive end of the week in your time zone.")
-    events: list[Event] = Field(default_factory=list, description="Non-cancelled events overlapping the week.")
+    events: list[Event] = Field(default_factory=list[Event], description="Non-cancelled events overlapping the week.")
     problem: str | None = Field(default=None, description="Why the calendar could not be read, if unavailable.")
     fix: str | None = Field(default=None, description="A command to connect a calendar, if available.")
 
