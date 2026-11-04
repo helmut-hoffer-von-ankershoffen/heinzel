@@ -446,10 +446,19 @@ class Filter(ctypes.Structure):
     _fields_ = [('code',ctypes.c_ushort),('jt',ctypes.c_ubyte),('jf',ctypes.c_ubyte),('k',ctypes.c_uint)]
 class Program(ctypes.Structure):
     _fields_ = [('len',ctypes.c_ushort),('filter',ctypes.POINTER(Filter))]
-arch, number = {'x86_64':(0xc000003e,41),'aarch64':(0xc00000b7,198)}[platform.machine()]
-rows = [(0x20,0,0,4),(0x15,1,0,arch),(0x06,0,0,0x80000000),(0x20,0,0,0),
-        (0x15,0,4,number),(0x20,0,0,16),(0x15,1,0,2),(0x15,0,1,10),
-        (0x06,0,0,0x00050001),(0x06,0,0,0x7fff0000)]
+# Permit socket creation/bind for local availability checks; forbid outbound operations,
+# including asynchronous submissions. No destination is contacted by this fixture.
+arch, denied = {
+    'x86_64': (0xc000003e, (42, 44, 46, 307, 425)),
+    'aarch64': (0xc00000b7, (203, 206, 211, 269, 425)),
+}[platform.machine()]
+rows = [(0x20,0,0,4),(0x15,1,0,arch),(0x06,0,0,0x80000000),(0x20,0,0,0)]
+for number in denied:
+    rows += [(0x15,0,1,number),(0x06,0,0,0x00050001)]
+# x86's alternate x32 syscall ABI must not bypass the native syscall-number checks.
+if platform.machine() == 'x86_64':
+    rows += [(0x45,0,1,0x40000000),(0x06,0,0,0x00050001)]
+rows += [(0x06,0,0,0x7fff0000)]
 filters = (Filter*len(rows))(*(Filter(*row) for row in rows))
 program = Program(len(rows),filters)
 libc = ctypes.CDLL(None,use_errno=True)
