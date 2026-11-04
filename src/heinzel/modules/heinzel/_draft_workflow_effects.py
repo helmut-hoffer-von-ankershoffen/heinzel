@@ -61,7 +61,7 @@ def marked_text(terms: DraftPublicationTerms, key: str, poem: str) -> str:
     """
     text = (
         "\nDRAFT — awaiting your review\n"
-        f"Helper: {terms.request.name}\nDraft: {key}\nSource: {terms.request.feed_reference}\n\n{poem}\n"
+        f"Heinzel: {terms.request.name}\nDraft: {key}\nSource: {terms.request.feed_reference}\n\n{poem}\n"
     )
     if not poem.strip() or len(text.encode("utf-8")) > terms.request.max_draft_bytes:
         msg = "The generated draft exceeds the published UTF-8 content bound"

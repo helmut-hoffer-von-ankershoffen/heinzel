@@ -9,7 +9,7 @@ related: 0049, 0099, 0115, 0120, 0121
 
 ## Context and Problem Statement
 
-A recurring helper must put each new release's poem into the owner's supplied rolling document before requesting
+A recurring Heinzel must put each new release's poem into the owner's supplied rolling document before requesting
 human review. The owner explicitly requested unattended draft append; requiring another insertion approval on every
 release would contradict that workflow. The exact-content confirmation required by ADR 0121 remains necessary for
 arbitrary writes and must not become a general standing permission.
@@ -25,7 +25,7 @@ arbitrary writes and must not become a general standing permission.
 Chosen option: **a separate bounded draft-append grant**, because initial trusted owner publication authorizes this
 specific recurring effect while every later share still needs an exact human decision.
 
-- An explicit trusted owner CLI publication binds the owner and helper, observed release source, provider source
+- An explicit trusted owner CLI publication binds the owner and Heinzel, observed release source, provider source
   digest, account, exact supplied rolling-document reference and section, append-marked-draft operation, cadence,
   content bounds and selected review-notice target. Model text, fetched documents and transport replies cannot
   create or expand this grant. No document ACL is changed.
@@ -53,7 +53,7 @@ specific recurring effect while every later share still needs an exact human dec
   remains mutable by design; it does not claim frozen document contents or an atomic cross-provider transaction.
   Unknown transport outcomes never trigger an automatic repost.
 - Append, review-notice, human decision, share, confirmation-notice and uncertain dispositions remain visible in
-  the helper's authoritative chat. Revocation, uncertain attempts and exact provider receipts survive restart.
+  the Heinzel's authoritative chat. Revocation, uncertain attempts and exact provider receipts survive restart.
 - Explicit owner publication activates this registered CLI/daemon workflow; no preview flag substitutes for that
   consent. Other incomplete connected-history and arbitrary-write capabilities retain their existing flags. Core
   uses declared generic ports and gains no dependency on concrete plugins or providers. SDK and adapter publication,
