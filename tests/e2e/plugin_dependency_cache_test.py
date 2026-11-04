@@ -2,7 +2,7 @@
 
 import json
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 
 import pytest
 
@@ -12,6 +12,7 @@ from heinzel.modules.system.plugin._models import PluginSettings
 from heinzel.modules.system.plugin._service import PluginService
 from tests.e2e.tool_install_test import Sandbox
 from tests.e2e.uv_tool_collision_test import _fixture_wheel
+from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.e2e
 
@@ -49,7 +50,7 @@ def test_a_new_plugin_keeps_fresh_dependency_cache_when_its_server_is_unavailabl
         def log_message(self, *_args):
             pass
 
-    with ThreadingHTTPServer(("127.0.0.1", 0), Wheels) as server:
+    with LoopbackThreadingHTTPServer(("127.0.0.1", 0), Wheels) as server:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
