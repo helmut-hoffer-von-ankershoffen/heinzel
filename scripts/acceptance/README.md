@@ -41,6 +41,12 @@ active and matching the profile, served assets byte-identical to the wheel, `hz`
 sharing and playback not enabled. Every phase's output is scanned for the generic app-profile error, "not proven
 quiescent" and HTTP 403. "Not proven quiescent" is allowed only in the malformed-unit control.
 
+Each private case supplies an explicitly fictional name, handle, role, time zone and team through supported `HZ_ORG__*`
+and `HZ_TEAM__NAME` configuration. This is noninteractive setup input; it does not prove interactive onboarding or
+discover a real person's identity. Installed foreground starts read the private prefix's Core distribution metadata,
+require the case's expected version, and use `hz ui` for 0.9.8 through 0.9.15 or `hz ui serve` for 0.9.16. Unknown
+versions fail before foreground startup; command selection never substitutes for the installed-byte and runtime checks.
+
 Preflight runs before any case and executes nothing: PyPI latest and its wheel digest, the governed latest app tag,
 `standard.json`, every release asset's hash, Core wheel equal on both sides, live `install.sh` equal to the release
 tag. If main moved past the tag, pass `--accept-install-sh-sha256` after reviewing it. `--accept-wheel-sha256` and

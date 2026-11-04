@@ -130,6 +130,117 @@ def test_only_x_y_z_is_a_final_version(version, final):
     assert harness.is_final_version(version) is final
 
 
+@pytest.mark.parametrize(
+    ("version", "command"),
+    [*[(f"0.9.{patch}", ["ui"]) for patch in range(8, 16)], ("0.9.16", ["ui", "serve"])],
+)
+def test_installed_metadata_selects_the_canonical_foreground_command(version, command, tmp_path):
+    calls = []
+    session = object()
+
+    def installed_version(argv, label, deadline):
+        calls.append((argv, label, deadline))
+        return 0, version + "\n", ""
+
+    def foreground(argv, label):
+        calls.append((argv, label))
+        return session
+
+    case = SimpleNamespace(
+        prefix=tmp_path / "tools/heinzel",
+        bin=tmp_path / "bin",
+        expect_version=version,
+        run=installed_version,
+        foreground=foreground,
+    )
+    assert harness.ui_app(case, "plugin-ui") is session
+    assert calls == [
+        (
+            [
+                str(case.prefix / "bin/python"),
+                "-I",
+                "-c",
+                "from importlib.metadata import version; print(version('heinzel'))",
+            ],
+            "plugin-ui-installed-version",
+            harness.SHORT_DEADLINE,
+        ),
+        ([str(case.bin / "hz"), *command], "plugin-ui"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("installed", "expected"),
+    [
+        ("0.9.15", "0.9.16"),
+        ("0.9.16", "0.9.15"),
+        ("0.9.17", "0.9.17"),
+        ("1.0.0", "1.0.0"),
+        ("0.9.7", "0.9.7"),
+        ("0.9.16.dev1", "0.9.16.dev1"),
+        ("0.9.16rc1", "0.9.16rc1"),
+        ("0.9.016", "0.9.016"),
+        ("v0.9.16", "v0.9.16"),
+        (" 0.9.16", "0.9.16"),
+        ("0.9.16 ", "0.9.16"),
+        ("0.9.16\n", "0.9.16"),
+        ("0.9.16\n0.9.15", "0.9.16"),
+        ("", "0.9.16"),
+        ("help", "0.9.16"),
+    ],
+)
+def test_unrecognized_or_wrong_installed_version_never_starts_foreground(installed, expected, tmp_path):
+    case = SimpleNamespace(
+        prefix=tmp_path / "tools/heinzel",
+        bin=tmp_path / "bin",
+        expect_version=expected,
+        run=lambda *_args: (0, installed + "\n", ""),
+        foreground=lambda *_args: pytest.fail("Unrecognized installed version started foreground"),
+    )
+    with pytest.raises(harness.StepFailed):
+        harness.ui_app(case, "plugin-ui")
+
+
+def test_missing_installed_metadata_never_starts_foreground(tmp_path):
+    def missing_metadata(*_args):
+        msg = "Installed metadata query failed"
+        raise harness.StepFailed(msg)
+
+    case = SimpleNamespace(
+        prefix=tmp_path / "tools/heinzel",
+        bin=tmp_path / "bin",
+        expect_version="0.9.16",
+        run=missing_metadata,
+        foreground=lambda *_args: pytest.fail("Missing installed metadata started foreground"),
+    )
+    with pytest.raises(harness.StepFailed, match="metadata query failed"):
+        harness.ui_app(case, "plugin-ui")
+
+
+def test_noninteractive_cases_supply_fictional_profile_without_inheriting_identity(tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_ORG__NAME", "Inherited Person")
+    monkeypatch.setenv("HZ_TEAM__NAME", "Inherited Team")
+    monkeypatch.setenv("HZ_ORG__EMAIL", "inherited@example.invalid")
+    monkeypatch.setenv("HZ_CONFIG_HOME", "/inherited/configuration")
+    monkeypatch.setenv("GITHUB_TOKEN", "inherited-token")
+    case = harness.Case("2", tmp_path, {"args": SimpleNamespace(expect_version="0.9.16"), "explicit_profile": None})
+    assert {key: case.env[key] for key in harness.PROFILE_FIXTURE} == {
+        "HZ_ORG__NAME": "Mira Example",
+        "HZ_ORG__HANDLE": "mira-example",
+        "HZ_ORG__ROLE": "engineer",
+        "HZ_ORG__TIMEZONE": "Europe/Berlin",
+        "HZ_TEAM__NAME": "Example Team",
+    }
+    assert case.notes["fictional_profile_fixture"] == harness.PROFILE_FIXTURE
+    assert "HZ_ORG__EMAIL" not in case.env
+    assert "GITHUB_TOKEN" not in case.env
+    assert "HZ_APP_PROFILE" not in case.env
+    assert case.env["HOME"] == str(case.root / "home")
+    assert case.env["HZ_CONFIG_HOME"] == str(case.root / "config_home")
+    assert case.env["XDG_CONFIG_HOME"] == str(case.root / "xdg-config")
+    assert case.env["HZ_SYSTEM_CREDENTIAL__BACKEND"] == "environment"
+
+
 def test_release_candidate_urls_accept_only_this_projects_final_or_edge_assets():
     wheel = harness.RELEASE_WHEEL_URL
     profile = harness.RELEASE_PROFILE_URL
