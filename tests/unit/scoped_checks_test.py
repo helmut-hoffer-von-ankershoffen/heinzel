@@ -188,6 +188,10 @@ def test_the_pre_push_hook_keeps_the_confidentiality_and_commit_checks():
             ".github/workflows/ci.yml",
             {"browser_runtime_setup", "ci_supervised", "ci", "web_build", "e2e_lane_partition"},
         ),
+        (
+            "tests/e2e/offline_uninstall_test.py",
+            {"standards", "browser_runtime_setup", "ci_supervised", "ci", "web_build", "e2e_lane_partition"},
+        ),
         ("Makefile", {"browser_runtime_setup", "ci_supervised", "ci", "web_build", "e2e_lane_partition"}),
         (
             "tests/e2e/new_test.py",
