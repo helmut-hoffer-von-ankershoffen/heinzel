@@ -206,6 +206,10 @@ def show(kernel: Kernel, output: Console) -> None:
 
 def main() -> None:
     """Entry point of the `hz` executable."""
+    if sys.argv[1:3] == ["system", "uninstall"]:
+        from heinzel.modules.system._uninstall import main as uninstall_main  # noqa: PLC0415 - offline recovery before discovery
+
+        sys.exit(uninstall_main(sys.argv[3:]))
     try:
         kernel = boot()
     except (HeinzelError, ValidationError) as exc:

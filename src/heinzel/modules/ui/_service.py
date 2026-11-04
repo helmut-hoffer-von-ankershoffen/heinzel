@@ -12,7 +12,8 @@ import stat
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
@@ -569,6 +570,24 @@ class WebService:
             retiring_instance=str(response["instance"]),
             message="Restart requested. Use `hz ui status` to verify a different ready instance.",
         )
+
+    @contextmanager
+    def removal_guard(self) -> Generator[Callable[[], WebChange], None, None]:
+        """Inspect all owned integration before another removal mutates it; retain the lifecycle lock.
+
+        Yields:
+            The existing verified remover, including when the preview flag is disabled.
+
+        Raises:
+            HeinzelError: If the filesystem or loaded job is foreign or changed.
+        """
+        with private_lock(self.directory / "lifecycle.lock"):
+            record = self._record()
+            if not self._integration_absent() and record is None:
+                msg = "The web service is foreign or changed; it was left unchanged."
+                raise HeinzelError(msg)
+            self._manager(record)  # Even absent files cannot authorize removal of an unowned loaded label.
+            yield self._uninstall
 
     def uninstall(self) -> WebChange:
         """Remove exact owned integration under one exclusive lifecycle writer.

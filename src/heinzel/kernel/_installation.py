@@ -842,6 +842,63 @@ class Installation:
         except OSError as exc:
             raise HeinzelError(msg) from exc
 
+    def tool_destination(self) -> tuple[Path, Path]:
+        """Return the verified running tool's store and script directory, without querying uv.
+
+        Raises:
+            HeinzelError: If the running tool's receipt or physical authority cannot be verified.
+            OSError: If a target cannot be inspected.
+        """
+        from heinzel.kernel._tool_uninstall import physical_directory  # noqa: PLC0415 - removal-only validation
+
+        target = self._current_tool_target()
+        store, binary = Path(target["UV_TOOL_DIR"]), Path(target["UV_TOOL_BIN_DIR"])
+        for path in (self.prefix, store, binary):
+            physical_directory(path)
+        return store, binary
+
+    def uninstall_offline(self, *, expected: str) -> None:
+        """Remove only this continuity-verified tool through offline uv under the caller's quiescence fence.
+
+        No refused or uncertain removal triggers a network restore. The caller retains its durable mutation gate.
+
+        Raises:
+            HeinzelError: If continuity, target, uv or the observed removal cannot be verified.
+            OSError: If a selected path cannot be inspected.
+        """
+        from heinzel.kernel._tool_uninstall import physical_directory, uv_identity  # noqa: PLC0415 - removal only
+
+        with self.tool_transaction():
+            target = self._current_tool_target()
+            prefix = self.prefix
+            for path in (prefix, Path(target["UV_TOOL_DIR"]), Path(target["UV_TOOL_BIN_DIR"])):
+                physical_directory(path)
+            links = self._owned_tool_links(target)
+            uv, identity = uv_identity(self.uv)
+            if not self.startup_state_matches() or self.startup_fingerprint() != expected:
+                msg = "The Heinzel installation changed; nothing was uninstalled. Inspect its local installation."
+                raise HeinzelError(msg)
+            if uv_identity(str(uv)) != (uv, identity):
+                msg = "The local uv executable changed; nothing was uninstalled."
+                raise HeinzelError(msg)
+            environment = {key: value for key, value in subprocess_environment().items() if not key.startswith("UV_")}
+            environment.update(target)
+            command = [str(uv), "--offline", "--no-config", "--no-python-downloads", "tool", "uninstall", "heinzel"]
+            try:
+                result = self._runner(command, environment)
+            except (OSError, subprocess.SubprocessError) as exc:
+                msg = "Offline removal did not finish. Heinzel services remain stopped; inspect the local uv tool."
+                raise HeinzelError(msg) from exc
+            if (
+                result.returncode
+                or os.path.lexists(prefix)
+                or any(os.path.lexists(Path(target["UV_TOOL_BIN_DIR"]) / name) for name in links)
+            ):
+                msg = (
+                    "Offline removal could not be verified. Heinzel services remain stopped; inspect the local uv tool."
+                )
+                raise HeinzelError(msg)
+
     def tool_constraints(self) -> list[str]:
         """Read existing uv tool constraints as normalized requirements for a subsequent install.
 
