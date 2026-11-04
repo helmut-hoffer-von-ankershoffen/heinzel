@@ -339,3 +339,17 @@ def test_a_foreign_gate_appearing_before_begin_cannot_authorize_any_effect(journ
     assert record.gate.read_text() == foreign
     assert installation.prefix.exists()
     assert unit.exists()
+
+
+def test_gate_publication_refuses_a_redirected_parent_before_writing(journal):
+    record, installation, unit = journal
+    record.gate.unlink()
+    parent = record.gate.parent
+    saved = parent.with_name(parent.name + "-retained")
+    parent.rename(saved)
+    parent.symlink_to(saved, target_is_directory=True)
+    with pytest.raises(HeinzelError, match="physically owned"):
+        record.begin()
+    assert not (saved / record.gate.name).exists()
+    assert installation.prefix.exists()
+    assert unit.exists()
