@@ -47,7 +47,7 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - name: Install the pinned tools, as locally
         run: make install # what `make fix` and the release script use; no git hooks, so no local pre-push check on the runner
       - name: Prepare the release branch and open the pull request

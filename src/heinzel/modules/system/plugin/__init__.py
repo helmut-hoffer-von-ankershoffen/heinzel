@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import CurrentUser, HeinzelError, Kernel, Module, Prompter
 from heinzel.kernel import DaemonInstallationLifecycle, Installation
@@ -19,8 +20,29 @@ from heinzel.modules.system.plugin._models import (
     PluginSearch,
     PluginSettings,
 )
-from heinzel.modules.system.plugin._render import render_change, render_list, render_search
 from heinzel.modules.system.plugin._service import TEMPLATE, PluginService
+
+
+def render_change(change: PluginChange) -> RenderableType:
+    """For `add` without confirming: what would be installed and the command that confirms; otherwise what was done."""
+    from heinzel.modules.system.plugin._render import render_change  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_change(change)
+
+
+def render_list(plugins: list[PluginInfo]) -> RenderableType:
+    """A table of installed plugins: version, source, whether enabled, and what each brings."""
+    from heinzel.modules.system.plugin._render import render_list  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_list(plugins)
+
+
+def render_search(result: PluginSearch) -> RenderableType:
+    """A table of installable plugins, then any warnings and a reminder that plugins run with your rights."""
+    from heinzel.modules.system.plugin._render import render_search  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_search(result)
+
 
 module = Module("plugin", "Find, add, remove, enable, disable, list and scaffold plugins.")
 module.settings(PluginSettings)

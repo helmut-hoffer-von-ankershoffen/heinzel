@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import Check, Module
 from heinzel.kernel import DaemonAttestation, DaemonInstallationLifecycle, DaemonOverview, parse_duration
@@ -20,9 +21,37 @@ from heinzel.modules.system.daemon._models import (
     Uninstalled,
 )
 from heinzel.modules.system.daemon._overview import DaemonOverviewService
-from heinzel.modules.system.daemon._render import render_installed, render_jobs, render_logs, render_tick
 from heinzel.modules.system.daemon._service import DaemonService
 from heinzel.modules.system.daemon._status_item import status_item
+
+
+def render_installed(result: Installed) -> RenderableType:
+    """The unit files, highlighted; with `--dry-run` that is all that happens."""
+    from heinzel.modules.system.daemon._render import render_installed  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_installed(result)
+
+
+def render_jobs(jobs: list[JobInfo]) -> RenderableType:
+    """A table of jobs with their schedule, next slot and last run."""
+    from heinzel.modules.system.daemon._render import render_jobs  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_jobs(jobs)
+
+
+def render_logs(lines: list[LogLine]) -> RenderableType:
+    """Log lines, one per row."""
+    from heinzel.modules.system.daemon._render import render_logs  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_logs(lines)
+
+
+def render_tick(report: TickReport) -> RenderableType:
+    """One line per job run, or why nothing ran."""
+    from heinzel.modules.system.daemon._render import render_tick  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_tick(report)
+
 
 module = Module("daemon", "Run modules' jobs in the background, supervised by launchd or systemd.")
 """Jobs run unattended, with your rights, on their schedule once installed (SECURITY.md). Stop them with

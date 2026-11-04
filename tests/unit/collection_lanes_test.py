@@ -18,6 +18,7 @@ def reporter(request, monkeypatch, tmp_path):
 
 def configuration(expression="(integration) and not perf", *, full=False, layout=True):
     return SimpleNamespace(
+        stash={},
         getoption=lambda name: expression if name == "markexpr" else full,
         getini=lambda name: (["tests"] if layout else []) if name == "testpaths" else ["*_test.py"],
     )

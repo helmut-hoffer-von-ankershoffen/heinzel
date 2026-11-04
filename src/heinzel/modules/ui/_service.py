@@ -350,7 +350,8 @@ class WebService:
         return True, int(pid) if pid.isdigit() and int(pid) > 0 else None
 
     def _control(self, record: dict[str, JsonValue], pid: int, command: str) -> dict[str, JsonValue]:
-        value = TypeAdapter(dict[str, JsonValue]).validate_json(private_read(self.runtime))
+        content = private_read(self.runtime)
+        value = TypeAdapter(dict[str, JsonValue]).validate_json(content)
         if set(value) != {"socket", "pid", "generation", "port", "instance"}:
             msg = "No matching web runtime has reported readiness."
             raise HeinzelError(msg)

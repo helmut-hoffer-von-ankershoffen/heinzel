@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import ConfigEditor, Module
 from heinzel.modules.system.config._models import (
@@ -14,8 +15,15 @@ from heinzel.modules.system.config._models import (
     SettingInfo,
     SettingRevealed,
 )
-from heinzel.modules.system.config._render import render_report
 from heinzel.modules.system.config._service import ConfigService, Scope
+
+
+def render_report(report: ConfigReport) -> RenderableType:
+    """The files in precedence order, then the settings with their overriding environment variables."""
+    from heinzel.modules.system.config._render import render_report  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_report(report)
+
 
 module = Module("config", "Show, get, set and initialize configuration.", essential=True)
 module.service(ConfigService)

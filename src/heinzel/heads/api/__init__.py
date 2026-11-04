@@ -154,10 +154,14 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
         return _error_response(exc, private=head == "web" or selected == API_PRIVATE)
 
     for item in exposed(kernel, selected):
+        # A private mutation has the same strict JSON input on its normal and streaming routes.
+        body_parameters = (
+            _parameters(item, body=True) if item.operation.private and not item.operation.read_only else None
+        )
         returns = item.returns if item.returns is not inspect.Signature.empty else None
         app.add_api_route(
             "/" + "/".join(item.path),
-            endpoint(kernel, item),
+            endpoint(kernel, item, body_parameters=body_parameters),
             methods=["GET" if item.operation.read_only else "POST"],
             summary=item.operation.summary,
             description=inspect.getdoc(item.operation.func) or "",
@@ -172,7 +176,7 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
         if token is not None or credentials is not None:  # Streams retain the authenticated call context.
             app.add_api_route(
                 "/stream/" + "/".join(item.path),
-                stream_endpoint(kernel, item),
+                stream_endpoint(kernel, item, body_parameters=body_parameters),
                 methods=["POST"],
                 include_in_schema=False,
             )
@@ -289,7 +293,9 @@ def _split(host: str) -> tuple[str, str]:
     return name, port
 
 
-def endpoint(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
+def endpoint(
+    kernel: Kernel, item: Exposed, *, body_parameters: list[inspect.Parameter] | None = None
+) -> Callable[..., Any]:
     """Bind public parameters, keeping private mutation input in a strict JSON body."""
     body = item.operation.private and not item.operation.read_only
 
@@ -302,13 +308,16 @@ def endpoint(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
 
     response_parameter = inspect.Parameter("response", inspect.Parameter.KEYWORD_ONLY, annotation=Response)
     run.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
-        [*_parameters(item, body=body), response_parameter], return_annotation=item.returns
+        [*(body_parameters if body_parameters is not None else _parameters(item, body=body)), response_parameter],
+        return_annotation=item.returns,
     )
     run.__name__ = item.name
     return run
 
 
-def stream_endpoint(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
+def stream_endpoint(
+    kernel: Kernel, item: Exposed, *, body_parameters: list[inspect.Parameter] | None = None
+) -> Callable[..., Any]:
     """Like `endpoint`, but the answer is the operation's events as a server-sent event stream."""
 
     async def run(**kwargs: Any) -> Any:  # noqa: ANN401 - a streaming response
@@ -316,7 +325,9 @@ def stream_endpoint(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
             kernel, item.operation, _arguments(item, kwargs, body=item.operation.private), module=item.record.qualname
         )
 
-    run.__signature__ = inspect.Signature(_parameters(item, body=item.operation.private))  # type: ignore[attr-defined]
+    run.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
+        body_parameters if body_parameters is not None else _parameters(item, body=item.operation.private)
+    )
     run.__name__ = f"{item.name}_stream"
     return run
 
