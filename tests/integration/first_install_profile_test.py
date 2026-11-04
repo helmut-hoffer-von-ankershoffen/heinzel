@@ -204,7 +204,9 @@ def test_complete_noninteractive_profile_is_preserved_and_can_open_without_promp
     assert calls == [["org", "show"], ["system", "config", "show"]]
 
 
-@pytest.mark.parametrize("problem", ["duplicate", "blank-source", "missing-value", "invalid-value", "missing-field"])
+@pytest.mark.parametrize(
+    "problem", ["duplicate", "blank-source", "missing-value", "invalid-value", "invalid-schema", "missing-field"]
+)
 @pytest.mark.parametrize("interactive", [False, True])
 def test_both_profile_paths_refuse_ambiguous_or_invalid_rows_before_questions_or_writes(
     monkeypatch, problem, interactive
@@ -221,6 +223,9 @@ def test_both_profile_paths_refuse_ambiguous_or_invalid_rows_before_questions_or
         del settings[0]["value"]
     elif problem == "invalid-value":
         settings[0]["value"] = True
+    elif problem == "invalid-schema":
+        settings[0]["value"] = None
+        settings[1]["json_schema"] = {"enum": [True]}
     else:
         settings.pop()
     calls = []

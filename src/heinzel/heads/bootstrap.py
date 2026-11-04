@@ -308,6 +308,7 @@ def _profile_gaps(executable: Path, environment: dict[str, str]) -> list[tuple[s
         if field is None or "value" not in field:
             msg = f"The required profile setting {key} is unavailable; inspect configuration before continuing."
             raise HeinzelError(msg)
+        _profile_choices(field.get("json_schema"))  # Validate every required field before returning any prompt.
         value = field["value"]
         if value is not None and not isinstance(value, str):
             msg = f"The required profile setting {key} is invalid; inspect configuration before continuing."
