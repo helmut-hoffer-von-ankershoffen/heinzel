@@ -18,6 +18,7 @@ from heinzel.kernel._approval import (
     arguments_hash,
     consume_approval,
 )
+from heinzel.modules.heinzel._notice_identity import notice_helper
 from heinzel.modules.heinzel._notification_proposals import NotificationProposal, NotificationProposals
 from heinzel.modules.heinzel._session_crud import SessionCrud
 
@@ -145,6 +146,7 @@ class NotificationDelivery:
                     route=f"/heinzel?chat={session}",
                     command="hz heinzel sessions",
                     key=key,
+                    helper=notice_helper(self.crud, session, "approved notice"),
                 )
             except Exception:  # noqa: BLE001 - no provider diagnostics or private content escape
                 recorded = False

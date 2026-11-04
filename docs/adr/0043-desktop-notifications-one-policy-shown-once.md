@@ -71,6 +71,15 @@ the notifications as hz's, with a click that can open the right screen.
 
 **The policy** (settings `[system.notify]`, user scope only: a project's `hz.toml` can't decide what interrupts you).
 
+Personal Heinzel notices may include optional bounded `NoticeHelper` metadata: display name, a hat colour from the
+shared palette, and the reason for the notice. Existing notices without it remain readable. Check-ins persist this
+metadata with their unresolved payload, so replay after a rename or restart keeps the original identity.
+
+The native notifier shows the name and reason as its subtitle and draws the face from bundled artwork, with no
+external image URL or file input. A stable notice id replaces the same native notification, and the chat route
+groups related notices. The user-only `sound` setting is off by default and enables the system notification sound.
+This presentation uses the existing approval, delivery, working-hours and durable replay policy.
+
 - `enabled` and one switch per kind (`draft`, `failed`, `doctor` on; `release` off). A kind that is off records
   nothing.
 - `repeat_hours` (24): a notice with the same `key` within it is not recorded again. Keys name what makes two notices

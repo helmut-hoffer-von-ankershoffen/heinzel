@@ -2,12 +2,13 @@
 //
 // hz starts it through LaunchServices (`open -n`), which puts it in the person's GUI session, also from the daemon.
 //   --status                                   print the notification authorization: authorized, denied, ...
-//   --message M [--title T] [--subtitle S] [--open URL]
+//   --message M [--title T] [--subtitle S] [--open URL] [--hat COLOUR] [--sound] [--id ID] [--thread T]
 //                                              ask for authorization once, post one notification, print the result
 //   (no arguments)                             launched by a click on a notification: open its URL, then quit
 // Everything arrives as arguments, never as code; text is bounded; a URL opens only when it is hz's web app on this
 // machine (http://127.0.0.1:<port>/...).
 import AppKit
+import Darwin
 import UserNotifications
 
 let messageLifetime = 80.0
@@ -31,6 +32,66 @@ func appURL(_ text: String?) -> URL? {
         url.user == nil, url.password == nil
     else { return nil }
     return url
+}
+
+/// Only the shared hat palette can select a face; all artwork comes from this signed app bundle.
+let hats: [String: String] = [
+    "red": "#E8572A", "rust": "#B5532F", "ochre": "#B7841C", "green": "#43A047", "teal": "#1F9488",
+    "blue": "#1E88E5", "purple": "#8E5BD8", "slate": "#64748B",
+]
+
+struct HelperFace {
+    let attachment: UNNotificationAttachment
+    let directory: URL
+}
+
+/// A bounded raster of bundled artwork in an atomically created owner-only temporary directory.
+func face(hat: String?) -> HelperFace? {
+    guard let hat, let colour = hats[hat], let source = Bundle.main.url(forResource: "face", withExtension: "svg"),
+        var svg = try? String(contentsOf: source, encoding: .utf8)
+    else { return nil }
+    var template = Array(FileManager.default.temporaryDirectory.appendingPathComponent("hz-face-XXXXXX").path.utf8CString)
+    let path = template.withUnsafeMutableBufferPointer { buffer -> String? in
+        guard let pointer = buffer.baseAddress, let created = mkdtemp(pointer) else { return nil }
+        return String(cString: created)
+    }
+    guard let path else { return nil }
+    let directory = URL(fileURLWithPath: path, isDirectory: true)
+    var retained = false
+    defer {
+        if !retained { try? FileManager.default.removeItem(at: directory) }
+    }
+    svg = svg.replacingOccurrences(of: "#E8572A", with: colour)
+    do {
+        let drawing = directory.appendingPathComponent("face.svg")
+        try svg.write(to: drawing, atomically: true, encoding: .utf8)
+        let size = 192
+        guard let image = NSImage(contentsOf: drawing),
+            let bitmap = NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8,
+                samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0,
+                bitsPerPixel: 0)
+        else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(in: NSRect(x: 0, y: 0, width: size, height: size))
+        NSGraphicsContext.restoreGraphicsState()
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { return nil }
+        let file = directory.appendingPathComponent("face.png")
+        try png.write(to: file)
+        let attachment = try UNNotificationAttachment(identifier: "face", url: file, options: nil)
+        retained = true
+        return HelperFace(attachment: attachment, directory: directory)
+    } catch { return nil }
+}
+
+/// A stable notice id replaces an earlier post; malformed manual arguments receive an independent id.
+func identifier(_ text: String?) -> String {
+    guard let text, !text.isEmpty, text.count <= 120,
+        text.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "._:-".contains($0)) })
+    else { return UUID().uuidString }
+    return text
 }
 
 /// Leave at once. `exit` runs atexit handlers and can wait on a lock the main thread holds (macOS asking for
@@ -81,9 +142,15 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
             content.title = bounded(argument("--title") ?? "Heinzelmännchen", titleLimit)
             if let subtitle = argument("--subtitle") { content.subtitle = bounded(subtitle, titleLimit) }
             content.body = bounded(message, bodyLimit)
+            if CommandLine.arguments.contains("--sound") { content.sound = .default }
+            if let thread = argument("--thread") { content.threadIdentifier = bounded(thread, 200) }
             if let url = appURL(argument("--open")) { content.userInfo = ["url": url.absoluteString] }
-            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            let helperFace = face(hat: argument("--hat"))
+            if let helperFace { content.attachments = [helperFace.attachment] }
+            let request = UNNotificationRequest(identifier: identifier(argument("--id")), content: content, trigger: nil)
             center.add(request) { error in
+                // The system owns its attachment copy; remove only the private directory this process created.
+                if let helperFace { try? FileManager.default.removeItem(at: helperFace.directory) }
                 if let error { finish("failed: \(error.localizedDescription)", 1) }
                 finish("posted", 0)
             }
@@ -105,7 +172,7 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
         withCompletionHandler done: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        done([.banner, .list])
+        done([.banner, .list, .sound])
     }
 }
 

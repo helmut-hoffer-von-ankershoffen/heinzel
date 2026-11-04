@@ -10,8 +10,9 @@ Nothing leaves the machine.
 from collections.abc import Sequence
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 
 class NoticeKind(StrEnum):
@@ -42,6 +43,20 @@ class Delivery(StrEnum):
     """The daemon, as a native notification, because no app was open."""
 
 
+HatColour = Literal["red", "rust", "ochre", "green", "teal", "blue", "purple", "slate"]
+"""The shared closed palette for a personal Heinzel's hat."""
+
+
+class NoticeHelper(BaseModel):
+    """The personal Heinzel behind a notice, using the bundled face and a closed hat palette."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(max_length=100, description="The personal Heinzel's display name.")
+    hat: HatColour | None = Field(default=None, description="Hat colour for the bundled face; none uses red.")
+    reason: str = Field(max_length=120, description="Why the Heinzel speaks now, such as scheduled check-in.")
+
+
 class Notice(BaseModel):
     """One thing that deserves attention, as recorded: what it is, where to look, and whether it was shown."""
 
@@ -57,6 +72,7 @@ class Notice(BaseModel):
     due: AwareDatetime = Field(description="When it may pop up: `at`, or the next start of your working hours.")
     popup: bool = Field(description="Whether it is shown as a desktop notification at all; false: in the list only.")
     held: str | None = Field(default=None, description="Why it isn't shown as a desktop notification; none if it is.")
+    helper: NoticeHelper | None = Field(default=None, description="The personal Heinzel behind this notice, if any.")
     delivered_by: Delivery | None = Field(default=None, description="Who showed it; none while it waits.")
     delivered_at: AwareDatetime | None = Field(default=None, description="When it was shown; none while it waits.")
 
@@ -78,6 +94,7 @@ class Notifications:
         command: str,
         key: str,
         urgent: bool = False,
+        helper: NoticeHelper | None = None,
     ) -> Notice | None:
         """Record a notice under the policy; the recorded one (or the earlier one it repeats), None if its kind is off.
 
@@ -86,7 +103,15 @@ class Notifications:
         raise NotImplementedError
 
     def emit_once(  # noqa: PLR0913 - the notice fields match emit
-        self, kind: NoticeKind, title: str, body: str, *, route: str, command: str, key: str
+        self,
+        kind: NoticeKind,
+        title: str,
+        body: str,
+        *,
+        route: str,
+        command: str,
+        key: str,
+        helper: NoticeHelper | None = None,
     ) -> bool:
         """Atomically persist one notice and its durable key, or recognize the previously recorded key."""
         raise NotImplementedError
