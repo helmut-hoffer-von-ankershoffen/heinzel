@@ -56,6 +56,10 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
+        "sudo sed -i 's|http://azure\\.archive\\.ubuntu\\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "
+        "/etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources": (
+            "selects the same signed primary Ubuntu archive as Docs before browser dependency installation"
+        ),
         "uv run --no-build --script scripts/main_batch.py": "read-only bounded admission of an explicit main batch",
         "echo 'The validated aggregate base": "records that the final run consumed the aggregate base",
         'echo "Full CI is recorded': "links the intermediate admission to its exact final run",

@@ -90,3 +90,4 @@ def test_plugin_generation_keeps_one_complete_suite_without_core_lane_references
         assert "SUITE=" not in text
     assert "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x" in makefile
     assert "make test-e2e" in workflow
+    assert "Use Ubuntu's primary archive for browser dependencies" not in workflow

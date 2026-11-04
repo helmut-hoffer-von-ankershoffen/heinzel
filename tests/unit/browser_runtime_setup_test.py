@@ -59,6 +59,26 @@ def test_every_e2e_matrix_host_installs_its_engines_before_tests():
     assert "make test-browser-deps" not in (REPO / "template/.github/workflows/ci.yml.jinja").read_text()
 
 
+def test_ci_browser_dependencies_use_the_verified_primary_archive_before_installing():
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    steps = workflow["jobs"]["e2e"]["steps"]
+    [archive] = [step for step in steps if step.get("name") == "Use Ubuntu's primary archive for browser dependencies"]
+    [install] = [step for step in steps if step.get("run") == "make test-browser-deps"]
+    docs = yaml.safe_load((REPO / ".github/workflows/docs.yml").read_text())
+    [verified] = [
+        step
+        for step in docs["jobs"]["site"]["steps"]
+        if step.get("name") == "Use Ubuntu's primary archive for browser dependencies"
+    ]
+    assert archive["if"] == (
+        "matrix.os == 'ubuntu-24.04' && (matrix.suite == 'supervised' || startsWith(matrix.suite, 'web'))"
+    )
+    assert archive["run"] == verified["run"]
+    assert "continue-on-error" not in archive
+    assert steps.index(archive) < steps.index(install)
+    assert workflow["jobs"]["e2e"]["timeout-minutes"] == 15
+
+
 def test_docs_browser_dependencies_use_primary_archive_without_changing_signed_package_sources(tmp_path):
     workflow = yaml.safe_load((REPO / ".github/workflows/docs.yml").read_text())
     site = workflow["jobs"]["site"]
