@@ -3,12 +3,14 @@
 
 # ruff: noqa: SLF001 -- sibling implementation of the same daemon authority boundary
 
+import ctypes
 import hashlib
 import json
 import os
 import pwd
 import re
 import stat
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -114,6 +116,40 @@ def _absent(path: Path) -> bool:
     except FileNotFoundError:
         return True
     return False
+
+
+def _rename_exclusive(source: Path, destination: Path) -> None:
+    """Atomically restore without replacing any destination.
+
+    Raises:
+        OSError: The exclusive native operation is unavailable or refuses the move.
+    """
+    # Darwin RENAME_EXCL=4 (xnu bsd/sys/stdio.h); Linux RENAME_NOREPLACE=1.
+    # Linux supports protocol-double tests only; real legacy recovery remains macOS-only.
+    if sys.platform == "darwin":
+        library = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
+        rename = library.renameatx_np
+        flags = 4
+    elif sys.platform == "linux":
+        library = ctypes.CDLL(None, use_errno=True)
+        rename = library.renameat2
+        flags = 1
+    else:
+        _refuse()
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    source_fd = os.open(source.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        destination_fd = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            if rename(source_fd, os.fsencode(source.name), destination_fd, os.fsencode(destination.name), flags):
+                raise OSError(ctypes.get_errno(), "Exclusive legacy restoration refused")
+            os.fsync(destination_fd)
+            os.fsync(source_fd)
+        finally:
+            os.close(destination_fd)
+    finally:
+        os.close(source_fd)
 
 
 def _account() -> dict[str, Any]:
@@ -764,6 +800,7 @@ class LegacyRetirement:
         self._verify_evidence(journal)
         manager = self._manager(Path(target["executable"]))
         files = []
+        preserved = []
         for index, original in enumerate(journal["plan"]["files"]):
             path = Path(original["path"])
             backups = journal["backups"]
@@ -773,6 +810,8 @@ class LegacyRetirement:
                 preserved_path = Path(backup["path"])
                 if not _absent(preserved_path) and _file(preserved_path).facts() != backup:
                     _refuse()
+            backup_path = self._directory(digest) / f"original-{index}"
+            preserved.append(None if _absent(backup_path) else _file(backup_path).facts())
             if present:
                 captured = _file(path)
                 known = [original["identity"][:2]] + ([backup["identity"][:2]] if backup else [])
@@ -795,6 +834,7 @@ class LegacyRetirement:
             "gate_absent": gate_absent,
             "target": target,
             "files": files,
+            "backups": preserved,
             "manager": manager,
             "historical_profile": "unknown",
         }
@@ -812,50 +852,72 @@ class LegacyRetirement:
                 _refuse()
             journal = self._read(digest)
             if facts["gate_absent"]:
-                private_write(service.state_dir / PENDING, json.dumps({"token": journal["token"]}, indent=2) + "\n")
+                self._admit_restore(journal, facts, gate_absent=True)
+                gate_fd = os.open(
+                    service.state_dir / PENDING, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
+                )
+                with os.fdopen(gate_fd, "w", encoding="utf-8") as gate:
+                    gate.write(json.dumps({"token": journal["token"]}, indent=2) + "\n")
+                    gate.flush()
+                    os.fsync(gate.fileno())
                 fsync_dir(service.state_dir)
             journal["state"] = "restore-intent"
             self._write(journal)
-            self._restore_files(digest, facts)
+            self._restore_files(journal, facts)
             target = journal["plan"]["target"]
             manager = self._manager(Path(target["executable"]))
             if journal["plan"]["manager"]["registered"] and not manager["registered"]:
                 journal["state"] = "restore-load-intent"
                 self._write(journal)
-                if self._target() != target:
-                    _refuse()
-                self._manager(Path(target["executable"]), require_absent=True)
+                self._admit_restore(journal, facts)
                 result = service.owned_manager_command(
                     ["/bin/launchctl", "bootstrap", f"gui/{os.getuid()}", str(plist_path(service.unit_dir))]
                 )
                 if result.returncode:
                     _refuse()
-            if self._manager(Path(target["executable"]))["registered"] != journal["plan"]["manager"]["registered"]:
+            facts["manager"] = self._manager(Path(target["executable"]))
+            if facts["manager"]["registered"] != journal["plan"]["manager"]["registered"]:
                 _refuse()
-            if self._target() != target:
-                _refuse()
-            for original in journal["plan"]["files"]:
-                if _file(Path(original["path"])).facts()["sha256"] != original["sha256"]:
-                    _refuse()
+            self._admit_restore(journal, facts)
             journal["state"] = "restored"
             self._write(journal)
             self._release_gate(journal)
             return self._terminal(digest, "restored")
 
-    def _restore_files(self, digest: str, facts: dict[str, Any]) -> None:
+    def _admit_restore(self, journal: dict[str, Any], facts: dict[str, Any], *, gate_absent: bool = False) -> None:
+        """Revalidate the entire coherent rollback set immediately before each effect."""
+        if self._target() != facts["target"] or self._manager(Path(facts["target"]["executable"])) != facts["manager"]:
+            _refuse()
+        self._verify_evidence(journal)
+        self._idle(token=None if gate_absent else journal["token"], check_tick=False, allow_history=True)
         for index, item in enumerate(facts["files"]):
-            if (
-                self._target() != facts["target"]
-                or self._manager(Path(facts["target"]["executable"])) != facts["manager"]
-            ):
+            original = Path(item["original"]["path"])
+            backup = self._directory(journal["digest"]) / f"original-{index}"
+            expected_backup = facts["backups"][index]
+            if expected_backup is None:
+                if not _absent(backup):
+                    _refuse()
+            elif _file(backup).facts() != expected_backup:
                 _refuse()
-            self._idle(token=facts["transaction"], check_tick=False, allow_history=True)
+            if item["at_original"]:
+                if _file(original).facts() != item["current"]:
+                    _refuse()
+            elif not _absent(original) or _file(backup).facts() != item["current"]:
+                _refuse()
+
+    def _restore_files(self, journal: dict[str, Any], facts: dict[str, Any]) -> None:
+        for index, item in enumerate(facts["files"]):
+            self._admit_restore(journal, facts)
             if item["at_original"]:
                 continue
             path = Path(item["original"]["path"])
-            backup = self._directory(digest) / f"original-{index}"
-            if not _absent(path) or _file(backup).facts() != item["current"]:
+            backup = self._directory(journal["digest"]) / f"original-{index}"
+            _rename_exclusive(backup, path)
+            restored = _file(path).facts()
+            if (
+                restored["identity"][:2] != item["current"]["identity"][:2]
+                or restored["sha256"] != item["current"]["sha256"]
+            ):
                 _refuse()
-            Path(backup).rename(path)
-            fsync_dir(path.parent)
-            fsync_dir(backup.parent)
+            item.update(at_original=True, current=restored)
+            facts["backups"][index] = None

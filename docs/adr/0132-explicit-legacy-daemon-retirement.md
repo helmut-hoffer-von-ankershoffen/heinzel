@@ -65,7 +65,11 @@ approve removal of precisely observed legacy integration without asserting histo
    original files and registration/activation only when the before-state can be verified; otherwise the durable
    gate and journal remain, and no success or successful rollback is claimed. Interrupted or uncertain requests
    are not retried automatically. Explicit recovery may restore only the journal-bound original state after all
-   current authority checks pass; foreign state is never overwritten to make recovery finish.
+   current authority checks pass. Before every restoration and registration request, the complete retained/restored
+   file and backup inode/hash set, evidence, target, manager and owned gate are revalidated, including files already
+   at their original paths. Restoration uses an atomic exclusive native rename with no replacing fallback; a
+   destination appearing after admission is preserved. An interruption after that atomic move remains recoverable
+   from the recorded backup inode at its original path; foreign state is never overwritten to make recovery finish.
 6. **Terminal separation and replay.** A completed retirement has its own durable terminal receipt, not an
    `install.json` or a new source-continuity checkpoint. It releases only its own ordinary blocking gate so the
    genuine installed SDK's supported updater can run. Repeating the same confirmed digest returns the historical

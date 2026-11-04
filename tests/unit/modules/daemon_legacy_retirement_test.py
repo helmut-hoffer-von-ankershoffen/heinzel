@@ -597,3 +597,149 @@ def test_changed_prepared_backup_refuses_before_unloading_registration(legacy, m
         recovery.retire(plan.digest)
     assert manager.verbs() == []
     assert [path.read_bytes() for path in paths] == before
+
+
+@pytest.mark.parametrize("retired_boundary", ["unloaded", "moved-2"])
+@pytest.mark.parametrize("boundary", ["restore-intent", "restore-load-intent"])
+@pytest.mark.parametrize("drift", ["unit", "marker", "request", "gate", "backup"])
+def test_restore_durable_boundary_drift_never_loads_changed_state(
+    completed_history, monkeypatch, retired_boundary, boundary, drift
+):
+    recovery, service, manager = completed_history
+    plan = recovery.plan()
+    write = recovery._write
+
+    def interrupted(journal):
+        write(journal)
+        if journal["state"] == retired_boundary:
+            msg = "injected interruption at retirement boundary"
+            raise RuntimeError(msg)
+
+    monkeypatch.setattr(recovery, "_write", interrupted)
+    with pytest.raises(RuntimeError):
+        recovery.retire(plan.digest)
+    monkeypatch.setattr(recovery, "_write", write)
+    restore = recovery.restore_plan(plan.digest)
+    path = {
+        "unit": service._unit_paths()[0],
+        "marker": service.state_dir / "install.json",
+        "request": service.state_dir / "handover-request.json",
+        "gate": service.state_dir / "standard-install-pending.json",
+        "backup": recovery.root / plan.digest / "original-0",
+    }[drift]
+    foreign = '{"token":"foreign"}' if drift == "gate" else "foreign changed bytes"
+
+    def changed(journal):
+        write(journal)
+        if journal["state"] == boundary:
+            path.write_text(foreign)
+
+    monkeypatch.setattr(recovery, "_write", changed)
+    effects = manager.verbs()
+    with pytest.raises(HeinzelError):
+        recovery.restore(plan.digest, restore.digest)
+    assert manager.verbs() == effects
+    assert not manager.registered
+    assert path.read_text() == foreign
+    assert (service.state_dir / "standard-install-pending.json").exists()
+
+
+@pytest.mark.parametrize("foreign", ["regular", "symlink"])
+def test_restore_exclusive_rename_preserves_destination_appearing_after_admission(legacy, monkeypatch, foreign):
+    from heinzel.modules.system.daemon import _legacy_retirement as implementation
+
+    recovery, service, manager = legacy
+    plan = recovery.plan()
+    write = recovery._write
+
+    def interrupted(journal):
+        write(journal)
+        if journal["state"] == "moved-0":
+            message = "injected interruption with missing unit"
+            raise RuntimeError(message)
+
+    monkeypatch.setattr(recovery, "_write", interrupted)
+    with pytest.raises(RuntimeError):
+        recovery.retire(plan.digest)
+    monkeypatch.setattr(recovery, "_write", write)
+    restore = recovery.restore_plan(plan.digest)
+    target = service.state_dir / "foreign-data"
+    target.write_text("foreign bytes")
+    unit = service._unit_paths()[0]
+    backup = recovery.root / plan.digest / "original-0"
+    restore_files = recovery._restore_files
+    absent = implementation._absent
+    file = implementation._file
+    injecting = checked_absent = appeared = False
+
+    def restoring(*args):
+        nonlocal injecting
+        injecting = True
+        return restore_files(*args)
+
+    def checked(path):
+        nonlocal checked_absent
+        result = absent(path)
+        if injecting and path == unit and result:
+            checked_absent = True
+        return result
+
+    def read(path):
+        nonlocal appeared
+        captured = file(path)
+        if injecting and checked_absent and path == backup and not appeared:
+            appeared = True
+            if foreign == "regular":
+                unit.write_text("foreign bytes")
+            else:
+                unit.symlink_to(target)
+        return captured
+
+    monkeypatch.setattr(recovery, "_restore_files", restoring)
+    monkeypatch.setattr(implementation, "_absent", checked)
+    monkeypatch.setattr(implementation, "_file", read)
+    effects = manager.verbs()
+    with pytest.raises(FileExistsError):
+        recovery.restore(plan.digest, restore.digest)
+    assert manager.verbs() == effects
+    assert service._unit_paths()[0].read_text() == "foreign bytes"
+    assert service._unit_paths()[0].is_symlink() == (foreign == "symlink")
+    assert (recovery.root / plan.digest / "original-0").exists()
+    assert (service.state_dir / "standard-install-pending.json").exists()
+
+
+def test_restore_crash_after_atomic_no_clobber_move_remains_explicitly_recoverable(legacy, monkeypatch):
+    from heinzel.modules.system.daemon import _legacy_retirement as implementation
+
+    recovery, service, manager = legacy
+    plan = recovery.plan()
+    write = recovery._write
+
+    def interrupted(journal):
+        write(journal)
+        if journal["state"] == "moved-1":
+            message = "injected interruption with both original files absent"
+            raise RuntimeError(message)
+
+    monkeypatch.setattr(recovery, "_write", interrupted)
+    with pytest.raises(RuntimeError):
+        recovery.retire(plan.digest)
+    monkeypatch.setattr(recovery, "_write", write)
+    restore = recovery.restore_plan(plan.digest)
+    rename = implementation._rename_exclusive
+
+    def lost_ack(source, destination):
+        rename(source, destination)
+        message = "injected crash after the exclusive move"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(implementation, "_rename_exclusive", lost_ack)
+    effects = manager.verbs()
+    with pytest.raises(RuntimeError):
+        recovery.restore(plan.digest, restore.digest)
+    assert manager.verbs() == effects
+    assert (service.state_dir / "standard-install-pending.json").exists()
+    monkeypatch.setattr(implementation, "_rename_exclusive", rename)
+    renewed = recovery.restore_plan(plan.digest)
+    assert recovery.restore(plan.digest, renewed.digest).status == "restored"
+    assert manager.registered
