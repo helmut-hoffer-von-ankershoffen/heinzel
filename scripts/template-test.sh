@@ -8,13 +8,13 @@ unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX # a caller's hook must not
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 destination="${1:-$(mktemp -d)/heinzel-example}"
 
-uv run --quiet --script scripts/build.py prepare
+uv run --no-build --quiet --script scripts/build.py prepare
 uv run --frozen copier copy --defaults --vcs-ref HEAD --quiet \
   --data preset=governed --data plugin_name=sprocket --data author_name="Template Test" --data author_email=template-test@example.test \
   --data github_owner=helmut-hoffer-von-ankershoffen \
   "$repo_root" "$destination"
 candidate_dir="$(mktemp -d)"
-uv run --quiet --script scripts/build.py --wheel --quiet --out-dir "$candidate_dir"
+uv run --no-build --quiet --script scripts/build.py --wheel --quiet --out-dir "$candidate_dir"
 core_wheel="$(find "$candidate_dir" -name 'heinzel-*.whl' -print -quit)"
 cd "$destination"
 git init --quiet -b main
