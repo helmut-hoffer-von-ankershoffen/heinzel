@@ -88,7 +88,11 @@ def test_recovery_binds_verified_persistent_target_before_plugin_disabled_resolu
 
     monkeypatch.setattr(head, "resolve_target", resolve)
     monkeypatch.setattr(head.Config, "load", lambda directory: SimpleNamespace(settings=lambda kind, section: settings))
-    monkeypatch.setattr(head, "private_read", lambda path: profile)
+    settings.data_dir.mkdir(mode=0o755)
+    settings.data_dir.chmod(0o755)
+    receipt = settings.data_dir / "standard-app.json"
+    head.install._write_standard_receipt(settings.data_dir, head.install.AppProfile.model_validate_json(profile))
+    assert receipt.stat().st_mode & 0o777 == 0o600
 
     class ObservedInstallation:
         def __init__(self, progress, *, prefix, uv):
@@ -128,3 +132,107 @@ def test_recovery_binds_verified_persistent_target_before_plugin_disabled_resolu
     else:
         assert head.recovery() == "narrow-port"
         assert calls[:3] == ["verify-target", "verify-checkpoint", "candidate-builtins-only"]
+
+
+def test_published_install_receipt_is_readable_without_changing_directory_permissions(tmp_path):
+    """The normal 022-umask data folder is public-searchable; mkstemp keeps receipt secrets private."""
+    from heinzel import HeinzelError
+    from heinzel.kernel import private_read
+
+    data = tmp_path / "data"
+    data.mkdir(mode=0o755)
+    data.chmod(0o755)
+    receipt = data / "standard-app.json"
+    receipt.write_bytes(b'{"format":2}')
+    receipt.chmod(0o600)
+    before = data.stat()
+    with pytest.raises(HeinzelError):
+        private_read(receipt)
+    assert head._standard_receipt(data) == b'{"format":2}'
+    assert data.stat() == before
+    assert receipt.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "directory-link",
+        "parent-link",
+        "writable-data",
+        "writable-parent",
+        "file-link",
+        "hardlink",
+        "readable-secret",
+        "directory",
+        "fifo",
+        "oversize",
+    ],
+)
+def test_legacy_directory_compatibility_preserves_private_receipt_boundary(tmp_path, problem):
+    import os
+
+    from heinzel import HeinzelError
+
+    parent = tmp_path / "parent"
+    parent.mkdir(mode=0o755)
+    data = parent / "data"
+    data.mkdir(mode=0o755)
+    receipt = data / "standard-app.json"
+    receipt.write_bytes(b"secret")
+    receipt.chmod(0o600)
+    selected = data
+    if problem == "directory-link":
+        selected = parent / "alias"
+        selected.symlink_to(data, target_is_directory=True)
+    elif problem == "parent-link":
+        alias = tmp_path / "alias"
+        alias.symlink_to(parent, target_is_directory=True)
+        selected = alias / "data"
+    elif problem == "writable-data":
+        data.chmod(0o775)
+    elif problem == "writable-parent":
+        parent.chmod(0o777)
+    elif problem == "file-link":
+        secret = data / "secret"
+        receipt.rename(secret)
+        receipt.symlink_to(secret)
+    elif problem == "hardlink":
+        os.link(receipt, data / "second")
+    elif problem == "readable-secret":
+        receipt.chmod(0o644)
+    elif problem == "directory":
+        receipt.unlink()
+        receipt.mkdir(mode=0o700)
+    elif problem == "fifo":
+        receipt.unlink()
+        os.mkfifo(receipt, 0o600)
+    else:
+        assert problem == "oversize"
+        receipt.write_bytes(b"x" * (16 * 1024 + 1))
+    with pytest.raises((HeinzelError, OSError)):
+        head._standard_receipt(selected)
+
+
+def test_receipt_entry_replacement_during_read_is_refused(monkeypatch, tmp_path):
+    import os
+
+    from heinzel import HeinzelError
+
+    data = tmp_path / "data"
+    data.mkdir(mode=0o755)
+    receipt = data / "standard-app.json"
+    receipt.write_bytes(b"old")
+    receipt.chmod(0o600)
+    original = os.stat
+
+    def replace_entry(path, *args, **kwargs):
+        if path == "standard-app.json":
+            replacement = data / "replacement"
+            replacement.write_bytes(b"new")
+            replacement.chmod(0o600)
+            replacement.replace(receipt)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(head.os, "stat", replace_entry)
+    with pytest.raises(HeinzelError, match="changed"):
+        head._standard_receipt(data)
