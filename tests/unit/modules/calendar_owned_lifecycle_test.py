@@ -314,3 +314,28 @@ def test_host_inventory_refuses_foreign_or_rebound_contribution(change):
         kernel.bind(CalendarMaintenance, CalendarMaintenance())
     with pytest.raises(HeinzelError, match="expected built-in"):
         _contributions(kernel)
+
+
+def test_a_foreign_gate_appearing_before_begin_cannot_authorize_any_effect(journal, monkeypatch):
+    from types import SimpleNamespace
+
+    from heinzel.modules.system._uninstall import _apply_removal
+
+    record, installation, unit = journal
+    foreign = '{"token":"another-transaction"}\n'
+    private_write(record.gate, foreign)
+    effects = []
+    service = SimpleNamespace(stop=lambda *args: effects.append("stop"), finish=lambda: effects.append("finish"))
+    monkeypatch.setattr(installation, "uninstall_offline", lambda **kwargs: effects.append("uv"))
+    with pytest.raises(HeinzelError, match="needs inspection"):
+        _apply_removal(
+            installation,
+            installation.startup_fingerprint(),
+            installation.test_remover,
+            (service, service, record, (), lambda: None),
+            None,
+        )
+    assert effects == []
+    assert record.gate.read_text() == foreign
+    assert installation.prefix.exists()
+    assert unit.exists()

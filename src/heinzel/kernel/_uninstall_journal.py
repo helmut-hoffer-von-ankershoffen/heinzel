@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 from heinzel.kernel import _uninstall_recovery as recovery
 from heinzel.kernel._installation_continuity import tool_python
 from heinzel.kernel._offline_uv import VerifiedUV, fsync_directory
-from heinzel.kernel._private_control import private_read, private_write
+from heinzel.kernel._private_control import private_read
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file
 
 
@@ -150,8 +150,16 @@ class RemovalJournal:
         fsync_directory(self.directory)
 
     def begin(self) -> None:
-        """Publish the existing cooperative installation gate durably before stopping any owned job."""
-        private_write(self.gate, self.gate_content)
+        """Exclusively publish the cooperative gate durably before stopping any owned job.
+
+        Raises:
+            FileExistsError: If another operation already owns the gate; its bytes remain unchanged.
+        """
+        descriptor = os.open(self.gate, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(descriptor, "w") as stream:
+            stream.write(self.gate_content)
+            stream.flush()
+            os.fsync(stream.fileno())
         fsync_directory(self.gate.parent)
 
     def phase(self, phase: str) -> None:

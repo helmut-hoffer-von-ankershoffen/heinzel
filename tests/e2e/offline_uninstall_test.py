@@ -200,7 +200,9 @@ if sys.argv[1:3] == ["fixture", "retention"]:
         route="/", command="", key="calendar-retention-fixture", expires=datetime.now(UTC) + timedelta(hours=1)
     )
     assert service.emit_once(NoticeKind.CALENDAR, "Fixture reminder", "Retained replay proof", **arguments)
-    assert not service.emit_once(NoticeKind.CALENDAR, "Fixture reminder", "Retained replay proof", **arguments)
+    assert service.emit_once(NoticeKind.CALENDAR, "Fixture reminder", "Retained replay proof", **arguments)
+    assert [notice.key for notice in service.store.read()] == ["calendar-retention-fixture"]
+    assert service.store.has_once("calendar-retention-fixture")
     print("retention prepared")
     raise SystemExit(0)
 from heinzel.heads.cli import main
