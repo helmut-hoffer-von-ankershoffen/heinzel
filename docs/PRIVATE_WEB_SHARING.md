@@ -1,13 +1,13 @@
 # Share the authenticated web app through a private HTTPS proxy
 
-Keep `hz ui` listening on `127.0.0.1` and allow the proxy's exact HTTPS origin in your user configuration. The
+Keep `hz ui serve` listening on `127.0.0.1` and allow the proxy's exact HTTPS origin in your user configuration. The
 restricted REST head's `api_allowed_hosts` setting does not configure the web app.
 
 For an existing private reverse proxy, configure its actual origin and start the backend on its stable port:
 
 ```sh
 hz system config set hz.ui_allowed_origins '["https://workstation.example.ts.net"]'
-hz ui --no-browser
+hz ui serve --no-browser
 ```
 
 Restart an already-running backend after changing the allowed origins. Until that replacement has loaded the
@@ -27,11 +27,11 @@ The proxy URL does not sign someone in. Access from your private network still r
 bearer or a paired-device credential. The terminal opens the backend owner's shell after those checks, so share an
 authenticated link only with devices you trust with that account.
 
-For a fresh browser, use the session link printed by your own `hz ui`, replacing only its loopback origin with the
+For a fresh browser, use the session link printed by your own `hz ui serve`, replacing only its loopback origin with the
 exact approved HTTPS origin and retaining its `/#token=…` fragment. The fragment is read by the app; it is not sent
 to the proxy or server. Never put a token in a URL query, configuration, screenshot or log. Pairing and notification
 permissions are stored separately by each browser origin; moving to a new origin does not copy them automatically.
-`hz ui --devices` and `hz ui --revoke ID` retain their existing meaning, including remote browser credentials.
+`hz ui serve --devices` and `hz ui serve --revoke ID` retain their existing meaning, including remote browser credentials.
 
 Pages, operations, pairing, notification/operation streams and terminal WebSockets all use the same authority
 policy. A mismatched Host/Origin, opaque Origin, duplicate authority header or cross-site fetch is refused before

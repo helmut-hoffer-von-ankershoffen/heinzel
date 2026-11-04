@@ -31,7 +31,7 @@ test("launches the installed CLI with fixed arguments and returns its verified U
   let spawned;
   const owned = createOwnedCli({ spawn: (...args) => { spawned = args; return child; } });
   const started = owned.start();
-  assert.deepEqual(spawned, ["hz", ["ui", "--port", "0", "--no-browser"], {
+  assert.deepEqual(spawned, ["hz", ["ui", "serve", "--port", "0", "--no-browser"], {
     shell: false,
     windowsHide: true,
     stdio: ["ignore", "pipe", "ignore"],

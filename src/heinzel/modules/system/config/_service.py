@@ -62,7 +62,7 @@ class ConfigService(ConfigEditor):
 
     def report(self) -> ConfigReport:
         """The files Heinzelmännchen reads, every setting in effect, and whether a file can be revealed here."""
-        # Read now, not as booted: `hz ui` keeps running while it and terminals change the files.
+        # Read now, not as booted: `hz ui serve` keeps running while it and terminals change the files.
         config = self._kernel.config.reread()
         sections = [(section, _fresh(config, section, settings)) for section, settings in self._kernel.settings_of()]
         schemas = {type(settings): setting_schemas(type(settings)) for _, settings in sections}

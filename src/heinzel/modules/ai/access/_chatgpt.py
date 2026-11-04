@@ -41,6 +41,7 @@ HOST_ID_FILE = "host-id"
 
 CHATGPT_LOGIN = CredentialLet(
     name="chatgpt-login",
+    required=False,
     purpose="The ChatGPT sign-in hz keeps for your plan: run `hz ai access login`, which signs in in your browser",
 )
 

@@ -1,4 +1,4 @@
-"""Automatic updates: the `hz ui` server checks, warns every window, waits for idle and applies (ADR 0116).
+"""Automatic updates: the `hz ui serve` server checks, warns every window, waits for idle and applies (ADR 0116).
 
 The plan lives here, in the server, never in a browser: two windows show the same countdown, a reload shows what is
 left of it, and with no window open the update still applies on time. It is saved under the state folder, so a
@@ -460,7 +460,7 @@ def _now() -> datetime:
 
 
 class AutoUpdater:
-    """Runs the plan in the `hz ui` server: checks, countdown, postpone, apply, and the outcome after a restart."""
+    """Run the web server update plan, retaining its countdown, deferral and restart outcome."""
 
     def __init__(  # noqa: PLR0913 - the seams tests replace and all by keyword
         self,
@@ -500,7 +500,7 @@ class AutoUpdater:
         self._waited: list[str] = []
         """What held the countdown off at the last look, so the log says it once per change."""
         self._applying: IO[str] | None = None
-        """Held from the start of an apply until this process ends, so no other `hz ui` applies meanwhile."""
+        """Held from the start of an apply until this process ends, so no other `hz ui serve` applies meanwhile."""
         self.plan = self._read(fresh=True) or Plan()
         now = self._clock()
         self._next_check = now + self._between(*FIRST_CHECK)
@@ -696,7 +696,7 @@ class AutoUpdater:
             self._applying = handle
             weakref.finalize(self, _unlock, handle)  # closed with this updater at the latest
         if self._applying is None:
-            # Another `hz ui` on this state folder applies now: it restarts with the news, this one waits.
+            # Another `hz ui serve` on this state folder applies now: it restarts with the news, this one waits.
             log.info("automatic update left to another server that is applying it")
             with self._editing() as plan:
                 plan.applying = False
@@ -758,7 +758,7 @@ class AutoUpdater:
     def _recover(self) -> None:
         """Put back an update that a dead process left half done, before anything else (`system.recover-announced`).
 
-        Only while no other `hz ui` on this state folder applies one: its copy is in use.
+        Only while no other `hz ui serve` on this state folder applies one: its copy is in use.
         """
         handle = _try_lock(self._apply_lock)
         if handle is None:
@@ -838,7 +838,7 @@ class AutoUpdater:
 
     @contextmanager
     def _editing(self) -> Generator[Plan]:
-        """The plan as the state file has it now, to change and save, under a lock every `hz ui` takes.
+        """The plan as the state file has it now, to change and save, under a lock every `hz ui serve` takes.
 
         Two servers on one state folder each change the latest plan, never their own older copy, so neither undoes
         the other's postpone, dismissal or news (no last writer wins). What only this process knows (that it applies

@@ -99,7 +99,7 @@ class UiService:
         self._editor = editor
 
     def chosen(self) -> dict[str, dict[Slot, bool]]:
-        """What the person decided per contribution and slot, read now: a running `hz ui` sees `hz system ui show`."""
+        """Read current contribution and slot choices so the web server observes terminal changes."""
         try:
             return {
                 key: dict(value) for key, value in Config.load().settings(UiSettings, SECTION).contributions.items()

@@ -39,7 +39,7 @@ def wait_for_port(  # noqa: PLR0913 - socket and time seams keep retries determi
             if remaining <= 0:
                 msg = (
                     f"Port {port} is still in use after {timeout:g} seconds. Another hz ui or application may be "
-                    "running; stop it, or use hz ui --port 0 for a free port."
+                    "running; stop it, or use hz ui serve --port 0 for a free port."
                 )
                 raise HeinzelError(msg) from None
             if not announced:
