@@ -79,7 +79,7 @@ for (const phase of ["fetch", "held response"]) {
   });
 }
 
-test("settlement surfaces route failures", async () => {
+test("settlement propagates unrouteAll errors", async () => {
   const failure = new Error("upstream fetch failed");
   await assert.rejects(
     settleRoutes({
