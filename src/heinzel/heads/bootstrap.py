@@ -42,9 +42,23 @@ def _object_rows(value: JsonValue) -> list[dict[str, JsonValue]]:
 
 def _setting_rows(value: JsonValue) -> list[dict[str, JsonValue]]:
     rows = _object_rows(value)
-    if any(not isinstance(row.get(key), str) for row in rows for key in ("section", "key", "source")):
-        msg = "The configuration field identities and sources could not be verified; inspect `hz system config show`."
-        raise HeinzelError(msg)
+    identities: set[tuple[str, str]] = set()
+    for row in rows:
+        section, key, source = (row.get(name) for name in ("section", "key", "source"))
+        if (
+            not isinstance(section, str)
+            or not section.strip()
+            or not isinstance(key, str)
+            or not key.strip()
+            or not isinstance(source, str)
+            or not source.strip()
+            or (section, key) in identities
+        ):
+            msg = (
+                "The configuration field identities and sources could not be verified; inspect `hz system config show`."
+            )
+            raise HeinzelError(msg)
+        identities.add((section, key))
     return rows
 
 
@@ -280,6 +294,29 @@ def _managed_json(executable: Path, environment: dict[str, str], arguments: list
     return _json_object(result.stdout)
 
 
+def _profile_gaps(executable: Path, environment: dict[str, str]) -> list[tuple[str, dict[str, JsonValue]]]:
+    profile = _managed_json(executable, environment, ["org", "show"])
+    report = _managed_json(executable, environment, ["system", "config", "show"])
+    settings = _setting_rows(report.get("settings"))
+    missing = _missing_fields(profile)
+    gaps: list[tuple[str, dict[str, JsonValue]]] = []
+    for key in dict.fromkeys(["org.name", "team.name", *missing]):
+        if not key.startswith(("org.", "team.")):
+            msg = "The profile declared unexpected requirements; inspect `hz org show`."
+            raise HeinzelError(msg)
+        field = next((item for item in settings if f"{item.get('section')}.{item.get('key')}" == key), None)
+        if field is None or "value" not in field:
+            msg = f"The required profile setting {key} is unavailable; inspect configuration before continuing."
+            raise HeinzelError(msg)
+        value = field["value"]
+        if value is not None and not isinstance(value, str):
+            msg = f"The required profile setting {key} is invalid; inspect configuration before continuing."
+            raise HeinzelError(msg)
+        if key in missing or value is None or not value.strip():
+            gaps.append((key, field))
+    return gaps
+
+
 def _complete_profile(executable: Path, environment: dict[str, str], prompter: Prompter | None = None) -> None:
     if prompter is None:
         from rich.console import Console  # noqa: PLC0415 - interactive setup only
@@ -288,24 +325,7 @@ def _complete_profile(executable: Path, environment: dict[str, str], prompter: P
 
         prompter = ConsolePrompter(Console(file=sys.stderr))
     prompter.say("Your profile stays on this computer. Existing values will be kept.")
-    profile = _managed_json(executable, environment, ["org", "show"])
-    report = _managed_json(executable, environment, ["system", "config", "show"])
-    settings = _setting_rows(report.get("settings"))
-    required = ["org.name", "team.name", *_missing_fields(profile)]
-    for key in dict.fromkeys(required):
-        if not key.startswith(("org.", "team.")):
-            msg = "The profile declared unexpected requirements; inspect `hz org show`."
-            raise HeinzelError(msg)
-        field = next(
-            (item for item in settings if f"{item.get('section')}.{item.get('key')}" == key),
-            None,
-        )
-        if field is None:
-            msg = f"The required profile setting {key} is unavailable; inspect configuration before continuing."
-            raise HeinzelError(msg)
-        value = field.get("value")
-        if value is not None and (not isinstance(value, str) or value.strip()):
-            continue
+    for key, field in _profile_gaps(executable, environment):
         choices = _profile_choices(field.get("json_schema"))
         title = {
             "org.name": "Your name",
@@ -326,8 +346,7 @@ def _complete_profile(executable: Path, environment: dict[str, str], prompter: P
 
 
 def _require_profile(executable: Path, environment: dict[str, str]) -> None:
-    profile = _managed_json(executable, environment, ["org", "show"])
-    if _missing_fields(profile):
+    if _profile_gaps(executable, environment):
         msg = "Setup is incomplete: run `uvx heinzel@latest` in an interactive terminal to complete your real profile."
         raise HeinzelError(msg)
 

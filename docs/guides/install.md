@@ -126,11 +126,13 @@ unchanged and ask for recovery help.
 
 On first interactive setup, provide your real name, team and required profile details. Existing values are kept.
 Choose **Set up AI later** to use Heinzel without an AI account; this saves an explicit unconfigured choice for uses
-that run only when asked. Existing provider selections are kept. Asking or sending a chat still requires configured
+that run only when asked. Existing provider selections are kept.
+
+Asking or sending a chat still requires configured
 access, and an active scheduled Heinzel still reports missing capabilities. Setup finishes only after actual system
 health is up. A bare noninteractive first use with missing required profile details returns an incomplete result
 without prompting or opening the app.
 
-For the transition from 0.9.15, an old explicit foreground vector such as `hz ui --port 0 --no-browser` forwards to
+When upgrading an existing installation, an old explicit foreground vector such as `hz ui --port 0 --no-browser` forwards to
 the same serving implementation with a deprecation hint. New scripts and applications use `hz ui serve`; bare
 `hz ui` remains group help and never starts a listener.

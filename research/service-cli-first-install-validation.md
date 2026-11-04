@@ -56,3 +56,10 @@ fields and profile enum choices at runtime, without casts or type suppressions. 
 non-boolean delivery evidence remain refusals. Focused strict Pyright, Ruff and 145 affected bootstrap/profile/module
 tests pass after that repair; normal commit hooks separately retain the full mypy check. These checks do not stand
 in for the pending daemon ownership ABI integration or final combined review and validation.
+
+
+The final profile review found that org health's missing list does not include optional schema fields name and team.
+Six real ConfigService regressions (missing or blank name/team with otherwise complete org health) fail the prior
+source in 1.17 seconds. Both interactive and noninteractive onboarding now use the same strict profile-gap reader,
+combining the actual missing list with required nonblank names. Duplicate field identities, missing value rows,
+invalid value types and unverified field sources are refused before questions, writes, service setup or UI launch.

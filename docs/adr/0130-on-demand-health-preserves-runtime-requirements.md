@@ -53,6 +53,7 @@ Execution tests retain mandatory failures before subprocess or network calls, an
 Module inventory grants are separate: `inspects=["ai-access:read"]` authorizes only the capability's explicit
 `inspection_methods` allowlist through `Adapters` injection. For AI access that is `status`, never the paid `test`
 method. A grant must be an unpinned read and the capability must declare inspection methods; capability declarations
-reject unknown or write inspection methods. Bound capability injection never consults this authority. Configuration
-and inventory services retain only these restricted handles. Live-test handles are injected into the consuming
+reject unknown or write inspection methods. Bound capability injection never consults this authority.
+
+Configuration and inventory services retain only these restricted handles. Live-test handles are injected into the consuming
 operation under its own ordinary runtime requirement, passed for that call, and never cached on the module service.

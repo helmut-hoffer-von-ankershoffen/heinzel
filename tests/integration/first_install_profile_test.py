@@ -26,9 +26,11 @@ def managed_profile(monkeypatch, make_kernel, tmp_path):
     def managed(_executable, _environment, arguments):
         # Each managed subprocess reads fresh configuration; use the same real head/service boundary here.
         refreshed = make_kernel(builtins=True, config=Config.load(tmp_path))
-        result = CliRunner().invoke(build(refreshed), [*arguments, "--json"])
-        assert result.exit_code == 0, result.output
         calls.append(arguments)
+        result = CliRunner().invoke(build(refreshed), [*arguments, "--json"])
+        if result.exit_code:
+            msg = "Managed command refused invalid configuration"
+            raise HeinzelError(msg)
         return json.loads(result.stdout)
 
     monkeypatch.setattr(bootstrap, "_managed_json", managed)
@@ -120,7 +122,7 @@ def test_noninteractive_missing_profile_is_explicitly_incomplete_without_prompts
     _kernel, _directory, calls = managed_profile
     with pytest.raises(HeinzelError, match="Setup is incomplete"):
         bootstrap._require_profile(Path("/fixture/persistent/bin/hz"), {})
-    assert calls == [["org", "show"]]
+    assert calls == [["org", "show"], ["system", "config", "show"]]
 
 
 def test_bare_noninteractive_first_use_stops_incomplete_before_opening(managed_profile, monkeypatch):
@@ -136,4 +138,105 @@ def test_bare_noninteractive_first_use_stops_incomplete_before_opening(managed_p
         bootstrap.main()
     assert result.value.code == 1
     assert not launched
-    assert calls == [["org", "show"]]
+    assert calls == [["org", "show"], ["system", "config", "show"]]
+
+
+@pytest.mark.parametrize(
+    ("name", "team"),
+    [
+        (None, "Payments"),
+        ("Mira", None),
+        ("", "Payments"),
+        ("Mira", ""),
+        ("  ", "Payments"),
+        ("Mira", "\t "),
+    ],
+)
+def test_noninteractive_health_complete_profile_still_requires_real_name_and_team(
+    managed_profile, monkeypatch, name, team
+):
+    _kernel, directory, calls = managed_profile
+    directory.mkdir(parents=True, exist_ok=True)
+    text = '[org]\nhandle="mira"\nrole="engineer"\ntimezone="Europe/Berlin"\n'
+    if name is not None:
+        text += f"name={json.dumps(name)}\n"
+    if team is not None:
+        text += f"[team]\nname={json.dumps(team)}\n"
+    configuration = directory / "config.toml"
+    configuration.write_text(text)
+    before = configuration.read_bytes()
+    executable = Path("/fixture/persistent/bin/hz")
+    monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
+    monkeypatch.setattr(bootstrap.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: executable)
+    monkeypatch.setattr(bootstrap, "_workspace_command", lambda *_args: ["ui", "open"])
+    opened, mutations = [], []
+    monkeypatch.setattr(bootstrap, "_launch_app", lambda *_args: opened.append(True))
+    monkeypatch.setattr(bootstrap, "_install_services", lambda *_args: mutations.append(True))
+    monkeypatch.setattr(bootstrap, "_complete_profile", lambda *_args: pytest.fail("Noninteractive profile prompt"))
+    with pytest.raises(SystemExit) as result:
+        bootstrap.main()
+    assert result.value.code == 1
+    assert opened == mutations == []
+    assert configuration.read_bytes() == before
+    assert calls == [["org", "show"], ["system", "config", "show"]]
+
+
+def test_complete_noninteractive_profile_is_preserved_and_can_open_without_prompt(managed_profile, monkeypatch):
+    _kernel, directory, calls = managed_profile
+    directory.mkdir(parents=True, exist_ok=True)
+    configuration = directory / "config.toml"
+    configuration.write_text(
+        '[org]\nname="Mira"\nhandle="mira"\nrole="engineer"\ntimezone="Europe/Berlin"\n[team]\nname="Payments"\n'
+    )
+    before = configuration.read_bytes()
+    executable = Path("/fixture/persistent/bin/hz")
+    monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
+    monkeypatch.setattr(bootstrap.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: executable)
+    monkeypatch.setattr(bootstrap, "_workspace_command", lambda *_args: ["ui", "open"])
+    opened = []
+    monkeypatch.setattr(bootstrap, "_launch_app", lambda *_args: opened.append(True))
+    monkeypatch.setattr(bootstrap, "_complete_profile", lambda *_args: pytest.fail("Noninteractive profile prompt"))
+    bootstrap.main()
+    assert opened == [True]
+    assert configuration.read_bytes() == before
+    assert calls == [["org", "show"], ["system", "config", "show"]]
+
+
+@pytest.mark.parametrize("problem", ["duplicate", "blank-source", "missing-value", "invalid-value", "missing-field"])
+@pytest.mark.parametrize("interactive", [False, True])
+def test_both_profile_paths_refuse_ambiguous_or_invalid_rows_before_questions_or_writes(
+    monkeypatch, problem, interactive
+):
+    settings = [
+        {"section": "org", "key": "name", "source": "default", "value": "Mira", "json_schema": {"type": "string"}},
+        {"section": "team", "key": "name", "source": "default", "value": "Payments", "json_schema": {"type": "string"}},
+    ]
+    if problem == "duplicate":
+        settings.append(dict(settings[0]))
+    elif problem == "blank-source":
+        settings[0]["source"] = " "
+    elif problem == "missing-value":
+        del settings[0]["value"]
+    elif problem == "invalid-value":
+        settings[0]["value"] = True
+    else:
+        settings.pop()
+    calls = []
+
+    def managed(_executable, _environment, arguments):
+        calls.append(arguments)
+        return {"missing": []} if arguments == ["org", "show"] else {"settings": settings}
+
+    monkeypatch.setattr(bootstrap, "_managed_json", managed)
+
+    def check():
+        if interactive:
+            bootstrap._complete_profile(Path("/fixture/persistent/bin/hz"), {}, ScriptedPrompter([]))
+        else:
+            bootstrap._require_profile(Path("/fixture/persistent/bin/hz"), {})
+
+    with pytest.raises(HeinzelError, match=r"could not be verified|is unavailable|is invalid"):
+        check()
+    assert calls == [["org", "show"], ["system", "config", "show"]]
