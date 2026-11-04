@@ -184,3 +184,44 @@ def test_the_status_item_counts_down_to_the_next_meeting_or_says_why_there_is_no
     assert odd is not None
     assert (odd.text, odd.effect) == ("Calendar unavailable", None)
     assert status_item(Agenda(now=NOW, calendar="google")) is None
+
+
+def test_week_includes_all_day_and_overlap_but_excludes_cancelled_and_outside():
+    from heinzel.modules.org._agenda import read_week
+
+    holiday = event("Holiday", "2026-10-26T00:00", 1440, all_day=True)
+    overlap = event("Overnight", "2026-10-25T23:00", 120)
+    cancelled = event("Cancelled", "2026-10-27T10:00", status="cancelled")
+    outside = event("Outside", "2026-11-02T00:00")
+    calendar = FakeCalendar(outside, cancelled, holiday, overlap)
+    result = read_week(calendar, FakeBindings(), NOW, 0)
+    assert result.events == [overlap, holiday]
+    assert result.since == datetime(2026, 10, 26, tzinfo=BERLIN)
+    assert result.until == datetime(2026, 11, 2, tzinfo=BERLIN)
+    assert calendar.windows == [Window(since=result.since, until=result.until)]
+
+
+def test_week_uses_local_midnights_across_daylight_saving_and_reports_errors():
+    from heinzel.modules.org._agenda import read_week
+
+    result = read_week(FakeCalendar(), FakeBindings(), NOW, -1)
+    assert result.since.utcoffset() == timedelta(hours=2)
+    assert result.until.utcoffset() == timedelta(hours=1)
+    assert result.timezone == "Europe/Berlin"
+    assert read_week(FakeCalendar(), FakeBindings(None, "missing"), NOW, 0).problem == "No calendar connected."
+    assert read_week(FakeCalendar(error=RuntimeError("secret")), FakeBindings(), NOW, 0).problem == (
+        "Reading your calendar failed: RuntimeError"
+    )
+
+
+def test_agenda_selects_the_correct_occurrence_during_the_repeated_dst_hour():
+    from datetime import UTC
+
+    first = datetime(2026, 10, 25, 2, 10, tzinfo=BERLIN, fold=0)
+    second = datetime(2026, 10, 25, 2, 10, tzinfo=BERLIN, fold=1)
+    now = datetime(2026, 10, 25, 2, 20, tzinfo=BERLIN, fold=0)
+    earlier = Event(id="1", title="First", start=first, end=first.astimezone(UTC) + timedelta(minutes=30))
+    later = Event(id="2", title="Second", start=second, end=second.astimezone(UTC) + timedelta(minutes=30))
+    result = read_agenda(FakeCalendar(earlier, later), FakeBindings(), now)
+    assert result.current == earlier
+    assert result.next == later

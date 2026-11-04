@@ -1511,6 +1511,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/org/calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a week from your connected calendar.
+         * @description Show a week from your connected calendar.
+         */
+        get: operations["org_calendar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/org/calendar-reminders-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show calendar reminder consent and the supervised worker's state.
+         * @description Show calendar reminder consent and the supervised worker's state.
+         */
+        get: operations["org_calendar_reminders_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org/show": {
         parameters: {
             query?: never;
@@ -3900,6 +3940,11 @@ export interface components {
              * @description Why there is no agenda: no calendar is connected, its binding can't be used, or reading it failed (e.g. an expired sign-in); none when it was read.
              */
             problem?: string | null;
+            /**
+             * Timezone
+             * @description Your IANA time zone when known.
+             */
+            timezone?: string | null;
         };
         /**
          * AgentResult
@@ -4177,6 +4222,54 @@ export interface components {
              * @default 1
              */
             revision: number;
+        };
+        /**
+         * CalendarReminderStatus
+         * @description Whether calendar reads are enabled and what the supervisor reports.
+         */
+        CalendarReminderStatus: {
+            /** Enabled */
+            enabled: boolean;
+            /** Service */
+            service: string;
+        };
+        /**
+         * CalendarWeek
+         * @description A bounded week of calendar events or an explanation why it could not be read.
+         */
+        CalendarWeek: {
+            /**
+             * Events
+             * @description Non-cancelled events overlapping the week.
+             */
+            events?: components["schemas"]["Event"][];
+            /**
+             * Fix
+             * @description A command to connect a calendar, if available.
+             */
+            fix?: string | null;
+            /**
+             * Problem
+             * @description Why the calendar could not be read, if unavailable.
+             */
+            problem?: string | null;
+            /**
+             * Since
+             * Format: date-time
+             * @description The beginning of the week in your time zone.
+             */
+            since: string;
+            /**
+             * Timezone
+             * @description IANA profile time zone when known.
+             */
+            timezone?: string | null;
+            /**
+             * Until
+             * Format: date-time
+             * @description The exclusive end of the week in your time zone.
+             */
+            until: string;
         };
         /**
          * Candidate
@@ -7880,6 +7973,11 @@ export interface components {
              */
             due: string;
             /**
+             * Expires
+             * @description Exclusive deadline for showing this notice.
+             */
+            expires?: string | null;
+            /**
              * Held
              * @description Why it isn't shown as a desktop notification; none if it is.
              */
@@ -7946,7 +8044,7 @@ export interface components {
          * @description What a notice is about; each kind can be switched off in `[system.notify]`.
          * @enum {string}
          */
-        NoticeKind: "draft" | "failed" | "doctor" | "release" | "plugin" | "test" | "heinzel";
+        NoticeKind: "draft" | "failed" | "doctor" | "release" | "plugin" | "test" | "heinzel" | "calendar";
         /**
          * NoticeList
          * @description The latest notices, and how they reach you on this machine.
@@ -13949,6 +14047,8 @@ export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
 export type SchemaAvatar = components['schemas']['Avatar'];
 export type SchemaAvatarSlot = components['schemas']['AvatarSlot'];
 export type SchemaBackendBinding = components['schemas']['BackendBinding'];
+export type SchemaCalendarReminderStatus = components['schemas']['CalendarReminderStatus'];
+export type SchemaCalendarWeek = components['schemas']['CalendarWeek'];
 export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
@@ -16633,6 +16733,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Agenda"];
+                };
+            };
+        };
+    };
+    org_calendar: {
+        parameters: {
+            query?: {
+                /** @description Weeks before or after this week. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarWeek"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    org_calendar_reminders_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarReminderStatus"];
                 };
             };
         };

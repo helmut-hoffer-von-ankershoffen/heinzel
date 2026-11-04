@@ -69,7 +69,8 @@ def plan(events: list[Event], now: datetime, *, provider: str = "") -> list[Remi
             continue
         boundary = (event.end if kind == "end" else event.start).astimezone(UTC)
         identity = f"{provider}\0{event.id}\0{event.start.astimezone(UTC).isoformat()}"
-        identity += f"\0{event.end.astimezone(UTC).isoformat()}"
+        if kind == "end":
+            identity += f"\0{event.end.astimezone(UTC).isoformat()}"
         identity += f"\0{kind}"
         key = "calendar:" + hashlib.sha256(identity.encode()).hexdigest()
         reminders.append(Reminder(key=key, title=event.title, kind=kind, due=boundary - LEAD, expires=boundary))

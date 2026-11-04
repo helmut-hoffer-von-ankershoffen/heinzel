@@ -3,11 +3,14 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fastapi.testclient import TestClient
 
-from heinzel import Config, Delivery, Event, Module
-from heinzel.kernel._calendar_reminders import agenda_plan, cycle
+from heinzel import Config, Delivery, Event, Module, Notifications
+from heinzel.heads import web
+from heinzel.kernel._calendar_reminders import cycle
 from heinzel.modules.org import agenda
 from heinzel.modules.system.notify import NotifyService, NotifySettings
+from heinzel.modules.system.notify._service import _calendar_keys
 
 pytestmark = pytest.mark.integration
 
@@ -49,7 +52,7 @@ def test_bound_provider_restarts_and_cancellation_suppresses_delivery(make_kerne
     notify = NotifyService(
         settings, NotifySettings(calendar=True, native=False, working_hours=False), {}, clock=lambda: now
     )
-    notify.calendar_valid = lambda instant: {item.key for item in agenda_plan(read(), instant)}
+    notify.calendar_valid = lambda instant: _calendar_keys(kernel, instant)
     cycle(read, notify, now, enabled=False)
     assert Calendar.reads == 0
     cycle(read, notify, now, enabled=True)
@@ -65,3 +68,18 @@ def test_bound_provider_restarts_and_cancellation_suppresses_delivery(make_kerne
     assert restarted.deliver([pending.id], Delivery.WEB) == []
     cycle(read, restarted, now, enabled=True)
     assert restarted.recent()[0].held == "withdrawn"
+
+
+def test_web_status_is_authenticated_and_reports_worker_state(make_kernel, settings, monkeypatch):
+    from heinzel.modules import org
+
+    kernel = make_kernel(builtins=True)
+    kernel.bind(Notifications, NotifyService(settings, NotifySettings(calendar=True), {}, notifier=None))
+    monkeypatch.setattr(org, "reminder_service_status", lambda: "not installed")
+    client = TestClient(
+        web.build(kernel, port=8000, token="fixture-token", static=None), base_url="http://127.0.0.1:8000"
+    )
+    assert client.get("/api/org/calendar-reminders-status").status_code == 401
+    response = client.get("/api/org/calendar-reminders-status", headers={"Authorization": "Bearer fixture-token"})
+    assert response.status_code == 200
+    assert response.json() == {"enabled": True, "service": "not installed"}

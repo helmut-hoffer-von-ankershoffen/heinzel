@@ -14,16 +14,18 @@ import secrets
 import stat
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter
 
 from heinzel import Notice
 
 logger = logging.getLogger(__name__)
 MAX_NOTICES = 200
 """The most notices kept; the oldest go first."""
+MAX_EXPIRING_KEYS = 1024
+"""Bound concurrent deadline-scoped receipts; refuse new ones if the limit is reached."""
 MAX_HEALTH_BYTES = 4 * 1024 * 1024
 """Health verification only; larger stores are unavailable to this check, not declared corrupt."""
 MAX_AGE = timedelta(days=30)
@@ -42,9 +44,22 @@ class _State(BaseModel):
     model_config = ConfigDict(extra="forbid")
     notices: list[Notice] = Field(default_factory=_empty_notices)
     durable_keys: set[str] = Field(default_factory=set)
+    expiring_keys: dict[str, AwareDatetime] = Field(default_factory=dict)
+    expiring_watermark: AwareDatetime | None = None
 
 
-def _decode_state(text: str | bytes, *, strict: bool) -> _State:
+def _advance_expiry(state: _State, now: datetime) -> datetime:
+    instant = now.astimezone(UTC)
+    watermark = max(instant, state.expiring_watermark or instant)
+    state.expiring_watermark = watermark
+    state.expiring_keys = {key: expiry for key, expiry in state.expiring_keys.items() if expiry > watermark}
+    for index, notice in enumerate(state.notices):
+        if notice.expires is not None and notice.expires <= watermark and notice.delivered_by is None:
+            state.notices[index] = notice.model_copy(update={"popup": False, "held": "expired"})
+    return watermark
+
+
+def _decode_state(text: str | bytes, *, strict: bool, expiring: bool = False) -> _State:
     """Validate serialized state; durable records must explicitly retain both fields.
 
     Raises:
@@ -57,8 +72,15 @@ def _decode_state(text: str | bytes, *, strict: bool) -> _State:
             raise ValueError(msg)
         return _State(notices=_NOTICES.validate_python(value))
     state = _State.model_validate(value)
-    if strict and state.model_fields_set != {"notices", "durable_keys"}:
+    if strict and not {"notices", "durable_keys"} <= state.model_fields_set:
         msg = "durable notification state lacks explicit notices or replay keys"
+        raise ValueError(msg)
+    if expiring and (
+        not {"expiring_keys", "expiring_watermark"} <= state.model_fields_set
+        or state.expiring_watermark is None
+        or len(state.expiring_keys) > MAX_EXPIRING_KEYS
+    ):
+        msg = "expiring notification state lacks replay evidence"
         raise ValueError(msg)
     return state
 
@@ -114,6 +136,15 @@ def _health_file(directory: int, name: str) -> int:
     return descriptor
 
 
+def _has_health_marker(directory: int, name: str) -> bool:
+    try:
+        descriptor = _health_file(directory, name)
+    except FileNotFoundError:
+        return False
+    os.close(descriptor)
+    return True
+
+
 def _health_contents(directory: int) -> bytes | None:
     """Read only the already verified descriptor; an oversized store remains unverified.
 
@@ -140,10 +171,16 @@ class Store:
         self._native = directory / "native.json"
         self._looked = directory / "looked.json"
         self._durable = directory / "durable-notices"
+        self._expiring = directory / "expiring-notices"
 
     def _read_state(self, *, strict: bool = False) -> _State:
+        expiring = self._expiring.exists()
+        strict = strict or expiring
+        if expiring and not self._durable.exists():
+            msg = "Expiring notification history lost its durable marker"
+            raise OSError(msg)
         try:
-            return _decode_state(self.path.read_text(encoding="utf-8"), strict=strict)
+            return _decode_state(self.path.read_text(encoding="utf-8"), strict=strict, expiring=expiring)
         except (OSError, ValueError) as exc:
             return self._damaged_state(strict, exc)
 
@@ -164,24 +201,19 @@ class Store:
             if directory is None:
                 return None
             try:
-                try:
-                    marker = _health_file(directory, "durable-notices")
-                except FileNotFoundError:
-                    durable = False
-                else:
-                    os.close(marker)
-                    durable = True
+                durable = _has_health_marker(directory, "durable-notices")
+                expiring = _has_health_marker(directory, "expiring-notices")
+                if expiring and not durable:
+                    return INTEGRITY_UNAVAILABLE
                 try:
                     data = _health_contents(directory)
                 except FileNotFoundError:
-                    if durable:
-                        return INTEGRITY_UNAVAILABLE
-                    return None
+                    return INTEGRITY_UNAVAILABLE if durable or expiring else None
                 if data is None:
                     return (
                         "Durable notification history exceeds the health-check read limit; verification is unavailable."
                     )
-                _decode_state(data, strict=durable)
+                _decode_state(data, strict=durable or expiring, expiring=expiring)
             finally:
                 os.close(directory)
         except (OSError, ValueError, RecursionError):
@@ -195,7 +227,12 @@ class Store:
     def _write_state(self, now: datetime, state: _State, *, durable: bool = False) -> None:
         state.notices = [notice for notice in state.notices if now - notice.at <= MAX_AGE][-MAX_NOTICES:]
         payload = (
-            state.model_dump_json(indent=1)
+            state.model_dump_json(
+                indent=1,
+                exclude=None
+                if self._expiring.exists() or state.expiring_watermark is not None
+                else {"expiring_keys", "expiring_watermark"},
+            )
             if durable or self._durable.exists() or state.durable_keys
             else _NOTICES.dump_json(state.notices, indent=1).decode()
         )
@@ -213,7 +250,9 @@ class Store:
             self._write_state(now, state)
         return result
 
-    def change_once(self, now: datetime, key: str, change: Callable[[list[Notice]], None]) -> bool:
+    def change_once(
+        self, now: datetime, key: str, change: Callable[[list[Notice]], None], *, expires: datetime | None = None
+    ) -> bool:
         """Commit the notice and its owner-scoped key together, or recognize a previous commit.
 
         Raises:
@@ -226,10 +265,27 @@ class Store:
                 # Persist the key-bearing shape first, so a crash cannot leave a marker beside a legacy list.
                 self._write_state(now, state, durable=True)
                 _write_private(self._durable, "1\n")
-            if digest in state.durable_keys:
+            if expires is not None and not self._expiring.exists():
+                state.expiring_watermark = now.astimezone(UTC)
+                self._write_state(now, state, durable=True)
+                _write_private(self._expiring, "1\n")
+            if expires is not None:
+                watermark = _advance_expiry(state, now)
+                if expires <= watermark:
+                    self._write_state(now, state)
+                    return True
+            if digest in state.durable_keys or digest in state.expiring_keys:
+                if expires is not None:
+                    self._write_state(now, state)
                 return True
+            if expires is not None and len(state.expiring_keys) >= MAX_EXPIRING_KEYS:
+                msg = "Too many outstanding expiring notification receipts"
+                raise OSError(msg)
             change(state.notices)
-            state.durable_keys.add(digest)
+            if expires is None:
+                state.durable_keys.add(digest)
+            else:
+                state.expiring_keys[digest] = expires
             self._write_state(now, state)
         return True
 
@@ -251,9 +307,11 @@ class Store:
         digests = {hashlib.sha256(key.encode()).hexdigest() for key in keys}
         with self._locked():
             state = self._read_state(strict=self._durable.exists())
-            if state.durable_keys.isdisjoint(digests):
+            if state.durable_keys.isdisjoint(digests) and state.expiring_keys.keys().isdisjoint(digests):
                 return True
             state.durable_keys.difference_update(digests)
+            for digest in digests:
+                state.expiring_keys.pop(digest, None)
             self._write_state(now, state)
         return True
 
@@ -271,7 +329,11 @@ class Store:
                     raise OSError(msg)
                 return False
             state = self._read_state(strict=True)
-            return digest in state.durable_keys or any(notice.key == key for notice in state.notices)
+            return (
+                digest in state.durable_keys
+                or digest in state.expiring_keys
+                or any(notice.key == key for notice in state.notices)
+            )
 
     def watched(self, now: datetime) -> None:
         """Remember that a head shows notices now."""

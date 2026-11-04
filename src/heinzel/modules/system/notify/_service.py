@@ -242,6 +242,8 @@ class NotifyService(Notifications):
         """Persist a notice and replay key together, independent of repeat policy and display retention."""
         if not (self.enabled(kind) if kind is NoticeKind.CALENDAR else self.settings.wants(kind)):
             return False
+        if expires is not None and (expires.tzinfo is None or expires.utcoffset() is None):
+            return False
         now = self._clock()
 
         def record(notices: list[Notice]) -> None:
@@ -265,7 +267,7 @@ class NotifyService(Notifications):
             )
 
         try:
-            return self.store.change_once(now, key, record)
+            return self.store.change_once(now, key, record, expires=expires)
         except OSError:
             logger.warning("can't record a durable notice in %s", self.store.directory, exc_info=True)
             return False

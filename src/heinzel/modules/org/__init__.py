@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from heinzel import Calendar, Check, ConfigEditor, Kernel, Module, NoticeKind, Notifications, Prompter, Status
 from heinzel.kernel import CapabilityView
-from heinzel.modules.org._agenda import Agenda, local_now, read_agenda, status_item
+from heinzel.modules.org._agenda import Agenda, CalendarWeek, local_now, read_agenda, read_week, status_item
 from heinzel.modules.org._models import ROLES, OrgSettings, Profile
 from heinzel.modules.org._profile import ProfileService, ask_profile
 from heinzel.modules.org._reminder_service import install as install_reminders
@@ -73,6 +73,17 @@ def calendar_reminders_status(notifications: Notifications) -> CalendarReminderS
 def calendar_reminder_worker(kernel: Kernel, notifications: Notifications) -> None:
     """Run the supervised calendar reminder worker until its periodic restart."""
     run_reminders(lambda: kernel.call(agenda), notifications)
+
+
+@module.operation(heads={"cli", "mcp", "web"}, requires=["calendar:read"], optional=True)
+def calendar(
+    calendar: Calendar,
+    view: CapabilityView,
+    settings: OrgSettings,
+    offset: Annotated[int, Field(ge=-52, le=52, description="Weeks before or after this week.")] = 0,
+) -> CalendarWeek:
+    """Show a week from your connected calendar."""
+    return read_week(calendar, view, local_now(settings.timezone), offset)
 
 
 # The web app's status bar shows it (ADR 0056): a view over `agenda`, so it is gated and private like the operation.

@@ -45,6 +45,8 @@ def test_moving_changes_key_and_daylight_saving_uses_actual_instant():
     assert original.due == datetime(2026, 10, 25, 0, 58, tzinfo=UTC)
     moved = event("meeting", start + timedelta(minutes=1), start + timedelta(hours=1))
     assert plan([moved], now)[0].key != original.key
+    extended = event("meeting", start, start + timedelta(hours=2))
+    assert plan([extended], now)[0].key == original.key
     assert plan([entry.model_copy(update={"status": "cancelled"})], now) == []
 
 
@@ -158,3 +160,29 @@ def test_supervised_worker_waits_for_exact_deadline_and_rechecks_consent(setting
     assert notice.kind is NoticeKind.CALENDAR
     assert notice.at == base + timedelta(seconds=17)
     assert 17 in reads
+
+
+def test_worker_hands_one_valid_reminder_to_the_native_notifier(settings, monkeypatch):
+    from unittest.mock import Mock
+
+    from heinzel.kernel._calendar_reminders import agenda_plan, cycle
+    from heinzel.modules.org._agenda import Agenda
+    from heinzel.modules.system.notify import NotifyService, NotifySettings
+    from heinzel.modules.system.notify._native import Native
+
+    now = datetime(2026, 10, 21, 10, tzinfo=UTC)
+    meeting = event("fixture", now + timedelta(minutes=5), now + timedelta(minutes=30))
+    agenda = Agenda(now=now, next=meeting, calendar="fixture")
+    native = Mock(spec=Native)
+    native.name = "fixture"
+    native.clicks = False
+    native.post.return_value = None
+    service = NotifyService(
+        settings, NotifySettings(calendar=True, working_hours=False), {}, clock=lambda: now, notifier=native
+    )
+    service.calendar_valid = lambda instant: {item.key for item in agenda_plan(agenda, instant)}
+    monkeypatch.setattr(service, "_end_leftover_instances", lambda: None)
+    cycle(lambda: agenda, service, now, enabled=True)
+    cycle(lambda: agenda, service, now, enabled=True)
+    assert native.post.call_count == 1
+    assert native.post.call_args.args[0] == "Meeting starts soon"

@@ -890,6 +890,18 @@
             ],
             "description": "Why there is no agenda: no calendar is connected, its binding can't be used, or reading it failed (e.g. an expired sign-in); none when it was read.",
             "title": "Problem"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your IANA time zone when known.",
+            "title": "Timezone"
           }
         },
         "required": [
@@ -1359,6 +1371,92 @@
           "mode"
         ],
         "title": "BackendBinding",
+        "type": "object"
+      },
+      "CalendarReminderStatus": {
+        "description": "Whether calendar reads are enabled and what the supervisor reports.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "service"
+        ],
+        "title": "CalendarReminderStatus",
+        "type": "object"
+      },
+      "CalendarWeek": {
+        "description": "A bounded week of calendar events or an explanation why it could not be read.",
+        "properties": {
+          "events": {
+            "description": "Non-cancelled events overlapping the week.",
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A command to connect a calendar, if available.",
+            "title": "Fix"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the calendar could not be read, if unavailable.",
+            "title": "Problem"
+          },
+          "since": {
+            "description": "The beginning of the week in your time zone.",
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "IANA profile time zone when known.",
+            "title": "Timezone"
+          },
+          "until": {
+            "description": "The exclusive end of the week in your time zone.",
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until"
+        ],
+        "title": "CalendarWeek",
         "type": "object"
       },
       "Candidate": {
@@ -7890,6 +7988,19 @@
             "title": "Due",
             "type": "string"
           },
+          "expires": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exclusive deadline for showing this notice.",
+            "title": "Expires"
+          },
           "held": {
             "anyOf": [
               {
@@ -8019,7 +8130,8 @@
           "release",
           "plugin",
           "test",
-          "heinzel"
+          "heinzel",
+          "calendar"
         ],
         "title": "NoticeKind",
         "type": "string"
@@ -21893,6 +22005,74 @@
           }
         },
         "summary": "Show the meeting you are in now and your next one, from your calendar, or how to connect one.",
+        "tags": [
+          "org"
+        ]
+      }
+    },
+    "/org/calendar": {
+      "get": {
+        "description": "Show a week from your connected calendar.",
+        "operationId": "org_calendar",
+        "parameters": [
+          {
+            "description": "Weeks before or after this week.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Weeks before or after this week.",
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarWeek"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a week from your connected calendar.",
+        "tags": [
+          "org"
+        ]
+      }
+    },
+    "/org/calendar-reminders-status": {
+      "get": {
+        "description": "Show calendar reminder consent and the supervised worker's state.",
+        "operationId": "org_calendar_reminders_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarReminderStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show calendar reminder consent and the supervised worker's state.",
         "tags": [
           "org"
         ]

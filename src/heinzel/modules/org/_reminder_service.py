@@ -39,7 +39,7 @@ def definition(platform: str, executable: Path) -> str:
             sort_keys=True,
         ).decode()
     if platform == "linux":
-        command = shlex.join([str(executable), *ARGS]).replace("%", "%%")
+        command = shlex.join([str(executable), *ARGS]).replace("%", "%%").replace("$", "$$")
         return (
             "[Unit]\nDescription=Heinzel calendar reminders\n\n[Service]\nType=simple\n"
             f"ExecStart={command}\nRestart=always\nRestartSec=1\nNice=10\n"
@@ -172,6 +172,8 @@ def status() -> str:
             return "unknown"
         if not path.exists():
             return "not installed"
+        if path.read_text(encoding="utf-8") != definition(platform, _shim()):
+            return "unknown"
         command = (
             ["/bin/launchctl", "print", f"gui/{os.getuid()}/{LABEL}"]
             if platform == "darwin"
@@ -180,8 +182,7 @@ def status() -> str:
         result = _run(command)
         if result.returncode != 0:
             return "unknown"
-        if platform == "darwin" and "state = running" not in result.stdout:
-            return "loaded"
+        observed = "loaded" if platform == "darwin" and "state = running" not in result.stdout else "running"
     except (OSError, HeinzelError):
         return "unknown"
-    return "running"
+    return observed
