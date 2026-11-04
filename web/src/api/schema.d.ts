@@ -5795,6 +5795,12 @@ export interface components {
              */
             loaded: boolean;
             /**
+             * Owned
+             * @description Whether exact selected-profile files, tool and loaded manager identity were verified.
+             * @default false
+             */
+            owned: boolean;
+            /**
              * Paused
              * @description Whether ticks are paused with `hz system daemon pause`.
              */
