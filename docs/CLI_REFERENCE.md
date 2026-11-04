@@ -678,6 +678,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `show`: Show a contract as the daemon runs it:...
 * `skill-draft`: Read exact private skill draft files and...
 * `skill-drafts`: List private draft references without file...
+* `start-helper`: Create a helper, retain its first prompt...
 * `tool-activity`: Show owner-private host-observed tool...
 * `wake`: Wake a Heinzelmännchen now: fetch its...
 
@@ -1301,6 +1302,28 @@ $ hz heinzel skill-drafts [OPTIONS] {session_id}
 
 * `--cursor <int>`: Resume after this session journal position.  [default: 0]
 * `--limit <int>`: The most private draft references returned in this page.  [default: 20]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel start-helper`
+
+Create a helper, retain its first prompt and answer it once through the selected chat backend.
+
+**Usage**:
+
+```console
+$ hz heinzel start-helper [OPTIONS] {request_id} {name} {prompt}
+```
+
+**Arguments**:
+
+* `request_id`: [required]
+* `name`: Your helper&#x27;s display name.  [required]
+* `prompt`: The exact first chat message; grants no connected access or schedule.  [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

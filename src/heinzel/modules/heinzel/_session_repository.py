@@ -208,6 +208,41 @@ class PersonalSessionRepository:
         except FileNotFoundError:
             return SessionRead()
 
+    def draft_target_read(self, session_id: str, target: str) -> SessionRead:
+        """Read a shared owner target fence after checking both session ownership and its opaque identity.
+
+        Raises:
+            HeinzelError: If the session, target or authoritative ledger is invalid.
+        """
+        self._owned(session_id)
+        _DIGEST.validate_python(target)
+        try:
+            return _verified(self._store("draft-targets").read("target-" + target))
+        except FileNotFoundError:
+            return SessionRead()
+
+    @contextmanager
+    def draft_target_writer(self, session_id: str, target: str, *, wait: bool = False) -> Generator[SessionWriter]:
+        """Serialize cooperating draft workers before acquiring any session main/control writer.
+
+        Yields:
+            The owner-private target ledger, held through mutation and synchronous quiescence.
+        """
+        self._owned(session_id)
+        _DIGEST.validate_python(target)
+        with self._store("draft-targets").writer("target-" + target, wait=wait) as writer:
+            yield writer
+
+    def is_draft_target_writer(self, session_id: str, target: str, writer: SessionWriter) -> bool:
+        """Verify the actual owner target fence, rather than accepting a caller's asserted lock ownership."""
+        self._owned(session_id)
+        _DIGEST.validate_python(target)
+        return (
+            writer.active
+            and writer.session == "target-" + target
+            and writer.store.root == self._store("draft-targets").root
+        )
+
     @contextmanager
     def budget_writer(self, session_id: str) -> Generator[SessionWriter]:
         """Serialize reservations across this owner's sessions after verifying session ownership.
