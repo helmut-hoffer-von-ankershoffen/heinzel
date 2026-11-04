@@ -3,6 +3,36 @@ import { openChatJourney, revealChat } from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 
 const { browser, context, page, token, url } = await openChatJourney();
+const latePage = process.argv[4] === "late-page";
+if (latePage) {
+  // Commit page DOM growth between press/release, while its resize
+  // notification arrives after release. Keep actual browser layout, response data and physical pointer events.
+  await page.addInitScript(() => {
+    const NativeObserver = window.ResizeObserver;
+    const pending = new Map();
+    window.__hzHoldPageResize = false;
+    window.__hzReleasePageResize = () => {
+      window.__hzHoldPageResize = false;
+      for (const [observer, deliver] of pending) {
+        pending.delete(observer);
+        deliver();
+      }
+    };
+    window.ResizeObserver = class extends NativeObserver {
+      constructor(callback) {
+        super((entries, observer) => {
+          if (window.__hzHoldPageResize && entries.some(({ target }) => target.querySelector("#content")))
+            pending.set(observer, () => callback(entries, observer));
+          else callback(entries, observer);
+        });
+      }
+      disconnect() {
+        pending.delete(this);
+        super.disconnect();
+      }
+    };
+  });
+}
 const trace = [];
 const watched = new Set([
   "/api/heinzel/chat",
@@ -101,10 +131,51 @@ try {
   await page.getByRole("checkbox", { name: /will not retry it or undo/ }).check();
   await page.getByRole("button", { name: "Set aside this turn" }).click();
   await page.getByText(/This turn was set aside/).waitFor();
+  const ready = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const inserted = Promise.withResolvers();
+  if (latePage) {
+    await page.route("**/api/system/doctor", async (route) => {
+      const response = await route.fetch();
+      ready.resolve();
+      await release.promise;
+      await route.fulfill({ response });
+      inserted.resolve();
+    });
+  }
   await page.reload();
   await revealChat(page);
   await page.getByText(/This turn was set aside/).waitFor();
-  await page.getByRole("button", { name: "Continue conversation" }).click();
+  const continueConversation = page.getByRole("button", { name: "Continue conversation" });
+  await watchDisclosure(continueConversation, "continue-conversation-after-reload");
+  if (latePage) {
+    await ready.promise;
+    await continueConversation.hover();
+    const box = await continueConversation.boundingBox();
+    assert.ok(box);
+    const pointer = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const priorHeight = await page.locator("#content").evaluate((node) => node.getBoundingClientRect().height);
+    await page.evaluate(() => {
+      window.__hzHoldPageResize = true;
+    });
+    try {
+      await page.mouse.down();
+      release.resolve();
+      await inserted.promise;
+      await page.waitForFunction(
+        (height) => document.getElementById("content").getBoundingClientRect().height > height,
+        priorHeight,
+      );
+      const stillUnderPointer = await continueConversation.evaluate(
+        (node, { x, y }) => node.contains(document.elementFromPoint(x, y)),
+        pointer,
+      );
+      await page.mouse.up();
+      assert.equal(stillUnderPointer, true, "late page loading keeps the pressed Continue control under the pointer");
+    } finally {
+      await page.evaluate(() => window.__hzReleasePageResize());
+    }
+  } else await continueConversation.click();
   const composer = page.getByLabel("Message your Heinzel");
   await composer.fill("Please continue with the draft.");
   const submit = page.getByRole("button", { name: "Queue message" });

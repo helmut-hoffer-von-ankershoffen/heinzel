@@ -1,6 +1,7 @@
 """Boot: load the configuration, discover every module and build the kernel. What heads call on start-up."""
 
 import email.policy
+import mimetypes
 from pathlib import Path
 
 from heinzel.kernel._config import KERNEL_SECTION, Config
@@ -11,7 +12,7 @@ from heinzel.kernel._source_loading import SourceDiscovery
 
 _installed_sources = SourceDiscovery(installed=True)
 # Fixed host bootstrap for MIME parsing, independent of any plugin declaration.
-_host_runtime = (email.policy,)
+_host_runtime = (email.policy, mimetypes)
 
 
 def boot(

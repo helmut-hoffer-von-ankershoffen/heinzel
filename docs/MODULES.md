@@ -82,8 +82,16 @@ Your Heinzelmännchen: durable helpers that draft your team's recurring work for
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
+| Create a named Heinzel from one prompt, then review and publish its bounded recurring draft grant. | `hz heinzel start-release-workflow` | — | — | — | yes |  |
+| Publish only the exact standing draft grant approved through the trusted human boundary. | `hz heinzel publish-draft-workflow` | — | — | `POST /api/heinzel/publish-draft-workflow` | yes |  |
+| Capture the human-edited marked section and revision for exact share review; send nothing. | `hz heinzel review-release-draft` | — | — | `POST /api/heinzel/review-release-draft` | yes |  |
+| Review the current edited section and explicitly approve one document-link delivery. | `hz heinzel approve-release-draft` | — | — | — | yes |  |
+| Deliver one document link for the exact edited revision approved by its owner. | `hz heinzel share-draft-link` | — | — | `POST /api/heinzel/share-draft-link` | yes |  |
+| Read the published workflow and durable release dispositions from this same chat. | `hz heinzel release-workflow` | — | — | `GET /api/heinzel/release-workflow` |  |  |
+| Revoke future recurring draft and notice effects under the shared document fence. | `hz heinzel revoke-release-workflow` | — | — | `POST /api/heinzel/revoke-release-workflow` | yes |  |
 | Read exact private skill draft files and requested sharing scope. | `hz heinzel skill-draft` | `heinzel_skill_draft` | — | `GET /api/heinzel/skill-draft` |  |  |
 | List private draft references without file contents. | `hz heinzel skill-drafts` | `heinzel_skill_drafts` | — | `GET /api/heinzel/skill-drafts` |  |  |
+| Create a helper, retain its first prompt and answer it once through the selected chat backend. | `hz heinzel start-helper` | — | — | `POST /api/heinzel/start-helper` | yes |  |
 | Inspect the latest suggested name and look; it has not been applied. | `hz heinzel latest-profile-proposal` | — | — | `GET /api/heinzel/latest-profile-proposal` |  |  |
 | Answer one authenticated user's accepted message; an interrupted request is never silently replayed. | `hz heinzel answer-chat` | — | — | `POST /api/heinzel/answer-chat` | yes |  |
 | Read the recorded turn state; unresolved may still be running. | `hz heinzel chat-turn-state` | — | — | `GET /api/heinzel/chat-turn-state` |  |  |
@@ -381,6 +389,8 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Stage a schedule action for review in chat; creating the proposal never changes or activates it. | `hz chat propose-schedule-control` | — | — | `POST /api/system/runner/chat/propose-schedule-control` | yes |  |
 | Stage the exact current model policy for human review; no grant or model call is made. | `hz chat propose-model-policy` | — | — | `POST /api/system/runner/chat/propose-model-policy` | yes |  |
 | Stage current agent contract terms for human review. | `hz chat propose-agent-contract` | — | — | `POST /api/system/runner/chat/propose-agent-contract` | yes |  |
+| Stage exact owner-private captured write terms for separate human confirmation. | `hz chat propose-captured-write` | — | — | `POST /api/system/runner/chat/propose-captured-write` | yes |  |
+| Stage exact owner-private channel posting terms for separate human confirmation. | `hz chat propose-channel-item` | — | — | `POST /api/system/runner/chat/propose-channel-item` | yes |  |
 | Stage one exact notification draft for a human decision; no notice is sent. | `hz chat propose-agent-notification` | — | — | `POST /api/system/runner/chat/propose-agent-notification` | yes |  |
 | Stage current connected-read terms for an explicit human decision. | `hz chat propose-connected-read-review` | — | — | `POST /api/system/runner/chat/propose-connected-read-review` | yes |  |
 | Stage the current read-set review for an explicit human decision. | `hz chat propose-connected-read-set-review` | — | — | `POST /api/system/runner/chat/propose-connected-read-set-review` | yes |  |

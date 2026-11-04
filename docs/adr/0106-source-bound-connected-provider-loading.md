@@ -48,8 +48,8 @@ source loader with a verified snapshot and sealed runtime. It is false outside t
 not grant permission or establish publisher trust. A plugin may use it to omit its captured-read service on older
 cores or ordinary loading; current source binding and human approval remain separate requirements.
 
-The fixed host initialization imports `email.policy` for general MIME parsing before external plugin discovery. That
-bootstrap and the Python interpreter's own imports are part of the trusted host runtime, not verified plugin code;
+The fixed host initialization imports `email.policy` and `mimetypes` for general MIME parsing before external
+plugin discovery. That bootstrap and the Python interpreter's own imports are part of the trusted host runtime, not verified plugin code;
 the source guard does not claim to prevent shadowing before that trusted initialization. No plugin declaration can
 extend this bootstrap. A missing runtime module or attribute makes the plugin ineligible for guarded reads.
 
