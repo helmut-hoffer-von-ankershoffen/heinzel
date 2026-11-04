@@ -1,5 +1,10 @@
-"""Render the production native face without posting, requesting permission or starting a service."""
+"""Render the production native face without posting, requesting permission or starting a service.
 
+The required serial macOS jobs build the notifier first. A fresh Swift SDK module cache can itself exceed this
+harness's ten-second compiler budget, so this native compiler check belongs with those builds, not Python shards.
+"""
+
+import platform
 import plistlib
 import shutil
 import subprocess
@@ -9,7 +14,7 @@ import pytest
 
 from heinzel.modules.system.notify._macos import SOURCES
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.e2e
 
 HARNESS = r"""
 precondition(identifier("notice-1") == "notice-1")
@@ -44,6 +49,7 @@ print("rendered bundled blue face; private directory removed; no notification po
 
 @pytest.mark.macos_specific
 @pytest.mark.skipif(sys.platform != "darwin", reason="AppKit rendering is macOS-only")
+@pytest.mark.timeout(15)
 def test_bundled_face_renders_in_an_owned_private_directory_without_posting(tmp_path):
     compiler = shutil.which("swiftc")
     assert compiler is not None
@@ -59,8 +65,14 @@ def test_bundled_face_renders_in_an_owned_private_directory_without_posting(tmp_
     shutil.copyfile(SOURCES / "heinzel.svg", resources / "face.svg")
     with (app / "Info.plist").open("wb") as handle:
         plistlib.dump({"CFBundleExecutable": "render", "CFBundlePackageType": "APPL"}, handle)
+    # Match the production slice's compiler settings so its SDK module cache can be reused.
+    target = f"{platform.machine()}-apple-macos13"
     subprocess.run(
-        [compiler, str(source), "-o", str(executable)], check=True, capture_output=True, text=True, timeout=10
+        [compiler, "-O", "-target", target, str(source), "-o", str(executable)],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     rendered = subprocess.run(
         [str(executable), str(tmp_path / "blue-face.png")],

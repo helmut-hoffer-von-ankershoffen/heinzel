@@ -135,6 +135,31 @@ def build_script():
     return script
 
 
+@pytest.mark.parametrize("architecture", ["arm64", "x86_64"])
+def test_native_face_proof_compiles_a_production_slice_with_the_original_budgets(architecture, monkeypatch, tmp_path):
+    from tests.e2e import notifier_face_test as proof
+
+    script = build_script()
+    commands = []
+
+    def run(command, **options):
+        commands.append((command, options))
+        return subprocess.CompletedProcess(
+            command, 0, "rendered bundled blue face; private directory removed; no notification posted"
+        )
+
+    monkeypatch.setattr(proof.platform, "machine", lambda: architecture)
+    monkeypatch.setattr(proof.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(proof.subprocess, "run", run)
+    proof.test_bundled_face_renders_in_an_owned_private_directory_without_posting(tmp_path)
+    compiler, compiler_options = commands[0]
+    assert compiler[:4] == ["/usr/bin/swiftc", "-O", "-target", f"{architecture}-apple-macos13"]
+    assert compiler[3] in script.TARGETS
+    assert compiler_options["timeout"] == 10
+    assert commands[1][1]["timeout"] == 3
+    assert "-Ounchecked" not in compiler
+
+
 def test_the_build_script_and_the_runtime_agree_on_the_version():
     script = build_script()
     assert script._version() == source_version(SOURCES)
