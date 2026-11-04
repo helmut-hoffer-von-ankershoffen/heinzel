@@ -9,7 +9,7 @@ import yaml
 from tests._e2e_lanes import REPO, lane_commands
 
 pytestmark = pytest.mark.unit
-SUPERVISED = "tests/e2e/ui_service_test.py"
+SUPERVISED = {"tests/e2e/ui_service_test.py", "tests/e2e/ui_service_browser_test.py"}
 README = "tests/e2e/docs_test.py::test_readme_instructions"
 
 
@@ -26,12 +26,12 @@ def test_all_e2e_lanes_keep_workers_and_deadlines_and_readme_runs_only_once(suit
         assert commands[0][-1] == README
     assert commands[-1][-1] == f"--deselect={README}"
     if suite == "cli":
-        assert f"--ignore={SUPERVISED}" in commands[-1]
+        assert {f"--ignore={path}" for path in SUPERVISED} <= set(commands[-1])
     elif suite == "supervised":
-        assert commands[-1][-2] == SUPERVISED
+        assert set(commands[-1][-3:-1]) == SUPERVISED
         assert not any(arg.startswith("--ignore=") for arg in commands[-1])
     elif not suite:
-        assert not any(arg.startswith("--ignore=") or arg == SUPERVISED for arg in commands[-1])
+        assert not any(arg.startswith("--ignore=") or arg in SUPERVISED for arg in commands[-1])
 
 
 def test_supervised_is_a_required_matrix_cell_on_the_existing_platforms_and_events():
