@@ -29,10 +29,12 @@ from heinzel import (
     NoticeHelper,
     NoticeKind,
     Notifications,
+    OperationLet,
     Settings,
     Status,
 )
 from heinzel.kernel import KERNEL_SECTION
+from heinzel.kernel._calendar_reminders import agenda_plan
 from heinzel.modules.system.notify import _policy as policy
 from heinzel.modules.system.notify._channels import (
     SHOWN,
@@ -72,6 +74,17 @@ STALE = timedelta(hours=12)
 """A notice that waited longer than this to be shown doesn't pop up any more; it stays in the list."""
 
 
+def _calendar_keys(kernel: Kernel, now: datetime) -> set[str]:
+    """Read the generic agenda operation afresh; absence and provider errors validate no reminders."""
+    operation = next(
+        (let for owner, let in kernel.lets(OperationLet) if (owner.qualname, let.name) == ("org", "agenda")), None
+    )
+    if operation is None or not kernel.available(operation.func):
+        return set()
+    agenda = kernel.call(operation.func)
+    return {reminder.key for reminder in agenda_plan(agenda, now) if reminder.due <= now < reminder.expires}
+
+
 class NotifyService(Notifications):
     """Records notices under the policy, and shows the due ones natively when no web app shows them."""
 
@@ -108,6 +121,8 @@ class NotifyService(Notifications):
         self.opener: Callable[[list[str]], None] = _open
         """Starts a program and doesn't wait (`open` on macOS); tests replace it so nothing opens."""
         self.platform = sys.platform
+        self.calendar_valid: Callable[[datetime], set[str]] | None = None
+        self._refresh_settings: Callable[[], NotifySettings] = lambda: self.settings
 
     @classmethod
     def for_user(cls, kernel: Kernel) -> "NotifyService":
@@ -121,6 +136,8 @@ class NotifyService(Notifications):
             ui_url=lambda route: f"http://127.0.0.1:{settings.ui_port}{route}",  # `hz ui`'s fixed port (ADR 0046)
         )
         service.watcher = lambda: watch(kernel, service, service.wanted)
+        service.calendar_valid = lambda now: _calendar_keys(kernel, now)
+        service._refresh_settings = lambda: Config.load(Path.home()).settings(NotifySettings, MODULE_SECTION)
         service.daemon = lambda: daemon_state(kernel)
         return service
 
@@ -155,6 +172,14 @@ class NotifyService(Notifications):
         return self._notifier
 
     # What modules call -----------------------------------------------------------------------------------------------
+
+    def enabled(self, kind: NoticeKind) -> bool:
+        """Read current user consent; configuration failures fail closed."""
+        try:
+            return self._refresh_settings().wants(kind)
+        except Exception:  # noqa: BLE001 - unreadable consent cannot authorize a background read
+            logger.warning("notification settings unavailable")
+            return False
 
     def emit(  # noqa: PLR0913 - what a notice is, all by keyword
         self,
@@ -215,7 +240,7 @@ class NotifyService(Notifications):
         expires: datetime | None = None,
     ) -> bool:
         """Persist a notice and replay key together, independent of repeat policy and display retention."""
-        if not self.settings.wants(kind):
+        if not (self.enabled(kind) if kind is NoticeKind.CALENDAR else self.settings.wants(kind)):
             return False
         now = self._clock()
 
@@ -305,11 +330,27 @@ class NotifyService(Notifications):
             and now - n.due <= STALE
             and (n.expires is None or now < n.expires)
         ]
+        waiting = self._valid_calendars(waiting, now)
         return waiting[: max(0, self.settings.per_hour - shown)]
+
+    def _valid_calendars(self, notices: list[Notice], now: datetime) -> list[Notice]:
+        """Refresh the provider before a calendar notice is offered or claimed, failing closed."""
+        calendar = [notice for notice in notices if notice.kind is NoticeKind.CALENDAR]
+        if not calendar:
+            return notices
+        valid: set[str] = set()
+        if self.enabled(NoticeKind.CALENDAR) and self.calendar_valid is not None:
+            try:
+                valid = self.calendar_valid(now)
+            except Exception:
+                logger.warning("calendar reminder validation failed", exc_info=True)
+        return [notice for notice in notices if notice.kind is not NoticeKind.CALENDAR or notice.key in valid]
 
     def deliver(self, ids: Sequence[str], by: Delivery) -> list[Notice]:
         """Mark notices as shown by `by`; the ones that weren't shown before."""
         wanted, now = set(ids), self._clock()
+        candidates = [notice for notice in self.store.read() if notice.id in wanted]
+        wanted = {notice.id for notice in self._valid_calendars(candidates, now)}
 
         def mark(notices: list[Notice]) -> list[Notice]:
             marked: list[Notice] = []

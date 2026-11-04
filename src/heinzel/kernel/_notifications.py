@@ -32,6 +32,8 @@ class NoticeKind(StrEnum):
     """`hz system notify test`: to see that notifications reach you."""
     HEINZEL = "heinzel"
     """A scheduled durable personal Heinzel checked in."""
+    CALENDAR = "calendar"
+    """A time-sensitive calendar reminder, after explicit opt-in."""
 
 
 class Delivery(StrEnum):
@@ -84,6 +86,10 @@ class Notifications:
     A base class rather than a protocol, so that the kernel can inject it by type like any other service. Every
     method raises `NotImplementedError` here.
     """
+
+    def enabled(self, kind: NoticeKind) -> bool:
+        """Whether a user has enabled recording this kind of notice."""
+        raise NotImplementedError
 
     def emit(  # noqa: PLR0913 - what a notice is, all by keyword
         self,

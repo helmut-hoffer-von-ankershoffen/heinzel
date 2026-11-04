@@ -4,7 +4,7 @@ It never fails for a missing or broken calendar: the web app's footer shows it a
 or an adapter error (an expired sign-in) comes back as `problem`, with the command that fixes it in `fix`.
 """
 
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
@@ -117,13 +117,21 @@ def read_agenda(calendar: Calendar, bindings: Bindings, now: datetime) -> Agenda
         return Agenda(
             now=now, calendar=adapter, problem=f"Reading your {adapter} calendar failed: {type(exc).__name__}"
         )
-    meetings = [e for e in events if not e.all_day and e.status != "cancelled"]
-    running = [e for e in meetings if e.start <= now < e.end]
-    upcoming = [e for e in meetings if e.start > now]
+    instant = now.astimezone(UTC)
+    meetings = [
+        e
+        for e in events
+        if not e.all_day
+        and e.status.casefold() not in {"cancelled", "canceled"}
+        and e.response != "declined"
+        and e.start.astimezone(UTC) < e.end.astimezone(UTC)
+    ]
+    running = [e for e in meetings if e.start.astimezone(UTC) <= instant < e.end.astimezone(UTC)]
+    upcoming = [e for e in meetings if e.start.astimezone(UTC) > instant]
     return Agenda(
         now=now,
-        current=max(running, key=lambda e: e.start, default=None),
-        next=min(upcoming, key=lambda e: e.start, default=None),
+        current=max(running, key=lambda e: (e.start.astimezone(UTC), e.id), default=None),
+        next=min(upcoming, key=lambda e: (e.start.astimezone(UTC), e.id), default=None),
         calendar=adapter,
     )
 

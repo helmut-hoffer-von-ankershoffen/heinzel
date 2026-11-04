@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from heinzel import Event
-from heinzel.modules.org._reminders import plan
+from heinzel.kernel._calendar_reminders import plan
 
 pytestmark = pytest.mark.unit
 
@@ -46,3 +46,115 @@ def test_moving_changes_key_and_daylight_saving_uses_actual_instant():
     moved = event("meeting", start + timedelta(minutes=1), start + timedelta(hours=1))
     assert plan([moved], now)[0].key != original.key
     assert plan([entry.model_copy(update={"status": "cancelled"})], now) == []
+
+
+def test_provider_refresh_consent_dedup_and_withdrawal(settings):
+    from heinzel import NoticeKind
+    from heinzel.kernel._calendar_reminders import agenda_plan, cycle
+    from heinzel.modules.org._agenda import Agenda
+    from heinzel.modules.system.notify import NotifyService, NotifySettings
+
+    class Clock:
+        now = datetime(2026, 10, 21, 10, tzinfo=UTC)
+
+        def __call__(self):
+            return self.now
+
+    clock = Clock()
+    start = clock.now + timedelta(minutes=6)
+    meeting = event("meeting", start, start + timedelta(hours=1))
+    agenda = Agenda(now=clock.now, next=meeting, calendar="fixture")
+    reads = []
+
+    def read():
+        reads.append(1)
+        return agenda
+
+    service = NotifyService(settings, NotifySettings(calendar=True, native=False, working_hours=False), {}, clock=clock)
+    service.calendar_valid = lambda now: {item.key for item in agenda_plan(read(), now)}
+    assert cycle(read, service, clock.now, enabled=False) == timedelta(seconds=30)
+    assert reads == []
+    assert cycle(read, service, clock.now, enabled=True) == timedelta(seconds=30)
+    clock.now += timedelta(minutes=1)
+    cycle(read, service, clock.now, enabled=True)
+    assert len(service.due()) == 1
+    restarted = NotifyService(
+        settings, NotifySettings(calendar=True, native=False, working_hours=False), {}, clock=clock
+    )
+    restarted.calendar_valid = service.calendar_valid
+    cycle(read, restarted, clock.now, enabled=True)
+    assert len(restarted.recent()) == 1
+    assert restarted.recent()[0].kind is NoticeKind.CALENDAR
+    agenda = Agenda(now=clock.now, calendar="fixture", next=meeting.model_copy(update={"status": "cancelled"}))
+    assert restarted.due() == []
+    cycle(read, restarted, clock.now, enabled=True)
+    assert restarted.recent()[0].held == "withdrawn"
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_service_install_and_uninstall_are_isolated_and_refuse_foreign_units(tmp_path, monkeypatch, platform):
+    import subprocess
+    from types import SimpleNamespace
+
+    from heinzel import HeinzelError
+    from heinzel.modules.org import _reminder_service as service
+
+    path = service.path_for(platform, tmp_path)
+    executable = tmp_path / "hz"
+    commands = []
+    monkeypatch.setattr(service, "sys", SimpleNamespace(platform=platform))
+    monkeypatch.setattr(service, "path_for", lambda *_: path)
+    monkeypatch.setattr(service, "_shim", lambda: executable)
+
+    def run(command):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(service, "_run", run)
+    assert "installed" in service.install()
+    assert path.read_text() == service.definition(platform, executable)
+    with pytest.raises(HeinzelError):
+        service.install()
+    assert "removed" in service.uninstall()
+    assert not path.exists()
+    path.write_text("foreign unit")
+    with pytest.raises(HeinzelError):
+        service.uninstall()
+    assert path.read_text() == "foreign unit"
+    assert commands
+
+
+def test_supervised_worker_waits_for_exact_deadline_and_rechecks_consent(settings):
+    from heinzel import NoticeKind
+    from heinzel.kernel._calendar_reminders import agenda_plan
+    from heinzel.modules.org._agenda import Agenda
+    from heinzel.modules.org._reminder_worker import run
+    from heinzel.modules.system.notify import NotifyService, NotifySettings
+
+    base = datetime(2026, 10, 21, 10, tzinfo=UTC)
+    elapsed = 0.0
+    reads = []
+    start = base + timedelta(minutes=5, seconds=17)
+    meeting = event("fixture", start, start + timedelta(minutes=30))
+    service = NotifyService(
+        settings,
+        NotifySettings(calendar=True, native=False, working_hours=False),
+        {},
+        clock=lambda: base + timedelta(seconds=elapsed),
+    )
+
+    def read():
+        reads.append(elapsed)
+        return Agenda(now=base + timedelta(seconds=elapsed), next=meeting, calendar="fixture")
+
+    service.calendar_valid = lambda now: {item.key for item in agenda_plan(read(), now)}
+
+    def sleep(seconds):
+        nonlocal elapsed
+        elapsed += seconds
+
+    run(read, service, monotonic=lambda: elapsed, sleep=sleep, clock=lambda: base + timedelta(seconds=elapsed))
+    [notice] = service.recent()
+    assert notice.kind is NoticeKind.CALENDAR
+    assert notice.at == base + timedelta(seconds=17)
+    assert 17 in reads

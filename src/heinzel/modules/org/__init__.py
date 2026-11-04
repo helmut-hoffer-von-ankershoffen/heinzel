@@ -7,13 +7,17 @@ for `ProfileService` by type to learn who is acting.
 
 from typing import Annotated
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-from heinzel import Calendar, Check, ConfigEditor, Module, Prompter, Status
+from heinzel import Calendar, Check, ConfigEditor, Kernel, Module, NoticeKind, Notifications, Prompter, Status
 from heinzel.kernel import CapabilityView
 from heinzel.modules.org._agenda import Agenda, local_now, read_agenda, status_item
 from heinzel.modules.org._models import ROLES, OrgSettings, Profile
 from heinzel.modules.org._profile import ProfileService, ask_profile
+from heinzel.modules.org._reminder_service import install as install_reminders
+from heinzel.modules.org._reminder_service import status as reminder_service_status
+from heinzel.modules.org._reminder_service import uninstall as uninstall_reminders
+from heinzel.modules.org._reminder_worker import run as run_reminders
 from heinzel.modules.org._render import render_agenda, render_profile
 from heinzel.modules.org._sync import SyncItem, SyncReport, SyncService, render_sync
 
@@ -38,6 +42,37 @@ def show(service: ProfileService) -> Profile:
 def agenda(calendar: Calendar, view: CapabilityView, settings: OrgSettings) -> Agenda:
     """Show the meeting you are in now and your next one, from your calendar, or how to connect one."""
     return read_agenda(calendar, view, local_now(settings.timezone))
+
+
+@module.operation(name="calendar-reminders-install", read_only=False, heads={"cli"})
+def calendar_reminders_install() -> str:
+    """Install a supervised worker; separately enable calendar reminders to consent to background reads."""
+    return install_reminders()
+
+
+@module.operation(name="calendar-reminders-uninstall", read_only=False, heads={"cli"})
+def calendar_reminders_uninstall() -> str:
+    """Stop and remove the supervised calendar reminder worker."""
+    return uninstall_reminders()
+
+
+class CalendarReminderStatus(BaseModel):
+    """Whether calendar reads are enabled and what the supervisor reports."""
+
+    enabled: bool
+    service: str
+
+
+@module.operation(name="calendar-reminders-status", heads={"cli", "web"})
+def calendar_reminders_status(notifications: Notifications) -> CalendarReminderStatus:
+    """Show calendar reminder consent and the supervised worker's state."""
+    return CalendarReminderStatus(enabled=notifications.enabled(NoticeKind.CALENDAR), service=reminder_service_status())
+
+
+@module.operation(name="calendar-reminder-worker", read_only=False, heads={"cli"})
+def calendar_reminder_worker(kernel: Kernel, notifications: Notifications) -> None:
+    """Run the supervised calendar reminder worker until its periodic restart."""
+    run_reminders(lambda: kernel.call(agenda), notifications)
 
 
 # The web app's status bar shows it (ADR 0056): a view over `agenda`, so it is gated and private like the operation.
