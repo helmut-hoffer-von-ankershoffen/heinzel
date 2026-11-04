@@ -323,7 +323,7 @@ def _manager_environment(command: list[str]) -> dict[str, str]:
 def bounded_manager_command(
     command: list[str], *, deadline: float | None = None, env: dict[str, str] | None = None
 ) -> ProcessOutcome:
-    """Bound a read-only manager child; never signal a reaped or unknown process."""
+    """Bound a manager child; never signal a reaped or unknown process."""
     process = subprocess.Popen(  # noqa: S603 - fixed absolute launchctl and fixed subcommands
         command,
         stdin=subprocess.DEVNULL,
@@ -857,10 +857,10 @@ class DaemonService:
     def _launchd_session(self) -> str | None:
         """The launchd session this process runs in (`Aqua` on the desktop), or None when launchctl doesn't say."""
         try:
-            result = self._runner(self._command("launchctl", "managername"))
+            result = self._quiescence_probe(["/bin/launchctl", "managername"])
         except (HeinzelError, OSError):
             return None
-        return result.stdout.strip() or None if result.returncode == 0 else None
+        return result.stdout.strip() or None if result.returncode == 0 and not result.truncated else None
 
     def _require_desktop_session(self, phases: Phases) -> None:
         """A macOS login service can only be registered from the person's desktop session.

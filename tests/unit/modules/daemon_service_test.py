@@ -2822,3 +2822,16 @@ def test_manager_uid_and_fixed_executable_are_required_before_mutation(make, bin
         service.owned_manager_command(["/some/path/launchctl", "bootout", "gui/501/foreign"])
     assert runner.verbs() == []
     assert all(payload is None for payload in service._capture_install_files().values())
+
+
+def test_real_install_never_resolves_any_manager_command_through_path(make, bin_dir):
+    manager = Runner(bin_dir)
+    service = make(runner=manager)
+    # Exercise the normal desktop-session method as well as the shared authority methods; only the declared
+    # bounded manager protocol double may answer, and neither PATH lookup nor the legacy runner may execute.
+    service._desktop_session = service._launchd_session
+    service._runner = Refuses()
+    service._which = lambda name: pytest.fail(f"Real installation must not resolve {name} through PATH")
+    service.install(FIVE_MINUTES)
+    assert service.owned_manager_state(bin_dir).registered
+    assert all(command[0] == "/bin/launchctl" for command in manager.commands)
