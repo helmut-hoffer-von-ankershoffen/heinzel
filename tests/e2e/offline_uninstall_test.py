@@ -31,7 +31,8 @@ from urllib.request import urlopen
 from heinzel.kernel import ProcessOutcome
 from heinzel.modules.system.daemon import _service as daemon
 
-root = Path(os.environ.pop("HZ_OFFLINE_MANAGER_FIXTURE"))
+root = Path(os.environ["HZ_OFFLINE_MANAGER_FIXTURE"])
+del os.environ["HZ_OFFLINE_MANAGER_FIXTURE"]
 
 
 def calendar_probe(command):
