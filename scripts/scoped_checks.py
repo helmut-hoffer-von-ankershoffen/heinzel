@@ -237,6 +237,7 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
             "tests/unit/browser_runtime_setup_test.py",
             "tests/unit/ci_test.py",
             "tests/unit/ci_supervised_test.py",
+            "tests/unit/web_build_test.py",
             "tests/integration/e2e_lane_partition_test.py",
         }
         for path in changed
@@ -248,7 +249,7 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
         targets.append("tests/integration/guides_test.py")
     if ci:
         targets += ["tests/unit/browser_runtime_setup_test.py", "tests/unit/ci_supervised_test.py"]
-        targets.append("tests/unit/ci_test.py")
+        targets += ["tests/unit/ci_test.py", "tests/unit/web_build_test.py"]
     commands = [["uv", "run", "pytest", *targets, "-n", "2", "-x", "-q", "--session-timeout=120"]] if targets else []
     if ci:
         commands.append(

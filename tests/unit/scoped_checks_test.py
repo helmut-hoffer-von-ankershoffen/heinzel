@@ -184,9 +184,19 @@ def test_the_pre_push_hook_keeps_the_confidentiality_and_commit_checks():
         ("tests/fixtures/example.py", {"standards"}),
         ("template/tests/conftest.py", {"standards"}),
         ("src/heinzel/modules/system/__init__.py", {"standards", "guides"}),
-        (".github/workflows/ci.yml", {"browser_runtime_setup", "ci_supervised", "ci", "e2e_lane_partition"}),
-        ("Makefile", {"browser_runtime_setup", "ci_supervised", "ci", "e2e_lane_partition"}),
-        ("tests/e2e/new_test.py", {"standards", "browser_runtime_setup", "ci_supervised", "ci", "e2e_lane_partition"}),
+        (
+            ".github/workflows/ci.yml",
+            {"browser_runtime_setup", "ci_supervised", "ci", "web_build", "e2e_lane_partition"},
+        ),
+        ("Makefile", {"browser_runtime_setup", "ci_supervised", "ci", "web_build", "e2e_lane_partition"}),
+        (
+            "tests/e2e/new_test.py",
+            {"standards", "browser_runtime_setup", "ci_supervised", "ci", "web_build", "e2e_lane_partition"},
+        ),
+        (
+            "tests/unit/web_build_test.py",
+            {"standards", "browser_runtime_setup", "ci_supervised", "ci", "web_build", "e2e_lane_partition"},
+        ),
     ],
 )
 def test_early_guards_select_only_owning_inputs(path, expected):
@@ -276,6 +286,7 @@ def test_early_ci_guards_use_whole_owning_files_so_test_renames_do_not_break_pre
         "tests/unit/browser_runtime_setup_test.py",
         "tests/unit/ci_supervised_test.py",
         "tests/unit/ci_test.py",
+        "tests/unit/web_build_test.py",
     }
     assert "tests/e2e" in partition
     assert partition[partition.index("-m") + 1] == "integration"
