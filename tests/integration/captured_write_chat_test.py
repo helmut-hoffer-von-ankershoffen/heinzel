@@ -295,15 +295,25 @@ def test_read_only_protocol_registration_and_exact_captured_declaration_are_sepa
     assert state["writes"] == 0
 
 
-def test_human_action_label_describes_insertion_and_normalizes_saved_legacy_wording(captured_client):
+def test_human_action_label_describes_insertion_and_normalizes_saved_legacy_wording(captured_client, monkeypatch):
     from heinzel.modules.system.runner.chat import ChatStore
 
     client, kernel, current, session, proposal, state, _source = captured_client
+    store = kernel.resolve(ChatStore)
+    original_propose = store.propose
+    proposed_labels = []
+
+    def record_proposal(call):
+        proposed_labels.append(call.command)
+        return original_propose(call)
+
+    monkeypatch.setattr(store, "propose", record_proposal)
     response = client.post("/api/heinzel/propose-captured-write", headers=AUTH, json={"proposal": proposal})
     assert response.status_code == 200, response.text
     staged, action = stage(client, session)
     contract = json.loads((Path(__file__).parents[2] / "web/src/test/capturedWriteReview.json").read_text())
     assert action["command"] == contract["command"]
+    assert proposed_labels == [contract["command"]]
     assert "full replacement" not in action["command"]
     assert action["arguments"]["review"]["reference"] == proposal["reference"]
     assert action["arguments"]["review"]["section"] == proposal["section"]
