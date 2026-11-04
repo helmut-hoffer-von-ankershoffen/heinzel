@@ -93,6 +93,24 @@ def test_provider_refresh_consent_dedup_and_withdrawal(settings):
     assert restarted.recent()[0].held == "withdrawn"
 
 
+@pytest.fixture(autouse=True)
+def verified_calendar_installation(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from heinzel.modules.org import _reminder_service
+
+    prefix = tmp_path / "verified-tools/heinzel"
+    prefix.mkdir(parents=True)
+    monkeypatch.setattr(
+        _reminder_service,
+        "_installation",
+        lambda: SimpleNamespace(
+            prefix=prefix,
+            startup_state_matches=lambda: True,
+        ),
+    )
+
+
 @pytest.mark.parametrize("platform", ["darwin", "linux"])
 def test_service_install_and_uninstall_are_isolated_and_refuse_foreign_units(tmp_path, monkeypatch, platform):
     import subprocess

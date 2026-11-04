@@ -6,6 +6,7 @@ import os
 import secrets
 import shlex
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from heinzel.kernel import _uninstall_recovery as recovery
@@ -13,6 +14,16 @@ from heinzel.kernel._installation_continuity import tool_python
 from heinzel.kernel._offline_uv import VerifiedUV, fsync_directory
 from heinzel.kernel._private_control import private_read, private_write
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file
+
+
+@dataclass(frozen=True)
+class RemovalCapture:
+    files: tuple[OwnedFile, ...]
+    entrypoints: tuple[Path, ...]
+    manager_units: dict[str, dict[str, object]]
+    gate: Path | None = None
+    locks: tuple[Path, ...] = ()
+    labels: tuple[str, ...] = ()
 
 
 class RemovalJournal:
@@ -25,12 +36,13 @@ class RemovalJournal:
         prefix: Path,
         binary: Path,
         state: Path,
-        captured: tuple[tuple[OwnedFile, ...], tuple[Path, ...], dict[str, dict[str, object]]],
+        captured: tuple[tuple[OwnedFile, ...], tuple[Path, ...], dict[str, dict[str, object]]] | RemovalCapture,
     ) -> None:
-        files, entrypoints, manager_units = captured
+        captured = captured if isinstance(captured, RemovalCapture) else RemovalCapture(*captured)
+        files, entrypoints, manager_units = captured.files, captured.entrypoints, captured.manager_units
         self.directory = executable.path.parent
         self.path = self.directory / "journal.json"
-        self.gate = state / "daemon/standard-install-pending.json"
+        self.gate = captured.gate or state / "daemon/standard-install-pending.json"
         self.gate_content = json.dumps({"token": secrets.token_hex(32)}, indent=2) + "\n"
         self.token = json.loads(self.gate_content)["token"]
         python, python_digest, _identity = tool_python(prefix)
@@ -48,6 +60,7 @@ class RemovalJournal:
             "prefix_identity": [info.st_dev, info.st_ino],
             "manifest": recovery.manifest(prefix),
             "manager_units": manager_units,
+            "manager_labels": list(captured.labels),
             "uv": str(executable.path),
             "uv_sha256": executable.digest,
             "uv_identity": list(executable.identity),
@@ -76,11 +89,14 @@ class RemovalJournal:
                 }
                 for file in files
             ],
-            "locks": [
-                str(state / "ui/lifecycle.lock"),
-                str(state / "daemon/lifecycle.lock"),
-                str(state / "daemon/tick.lock"),
-            ],
+            "locks": sorted(
+                {
+                    str(state / "ui/lifecycle.lock"),
+                    str(state / "daemon/lifecycle.lock"),
+                    str(state / "daemon/tick.lock"),
+                    *(str(path) for path in captured.locks),
+                }
+            ),
             "gate": str(self.gate),
             "gate_content": self.gate_content,
         }
@@ -111,6 +127,16 @@ class RemovalJournal:
         """Durably record an observed phase; a later failure never fabricates rollback or completion."""
         self.value["phase"] = phase
         recovery.write(self.path, self.value)
+
+    def require_gate(self) -> None:
+        """Recheck exact durable authority before each effect; a foreign operation is never adopted.
+
+        Raises:
+            ValueError: If the current gate differs from this operation.
+        """
+        if private_read(self.gate) != self.gate_content:
+            msg = "The uninstall recovery gate changed"
+            raise ValueError(msg)
 
     def complete(self) -> None:
         """Clear only this exact recovery gate after integration cleanup and durable manager reload.

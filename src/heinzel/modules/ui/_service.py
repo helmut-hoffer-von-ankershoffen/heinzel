@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 from heinzel import Config, HeinzelError, Kernel, Settings
 from heinzel.kernel import (
     Installation,
+    MaintenanceLocks,
     PrivateControl,
     feature_enabled,
     installation_mutation_paths,
@@ -601,7 +602,7 @@ class WebService:
         )
 
     @contextmanager
-    def removal_guard(self) -> Generator[WebRemoval, None, None]:
+    def removal_guard(self, *, locks: MaintenanceLocks | None = None) -> Generator[WebRemoval, None, None]:
         """Hold exact integration authority, separating stop from cleanup after verified tool removal.
 
         Yields:
@@ -610,7 +611,8 @@ class WebService:
         Raises:
             HeinzelError: If files or the loaded user job are foreign, changed or unavailable.
         """
-        with private_lock(self.directory / "lifecycle.lock"):
+        path = self.directory / "lifecycle.lock"
+        with locks.guard(path) if locks is not None else private_lock(path):
             record = self._record()
             if not self._integration_absent() and record is None:
                 msg = "The web service is foreign or changed; it was left unchanged."

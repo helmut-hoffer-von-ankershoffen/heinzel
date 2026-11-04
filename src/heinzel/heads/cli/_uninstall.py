@@ -23,7 +23,7 @@ def main(arguments: list[str]) -> int:
     parser.add_argument("--json", action="store_true", help="Print the observed result as JSON")
     args = parser.parse_args(arguments)
     try:
-        kernel = boot(builtin_only=True, cwd=Path.home())
+        kernel = boot(builtin_only=True, cwd=Path.home(), maintenance=True)
         service = kernel.resolve_builtin_service(OfflineUninstall, "system")
         result = service.uninstall(on_recovery=_show_recovery)
     except (HeinzelError, OSError, ValueError) as error:

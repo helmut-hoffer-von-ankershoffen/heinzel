@@ -6,7 +6,6 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 Status says whether we agreed. The second line of the Status column says whether it runs: built, partial or planned.
 
 <!-- adr-index:start -->
-
 <div class="adr-index" markdown="1">
 
 | ADR | Status | Pull requests |
@@ -120,9 +119,9 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0125](0125-prepare-locked-isolated-build-dependencies.md) Prepare locked dependencies before isolated local builds | proposed · 4 Nov<br>built |  |
 | [0126](0126-calendar-reminders.md) Calendar reminder scheduling | proposed · 4 Nov<br>partial |  |
 | [0131](0131-offline-uninstall-has-private-installer-authority.md) Offline uninstall keeps private installer and recovery authority | proposed · 4 Nov<br>partial |  |
+| [0133](0133-owned-host-integrations-join-maintenance.md) Owned host integrations join one maintenance inventory | proposed · 4 Nov<br>partial |  |
 
 </div>
-
 <!-- adr-index:end -->
 
 The pull requests are the ones that built the record, empty where none is known (the founding records came with the

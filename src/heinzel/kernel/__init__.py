@@ -119,6 +119,15 @@ from heinzel.kernel._git import (
     check_repository_url,
     git_command,
 )
+from heinzel.kernel._host_maintenance import (
+    HostIntegration,
+    HostMaintenanceIntegration,
+    HostServiceManager,
+    MaintenanceLocks,
+    host_maintenance_directory,
+    host_maintenance_gate,
+    host_maintenance_lock,
+)
 from heinzel.kernel._identity import PRIVATE_WRITE, Authentication, CallIdentity, CurrentUser, Principal
 from heinzel.kernel._installation import (
     CORE_DISTRIBUTION,
@@ -310,6 +319,18 @@ from heinzel.kernel._themes import (
     ThemeVariant,
     font_stack_problem,
 )
+from heinzel.kernel._tool_uninstall import (
+    OwnedFile as OwnedIntegrationFile,
+)
+from heinzel.kernel._tool_uninstall import (
+    owned_file as capture_owned_integration_file,
+)
+from heinzel.kernel._tool_uninstall import (
+    physical_directory as verify_integration_directory,
+)
+from heinzel.kernel._tool_uninstall import (
+    remove_owned_file as remove_owned_integration_file,
+)
 from heinzel.kernel._views import ViewLet, ViewSlot, read_view_asset
 
 __all__ = [
@@ -434,6 +455,9 @@ __all__ = [
     "GraphicWidget",
     "HealthLet",
     "HeinzelError",
+    "HostIntegration",
+    "HostMaintenanceIntegration",
+    "HostServiceManager",
     "How",
     "Icon",
     "InfoLet",
@@ -469,6 +493,7 @@ __all__ = [
     "MailMessage",
     "MailQuery",
     "MailThread",
+    "MaintenanceLocks",
     "McpChatSessions",
     "McpServer",
     "Meeting",
@@ -492,6 +517,7 @@ __all__ = [
     "OperationLet",
     "OrgContext",
     "Origin",
+    "OwnedIntegrationFile",
     "Participant",
     "PersistentWeb",
     "Person",
@@ -608,6 +634,7 @@ __all__ = [
     "Window",
     "boot",
     "capability_read_schema",
+    "capture_owned_integration_file",
     "captured_source_active",
     "check_repository_url",
     "check_target",
@@ -624,6 +651,9 @@ __all__ = [
     "format_duration",
     "free_busy_people",
     "git_command",
+    "host_maintenance_directory",
+    "host_maintenance_gate",
+    "host_maintenance_lock",
     "input_schema",
     "installation_mutation_paths",
     "installation_mutation_pending",
@@ -645,6 +675,7 @@ __all__ = [
     "read_view_asset",
     "record_usage",
     "redact_emails",
+    "remove_owned_integration_file",
     "requirement_from_receipt",
     "restricts",
     "run_bounded_process",
@@ -661,5 +692,6 @@ __all__ = [
     "toml_value",
     "user_config_dir",
     "using_tick_interval",
+    "verify_integration_directory",
     "walk",
 ]

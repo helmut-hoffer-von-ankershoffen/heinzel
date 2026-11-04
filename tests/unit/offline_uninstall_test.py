@@ -140,11 +140,11 @@ def test_cli_uninstall_uses_only_builtin_port_and_home_configuration(monkeypatch
 
     def resolve(kernel, kind):
         resolutions.append(kind)
-        assert kind is OfflineUninstall
+        assert kind in {OfflineUninstall, Kernel}
         return original_resolve(kernel, kind)
 
     def boot(**kwargs):
-        assert kwargs == {"builtin_only": True, "cwd": Path.home()}
+        assert kwargs == {"builtin_only": True, "cwd": Path.home(), "maintenance": True}
         kernel = original_boot(**kwargs)
         assert all(record.origin.builtin for record in kernel.modules)
         assert not kernel._factory_instances
@@ -169,7 +169,7 @@ def test_cli_uninstall_uses_only_builtin_port_and_home_configuration(monkeypatch
     output = capsys.readouterr()
     assert '"data_retained":true' in output.out
     assert "fixture-local-recovery" in output.err
-    assert resolutions == [OfflineUninstall]
+    assert resolutions == [OfflineUninstall, Kernel]
     assert len(calls) == 1
     assert tmp_path / "hz.toml" not in scopes
 
@@ -223,7 +223,7 @@ def test_maintenance_port_rejects_foreign_and_rebound_providers(make_kernel, cha
     elif change == "callback":
         kernel._factories[OfflineUninstall] = lambda: pytest.fail("A substituted callback must never run")
     else:
-        kernel.bind(OfflineUninstall, _uninstall.SystemOfflineUninstall())
+        kernel.bind(OfflineUninstall, _uninstall.SystemOfflineUninstall(kernel))
     with pytest.raises(HeinzelError, match="expected built-in service"):
         kernel.resolve_builtin_service(OfflineUninstall, "system")
 

@@ -228,7 +228,7 @@ def managers_absent(journal: dict[str, Any]) -> None:
         ValueError: If the user session, bus or stopped evidence cannot be verified.
     """
     if journal["platform"] == "darwin":
-        _mac_absent()
+        _mac_absent(journal)
     elif journal["platform"] == "linux":
         _linux_absent(journal)
     else:
@@ -236,7 +236,7 @@ def managers_absent(journal: dict[str, Any]) -> None:
         raise ValueError(msg)
 
 
-def _mac_absent() -> None:
+def _mac_absent(journal: dict[str, Any] | None = None) -> None:
     if _manager(["/bin/launchctl", "managername"], "darwin").strip() != "Aqua" or _manager(
         ["/bin/launchctl", "manageruid"], "darwin"
     ).strip() != str(os.getuid()):
@@ -250,7 +250,7 @@ def _mac_absent() -> None:
     ):
         msg = "Service manager evidence is incomplete"
         raise ValueError(msg)
-    if any(line.split()[-1] in {DAEMON, WEB} for line in lines[1:]):
+    if any(line.split()[-1] in {DAEMON, WEB, *(journal or {}).get("manager_labels", [])} for line in lines[1:]):
         msg = "A service is still loaded; inspect its local manager before recovery"
         raise ValueError(msg)
     if _manager(["/bin/launchctl", "managername"], "darwin").strip() != "Aqua" or _manager(
@@ -293,6 +293,16 @@ def _properties(output: str) -> dict[str, str]:
     return values
 
 
+def manager_properties(output: str) -> dict[str, str]:
+    """Expose the same bounded unique-property grammar to in-process maintenance guards."""
+    return _properties(output)
+
+
+def manager_identity_matches(values: dict[str, str], expected: dict[str, Any], unit: str) -> bool:
+    """Share the exact standalone retained-unit identity check with the host coordinator."""
+    return _loaded_identity(values, expected, unit)
+
+
 def _loaded_identity(values: dict[str, str], expected: dict[str, Any], unit: str) -> bool:
     if (
         values.get("Id") != unit
@@ -327,7 +337,7 @@ def _environment_identity(raw: str, wanted: dict[str, str]) -> bool:
 
 def _linux_absent(journal: dict[str, Any]) -> None:
     before = _linux_identity()
-    for unit in ("hz-daemon.service", "hz-daemon.timer", "hz-ui.service"):
+    for unit in sorted({"hz-daemon.service", "hz-daemon.timer", "hz-ui.service", *journal["manager_units"]}):
         output = _manager(
             [
                 "/usr/bin/systemctl",

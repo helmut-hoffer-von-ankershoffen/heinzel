@@ -24,51 +24,169 @@ pytestmark = pytest.mark.e2e
 
 PLUGIN_MODULE = b'from heinzel import Module\nmodule = Module("offline-fixture", "Isolated offline fixture.")\n'
 
-MANAGER_FIXTURE = """import importlib.metadata, json, os, sys
+MANAGER_FIXTURE = r"""import importlib.metadata, json, os, sys
 from pathlib import Path
 from urllib.request import urlopen
 from heinzel.kernel import ProcessOutcome
 from heinzel.modules.system.daemon import _service as daemon
+
 root = Path(os.environ["HZ_OFFLINE_MANAGER_FIXTURE"])
+
+
+def calendar_probe(command):
+    import plistlib, shlex
+
+    database = root / "calendar-manager.json"
+    entries = json.loads(database.read_text()) if database.exists() else {}
+    linux = command[0] == "/usr/bin/systemctl"
+    operation = command[2] if linux else command[1]
+    if operation == "bootstrap":
+        path = Path(command[-1])
+        value = plistlib.loads(path.read_bytes())
+        entries[value["Label"]] = {"path": str(path), "active": True}
+        database.write_text(json.dumps(entries))
+        return ProcessOutcome(0, "", "")
+    if linux and operation == "enable":
+        name = command[-1]
+        entries[name] = {"path": str(Path.home() / ".config/systemd/user" / name), "active": True}
+        database.write_text(json.dumps(entries))
+        return ProcessOutcome(0, "", "")
+    name = command[-1].rsplit("/", 1)[-1] if not linux or operation != "show" else command[3]
+    if operation in {"bootout", "disable"} and name in entries:
+        entries[name]["active"] = False
+        database.write_text(json.dumps(entries))
+        return ProcessOutcome(0, "", "")
+    if operation == "daemon-reload" and database.exists():
+        return ProcessOutcome(0, "", "")
+    if operation == "list" and database.exists():
+        return ProcessOutcome(
+            0,
+            "PID\tStatus\tLabel\n"
+            + "".join("123 0 " + name + "\n" for name, item in entries.items() if item["active"]),
+            "",
+        )
+    if operation == "list-units" and database.exists():
+        return ProcessOutcome(0, "".join(name + " loaded inactive dead fixture\n" for name in entries), "")
+    if name not in entries:
+        return None
+    item = entries[name]
+    if operation == "is-enabled":
+        return ProcessOutcome(1, "disabled\n", "")
+    if not linux:
+        if operation != "print" or not item["active"]:
+            return ProcessOutcome(113, "", "")
+        value = plistlib.loads(Path(item["path"]).read_bytes())
+        text = (
+            "path = "
+            + item["path"]
+            + "\nprogram = "
+            + value["ProgramArguments"][0]
+            + "\nworking directory = "
+            + value["WorkingDirectory"]
+            + "\narguments = {\n"
+            + "\n".join(value["ProgramArguments"])
+            + "\n}\nenvironment = {\n"
+            + "\n".join(key + " => " + val for key, val in value["EnvironmentVariables"].items())
+            + "\n}\npid = 123\n"
+        )
+        return ProcessOutcome(0, text, "")
+    values = Path(item["path"]).read_text().splitlines()
+    environment = [
+        shlex.split(line.removeprefix("Environment="))[0].replace("%%", "%")
+        for line in values
+        if line.startswith("Environment=")
+    ]
+    args = shlex.split(next(line.removeprefix("ExecStart=") for line in values if line.startswith("ExecStart=")))
+    directory = json.loads(
+        next(line.removeprefix("WorkingDirectory=") for line in values if line.startswith("WorkingDirectory="))
+    )
+    text = (
+        "Id="
+        + name
+        + "\nLoadState=loaded\nFragmentPath="
+        + item["path"]
+        + "\nDropInPaths=\nExecStart={ path="
+        + args[0]
+        + " ; argv[]="
+        + " ".join(args)
+        + " ; ignore_errors=no ; }\n"
+        + "Environment="
+        + shlex.join(environment)
+        + "\nWorkingDirectory="
+        + directory
+        + "\nActiveState="
+        + ("active" if item["active"] else "inactive")
+        + "\nUnitFileState="
+        + ("enabled" if item["active"] else "disabled")
+        + "\nMainPID="
+        + ("123" if item["active"] else "0")
+        + "\nControlPID=0\nJob=\n"
+    )
+    return ProcessOutcome(0, text, "")
+
+
 def probe(command):
     assert command[0] in {"/bin/launchctl", "/usr/bin/systemctl"}, "No PATH-selected manager may run"
+    if result := calendar_probe(command):
+        return result
     with (root / "manager-calls.jsonl").open("a") as stream:
-        stream.write(json.dumps(command) + "\\n")
+        stream.write(json.dumps(command) + "\n")
     if command[0] == "/usr/bin/systemctl":
-        if "--property=Version" in command: return ProcessOutcome(0, "Version=255\\n", "")
+        if "list-units" in command:
+            return ProcessOutcome(0, "", "")
+        if "--property=Version" in command:
+            return ProcessOutcome(0, "Version=255\n", "")
         unit = next((item for item in command if item.endswith((".service", ".timer"))), "")
-        output = ("LoadState=not-found\\nActiveState=inactive\\nSubState=dead\\nMainPID=0\\n"
-                  "ControlPID=0\\nJob=\\nId=" + unit + "\\n")
+        output = (
+            "LoadState=not-found\nActiveState=inactive\nSubState=dead\nMainPID=0\nControlPID=0\nJob=\nId=" + unit + "\n"
+        )
         return ProcessOutcome(0, output, "")
     name = command[1]
-    if name == "managername": return ProcessOutcome(0, "Aqua\\n", "")
-    if name == "manageruid": return ProcessOutcome(0, str(os.getuid()) + "\\n", "")
-    if name == "list": return ProcessOutcome(0, "PID\\tStatus\\tLabel\\n", "")
-    if name == "print": return ProcessOutcome(113, "", "")
+    if name == "managername":
+        return ProcessOutcome(0, "Aqua\n", "")
+    if name == "manageruid":
+        return ProcessOutcome(0, str(os.getuid()) + "\n", "")
+    if name == "list":
+        return ProcessOutcome(0, "PID\tStatus\tLabel\n", "")
+    if name == "print":
+        return ProcessOutcome(113, "", "")
     raise AssertionError("A no-service fixture must never mutate its manager")
+
+
 daemon._quiescence_command = probe
-daemon._linux_user_manager_identity = lambda: (1,2,3)
+daemon._linux_user_manager_identity = lambda: (1, 2, 3)
+
+
 def no_discovery(*args, **kwargs):
     raise AssertionError("Offline uninstall must not discover installed plugins")
+
+
 if sys.argv[1:3] == ["system", "uninstall"]:
     from heinzel.kernel import Credentials, Installation, Kernel, OfflineUninstall, Progress, _discovery
+    from heinzel.modules.org._reminder_maintenance import CalendarMaintenance
+
     importlib.metadata.entry_points = no_discovery
     _discovery.entry_points = no_discovery
     Credentials.__init__ = no_discovery
     original_resolve = Kernel.resolve
+
     def maintenance_only(kernel, kind):
-        if kind is not OfflineUninstall:
+        if kind not in {OfflineUninstall, CalendarMaintenance, Kernel}:
             # The existing coordinator has no records and reads only its already-bound local objects.
             assert not kernel.modules, "Only the maintenance port may resolve from the discovered registry"
             assert kind in {Installation, Progress} and kind in kernel._instances
         return original_resolve(kernel, kind)
+
     Kernel.resolve = maintenance_only
 if os.environ.get("HZ_OFFLINE_INTERRUPT_FIXTURE") == "1":
     from heinzel.kernel import Installation
+
     def interrupted(*args, **kwargs):
         raise KeyboardInterrupt("immutable fixture interruption before uv removal")
+
     Installation.uninstall_offline = interrupted
 from heinzel.heads.cli import main
+
 main()
 """
 
@@ -232,6 +350,8 @@ def deny_network(command: list[str]) -> list[str]:
 
 def absent_manager(command):
     if command[0] == "/usr/bin/systemctl":
+        if "list-units" in command:
+            return ProcessOutcome(0, "", "")
         if "--property=Version" in command:
             return ProcessOutcome(0, "Version=255\n", "")
         unit = next((item for item in command if item.endswith((".service", ".timer"))), "")
@@ -392,6 +512,40 @@ def normal_embedded_uv_paths(selected, environment, candidate):
     assert not (selected.home / ".local/share/uv/tools").exists()
 
 
+def prepare_calendar_workers(selected, environment):
+    from heinzel.modules.org import _reminder_service
+
+    paths, data = [], []
+    for name in ("first", "second"):
+        base = selected.home / name
+        profile = {"HZ_CONFIG_HOME": str(base / "config"), "HZ_CONFIG": ""}
+        profile.update({f"HZ_{field.upper()}_DIR": str(base / field) for field in ("state", "data", "cache", "log")})
+        result = subprocess.run(
+            [
+                str(selected.root / "tools/heinzel/bin/python"),
+                "-I",
+                "-m",
+                "offline_uninstall_fixture",
+                "org",
+                "calendar-reminders-install",
+                "--confirm",
+            ],
+            env=environment | profile,
+            cwd=selected.home,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+        assert result.returncode == 0, result.stderr
+        paths.append(_reminder_service.path_for(sys.platform, selected.home, _reminder_service.Profile(profile)))
+        retained = base / "data/reminder-consent-and-replay"
+        retained.parent.mkdir(parents=True, exist_ok=True)
+        retained.write_text("retained")
+        data.append(retained)
+    return paths, data
+
+
 def installed_uninstall(selected, environment, change):
     interpreter = selected.root / "tools/heinzel/bin/python"
     # Execute the installed isolated module, even when the public hz script itself is the negative target.
@@ -401,7 +555,7 @@ def installed_uninstall(selected, environment, change):
     (poisoned / "uv").write_text("#!/bin/sh\necho unsafe-PATH-uv >&2\nexit 98\n")
     (poisoned / "uv").chmod(0o700)
     environment = environment | {"PATH": str(poisoned)}
-    if change == "recovery":
+    if change in {"recovery", "calendar-recovery"}:
         environment["HZ_OFFLINE_INTERRUPT_FIXTURE"] = "1"
     result = subprocess.run(
         deny_network(command),
@@ -419,7 +573,17 @@ def installed_uninstall(selected, environment, change):
 @pytest.mark.timeout(300)
 @pytest.mark.parametrize(
     "change",
-    ["none", "old015-upgrade", "recovery", "tampered-receipt", "foreign-script", "missing-remover", "unsafe-remover"],
+    [
+        "none",
+        "old015-upgrade",
+        "recovery",
+        "calendar",
+        "calendar-recovery",
+        "tampered-receipt",
+        "foreign-script",
+        "missing-remover",
+        "unsafe-remover",
+    ],
 )
 def test_installed_uninstall_needs_no_network_or_discovery_and_keeps_user_work(
     sandbox, wheel, monkeypatch, change, request
@@ -462,23 +626,38 @@ def test_installed_uninstall_needs_no_network_or_discovery_and_keeps_user_work(
     foreign = selected.root / "tools/unrelated"
     foreign.mkdir()
     (foreign / "kept.txt").write_text("another tool")
+    calendar_paths, calendar_data = (
+        prepare_calendar_workers(selected, environment) if change.startswith("calendar") else ([], [])
+    )
     receipt = selected.root / "tools/heinzel/uv-receipt.toml"
     alter_installation(change, receipt, selected, settings)
     result, environment = installed_uninstall(selected, environment, change)
-    if change == "recovery":
+    if change in {"recovery", "calendar-recovery"}:
         result = recover_installed_interruption(selected, settings, environment, result)
     assert data.read_text() == "retained user work"
     assert (foreign / "kept.txt").read_text() == "another tool"
-    if change in {"none", "old015-upgrade", "recovery"}:
+    _assert_removal_outcome(change, result, selected, receipt, (calendar_paths, calendar_data))
+
+
+def _assert_removal_outcome(change, result, selected, receipt, calendar):
+    calendar_paths, calendar_data = calendar
+    if change in {"none", "old015-upgrade", "recovery", "calendar", "calendar-recovery"}:
         assert result.returncode == 0, result.stderr
-        if change != "recovery":
+        if change not in {"recovery", "calendar-recovery"}:
             assert json.loads(result.stdout)["removed"] is True
         assert not (selected.root / "tools/heinzel").exists()
         assert not selected.hz_bin.exists()
         calls = [json.loads(line) for line in (selected.root / "manager-calls.jsonl").read_text().splitlines()]
         assert calls
         assert all(call[0] in {"/bin/launchctl", "/usr/bin/systemctl"} for call in calls)
-        assert not any("bootout" in call or "disable" in call or "stop" in call for call in calls)
+        if not change.startswith("calendar"):
+            assert not any("bootout" in call or "disable" in call or "stop" in call for call in calls)
+        else:
+            manager = json.loads((selected.root / "calendar-manager.json").read_text())
+            assert len(manager) == 2
+            assert all(not item["active"] for item in manager.values())
+            assert all(not path.exists() for path in calendar_paths)
+            assert all(path.read_text() == "retained" for path in calendar_data)
     else:
         assert result.returncode == 1
         assert receipt.exists()

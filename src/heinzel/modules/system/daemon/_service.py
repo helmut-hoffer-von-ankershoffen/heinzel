@@ -53,9 +53,12 @@ from heinzel.kernel import (
     DaemonHandoverRequest,
     DaemonMutationScope,
     Installation,
+    MaintenanceLocks,
     ProcessOutcome,
+    host_maintenance_gate,
     private_directory,
     private_lock,
+    private_read,
     private_write,
     tick_interval,
 )
@@ -1196,7 +1199,7 @@ class DaemonService:
         if self.owned_unit_state(binary):
             self._quiescence_advice = None
 
-    def _quiescent_snapshot(self, binary: Path, token: str | None = None) -> bool:
+    def _quiescent_snapshot(self, binary: Path, token: str | None = None, *, gate: Path | None = None) -> bool:
         self._quiescence_problem = "The selected installation destination could not be verified."
         if self._platform not in {"darwin", "linux"} or not self._quiescence_target(binary):
             return False
@@ -1206,6 +1209,18 @@ class DaemonService:
         ]
 
         def pending_valid() -> bool:
+            if gate is not None:
+                installation = self._quiescence_installation
+                return (
+                    installation is not None
+                    and gate == host_maintenance_gate(installation.prefix)
+                    and _safely_absent(self.state_dir / "standard-install-pending.json")
+                    and private_read(gate) == json.dumps({"token": token}, indent=2) + "\n"
+                )
+            if self._quiescence_installation is not None and not _safely_absent(
+                host_maintenance_gate(self._quiescence_installation.prefix)
+            ):
+                return False
             if token is None:
                 return _safely_absent(self.state_dir / "standard-install-pending.json")
             return self._mutation_token_matches(token, "standard-install-pending.json")
@@ -1602,7 +1617,9 @@ class DaemonService:
         paths = [*self._unit_paths(), self.state_dir / "install.json"]
         return [owned_file(path) for path in paths if os.path.lexists(path)]
 
-    def _offline_stop(self, binary: Path, files: list[OwnedFile], state: ManagerState, token: str) -> None:
+    def _offline_stop(
+        self, binary: Path, files: list[OwnedFile], state: ManagerState, token: str, *, gate: Path | None = None
+    ) -> None:
         from heinzel.modules.system.daemon._units import LABEL, SYSTEMD_NAME  # noqa: PLC0415 - fixed manager names
 
         if any(owned_file(file.path) != file for file in files) or self.owned_manager_state(binary) != state:
@@ -1624,7 +1641,7 @@ class DaemonService:
             if self._offline_probe(command) is None:
                 msg = "The owned daemon could not be stopped; its files and installation were retained."
                 raise HeinzelError(msg)
-        if not self._quiescent_snapshot(binary, token):
+        if not self._quiescent_snapshot(binary, token, gate=gate):
             msg = (
                 "The daemon is not proven quiescent; the installation was retained. Inspect its local service manager."
             )
@@ -1650,7 +1667,9 @@ class DaemonService:
         }
 
     @contextmanager
-    def offline_removal_guard(self, binary: Path) -> Generator[DaemonRemoval, None, None]:
+    def offline_removal_guard(
+        self, binary: Path, *, locks: MaintenanceLocks | None = None, gate: Path | None = None
+    ) -> Generator[DaemonRemoval, None, None]:
         """Hold daemon lifecycle/tick authority while a durable coordinator stops and removes one tool.
 
         Yields:
@@ -1660,7 +1679,11 @@ class DaemonService:
             HeinzelError: If ownership, quiescence or final cleanup cannot be established.
             OSError: If physical local authority cannot be inspected.
         """
-        with private_lock(self.state_dir / "lifecycle.lock"), private_lock(self.state_dir / "tick.lock"):
+        lifecycle, tick = self.state_dir / "lifecycle.lock", self.state_dir / "tick.lock"
+        with (
+            locks.guard(lifecycle) if locks is not None else private_lock(lifecycle),
+            locks.guard(tick) if locks is not None else private_lock(tick),
+        ):
             if self._handover_pending():
                 msg = "A Heinzel lifecycle change requires recovery; nothing was uninstalled."
                 raise HeinzelError(msg)
@@ -1668,7 +1691,7 @@ class DaemonService:
             state = self.owned_manager_state(binary)
 
             def stop(token: str) -> None:
-                self._offline_stop(binary, files, state, token)
+                self._offline_stop(binary, files, state, token, gate=gate)
 
             def finish() -> None:
                 if self._quiescence_installation is None or not _safely_absent(self._quiescence_installation.prefix):
@@ -1828,6 +1851,10 @@ class DaemonService:
         )
 
     def _handover_pending(self) -> bool:
+        if self._quiescence_installation is not None and not _safely_absent(
+            host_maintenance_gate(self._quiescence_installation.prefix)
+        ):
+            return True
         for name in ("handover-pending.json", "mutation-pending.json", "standard-install-pending.json"):
             try:
                 (self.state_dir / name).lstat()

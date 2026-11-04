@@ -5,16 +5,26 @@ import json
 import os
 import plistlib
 import shlex
-import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 from heinzel import Config, HeinzelError, Settings
-from heinzel.kernel import user_config_dir
+from heinzel.kernel import (
+    HostServiceManager,
+    Installation,
+    MaintenanceLocks,
+    Progress,
+    boot,
+    host_maintenance_lock,
+    installation_mutation_pending,
+    user_config_dir,
+)
 
 LABEL = "io.github.helmut-hoffer-von-ankershoffen.heinzel.calendar-reminders"
 LAUNCHCTL_NO_SERVICE = 113
@@ -114,24 +124,42 @@ def definition(platform: str, executable: Path, profile: Profile | None = None) 
 
 
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
-    try:
-        return subprocess.run(command, capture_output=True, text=True, check=False, timeout=15)  # noqa: S603
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        msg = f"Cannot run {command[0]}: {type(exc).__name__}."
-        raise HeinzelError(msg) from exc
+    kernel = boot(builtin_only=True, cwd=Path.home())
+    return kernel.resolve_builtin_service(HostServiceManager, "system.daemon").command(command)
+
+
+def _installation() -> Installation:
+    return Installation(Progress())
 
 
 def _shim() -> Path:
-    uv = shutil.which("uv")
-    if uv is None:
-        msg = "Install uv and the hz tool before installing reminders."
+    installation = _installation()
+    _, binary = installation.tool_destination()
+    if not installation.startup_state_matches():
+        msg = "Calendar reminders require the verified standard Heinzel installation."
         raise HeinzelError(msg)
-    result = _run([uv, "tool", "dir", "--bin"])
-    executable = Path(result.stdout.strip()) / "hz"
-    if result.returncode != 0 or not executable.is_absolute() or not executable.exists():
-        msg = "Cannot find the installed hz tool shim; install hz as a uv tool first."
-        raise HeinzelError(msg)
-    return executable
+    return binary / "hz"
+
+
+@contextmanager
+def lifecycle(profile: Profile) -> Generator[None]:
+    """Fence setup and every worker cycle with SDK-wide and exact-profile maintenance authority.
+
+    Raises:
+        HeinzelError: If installation identity, a pending mutation or a concurrent writer prevents admission.
+    """
+    installation = _installation()
+    paths = [
+        host_maintenance_lock(installation.prefix),
+        Path(profile.environment["HZ_STATE_DIR"]) / "calendar-reminders/lifecycle.lock",
+    ]
+    with MaintenanceLocks(paths):
+        if not installation.startup_state_matches() or installation_mutation_pending(
+            installation.prefix, Path(profile.environment["HZ_STATE_DIR"])
+        ):
+            msg = "Heinzel maintenance is pending or its installation is unverified; calendar work was not started."
+            raise HeinzelError(msg)
+        yield
 
 
 def path_for(platform: str, home: Path, profile: Profile | None = None) -> Path:
@@ -155,25 +183,28 @@ def install() -> str:
     Raises:
         HeinzelError: If the platform, installation or service manager is unavailable.
     """
-    platform, home = sys.platform, Path.home()
     profile = Profile.selected()
-    path = path_for(platform, home, profile)
-    executable = _shim()
-    content = definition(platform, executable, profile)
-    if path.exists() or path.is_symlink():
-        _owned(path, content)
-        observed = status(profile)
-        if observed == "running":
-            return "Calendar reminder service is already running for this profile."
-        if observed == "loaded":
-            return "Calendar reminder service is loaded for this profile; running has not been observed."
-    else:
-        _write(path, content)
-    _load(platform, path, profile)
-    if status(profile) not in {"running", "loaded"}:
-        msg = "The reminder service file is installed, but loading could not be verified. Retry setup to recover."
-        raise HeinzelError(msg)
-    return "Calendar reminder service installed. Enable Calendar reminders in Notifications settings to allow reads."
+    with lifecycle(profile):
+        platform, home = sys.platform, Path.home()
+        path = path_for(platform, home, profile)
+        executable = _shim()
+        content = definition(platform, executable, profile)
+        if path.exists() or path.is_symlink():
+            _owned(path, content)
+            observed = status(profile)
+            if observed == "running":
+                return "Calendar reminder service is already running for this profile."
+            if observed == "loaded":
+                return "Calendar reminder service is loaded for this profile; running has not been observed."
+        else:
+            _write(path, content)
+        _load(platform, path, profile)
+        if status(profile) not in {"running", "loaded"}:
+            msg = "The reminder service file is installed, but loading could not be verified. Retry setup to recover."
+            raise HeinzelError(msg)
+        return (
+            "Calendar reminder service installed. Enable Calendar reminders in Notifications settings to allow reads."
+        )
 
 
 def _owned(path: Path, content: str) -> os.stat_result:
@@ -234,29 +265,30 @@ def uninstall() -> str:
     Raises:
         HeinzelError: If the unit was modified or the service manager cannot stop it.
     """
-    platform = sys.platform
     profile = Profile.selected()
-    path = path_for(platform, Path.home(), profile)
-    if not path.exists() and not path.is_symlink():
-        return "Calendar reminder service is not installed for this profile."
-    owned = _owned(path, definition(platform, _shim(), profile))
-    command = (
-        ["/bin/launchctl", "bootout", f"gui/{os.getuid()}/{profile.label}"]
-        if platform == "darwin"
-        else ["/usr/bin/systemctl", "--user", "disable", "--now", profile.unit]
-    )
-    stopped = _run(command)
-    if stopped.returncode != 0 and not _absent(platform, profile):
-        msg = "The calendar reminder service could not be stopped; its file was left in place."
-        raise HeinzelError(msg)
-    if _owned(path, definition(platform, _shim(), profile))[:7] != owned[:7]:
-        msg = "The reminder service file changed during removal; it was left alone."
-        raise HeinzelError(msg)
-    path.unlink()
-    if platform == "linux" and _run(["/usr/bin/systemctl", "--user", "daemon-reload"]).returncode != 0:
-        msg = "The reminder service stopped and its file was removed, but systemd reload failed."
-        raise HeinzelError(msg)
-    return "Calendar reminder service stopped and removed."
+    with lifecycle(profile):
+        platform = sys.platform
+        path = path_for(platform, Path.home(), profile)
+        if not path.exists() and not path.is_symlink():
+            return "Calendar reminder service is not installed for this profile."
+        owned = _owned(path, definition(platform, _shim(), profile))
+        command = (
+            ["/bin/launchctl", "bootout", f"gui/{os.getuid()}/{profile.label}"]
+            if platform == "darwin"
+            else ["/usr/bin/systemctl", "--user", "disable", "--now", profile.unit]
+        )
+        stopped = _run(command)
+        if stopped.returncode != 0 and not _absent(platform, profile):
+            msg = "The calendar reminder service could not be stopped; its file was left in place."
+            raise HeinzelError(msg)
+        if _owned(path, definition(platform, _shim(), profile))[:7] != owned[:7]:
+            msg = "The reminder service file changed during removal; it was left alone."
+            raise HeinzelError(msg)
+        path.unlink()
+        if platform == "linux" and _run(["/usr/bin/systemctl", "--user", "daemon-reload"]).returncode != 0:
+            msg = "The reminder service stopped and its file was removed, but systemd reload failed."
+            raise HeinzelError(msg)
+        return "Calendar reminder service stopped and removed."
 
 
 def status(profile: Profile | None = None) -> str:

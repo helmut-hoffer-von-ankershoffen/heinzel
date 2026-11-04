@@ -18,6 +18,24 @@ from heinzel.modules.system.notify._native import Native
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def verified_calendar_installation(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from heinzel.modules.org import _reminder_service
+
+    prefix = tmp_path / "verified-tools/heinzel"
+    prefix.mkdir(parents=True)
+    monkeypatch.setattr(
+        _reminder_service,
+        "_installation",
+        lambda: SimpleNamespace(
+            prefix=prefix,
+            startup_state_matches=lambda: True,
+        ),
+    )
+
+
 @pytest.mark.parametrize("platform", ["darwin", "linux"])
 def test_supervisor_pins_profile_paths_and_never_reports_or_removes_another_profile(tmp_path, monkeypatch, platform):
     executable = tmp_path / "tool" / "hz"
@@ -235,14 +253,14 @@ def test_supervised_execution_checks_exact_profile_binding(tmp_path, monkeypatch
     monkeypatch.setattr(org, "run_reminders", worker)
     monkeypatch.delenv("HZ_REMINDER_PROFILE", raising=False)
     with pytest.raises(HeinzelError, match="bound"):
-        org.calendar_reminder_worker(Mock(), Mock())
+        org.calendar_reminder_worker(Mock())
     worker.assert_not_called()
     monkeypatch.setenv("HZ_REMINDER_PROFILE", supervisor.Profile.selected().identity)
-    org.calendar_reminder_worker(Mock(), Mock())
+    org.calendar_reminder_worker(Mock())
     worker.assert_called_once()
     monkeypatch.setenv("HZ_STATE_DIR", str(tmp_path / "different-state"))
     with pytest.raises(HeinzelError, match="bound"):
-        org.calendar_reminder_worker(Mock(), Mock())
+        org.calendar_reminder_worker(Mock())
     worker.assert_called_once()
 
 

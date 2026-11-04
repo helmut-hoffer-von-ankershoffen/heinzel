@@ -1,15 +1,30 @@
 """Offline removal of one verified uv installation, with owned service cleanup and retained user work."""
 
 import secrets
+import subprocess
+import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from heinzel import Config, HeinzelError, Kernel, Progress, Settings
-from heinzel.kernel import Installation, OfflineUninstall, UninstallResult
+from heinzel.kernel import (
+    HostMaintenanceIntegration,
+    HostServiceManager,
+    Installation,
+    MaintenanceLocks,
+    OfflineUninstall,
+    ServiceLet,
+    UninstallResult,
+    boot,
+    host_maintenance_gate,
+    host_maintenance_lock,
+)
+from heinzel.kernel._host_maintenance import HostIntegrationRemoval
 from heinzel.kernel._installation_mutations import installation_mutation_pending
 from heinzel.kernel._offline_uv import VerifiedUV, stage
-from heinzel.kernel._uninstall_journal import RemovalJournal
+from heinzel.kernel._uninstall_journal import RemovalCapture, RemovalJournal
 
 if TYPE_CHECKING:
     from heinzel.modules.system.daemon._service import DaemonRemoval, DaemonService
@@ -22,6 +37,7 @@ def uninstall_installation(
     daemon: "DaemonService | None" = None,
     web: "WebService | None" = None,
     on_recovery: Callable[[str], None] | None = None,
+    maintenance: Kernel | None = None,
 ) -> UninstallResult:
     """Stop only verified owned services and remove the current standard tool, retaining all user work.
 
@@ -82,29 +98,110 @@ def uninstall_installation(
     if installation_mutation_pending(installation.prefix, daemon.state_dir.parent):
         msg = "An installation change requires local recovery before uninstalling Heinzel."
         raise HeinzelError(msg)
-    with (
-        installation.tool_transaction(),
-        web.removal_guard() as remove_web,
-        daemon.offline_removal_guard(binary) as daemon_removal,
-    ):
-        if not installation.startup_state_matches() or installation.startup_fingerprint() != before:
-            msg = "The Heinzel installation changed during inspection; nothing was removed."
+    context = _RemovalContext(
+        installation,
+        before,
+        executable,
+        binary,
+        settings,
+        daemon,
+        web,
+        maintenance or boot(builtin_only=True, cwd=Path.home(), maintenance=True),
+    )
+    return _compose_removal(context, on_recovery)
+
+
+MAX_INTEGRATIONS = 512
+
+
+@dataclass
+class _RemovalContext:
+    installation: Installation
+    before: str
+    executable: VerifiedUV
+    binary: Path
+    settings: Settings
+    daemon: "DaemonService"
+    web: "WebService"
+    maintenance: Kernel
+
+
+@dataclass
+class _UninstallManager(HostServiceManager):
+    daemon: "DaemonService"
+
+    def command(self, arguments: list[str]) -> subprocess.CompletedProcess[str]:
+        return self.daemon.owned_manager_command(arguments)
+
+
+def _contributions(kernel: Kernel) -> list[HostMaintenanceIntegration]:
+    return [
+        kernel.resolve_builtin_service(service.provides, record.qualname)
+        for record, service in kernel.lets(ServiceLet)
+        if issubclass(service.provides, HostMaintenanceIntegration)
+    ]
+
+
+def _compose_removal(context: _RemovalContext, on_recovery: Callable[[str], None] | None) -> UninstallResult:
+    installation, before, executable = context.installation, context.before, context.executable
+    binary, settings, daemon, web = context.binary, context.settings, context.daemon, context.web
+    maintenance = context.maintenance
+    contributions = _contributions(maintenance)
+    manager = _UninstallManager(daemon)
+    inventory = [(owner, owner.inventory(installation.prefix, binary, manager)) for owner in contributions]
+    integrations = tuple(item for _, items in inventory for item in items)
+    if len(integrations) > MAX_INTEGRATIONS or len({item.name for item in integrations}) != len(integrations):
+        msg = "The host integration inventory is ambiguous or exceeds its budget."
+        raise HeinzelError(msg)
+    lock_paths = (
+        host_maintenance_lock(installation.prefix),
+        web.directory / "lifecycle.lock",
+        daemon.state_dir / "lifecycle.lock",
+        daemon.state_dir / "tick.lock",
+        *(path for item in integrations for path in item.locks),
+    )
+    gate = host_maintenance_gate(installation.prefix)
+    with installation.tool_transaction(), MaintenanceLocks(lock_paths) as locks:
+        if any(owner.inventory(installation.prefix, binary, manager) != items for owner, items in inventory):
+            msg = "The host integration inventory changed before removal; no service was stopped."
             raise HeinzelError(msg)
-        journal = RemovalJournal(
-            executable,
-            prefix=installation.prefix,
-            binary=binary,
-            state=settings.state_dir,
-            captured=(
-                (*remove_web.files, *daemon_removal.files),
-                installation.tool_entrypoints(),
-                {**remove_web.manager_units, **daemon_removal.manager_units},
-            ),
-        )
-        if not installation.startup_state_matches() or installation.startup_fingerprint() != before:
-            msg = "The Heinzel installation changed while preparing recovery; no service was stopped."
-            raise HeinzelError(msg)
-        _apply_removal(installation, before, executable, (remove_web, daemon_removal, journal), on_recovery)
+        plans = tuple(owner.guard(item, manager, locks) for owner, items in inventory for item in items)
+        with (
+            web.removal_guard(locks=locks) as remove_web,
+            daemon.offline_removal_guard(binary, locks=locks, gate=gate) as daemon_removal,
+        ):
+            if not installation.startup_state_matches() or installation.startup_fingerprint() != before:
+                msg = "The Heinzel installation changed during inspection; nothing was removed."
+                raise HeinzelError(msg)
+            manager_units = {**remove_web.manager_units, **daemon_removal.manager_units}
+            if sys.platform == "linux":
+                manager_units.update({item.name: item.manager_facts() for item in integrations})
+            journal = RemovalJournal(
+                executable,
+                prefix=installation.prefix,
+                binary=binary,
+                state=settings.state_dir,
+                captured=RemovalCapture(
+                    (*remove_web.files, *daemon_removal.files, *(file for item in integrations for file in item.files)),
+                    installation.tool_entrypoints(),
+                    manager_units,
+                    gate=gate,
+                    locks=lock_paths,
+                    labels=tuple(item.name for item in integrations),
+                ),
+            )
+            if not installation.startup_state_matches() or installation.startup_fingerprint() != before:
+                msg = "The Heinzel installation changed while preparing recovery; no service was stopped."
+                raise HeinzelError(msg)
+
+            def revalidate() -> None:
+                if any(owner.inventory(installation.prefix, binary, manager) != items for owner, items in inventory):
+                    msg = "The host integration inventory changed before native removal."
+                    raise HeinzelError(msg)
+
+            _apply_removal(
+                installation, before, executable, (remove_web, daemon_removal, journal, plans, revalidate), on_recovery
+            )
 
     return UninstallResult(daemon_removed=bool(daemon_removal.files), web_removed=bool(remove_web.files))
 
@@ -113,20 +210,32 @@ def _apply_removal(
     installation: Installation,
     before: str,
     executable: VerifiedUV,
-    plan: tuple["WebRemoval", "DaemonRemoval", RemovalJournal],
+    plan: tuple["WebRemoval", "DaemonRemoval", RemovalJournal, tuple[HostIntegrationRemoval, ...], Callable[[], None]],
     on_recovery: Callable[[str], None] | None,
 ) -> None:
-    remove_web, daemon_removal, journal = plan
+    remove_web, daemon_removal, journal, integrations, revalidate = plan
     if on_recovery is not None:
         on_recovery(journal.command)
     try:
         journal.begin()
+        for integration in integrations:
+            journal.require_gate()
+            integration.stop()
+        journal.require_gate()
         remove_web.stop()
+        journal.require_gate()
         daemon_removal.stop(journal.token)
+        revalidate()
+        for integration in integrations:
+            integration.quiescent()
+        journal.require_gate()
         journal.phase("stopped")
         journal.phase("removing")
         installation.uninstall_offline(expected=before, executable=executable)
         journal.phase("removed")
+        for integration in integrations:
+            journal.require_gate()
+            integration.finish()
         remove_web.finish()
         daemon_removal.finish()
         journal.complete()
@@ -138,6 +247,9 @@ def _apply_removal(
 class SystemOfflineUninstall(OfflineUninstall):
     """Built-in maintenance implementation; construction performs no account or provider work."""
 
+    def __init__(self, kernel: Kernel) -> None:
+        self.kernel = kernel
+
     def uninstall(self, *, on_recovery: Callable[[str], None] | None = None) -> UninstallResult:
         """Apply the existing recordless coordinator and every installation/service/recovery check."""
-        return uninstall_installation(on_recovery=on_recovery)
+        return uninstall_installation(on_recovery=on_recovery, maintenance=self.kernel)

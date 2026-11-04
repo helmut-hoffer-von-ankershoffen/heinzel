@@ -26,10 +26,13 @@ from heinzel.kernel import CapabilityView
 from heinzel.modules.org._agenda import Agenda, CalendarWeek, local_now, read_agenda, read_week, status_item
 from heinzel.modules.org._models import ROLES, OrgSettings, Profile
 from heinzel.modules.org._profile import ProfileService, ask_profile
+from heinzel.modules.org._reminder_maintenance import CalendarMaintenance
+from heinzel.modules.org._reminder_service import Profile as ReminderProfile
 from heinzel.modules.org._reminder_service import install as install_reminders
+from heinzel.modules.org._reminder_service import lifecycle, verify_binding
 from heinzel.modules.org._reminder_service import status as reminder_service_status
 from heinzel.modules.org._reminder_service import uninstall as uninstall_reminders
-from heinzel.modules.org._reminder_service import verify_binding
+from heinzel.modules.org._reminder_worker import WorkerReads
 from heinzel.modules.org._reminder_worker import run as run_reminders
 from heinzel.modules.org._sync import SyncItem, SyncReport, SyncService, render_sync
 
@@ -51,6 +54,7 @@ def render_profile(profile: Profile) -> RenderableType:
 module = Module("org", "Your profile, and the team, org and company you work with.")
 module.settings(OrgSettings)
 module.service(ProfileService)
+module.service(CalendarMaintenance)
 module.service(SyncService)
 
 
@@ -117,10 +121,13 @@ def calendar_reminders_status(notifications: Notifications) -> CalendarReminderS
 
 
 @module.operation(name="calendar-reminder-worker", read_only=False, heads={"cli"})
-def calendar_reminder_worker(kernel: Kernel, notifications: Notifications) -> None:
+def calendar_reminder_worker(kernel: Kernel) -> None:
     """Run the supervised calendar reminder worker until its periodic restart."""
-    verify_binding()
-    run_reminders(lambda: kernel.call(agenda), notifications)
+    selected = ReminderProfile.selected()
+    with lifecycle(selected):
+        verify_binding()
+        notifications = kernel.resolve(Notifications)
+    run_reminders(WorkerReads(lambda: kernel.call(agenda), lambda: lifecycle(selected)), notifications)
 
 
 @module.operation(heads={"cli", "mcp", "web"}, requires=["calendar:read"], optional=True)
