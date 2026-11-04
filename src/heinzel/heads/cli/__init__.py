@@ -197,6 +197,13 @@ def _mount_ui(app: typer.Typer, groups: dict[str, typer.Typer], kernel: Kernel, 
         app.add_typer(ui, name="ui", cls=SortedGroup, rich_help_panel=CORE_PANEL)
 
 
+def show(kernel: Kernel, output: Console) -> None:
+    """Render the interactive overview on demand, retaining the CLI's existing call boundary."""
+    from heinzel.heads.cli._overview import show as render_overview  # noqa: PLC0415 - only the bare interactive command
+
+    render_overview(kernel, output)
+
+
 def main() -> None:
     """Entry point of the `hz` executable."""
     try:
@@ -206,8 +213,6 @@ def main() -> None:
         err_console.print("Check the files `hz system config show` lists and your HZ_* environment variables.")
         sys.exit(EX_CONFIG)
     if not sys.argv[1:] and sys.stdout.isatty() and sys.stdin.isatty():
-        from heinzel.heads.cli._overview import show  # noqa: PLC0415 - only the bare interactive command
-
         show(kernel, console)
         return
     # Discovery stays offline; ordinary invocations check in the background at most once an hour (ADR 0031).
