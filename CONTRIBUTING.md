@@ -30,6 +30,11 @@ That is all. `make setup` installs everything else into the clone, without sudo:
 in `.tools/bin` ([ADR 0036](docs/adr/0036-the-build-installs-its-own-tools.md)). `make doctor` shows what is there and
 prints the command that fixes anything missing. Windows: use WSL.
 
+Setup also prepares the locked wheel and editable build backends. Local builds then run in isolated environments,
+with network disabled and every backend dependency checked against hashes exported from `uv.lock`
+([ADR 0125](docs/adr/0125-prepare-locked-isolated-build-dependencies.md)). If a backend artifact is absent, run
+`make setup` to fetch it; a cold setup still needs the registry.
+
 The web app uses TypeScript 7's native compiler through the pinned `@typescript/native` npm alias. Its schema
 generator still requires TypeScript 5's JavaScript API, so `typescript` stays on the generator's supported major.
 `make typecheck` and `pnpm run typecheck` select the native compiler explicitly; Node type definitions match the pinned

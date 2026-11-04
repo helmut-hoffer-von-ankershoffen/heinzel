@@ -54,7 +54,7 @@ help: ## Show this help
 
 install: ## Install what the build needs: Python with every dependency group (.venv) and the pinned tools (.tools)
 	@test -f uv.lock || uv lock --quiet
-	@uv sync --frozen --all-groups --quiet && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
+	@uv run --quiet --script scripts/build.py sync && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
 	@$(TOOLS) install build web
 	@$(WEB) install
 	@$(MAKE) --no-print-directory managed-backend-setup
@@ -101,7 +101,7 @@ preflight: ## What CI checks, before you push: check with coverage, template, bu
 	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(WEB_TESTS) \
 		"&tests=$(COVERED) -x && uv run coverage combine --quiet && uv run coverage report --format=total --fail-under=90" \
 		"&template=TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" \
-		"&build=uv build --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
+		"&build=uv run --quiet --script scripts/build.py --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
 		"&commits=$(MAKE) --no-print-directory commits" $(MANAGED_CHECK)
 	@if [ "$(PREFLIGHT)" = full ]; then $(MAKE) --no-print-directory audit test-e2e; fi
 
@@ -247,8 +247,9 @@ test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers (2 o
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
 	$(STEPS) $(if $(findstring web,$(SUITE)),,"e2e-readme=$(E2E_PYTEST) tests/e2e/docs_test.py::test_readme_instructions") "e2e=$(E2E_PYTEST)$(E2E_SELECT) --deselect=tests/e2e/docs_test.py::test_readme_instructions"
 
-e2e-prepare: ## Prepare current build assets before end-to-end procedure deadlines
-	@set -eu; dir="$$(mktemp -d "$${TMPDIR:-/tmp}/heinzel-e2e.XXXXXXXX")"; trap 'rm -rf "$$dir"' EXIT; uv build --quiet --wheel --out-dir "$$dir"
+e2e-prepare: ## Prepare the locked controller and current build assets before end-to-end procedure deadlines
+	@uv run --quiet --script scripts/build.py sync
+	@set -eu; dir="$$(mktemp -d "$${TMPDIR:-/tmp}/heinzel-e2e.XXXXXXXX")"; trap 'rm -rf "$$dir"' EXIT; uv run --quiet --script scripts/build.py --quiet --wheel --out-dir "$$dir"
 
 audit: ## Audit runtime dependencies: known vulnerabilities (pip-audit) and licenses (.license-allowlist)
 	$(STEPS) "licenses=$(MAKE) --no-print-directory licenses" "&vulnerabilities=uv export --quiet --no-dev --no-emit-project --no-emit-package heinzel --format requirements-txt --output-file .audit-requirements.txt && uv run pip-audit --strict --disable-pip -r .audit-requirements.txt; status=\$$?; rm -f .audit-requirements.txt; exit \$$status" "&web-vulnerabilities=$(WEB) pnpm audit --prod"
@@ -330,7 +331,7 @@ terminal-art: ## Redraw Heinzelmännchen for the terminal from web/src/component
 	@uv run --quiet --script scripts/terminal_art.py && uv run --quiet ruff format --quiet src/heinzel/heads/cli/_art_data.py
 
 build: web-build ## Build the core wheel and sdist into dist/ (the web app first)
-	uv build
+	uv run --quiet --script scripts/build.py
 
 PYPI_DIST ?= dist
 pypi-clean-build-marker: ## Remove uv's generated ignore marker from the PyPI staging directory

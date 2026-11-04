@@ -31,7 +31,12 @@ def _one_e2e_suite(text: str) -> str:
 
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
-    text = (ROOT / "Makefile").read_text(encoding="utf-8")
+    text = (
+        (ROOT / "Makefile")
+        .read_text(encoding="utf-8")
+        .replace("uv run --quiet --script scripts/build.py sync", "uv sync --frozen --all-groups --quiet")
+        .replace("uv run --quiet --script scripts/build.py", "uv build")
+    )
     # Hook runner is repository tooling, not a plugin test dependency or part of its runtime closure.
     text = text.replace("uv run --quiet prek install", "uv tool run --from prek==0.5.7 prek install")
     text = text.replace(" template-test template-sync docs attributions fuzz demo", "")
@@ -297,6 +302,7 @@ def pyproject() -> str:
         '"pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8"]',
         dev,
     )
+    dev = re.sub(r"\n# Isolated wheel and editable backends[^\n]*\nbuild = [^\n]*", "", dev)
     # Only Heinzelmännchen itself needs these: the template renderer, its import contracts, its first-party plugin and
     # the type stubs of its own dependencies.
     dev = re.sub(r'\n    "(copier|import-linter|heinzel-[a-z]+>=|types-croniter)[^\n]*', "", dev)

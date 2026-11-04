@@ -162,7 +162,9 @@ def test_sandbox_selects_private_managed_python_without_receipt_options(sandbox,
 @pytest.fixture(scope="module")
 def wheel(tmp_path_factory) -> Path:
     dist = tmp_path_factory.mktemp("dist")
-    subprocess.run(["uv", "build", "--wheel", "--out-dir", str(dist), str(REPO)], check=True, timeout=300)
+    subprocess.run(
+        [sys.executable, str(REPO / "scripts/build.py"), "--wheel", "--out-dir", str(dist)], check=True, timeout=300
+    )
     return next(dist.glob("heinzel-*.whl"))
 
 
