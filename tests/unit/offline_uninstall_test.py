@@ -22,7 +22,14 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture
 def removable(tool):
-    (tool.prefix / "bin/python").symlink_to(Path(sys.executable).resolve())
+    # These unit fixtures inspect continuity but never execute the installed interpreter.
+    # Own the external target too: the runner's Homebrew Python parents may legitimately be writable.
+    interpreter = tool.prefix.parent.parent / "fixture-python"
+    assert not interpreter.exists()
+    assert not interpreter.is_symlink()
+    interpreter.write_bytes(b"isolated interpreter fixture")
+    interpreter.chmod(0o700)
+    (tool.prefix / "bin/python").symlink_to(interpreter)
     uv = tool.prefix.parent.parent / "uv"
     uv.write_text("#!/bin/sh\nexit 99\n")
     uv.chmod(0o700)
@@ -31,6 +38,22 @@ def removable(tool):
     tool.test_remover = VerifiedUV(uv, hashlib.sha256(captured.content).hexdigest(), captured.identity)
     tool.record_startup_state(expected=tool.startup_fingerprint())
     return tool
+
+
+def test_removal_fixture_does_not_adopt_an_unsafe_host_interpreter(tmp_path, monkeypatch, request):
+    host = tmp_path / "unsafe-host" / "python"
+    host.parent.mkdir(mode=0o700)
+    host.write_bytes(b"host interpreter fixture must not be adopted")
+    host.chmod(0o700)
+    host.parent.chmod(0o777)
+    monkeypatch.setattr(sys, "executable", str(host))
+    selected = request.getfixturevalue("removable")
+    interpreter = (selected.prefix / "bin/python").resolve(strict=True)
+    assert interpreter.is_relative_to(tmp_path.resolve())
+    assert not interpreter.samefile(host)
+    assert not interpreter.samefile(sys._base_executable)
+    assert interpreter.stat().st_mode & 0o022 == 0
+    assert selected.startup_state_matches()
 
 
 def test_offline_command_removes_only_the_verified_tool_and_owned_links(removable, tmp_path, monkeypatch):
