@@ -249,6 +249,10 @@ that says what it may cost before it runs. Modules can also advertise jobs that
 `hz system daemon install` runs in the background on a schedule, under launchd or systemd, with your
 rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)).
 
+In **Settings → This computer → Web server**, choose **Restart web server** and confirm to restart the server
+connected to that window, keeping its profile and address. The page keeps your open work and reconnects automatically;
+it confirms success only after a replacement server answers. An unfinished installation change must complete or recover first.
+
 `hz ui` normally stops when its terminal closes. Persistent availability is currently a preview, disabled until
 `persistent_web` is named in your user-level `hz.features` configuration file for lifecycle validation. Then run `hz ui install --port 8737`; `hz ui status` distinguishes a loaded service from a ready web server. Later `hz ui`
 opens that owned service. `hz ui restart` keeps its session through a normal restart; `hz ui uninstall` removes

@@ -237,7 +237,7 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 
 # Core E2E lanes keep supervised cold starts apart from unrelated Git/frontend builds. Every lane keeps the same
 # per-OS workers and deadlines; the default local target still runs every case. Browser files use shared helpers.
-E2E_WEB := $(sort $(shell grep -lE 'playwright|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
+E2E_WEB := $(sort $(shell grep -lE 'playwright|_browser_ready|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
 E2E_SUPERVISED := tests/e2e/ui_service_test.py
 E2E_WORKERS := $(if $(filter Darwin,$(shell uname -s)),2,3)
 E2E_PYTEST := uv run pytest -m e2e -n $(E2E_WORKERS) -q --session-timeout=600 -x

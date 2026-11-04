@@ -1027,3 +1027,49 @@ def test_remove_transient_constraint_refuses_a_different_set(tmp_path):
         installation.remove_transient_tool_constraint(
             expected=installation.startup_fingerprint(), original=policy, added=("heinzel==0.9.7", "heinzel-a==1.0")
         )
+
+
+def test_preserved_tool_sources_require_a_matching_checkpoint(tmp_path, monkeypatch):
+    prefix, _ = _target_fixture(tmp_path)
+    installation = Installation(Progress(), prefix=prefix)
+    monkeypatch.setattr(
+        _installation._installed_metadata,
+        "preserved_wheel_constraints",
+        lambda *_: pytest.fail("Unverified metadata must not become an authority"),
+    )
+    assert installation.preserved_tool_wheel_constraints(["heinzel"]) == ()
+
+
+def test_preserved_tool_sources_refuse_generation_drift(tmp_path, monkeypatch):
+    prefix, _ = _target_fixture(tmp_path)
+    installation = Installation(Progress(), prefix=prefix)
+    installation.record_startup_state(expected=installation.startup_fingerprint())
+
+    def changed(*_args):
+        (prefix / "unexpected-change").write_text("changed")
+        return ()
+
+    monkeypatch.setattr(_installation._installed_metadata, "preserved_wheel_constraints", changed)
+    with pytest.raises(HeinzelError, match="changed while preserving"):
+        installation.preserved_tool_wheel_constraints(["heinzel"])
+
+
+@pytest.mark.parametrize("problem", ["hash", "path", "extra", "missing", "version"])
+def test_transient_wheel_constraint_removal_requires_exact_captured_policy(tmp_path, problem):
+    wheel = tmp_path / "heinzel-0.9.15-py3-none-any.whl"
+    source = f"heinzel @ {wheel.as_uri()}#sha256={'a' * 64}"
+    policy = ToolConstraintPolicy(present=False, entries=())
+    entry = f'{{name="heinzel", path="{wheel}"}}'
+    if problem == "path":
+        entry = entry.replace(str(wheel), str(tmp_path / "different.whl"))
+    if problem == "extra":
+        entry += ', {name="another", specifier="==1"}'
+    if problem == "missing":
+        entry = ""
+    if problem == "version":
+        entry = '{name="heinzel", specifier="==0.9.15"}'
+    if problem == "hash":
+        source = source.split("#", maxsplit=1)[0]
+    receipt = f"[tool]\nrequirements = [{{name='heinzel'}}]\nconstraints=[{entry}]\n".encode()
+    with pytest.raises(HeinzelError, match="constraints changed unexpectedly"):
+        _installation._remove_transient_constraint(receipt, policy, (source,))
