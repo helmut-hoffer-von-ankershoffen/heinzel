@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vitest";
 import { explainOwnedBrowser, nativeFrames, ownedBrowserChildren } from "./reopen-processes.mjs";
 
 test("ownership follows descendants regardless of ps ordering and excludes unrelated browser/profile owners", () => {
