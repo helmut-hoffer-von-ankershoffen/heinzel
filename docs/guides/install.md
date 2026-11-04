@@ -153,8 +153,9 @@ uses the already installed external Python and retained verified remover, so it 
 SDK is gone. Keep its journal and integration files until recovery reports completion.
 
 
-Older owned web launchers remain inspectable after an upgrade. Use `hz ui install --port PORT` with the port shown by
-`hz ui status`, or restart the ready owned service, to update its launcher before loading current code. An interrupted
-launcher update prints the exact install or uninstall command to retry; retain its journal and recovery fences until that
+Older owned web launchers remain inspectable after an upgrade. Run `hz ui status` to find the current port, then use
+`hz ui install --port 8738` with that value in place of 8738, or restart the ready owned service, to update its launcher
+before loading current code. An interrupted update prints the exact install or uninstall command to retry; retain its
+journal and recovery fences until that
 operation completes. Offline uninstall retains compatible fences for older shells through verified SDK removal and
 integration cleanup, and its copied recovery remains usable after the SDK is gone.
