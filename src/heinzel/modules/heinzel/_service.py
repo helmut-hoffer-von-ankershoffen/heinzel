@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import quote
 
-from croniter import CroniterBadDateError, croniter
 from pydantic import BaseModel, JsonValue
 from pydantic_core import to_jsonable_python
 
@@ -839,6 +838,8 @@ class HeinzelService:
 
     def _next_run(self, schedule: str) -> datetime | None:
         """The next slot of a cron expression in local time, as the daemon reads it; none if it never fires."""
+        from croniter import CroniterBadDateError, croniter  # noqa: PLC0415 - parse only when a schedule is used
+
         now = self._clock().astimezone()
         try:
             iterator = croniter(schedule, now.replace(tzinfo=None))

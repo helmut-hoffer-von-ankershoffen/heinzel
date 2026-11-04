@@ -14,8 +14,6 @@ from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from croniter import croniter
-
 LOCALTIME = Path("/etc/localtime")
 MAX_RUNS = 5000
 """Runs of one schedule looked at, newest first: five weeks of a contract that runs every ten minutes."""
@@ -56,6 +54,8 @@ def _naive(moment: datetime, zone: tzinfo) -> datetime:
 
 def runs(schedule: str, since: datetime, until: datetime, zone: tzinfo, limit: int = MAX_RUNS) -> list[datetime]:
     """Runs `r` with `since < r <= until`, oldest first; the newest `limit` of them when there are more."""
+    from croniter import croniter  # noqa: PLC0415 - parse only when a schedule is used
+
     found: list[datetime] = []
     # croniter's get_prev excludes its start, so start just past `until` to include a run that falls on it.
     iterator = croniter(schedule, _naive(until, zone) + timedelta(seconds=1))
@@ -70,6 +70,8 @@ def runs(schedule: str, since: datetime, until: datetime, zone: tzinfo, limit: i
 
 def next_run(schedule: str, after: datetime, zone: tzinfo) -> datetime:
     """The first run after `after`."""
+    from croniter import croniter  # noqa: PLC0415 - parse only when a schedule is used
+
     iterator = croniter(schedule, _naive(after, zone))
     run = _place(iterator.get_next(datetime), zone)
     while run <= after:

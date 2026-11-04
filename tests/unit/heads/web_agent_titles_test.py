@@ -2,6 +2,7 @@
 
 import json
 
+import psutil
 import pytest
 
 from heinzel.heads.web import _agent_titles
@@ -31,7 +32,7 @@ def test_foreground_claude_name_and_rename(tmp_path, monkeypatch):
             return 1_000
 
     monkeypatch.setattr(_agent_titles.os, "tcgetpgrp", lambda _: 123)
-    monkeypatch.setattr(_agent_titles.psutil, "Process", Process)
+    monkeypatch.setattr(psutil, "Process", Process)
     assert _agent_titles.claude_title(10) == "First task"
     metadata.write_text(
         json.dumps({"pid": 123, "sessionId": "test-session", "name": "Second task", "startedAt": 1_000_000})
@@ -56,5 +57,5 @@ def test_an_unrelated_foreground_process_cannot_expose_a_stale_record(tmp_path, 
             return ["/bin/zsh"]
 
     monkeypatch.setattr(_agent_titles.os, "tcgetpgrp", lambda _: 123)
-    monkeypatch.setattr(_agent_titles.psutil, "Process", Process)
+    monkeypatch.setattr(psutil, "Process", Process)
     assert _agent_titles.claude_title(10) is None

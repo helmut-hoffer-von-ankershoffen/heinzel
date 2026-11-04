@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import Kernel, Module
 from heinzel.kernel import (
@@ -28,10 +29,45 @@ from heinzel.modules.system._models import (
     UpdateResult,
 )
 from heinzel.modules.system._plugin_releases import plugin_releases
-from heinzel.modules.system._render import render_channel, render_info, render_modules, render_release, render_update
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
 from heinzel.modules.system._update import UpdateService
 from heinzel.modules.system.config._service import ConfigService
+
+
+def render_channel(report: ChannelReport) -> RenderableType:
+    """The channel and what a switch changes, with how to confirm one that hasn't happened."""
+    from heinzel.modules.system._render import render_channel  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_channel(report)
+
+
+def render_info(info: SystemInfo) -> RenderableType:
+    """An overview panel, the modules, plugin errors and the module sections."""
+    from heinzel.modules.system._render import render_info  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_info(info)
+
+
+def render_modules(modules: list[ModuleInfo]) -> RenderableType:
+    """A table of modules and their lets."""
+    from heinzel.modules.system._render import render_modules  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_modules(modules)
+
+
+def render_release(check: ReleaseCheck) -> RenderableType:
+    """One line: the update and where to read about it, that this is the latest, or why nobody could tell."""
+    from heinzel.modules.system._render import render_release  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_release(check)
+
+
+def render_update(result: UpdateResult) -> RenderableType:
+    """What the update did, or what the installation is pinned to and the command that moves it."""
+    from heinzel.modules.system._render import render_update  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_update(result)
+
 
 module = Module("system", "Inspect, configure, diagnose and update Heinzelmännchen itself.", essential=True)
 module.service(SystemService)

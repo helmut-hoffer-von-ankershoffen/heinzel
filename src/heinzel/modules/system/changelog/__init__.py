@@ -5,12 +5,10 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Annotated, ClassVar
 
-from markdown_it import MarkdownIt
 from packaging.version import InvalidVersion, Version
 from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import SettingsConfigDict
 from rich.console import Group, RenderableType
-from rich.markdown import Markdown
 from rich.rule import Rule
 from rich.text import Text
 
@@ -47,12 +45,15 @@ module = Module("changelog", "Release notes of the installed version and of newe
 module.settings(ChangelogSettings)
 
 
-def as_markdown(text: str, *, hyperlinks: bool = True) -> Markdown:
+def as_markdown(text: str, *, hyperlinks: bool = True) -> RenderableType:
     """Render the changelog as Markdown, showing text like `heinzel-<name>` verbatim.
 
     Rich's parser reads `<name>` as inline HTML and drops it; the changelog contains no HTML, so turn HTML off.
     Third-party notes get `hyperlinks=False`: a link shows its target next to its text instead of hiding it.
     """
+    from markdown_it import MarkdownIt  # noqa: PLC0415 - only terminal changelog rendering needs a parser
+    from rich.markdown import Markdown  # noqa: PLC0415 - API/web results are data, not terminal Markdown
+
     markdown = Markdown(text, hyperlinks=hyperlinks)
     markdown.parsed = MarkdownIt("commonmark", {"html": False}).enable("strikethrough").enable("table").parse(text)
     return markdown

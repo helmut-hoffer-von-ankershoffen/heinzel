@@ -74,6 +74,72 @@ _ALLOWED_TYPES = frozenset(
 )
 _LEVELS = frozenset(CATEGORIES)
 _LEVEL_LAYOUT = all((_ROOT / "tests" / level).is_dir() for level in _LEVELS)
+_E2E_NODES = pytest.StashKey[tuple[str, ...]]()
+_E2E_FILES = pytest.StashKey[set[Path]]()
+
+
+def _argument_covers(config: pytest.Config, target: Path, *, allow_nodes: bool = False) -> bool:
+    """Check whole-directory scope, allowing node-qualified scopes only to locate the guard consumer."""
+    for argument in config.args:
+        if "::" in argument and not allow_nodes:
+            continue
+        scope = Path(argument.partition("::")[0])
+        if not scope.is_absolute():
+            scope = config.invocation_params.dir / scope
+        if target.is_relative_to(scope.resolve()):
+            return True
+    return False
+
+
+def _inventory_requested(config: pytest.Config) -> bool:
+    guard = _ROOT / "tests/integration/e2e_lane_partition_test.py"
+    # Copied fixture projects without this core-only guard retain their original lane collection behavior.
+    return guard.is_file() and _argument_covers(config, guard, allow_nodes=True)
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Start each collection with empty config-owned inventory, even if a caller reuses a config object."""
+    session.config.stash[_E2E_NODES] = ()
+    session.config.stash[_E2E_FILES] = set()
+
+
+@pytest.hookimpl
+def pytest_collectstart(collector: pytest.Collector) -> None:
+    """Record real module collection, including empty files, within this pytest config/xdist worker only."""
+    if isinstance(collector, pytest.Module) and collector.path.is_relative_to(_ROOT / "tests/e2e"):
+        collector.config.stash.setdefault(_E2E_FILES, set()).add(collector.path.resolve())
+
+
+def _complete_e2e_inventory(config: pytest.Config) -> tuple[str, ...]:
+    """Use the outer real inventory only when its roots and collected files prove completeness."""
+    root = _ROOT / "tests/e2e"
+    guidance = "Collect the whole tests/e2e directory with -m integration when focusing the partition guard"
+    assert _argument_covers(config, root), guidance
+    assert not config.getoption("ignore"), "E2E inventory requires collection without --ignore"
+    assert not config.getoption("ignore_glob"), "E2E inventory requires collection without --ignore-glob"
+    assert not config.getoption("pyargs"), "E2E inventory requires directory-based collection"
+    assert not config.getoption("deselect"), "E2E inventory requires collection without --deselect"
+    assert not config.getoption("lf"), "E2E inventory requires collection without --lf"
+    assert not config.getoption("doctestmodules"), "E2E inventory requires normal non-doctest collection"
+    expected = {path.resolve() for path in root.rglob("*.py") if path.match("test_*.py") or path.match("*_test.py")}
+    assert config.getini("python_files") == ["test_*.py", "*_test.py"], (
+        "E2E inventory requires the normal file patterns"
+    )
+    assert config.getini("python_functions") == ["test"], "E2E inventory requires normal function patterns"
+    assert config.getini("python_classes") == ["Test"], "E2E inventory requires normal class patterns"
+    assert expected, "E2E inventory requires test files"
+    assert config.stash.get(_E2E_FILES, set()) == expected, "E2E inventory file collection is incomplete"
+    nodes = config.stash.get(_E2E_NODES, ())
+    assert nodes, "E2E inventory must contain actual collected nodes"
+    return nodes
+
+
+@pytest.fixture
+def collected_e2e_nodes(request: pytest.FixtureRequest) -> tuple[str, ...]:
+    """Expose only this config's complete real inventory; never recollect inside a test's deadline."""
+    return _complete_e2e_inventory(request.config)
+
+
 # Keep these integration files' existing node IDs and unit-scoped fixtures until they can move together.
 _INTEGRATION_FILES = frozenset(
     {
@@ -109,7 +175,7 @@ def _path_level(path: Path) -> str | None:
 
 
 def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
-    """The integration shard imports its owned files; directories and their scoped fixtures are always collected."""
+    """Prune unrelated unit files, retaining E2E inventory when the integration partition guard is collected."""
     if (
         config.getoption("markexpr") != "(integration) and not perf"
         or config.getoption("full_level_collection")
@@ -119,6 +185,10 @@ def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool 
     ):
         return None
     level = _path_level(collection_path)
+    # The partition guard consumes the real E2E inventory before marker deselection, rather than recursively
+    # collecting a second pytest session inside its test deadline. E2E fixture bodies remain deselected normally.
+    if level == "e2e" and _inventory_requested(config):
+        return None
     return True if level is not None and level != "integration" else None
 
 
@@ -126,6 +196,7 @@ def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool 
 def pytest_collection_modifyitems_layout(config: pytest.Config, items: list[pytest.Item]) -> Iterator[None]:
     """Validate each lane's actual markers, including cases another hook deselects or reclassifies."""
     original = tuple(items) if _level_layout(config) else ()
+    config.stash[_E2E_NODES] = tuple(item.nodeid for item in original if item.get_closest_marker("e2e") is not None)
     yield
     offenders: set[str] = set()
     for item in original:

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field, JsonValue
+from rich.console import RenderableType
 
 from heinzel import Check, Config, ConfigEditor, HeinzelError, Module, Prompter
 from heinzel.kernel import CompiledJobs, PlaybookLet, PlaybookSetup, TeamPromises
@@ -41,22 +42,87 @@ from heinzel.modules.heinzel._models import (
 )
 from heinzel.modules.heinzel._playbooks import Discovery, PlaybookList
 from heinzel.modules.heinzel._promises import ContractPromises
-from heinzel.modules.heinzel._render import (
-    render_check,
-    render_discovery,
-    render_drafts,
-    render_graph,
-    render_list,
-    render_new,
-    render_playbooks,
-    render_prune,
-    render_run,
-    render_sent,
-    render_show,
-)
 from heinzel.modules.heinzel._service import HeinzelService
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_operations import register_session_operations
+
+
+def render_check(report: CheckReport) -> RenderableType:
+    """Every diagnostic as `file:line  CODE  field  message`, then a summary line."""
+    from heinzel.modules.heinzel._render import render_check  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_check(report)
+
+
+def render_discovery(result: Discovery) -> RenderableType:
+    """The candidates for each asset type, and hints that couldn't run."""
+    from heinzel.modules.heinzel._render import render_discovery  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_discovery(result)
+
+
+def render_drafts(result: DraftList) -> RenderableType:
+    """The drafts newest first with their paths, or the newest draft's text; where they would be when there are none."""
+    from heinzel.modules.heinzel._render import render_drafts  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_drafts(result)
+
+
+def render_graph(graph: ContractGraph) -> RenderableType:
+    """Each contract with what it maintains and reads, then cycles and unmaintained inputs; or only the flowchart."""
+    from heinzel.modules.heinzel._render import render_graph  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_graph(graph)
+
+
+def render_list(listing: HeinzelList) -> RenderableType:
+    """One row per Heinzelmännchen: its contract, owner, state, and its last and next run."""
+    from heinzel.modules.heinzel._render import render_list  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_list(listing)
+
+
+def render_new(result: NewContract) -> RenderableType:
+    """Where the starter was written, and what to do with it."""
+    from heinzel.modules.heinzel._render import render_new  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_new(result)
+
+
+def render_playbooks(result: PlaybookList) -> RenderableType:
+    """Each playbook: its asset types with their hints, its templates and its recommended settings."""
+    from heinzel.modules.heinzel._render import render_playbooks  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_playbooks(result)
+
+
+def render_prune(report: PruneReport) -> RenderableType:
+    """What was deleted, or would be in a dry run, with the cutoff; that nothing is when drafts are kept forever."""
+    from heinzel.modules.heinzel._render import render_prune  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_prune(report)
+
+
+def render_run(result: RunResult) -> RenderableType:
+    """A dry run's packet as the agent would get it, or where the draft was saved."""
+    from heinzel.modules.heinzel._render import render_run  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_run(result)
+
+
+def render_sent(result: Sent) -> RenderableType:
+    """How much of the draft changed before it was sent, and where that was recorded."""
+    from heinzel.modules.heinzel._render import render_sent  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_sent(result)
+
+
+def render_show(contract: CompiledContract) -> RenderableType:
+    """The compiled view: schedule, requirements with their adapters, inputs, outputs, publishes and limits."""
+    from heinzel.modules.heinzel._render import render_show  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_show(contract)
+
 
 module = Module(
     "heinzel",
