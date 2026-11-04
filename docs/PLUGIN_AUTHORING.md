@@ -129,8 +129,10 @@ module.prerequisite(
 `when` says how early the program is needed: `install` (every standard app), `setup` (the module's setup step) or
 `feature` (only when `needed`, a read-only predicate over settings, says the person's selection requires it).
 `condition` is the same condition in words; documentation shows it and never runs your predicate. The generic engine
-runs `vpn-tool --version` (`version_args` may start with `--version`, `-version`, `-V` or `version`), accepts the
-first copy that answers and meets `minimum_version`, and on macOS installs a missing `Homebrew` formula or cask after
+runs `vpn-tool --version` (`version_args` must contain exactly one of `--version`, `-version`, `-V` or `version`,
+without any suffix arguments), accepts a copy that answers and meets `minimum_version`, and verifies every result
+against the final process `PATH`. A directory choice that shadows another required tool leaves that tool unmet.
+On macOS it installs a missing `Homebrew` formula or cask after
 the person agreed. Linux, a missing Homebrew and a `ManualInstall` only show your steps. Text and links are one plain
 line each. Do not sign anyone in from a prerequisite: keep sign-in in
 your own setup step.

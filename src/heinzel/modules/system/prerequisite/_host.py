@@ -51,10 +51,12 @@ class ToolHost:
         """The `PATH` programs are looked up in, including directories added by `add_to_path`."""
         return self.environment.get("PATH") or os.defpath
 
-    def add_to_path(self, directory: str) -> None:
-        """Append a directory to `PATH` for this process and what it starts; nothing is written to any shell file."""
+    def add_to_path(self, directory: str, *, first: bool = False) -> None:
+        """Add a process-local directory, promoting it when an incompatible executable would shadow it."""
         entries = [entry for entry in self.search_path.split(os.pathsep) if entry]
-        if directory not in entries:
+        if first:
+            self.environment["PATH"] = os.pathsep.join([directory, *(entry for entry in entries if entry != directory)])
+        elif directory not in entries:
             self.environment["PATH"] = os.pathsep.join([*entries, directory])
 
     def run(self, command: list[str], timeout: float, flags: tuple[tuple[str, str], ...] = ()) -> ProcessOutcome:

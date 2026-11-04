@@ -61,7 +61,23 @@ def test_an_unusable_declaration_is_refused_with_the_reason(changes: dict[str, o
         declare(**changes)
 
 
-@pytest.mark.parametrize("probe", [("--version",), ("-version",), ("-V",), ("version",), ("version", "--short", "a=b")])
+@pytest.mark.parametrize(
+    "probe",
+    [
+        ("-V", "-e", "die"),
+        ("--version", "-e", "die"),
+        ("-version", "script"),
+        ("version", "--short"),
+        ("version", "a=b"),
+        ("version", "--help"),
+    ],
+)
+def test_version_probes_refuse_every_suffix_before_any_program_can_run(probe: tuple[str, ...]):
+    with pytest.raises(ValueError, match="probes its version"):
+        Module("example", "An example.").prerequisite("perl", purpose="Check Perl.", linux=LINUX, version_args=probe)
+
+
+@pytest.mark.parametrize("probe", [("--version",), ("-version",), ("-V",), ("version",)])
 def test_a_version_probe_only_asks_for_a_version(probe: tuple[str, ...]):
     assert declare(version_args=probe).version_args == probe
 

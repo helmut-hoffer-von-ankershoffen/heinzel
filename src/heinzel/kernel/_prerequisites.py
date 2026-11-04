@@ -21,9 +21,8 @@ PREREQUISITE_READY = frozenset({"available", "installed", "skipped"})
 """Statuses after which a tool needs nothing from the person."""
 _EXECUTABLE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
 _PACKAGE = re.compile(r"[a-z0-9][a-z0-9@+_.-]*(?:/[a-z0-9][a-z0-9@+_.-]*){0,2}\Z")
-_VERSION_WORD = re.compile(r"[A-Za-z0-9._=-]+\Z")
 VERSION_PROBES = frozenset({"--version", "-version", "-V", "version"})
-"""How a probe starts: it asks for a version and nothing else, so a declaration cannot make `check` run code."""
+"""The sole argument of a version probe; suffixes could make an interpreter execute code."""
 _HIDDEN = frozenset({"Cc", "Cf", "Zl", "Zp"})
 
 
@@ -123,9 +122,8 @@ def _check_probe(let: PrerequisiteLet) -> None:
     Raises:
         ValueError: If the declaration is invalid.
     """
-    first, *rest = let.version_args or ("",)
-    if first not in VERSION_PROBES or not all(_VERSION_WORD.fullmatch(word) for word in rest):
-        msg = "A prerequisite probes its version with `--version`, `-version`, `-V` or `version` and plain words."
+    if len(let.version_args) != 1 or let.version_args[0] not in VERSION_PROBES:
+        msg = "A prerequisite probes its version with exactly one of `--version`, `-version`, `-V` or `version`."
         raise ValueError(msg)
     if let.minimum_version is not None:
         try:

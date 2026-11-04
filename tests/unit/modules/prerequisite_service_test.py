@@ -1,12 +1,14 @@
 """The prerequisite engine (ADR 0112) against described machines: no real Homebrew, shell or search path is touched."""
 
 import os
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from heinzel import HeinzelError, Homebrew, Kernel, ManualInstall, Module, PrerequisiteLet, Progress
+from heinzel.kernel import ProcessOutcome
 from heinzel.modules.system.prerequisite._host import ToolHost
 from heinzel.modules.system.prerequisite._service import BREW_FLAGS, ToolPrerequisites
 from tests._prerequisite_machine import BREW, Machine
@@ -67,9 +69,9 @@ def test_a_probe_gets_the_owners_arguments_and_no_credentials(make_kernel):
     machine = Machine(present={"/usr/bin/tool": "1.2"})
     machine.environment["HZ_CREDENTIAL_SERVICE_TOKEN"] = "secret"
 
-    engine(machine, make_kernel, example=owner(tool(version_args=("version", "--short")))).check()
+    engine(machine, make_kernel, example=owner(tool(version_args=("version",)))).check()
 
-    assert machine.commands[-1] == ["/usr/bin/tool", "version", "--short"]
+    assert machine.commands[-1] == ["/usr/bin/tool", "version"]
     assert "HZ_CREDENTIAL_SERVICE_TOKEN" not in machine.environments[-1]
 
 
@@ -99,6 +101,122 @@ def test_a_newer_copy_elsewhere_satisfies_the_minimum(make_kernel):
     [check] = engine(machine, make_kernel, example=owner(tool(minimum_version="2.1"))).check().checks
 
     assert (check.status, check.path) == ("available", "/opt/homebrew/bin/tool")
+
+
+@pytest.mark.parametrize("path", ["/usr/bin:/bin", "/usr/bin:/opt/homebrew/bin:/bin"])
+def test_a_newer_copy_is_the_executable_the_continuing_process_resolves(make_kernel, path: str):
+    machine = Machine(present={"/usr/bin/tool": "tool 1.0", "/opt/homebrew/bin/tool": "tool 3.0"}, path=path)
+
+    report = engine(machine, make_kernel, example=owner(tool(minimum_version="2.1"))).check()
+
+    [check] = report.checks
+    assert report.ready
+    assert check.path == machine.which("tool", machine.environment["PATH"]) == "/opt/homebrew/bin/tool"
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_conflicting_tool_directory_precedence_cannot_leave_an_earlier_report_ready(make_kernel, reverse: bool):
+    machine = Machine(
+        present={
+            "/opt/homebrew/bin/first": "first 3.0",
+            "/usr/local/bin/first": "first 1.0",
+            "/opt/homebrew/bin/second": "second 1.0",
+            "/usr/local/bin/second": "second 3.0",
+        }
+    )
+    declarations = [tool("first", minimum_version="2.0"), tool("second", minimum_version="2.0")]
+    if reverse:
+        declarations.reverse()
+
+    report = engine(machine, make_kernel, example=owner(*declarations)).check()
+
+    assert not report.ready
+    assert {check.status for check in report.checks} == {"available", "incompatible"}
+    for check in report.checks:
+        assert check.path == machine.which(check.requirement.name, machine.environment["PATH"])
+        assert check.version == ("3.0" if check.status == "available" else "1.0")
+
+
+def test_a_later_directory_choice_updates_an_earlier_report_to_its_final_compatible_copy(make_kernel):
+    machine = Machine(
+        present={
+            "/opt/homebrew/bin/first": "first 3.0",
+            "/usr/local/bin/first": "first 4.0",
+            "/opt/homebrew/bin/second": "second 1.0",
+            "/usr/local/bin/second": "second 3.0",
+        }
+    )
+
+    report = engine(
+        machine, make_kernel, example=owner(tool("first", minimum_version="2.0"), tool("second", minimum_version="2.0"))
+    ).check()
+
+    assert report.ready
+    assert [(check.path, check.version) for check in report.checks] == [
+        ("/usr/local/bin/first", "4.0"),
+        ("/usr/local/bin/second", "3.0"),
+    ]
+    assert all(
+        check.path == machine.which(check.requirement.name, machine.environment["PATH"]) for check in report.checks
+    )
+
+
+def test_two_owners_of_one_tool_both_report_the_final_compatible_executable(make_kernel):
+    machine = Machine(present={"/usr/bin/tool": "tool 1.0", "/opt/homebrew/bin/tool": "tool 3.0"})
+
+    report = engine(
+        machine, make_kernel, example=owner(tool()), strict=owner(tool(minimum_version="2.0"), name="strict")
+    ).check()
+
+    assert report.ready
+    assert {check.path for check in report.checks} == {machine.which("tool", machine.environment["PATH"])}
+    assert {check.version for check in report.checks} == {"3.0"}
+
+
+def test_installation_cannot_report_ready_when_a_new_tool_shadows_an_existing_requirement(make_kernel):
+    machine = Machine(present={BREW: "", "/opt/homebrew/bin/first": "first 3.0"})
+    machine.provides["second"] = {
+        "/opt/homebrew/bin/second": "second 1.0",
+        "/usr/local/bin/first": "first 1.0",
+        "/usr/local/bin/second": "second 3.0",
+    }
+
+    report = engine(
+        machine,
+        make_kernel,
+        example=owner(
+            tool("first", minimum_version="2.0"), tool("second", macos=Homebrew("second"), minimum_version="2.0")
+        ),
+    ).install()
+
+    assert not report.ready
+    assert [(check.status, check.path) for check in report.checks] == [
+        ("incompatible", "/usr/local/bin/first"),
+        ("installed", "/usr/local/bin/second"),
+    ]
+    assert all(
+        check.path == machine.which(check.requirement.name, machine.environment["PATH"]) for check in report.checks
+    )
+
+
+def test_the_final_report_matches_real_bare_command_lookup_without_running_host_tools(make_kernel, tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    for directory, version in ((old, "1.0"), (new, "3.0")):
+        directory.mkdir()
+        executable = directory / "tool"
+        executable.write_text(f"tool {version}")
+        executable.chmod(0o755)
+    host = ToolHost(
+        platform="linux",
+        environment={"PATH": os.pathsep.join((str(old), str(new)))},
+        brew_locations=(str(new / "brew"),),
+        execute=lambda command, **options: ProcessOutcome(0, Path(command[0]).read_text(), ""),
+    )
+
+    report = ToolPrerequisites(make_kernel(example=owner(tool(minimum_version="2.0"))), Progress(), host).check()
+
+    assert report.ready
+    assert report.checks[0].path == shutil.which("tool", path=host.search_path) == str(new / "tool")
 
 
 def test_homebrew_directories_are_searched_though_the_path_lacks_them(make_kernel):

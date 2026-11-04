@@ -43,8 +43,8 @@ Chosen option: **immutable public declarations consumed by one prerequisite serv
 owner's own setup step**, because ownership belongs to the module while installing and reporting are shared.
 
 - **Declaration.** `Module.prerequisite(name, purpose=, linux=, macos=, when=, ...)` adds a `PrerequisiteLet` named
-  after the executable. It carries the purpose, a version probe (`--version`, `-version`, `-V` or `version` plus plain
-  words, so a declaration cannot make a check run code), an optional minimum version, a
+  after the executable. It carries the purpose, a version probe (exactly one of `--version`, `-version`, `-V` or
+  `version`, without suffix arguments that could execute code), an optional minimum version, a
   `Homebrew` formula or cask (or `ManualInstall` text) for macOS, a `ManualInstall` for Linux, and a context:
   `install` (every standard app), `setup` (the owner's setup) or `feature` (only when selected). An optional
   `needed` predicate, evaluated only by checks and installs, takes settings or the capability view and returns whether
@@ -63,7 +63,10 @@ owner's own setup step**, because ownership belongs to the module while installi
   finding, never permission to install.
 - **Install.** On macOS with Homebrew present, `install` runs fixed `brew install --formula|--cask` argument lists
   without auto-update or upgrade of installed packages, then probes again; the new tool's directory is added to
-  `PATH` for the running process so the continuing flow needs no shell restart. Without Homebrew, on Linux and on
+  `PATH` for the running process so the continuing flow needs no shell restart. A compatible copy is promoted over
+  an incompatible one, including when its directory is already later in `PATH`. Every active result is reconciled
+  against the final bare-command lookup: if one directory choice shadows another tool with an incompatible copy,
+  that requirement stays unmet instead of reporting stale readiness. Without Homebrew, on Linux and on
   other systems, it changes nothing and returns the owner's instructions with the outcome `manual`; no installation
   script is run and no package manager is bootstrapped. Existing incompatible versions get update guidance;
   upgrades are a separate decision. Package-manager-less Linux installation is out of scope.

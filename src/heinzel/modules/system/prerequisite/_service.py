@@ -148,34 +148,64 @@ class ToolPrerequisites(PrerequisiteService):
         except InvalidVersion:
             return None
 
-    def _probe(self, record: ModuleRecord, let: PrerequisiteLet, *, run: bool) -> PrerequisiteCheck:
+    def _observe(
+        self, record: ModuleRecord, let: PrerequisiteLet, candidate: str, *, run: bool
+    ) -> PrerequisiteCheck | None:
+        """Observe exactly this executable, without changing command resolution."""
         definition = definition_of(record, let)
+        if not candidate.startswith("/") or not self.host.is_executable(candidate):
+            return None
+        if self.host.platform == "darwin" and candidate.startswith(APPLE_SHIMS) and not self._developer_tools_ready():
+            return None
+        if not run:
+            return PrerequisiteCheck(
+                requirement=definition,
+                status="available",
+                path=candidate,
+                detail="Found; `hz system prerequisite check` verifies its version.",
+            )
+        if (version := self._version(let, candidate)) is None:
+            return None
+        if let.minimum_version is not None and version < Version(let.minimum_version):
+            return PrerequisiteCheck(
+                requirement=definition,
+                status="incompatible",
+                path=candidate,
+                version=str(version),
+                detail=f"Version {let.minimum_version} or newer is needed; update {let.name} with its installer.",
+            )
+        return PrerequisiteCheck(requirement=definition, status="available", path=candidate, version=str(version))
+
+    def _probe(self, record: ModuleRecord, let: PrerequisiteLet, *, run: bool) -> PrerequisiteCheck:
         too_old: PrerequisiteCheck | None = None
         for candidate in self._candidates(let):
-            if not self.host.is_executable(candidate):
+            check = self._observe(record, let, candidate, run=run)
+            if check is None:
                 continue
-            if not run:
-                self.host.add_to_path(str(Path(candidate).parent))
-                return PrerequisiteCheck(
-                    requirement=definition,
-                    status="available",
-                    path=candidate,
-                    detail="Found; `hz system prerequisite check` verifies its version.",
-                )
-            if (version := self._version(let, candidate)) is None:
+            if check.status == "incompatible":
+                too_old = too_old or check
                 continue
-            if let.minimum_version is not None and version < Version(let.minimum_version):
-                too_old = too_old or PrerequisiteCheck(
-                    requirement=definition,
-                    status="incompatible",
-                    path=candidate,
-                    version=str(version),
-                    detail=f"Version {let.minimum_version} or newer is needed; update {let.name} with its installer.",
-                )
+            found = self.host.which(let.name, self.host.search_path)
+            self.host.add_to_path(str(Path(candidate).parent), first=found is not None and found != candidate)
+            return check
+        return too_old or self._missing(definition_of(record, let))
+
+    def _final_paths(
+        self, entries: list[Entry], checks: list[PrerequisiteCheck], *, run: bool
+    ) -> list[PrerequisiteCheck]:
+        """Reconcile every active finding after all directory choices; one tool may shadow an earlier one."""
+        for index, ((record, let), check) in enumerate(zip(entries, checks, strict=True)):
+            if check.status not in {"available", "incompatible", "missing"}:
                 continue
-            self.host.add_to_path(str(Path(candidate).parent))  # a launchd or GUI process lacks Homebrew's directory
-            return PrerequisiteCheck(requirement=definition, status="available", path=candidate, version=str(version))
-        return too_old or self._missing(definition)
+            resolved = self.host.which(let.name, self.host.search_path)
+            if resolved == check.path:
+                continue
+            observed = self._observe(record, let, resolved, run=run) if resolved is not None else None
+            final = observed or self._missing(definition_of(record, let))
+            if check.status == "available" and final.status != "available":
+                final.detail = "The final PATH no longer selects a compatible executable for this tool. " + final.detail
+            checks[index] = final
+        return checks
 
     def _missing(self, definition: PrerequisiteDefinition) -> PrerequisiteCheck:
         """A missing tool with the plan for it on this machine: what `install` would run, or what to do by hand."""
@@ -221,11 +251,9 @@ class ToolPrerequisites(PrerequisiteService):
         if context not in PREREQUISITE_CONTEXTS:
             msg = "Choose the install, setup or feature prerequisite context."
             raise HeinzelError(msg)
-        checks = [
-            self._skip(record, let, context) or self._probe(record, let, run=probe)
-            for record, let in self._entries(module)
-        ]
-        return report_of(self._without_conflicts(checks))
+        entries = self._entries(module)
+        checks = [self._skip(record, let, context) or self._probe(record, let, run=probe) for record, let in entries]
+        return report_of(self._without_conflicts(self._final_paths(entries, checks, run=probe)))
 
     # Installing ------------------------------------------------------------------------------------------------------
 
