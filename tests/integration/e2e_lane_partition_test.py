@@ -65,7 +65,14 @@ def test_ci_lanes_preserve_every_original_node_once_including_supervised_paramet
     old_cli = lanes.pop("original-cli")
     assert all(count == 1 for count in default.values())
     old_cli.update({"tests/e2e/docs_test.py::test_readme_instructions": 1})
-    assert lanes["cli"] + lanes["supervised"] == old_cli
+    non_browser_supervised = Counter(
+        {
+            node: count
+            for node, count in lanes["supervised"].items()
+            if node.startswith("tests/e2e/ui_service_test.py::")
+        }
+    )
+    assert lanes["cli"] + non_browser_supervised == old_cli
     actual = sum(lanes.values(), Counter())
     assert actual == default
     assert all(count == 1 for count in actual.values())
@@ -82,6 +89,12 @@ def test_ci_lanes_preserve_every_original_node_once_including_supervised_paramet
     )
     expected_supervised.add(
         "tests/e2e/ui_service_test.py::test_installed_account_free_complete_profile_has_green_doctor"
+    )
+    expected_supervised.update(
+        "tests/e2e/ui_service_browser_test.py::"
+        f"test_installed_server_restarts_from_settings_and_reconnects_the_selected_profile[{platform}-{engine}]"
+        for platform in ("linux", "darwin")
+        for engine in ("chromium", "webkit")
     )
     assert set(lanes["supervised"]) == expected_supervised
     assert not set(lanes["supervised"]).intersection(lanes["cli"])
