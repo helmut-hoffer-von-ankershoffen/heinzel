@@ -38,6 +38,42 @@ def engine(machine: Machine, kernel_factory: Callable[..., Kernel], **modules: M
     return ToolPrerequisites(kernel_factory(**modules), Progress(), machine.host())
 
 
+def aliased_apple_launcher(
+    tmp_path: Path, *, fallback: bool = False, developer_tools: bool = False
+) -> tuple[ToolHost, list[list[str]], Path, Path]:
+    """Real private files and a symlink, with every executable call intercepted."""
+    system, alias, alternative = tmp_path / "system" / "tool", tmp_path / "alias" / "tool", tmp_path / "real" / "tool"
+    for directory in (system.parent, alias.parent, alternative.parent):
+        directory.mkdir()
+    system.write_text("tool 3.0")
+    system.chmod(0o755)
+    alias.symlink_to(system)
+    if fallback:
+        alternative.write_text("tool 4.0")
+        alternative.chmod(0o755)
+    commands: list[list[str]] = []
+
+    def execute(command: list[str], **options: object) -> ProcessOutcome:
+        del options
+        commands.append(command)
+        if command[0] == "/usr/bin/xcode-select":
+            return ProcessOutcome(0 if developer_tools else 2, "", "")
+        return ProcessOutcome(0, Path(command[0]).read_text(), "")
+
+    def canonical_path(path: str) -> str:
+        # The virtual system launcher maps to a private file; no host tool is inspected or executed.
+        return os.path.realpath(system if path == "/usr/bin/tool" else path)
+
+    host = ToolHost(
+        platform="darwin",
+        environment={"PATH": str(alias.parent), "HOME": str(tmp_path)},
+        execute=execute,
+        canonical_path=canonical_path,
+        brew_locations=(str(alternative.parent / "brew"),) if fallback else (),
+    )
+    return host, commands, alias, alternative
+
+
 def test_a_working_executable_on_the_path_is_available_with_its_version(make_kernel):
     machine = Machine(present={"/usr/bin/tool": "tool version 2.39.5 (Apple)"})
 
@@ -143,6 +179,111 @@ def test_another_owner_cannot_bypass_a_declared_apple_launcher_guard(make_kernel
     assert not report.ready
     assert report.checks[0].status == ("missing" if probe else "failed")
     assert machine.commands == ([["/usr/bin/xcode-select", "-p"]] if probe else [])
+
+
+@pytest.mark.parametrize("directory", ["/usr/bin/.", "/usr/bin/../bin"])
+@pytest.mark.parametrize("probe", [False, True])
+def test_normalized_path_aliases_cannot_bypass_the_apple_launcher_guard(make_kernel, directory: str, probe: bool):
+    machine = Machine(path=directory, present={f"{directory}/tool": "tool 3.0"})
+    machine.developer_tools = False
+
+    report = engine(machine, make_kernel, example=owner(tool(requires_apple_developer_tools=True))).check(probe=probe)
+
+    assert not report.ready
+    assert report.checks[0].status == ("missing" if probe else "failed")
+    assert machine.commands == ([["/usr/bin/xcode-select", "-p"]] if probe else [])
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+@pytest.mark.parametrize("probe", [False, True])
+def test_real_symlink_aliases_cannot_bypass_launcher_checks_or_final_lookup(
+    make_kernel, tmp_path, fallback: bool, probe: bool
+):
+    host, commands, alias, alternative = aliased_apple_launcher(tmp_path, fallback=fallback)
+    assert host.which("tool", host.search_path) == str(alias)
+
+    report = ToolPrerequisites(
+        make_kernel(example=owner(tool(requires_apple_developer_tools=True))), Progress(), host
+    ).check(probe=probe)
+
+    [check] = report.checks
+    expected = [["/usr/bin/xcode-select", "-p"]] if probe else []
+    if fallback:
+        assert report.ready
+        assert check.path == host.which("tool", host.search_path) == str(alternative)
+        assert check.version == ("4.0" if probe else None)
+        if probe:
+            expected.append([str(alternative), "--version"])
+    else:
+        assert not report.ready
+        assert check.status == ("missing" if probe else "failed")
+        assert check.path is None
+    assert commands == expected
+
+
+def test_a_verified_launcher_keeps_its_selected_symlink_path_for_execution_and_reporting(make_kernel, tmp_path):
+    host, commands, alias, _ = aliased_apple_launcher(tmp_path, developer_tools=True)
+
+    report = ToolPrerequisites(
+        make_kernel(example=owner(tool(requires_apple_developer_tools=True))), Progress(), host
+    ).check()
+
+    assert report.ready
+    assert report.checks[0].path == host.which("tool", host.search_path) == str(alias)
+    assert commands == [["/usr/bin/xcode-select", "-p"], [str(alias), "--version"]]
+
+
+@pytest.mark.parametrize("probe", [False, True])
+def test_final_lookup_rechecks_a_launcher_alias_shadowed_by_another_tools_directory(make_kernel, tmp_path, probe: bool):
+    system, initial, later = (tmp_path / name for name in ("system", "initial", "later"))
+    for directory in (system, initial, later):
+        directory.mkdir()
+    for executable in (system / "first", system / "second", initial / "first", later / "second"):
+        executable.write_text(f"{executable.name} 3.0")
+        executable.chmod(0o755)
+    (initial / "second").symlink_to(system / "second")
+    (later / "first").symlink_to(system / "first")
+    commands: list[list[str]] = []
+
+    def execute(command: list[str], **options: object) -> ProcessOutcome:
+        del options
+        commands.append(command)
+        if command[0] == "/usr/bin/xcode-select":
+            return ProcessOutcome(2, "", "")
+        return ProcessOutcome(0, Path(command[0]).read_text(), "")
+
+    def canonical_path(path: str) -> str:
+        candidate = system / Path(path).name if path in {"/usr/bin/first", "/usr/bin/second"} else path
+        return os.path.realpath(candidate)
+
+    host = ToolHost(
+        platform="darwin",
+        environment={"PATH": str(initial), "HOME": str(tmp_path)},
+        execute=execute,
+        canonical_path=canonical_path,
+        brew_locations=(str(later / "brew"),),
+    )
+    report = ToolPrerequisites(
+        make_kernel(
+            example=owner(
+                tool("first", requires_apple_developer_tools=True), tool("second", requires_apple_developer_tools=True)
+            )
+        ),
+        Progress(),
+        host,
+    ).check(probe=probe)
+
+    assert not report.ready
+    first, second = report.checks
+    assert first.status == ("missing" if probe else "failed")
+    assert second.status == "available"
+    assert host.which("first", host.search_path) == str(later / "first")
+    assert second.path == host.which("second", host.search_path) == str(later / "second")
+    assert commands == (
+        [[str(initial / "first"), "--version"], ["/usr/bin/xcode-select", "-p"], [str(later / "second"), "--version"]]
+        if probe
+        else []
+    )
 
 
 def test_relative_homebrew_lookup_cannot_execute_a_different_home_directory_file(make_kernel, tmp_path, monkeypatch):
@@ -810,6 +951,15 @@ def test_the_real_defaults_find_only_executable_files_on_the_given_path(tmp_path
     assert host.is_executable(str(runnable))
     assert not host.is_executable(str(plain))
     assert not host.is_executable(str(tmp_path / "absent"))
+
+
+def test_host_identity_resolves_dot_components_and_real_symlinks_without_running_them(tmp_path):
+    target, alias = tmp_path / "program", tmp_path / "alias"
+    target.write_text("private file, never executed")
+    alias.symlink_to(target)
+    host = ToolHost(environment={"PATH": str(tmp_path)})
+
+    assert host.canonical_path(f"{tmp_path}/./alias") == str(target.resolve())
 
 
 def test_a_home_that_does_not_exist_does_not_stop_a_probe_from_running(tmp_path):

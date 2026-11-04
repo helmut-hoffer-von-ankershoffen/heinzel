@@ -155,11 +155,11 @@ class ToolPrerequisites(PrerequisiteService):
             return None
         apple_launcher = (
             self.host.platform == "darwin"
-            and candidate == f"/usr/bin/{let.name}"
             and any(
                 owner.name == let.name and owner.requires_apple_developer_tools
                 for _, owner in self.kernel.lets(PrerequisiteLet)
             )
+            and self.host.canonical_path(candidate) == self.host.canonical_path(f"/usr/bin/{let.name}")
         )
         if not run:
             detail = (

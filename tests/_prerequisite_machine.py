@@ -37,6 +37,7 @@ class Machine:
             execute=self.execute,
             which=self.which,
             is_executable=lambda path: path in self.files,
+            canonical_path=os.path.normpath,
             brew_locations=(BREW, "/usr/local/bin/brew"),
         )
 
@@ -86,5 +87,6 @@ def ready_everywhere(*absent: str) -> ToolHost:
         execute=execute,
         which=lambda name, path: None if name in absent else f"/usr/bin/{name}",
         is_executable=lambda path: Path(path).name not in absent,
+        canonical_path=os.path.normpath,
         brew_locations=(),
     )

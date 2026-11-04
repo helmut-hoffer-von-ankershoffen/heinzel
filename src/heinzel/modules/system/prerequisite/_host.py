@@ -28,6 +28,11 @@ def _is_executable(path: str) -> bool:
     return candidate.is_file() and os.access(candidate, os.X_OK)
 
 
+def _canonical_path(path: str) -> str:
+    """Resolve filesystem aliases for identity checks without starting the executable."""
+    return os.path.realpath(path)
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ToolHost:
     """A machine as the engine sees it; every field has a real default and a fake in tests."""
@@ -37,6 +42,7 @@ class ToolHost:
     execute: ProcessExecute = run_bounded_process
     which: Callable[[str, str], str | None] = _which
     is_executable: Callable[[str], bool] = _is_executable
+    canonical_path: Callable[[str], str] = _canonical_path
     brew_locations: tuple[str, ...] = BREW_LOCATIONS
 
     @classmethod
