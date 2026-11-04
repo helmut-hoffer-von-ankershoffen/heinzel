@@ -70,6 +70,17 @@ export async function call(method: "GET" | "POST", path: string, signal?: AbortS
   }
 }
 
+/** The live server plan shared by the update pane and automatic countdown. Reads only cached facts. */
+export function useAutoUpdateStatus(poll = false) {
+  return useQuery({
+    queryKey: KEY,
+    queryFn: ({ signal }) => call("GET", "", signal),
+    refetchInterval: poll ? 2_000 : false,
+    refetchIntervalInBackground: true,
+    retry: false,
+  });
+}
+
 /** The one line both switches show, disabled, when the setting can't turn updates on here: this hz runs for
  * development, or update checks are off. Null when the switch works. It is asked again when update checks change. */
 export function useAutoUpdateHeld(): string | null {

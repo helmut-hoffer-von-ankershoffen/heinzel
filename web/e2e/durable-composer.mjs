@@ -128,10 +128,10 @@ try {
   await page.getByLabel("Message your Heinzel").waitFor();
   assert.equal(await page.getByLabel("Message your Heinzel").inputValue(), "First session draft survives the update");
   assert.equal(await page.evaluate((key) => sessionStorage.getItem(key), secondKey), null);
-  await page.getByRole("button", { name: "Update available" }).click();
-  await page.getByRole("button", { name: "Update hz and plugins" }).waitFor();
+  await page.getByRole("button", { name: "Updates available" }).click();
+  await page.getByRole("button", { name: "Update now" }).waitFor();
   const reloaded = page.waitForEvent("load", { timeout: 30_000 });
-  await page.getByRole("button", { name: "Update hz and plugins" }).click();
+  await page.getByRole("button", { name: "Update now" }).click();
   await reloaded;
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
   await page.waitForFunction(() => sessionStorage.getItem("hz.update.receipt") === null, null, { timeout: 15_000 });
