@@ -1,37 +1,13 @@
 """Real collected E2E node IDs form the same complete disjoint union after CI allocation changes."""
 
-import json
-import subprocess
 import sys
 from collections import Counter
 
 import pytest
 
-from tests._e2e_lanes import REPO, lane_commands
+from tests._e2e_lanes import lane_commands
 
 pytestmark = pytest.mark.integration
-
-
-def collect() -> Counter[str]:
-    # One complete real collection supplies every parameterized node; repeating whole pytest sessions was costly.
-    code = """
-import json, pytest
-class Collected:
-    def pytest_collection_finish(self, session):
-        print('COLLECTED_NODES=' + json.dumps([item.nodeid for item in session.items]))
-raise SystemExit(pytest.main(['-m', 'e2e', '--collect-only', '-q'], plugins=[Collected()]))
-"""
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        timeout=12,
-        check=False,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    [line] = [line for line in result.stdout.splitlines() if line.startswith("COLLECTED_NODES=")]
-    return Counter(json.loads(line.partition("=")[2]))
 
 
 def selected(nodes: Counter[str], commands: list[list[str]]) -> Counter[str]:
@@ -77,11 +53,11 @@ def selected(nodes: Counter[str], commands: list[list[str]]) -> Counter[str]:
     return result
 
 
-def test_ci_lanes_preserve_every_original_node_once_including_supervised_parameterizations():
+def test_ci_lanes_preserve_every_original_node_once_including_supervised_parameterizations(collected_e2e_nodes):
     groups = {suite: lane_commands(suite) for suite in ("", "cli", "supervised", "web-1", "web-2")}
     # Before the split, CLI ignored only browser files. Reconstruct that exact original selection.
     groups["original-cli"] = [[arg for arg in groups["cli"][-1] if arg != "--ignore=tests/e2e/ui_service_test.py"]]
-    baseline = collect()
+    baseline = Counter(collected_e2e_nodes)
     lanes = {label: selected(baseline, commands) for label, commands in groups.items()}
     assert set(lanes) == set(groups)
     default = lanes.pop("")
