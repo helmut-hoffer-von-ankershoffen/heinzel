@@ -37,6 +37,8 @@ if TYPE_CHECKING:
 
 LIMIT = 256 * 1024
 MANAGER_LIMIT = 1_000_000
+MAX_MANAGER_DEPTH = 32
+MANAGER_FIELD_DEPTH = 2
 MAX_PLAN_BYTES = 12000
 MAX_JOURNAL_BYTES = 16 * 1024
 MAX_HISTORY_OBSERVATION = 128 * 1024
@@ -191,20 +193,59 @@ def _safe_home(home: str) -> None:
         _refuse()
 
 
-def _environment(output: str, home: str) -> dict[str, str]:
-    """Require complete, unique bounded blocks; hidden/conflicting routing is never merged away."""
+def _launchd_lines(output: str) -> list[str]:
+    """Require one complete bounded selected-job print envelope."""
+    if len(output.encode()) > MANAGER_LIMIT:
+        _refuse()
+    lines = output.strip().splitlines()
+    if not lines or lines[0].strip() != f"gui/{os.getuid()}/{LABEL} = {{" or lines[-1].strip() != "}":
+        _refuse()
+    return lines[1:-1]
+
+
+def _launchd_fields(output: str) -> dict[str, str | list[str]]:
+    """Parse launchctl structure, preserving only the selected job's top-level fields."""
+    lines = _launchd_lines(output)
+    fields: dict[str, str | list[str]] = {}
+    block: list[str] = []
+    depth = 1
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        opening = line.endswith((" = {", " => {"))
+        if depth == 1:
+            name, separator, value = line.partition(" = ")
+            if not separator or not name or name in fields or line == "}":
+                _refuse()
+            if opening:
+                block = []
+                fields[name] = block
+            else:
+                fields[name] = value
+        elif line != "}" or depth > MANAGER_FIELD_DEPTH:
+            block.append(line)
+        depth += int(opening) - int(line == "}")
+        if depth < 1 or depth > MAX_MANAGER_DEPTH:
+            _refuse()
+    if depth != 1:
+        _refuse()
+    return fields
+
+
+def _environment(fields: dict[str, str | list[str]], home: str) -> dict[str, str]:
+    """Require complete, unique top-level blocks; hidden/conflicting routing is never merged away."""
     names = ("default environment", "inherited environment", "environment")
-    observed = re.findall(r"(?m)^\s*([^\n={}]*environment) = \{", output)
-    if sorted(name.strip() for name in observed) != sorted(names):
+    if sorted(name for name in fields if name.endswith("environment")) != sorted(names):
         _refuse()
     environment: dict[str, str] = {}
     for name in names:
-        blocks = re.findall(rf"(?ms)^\s*{name} = \{{\n(.*?)^\s*\}}", output)
-        if len(blocks) != 1:
+        block = fields[name]
+        if not isinstance(block, list):
             _refuse()
         values: dict[str, str] = {}
-        for line in blocks[0].splitlines():
-            key, separator, value = line.strip().partition(" => ")
+        for line in block:
+            key, separator, value = line.partition(" => ")
             if (
                 not separator
                 or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
@@ -219,23 +260,15 @@ def _environment(output: str, home: str) -> dict[str, str]:
 
 
 def _loaded(output: str, unit: Path, executable: Path, home: str) -> dict[str, Any]:
-    if len(output.encode()) > MANAGER_LIMIT:
-        _refuse()
-    paths = re.findall(r"(?m)^\s*path = (.+)$", output)
-    programs = re.findall(r"(?m)^\s*program = (.+)$", output)
-    arguments = re.findall(r"(?ms)^\s*arguments = \{\n(.*?)^\s*\}", output)
-    directories = re.findall(r"(?m)^\s*working directory = (.+)$", output)
-    states = re.findall(r"(?m)^\s*state = (.+)$", output)
-    pids = re.findall(r"(?m)^\s*pid = (.*)$", output)
-    argv = [line.strip() for line in arguments[0].splitlines()] if len(arguments) == 1 else []
-    environment = _environment(output, home)
+    fields = _launchd_fields(output)
+    environment = _environment(fields, home)
     if (
-        paths != [str(unit)]
-        or programs != [str(executable)]
-        or argv != [str(executable), *TICK]
-        or directories not in ([], [home])
-        or states != ["not running"]
-        or pids not in ([], ["0"])
+        fields.get("path") != str(unit)
+        or fields.get("program") != str(executable)
+        or fields.get("arguments") != [str(executable), *TICK]
+        or fields.get("working directory") not in (None, home)
+        or fields.get("state") != "not running"
+        or fields.get("pid") not in (None, "0")
         or environment.get("PATH") != f"{executable.parent}:{PATH}"
     ):
         _refuse()

@@ -39,7 +39,7 @@ export function DurableHeinzelStatus() {
     setCreateFailed(false);
     try {
       const created = await unwrap(
-        api.POST("/heinzel/new-chat", { body: { request_id: createRequest.current, name: "Personal helper" } }),
+        api.POST("/heinzel/new-chat", { body: { request_id: createRequest.current, name: "Personal Heinzel" } }),
       );
       createRequest.current = null;
       navigate(`/heinzel?chat=${created.session_id}`);

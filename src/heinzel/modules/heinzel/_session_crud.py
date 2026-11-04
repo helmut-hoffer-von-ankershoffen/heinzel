@@ -58,7 +58,7 @@ from heinzel.modules.heinzel._session_models import (
 )
 from heinzel.modules.heinzel._session_protocol import SessionRepository
 
-_VISIBLE_KINDS = {"message.accepted", "message.replied", "agent.schedule-failed"}
+_VISIBLE_KINDS = {"message.accepted", "message.replied", "agent.schedule-failed", "draft.workflow-message"}
 _ORIGIN = TypeAdapter(MessageOrigin)
 _REQUEST = TypeAdapter(RequestId)
 _SESSION_ID = TypeAdapter(SessionId)
@@ -267,6 +267,41 @@ class _Cursor(BaseModel):
     v: int = Field(ge=1, le=1)
     session_id: str
     after: int = Field(ge=0)
+
+
+class _SearchJumpCursor(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    v: Literal[2] = 2
+    session_id: str
+    owner: str
+    storage: str
+    target: int = Field(gt=0)
+    high: int = Field(gt=0)
+    high_hash: str
+
+
+def history_cursor_before(service: "SessionCrud", session_id: str, seq: int, high: int, high_hash: str | None) -> str:
+    """Bind a search navigation hint to the owner, storage, session and observed journal prefix.
+
+    Raises:
+        HeinzelError: If the search anchor or target is invalid.
+    """
+    if type(seq) is not int or seq < 1 or seq > high or not high_hash:
+        msg = "The search message position is invalid"
+        raise HeinzelError(msg)
+    payload = (
+        _SearchJumpCursor(
+            session_id=session_id,
+            owner=service.repository.principal_id,
+            storage=hashlib.sha256(service.repository.search_storage_id.encode()).hexdigest(),
+            target=seq,
+            high=high,
+            high_hash=high_hash,
+        )
+        .model_dump_json()
+        .encode()
+    )
+    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
 
 
 class _CheckInIntent(BaseModel):
@@ -483,19 +518,30 @@ class SessionCrud(ApprovalIssuer):
         self.clock = clock
 
     def new_chat(
-        self, request_id: str, name: str = "New Heinzel", appearance: HeinzelAppearance | None = None
+        self,
+        request_id: str,
+        name: str = "New Heinzel",
+        appearance: HeinzelAppearance | None = None,
+        *,
+        initial_message: str | None = None,
     ) -> SessionSnapshot:
         """Reserve identity, then initialize private profile; a retry finishes any interrupted initialization."""
         _REQUEST.validate_python(request_id)
         profile = PersonalProfile.model_validate_json(
             PersonalProfile(name=name, appearance=appearance or HeinzelAppearance()).model_dump_json()
         )
-        session_id = self.repository.reserve(request_id, _digest(profile.model_dump(mode="json")))
+        initial = MessageRequest(request_id=request_id, text=initial_message) if initial_message is not None else None
+        details: JsonValue = profile.model_dump(mode="json")
+        if initial is not None:
+            details = {"profile": details, "initial_message": initial.model_dump(mode="json")}
+        session_id = self.repository.reserve(request_id, _digest(details))
         try:
             existing = self.repository.control_read(session_id).events
         except FileNotFoundError:
             existing = []
         if any(event.kind == "profile.updated" for event in existing):
+            if initial is not None:
+                self.accept(session_id, initial)
             return self.snapshot(session_id)
         # Creation alone takes main then control, matching active turns. The reservation lock is already released.
         with self.repository.main_writer(session_id, wait=True) as main:
@@ -504,9 +550,16 @@ class SessionCrud(ApprovalIssuer):
             with self.repository.control_writer(session_id) as control:
                 if not self.repository.control_read(session_id).events:
                     body = immutable_body(control, "profile", profile.model_dump(mode="json"), control=True)
-                    control.append(
-                        "profile.updated", key="created", data={"revision": 1, **body.model_dump(mode="json")}
-                    )
+                    data: dict[str, JsonValue] = {"revision": 1, **body.model_dump(mode="json")}
+                    if initial is not None:
+                        # Fence the first inbox position even if the process stops after writing the profile.
+                        data.update(
+                            initial_request_id=initial.request_id,
+                            initial_request_hash=_digest(initial.model_dump(mode="json")),
+                        )
+                    control.append("profile.updated", key="created", data=data)
+                if initial is not None:
+                    self._accept_locked(session_id, initial, control)
         return self.snapshot(session_id)
 
     def _profile(self, session_id: str, events: list[SessionEvent]) -> tuple[PersonalProfile, int]:
@@ -604,27 +657,45 @@ class SessionCrud(ApprovalIssuer):
         if request.attachment_ids:
             msg = "Attachments need a retained upload before they can be sent in this conversation"
             raise HeinzelError(msg)
-        digest = _digest(request.model_dump(mode="json"))
         with self.repository.control_writer(session_id) as writer:
-            events = self.repository.control_read(session_id).events
-            prior = next((event for event in events if event.key == f"message-{request.request_id}"), None)
-            if prior is not None:
-                if prior.kind != "message.accepted" or prior.data.get("request_hash") != digest:
-                    msg = "This request already identifies a different accepted message"
-                    raise HeinzelError(msg)
-                event = prior
-            else:
-                body = immutable_body(writer, "inbox", request.model_dump(mode="json"), control=True)
-                event = writer.append(
-                    "message.accepted",
-                    key=f"message-{request.request_id}",
-                    data={
-                        "message_id": request.request_id,
-                        "request_hash": digest,
-                        "origin": _ORIGIN.validate_python(self.repository.authentication, strict=True),
-                        **body.model_dump(mode="json"),
-                    },
-                )
+            return self._accept_locked(session_id, request, writer)
+
+    def _accept_locked(self, session_id: str, request: MessageRequest, writer: SessionWriter) -> MessageAccepted:
+        """Accept under the owning control lock, retaining a creation prompt's first inbox position.
+
+        Raises:
+            HeinzelError: If an initial prompt is pending or exact request terms changed.
+        """
+        digest = _digest(request.model_dump(mode="json"))
+        events = self.repository.control_read(session_id).events
+        created = next((event for event in events if event.kind == "profile.updated" and event.key == "created"), None)
+        if created is not None and "initial_request_id" in created.data:
+            first_id = created.data["initial_request_id"]
+            first_hash = created.data.get("initial_request_hash")
+            first = next((event for event in events if event.key == f"message-{first_id}"), None)
+            if (first is None and (request.request_id != first_id or digest != first_hash)) or (
+                first is not None and (first.kind != "message.accepted" or first.data.get("request_hash") != first_hash)
+            ):
+                msg = "The helper's exact original prompt must be accepted first"
+                raise HeinzelError(msg)
+        prior = next((event for event in events if event.key == f"message-{request.request_id}"), None)
+        if prior is not None:
+            if prior.kind != "message.accepted" or prior.data.get("request_hash") != digest:
+                msg = "This request already identifies a different accepted message"
+                raise HeinzelError(msg)
+            event = prior
+        else:
+            body = immutable_body(writer, "inbox", request.model_dump(mode="json"), control=True)
+            event = writer.append(
+                "message.accepted",
+                key=f"message-{request.request_id}",
+                data={
+                    "message_id": request.request_id,
+                    "request_hash": digest,
+                    "origin": _ORIGIN.validate_python(self.repository.authentication, strict=True),
+                    **body.model_dump(mode="json"),
+                },
+            )
         return MessageAccepted(
             request_id=request.request_id, session_id=session_id, disposition="queued", inbox_position=event.seq
         )
@@ -1617,21 +1688,37 @@ class SessionCrud(ApprovalIssuer):
                 events,
             )
 
-    @staticmethod
-    def _after(session_id: str, cursor: str | None) -> int:
+    def _after(
+        self, session_id: str, cursor: str | None, events: list[SessionEvent], hashes: list[str]
+    ) -> tuple[int, bool]:
         if cursor is None:
-            return 0
+            return 0, False
         msg = "This message cursor belongs to a different conversation or is invalid; reopen the session"
         if len(cursor) > MAX_CURSOR:
             raise HeinzelError(msg)
         try:
             raw = base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
-            parsed = _Cursor.model_validate_json(raw)
+            parsed = TypeAdapter(_Cursor | _SearchJumpCursor).validate_json(raw)
         except (ValueError, ValidationError):
             raise HeinzelError(msg) from None
+        if isinstance(parsed, _SearchJumpCursor):
+            storage = hashlib.sha256(self.repository.search_storage_id.encode()).hexdigest()
+            if (
+                parsed.session_id != session_id
+                or parsed.owner != self.repository.principal_id
+                or parsed.storage != storage
+                or parsed.target > parsed.high
+                or parsed.high > len(events)
+                or len(hashes) != len(events)
+                or hashes[parsed.high - 1] != parsed.high_hash
+                or events[parsed.target - 1].seq != parsed.target
+                or events[parsed.target - 1].kind not in {"message.accepted", "message.replied"}
+            ):
+                raise HeinzelError(msg)
+            return parsed.target - 1, True
         if parsed.session_id != session_id:
             raise HeinzelError(msg)
-        return parsed.after
+        return parsed.after, False
 
     def read_message(self, session_id: str, event: SessionEvent) -> SessionMessage:
         """Project an authoritative message event, including its verified private body and origin.
@@ -1667,7 +1754,13 @@ class SessionCrud(ApprovalIssuer):
             return SessionMessage(
                 id=message_id,
                 seq=event.seq,
-                role="user" if event.kind == "message.accepted" else "assistant",
+                role=(
+                    "user"
+                    if event.kind == "message.accepted"
+                    else "system"
+                    if event.kind == "draft.workflow-message"
+                    else "assistant"
+                ),
                 origin=origin,
                 at=event.ts,
                 status="expired",
@@ -1703,8 +1796,9 @@ class SessionCrud(ApprovalIssuer):
         if type(limit) is not int or not 1 <= limit <= MAX_PAGE:
             msg = "Choose between 1 and 200 messages per page"
             raise HeinzelError(msg)
-        after = self._after(session_id, cursor)
-        events = self.repository.control_read(session_id).events
+        journal = self.repository.control_read(session_id)
+        events = journal.events
+        after, search_jump = self._after(session_id, cursor, events, journal.hashes)
         if after > (events[-1].seq if events else 0):
             msg = "This message cursor is ahead of the committed conversation; reopen the session"
             raise HeinzelError(msg)
@@ -1719,6 +1813,10 @@ class SessionCrud(ApprovalIssuer):
         if more:
             encoded = _Cursor(v=1, session_id=session_id, after=page[-1].seq).model_dump_json().encode()
             next_cursor = base64.urlsafe_b64encode(encoded).decode().rstrip("=")
+        projected = [self.read_message(session_id, event) for event in page]
+        if search_jump and (not projected or projected[0].status == "expired"):
+            msg = "This search result is no longer retained; run the search again"
+            raise HeinzelError(msg)
         costs = self.costs()
         return SessionSnapshot(
             session_id=session_id,
@@ -1731,7 +1829,7 @@ class SessionCrud(ApprovalIssuer):
             contracts=contracts,
             schedule=schedule,
             last_seq=events[-1].seq if events else 0,
-            messages=[self.read_message(session_id, event) for event in page],
+            messages=projected,
             costs=costs.model_copy(
                 update={
                     "unknown_turns": costs.unknown_turns
@@ -1755,8 +1853,8 @@ class SessionCrud(ApprovalIssuer):
             msg = f"Choose between 1 and {MAX_RECENT_HISTORY} recent messages"
             raise HeinzelError(msg)
         events = self.repository.control_read(session_id).events
-        messages = [self.read_message(session_id, event) for event in events if event.kind in _VISIBLE_KINDS]
-        return messages[-limit:]
+        messages = [event for event in events if event.kind in _VISIBLE_KINDS]
+        return [self.read_message(session_id, event) for event in messages[-limit:]]
 
     def listing(self) -> SessionList:
         """Include new uncontracted chats; catalog/control journals never become phantom agents.

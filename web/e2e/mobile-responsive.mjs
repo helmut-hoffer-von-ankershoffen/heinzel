@@ -247,12 +247,13 @@ async function footerPane(page, id, label, ready) {
   const direct = trigger.filter({ visible: true });
   const more = page
     .locator(
-      `footer:has([data-footer-part="${id}"][data-footer-hidden="overflow"]) [data-footer-content="@more"] button`,
+      `footer:has([data-footer-part="${id}"][data-footer-hidden="overflow"]) [data-footer-content="@more"] button[aria-expanded="false"]`,
     )
     .filter({ visible: true });
-  await direct.or(more).first().waitFor();
-  if (!(await direct.isVisible())) await more.tap();
-  await trigger.tap();
+  // Resolve the currently actionable path as part of the real touch action. A snapshot of direct visibility
+  // can become obsolete when an independent provider changes footer capacity before Playwright sends the tap.
+  await direct.or(more).first().tap();
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") await direct.tap();
   return page.getByRole("region", { name: label, exact: true }).locator("..");
 }
 
@@ -328,13 +329,14 @@ try {
       await page.goto(url);
       await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
       await statusRequested.promise;
-      const opening = footerPane(page, entry.id, "Share probe");
-      // Observe the held state after opening starts: shell readiness does not publish status items.
+      // Other real contributions can already require More. A held, unpublished item must have neither its
+      // trigger nor an overflow entry; shell readiness alone cannot make that item actionable.
       const held = await page.evaluate(() => ({
         target: !!document.querySelector('[data-footer-content="probe:share"] button'),
-        more: getComputedStyle(document.querySelector('[data-footer-content="@more"] button')).visibility,
+        overflow: !!document.querySelector('[data-footer-part="probe:share"][data-footer-hidden="overflow"]'),
       }));
-      assert.deepEqual(held, { target: false, more: "hidden" });
+      assert.deepEqual(held, { target: false, overflow: false });
+      const opening = footerPane(page, entry.id, "Share probe");
       publishStatus.resolve();
       const pane = await opening;
       const copy = pane.getByRole("button", { name: "Copy URL", exact: true });
@@ -676,7 +678,7 @@ try {
     await page.getByRole("textbox", { name: "Your message" }).fill("A draft to keep.");
     await assertContained(
       page,
-      page.getByRole("button", { name: "Create a helper and take this message" }),
+      page.getByRole("button", { name: "Create a Heinzel and take this message" }),
       `${spec.name}: workshop agent handoff`,
     );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-agent-handoff.png`) });
@@ -897,7 +899,7 @@ try {
       });
     });
     await page.getByRole("textbox", { name: "Your message" }).fill("Keep my notes current.");
-    await page.getByRole("button", { name: "Create a helper and take this message" }).click();
+    await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
     await page.getByLabel("Message your Heinzel").waitFor();
     await page.getByText(/Customize.*suggested look/).click();
     const useSuggestion = page.getByRole("button", { name: "Use suggested identity" });

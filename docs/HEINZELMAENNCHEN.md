@@ -1,6 +1,6 @@
 # Heinzelmännchen
 
-Your **Heinzelmännchen** are what hz is: one helper for each contract you have. `hz heinzel list` shows them, and so
+Your **Heinzelmännchen** are what hz is: one Heinzel for each contract you have. `hz heinzel list` shows them, and so
 does the web app's Heinzelmännchen page.
 
 A **contract** keeps one thing true. It is a `<name>.prose.md` file: YAML frontmatter says what it reads and when it
@@ -10,13 +10,13 @@ drafts it, and your daemon drafts it on its schedule. Drafts stay on your machin
 There are no workflow files. Contracts make the workflow together: one that reads another's output depends on it, and
 `hz heinzel graph` draws the result.
 
-This page walks from nothing to a scheduled helper, then lists the reference. Every command is in
+This page walks from nothing to a scheduled Heinzel, then lists the reference. Every command is in
 [CLI_REFERENCE.md](CLI_REFERENCE.md#hz-heinzel), every setting in [CONFIGURATION.md](CONFIGURATION.md#heinzel). The
 reasoning is in the [workflow contracts decision](adr/0021-workflow-contracts.md).
 
 ## What is built
 
-Released: contracts, daemon schedules, named helpers with their own chat, a reviewed check-in that posts a local
+Released: contracts, daemon schedules, named Heinzels with their own chat, a reviewed check-in that posts a local
 notice, and a reviewed schedule that the daemon runs. Proven only with fakes: the scheduled model turn. The rest is
 under [Not built yet](#not-built-yet).
 
@@ -158,13 +158,13 @@ hz system config set heinzel.schedule_team '["retro-agenda@sha256:<hex>"]'     #
 
 A pinned contract whose file changed does not run until you approve the new content.
 
-### 11. Create a helper with a name and a look
+### 11. Create a Heinzel with a name and a look
 
-A personal helper has an identity before it has a contract. Create one with a stable request id, then use the
+A personal Heinzel has an identity before it has a contract. Create one with a stable request id, then use the
 returned `session_id` to reopen it or change its look:
 
 ```bash
-hz heinzel new-chat create-helper --name "My helper" --appearance '{"hat":"blue"}' --json
+hz heinzel new-chat create-helper --name "My Heinzel" --appearance '{"hat":"blue"}' --json
 hz heinzel sessions --json
 hz heinzel session <session-id> --json
 hz heinzel profile <session-id> change-look 1 --appearance '{"hat":"teal","accessories":["scarf"]}' --json
@@ -180,7 +180,7 @@ restores the defaults. The web app's Heinzelmännchen page does the same, with a
 hz heinzel chat <session-id> <request-id> <message> --json
 ```
 
-This queues your message. A queued receipt means it arrived, not that the helper has answered. Repeat the same
+This queues your message. A queued receipt means it arrived, not that the Heinzel has answered. Repeat the same
 `request_id` after a lost reply and you get the same message back, not a second one.
 
 ### 13. Schedule a check-in
@@ -208,7 +208,7 @@ hz system daemon restart           # if it is unloaded or its version does not m
 Without a daemon, an approved schedule stays dormant. Approval needs the daemon's version to match your install; only a
 tick run by launchd or systemd proves that. After `restart`, wait until `version` equals `installed_version`.
 
-### 14. Schedule a helper that thinks
+### 14. Schedule a Heinzel that thinks
 
 A reviewed schedule can run your instructions on a timer. You record the terms, review them and approve them
 separately; the daemon then runs the schedule.

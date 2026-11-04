@@ -29,7 +29,16 @@ const accessible = async (node) => {
   assert.deepEqual(violations, []);
 };
 async function openFooter(name) {
-  await page.getByRole("contentinfo").getByRole("button", { name }).click();
+  const trigger = page.getByRole("button", { name });
+  const direct = trigger.filter({ visible: true });
+  const more = page
+    .locator(
+      'footer:has([data-footer-part="system.daemon:daemon"][data-footer-hidden="overflow"]) [data-footer-content="@more"] button',
+    )
+    .filter({ visible: true });
+  await direct.or(more).first().waitFor();
+  if (!(await direct.isVisible())) await more.click();
+  await trigger.click();
   return page.getByRole("region", { name: /^Daemon/ });
 }
 try {

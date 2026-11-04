@@ -103,6 +103,10 @@ jobs:
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: false # the site is published, and a poisoned cache must not be able to reach it (zizmor)
+      # The hosted Azure mirror exhausted the existing browser-install deadline while fetching packages.
+      # Change only its transport endpoint; suites, components and Ubuntu archive signing keys stay intact.
+      - name: Use Ubuntu's primary archive for browser dependencies
+        run: sudo sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources
       - name: Build and verify the product site or a standalone documentation site
         env:
           GH_TOKEN: ${{ github.token }}

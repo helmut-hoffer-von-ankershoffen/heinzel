@@ -56,6 +56,10 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
+        "sudo sed -i 's|http://azure\\.archive\\.ubuntu\\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "
+        "/etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources": (
+            "selects the same signed primary Ubuntu archive as Docs before browser dependency installation"
+        ),
         "uv run --no-build --script scripts/main_batch.py": "read-only bounded admission of an explicit main batch",
         "echo 'The validated aggregate base": "records that the final run consumed the aggregate base",
         'echo "Full CI is recorded': "links the intermediate admission to its exact final run",
@@ -81,6 +85,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ),
     },
     "docs.yml": {
+        "sudo sed -i ": "selects the primary signed Ubuntu archive before browser dependency installation",
         "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
         "uv run --quiet --frozen --no-build --group docs playwright install-deps": (
             "Chromium's system libraries, from the runner"

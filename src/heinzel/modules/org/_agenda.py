@@ -4,7 +4,7 @@ It never fails for a missing or broken calendar: the web app's footer shows it a
 or an adapter error (an expired sign-in) comes back as `problem`, with the command that fixes it in `fix`.
 """
 
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
@@ -54,6 +54,7 @@ class Agenda(BaseModel):
     """The meeting you are in now and your next one, or why they can't be read."""
 
     now: AwareDatetime = Field(description="When the agenda was read, in your time zone.")
+    timezone: str | None = Field(default=None, description="Your IANA time zone when known.")
     current: Event | None = Field(
         default=None,
         description="The event in progress now, not all-day and not cancelled; the one that started last if several "
@@ -80,6 +81,65 @@ class Agenda(BaseModel):
     )
 
 
+class CalendarWeek(BaseModel):
+    """A bounded week of calendar events or an explanation why it could not be read."""
+
+    timezone: str | None = Field(default=None, description="IANA profile time zone when known.")
+    since: AwareDatetime = Field(description="The beginning of the week in your time zone.")
+    until: AwareDatetime = Field(description="The exclusive end of the week in your time zone.")
+    events: list[Event] = Field(default_factory=list[Event], description="Non-cancelled events overlapping the week.")
+    problem: str | None = Field(default=None, description="Why the calendar could not be read, if unavailable.")
+    fix: str | None = Field(default=None, description="A command to connect a calendar, if available.")
+
+
+def read_week(calendar: Calendar, bindings: Bindings, now: datetime, offset: int) -> CalendarWeek:
+    """Read one local calendar week through the bound calendar capability."""
+    monday = now.date() - timedelta(days=now.weekday()) + timedelta(weeks=offset)
+    since = datetime.combine(monday, time(), tzinfo=now.tzinfo)
+    until = datetime.combine(monday + timedelta(days=7), time(), tzinfo=now.tzinfo)
+    zone = getattr(now.tzinfo, "key", None)
+    adapter, problem = bindings.serves(CALENDAR)
+    if adapter is None or problem is not None:
+        bound = bindings.bound(CALENDAR.capability)
+        if bound is None:
+            return CalendarWeek(
+                timezone=zone,
+                since=since,
+                until=until,
+                problem="No calendar connected.",
+                fix=bindings.command("calendar"),
+            )
+        return CalendarWeek(
+            timezone=zone,
+            since=since,
+            until=until,
+            problem=f"Calendar unavailable: {problem}. {bindings.fix('calendar')}",
+        )
+    try:
+        events = calendar.events(Window(since=since, until=until))
+    except HeinzelError as exc:
+        return CalendarWeek(timezone=zone, since=since, until=until, problem=str(exc))
+    except Exception as exc:  # noqa: BLE001 - isolate a broken calendar adapter from the web view
+        return CalendarWeek(
+            timezone=zone, since=since, until=until, problem=f"Reading your calendar failed: {type(exc).__name__}"
+        )
+    return CalendarWeek(
+        timezone=zone,
+        since=since,
+        until=until,
+        events=sorted(
+            (
+                event
+                for event in events
+                if event.status != "cancelled"
+                and event.start.astimezone(UTC) < until.astimezone(UTC)
+                and event.end.astimezone(UTC) > since.astimezone(UTC)
+            ),
+            key=lambda event: event.start.astimezone(UTC),
+        ),
+    )
+
+
 def local_now(timezone: str | None) -> datetime:
     """Now in `timezone` (an IANA name), or in this machine's zone when it is unset.
 
@@ -98,6 +158,7 @@ def read_agenda(calendar: Calendar, bindings: Bindings, now: datetime) -> Agenda
         if bound is None:
             return Agenda(
                 now=now,
+                timezone=getattr(now.tzinfo, "key", None),
                 problem=f"No calendar connected ({CALENDAR}: {problem}).",
                 fix=bindings.command(CALENDAR.capability),
             )
@@ -105,6 +166,7 @@ def read_agenda(calendar: Calendar, bindings: Bindings, now: datetime) -> Agenda
         # repair, not a calendar to connect.
         return Agenda(
             now=now,
+            timezone=getattr(now.tzinfo, "key", None),
             calendar=bound,
             problem=f"Your calendar binding {bound!r} can't be used: {problem}. {bindings.fix(CALENDAR.capability)}",
         )
@@ -112,18 +174,30 @@ def read_agenda(calendar: Calendar, bindings: Bindings, now: datetime) -> Agenda
     try:
         events = calendar.events(Window(since=now, until=midnight))
     except HeinzelError as exc:
-        return Agenda(now=now, calendar=adapter, problem=str(exc))
+        return Agenda(now=now, timezone=getattr(now.tzinfo, "key", None), calendar=adapter, problem=str(exc))
     except Exception as exc:  # noqa: BLE001 - isolation boundary: a broken adapter must not break the footer
         return Agenda(
-            now=now, calendar=adapter, problem=f"Reading your {adapter} calendar failed: {type(exc).__name__}"
+            now=now,
+            timezone=getattr(now.tzinfo, "key", None),
+            calendar=adapter,
+            problem=f"Reading your {adapter} calendar failed: {type(exc).__name__}",
         )
-    meetings = [e for e in events if not e.all_day and e.status != "cancelled"]
-    running = [e for e in meetings if e.start <= now < e.end]
-    upcoming = [e for e in meetings if e.start > now]
+    instant = now.astimezone(UTC)
+    meetings = [
+        e
+        for e in events
+        if not e.all_day
+        and e.status.casefold() not in {"cancelled", "canceled"}
+        and e.response != "declined"
+        and e.start.astimezone(UTC) < e.end.astimezone(UTC)
+    ]
+    running = [e for e in meetings if e.start.astimezone(UTC) <= instant < e.end.astimezone(UTC)]
+    upcoming = [e for e in meetings if e.start.astimezone(UTC) > instant]
     return Agenda(
         now=now,
-        current=max(running, key=lambda e: e.start, default=None),
-        next=min(upcoming, key=lambda e: e.start, default=None),
+        current=max(running, key=lambda e: (e.start.astimezone(UTC), e.id), default=None),
+        next=min(upcoming, key=lambda e: (e.start.astimezone(UTC), e.id), default=None),
+        timezone=getattr(now.tzinfo, "key", None),
         calendar=adapter,
     )
 

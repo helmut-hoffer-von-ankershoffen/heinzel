@@ -21,6 +21,7 @@ import { useNoticeStream } from "@/notifications/useNoticeStream";
 import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { InstalledView, useViews, ViewSlot } from "@/plugins/Views";
 import { SoundEngine } from "@/sound/SoundEngine";
+import { CalendarPanel } from "./CalendarPanel";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
 import { NotificationPanel } from "./NotificationCenter";
@@ -93,6 +94,7 @@ function Layout() {
   const [navOpen, setNavOpen] = useRemembered("hz.nav.open", () => window.innerWidth >= 1024);
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [terminalFull, setTerminalFull] = useState(false);
   const [activePanel, setActivePanel] = useState(() => (window.innerWidth < 1024 ? "page" : "chat"));
   const views = useViews();
@@ -204,17 +206,19 @@ function Layout() {
       ? "page"
       : activePanel === "chat" && chatOpen
         ? "chat"
-        : activePanel === "terminal" && terminalOpen
-          ? "terminal"
-          : retainedViews.includes(activePanel) && panelViews.some((view) => view.id === activePanel)
-            ? activePanel
-            : chatOpen
-              ? "chat"
-              : terminalOpen
-                ? "terminal"
-                : !beside
-                  ? "page"
-                  : "chat");
+        : activePanel === "calendar" && calendarOpen
+          ? "calendar"
+          : activePanel === "terminal" && terminalOpen
+            ? "terminal"
+            : retainedViews.includes(activePanel) && panelViews.some((view) => view.id === activePanel)
+              ? activePanel
+              : chatOpen
+                ? "chat"
+                : terminalOpen
+                  ? "terminal"
+                  : !beside
+                    ? "page"
+                    : "chat");
   // Panel and full-screen changes can reveal the same footer at a new capacity without a viewport resize.
   // biome-ignore lint/correctness/useExhaustiveDependencies: each layout change requires a fresh footer measurement
   useLayoutEffect(() => {
@@ -229,7 +233,11 @@ function Layout() {
   const full = terminalOpen && terminalFull && selectedPanel === "terminal";
   const flowingWorkspace = !beside && !full;
   const workspaceShown =
-    chatOpen || terminalOpen || viewOpen || retainedViews.some((id) => panelViews.some((view) => view.id === id));
+    chatOpen ||
+    terminalOpen ||
+    calendarOpen ||
+    viewOpen ||
+    retainedViews.some((id) => panelViews.some((view) => view.id === id));
   useLayoutEffect(() => {
     if (
       !flowingWorkspace ||
@@ -518,6 +526,22 @@ function Layout() {
                         },
                       ]
                     : []),
+                  ...(calendarOpen
+                    ? [
+                        {
+                          id: "calendar",
+                          title: "Calendar",
+                          content: (
+                            <CalendarPanel
+                              onClose={() => {
+                                setCalendarOpen(false);
+                                setActivePanel(chatOpen ? "chat" : "page");
+                              }}
+                            />
+                          ),
+                        },
+                      ]
+                    : []),
                   ...panelViews
                     .filter((view) => view.id === requestedId || retainedViews.includes(view.id))
                     .map((view) => ({
@@ -570,7 +594,15 @@ function Layout() {
           headerHost,
         )}
         {/* Moving the mounted controls preserves their state when the side panel moves below. */}
-        {createPortal(<StatusBar />, footerHost)}
+        {createPortal(
+          <StatusBar
+            onOpenCalendar={() => {
+              setCalendarOpen(true);
+              selectPanel("calendar");
+            }}
+          />,
+          footerHost,
+        )}
       </div>
       {showAudioVisualizer && (
         <section aria-label="Audio visualizer" className="min-h-0 w-7 shrink-0 self-stretch border-l border-border">

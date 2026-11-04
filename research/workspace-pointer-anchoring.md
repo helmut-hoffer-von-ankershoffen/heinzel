@@ -31,3 +31,26 @@ regression passes with the repair in 8.92 seconds. Fifteen focused anchor tests 
 native scroll compensation, viewport reflow, Page interaction, scroll-away, removed control, hidden/disconnected
 workspace and observer cleanup. `make lint typecheck` passes, including import contracts, generated API/documentation
 freshness and Python/frontend types. Fresh hosted CI remains required; these results are not release acceptance.
+
+
+## Continue after an uncertain chat turn
+
+Run 41838438568 failed `test_mounted_generic_agent_chat[webkit]` on Ubuntu at source 316f44ac3.
+After the saved turn was set aside and the page reloaded, the physical Continue conversation click returned,
+but the composer retained its pending message and stayed disabled. The subsequent fill reached its unchanged
+thirty-second deadline. The saved-turn reads and set-aside request succeeded. The disclosure watcher was not armed
+after that reload, so this historical log does not identify the pointer targets; the timing cause is inferred
+from the deterministic reproduction below, rather than claimed as directly recorded in that hosted run.
+
+The generic conversation now also runs with the real pending doctor report released between physical press and
+release of Continue conversation. It holds only the page ResizeObserver notification until after release, as the
+existing connected-read regression does. It retains both normal browser journeys, the uncertain-turn warning,
+explicit human acknowledgement, reload, original message identity, model-call count and subsequent successful reply.
+A watcher is armed again after the final reload so a future hosted failure retains the pointer targets.
+
+With the actual former workspace anchor from 316f44ac3, the WebKit regression fails in 9.17 seconds. Pointerdown
+hits the original Continue button at y=695; page growth moves that same button from top 679 to 1729.25. Pointerup
+hits a table cell, and click hits an ancestor div. The button stays mounted, visible and non-inert, while the
+composer stays disabled. The restored main anchor from #505 passes the same regression in 9.80 seconds.
+Both browsers' normal and delayed-page journeys pass together: four cases in 19.85 seconds. No additional production
+change or deadline increase is required for this reproduction. Fresh hosted CI and release acceptance remain separate.

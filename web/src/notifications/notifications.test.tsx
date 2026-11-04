@@ -188,6 +188,22 @@ describe("desktop notifications", () => {
     });
   });
 
+  it("discards expired notices after a delayed service worker registration or suspended tab", async () => {
+    const showNotification = vi.fn(async () => {});
+    let instant = Date.parse("2026-11-04T10:00:00Z");
+    vi.spyOn(Date, "now").mockImplementation(() => instant);
+    const expired = { ...notice, expires: "2026-11-04T10:00:01Z" };
+    const registration = async () => {
+      instant += 1000;
+      return { showNotification } as unknown as ServiceWorkerRegistration;
+    };
+    expect(await popUp(expired, vi.fn(), registration)).toBe(false);
+    showNotification.mockClear();
+    expect(await popUp(expired, vi.fn(), async () => null)).toBe(false);
+    expect(showNotification).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
   it("without a service worker, focus the tab and open the notice's screen when clicked", async () => {
     installNotification("granted");
     const navigate = vi.fn();

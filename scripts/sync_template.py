@@ -162,6 +162,22 @@ def _without_batch_admission(text: str) -> str:
     return text[:start] + text[end:] if 0 <= start < end else text
 
 
+def _without_core_browser_setup(text: str) -> str:
+    """Plugins have neither the core web head nor its browser dependency steps."""
+    text = re.sub(
+        r"\n      - name: Use Ubuntu's primary archive for browser dependencies\n"
+        r"        if: [^\n]*\n        run: [^\n]*",
+        "",
+        text,
+    )
+    return re.sub(
+        r"\n      - name: Install browser runtimes and host dependencies\n"
+        r"(?:        if: [^\n]*\n)?        run: make test-browser-deps",
+        "",
+        text,
+    )
+
+
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
@@ -191,12 +207,7 @@ def ci_workflow() -> str:
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
     # The web head's app (ADR 0039) and ATTRIBUTIONS.md, the notices of what it bundles: plugins have neither.
     text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
-    text = re.sub(
-        r"\n      - name: Install browser runtimes and host dependencies\n"
-        r"(?:        if: [^\n]*\n)?        run: make test-browser-deps",
-        "",
-        text,
-    )
+    text = _without_core_browser_setup(text)
     text = re.sub(r"\n      - run: make managed-backend-[^\n]*", "", text)
     # Only the core daemon uses the host's user service manager; plugins ship no such probe.
     text = re.sub(

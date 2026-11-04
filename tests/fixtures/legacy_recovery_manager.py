@@ -5,6 +5,7 @@ import os
 import plistlib
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from heinzel import __version__
@@ -14,6 +15,46 @@ from heinzel.modules.system.daemon._units import LABEL
 
 ROOT = Path(os.environ["HZ_LEGACY_MANAGER_FIXTURE"])
 STATE = ROOT / "manager.json"
+
+
+PHASES = frozenset({"tick-enter", "native-notices-enter", "native-notices-return", "tick-main-return", "tick-watchdog"})
+STACK_PHASES = frozenset(
+    {
+        "tick",
+        "_post_notices",
+        "post_native",
+        "lock_until_finished",
+        "_wait",
+        "wait",
+        "communicate",
+        "join",
+        "look",
+        "ensure",
+        "clean",
+        "unregister_strays",
+        "_ui_url",
+    }
+)
+
+
+def phase(name, *, stacks=False):
+    """Write fixed diagnostic categories only; no stack source, paths, arguments or identities."""
+    assert name in PHASES
+    categories = set()
+    if stacks:
+        for top in list(sys._current_frames().values())[:16]:
+            frame = top
+            for _ in range(64):
+                if frame.f_code.co_name in STACK_PHASES:
+                    categories.add(frame.f_code.co_name)
+                frame = frame.f_back
+                if frame is None:
+                    break
+    try:
+        with (ROOT / "tick-phases.jsonl").open("a") as stream:
+            stream.write(json.dumps({"phase": name, "stacks": sorted(categories)}) + "\n")
+    except OSError:
+        pass  # Diagnostic I/O never replaces the immutable SDK's actual outcome.
 
 
 def probe(command):
@@ -80,7 +121,7 @@ def loaded(state):
         "default environment = {\nPATH => /usr/bin:/bin\n}\n"
         f"inherited environment = {{\nHOME => {Path.home()}\n}}\nstate = not running\n"
     )
-    return ProcessOutcome(0, output, "")
+    return ProcessOutcome(0, f"gui/{os.getuid()}/{LABEL} = {{\n{output}}}\n", "")
 
 
 def runner(command):
@@ -104,6 +145,16 @@ def initialize(self, *args, **kwargs):
     self._runner = runner
     self._quiescence_probe = probe
     self._desktop_session = lambda: "Aqua"
+    original_notices = self._post_notices
+
+    def observed_notices(*arguments, **keywords):
+        phase("native-notices-enter")
+        try:
+            return original_notices(*arguments, **keywords)
+        finally:
+            phase("native-notices-return")
+
+    self._post_notices = observed_notices
 
 
 daemon.DaemonService.__init__ = initialize
@@ -161,9 +212,18 @@ elif sys.argv[1:2] == ["recovery"]:
 else:
     from heinzel.heads.cli import main
 
+    watchdog = None
+    if sys.argv[1:4] == ["system", "daemon", "tick"]:
+        phase("tick-enter")
+        watchdog = threading.Timer(10, lambda: phase("tick-watchdog", stacks=True))
+        watchdog.daemon = True
+        watchdog.start()
     try:
         main()
     finally:
+        if watchdog is not None:
+            watchdog.cancel()
+            phase("tick-main-return")
         if sys.argv[1:4] == ["system", "daemon", "tick"] and STATE.exists():
             state = json.loads(STATE.read_text())
             if state.get("pid") == os.getpid():

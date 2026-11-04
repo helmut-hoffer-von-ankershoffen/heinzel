@@ -23,8 +23,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import parse_qs, unquote, urlsplit, urlunsplit
+
+if TYPE_CHECKING:
+    from heinzel.kernel._offline_uv import VerifiedUV
 
 import tomlkit
 from packaging.requirements import InvalidRequirement, Requirement
@@ -123,6 +126,16 @@ def _run(command: Sequence[str], environment: Mapping[str, str] | None = None) -
         )
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(command, 124, "", f"{command[0]} timed out after {COMMAND_TIMEOUT}s")
+
+
+def _run_exact(command: Sequence[str], environment: Mapping[str, str]) -> subprocess.CompletedProcess[str]:
+    """Run an offline removal with exactly its selected environment, never merging ambient resolver policy."""
+    try:
+        return subprocess.run(  # noqa: S603 - verified private executable and a fixed offline command
+            command, capture_output=True, text=True, check=False, timeout=COMMAND_TIMEOUT, env=dict(environment)
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(command, 124, "", "Offline removal timed out; inspect its local outcome.")
 
 
 def _core_requirement(source: str) -> str:  # noqa: C901 - validate several source forms before invoking uv
@@ -632,6 +645,7 @@ class Installation:
         self._progress = progress
         self.prefix = prefix or Path(sys.prefix)
         self._runner = runner
+        self._exact_runner: Runner = _run_exact
         self._uv = uv or shutil.which("uv")
         self._tool_scope: ContextVar[
             tuple[
@@ -887,6 +901,82 @@ class Installation:
                 raise HeinzelError(msg)
         except OSError as exc:
             raise HeinzelError(msg) from exc
+
+    def tool_destination(self) -> tuple[Path, Path]:
+        """Return the verified running tool's store and script directory, without querying uv.
+
+        Raises:
+            HeinzelError: If the running tool's receipt or physical authority cannot be verified.
+            OSError: If a target cannot be inspected.
+        """
+        from heinzel.kernel._tool_uninstall import physical_directory  # noqa: PLC0415 - removal-only validation
+
+        target = self._current_tool_target()
+        store, binary = Path(target["UV_TOOL_DIR"]), Path(target["UV_TOOL_BIN_DIR"])
+        for path in (self.prefix, store, binary):
+            physical_directory(path)
+        return store, binary
+
+    def tool_entrypoints(self) -> tuple[Path, ...]:
+        """Return only the currently verified receipt-owned script links.
+
+        Raises:
+            HeinzelError: If the installation or any named script cannot be verified.
+        """
+        target = self._current_tool_target()
+        links = self._owned_tool_links(target)
+        return tuple(Path(target["UV_TOOL_BIN_DIR"]) / name for name in links)
+
+    def uninstall_offline(self, *, expected: str, executable: "VerifiedUV") -> None:
+        """Remove only this continuity-verified tool through offline uv under the caller's quiescence fence.
+
+        No refused or uncertain removal triggers a network restore. The caller retains its durable mutation gate.
+
+        Raises:
+            HeinzelError: If continuity, target, uv or the observed removal cannot be verified.
+            OSError: If a selected path cannot be inspected.
+        """
+        from heinzel.kernel._tool_uninstall import physical_directory  # noqa: PLC0415 - removal only
+
+        with self.tool_transaction():
+            target = self._current_tool_target()
+            prefix = self.prefix
+            for path in (prefix, Path(target["UV_TOOL_DIR"]), Path(target["UV_TOOL_BIN_DIR"])):
+                physical_directory(path)
+            links = self._owned_tool_links(target)
+            executable.verify()
+            if not self.startup_state_matches() or self.startup_fingerprint() != expected:
+                msg = "The Heinzel installation changed; nothing was uninstalled. Inspect its local installation."
+                raise HeinzelError(msg)
+            executable.verify()
+            environment = {"PATH": "/usr/bin:/bin", "LANG": "C", "UV_NO_CACHE": "1", **target}
+            command = [
+                str(executable.path),
+                "--offline",
+                "--no-config",
+                "--no-python-downloads",
+                "tool",
+                "uninstall",
+                "heinzel",
+            ]
+            try:
+                result = self._exact_runner(command, environment)
+            except (OSError, subprocess.SubprocessError) as exc:
+                msg = "Offline removal did not finish. Heinzel services remain stopped; inspect the local uv tool."
+                raise HeinzelError(msg) from exc
+            if (
+                result.returncode
+                or os.path.lexists(prefix)
+                or any(os.path.lexists(Path(target["UV_TOOL_BIN_DIR"]) / name) for name in links)
+            ):
+                msg = (
+                    "Offline removal could not be verified. Heinzel services remain stopped; inspect the local uv tool."
+                )
+                raise HeinzelError(msg)
+            from heinzel.kernel._offline_uv import fsync_directory  # noqa: PLC0415 - durable removal result
+
+            fsync_directory(Path(target["UV_TOOL_DIR"]))
+            fsync_directory(Path(target["UV_TOOL_BIN_DIR"]))
 
     def tool_constraints(self) -> list[str]:
         """Read existing uv tool constraints as normalized requirements for a subsequent install.

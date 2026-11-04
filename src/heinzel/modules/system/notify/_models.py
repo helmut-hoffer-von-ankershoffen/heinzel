@@ -23,8 +23,8 @@ class NotifySettings(ModuleSettings):
     )
     heinzel: bool = Field(
         default=True,
-        title="Scheduled Heinzelmännchen check-ins",
-        description="Notify when a personal helper checks in.",
+        title="Heinzel notifications",
+        description="Notify when a personal Heinzel checks in.",
     )
     failed: bool = Field(
         default=True, title="Failed runs", description="Notify when a contract run on your daemon failed."
@@ -41,6 +41,12 @@ class NotifySettings(ModuleSettings):
         default=True,
         title="Plugin notices",
         description="Notify when an installed plugin reports something that needs attention.",
+    )
+    calendar: bool = Field(
+        default=False,
+        title="Calendar reminders",
+        description="Allow background calendar reads and reminders before meetings start and end; "
+        "set up the worker in Calendar.",
     )
     sound: bool = Field(
         default=False,
@@ -90,6 +96,7 @@ class NotifySettings(ModuleSettings):
             "doctor",
             "release",
             "plugin",
+            "calendar",
             "sound",
             "quiet",
             "working_hours",

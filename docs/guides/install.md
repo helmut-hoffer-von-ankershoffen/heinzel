@@ -136,3 +136,26 @@ without prompting or opening the app.
 When upgrading an existing installation, an old explicit foreground vector such as `hz ui --port 0 --no-browser` forwards to
 the same serving implementation with a deprecation hint. New scripts and applications use `hz ui serve`; bare
 `hz ui` remains group help and never starts a listener.
+
+## Uninstall offline
+
+For a verified standard installation, run `hz system uninstall`.
+It needs no network or running web UI. Your logged-in user service manager must be available: it stops only the installation's verified owned web, daemon and calendar-reminder jobs across all recorded profiles, then removes its uv tool
+and command scripts. Your data, configuration, agent skills, notifier and private recovery history stay.
+
+Core installs an exact pinned uv dependency. Removal authenticates its native bytes and stages a private copy before
+stopping any service; it never executes uv from PATH. A missing artifact, changed SDK, foreign service or
+unsupported installation refuses before unsafe removal. Unmarked SDK and desktop runtime installations use their
+own local installer. No purge or network bootstrap runs as part of this command.
+
+If removal is interrupted, follow the concrete offline recovery command printed by the failure. Its private script
+uses the already installed external Python and retained verified remover, so it remains usable after the command's
+SDK is gone. Keep its journal and integration files until recovery reports completion.
+
+
+Older owned web launchers remain inspectable after an upgrade. Run `hz ui status` to find the current port, then use
+`hz ui install --port 8738` with that value in place of 8738, or restart the ready owned service, to update its launcher
+before loading current code. An interrupted update prints the exact install or uninstall command to retry; retain its
+journal and recovery fences until that
+operation completes. Offline uninstall retains compatible fences for older shells through verified SDK removal and
+integration cleanup, and its copied recovery remains usable after the SDK is gone.
