@@ -4,6 +4,16 @@ import { openChatJourney, revealChat, runDaemonTurn } from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
+const revocations = [];
+const revocationPath = "/api/heinzel/revoke-connected-read";
+page.on("request", (request) => {
+  if (new URL(request.url()).pathname === revocationPath && request.method() === "POST")
+    revocations.push({ kind: "request" });
+});
+page.on("response", (response) => {
+  if (new URL(response.url()).pathname === revocationPath && response.request().method() === "POST")
+    revocations.push({ kind: "response", status: response.status() });
+});
 try {
   await page.goto(url.href);
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
@@ -75,6 +85,20 @@ try {
   await schedule.getByText(/approved; the daemon must be running/i).waitFor();
   const session = new URLSearchParams(page.url().split("?")[1]).get("chat");
   assert.ok(session);
+  let latePage;
+  if (process.argv[6] === "late-page") {
+    const ready = Promise.withResolvers();
+    const release = Promise.withResolvers();
+    const inserted = Promise.withResolvers();
+    await page.route("**/api/system/doctor", async (route) => {
+      const response = await route.fetch();
+      ready.resolve();
+      await release.promise;
+      await route.fulfill({ response });
+      inserted.resolve();
+    });
+    latePage = { ready: ready.promise, release: release.resolve, inserted: inserted.promise };
+  }
   await runDaemonTurn(page, process.argv[4], session);
   await watchDisclosure(page.getByText(/Tool activity for this reply/).nth(2), "daemon-activity");
   await page
@@ -88,8 +112,32 @@ try {
   await page.getByText("Approved read: first recorded result.").waitFor();
   assert.equal(await page.getByText("Approved read: first recorded result.").count(), 1);
   await page.getByText(/this is not event deduplication or complete history/i).waitFor();
-  await panel.getByRole("button", { name: "Revoke this grant" }).click();
+  const revoke = panel.getByRole("button", { name: "Revoke this grant" });
+  if (latePage) {
+    await latePage.ready;
+    await revoke.hover();
+    const priorHeight = await page.locator("#content").evaluate((node) => node.getBoundingClientRect().height);
+    // Deliver the real pending page report between the same physical press and release as a normal click.
+    await page.mouse.down();
+    latePage.release();
+    await latePage.inserted;
+    await page.waitForFunction(
+      (height) => document.getElementById("content").getBoundingClientRect().height > height,
+      priorHeight,
+    );
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.mouse.up();
+  } else await revoke.click();
   await panel.getByText(/Recorded state: revoked/).waitFor();
+  assert.deepEqual(revocations, [{ kind: "request" }, { kind: "response", status: 200 }]);
+  const saved = await page.evaluate(async (session) => {
+    const credential = sessionStorage.getItem("hz.token") ?? localStorage.getItem("hz.device");
+    const response = await fetch(`/api/heinzel/connected-read-state?${new URLSearchParams({ session_id: session })}`, {
+      headers: { Authorization: `Bearer ${credential}` },
+    });
+    return { status: response.status, grant: (await response.json()).status };
+  }, session);
+  assert.deepEqual(saved, { status: 200, grant: "revoked" });
   await page.reload();
   await revealChat(page);
   await watchDisclosure(schedule.getByText("Recurring agent turns", { exact: true }), "recurring-turns-after-reload");
@@ -135,7 +183,7 @@ try {
     .catch(() => null);
   await page.screenshot({ path: join(process.argv[4], `scheduled-${process.argv[3]}-failure.png`) }).catch(() => {});
   const disclosures = await disclosureDiagnostics(page);
-  const diagnostic = `${message}\n${visible}\nLayout: ${JSON.stringify(layout)}\nDisclosure trace: ${JSON.stringify(disclosures)}`;
+  const diagnostic = `${message}\n${visible}\nLayout: ${JSON.stringify(layout)}\nDisclosure trace: ${JSON.stringify(disclosures)}\nRevocation trace: ${JSON.stringify(revocations.slice(-12))}`;
   process.stderr.write(`${diagnostic.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
   process.exitCode = 1;
 } finally {

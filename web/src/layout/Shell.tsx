@@ -16,6 +16,7 @@ import { OPEN_TERMINAL } from "@/lib/terminal";
 import { useWidth } from "@/lib/useWidth";
 import { cn } from "@/lib/utils";
 import { useVisualViewport } from "@/lib/viewport";
+import { anchorWorkspace } from "@/lib/workspaceAnchor";
 import { useNoticeStream } from "@/notifications/useNoticeStream";
 import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { InstalledView, useViews, ViewSlot } from "@/plugins/Views";
@@ -122,6 +123,7 @@ function Layout() {
   }, [home, setChatOpen]);
   const area = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  const pageContent = useRef<HTMLDivElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const pageScroll = useRef<(() => void) | null>(null);
   const [scrollTarget, setScrollTarget] = useState<{ id: string } | null>(null);
@@ -226,6 +228,20 @@ function Layout() {
   }, [route, beside]);
   const full = terminalOpen && terminalFull && selectedPanel === "terminal";
   const flowingWorkspace = !beside && !full;
+  const workspaceShown =
+    chatOpen || terminalOpen || viewOpen || retainedViews.some((id) => panelViews.some((view) => view.id === id));
+  useLayoutEffect(() => {
+    if (
+      !flowingWorkspace ||
+      !workspaceShown ||
+      selectedPanel === "page" ||
+      !scroller.current ||
+      !pageContent.current ||
+      !workspace.current
+    )
+      return;
+    return anchorWorkspace(scroller.current, pageContent.current, workspace.current);
+  }, [flowingWorkspace, workspaceShown, selectedPanel]);
   // An explicit navigation to the view can repeat the same URL, and should still bring it into view.
   const previousLocation = useRef(location);
   const ownNavigation = useRef<{ path: string; search: string } | null>(null);
@@ -425,6 +441,7 @@ function Layout() {
           )}
         >
           <div
+            ref={pageContent}
             inert={full}
             aria-hidden={full || undefined}
             className={cn("flex min-w-0 flex-col", flowingWorkspace ? "min-h-full shrink-0" : "min-h-0 flex-1")}
@@ -444,10 +461,7 @@ function Layout() {
             </main>
             <div ref={besideFooter} hidden={!beside} className="shrink-0" />
           </div>
-          {(chatOpen ||
-            terminalOpen ||
-            viewOpen ||
-            retainedViews.some((id) => panelViews.some((view) => view.id === id))) && (
+          {workspaceShown && (
             // One selected workspace panel; the same mounted contents move between desktop and phone layouts.
             <div
               ref={workspace}

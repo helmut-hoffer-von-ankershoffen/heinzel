@@ -23,6 +23,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from tests.e2e._mobile_server_output import MobileServerOutput, check_driver, redact, sanitize_timeout
+from tests.e2e._reopen_server import receipt_tail
 
 pytestmark = pytest.mark.e2e
 
@@ -244,8 +245,11 @@ def _free_port() -> int:
 
 
 def _start_ui(env: dict[str, str], port: int) -> tuple[subprocess.Popen[str], str]:
+    command = [sys.executable, "-m", "heinzel"]
+    if env.get("HZ_REOPEN_RECEIPTS"):
+        command = [sys.executable, str(REPO / "tests/e2e/_reopen_server.py")]
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", str(port), "--no-browser"],
+        [*command, "ui", "--port", str(port), "--no-browser"],
         cwd=REPO,
         env=env,
         stderr=subprocess.PIPE,
@@ -302,6 +306,9 @@ def _stop_ui(ui: subprocess.Popen[str]) -> None:
 def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(environment, tmp_path, engine, mode):
     """Pair once with the printed link; Ctrl-C and a new `hz ui` with a new session token keep it signed in."""
     env, _ = environment
+    receipts = tmp_path / "navigation-receipts.jsonl"
+    if os.environ.get("HZ_REOPEN_DIAGNOSTICS") == "1":
+        env |= {"HZ_REOPEN_RECEIPTS": str(receipts)}
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(
@@ -311,6 +318,7 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
     port = _free_port()
 
     def drive(step: str, url: str) -> dict[str, object]:
+        receipt_offset = receipts.stat().st_size if receipts.exists() else 0
         driven = subprocess.run(
             [*run, "exec", "node", "e2e/device-reopen.mjs", engine, str(profile), step, url, mode],
             cwd=REPO,
@@ -319,7 +327,10 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
             check=False,
             timeout=120,
         )
-        assert driven.returncode == 0, driven.stderr + driven.stdout
+        progress = ""
+        if driven.returncode and receipts.exists():
+            progress = "\nServer GET / progress:\n" + receipt_tail(receipts, receipt_offset)
+        assert driven.returncode == 0, driven.stderr + driven.stdout + progress
         return json.loads(driven.stdout.strip().splitlines()[-1])
 
     ui, link = _start_ui(env, port)

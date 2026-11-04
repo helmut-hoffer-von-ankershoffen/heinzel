@@ -27,7 +27,7 @@ from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificati
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import BackendBinding, RequestId, SessionId, SessionMessage
 from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
-from heinzel.modules.heinzel._turn_activity import ToolActivity, interactive_turn_id
+from heinzel.modules.heinzel._turn_activity import ToolActivity, TurnActivityProjection, interactive_turn_id
 
 if TYPE_CHECKING:
     from heinzel.modules.heinzel._claude_subscription_model import SubscriptionAdmission
@@ -426,6 +426,6 @@ class UserChatService:
 
     def activity(self, session: str, limit: int = 30) -> UserToolActivity:
         """Return only owner-bound host-observed tool activity."""
-        from heinzel.modules.heinzel._interactive_turn import InteractiveTurn  # noqa: PLC0415 - load the turn projector only when requested
-
-        return UserToolActivity(session_id=session, items=InteractiveTurn(self._crud).activity(session, limit=limit))
+        return UserToolActivity(
+            session_id=session, items=TurnActivityProjection(self._crud).activity(session, limit=limit)
+        )
