@@ -2136,6 +2136,7 @@
                 "type": "null"
               }
             ],
+            "description": "The exact linked owner actor, when approval replies are supported.",
             "title": "Actor"
           },
           "approval": {
@@ -2146,19 +2147,23 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "The exact bounded human approval request, when applicable."
           },
           "binding_id": {
+            "description": "Digest identifying the captured transport source.",
             "pattern": "^[0-9a-f]{64}$",
             "title": "Binding Id",
             "type": "string"
           },
           "channel": {
+            "description": "The selected registered channel name.",
             "pattern": "^[a-z][a-z0-9-]{0,63}$",
             "title": "Channel",
             "type": "string"
           },
           "kind": {
+            "description": "Whether this proposal posts a notice or requests approval.",
             "enum": [
               "notice",
               "approval"
@@ -2174,24 +2179,29 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "The complete proposed notice, when applicable."
           },
           "owner": {
+            "description": "The authenticated installation owner's private identity.",
             "title": "Owner",
             "type": "string"
           },
           "request_id": {
+            "description": "Stable identity for this exact request; reuse only for an unchanged retry.",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
             "title": "Request Id",
             "type": "string"
           },
           "session_id": {
+            "description": "The owning durable personal chat identity.",
             "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
             "title": "Session Id",
             "type": "string"
           },
           "target": {
-            "$ref": "#/components/schemas/ChannelTarget"
+            "$ref": "#/components/schemas/ChannelTarget",
+            "description": "The exact observed provider account, resource, revision and scope."
           },
           "write_request": {
             "anyOf": [
@@ -2203,6 +2213,7 @@
                 "type": "null"
               }
             ],
+            "description": "The linked captured-write request, when applicable.",
             "title": "Write Request"
           },
           "write_review": {
@@ -2217,6 +2228,7 @@
                 "type": "null"
               }
             ],
+            "description": "The complete exact captured-write review, when applicable.",
             "title": "Write Review"
           }
         },
@@ -2312,18 +2324,21 @@
         "description": "Exact signed-in posting destination and scope; observed by the host, never selected by model text.",
         "properties": {
           "account": {
+            "description": "The exact signed-in provider account identity.",
             "maxLength": 256,
             "minLength": 1,
             "title": "Account",
             "type": "string"
           },
           "destination": {
+            "description": "The exact immutable posting destination.",
             "maxLength": 256,
             "minLength": 1,
             "title": "Destination",
             "type": "string"
           },
           "scope": {
+            "description": "The exact selected posting authority scope.",
             "maxLength": 256,
             "minLength": 1,
             "title": "Scope",
@@ -5099,6 +5114,444 @@
           "warnings"
         ],
         "title": "Documentation",
+        "type": "object"
+      },
+      "DraftAppendTarget": {
+        "additionalProperties": false,
+        "description": "An observed document and stable section; observing it creates neither resource nor permission.",
+        "properties": {
+          "account": {
+            "description": "The exact signed-in provider account identity.",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Account",
+            "type": "string"
+          },
+          "conditional_append": {
+            "const": true,
+            "description": "Whether the provider enforces the exact append revision precondition.",
+            "title": "Conditional Append",
+            "type": "boolean"
+          },
+          "reference": {
+            "description": "The exact owner-selected resource reference.",
+            "maxLength": 2048,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Reference",
+            "type": "string"
+          },
+          "resource_id": {
+            "description": "The stable provider document identity.",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The exact observed provider revision.",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Revision",
+            "type": "string"
+          },
+          "section": {
+            "description": "The fixed logical section for marked draft appends.",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Section",
+            "type": "string"
+          },
+          "source": {
+            "description": "The stable observed provider source identity.",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Source",
+            "type": "string"
+          },
+          "write_scope": {
+            "description": "The exact observed bounded append scope.",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Write Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "source",
+          "reference",
+          "resource_id",
+          "section",
+          "revision",
+          "write_scope",
+          "conditional_append"
+        ],
+        "title": "DraftAppendTarget",
+        "type": "object"
+      },
+      "DraftPublicationRequest": {
+        "additionalProperties": false,
+        "description": "Owner-supplied references and bounds; neither this object nor its prompt grants authority.",
+        "properties": {
+          "cadence_seconds": {
+            "const": 300,
+            "default": 300,
+            "description": "The published five-minute polling interval in seconds.",
+            "title": "Cadence Seconds",
+            "type": "integer"
+          },
+          "document_reference": {
+            "description": "The exact owner-supplied existing rolling-document HTTPS reference.",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Document Reference",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional owner-selected expiry; null adds no finite expiry.",
+            "title": "Expires At"
+          },
+          "feed_reference": {
+            "description": "The exact owner-supplied HTTPS changelog reference.",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Feed Reference",
+            "type": "string"
+          },
+          "max_draft_bytes": {
+            "default": 8000,
+            "description": "Maximum UTF-8 bytes in the complete marked draft.",
+            "maximum": 32768.0,
+            "minimum": 256.0,
+            "title": "Max Draft Bytes",
+            "type": "integer"
+          },
+          "max_drafts_per_day": {
+            "anyOf": [
+              {
+                "maximum": 288.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional owner-selected daily draft cap; null adds no extra daily cap.",
+            "title": "Max Drafts Per Day"
+          },
+          "max_requests": {
+            "default": 4,
+            "description": "Maximum model requests for each release poem.",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Max Requests",
+            "type": "integer"
+          },
+          "name": {
+            "description": "The Heinzel's display name.",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "notice_channel": {
+            "description": "The selected private owner review-notice channel.",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Notice Channel",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "The exact owner prompt retained as the Heinzel's first chat message.",
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "publication_channel": {
+            "description": "The selected channel for separately human-approved document links.",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Publication Channel",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Stable identity for this exact request; reuse only for an unchanged retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "section": {
+            "description": "The fixed logical section for marked draft appends.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Section",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "default": 60,
+            "description": "Maximum time in seconds for each model turn.",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "name",
+          "prompt",
+          "feed_reference",
+          "document_reference",
+          "section",
+          "publication_channel",
+          "notice_channel"
+        ],
+        "title": "DraftPublicationRequest",
+        "type": "object"
+      },
+      "DraftPublicationTerms": {
+        "additionalProperties": false,
+        "description": "Exactly what trusted owner publication can authorize; it contains no model-selected destination.",
+        "properties": {
+          "append_binding": {
+            "description": "Digest of the captured conditional append implementation and source.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Append Binding",
+            "type": "string"
+          },
+          "channel_binding": {
+            "description": "Digest of the captured publication channel source.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Channel Binding",
+            "type": "string"
+          },
+          "channel_target": {
+            "$ref": "#/components/schemas/ChannelTarget",
+            "description": "The exact publication account, destination and scope."
+          },
+          "document": {
+            "$ref": "#/components/schemas/DraftAppendTarget",
+            "description": "The exact existing document account, reference and stable section."
+          },
+          "eligibility": {
+            "const": "new-provider-identities-after-explicit-baseline",
+            "default": "new-provider-identities-after-explicit-baseline",
+            "description": "Only new provider identities after the explicit initial baseline are eligible.",
+            "title": "Eligibility",
+            "type": "string"
+          },
+          "feed_baseline": {
+            "$ref": "#/components/schemas/ReleaseFeedBaseline",
+            "description": "The explicit initial release frontier and observed feed identity."
+          },
+          "feed_binding": {
+            "description": "Digest of the captured release-feed implementation and source.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Feed Binding",
+            "type": "string"
+          },
+          "generation": {
+            "description": "The monotonic publication generation.",
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "model_binding": {
+            "description": "Digest of the selected model configuration and executable.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Model Binding",
+            "type": "string"
+          },
+          "notice_binding": {
+            "description": "Digest of the captured private notice implementation.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Notice Binding",
+            "type": "string"
+          },
+          "notice_target": {
+            "$ref": "#/components/schemas/OwnerNoticeTarget",
+            "description": "The exact private owner notification destination."
+          },
+          "operation": {
+            "const": "append-marked-draft",
+            "default": "append-marked-draft",
+            "description": "The sole authorized bounded draft effect.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "owner": {
+            "description": "The authenticated installation owner's private identity.",
+            "pattern": "^u-[0-9a-f]{32}$",
+            "title": "Owner",
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/DraftPublicationRequest",
+            "description": "The complete owner-supplied references and published bounds."
+          },
+          "session_id": {
+            "description": "The owning durable personal chat identity.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "session_id",
+          "request",
+          "generation",
+          "feed_binding",
+          "feed_baseline",
+          "append_binding",
+          "document",
+          "channel_binding",
+          "channel_target",
+          "notice_binding",
+          "notice_target",
+          "model_binding"
+        ],
+        "title": "DraftPublicationTerms",
+        "type": "object"
+      },
+      "DraftSectionSnapshot": {
+        "additionalProperties": false,
+        "description": "The bounded edited draft at an observed revision; editing is never share consent.",
+        "properties": {
+          "draft_key": {
+            "description": "The stable host-derived draft identity.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Draft Key",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/DraftAppendTarget",
+            "description": "The exact observed provider account, resource, revision and scope."
+          },
+          "text": {
+            "description": "Complete bounded literal UTF-8 content; data, never instructions.",
+            "format": "password",
+            "title": "Text",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "draft_key",
+          "target",
+          "text"
+        ],
+        "title": "DraftSectionSnapshot",
+        "type": "object"
+      },
+      "DraftShareReview": {
+        "additionalProperties": false,
+        "description": "The edited historical snapshot and exact mutable-document link the human is asked to share.",
+        "properties": {
+          "channel": {
+            "description": "The selected registered channel name.",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Channel",
+            "type": "string"
+          },
+          "channel_binding": {
+            "description": "Digest of the captured publication channel source.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Channel Binding",
+            "type": "string"
+          },
+          "channel_target": {
+            "$ref": "#/components/schemas/ChannelTarget",
+            "description": "The exact publication account, destination and scope."
+          },
+          "content_sha256": {
+            "description": "Digest of the complete edited draft text.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "draft_key": {
+            "description": "The stable host-derived draft identity.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Draft Key",
+            "type": "string"
+          },
+          "generation": {
+            "description": "The monotonic publication generation.",
+            "minimum": 1.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "grant_sha256": {
+            "description": "Digest of the exact published standing grant.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Grant Sha256",
+            "type": "string"
+          },
+          "link_text": {
+            "description": "The complete exact document-link message to review.",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Link Text",
+            "type": "string"
+          },
+          "owner": {
+            "description": "The authenticated installation owner's private identity.",
+            "pattern": "^u-[0-9a-f]{32}$",
+            "title": "Owner",
+            "type": "string"
+          },
+          "publication_request": {
+            "description": "Identity of the standing publication covering this draft.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Publication Request",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The owning durable personal chat identity.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/DraftSectionSnapshot",
+            "description": "The complete human-edited section and exact observed revision."
+          }
+        },
+        "required": [
+          "owner",
+          "session_id",
+          "publication_request",
+          "generation",
+          "grant_sha256",
+          "draft_key",
+          "snapshot",
+          "content_sha256",
+          "channel",
+          "channel_binding",
+          "channel_target",
+          "link_text"
+        ],
+        "title": "DraftShareReview",
         "type": "object"
       },
       "Edge": {
@@ -9219,6 +9672,56 @@
         "title": "OperationDoc",
         "type": "object"
       },
+      "OwnerNoticeTarget": {
+        "additionalProperties": false,
+        "description": "A provider-attested private destination for its linked owner, still requiring initial host consent.",
+        "properties": {
+          "account": {
+            "description": "The exact signed-in provider account identity.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Account",
+            "type": "string"
+          },
+          "destination": {
+            "description": "The exact immutable posting destination.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Destination",
+            "type": "string"
+          },
+          "owner_actor": {
+            "description": "The transport-attested identity of the linked owner.",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Owner Actor",
+            "type": "string"
+          },
+          "private_owner": {
+            "const": true,
+            "description": "Whether this destination is private to the linked owner.",
+            "title": "Private Owner",
+            "type": "boolean"
+          },
+          "scope": {
+            "description": "The exact selected posting authority scope.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "destination",
+          "scope",
+          "owner_actor",
+          "private_owner"
+        ],
+        "title": "OwnerNoticeTarget",
+        "type": "object"
+      },
       "ParameterDoc": {
         "description": "One public parameter of an operation.",
         "properties": {
@@ -11339,6 +11842,75 @@
           "warnings"
         ],
         "title": "ReleaseCheck",
+        "type": "object"
+      },
+      "ReleaseFeedBaseline": {
+        "additionalProperties": false,
+        "description": "An explicit provider frontier: subsequent polls include releases after this baseline.",
+        "properties": {
+          "cursor": {
+            "description": "The exact provider continuation frontier.",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Cursor",
+            "type": "string"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/ReleaseFeedIdentity",
+            "description": "The source-bound release-feed identity."
+          }
+        },
+        "required": [
+          "identity",
+          "cursor"
+        ],
+        "title": "ReleaseFeedBaseline",
+        "type": "object"
+      },
+      "ReleaseFeedIdentity": {
+        "additionalProperties": false,
+        "description": "The exact observed signed-in source, not a permission to poll it.",
+        "properties": {
+          "account": {
+            "description": "The exact signed-in provider account identity.",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Account",
+            "type": "string"
+          },
+          "read_scope": {
+            "description": "The exact observed read scope.",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Read Scope",
+            "type": "string"
+          },
+          "reference": {
+            "description": "The exact owner-selected resource reference.",
+            "maxLength": 2048,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Reference",
+            "type": "string"
+          },
+          "source": {
+            "description": "The stable observed provider source identity.",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "source",
+          "reference",
+          "read_scope"
+        ],
+        "title": "ReleaseFeedIdentity",
         "type": "object"
       },
       "ReleaseNotes": {
@@ -18922,6 +19494,44 @@
         "title": "heinzel_propose_skill_sharing_Input",
         "type": "object"
       },
+      "heinzel_publish_draft_workflow_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "description": "Private proof supplied only by the trusted in-process confirmation boundary.",
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Stable identity for this exact unchanged request.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The complete exact terms displayed at human review.",
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "The owning durable personal chat identity.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_publish_draft_workflow_Input",
+        "type": "object"
+      },
       "heinzel_queue_agent_notification_Input": {
         "additionalProperties": false,
         "properties": {
@@ -18987,6 +19597,29 @@
         "title": "heinzel_resolve_scheduled_notification_Input",
         "type": "object"
       },
+      "heinzel_review_release_draft_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "draft_key": {
+            "description": "The stable host-derived release draft key.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Draft Key",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The owning durable personal chat identity.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "draft_key"
+        ],
+        "title": "heinzel_review_release_draft_Input",
+        "type": "object"
+      },
       "heinzel_revoke_connected_read_Input": {
         "additionalProperties": false,
         "properties": {
@@ -19031,6 +19664,29 @@
           "request_id"
         ],
         "title": "heinzel_revoke_connected_read_set_Input",
+        "type": "object"
+      },
+      "heinzel_revoke_release_workflow_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "Stable identity for this exact unchanged request.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The owning durable personal chat identity.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_revoke_release_workflow_Input",
         "type": "object"
       },
       "heinzel_schedule_control_Input": {
@@ -19131,6 +19787,76 @@
           "request"
         ],
         "title": "heinzel_search_conversation_Input",
+        "type": "object"
+      },
+      "heinzel_share_draft_link_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "description": "Private proof supplied only by the trusted in-process confirmation boundary.",
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Stable identity for this exact unchanged request.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The complete exact terms displayed at human review.",
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "The owning durable personal chat identity.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_share_draft_link_Input",
+        "type": "object"
+      },
+      "heinzel_start_helper_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Your helper's display name.",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "The exact first chat message; grants no connected access or schedule.",
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "name",
+          "prompt"
+        ],
+        "title": "heinzel_start_helper_Input",
         "type": "object"
       },
       "system_state_push_Input": {
@@ -22319,6 +23045,48 @@
         ]
       }
     },
+    "/heinzel/publish-draft-workflow": {
+      "post": {
+        "description": "Publish only the exact standing draft grant approved through the trusted human boundary.",
+        "operationId": "heinzel_publish_draft_workflow",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_publish_draft_workflow_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftPublicationTerms"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish only the exact standing draft grant approved through the trusted human boundary.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/queue-agent-notification": {
       "post": {
         "description": "Queue the exact owner-confirmed notice; recorded means queued, never shown.",
@@ -22366,6 +23134,53 @@
         ]
       }
     },
+    "/heinzel/release-workflow": {
+      "get": {
+        "description": "Read the published workflow and durable release dispositions from this same chat.",
+        "operationId": "heinzel_release_workflow",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/JsonValue"
+                  },
+                  "title": "Response Heinzel Release Workflow",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read the published workflow and durable release dispositions from this same chat.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/resolve-scheduled-notification": {
       "post": {
         "description": "Inspect the receipt or set aside uncertainty; never resend or undo a notice.",
@@ -22403,6 +23218,48 @@
           }
         },
         "summary": "Inspect the receipt or set aside uncertainty; never resend or undo a notice.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/review-release-draft": {
+      "post": {
+        "description": "Capture the human-edited marked section and revision for exact share review; send nothing.",
+        "operationId": "heinzel_review_release_draft",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_review_release_draft_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftShareReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Capture the human-edited marked section and revision for exact share review; send nothing.",
         "tags": [
           "heinzel"
         ]
@@ -22489,6 +23346,49 @@
           }
         },
         "summary": "Revoke the complete exact set before any later reads.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/revoke-release-workflow": {
+      "post": {
+        "description": "Revoke future recurring draft and notice effects under the shared document fence.",
+        "operationId": "heinzel_revoke_release_workflow",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_revoke_release_workflow_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Revoke Release Workflow",
+                  "type": "boolean"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke future recurring draft and notice effects under the shared document fence.",
         "tags": [
           "heinzel"
         ]
@@ -22834,6 +23734,49 @@
         ]
       }
     },
+    "/heinzel/share-draft-link": {
+      "post": {
+        "description": "Deliver one document link for the exact edited revision approved by its owner.",
+        "operationId": "heinzel_share_draft_link",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_share_draft_link_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Share Draft Link",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deliver one document link for the exact edited revision approved by its owner.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/show": {
       "get": {
         "description": "Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.",
@@ -23112,6 +24055,48 @@
           }
         },
         "summary": "Discover owner-private pending sharing request references.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/start-helper": {
+      "post": {
+        "description": "Create a helper, retain its first prompt and answer it once through the selected chat backend.\n\nRaises:\n    HeinzelError: If the feature is off, request changed or selected model access is unavailable.",
+        "operationId": "heinzel_start_helper",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_start_helper_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserChatAnswer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create a helper, retain its first prompt and answer it once through the selected chat backend.",
         "tags": [
           "heinzel"
         ]

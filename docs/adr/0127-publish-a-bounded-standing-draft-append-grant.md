@@ -1,7 +1,7 @@
 ---
 status: proposed
 date: 2026-11-04
-implementation: planned
+implementation: partial
 related: 0049, 0099, 0115, 0120, 0121
 ---
 
@@ -54,8 +54,10 @@ specific recurring effect while every later share still needs an exact human dec
   Unknown transport outcomes never trigger an automatic repost.
 - Append, review-notice, human decision, share, confirmation-notice and uncertain dispositions remain visible in
   the helper's authoritative chat. Revocation, uncertain attempts and exact provider receipts survive restart.
-- The complete workflow stays off by default. Core uses declared generic ports and gains no dependency on concrete
-  plugins or providers. SDK and adapter publication, real provider acceptance and activation remain separate gates.
+- Explicit owner publication activates this registered CLI/daemon workflow; no preview flag substitutes for that
+  consent. Other incomplete connected-history and arbitrary-write capabilities retain their existing flags. Core
+  uses declared generic ports and gains no dependency on concrete plugins or providers. SDK and adapter publication,
+  real provider acceptance and activation remain separate gates.
 
 ### Consequences
 
@@ -64,6 +66,6 @@ specific recurring effect while every later share still needs an exact human dec
 
 ### Confirmation
 
-Review only until the runtime and its tests exist. Required acceptance includes the real installed CLI and daemon
-with isolated provider doubles, restart and lost-acknowledgement cases, edited-revision review, revocation and exact
-destination controls; real human/provider acceptance remains separate from those source fixtures.
+The registered runtime tests exercise the installed CLI and daemon with isolated provider doubles, restart and
+lost-acknowledgement cases, edited-revision review, revocation and exact destination controls. Real human/provider
+acceptance and independent security review remain separate from those source fixtures.

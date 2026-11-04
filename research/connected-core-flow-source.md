@@ -29,13 +29,17 @@ and actual delivery acceptance. Exact per-item offline confirmation does not est
 
 The original web history/search interface, captured-write activity views, new-file provider acceptance, tracker
 capability extensions and full connected helper onboarding remain outstanding. No concrete provider implementation
-or credential scopes were added. Standing rolling-document append authority is a separate strongest-reviewed
-design, not implemented by this continuation. This is source preparation, not full PR #325 or that journey's delivery.
+or credential scopes were added. The bounded release-draft journey now has a separate registered owner CLI
+publication, five-minute daemon job,
+local review notice and exact edited-revision link approval. Arbitrary captured writes retain their separate approval
+path. These source changes do not establish full PR #325 or real provider delivery.
 
 ## Validation boundary
 
-Offline fixtures only; this remains default-off source preparation. No real provider, sign-in, live installation,
-public push, PR, merge or release. Focused test results and independent security review belong to the eventual PR body;
+Isolated fixtures only: the release-draft slice is registered without preview flags and has been exercised through an
+installed CLI and actual daemon tick with source-declared provider doubles. The other incomplete connected-history
+and arbitrary-write paths retain their flags. No real provider account, sign-in, live Mini/Air change, public push,
+PR, merge or release was performed. Focused test results and independent security review belong to the eventual PR body;
 ordinary gate access yields to current CI and startup repair.
 
 ## Channel consumer regression evidence
@@ -51,3 +55,14 @@ Full source mypy and Pyright passed; generated command/API references and web sc
 application/browser suite, hosted CI, publication/installation of this new SDK, independent security review and real
 provider/human delivery acceptance were not run for this continuation. Original UI, tracker and Turing obligations
 above remain open. This evidence is source preparation, never a claim of accepted release or live delivery.
+
+## Registered release-draft source scenario
+
+`tests/e2e/draft_workflow_test.py` installs the candidate wheel and a source-declared provider double into a private
+uv tool profile. A genuine terminal publishes one natural-language prompt as Turing's first message. The supported
+`hz system daemon tick` finds the registered five-minute job, appends one marked draft and queues an ordinary local
+owner notice, with no link share before approval. A human-style document edit adds a dot. A further edit during the
+trusted CLI preview invalidates consent; a fresh exact review retains that edited section and revision in the receipt.
+New daemon and approval processes do not duplicate the append or share. Separate installed cases lose the append and
+share acknowledgements and prove that later processes refuse replay. These are isolated provider doubles, not real
+Google Docs, GitHub or Slack acceptance. No live service or owner installation is changed.

@@ -1334,6 +1334,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/publish-draft-workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish only the exact standing draft grant approved through the trusted human boundary.
+         * @description Publish only the exact standing draft grant approved through the trusted human boundary.
+         */
+        post: operations["heinzel_publish_draft_workflow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/queue-agent-notification": {
         parameters: {
             query?: never;
@@ -1354,6 +1374,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/release-workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the published workflow and durable release dispositions from this same chat.
+         * @description Read the published workflow and durable release dispositions from this same chat.
+         */
+        get: operations["heinzel_release_workflow"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/resolve-scheduled-notification": {
         parameters: {
             query?: never;
@@ -1368,6 +1408,26 @@ export interface paths {
          * @description Inspect the receipt or set aside uncertainty; never resend or undo a notice.
          */
         post: operations["heinzel_resolve_scheduled_notification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/review-release-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Capture the human-edited marked section and revision for exact share review; send nothing.
+         * @description Capture the human-edited marked section and revision for exact share review; send nothing.
+         */
+        post: operations["heinzel_review_release_draft"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1408,6 +1468,26 @@ export interface paths {
          * @description Revoke the complete exact set before any later reads.
          */
         post: operations["heinzel_revoke_connected_read_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/revoke-release-workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke future recurring draft and notice effects under the shared document fence.
+         * @description Revoke future recurring draft and notice effects under the shared document fence.
+         */
+        post: operations["heinzel_revoke_release_workflow"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1557,6 +1637,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/share-draft-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deliver one document link for the exact edited revision approved by its owner.
+         * @description Deliver one document link for the exact edited revision approved by its owner.
+         */
+        post: operations["heinzel_share_draft_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/show": {
         parameters: {
             query?: never;
@@ -1651,6 +1751,29 @@ export interface paths {
         get: operations["heinzel_skill_sharing_proposals"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/start-helper": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a helper, retain its first prompt and answer it once through the selected chat backend.
+         * @description Create a helper, retain its first prompt and answer it once through the selected chat backend.
+         *
+         *     Raises:
+         *         HeinzelError: If the feature is off, request changed or selected model access is unavailable.
+         */
+        post: operations["heinzel_start_helper"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4839,29 +4962,57 @@ export interface components {
          * @description An inert exact per-item transport proposal, including the full preview and linked owner.
          */
         ChannelDeliveryTerms: {
-            /** Actor */
+            /**
+             * Actor
+             * @description The exact linked owner actor, when approval replies are supported.
+             */
             actor?: string | null;
+            /** @description The exact bounded human approval request, when applicable. */
             approval?: components["schemas"]["ChannelApprovalRequest"] | null;
-            /** Binding Id */
+            /**
+             * Binding Id
+             * @description Digest identifying the captured transport source.
+             */
             binding_id: string;
-            /** Channel */
+            /**
+             * Channel
+             * @description The selected registered channel name.
+             */
             channel: string;
             /**
              * Kind
+             * @description Whether this proposal posts a notice or requests approval.
              * @enum {string}
              */
             kind: "notice" | "approval";
+            /** @description The complete proposed notice, when applicable. */
             notice?: components["schemas"]["ChannelNotice"] | null;
-            /** Owner */
+            /**
+             * Owner
+             * @description The authenticated installation owner's private identity.
+             */
             owner: string;
-            /** Request Id */
+            /**
+             * Request Id
+             * @description Stable identity for this exact request; reuse only for an unchanged retry.
+             */
             request_id: string;
-            /** Session Id */
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
+             */
             session_id: string;
+            /** @description The exact observed provider account, resource, revision and scope. */
             target: components["schemas"]["ChannelTarget"];
-            /** Write Request */
+            /**
+             * Write Request
+             * @description The linked captured-write request, when applicable.
+             */
             write_request?: string | null;
-            /** Write Review */
+            /**
+             * Write Review
+             * @description The complete exact captured-write review, when applicable.
+             */
             write_review?: {
                 [key: string]: components["schemas"]["JsonValue"];
             } | null;
@@ -4923,11 +5074,20 @@ export interface components {
          * @description Exact signed-in posting destination and scope; observed by the host, never selected by model text.
          */
         ChannelTarget: {
-            /** Account */
+            /**
+             * Account
+             * @description The exact signed-in provider account identity.
+             */
             account: string;
-            /** Destination */
+            /**
+             * Destination
+             * @description The exact immutable posting destination.
+             */
             destination: string;
-            /** Scope */
+            /**
+             * Scope
+             * @description The exact selected posting authority scope.
+             */
             scope: string;
         };
         /**
@@ -6519,6 +6679,283 @@ export interface components {
              * @description What couldn't be documented, e.g. a plugin that failed to load.
              */
             warnings: string[];
+        };
+        /**
+         * DraftAppendTarget
+         * @description An observed document and stable section; observing it creates neither resource nor permission.
+         */
+        DraftAppendTarget: {
+            /**
+             * Account
+             * @description The exact signed-in provider account identity.
+             */
+            account: string;
+            /**
+             * Conditional Append
+             * @description Whether the provider enforces the exact append revision precondition.
+             * @constant
+             */
+            conditional_append: true;
+            /**
+             * Reference
+             * @description The exact owner-selected resource reference.
+             */
+            reference: string;
+            /**
+             * Resource Id
+             * @description The stable provider document identity.
+             */
+            resource_id: string;
+            /**
+             * Revision
+             * @description The exact observed provider revision.
+             */
+            revision: string;
+            /**
+             * Section
+             * @description The fixed logical section for marked draft appends.
+             */
+            section: string;
+            /**
+             * Source
+             * @description The stable observed provider source identity.
+             */
+            source: string;
+            /**
+             * Write Scope
+             * @description The exact observed bounded append scope.
+             */
+            write_scope: string;
+        };
+        /**
+         * DraftPublicationRequest
+         * @description Owner-supplied references and bounds; neither this object nor its prompt grants authority.
+         */
+        DraftPublicationRequest: {
+            /**
+             * Cadence Seconds
+             * @description The published five-minute polling interval in seconds.
+             * @default 300
+             * @constant
+             */
+            cadence_seconds: 300;
+            /**
+             * Document Reference
+             * @description The exact owner-supplied existing rolling-document HTTPS reference.
+             */
+            document_reference: string;
+            /**
+             * Expires At
+             * @description Optional owner-selected expiry; null adds no finite expiry.
+             */
+            expires_at?: string | null;
+            /**
+             * Feed Reference
+             * @description The exact owner-supplied HTTPS changelog reference.
+             */
+            feed_reference: string;
+            /**
+             * Max Draft Bytes
+             * @description Maximum UTF-8 bytes in the complete marked draft.
+             * @default 8000
+             */
+            max_draft_bytes: number;
+            /**
+             * Max Drafts Per Day
+             * @description Optional owner-selected daily draft cap; null adds no extra daily cap.
+             */
+            max_drafts_per_day?: number | null;
+            /**
+             * Max Requests
+             * @description Maximum model requests for each release poem.
+             * @default 4
+             */
+            max_requests: number;
+            /**
+             * Name
+             * @description The Heinzel's display name.
+             */
+            name: string;
+            /**
+             * Notice Channel
+             * @description The selected private owner review-notice channel.
+             */
+            notice_channel: string;
+            /**
+             * Prompt
+             * @description The exact owner prompt retained as the Heinzel's first chat message.
+             */
+            prompt: string;
+            /**
+             * Publication Channel
+             * @description The selected channel for separately human-approved document links.
+             */
+            publication_channel: string;
+            /**
+             * Request Id
+             * @description Stable identity for this exact request; reuse only for an unchanged retry.
+             */
+            request_id: string;
+            /**
+             * Section
+             * @description The fixed logical section for marked draft appends.
+             */
+            section: string;
+            /**
+             * Timeout Seconds
+             * @description Maximum time in seconds for each model turn.
+             * @default 60
+             */
+            timeout_seconds: number;
+        };
+        /**
+         * DraftPublicationTerms
+         * @description Exactly what trusted owner publication can authorize; it contains no model-selected destination.
+         */
+        DraftPublicationTerms: {
+            /**
+             * Append Binding
+             * @description Digest of the captured conditional append implementation and source.
+             */
+            append_binding: string;
+            /**
+             * Channel Binding
+             * @description Digest of the captured publication channel source.
+             */
+            channel_binding: string;
+            /** @description The exact publication account, destination and scope. */
+            channel_target: components["schemas"]["ChannelTarget"];
+            /** @description The exact existing document account, reference and stable section. */
+            document: components["schemas"]["DraftAppendTarget"];
+            /**
+             * Eligibility
+             * @description Only new provider identities after the explicit initial baseline are eligible.
+             * @default new-provider-identities-after-explicit-baseline
+             * @constant
+             */
+            eligibility: "new-provider-identities-after-explicit-baseline";
+            /** @description The explicit initial release frontier and observed feed identity. */
+            feed_baseline: components["schemas"]["ReleaseFeedBaseline"];
+            /**
+             * Feed Binding
+             * @description Digest of the captured release-feed implementation and source.
+             */
+            feed_binding: string;
+            /**
+             * Generation
+             * @description The monotonic publication generation.
+             */
+            generation: number;
+            /**
+             * Model Binding
+             * @description Digest of the selected model configuration and executable.
+             */
+            model_binding: string;
+            /**
+             * Notice Binding
+             * @description Digest of the captured private notice implementation.
+             */
+            notice_binding: string;
+            /** @description The exact private owner notification destination. */
+            notice_target: components["schemas"]["OwnerNoticeTarget"];
+            /**
+             * Operation
+             * @description The sole authorized bounded draft effect.
+             * @default append-marked-draft
+             * @constant
+             */
+            operation: "append-marked-draft";
+            /**
+             * Owner
+             * @description The authenticated installation owner's private identity.
+             */
+            owner: string;
+            /** @description The complete owner-supplied references and published bounds. */
+            request: components["schemas"]["DraftPublicationRequest"];
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
+             */
+            session_id: string;
+        };
+        /**
+         * DraftSectionSnapshot
+         * @description The bounded edited draft at an observed revision; editing is never share consent.
+         */
+        DraftSectionSnapshot: {
+            /**
+             * Draft Key
+             * @description The stable host-derived draft identity.
+             */
+            draft_key: string;
+            /** @description The exact observed provider account, resource, revision and scope. */
+            target: components["schemas"]["DraftAppendTarget"];
+            /**
+             * Text
+             * Format: password
+             * @description Complete bounded literal UTF-8 content; data, never instructions.
+             */
+            text: string;
+        };
+        /**
+         * DraftShareReview
+         * @description The edited historical snapshot and exact mutable-document link the human is asked to share.
+         */
+        DraftShareReview: {
+            /**
+             * Channel
+             * @description The selected registered channel name.
+             */
+            channel: string;
+            /**
+             * Channel Binding
+             * @description Digest of the captured publication channel source.
+             */
+            channel_binding: string;
+            /** @description The exact publication account, destination and scope. */
+            channel_target: components["schemas"]["ChannelTarget"];
+            /**
+             * Content Sha256
+             * @description Digest of the complete edited draft text.
+             */
+            content_sha256: string;
+            /**
+             * Draft Key
+             * @description The stable host-derived draft identity.
+             */
+            draft_key: string;
+            /**
+             * Generation
+             * @description The monotonic publication generation.
+             */
+            generation: number;
+            /**
+             * Grant Sha256
+             * @description Digest of the exact published standing grant.
+             */
+            grant_sha256: string;
+            /**
+             * Link Text
+             * @description The complete exact document-link message to review.
+             */
+            link_text: string;
+            /**
+             * Owner
+             * @description The authenticated installation owner's private identity.
+             */
+            owner: string;
+            /**
+             * Publication Request
+             * @description Identity of the standing publication covering this draft.
+             */
+            publication_request: string;
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
+             */
+            session_id: string;
+            /** @description The complete human-edited section and exact observed revision. */
+            snapshot: components["schemas"]["DraftSectionSnapshot"];
         };
         /**
          * Edge
@@ -8862,6 +9299,38 @@ export interface components {
             web_endpoint: string | null;
         };
         /**
+         * OwnerNoticeTarget
+         * @description A provider-attested private destination for its linked owner, still requiring initial host consent.
+         */
+        OwnerNoticeTarget: {
+            /**
+             * Account
+             * @description The exact signed-in provider account identity.
+             */
+            account: string;
+            /**
+             * Destination
+             * @description The exact immutable posting destination.
+             */
+            destination: string;
+            /**
+             * Owner Actor
+             * @description The transport-attested identity of the linked owner.
+             */
+            owner_actor: string;
+            /**
+             * Private Owner
+             * @description Whether this destination is private to the linked owner.
+             * @constant
+             */
+            private_owner: true;
+            /**
+             * Scope
+             * @description The exact selected posting authority scope.
+             */
+            scope: string;
+        };
+        /**
          * ParameterDoc
          * @description One public parameter of an operation.
          */
@@ -10111,6 +10580,45 @@ export interface components {
              * @description Why the source could not be asked, e.g. offline or rate-limited.
              */
             warnings: string[];
+        };
+        /**
+         * ReleaseFeedBaseline
+         * @description An explicit provider frontier: subsequent polls include releases after this baseline.
+         */
+        ReleaseFeedBaseline: {
+            /**
+             * Cursor
+             * @description The exact provider continuation frontier.
+             */
+            cursor: string;
+            /** @description The source-bound release-feed identity. */
+            identity: components["schemas"]["ReleaseFeedIdentity"];
+        };
+        /**
+         * ReleaseFeedIdentity
+         * @description The exact observed signed-in source, not a permission to poll it.
+         */
+        ReleaseFeedIdentity: {
+            /**
+             * Account
+             * @description The exact signed-in provider account identity.
+             */
+            account: string;
+            /**
+             * Read Scope
+             * @description The exact observed read scope.
+             */
+            read_scope: string;
+            /**
+             * Reference
+             * @description The exact owner-selected resource reference.
+             */
+            reference: string;
+            /**
+             * Source
+             * @description The stable observed provider source identity.
+             */
+            source: string;
         };
         /**
          * ReleaseNotes
@@ -14473,6 +14981,31 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_publish_draft_workflow_Input */
+        heinzel_publish_draft_workflow_Input: {
+            /**
+             * Approval Proof
+             * @description Private proof supplied only by the trusted in-process confirmation boundary.
+             */
+            approval_proof: string;
+            /**
+             * Request Id
+             * @description Stable identity for this exact unchanged request.
+             */
+            request_id: string;
+            /**
+             * Review
+             * @description The complete exact terms displayed at human review.
+             */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
+             */
+            session_id: string;
+        };
         /** heinzel_queue_agent_notification_Input */
         heinzel_queue_agent_notification_Input: {
             /** Approval Proof */
@@ -14510,6 +15043,19 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_review_release_draft_Input */
+        heinzel_review_release_draft_Input: {
+            /**
+             * Draft Key
+             * @description The stable host-derived release draft key.
+             */
+            draft_key: string;
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
+             */
+            session_id: string;
+        };
         /** heinzel_revoke_connected_read_Input */
         heinzel_revoke_connected_read_Input: {
             /**
@@ -14533,6 +15079,19 @@ export interface components {
             /**
              * Session Id
              * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
+        /** heinzel_revoke_release_workflow_Input */
+        heinzel_revoke_release_workflow_Input: {
+            /**
+             * Request Id
+             * @description Stable identity for this exact unchanged request.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
              */
             session_id: string;
         };
@@ -14583,6 +15142,49 @@ export interface components {
         /** heinzel_search_conversation_Input */
         heinzel_search_conversation_Input: {
             request: components["schemas"]["HistorySearchRequest"];
+        };
+        /** heinzel_share_draft_link_Input */
+        heinzel_share_draft_link_Input: {
+            /**
+             * Approval Proof
+             * @description Private proof supplied only by the trusted in-process confirmation boundary.
+             */
+            approval_proof: string;
+            /**
+             * Request Id
+             * @description Stable identity for this exact unchanged request.
+             */
+            request_id: string;
+            /**
+             * Review
+             * @description The complete exact terms displayed at human review.
+             */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
+             */
+            session_id: string;
+        };
+        /** heinzel_start_helper_Input */
+        heinzel_start_helper_Input: {
+            /**
+             * Name
+             * @description Your helper's display name.
+             */
+            name: string;
+            /**
+             * Prompt
+             * @description The exact first chat message; grants no connected access or schedule.
+             */
+            prompt: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
         };
         /** system_state_push_Input */
         system_state_push_Input: Record<string, never>;
@@ -14673,6 +15275,11 @@ export type SchemaDirectory = components['schemas']['Directory'];
 export type SchemaDiscovery = components['schemas']['Discovery'];
 export type SchemaDisposition = components['schemas']['Disposition'];
 export type SchemaDocumentation = components['schemas']['Documentation'];
+export type SchemaDraftAppendTarget = components['schemas']['DraftAppendTarget'];
+export type SchemaDraftPublicationRequest = components['schemas']['DraftPublicationRequest'];
+export type SchemaDraftPublicationTerms = components['schemas']['DraftPublicationTerms'];
+export type SchemaDraftSectionSnapshot = components['schemas']['DraftSectionSnapshot'];
+export type SchemaDraftShareReview = components['schemas']['DraftShareReview'];
 export type SchemaEdge = components['schemas']['Edge'];
 export type SchemaEdgeMetadata = components['schemas']['EdgeMetadata'];
 export type SchemaEffortChoice = components['schemas']['EffortChoice'];
@@ -14745,6 +15352,7 @@ export type SchemaOpened = components['schemas']['Opened'];
 export type SchemaOperationAudience = components['schemas']['OperationAudience'];
 export type SchemaOperationCall = components['schemas']['OperationCall'];
 export type SchemaOperationDoc = components['schemas']['OperationDoc'];
+export type SchemaOwnerNoticeTarget = components['schemas']['OwnerNoticeTarget'];
 export type SchemaParameterDoc = components['schemas']['ParameterDoc'];
 export type SchemaParticipant = components['schemas']['Participant'];
 export type SchemaPersonalArtifact = components['schemas']['PersonalArtifact'];
@@ -14779,6 +15387,8 @@ export type SchemaRecommendationView = components['schemas']['RecommendationView
 export type SchemaRecording = components['schemas']['Recording'];
 export type SchemaReferenceBlock = components['schemas']['ReferenceBlock'];
 export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
+export type SchemaReleaseFeedBaseline = components['schemas']['ReleaseFeedBaseline'];
+export type SchemaReleaseFeedIdentity = components['schemas']['ReleaseFeedIdentity'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRendererBlock = components['schemas']['RendererBlock'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
@@ -14910,13 +15520,18 @@ export type SchemaHeinzelProposeRollingConnectedReadInput = components['schemas'
 export type SchemaHeinzelProposeScheduledAgentInput = components['schemas']['heinzel_propose_scheduled_agent_Input'];
 export type SchemaHeinzelProposeSkillDraftInput = components['schemas']['heinzel_propose_skill_draft_Input'];
 export type SchemaHeinzelProposeSkillSharingInput = components['schemas']['heinzel_propose_skill_sharing_Input'];
+export type SchemaHeinzelPublishDraftWorkflowInput = components['schemas']['heinzel_publish_draft_workflow_Input'];
 export type SchemaHeinzelQueueAgentNotificationInput = components['schemas']['heinzel_queue_agent_notification_Input'];
 export type SchemaHeinzelResolveScheduledNotificationInput = components['schemas']['heinzel_resolve_scheduled_notification_Input'];
+export type SchemaHeinzelReviewReleaseDraftInput = components['schemas']['heinzel_review_release_draft_Input'];
 export type SchemaHeinzelRevokeConnectedReadInput = components['schemas']['heinzel_revoke_connected_read_Input'];
 export type SchemaHeinzelRevokeConnectedReadSetInput = components['schemas']['heinzel_revoke_connected_read_set_Input'];
+export type SchemaHeinzelRevokeReleaseWorkflowInput = components['schemas']['heinzel_revoke_release_workflow_Input'];
 export type SchemaHeinzelScheduleControlInput = components['schemas']['heinzel_schedule_control_Input'];
 export type SchemaHeinzelSearchAgentConversationsInput = components['schemas']['heinzel_search_agent_conversations_Input'];
 export type SchemaHeinzelSearchConversationInput = components['schemas']['heinzel_search_conversation_Input'];
+export type SchemaHeinzelShareDraftLinkInput = components['schemas']['heinzel_share_draft_link_Input'];
+export type SchemaHeinzelStartHelperInput = components['schemas']['heinzel_start_helper_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
 export type $defs = Record<string, never>;
@@ -17045,6 +17660,39 @@ export interface operations {
             };
         };
     };
+    heinzel_publish_draft_workflow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_publish_draft_workflow_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftPublicationTerms"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_queue_agent_notification: {
         parameters: {
             query?: never;
@@ -17078,6 +17726,39 @@ export interface operations {
             };
         };
     };
+    heinzel_release_workflow: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_resolve_scheduled_notification: {
         parameters: {
             query?: never;
@@ -17098,6 +17779,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledNotificationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_review_release_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_review_release_draft_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftShareReview"];
                 };
             };
             /** @description Validation Error */
@@ -17154,6 +17868,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["heinzel_revoke_connected_read_set_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_revoke_release_workflow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_revoke_release_workflow_Input"];
             };
         };
         responses: {
@@ -17398,6 +18145,39 @@ export interface operations {
             };
         };
     };
+    heinzel_share_draft_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_share_draft_link_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_show: {
         parameters: {
             query: {
@@ -17551,6 +18331,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillSharingPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_start_helper: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_start_helper_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserChatAnswer"];
                 };
             };
             /** @description Validation Error */

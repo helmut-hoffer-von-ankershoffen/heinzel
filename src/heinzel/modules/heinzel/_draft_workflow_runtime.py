@@ -35,7 +35,7 @@ def _release_value(release: DraftRelease) -> dict[str, JsonValue]:
 
 
 def _observed(host: DraftWorkflowPublication, terms: DraftPublicationTerms) -> list[DraftRelease]:
-    result = []
+    result: list[DraftRelease] = []
     for event in matching(host.journal.events(terms.session_id), "draft.release-observed"):
         value = host.crud.read_body(terms.session_id, event)
         if not isinstance(value, dict) or value.get("grant_sha256") != arguments_hash(grant_payload(terms)):

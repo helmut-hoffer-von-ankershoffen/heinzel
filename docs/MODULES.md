@@ -82,6 +82,13 @@ Your Heinzelmännchen: durable helpers that draft your team's recurring work for
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
+| Create a named Heinzel from one prompt, then review and publish its bounded recurring draft grant. | `hz heinzel start-release-workflow` | — | — | — | yes |  |
+| Publish only the exact standing draft grant approved through the trusted human boundary. | `hz heinzel publish-draft-workflow` | — | — | `POST /api/heinzel/publish-draft-workflow` | yes |  |
+| Capture the human-edited marked section and revision for exact share review; send nothing. | `hz heinzel review-release-draft` | — | — | `POST /api/heinzel/review-release-draft` | yes |  |
+| Review the current edited section and explicitly approve one document-link delivery. | `hz heinzel approve-release-draft` | — | — | — | yes |  |
+| Deliver one document link for the exact edited revision approved by its owner. | `hz heinzel share-draft-link` | — | — | `POST /api/heinzel/share-draft-link` | yes |  |
+| Read the published workflow and durable release dispositions from this same chat. | `hz heinzel release-workflow` | — | — | `GET /api/heinzel/release-workflow` |  |  |
+| Revoke future recurring draft and notice effects under the shared document fence. | `hz heinzel revoke-release-workflow` | — | — | `POST /api/heinzel/revoke-release-workflow` | yes |  |
 | Read exact private skill draft files and requested sharing scope. | `hz heinzel skill-draft` | `heinzel_skill_draft` | — | `GET /api/heinzel/skill-draft` |  |  |
 | List private draft references without file contents. | `hz heinzel skill-drafts` | `heinzel_skill_drafts` | — | `GET /api/heinzel/skill-drafts` |  |  |
 | Create a helper, retain its first prompt and answer it once through the selected chat backend. | `hz heinzel start-helper` | — | — | `POST /api/heinzel/start-helper` | yes |  |

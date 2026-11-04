@@ -48,6 +48,10 @@ from heinzel.modules.heinzel._connected_read_set_reviews import ConnectedReadSet
 from heinzel.modules.heinzel._connected_read_sets import ConnectedReadSets, ReadSetProposal, ReadSetSelection
 from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
 from heinzel.modules.heinzel._cross_history import CrossHistoryPage, CrossHistoryRequest, search_owner_history
+from heinzel.modules.heinzel._draft_workflow_journal import grant_payload
+from heinzel.modules.heinzel._draft_workflow_operations import register_draft_workflow_operations
+from heinzel.modules.heinzel._draft_workflow_publication import DraftWorkflowPublication
+from heinzel.modules.heinzel._draft_workflow_share import DraftWorkflowShare, share_payload
 from heinzel.modules.heinzel._history_fts import IndexedHistoryPage, indexed_search
 from heinzel.modules.heinzel._history_search import HistorySearchPage, HistorySearchRequest, search_history
 from heinzel.modules.heinzel._input_receipts import InputSnapshotPage, snapshot_history
@@ -175,7 +179,21 @@ class _SessionApprovalIssuer(ApprovalIssuer):
             self.service, self.kernel.resolve(CurrentUser), self.kernel.resolve(SelectedWriteService)
         )
 
+    def _draft_host(self) -> DraftWorkflowPublication:
+        if self.kernel is None:
+            msg = "Draft workflow review is unavailable"
+            raise HeinzelError(msg)
+        return self.kernel.resolve(DraftWorkflowPublication)
+
     def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        if module == "heinzel" and operation in {"publish-draft-workflow", "share-draft-link"}:
+            session, request = self._model_args(arguments)
+            host = self._draft_host()
+            if operation == "publish-draft-workflow":
+                terms = host.proposal(session, request)
+                host.verify_ports(terms)
+                return grant_payload(terms)
+            return share_payload(DraftWorkflowShare(host).current(session, request))
         if module == "heinzel" and operation == "deliver-channel-item":
             if self.kernel is None:
                 msg = "Channel review is unavailable"
@@ -279,6 +297,15 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         return self.kernel.resolve(NotificationDelivery).recover(session, request, write_receipt=False) == "recorded"
 
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if module == "heinzel" and operation in {"publish-draft-workflow", "share-draft-link"}:
+            if arguments.get("review") != self.review(module, operation, arguments):
+                msg = "The reviewed draft workflow changed"
+                raise HeinzelError(msg)
+            session, request = self._model_args(arguments)
+            host = self._draft_host()
+            if operation == "publish-draft-workflow":
+                return host.issue(session, request, provenance)
+            return DraftWorkflowShare(host).issue(session, request, provenance)
         if module == "heinzel" and operation == "deliver-channel-item":
             if self.kernel is None or arguments.get("review") != self.review(module, operation, arguments):
                 msg = "The reviewed channel posting changed"
@@ -352,6 +379,12 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         )
 
     def applied(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
+        if module == "heinzel" and operation in {"publish-draft-workflow", "share-draft-link"}:
+            session, request = self._model_args(arguments)
+            draft_host = self._draft_host()
+            if operation == "publish-draft-workflow":
+                return arguments.get("review") == grant_payload(draft_host.published(session, request, active=False))
+            return DraftWorkflowShare(draft_host).applied(session, request, arguments.get("review"))
         if module == "heinzel" and operation == "execute-captured-write":
             if self.kernel is None:
                 return False
@@ -930,6 +963,7 @@ def _register_review_services(module: Module) -> None:
     _register_history_search(module)
     register_captured_write_operations(module)
     register_channel_operations(module)
+    register_draft_workflow_operations(module)
 
 
 def _check_history(kernel: Kernel) -> None:

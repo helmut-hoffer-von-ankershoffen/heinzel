@@ -49,18 +49,30 @@ class ChannelDeliveryTerms(BaseModel):
     """An inert exact per-item transport proposal, including the full preview and linked owner."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    session_id: SessionId
-    request_id: RequestId
-    owner: str
-    channel: str = Field(pattern=r"^[a-z][a-z0-9-]{0,63}$")
-    kind: Literal["notice", "approval"]
-    binding_id: str = Field(pattern=r"^[0-9a-f]{64}$")
-    target: ChannelTarget
-    actor: str | None = Field(default=None, max_length=256)
-    notice: ChannelNotice | None = None
-    approval: ChannelApprovalRequest | None = None
-    write_request: RequestId | None = None
-    write_review: dict[str, JsonValue] | None = None
+    session_id: SessionId = Field(description="The owning durable personal chat identity.")
+    request_id: RequestId = Field(
+        description="Stable identity for this exact request; reuse only for an unchanged retry."
+    )
+    owner: str = Field(description="The authenticated installation owner's private identity.")
+    channel: str = Field(description="The selected registered channel name.", pattern=r"^[a-z][a-z0-9-]{0,63}$")
+    kind: Literal["notice", "approval"] = Field(
+        description="Whether this proposal posts a notice or requests approval."
+    )
+    binding_id: str = Field(description="Digest identifying the captured transport source.", pattern=r"^[0-9a-f]{64}$")
+    target: ChannelTarget = Field(description="The exact observed provider account, resource, revision and scope.")
+    actor: str | None = Field(
+        description="The exact linked owner actor, when approval replies are supported.", default=None, max_length=256
+    )
+    notice: ChannelNotice | None = Field(default=None, description="The complete proposed notice, when applicable.")
+    approval: ChannelApprovalRequest | None = Field(
+        default=None, description="The exact bounded human approval request, when applicable."
+    )
+    write_request: RequestId | None = Field(
+        default=None, description="The linked captured-write request, when applicable."
+    )
+    write_review: dict[str, JsonValue] | None = Field(
+        default=None, description="The complete exact captured-write review, when applicable."
+    )
 
 
 class ChannelDelivery(ChannelReplyConsumer):

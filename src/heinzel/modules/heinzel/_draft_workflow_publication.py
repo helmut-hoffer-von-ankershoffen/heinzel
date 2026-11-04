@@ -4,13 +4,11 @@ import json
 import secrets
 from dataclasses import dataclass
 from datetime import timedelta
-from pathlib import Path
 
 from pydantic import JsonValue
 
 from heinzel import (
     ChannelTarget,
-    Config,
     CurrentUser,
     DraftAppendService,
     DraftAppendTarget,
@@ -23,8 +21,8 @@ from heinzel import (
     ReviewedLinkChannel,
     SessionEvent,
     SessionWriter,
-    Settings,
 )
+from heinzel.kernel import PRIVATE_WRITE
 from heinzel.kernel._approval import (
     ApprovalConfirmation,
     ApprovalEvidence,
@@ -34,9 +32,7 @@ from heinzel.kernel._approval import (
     arguments_hash,
     consume_approval,
 )
-from heinzel.kernel._features import feature_enabled
-from heinzel.kernel._identity import PRIVATE_READ, PRIVATE_WRITE
-from heinzel.modules.heinzel._autonomous_schedule import _fingerprint
+from heinzel.modules.heinzel._autonomous_schedule import model_binding_fingerprint
 from heinzel.modules.heinzel._draft_workflow_binding import DraftChannelBinding, DraftWorkflowBinding
 from heinzel.modules.heinzel._draft_workflow_journal import DraftJournal, grant_payload, matching, target_key
 from heinzel.modules.heinzel._draft_workflow_models import DraftPublicationRequest, DraftPublicationTerms
@@ -69,11 +65,11 @@ class DraftWorkflowPublication:
         self.crud, self.current_user, self.kernel, self.chat = crud, current, kernel, chat
         self.journal = DraftJournal(crud)
 
-    def owner(self, *, human: bool = False, daemon: bool = False, enabled: bool = True, read: bool = False) -> None:
-        """Require an actual host-bound owner context and both current feature settings.
+    def owner(self, *, human: bool = False, daemon: bool = False, read: bool = False) -> None:
+        """Require an actual host-bound owner context and the current private write authority.
 
         Raises:
-            HeinzelError: If the feature, private write scope, owner or allowed authentication is unavailable.
+            HeinzelError: If the private scope, owner or allowed authentication is unavailable.
         """
         context = self.current_user.context()
         allowed = _HUMAN_HEADS if human else _HUMAN_HEADS | {"api-bearer"}
@@ -81,14 +77,9 @@ class DraftWorkflowPublication:
             allowed = frozenset({"daemon"})
         if (
             context.authentication not in allowed
-            or (PRIVATE_READ if read else PRIVATE_WRITE) not in context.permissions
+            or ("private:read" if read else PRIVATE_WRITE) not in context.permissions
             or context.principal != self.current_user.owner()
             or self.crud.repository.principal_id != context.principal.id
-            or (enabled and not feature_enabled(self.kernel.settings, "connected_frontdoor"))
-            or (
-                enabled
-                and not feature_enabled(Config.load(Path.home()).settings(Settings, "hz"), "connected_frontdoor")
-            )
         ):
             msg = "The owner-bound draft workflow is unavailable"
             raise HeinzelError(msg)
@@ -187,7 +178,7 @@ class DraftWorkflowPublication:
         Raises:
             HeinzelError: If the owner or exact current publication is invalid.
         """
-        self.owner(human=True, enabled=False)
+        self.owner(human=True)
         terms = self.published(session, request, active=False)
         with (
             self.journal.repository.draft_target_writer(session, target_key(terms), wait=True),
@@ -254,7 +245,7 @@ class DraftWorkflowPublication:
             channel_target=ChannelTarget.model_validate_json(target.model_dump_json()),
             notice_binding=ports.notice.digest,
             notice_target=OwnerNoticeTarget.model_validate_json(notice.model_dump_json()),
-            model_binding=_fingerprint(self.chat),
+            model_binding=model_binding_fingerprint(self.chat),
         )
         self.journal.record(
             session,
@@ -284,7 +275,7 @@ class DraftWorkflowPublication:
             or identity != terms.feed_baseline.identity
             or ports.notice.call(lambda service: service.owner_target()) != terms.notice_target
             or ports.share.call(lambda service: service.delivery_target()) != terms.channel_target
-            or _fingerprint(self.chat) != terms.model_binding
+            or model_binding_fingerprint(self.chat) != terms.model_binding
         ):
             msg = "The reviewed draft workflow source, account or exact scope changed"
             raise HeinzelError(msg)

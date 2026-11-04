@@ -177,6 +177,8 @@ class ChatStore(McpChatSessions):
         for action in chat.actions:  # what the person reads is derived from what runs, never stored text
             self._check_personal_action(chat, action.module, action.operation, action.arguments)
             if action.module == "heinzel" and action.operation in {
+                "publish-draft-workflow",
+                "share-draft-link",
                 "approve-model-grant",
                 "accept-agent-contract",
                 "execute-captured-write",
@@ -188,7 +190,11 @@ class ChatStore(McpChatSessions):
             }:
                 # The review remains visible in the action, not in model-visible transcript text.
                 action.command = (
-                    "Review exact channel posting account, destination, scope and full message"
+                    "Review the bounded standing draft grant and initial release baseline"
+                    if action.operation == "publish-draft-workflow"
+                    else "Review the complete edited draft, exact revision and link destination"
+                    if action.operation == "share-draft-link"
+                    else "Review exact channel posting account, destination, scope and full message"
                     if action.operation == "deliver-channel-item"
                     else "Review notification"
                     if action.operation == "queue-agent-notification"
@@ -217,6 +223,8 @@ class ChatStore(McpChatSessions):
             not in {
                 "schedule-control",
                 "propose-check-in",
+                "publish-draft-workflow",
+                "share-draft-link",
                 "approve-model-grant",
                 "accept-agent-contract",
                 "execute-captured-write",
@@ -582,6 +590,8 @@ class StoreGate(ActionGate):
         """
         chat = self._store.load(call.session)
         if call.module == "heinzel" and call.operation in {
+            "publish-draft-workflow",
+            "share-draft-link",
             "approve-model-grant",
             "accept-agent-contract",
             "execute-captured-write",

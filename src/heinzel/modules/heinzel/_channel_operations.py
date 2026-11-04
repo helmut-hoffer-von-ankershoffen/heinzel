@@ -47,8 +47,3 @@ def register_channel_operations(module: Module) -> None:
     def channel_item_status(delivery: ChannelDelivery, session_id: SessionId, request_id: RequestId) -> str:
         """Read the recorded posting outcome without retrying it."""
         return delivery.status(session_id, request_id)
-
-    @module.job(schedule="* * * * *")
-    def consume_channel_replies(delivery: ChannelDelivery) -> int:
-        """Consume genuine owner decisions on previously consented exact channel previews."""
-        return delivery.apply_channel_replies()

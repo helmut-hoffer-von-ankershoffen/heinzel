@@ -1,15 +1,15 @@
 """Exact captured SDK service bindings for the separately published draft workflow (ADR 0127)."""
 
 import hashlib
+import inspect
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
-from heinzel import Config, HeinzelError, Kernel, NotificationChannel, ServiceLet, Settings
+from heinzel import Config, HeinzelError, Kernel, ModuleRecord, NotificationChannel, ServiceLet, Settings
 from heinzel.kernel import CapabilitySettings
 from heinzel.kernel._approval import arguments_hash
-from heinzel.kernel._features import feature_enabled
 from heinzel.kernel._services import ServiceContract
 
 
@@ -72,11 +72,6 @@ class DraftWorkflowBinding[T: ServiceContract]:
         """
         config = Config.load(Path.home())
         settings = config.settings(Settings, "hz")
-        if not feature_enabled(self.kernel.settings, "connected_frontdoor") or not feature_enabled(
-            settings, "connected_frontdoor"
-        ):
-            msg = "Connected draft workflows are not enabled"
-            raise HeinzelError(msg)
         configured = config.settings(CapabilitySettings, "capabilities")
         original = self.kernel.capability_settings
         record, registration = self.kernel.selected_capability_provider(self.capability)
@@ -137,6 +132,32 @@ class DraftWorkflowBinding[T: ServiceContract]:
                 self.current()
 
 
+class _ChannelCapture[T: NotificationChannel](Protocol):
+    def service(self, kernel: Kernel, record: ModuleRecord, contract: type[T]) -> T: ...
+
+
+class _BuiltinChannelCapture[T: NotificationChannel]:
+    """Capture a registered core class separately from external plugin manifests, never as their fallback."""
+
+    def __init__(self, kernel: Kernel, record: ModuleRecord, contract: type[T], kind: type[T], owner: str) -> None:
+        self.kind, self.owner, self.record = kind, owner, record
+        self.path = Path(inspect.getfile(kind)).resolve()
+        self.digest = hashlib.sha256(self.path.read_bytes()).hexdigest()
+        self.instance = kernel.resolve_builtin_service(kind, owner)
+        self.contract = contract
+
+    def service(self, kernel: Kernel, record: ModuleRecord, contract: type[T]) -> T:
+        if (
+            record is not self.record
+            or contract is not self.contract
+            or kernel.resolve_builtin_service(self.kind, self.owner) is not self.instance
+            or hashlib.sha256(self.path.read_bytes()).hexdigest() != self.digest
+        ):
+            msg = "The registered built-in channel source changed"
+            raise HeinzelError(msg)
+        return self.instance
+
+
 class DraftChannelBinding[T: NotificationChannel]:
     """One exact source-captured workflow transport, distinct from another role in the same provider module."""
 
@@ -151,18 +172,32 @@ class DraftChannelBinding[T: NotificationChannel]:
         if discovery is None:
             msg = "Draft notices require an installed source-bound channel"
             raise HeinzelError(msg)
-        matches = []
+        matches: list[tuple[ModuleRecord, _ChannelCapture[T], T, list[str]]] = []
         for record, let in kernel.lets(ServiceLet):
             if let.provides is contract or not issubclass(let.provides, contract):
                 continue
-            capture = discovery.service_capture(kernel, record, contract)
+            capture: _ChannelCapture[T]
+            if record.origin.builtin:
+                # The issubclass check above narrows this discovered service to the requested port.
+                builtin = _BuiltinChannelCapture(kernel, record, contract, let.provides, record.qualname)
+                capture = builtin
+                source = [str(builtin.path), builtin.digest, "core"]
+            else:
+                external = discovery.service_capture(kernel, record, contract)
+                # CapturedEntry.service is generic over this exact supplied contract.
+                capture = cast("_ChannelCapture[T]", external)
+                source = [
+                    str(external.finder.snapshot.root),
+                    external.finder.snapshot.digest(),
+                    ",".join(sorted(external.approved_runtime)),
+                ]
             service = capture.service(kernel, record, contract)
             if service.name == name:
-                matches.append((record, capture, service))
+                matches.append((record, capture, service, source))
         if len(matches) != 1:
             msg = "Choose one explicitly implemented draft workflow channel"
             raise HeinzelError(msg)
-        self.record, self.capture, self.service = matches[0]
+        self.record, self.capture, self.service, source = matches[0]
         self.digest = arguments_hash(
             [
                 contract.__module__,
@@ -171,9 +206,7 @@ class DraftChannelBinding[T: NotificationChannel]:
                 self.record.qualname,
                 self.record.origin.distribution,
                 self.record.origin.version,
-                str(self.capture.finder.snapshot.root),
-                self.capture.finder.snapshot.digest(),
-                ",".join(sorted(self.capture.approved_runtime)),
+                *source,
                 type(self.service).__module__,
                 type(self.service).__qualname__,
             ]
@@ -189,12 +222,7 @@ class DraftChannelBinding[T: NotificationChannel]:
         config = Config.load(Path.home()).settings(Settings, "hz")
         declaration = vars(type(self.service)).get("supported_operations")
         if (
-            not all(
-                feature_enabled(settings, feature)
-                for settings in (self.kernel.settings, config)
-                for feature in ("connected_frontdoor", "connected_channels")
-            )
-            or config.disabled_modules != self.kernel.settings.disabled_modules
+            config.disabled_modules != self.kernel.settings.disabled_modules
             or type(declaration) is not frozenset
             or declaration != frozenset({self.operation})
             or "supported_operations" in vars(self.service)

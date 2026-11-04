@@ -940,6 +940,8 @@ class ChatService:
             (found.operation == "schedule-control" and found.arguments.get("action") in {"activate", "resume"})
             or found.operation
             in {
+                "publish-draft-workflow",
+                "share-draft-link",
                 "approve-model-grant",
                 "accept-agent-contract",
                 "execute-captured-write",
@@ -1023,6 +1025,8 @@ class ChatService:
             (found.operation == "schedule-control" and found.arguments.get("action") in {"activate", "pause", "resume"})
             or found.operation
             in {
+                "publish-draft-workflow",
+                "share-draft-link",
                 "approve-model-grant",
                 "accept-agent-contract",
                 "execute-captured-write",
@@ -1162,6 +1166,8 @@ class ChatService:
                     action.module == "heinzel"
                     and action.operation
                     in {
+                        "publish-draft-workflow",
+                        "share-draft-link",
                         "approve-model-grant",
                         "accept-agent-contract",
                         "execute-captured-write",

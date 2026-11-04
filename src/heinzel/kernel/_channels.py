@@ -23,9 +23,9 @@ class _Message(BaseModel):
 class ChannelTarget(_Message):
     """Exact signed-in posting destination and scope; observed by the host, never selected by model text."""
 
-    account: str = Field(min_length=1, max_length=256)
-    destination: str = Field(min_length=1, max_length=256)
-    scope: str = Field(min_length=1, max_length=256)
+    account: str = Field(description="The exact signed-in provider account identity.", min_length=1, max_length=256)
+    destination: str = Field(description="The exact immutable posting destination.", min_length=1, max_length=256)
+    scope: str = Field(description="The exact selected posting authority scope.", min_length=1, max_length=256)
 
 
 class ChannelNotice(_Message):

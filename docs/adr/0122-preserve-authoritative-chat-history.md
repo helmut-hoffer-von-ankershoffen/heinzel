@@ -46,7 +46,7 @@ the recent-context helper, and confirm earlier messages and journal events remai
 verify that externally removed bodies are not returned from the disposable index. No test demonstrates a production
 session-pruning feature, a live provider, or recovery of deleted content.
 
-## Integration boundary
+## More Information
 
 This continuation salvages the original owner-private bounded search, disposable FTS cache, catalog traversal and
 anchored navigation. Operations stay off behind `connected_history`; no search is offered to the model, and model
