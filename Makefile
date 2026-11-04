@@ -335,6 +335,7 @@ terminal-art: ## Redraw Heinzelmännchen for the terminal from web/src/component
 	@uv run --quiet --script scripts/terminal_art.py && uv run --quiet ruff format --quiet src/heinzel/heads/cli/_art_data.py
 
 build: web-build ## Build the core wheel and sdist into dist/ (the web app first)
+	uv run --quiet --script scripts/build.py prepare
 	uv run --quiet --script scripts/build.py
 
 PYPI_DIST ?= dist
