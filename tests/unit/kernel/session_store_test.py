@@ -399,3 +399,50 @@ def test_unsafe_directory_permissions_do_not_block_other_sessions_and_restore_cl
     assert sessions.heads()[0].problem
     folder.chmod(0o700)
     assert sessions.read("one").problem is None
+
+
+def test_indexed_listing_validates_open_directories_without_redundant_path_stats(tmp_path, monkeypatch):
+    sessions = store(tmp_path)
+    append(sessions, session="one", data={"state": "waiting"})
+    append(sessions, session="two", data={"state": "asleep"})
+    expected = sessions.heads()
+    original = os.stat
+    spine_stats = []
+
+    def checked(path, *args, **kwargs):
+        if kwargs.get("dir_fd") is not None:
+            assert path not in {"one", "two"}, "Directory metadata must come from its opened no-follow descriptor"
+            if path == "session.jsonl":
+                assert kwargs["follow_symlinks"] is False
+                spine_stats.append(path)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", checked)
+    assert sessions.heads() == expected
+    assert len(spine_stats) == 2  # every spine still gets a fresh descriptor-relative checkpoint stat
+
+
+def test_listing_refuses_a_session_replaced_with_a_symlink_after_enumeration(tmp_path, monkeypatch):
+    sessions = store(tmp_path)
+    append(sessions)
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o700)
+    (outside / "session.jsonl").write_text("untouched")
+    original = os.open
+    attempted = False
+
+    def swapped(path, flags, *args, **kwargs):
+        nonlocal attempted
+        if path == "one" and kwargs.get("dir_fd") is not None:
+            attempted = True
+            assert flags & os.O_DIRECTORY
+            assert flags & os.O_NOFOLLOW
+            (sessions.root / "one").rename(sessions.root / "saved")
+            (sessions.root / "one").symlink_to(outside, target_is_directory=True)
+        return original(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", swapped)
+    with pytest.raises(OSError, match=r"Too many levels of symbolic links|Not a directory"):
+        sessions.heads()
+    assert attempted
+    assert (outside / "session.jsonl").read_text() == "untouched"

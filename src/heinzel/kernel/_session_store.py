@@ -271,25 +271,32 @@ class SessionStore:
     def _sync(self, root: int, index: sqlite3.Connection, *, force: bool = False) -> None:
         known = {str(row["session"]): row for row in index.execute("SELECT * FROM sessions")}
         found: set[str] = set()
-        for session in sorted(os.listdir(root)):
-            info = os.stat(session, dir_fd=root, follow_symlinks=False)
-            if not ID.fullmatch(session) or not stat.S_ISDIR(info.st_mode):
-                continue
-            if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != PRIVATE_DIR:
-                if session in known:
-                    found.add(session)
-                    index.execute(
-                        "UPDATE sessions SET problem = ?, mtime = -1 WHERE session = ?",
-                        ("Session directory is not private or not owned by you", session),
-                    )
-                continue
-            with child(root, session) as folder:
-                try:
-                    info = os.stat("session.jsonl", dir_fd=folder, follow_symlinks=False)
-                except FileNotFoundError:
+        # Directory entries identify candidate folders without a separate pathname stat. Validate ownership and
+        # permissions on the O_NOFOLLOW descriptor itself, then still stat every spine for checkpoint freshness.
+        with os.scandir(root) as entries:
+            for entry in sorted(entries, key=lambda item: item.name):
+                session = entry.name
+                if not ID.fullmatch(session) or not entry.is_dir(follow_symlinks=False):
                     continue
-                found.add(session)
-                self._refresh(index, session, folder, info, known.get(session), force=force)
+                folder = os.open(session, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root)
+                try:
+                    info = os.fstat(folder)
+                    if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != PRIVATE_DIR:
+                        if session in known:
+                            found.add(session)
+                            index.execute(
+                                "UPDATE sessions SET problem = ?, mtime = -1 WHERE session = ?",
+                                ("Session directory is not private or not owned by you", session),
+                            )
+                        continue
+                    try:
+                        info = os.stat("session.jsonl", dir_fd=folder, follow_symlinks=False)
+                    except FileNotFoundError:
+                        continue
+                    found.add(session)
+                    self._refresh(index, session, folder, info, known.get(session), force=force)
+                finally:
+                    os.close(folder)
         for missing in known.keys() - found:
             index.execute("UPDATE sessions SET problem = ? WHERE session = ?", ("Session spine is missing", missing))
 
