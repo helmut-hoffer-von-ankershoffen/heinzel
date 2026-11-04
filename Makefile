@@ -232,20 +232,21 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 		$(WEB) exec playwright-core install chromium webkit; \
 	fi
 
-# The browser E2E files (Playwright, the mounted web app) compete with the tool-install and CLI ones for CPU, so CI runs
-# the two halves as separate jobs. A file counts as browser when it mentions Playwright or the shared browser helpers.
+# Core E2E lanes keep supervised cold starts apart from unrelated Git/frontend builds. Every lane keeps the same
+# per-OS workers and deadlines; the default local target still runs every case. Browser files use shared helpers.
 E2E_WEB := $(sort $(shell grep -lE 'playwright|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
+E2E_SUPERVISED := tests/e2e/ui_service_test.py
 E2E_WORKERS := $(if $(filter Darwin,$(shell uname -s)),2,3)
 E2E_PYTEST := uv run pytest -m e2e -n $(E2E_WORKERS) -q --session-timeout=600 -x
 # The browser files go to two jobs (every other file each), because one job's 600 s of tests left no headroom on a slow
 # 3 vCPU macOS runner: the same code took 8 minutes on main and passed 10 minutes' budget on none of the slow runs.
 E2E_WEB_1 := $(foreach i,$(shell seq 1 2 $(words $(E2E_WEB))),$(word $(i),$(E2E_WEB)))
 E2E_WEB_2 := $(foreach i,$(shell seq 2 2 $(words $(E2E_WEB))),$(word $(i),$(E2E_WEB)))
-E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB), --ignore=$(f)))$(if $(filter web-1,$(SUITE)),$(foreach f,$(E2E_WEB_1), $(f)))$(if $(filter web-2,$(SUITE)),$(foreach f,$(E2E_WEB_2), $(f)))
+E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB) $(E2E_SUPERVISED), --ignore=$(f)))$(if $(filter supervised,$(SUITE)), $(E2E_SUPERVISED))$(if $(filter web-1,$(SUITE)),$(foreach f,$(E2E_WEB_1), $(f)))$(if $(filter web-2,$(SUITE)),$(foreach f,$(E2E_WEB_2), $(f)))
 
-test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers (2 on macOS); SUITE=cli (tool install, CLI), web-1 or web-2 (browser, half of the files each) runs one part
+test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers (2 on macOS); SUITE=cli (tool install, CLI), supervised (installed server), web-1 or web-2 (browser halves) runs one part
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
-	$(STEPS) $(if $(findstring web,$(SUITE)),,"e2e-readme=$(E2E_PYTEST) tests/e2e/docs_test.py::test_readme_instructions") "e2e=$(E2E_PYTEST)$(E2E_SELECT) --deselect=tests/e2e/docs_test.py::test_readme_instructions"
+	$(STEPS) $(if $(filter supervised web-1 web-2,$(SUITE)),,"e2e-readme=$(E2E_PYTEST) tests/e2e/docs_test.py::test_readme_instructions") "e2e=$(E2E_PYTEST)$(E2E_SELECT) --deselect=tests/e2e/docs_test.py::test_readme_instructions"
 
 e2e-prepare: ## Prepare the locked controller and current build assets before end-to-end procedure deadlines
 	@uv run --quiet --script scripts/build.py sync
