@@ -30,6 +30,7 @@ Helper notifications now identify who spoke with a name and hat. Run the web app
 - **system:** Report broken durable notification stores ([#493](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/493)) ([b1e7bb1](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b1e7bb1369ac2ca4eb05110f938f6956b802e1a6))
 - **web:** Stabilize phone controls and isolate activity reads ([#497](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/497)) ([f7f0940](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f7f094024972e50013768f06f89ee9c0db421189))
 - **release:** Include reviewed runtime repairs in v0.9.15 ([eaa3024](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/eaa302425bac4335169ad16773f623ada453c45a))
+- **ci:** Pin tools and reduce managed UI startup work ([#500](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/500)) ([e822215](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e822215e52dfeffc31bd884c8c08f4ca833a2712))
 
 ### ⚡ Performance
 
@@ -44,6 +45,7 @@ Helper notifications now identify who spoke with a name and hat. Run the web app
 - **release:** Refresh notes for v0.9.15 ([320143d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/320143dc22c3c127f9f7ae0762f3084bb1a7bd0d))
 - **release:** Describe the complete v0.9.15 batch ([f7cadce](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f7cadce60ccee669c54215fae05a657f75ca7ac7))
 - **release:** Include helper identity in v0.9.15 notes ([780980e](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/780980e9d03382632af23cb472ce28b9ec79bba9))
+- **release:** Include runtime repair in v0.9.15 notes ([00413c6](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/00413c62e4fc42317002abee61b39ce5e9e998f6))
 
 ### 🧪 Testing
 
