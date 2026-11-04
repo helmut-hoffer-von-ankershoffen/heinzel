@@ -146,30 +146,49 @@ def test_prepare_refuses_when_install_fails(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("prepare_exit", [0, 1])
-@pytest.mark.parametrize("target", ["check", "check-fast", "preflight", "lint"])
-def test_make_prepares_before_starting_parallel_checks(tmp_path, prepare_exit, target):
+@pytest.mark.parametrize(
+    ("target", "early_exit"),
+    [("check", 0), ("lint", 0), ("check-fast", 0), ("preflight", 0), ("check-fast", 1), ("preflight", 1)],
+)
+def test_make_prepares_before_starting_parallel_checks(tmp_path, prepare_exit, target, early_exit):
     web, steps, log = tmp_path / "web", tmp_path / "steps", tmp_path / "order"
     web.write_text('#!/bin/sh\nprintf "prepare\\n" >> "$ORDER_LOG"\nexit "$PREPARE_EXIT"\n')
     steps.write_text('#!/bin/sh\nprintf "checks\\n" >> "$ORDER_LOG"\n')
+    # Intercept the declared early-guard command, checking its arguments before returning its controlled verdict.
+    # The fixture must exercise this phase: an absent runner used to fail before either ordering witness ran.
+    uv = tmp_path / "uv"
+    uv.write_text(
+        '#!/bin/sh\n[ "$*" = "$EXPECTED_EARLY_COMMAND" ] || exit 99\n'
+        'printf "early\\n" >> "$ORDER_LOG"\nexit "$EARLY_EXIT"\n'
+    )
     web.chmod(0o700)
     steps.chmod(0o700)
+    uv.chmod(0o700)
+    early = target in {"check-fast", "preflight"}
+    command = "run --quiet --script scripts/scoped_checks.py "
+    command += "early-fast" if target == "check-fast" else "early-preflight --base HEAD"
     env = {
-        "PATH": os.defpath,
+        "PATH": str(tmp_path) + os.pathsep + os.defpath,
         "ORDER_LOG": str(log),
         "PREPARE_EXIT": str(prepare_exit),
+        "EARLY_EXIT": str(early_exit),
+        "EXPECTED_EARLY_COMMAND": command,
         "PREFLIGHT": "",
         "MAKEFLAGS": "",
     }
     result = subprocess.run(
-        ["make", "--no-print-directory", target, f"WEB={web}", f"STEPS={steps}"],
+        ["make", "--no-print-directory", target, f"WEB={web}", f"STEPS={steps}", "BASE=HEAD"],
         cwd=REPO,
         env=env,
         capture_output=True,
         timeout=10,
         check=False,
     )
-    assert (result.returncode == 0) is (prepare_exit == 0)
-    assert log.read_text().splitlines() == (["prepare", "checks"] if prepare_exit == 0 else ["prepare"])
+    assert (result.returncode == 0) is (early_exit == 0 and prepare_exit == 0)
+    expected = ["early"] if early else []
+    if early_exit == 0:
+        expected += ["prepare", "checks"] if prepare_exit == 0 else ["prepare"]
+    assert log.read_text().splitlines() == expected
 
 
 def test_an_unknown_command_prints_the_usage(capsys):

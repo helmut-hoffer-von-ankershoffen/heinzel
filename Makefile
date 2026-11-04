@@ -86,6 +86,7 @@ FAST_TYPES ?=
 UNIT_TARGETS ?=
 # Unit tests take every core and have a 5 s budget each; Vitest beside them starved them into timeouts, so it runs after.
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts, generated files, unit tests
+	@uv run --quiet --script scripts/scoped_checks.py early-fast
 	@$(WEB) prepare
 	$(STEPS) \
 		"format=uv run ruff format --check ." \
@@ -100,6 +101,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"unit=uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS)) $(MANAGED_CHECK)
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
+	@uv run --quiet --script scripts/scoped_checks.py early-preflight --base "$(BASE)"
 	@$(WEB) prepare
 	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(WEB_TESTS) \
 		"&tests=$(COVERED) -x && uv run coverage combine --quiet && uv run coverage report --format=total --fail-under=90" \
@@ -237,14 +239,15 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 
 # Core E2E lanes keep supervised cold starts apart from unrelated Git/frontend builds. Every lane keeps the same
 # per-OS workers and deadlines; the default local target still runs every case. Browser files use shared helpers.
-E2E_WEB := $(sort $(shell grep -lE 'playwright|_browser_ready|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
-E2E_SUPERVISED := tests/e2e/ui_service_test.py
+E2E_SUPERVISED := tests/e2e/ui_service_test.py tests/e2e/ui_service_browser_test.py
+E2E_WEB_CANDIDATES := $(sort $(shell grep -lE 'playwright|_browser_ready|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
+E2E_WEB := $(filter-out $(E2E_SUPERVISED),$(E2E_WEB_CANDIDATES))
 E2E_WORKERS := $(if $(filter Darwin,$(shell uname -s)),2,3)
 E2E_PYTEST := uv run pytest -m e2e -n $(E2E_WORKERS) -q --session-timeout=600 -x
-# The browser files go to two jobs (every other file each), because one job's 600 s of tests left no headroom on a slow
-# 3 vCPU macOS runner: the same code took 8 minutes on main and passed 10 minutes' budget on none of the slow runs.
-E2E_WEB_1 := $(foreach i,$(shell seq 1 2 $(words $(E2E_WEB))),$(word $(i),$(E2E_WEB)))
-E2E_WEB_2 := $(foreach i,$(shell seq 2 2 $(words $(E2E_WEB))),$(word $(i),$(E2E_WEB)))
+# Keep the mounted app sweep in its existing lane when a supervised journey uses a browser helper.
+# Classifying installed-server journeys first keeps their cold starts apart from unrelated browser builds.
+E2E_WEB_1 := $(filter-out $(E2E_SUPERVISED),$(foreach i,$(shell seq 1 2 $(words $(E2E_WEB_CANDIDATES))),$(word $(i),$(E2E_WEB_CANDIDATES))))
+E2E_WEB_2 := $(filter-out $(E2E_SUPERVISED),$(foreach i,$(shell seq 2 2 $(words $(E2E_WEB_CANDIDATES))),$(word $(i),$(E2E_WEB_CANDIDATES))))
 E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB) $(E2E_SUPERVISED), --ignore=$(f)))$(if $(filter supervised,$(SUITE)), $(E2E_SUPERVISED))$(if $(filter web-1,$(SUITE)),$(foreach f,$(E2E_WEB_1), $(f)))$(if $(filter web-2,$(SUITE)),$(foreach f,$(E2E_WEB_2), $(f)))
 
 test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers (2 on macOS); SUITE=cli (tool install, CLI), supervised (installed server), web-1 or web-2 (browser halves) runs one part

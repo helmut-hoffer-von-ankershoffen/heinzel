@@ -23,7 +23,7 @@ pytestmark = pytest.mark.unit
 REPO = Path(__file__).resolve().parents[2]
 
 
-def test_browser_service_journey_has_one_browser_shard_and_keeps_cli_service_tests_separate():
+def test_installed_browser_service_journey_keeps_cold_starts_out_of_browser_shards():
     recipe = "show-browser-allocation:\n\t@printf '%s\\n' '$(E2E_WEB)' '$(E2E_WEB_1)' '$(E2E_WEB_2)'"
     result = subprocess.run(
         ["make", "--no-print-directory", "-f", "Makefile", "-f", "-", "show-browser-allocation"],
@@ -36,8 +36,8 @@ def test_browser_service_journey_has_one_browser_shard_and_keeps_cli_service_tes
     )
     browser, first, second = [set(line.split()) for line in result.stdout.splitlines()]
     journey = "tests/e2e/ui_service_browser_test.py"
-    assert journey in browser
-    assert (journey in first) != (journey in second)
+    assert journey not in browser
+    assert journey not in first | second
     assert "tests/e2e/ui_service_test.py" not in browser
     assert first.isdisjoint(second)
     assert first | second == browser
