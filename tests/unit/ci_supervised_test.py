@@ -9,7 +9,7 @@ import yaml
 from tests._e2e_lanes import REPO, lane_commands
 
 pytestmark = pytest.mark.unit
-SUPERVISED = "tests/e2e/ui_service_test.py"
+SUPERVISED = {"tests/e2e/ui_service_test.py", "tests/e2e/ui_service_browser_test.py"}
 README = "tests/e2e/docs_test.py::test_readme_instructions"
 
 
@@ -26,12 +26,12 @@ def test_all_e2e_lanes_keep_workers_and_deadlines_and_readme_runs_only_once(suit
         assert commands[0][-1] == README
     assert commands[-1][-1] == f"--deselect={README}"
     if suite == "cli":
-        assert f"--ignore={SUPERVISED}" in commands[-1]
+        assert {f"--ignore={path}" for path in SUPERVISED} <= set(commands[-1])
     elif suite == "supervised":
-        assert commands[-1][-2] == SUPERVISED
+        assert set(commands[-1][-3:-1]) == SUPERVISED
         assert not any(arg.startswith("--ignore=") for arg in commands[-1])
     elif not suite:
-        assert not any(arg.startswith("--ignore=") or arg == SUPERVISED for arg in commands[-1])
+        assert not any(arg.startswith("--ignore=") or arg in SUPERVISED for arg in commands[-1])
 
 
 def test_supervised_is_a_required_matrix_cell_on_the_existing_platforms_and_events():
@@ -55,6 +55,22 @@ def test_supervised_is_a_required_matrix_cell_on_the_existing_platforms_and_even
     gate = jobs["ci-ok"]["steps"][0]
     assert gate["env"]["RESULTS"] == "${{ join(needs.*.result, ' ') }}"
     assert '*) echo "A required job ended with: $result"; exit 1 ;;' in gate["run"]
+
+
+def test_installed_browser_journey_receives_cached_runtimes_and_linux_host_dependencies_before_starting():
+    steps = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]["e2e"]["steps"]
+    [installer] = [step for step in steps if step.get("run") == "make test-browser-deps"]
+    [cache] = [step for step in steps if step.get("name") == "Reuse the browsers this lockfile's Playwright installs"]
+    [run] = [step for step in steps if step.get("run", "").startswith("make test-e2e ")]
+    # The supervised lane now includes Chromium and WebKit. Downloading browsers inside the driver cannot
+    # install WebKit's Linux shared libraries: the existing host-dependency target must run before pytest.
+    assert installer["if"] == cache["if"] == "matrix.suite == 'supervised' || startsWith(matrix.suite, 'web')"
+    assert steps.index(cache) < steps.index(installer) < steps.index(run)
+    makefile = (REPO / "Makefile").read_text()
+    browser_target = makefile.partition("test-browser-deps:")[2].partition("# Core E2E lanes")[0]
+    assert '"$$(uname -s)" = Linux' in browser_target
+    assert "playwright-core install --with-deps chromium webkit" in browser_target
+    assert "continue-on-error" not in installer
 
 
 def test_plugin_generation_keeps_one_complete_suite_without_core_lane_references():
