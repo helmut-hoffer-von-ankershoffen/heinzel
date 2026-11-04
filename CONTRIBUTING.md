@@ -36,6 +36,11 @@ exported from `uv.lock` ([ADR 0125](docs/adr/0125-prepare-locked-isolated-build-
 package fetching follows the existing behavior. If a Python backend artifact is absent, run `make setup` to fetch
 it; a cold setup still needs the registry.
 
+`make build` also prepares the locked backend cache before its isolated wheel and source-distribution builds,
+so it works directly from a fresh checkout without installing the controller. This preparation needs the registry
+when backend artifacts are missing. Calling `scripts/build.py` directly keeps Python build-dependency resolution
+offline and requires an already prepared cache.
+
 The web app uses TypeScript 7's native compiler through the pinned `@typescript/native` npm alias. Its schema
 generator still requires TypeScript 5's JavaScript API, so `typescript` stays on the generator's supported major.
 `make typecheck` and `pnpm run typecheck` select the native compiler explicitly; Node type definitions match the pinned
