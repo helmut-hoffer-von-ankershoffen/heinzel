@@ -1884,3 +1884,19 @@ def test_short_names_resolve_for_plugins_a_topic_text_search_cannot_see(make_ker
     topic_queries = [url for url, _token, _timeout in github.requests if "search/repositories" in url]
     assert topic_queries
     assert all("unforeseen" not in url for url in topic_queries)
+
+
+def test_replacing_a_plugin_cannot_inherit_its_previously_checkpointed_wheel_source(make_kernel, tool_env, monkeypatch):
+    service = service_for(
+        make_kernel, tool_env, lambda command, environment=None: subprocess.CompletedProcess(command, 0)
+    )
+    captured = []
+    monkeypatch.setattr(
+        service._installation, "preserved_tool_wheel_constraints", lambda values: captured.append(values) or ()
+    )
+    command = service.add_command("heinzel-old==1.0.0")
+    mutation = _service._PackageMutation(types.SimpleNamespace(), service._installation.startup_fingerprint())
+    service._run_package_change(
+        command, "Fixture change failed", "Fixture mutation", context=(mutation, ()), adding="heinzel-old==1.0.0"
+    )
+    assert captured == [["heinzel @ git+https://github.com/org/heinzel@v0.1.0"]]

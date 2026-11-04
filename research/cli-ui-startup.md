@@ -1,5 +1,16 @@
 # Direct UI command construction
 
+## Current supervised readiness contract
+
+On 2026-11-04 the owner explicitly increased the installed supervised web
+readiness deadline from six to twelve seconds. This is a policy relaxation,
+not a startup performance fix or a claim that the historical failures have a
+proven cause. The same deadline applies to fresh starts, replacement exec and
+cold recovery for both service-manager platforms. Exact ownership, a new
+lifecycle instance, authentication and selected-profile checks remain required.
+All other time budgets remain unchanged. The measurements and six-second
+failures below describe the earlier contract and remain historical evidence.
+
 `hz ui` used to construct the schemas of every unrelated CLI operation before
 Click dispatched its existing UI callback. Direct UI invocations now construct
 the complete existing UI subtree and the same root options/logging callback.
