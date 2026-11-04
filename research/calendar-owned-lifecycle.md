@@ -34,3 +34,16 @@ store/replay files are checked byte-for-byte. Ordinary native tool listing must 
 These tests do not establish actual isolated launchd/systemd, Linux native execution, a connected calendar provider,
 OS notification delivery or live acceptance. No live user service was changed. Final independent source review and
 combined publication/CI/release acceptance are still required.
+
+
+Independent review found that using the expanded mutation-path generator to authenticate older launchers changed the
+historical byte grammar. Six isolated OS/format cases reproduced the refusal using immutable published 0.9.15 wheel
+and actual main 505 renderer fixtures. The repair freezes historical bytes separately and keeps historical ownership
+out of current readiness and idempotent-install behavior.
+
+Explicit migration and retirement use a separate durable old/new transition journal and deterministic SDK/web locks.
+The fixed manager and verified current SDK uv are selected independently of PATH; the historical uv path is never
+executed. Both the global SDK gate and an old-shell-compatible profile gate remain through stop/replacement/removal,
+with exact authority checks at effect boundaries. Copied offline recovery binds both fences and distinguishes complete
+target cleanup from terminal gate cleanup. Real OS-manager, Linux-native and connected-provider acceptance remain
+separate from the isolated fixtures.

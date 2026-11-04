@@ -170,7 +170,7 @@ def test_cleanup_failure_keeps_precise_recoverable_phase_and_does_not_repeat_uv(
         monkeypatch.setattr(module, "sync", refuse_gate)
     with pytest.raises(OSError, match="refused"):
         module.recover(record.directory, module.EXPECTED_AUTHORITY)
-    assert json.loads(record.path.read_text())["phase"] == "removed"
+    assert json.loads(record.path.read_text())["phase"] == ("cleaned" if failure == "gate-sync" else "removed")
     assert len(calls) == 1
     monkeypatch.setattr(module, "_owned_unlink", recovery._owned_unlink)
     monkeypatch.setattr(module, "_manager", lambda *args: "")

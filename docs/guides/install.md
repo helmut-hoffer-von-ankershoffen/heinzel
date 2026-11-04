@@ -151,3 +151,10 @@ own local installer. No purge or network bootstrap runs as part of this command.
 If removal is interrupted, follow the concrete offline recovery command printed by the failure. Its private script
 uses the already installed external Python and retained verified remover, so it remains usable after the command's
 SDK is gone. Keep its journal and integration files until recovery reports completion.
+
+
+Older owned web launchers remain inspectable after an upgrade. Use `hz ui install --port PORT` with the port shown by
+`hz ui status`, or restart the ready owned service, to update its launcher before loading current code. An interrupted
+launcher update prints the exact install or uninstall command to retry; retain its journal and recovery fences until that
+operation completes. Offline uninstall retains compatible fences for older shells through verified SDK removal and
+integration cleanup, and its copied recovery remains usable after the SDK is gone.

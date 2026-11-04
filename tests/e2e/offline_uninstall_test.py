@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import zipfile
@@ -15,7 +16,7 @@ import pytest
 
 from heinzel import Config, Settings
 from heinzel.heads import install
-from heinzel.kernel import ProcessOutcome
+from heinzel.kernel import ProcessOutcome, user_config_dir
 from heinzel.modules.system.daemon import _service as daemon
 from tests.e2e.tool_install_test import REPO, Sandbox, sandbox, seed_uv_cache, wheel
 
@@ -30,7 +31,7 @@ from urllib.request import urlopen
 from heinzel.kernel import ProcessOutcome
 from heinzel.modules.system.daemon import _service as daemon
 
-root = Path(os.environ["HZ_OFFLINE_MANAGER_FIXTURE"])
+root = Path(os.environ.pop("HZ_OFFLINE_MANAGER_FIXTURE"))
 
 
 def calendar_probe(command):
@@ -59,10 +60,12 @@ def calendar_probe(command):
     if operation == "daemon-reload" and database.exists():
         return ProcessOutcome(0, "", "")
     if operation == "list" and database.exists():
+        web = json.loads((root / "web-manager.json").read_text()) if (root / "web-manager.json").exists() else None
         return ProcessOutcome(
             0,
             "PID\tStatus\tLabel\n"
-            + "".join("123 0 " + name + "\n" for name, item in entries.items() if item["active"]),
+            + "".join("123 0 " + name + "\n" for name, item in entries.items() if item["active"])
+            + ("123 0 io.github.helmut-hoffer-von-ankershoffen.heinzel.web\n" if web and web["loaded"] else ""),
             "",
         )
     if operation == "list-units" and database.exists():
@@ -125,8 +128,110 @@ def calendar_probe(command):
     return ProcessOutcome(0, text, "")
 
 
+def web_probe(command):
+    import hashlib, plistlib, shlex, subprocess
+
+    database = root / "web-manager.json"
+    item = json.loads(database.read_text()) if database.exists() else None
+    linux = command[0] == "/usr/bin/systemctl"
+    operation = command[2] if linux else command[1]
+    target = command[3] if linux and operation == "show" else command[-1].rsplit("/", 1)[-1]
+    web_label = "io.github.helmut-hoffer-von-ankershoffen.heinzel.web"
+    if operation == "bootstrap" and target == web_label + ".plist":
+        item = {"path": command[-1], "loaded": True, "active": True}
+    elif linux and operation == "enable" and target == "hz-web.service":
+        item = {"path": str(Path.home() / ".config/systemd/user/hz-web.service"), "loaded": True, "active": True}
+    elif item is None:
+        return None
+    elif operation == "list" and not (root / "calendar-manager.json").exists():
+        return ProcessOutcome(0, "PID\tStatus\tLabel\n" + ("123 0 " + web_label + "\n" if item["loaded"] else ""), "")
+    elif operation in {"bootout", "disable"} and target in {web_label, "hz-web.service"}:
+        if linux:
+            values = Path(item["path"]).read_text().splitlines()
+            launcher = Path(
+                shlex.split(next(line.removeprefix("ExecStart=") for line in values if line.startswith("ExecStart=")))[
+                    1
+                ]
+            )
+        else:
+            launcher = Path(plistlib.loads(Path(item["path"]).read_bytes())["ProgramArguments"][1])
+        prefix = Path(os.environ["UV_TOOL_DIR"]) / "heinzel"
+        sdk_gate = (
+            prefix.parent
+            / ".heinzel-maintenance"
+            / hashlib.sha256(str(prefix).encode()).hexdigest()[:24]
+            / "pending.json"
+        )
+        assert sdk_gate.is_file(), "Every new transition/removal must retain the SDK-wide fence"
+        if str(sdk_gate) not in launcher.read_text():
+            compatibility = launcher.parent.parent / "daemon/standard-install-pending.json"
+            assert compatibility.is_file(), "An old shell must consume the compatibility fence"
+            assert compatibility.read_bytes() == sdk_gate.read_bytes()
+        cold = subprocess.run(["/bin/sh", str(launcher)], env={}, capture_output=True, check=False, timeout=5)
+        assert cold.returncode == 75, "The actual historical/current installed shell must refuse before SDK imports"
+        item.update(active=False, loaded=linux)
+    elif operation == "daemon-reload":
+        item["loaded"] = item["loaded"] and Path(item["path"]).exists()
+    elif target not in {web_label, "hz-web.service"}:
+        return None
+    elif operation == "print":
+        if not item["loaded"]:
+            return ProcessOutcome(113, "", "")
+        value = plistlib.loads(Path(item["path"]).read_bytes())
+        text = (
+            "path = "
+            + item["path"]
+            + "\nprogram = /bin/sh\narguments = {\n"
+            + "\n".join(value["ProgramArguments"])
+            + "\n}\n"
+        )
+        return ProcessOutcome(0, text + ("pid = 123\n" if item["active"] else ""), "")
+    elif operation == "show":
+        if command[-1] == "--property=ActiveState,MainPID":
+            return ProcessOutcome(
+                0,
+                "ActiveState="
+                + ("active" if item["active"] else "inactive")
+                + "\nMainPID="
+                + ("123" if item["active"] else "0")
+                + "\n",
+                "",
+            )
+        if not item["loaded"]:
+            return ProcessOutcome(0, "LoadState=not-found\nMainPID=0\nControlPID=0\nJob=\n", "")
+        values = Path(item["path"]).read_text().splitlines()
+        directory = shlex.split(
+            next(line.removeprefix("WorkingDirectory=") for line in values if line.startswith("WorkingDirectory="))
+        )[0]
+        launcher = shlex.split(
+            next(line.removeprefix("ExecStart=") for line in values if line.startswith("ExecStart="))
+        )[1]
+        text = (
+            "Id=hz-web.service\nLoadState=loaded\nFragmentPath="
+            + item["path"]
+            + "\nDropInPaths=\nExecStart={ path=/bin/sh ; argv[]=/bin/sh "
+            + launcher
+            + " ; ignore_errors=no ; }\nWorkingDirectory="
+            + directory
+            + "\nActiveState="
+            + ("active" if item["active"] else "inactive")
+            + "\nUnitFileState="
+            + ("enabled" if item["active"] else "disabled")
+            + "\nMainPID="
+            + ("123" if item["active"] else "0")
+            + "\nControlPID=0\nJob=\n"
+        )
+        return ProcessOutcome(0, text, "")
+    else:
+        return None
+    database.write_text(json.dumps(item))
+    return ProcessOutcome(0, "", "")
+
+
 def probe(command):
     assert command[0] in {"/bin/launchctl", "/usr/bin/systemctl"}, "No PATH-selected manager may run"
+    if result := web_probe(command):
+        return result
     if result := calendar_probe(command):
         return result
     with (root / "manager-calls.jsonl").open("a") as stream:
@@ -155,6 +260,50 @@ def probe(command):
 
 daemon._quiescence_command = probe
 daemon._linux_user_manager_identity = lambda: (1, 2, 3)
+
+from heinzel.modules.ui import _service as web_service
+if not hasattr(web_service.WebService, "historical_record"):
+    defaults = web_service.WebService.__init__.__kwdefaults__
+    assert defaults is not None and "which" in defaults
+    # Explicit old constructor seam: OS exec denial also makes native access(X_OK) false.
+    defaults["which"] = lambda name: "/bin/launchctl" if name == "launchctl" else "/usr/bin/systemctl"
+
+import subprocess
+
+_native_run, _native_popen = subprocess.run, subprocess.Popen
+
+
+def manager_command(arguments):
+    return (
+        isinstance(arguments, (list, tuple))
+        and bool(arguments)
+        and Path(str(arguments[0])).name in {"launchctl", "systemctl"}
+    )
+
+
+def fixture_run(arguments, *args, **kwargs):
+    if manager_command(arguments):
+        result = probe(list(arguments))
+        if kwargs.get("check") and result.returncode:
+            raise subprocess.CalledProcessError(result.returncode, arguments, result.stdout, result.stderr)
+        return subprocess.CompletedProcess(arguments, result.returncode, result.stdout, result.stderr)
+    return _native_run(arguments, *args, **kwargs)
+
+
+def no_native_manager(arguments, *args, **kwargs):
+    assert not manager_command(arguments), "A manager double must never spawn a real user manager"
+    assert not kwargs.get("shell"), "The isolated fixture never runs a shell command"
+    return _native_popen(arguments, *args, **kwargs)
+
+
+subprocess.run, subprocess.Popen = fixture_run, no_native_manager
+if sys.argv[1:] == ["fixture", "manager-trap"]:
+    try:
+        subprocess.Popen(["/bin/launchctl" if sys.platform == "darwin" else "/usr/bin/systemctl", "managername"])
+    except AssertionError:
+        print("native manager spawn trapped before execution")
+        raise SystemExit(0)
+    raise AssertionError("The native manager trap was not installed")
 
 
 def no_discovery(*args, **kwargs):
@@ -259,14 +408,14 @@ def candidate_016(tmp_path_factory):
             root / name,
             ignore=shutil.ignore_patterns("node_modules", "__pycache__", "test-results", "work", ".vite"),
         )
-    subprocess.run(["git", "init", "--quiet", str(root)], check=True, timeout=15)
+    fixture_run(["git", "init", "--quiet", str(root)], check=True, timeout=15)
     project = root / "pyproject.toml"
     project.write_text(project.read_text().replace('version = "0.9.15"', 'version = "0.9.16"', 1))
     lock = root / "uv.lock"
     lock.write_text(
         lock.read_text().replace('name = "heinzel"\nversion = "0.9.15"', 'name = "heinzel"\nversion = "0.9.16"', 1)
     )
-    subprocess.run(
+    fixture_run(
         [sys.executable, str(root / "scripts/build.py"), "--wheel", "--out-dir", str(root / "dist")],
         check=True,
         timeout=300,
@@ -319,7 +468,7 @@ spec.loader.exec_module(module)
 def manager(command, platform):
     assert command[0] in {"/bin/launchctl", "/usr/bin/systemctl"}
     if platform == "linux":
-        if command[-1] == "daemon-reload": return ""
+        if command[-1] == "daemon-reload" or "list-units" in command: return ""
         return "LoadState=not-found\\nMainPID=0\\nControlPID=0\\nJob=\\n"
     return {"managername":"Aqua\\n", "manageruid":str(os.getuid())+"\\n", "list":"PID\\tStatus\\tLabel\\n"}[command[1]]
 module._manager = manager
@@ -339,7 +488,7 @@ def recover_installed_interruption(selected, settings, environment, result):
     assert journal["phase"] == "removing"
     assert Path(journal["gate"]).is_file()
     (selected.root / "interruption-result.txt").write_text(result.stdout + result.stderr)
-    result = subprocess.run(
+    result = fixture_run(
         deny_network([journal["python"], "-I", "-c", RECOVERY_FIXTURE, str(journals[0].parent / "recover.py")]),
         env=environment,
         cwd=selected.home,
@@ -354,6 +503,21 @@ def recover_installed_interruption(selected, settings, environment, result):
     assert Path(journal["uv"]).is_file()
     assert not (selected.root / "tools/heinzel").exists()
     return result
+
+
+MANAGER_EXEC_DENIAL = '(deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/systemctl"))'
+
+
+def deny_managers(command):
+    if sys.platform != "darwin":
+        return command  # Linux uses the explicit subprocess trap; native Linux acceptance remains separate.
+    if command[0] == "/usr/bin/sandbox-exec":
+        return [*command[:2], command[2] + MANAGER_EXEC_DENIAL, *command[3:]]
+    return ["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)" + MANAGER_EXEC_DENIAL, *command]
+
+
+def fixture_run(command, **kwargs):
+    return subprocess.run(deny_managers(command), check=kwargs.pop("check", False), **kwargs)
 
 
 def deny_network(command: list[str]) -> list[str]:
@@ -400,28 +564,16 @@ def alter_installation(change, receipt, selected, settings):
 
 
 def isolated_environment(selected, monkeypatch):
-    environment = selected.env | {"HZ_OFFLINE_MANAGER_FIXTURE": str(selected.root)}
+    # Use a real selected user profile, rather than inheriting pytest's process-only Core overrides.
+    environment = {
+        key: value for key, value in selected.env.items() if not key.upper().startswith("HZ_") and key != "VIRTUAL_ENV"
+    } | {"HZ_OFFLINE_MANAGER_FIXTURE": str(selected.root)}
     for key, value in environment.items():
-        if key in {
-            "HOME",
-            "UV_TOOL_DIR",
-            "UV_TOOL_BIN_DIR",
-            "UV_CACHE_DIR",
-            "UV_PYTHON_INSTALL_DIR",
-            "UV_PYTHON",
-            "HZ_OFFLINE_MANAGER_FIXTURE",
-        }:
+        if key in {"HOME", "UV_TOOL_DIR", "UV_TOOL_BIN_DIR", "UV_CACHE_DIR", "UV_PYTHON_INSTALL_DIR", "UV_PYTHON"}:
             monkeypatch.setenv(key, value)
-    for key in (
-        "HZ_CONFIG",
-        "HZ_CONFIG_HOME",
-        "HZ_DATA_DIR",
-        "HZ_CACHE_DIR",
-        "HZ_STATE_DIR",
-        "HZ_LOG_DIR",
-        "VIRTUAL_ENV",
-    ):
-        monkeypatch.delenv(key, raising=False)
+    for key in tuple(os.environ):
+        if key.upper().startswith("HZ_") or key == "VIRTUAL_ENV":
+            monkeypatch.delenv(key, raising=False)
     return environment
 
 
@@ -439,7 +591,7 @@ def retain_manager_fixture_source(selected, environment):
         '[tool.hatch.build.targets.wheel]\nonly-include = ["offline_uninstall_fixture.py", "offline_manager_plugin"]\n'
     )
     interpreter = selected.root / "tools/heinzel/bin/python"
-    result = subprocess.run(
+    result = fixture_run(
         [str(interpreter), "-I", "-m", "offline_uninstall_fixture", "system", "plugin", "develop", str(source)],
         env=environment,
         cwd=selected.home,
@@ -455,7 +607,7 @@ def upgrade_published_015(selected, environment, candidate):
     retain_manager_fixture_source(selected, environment)
     assert not list((selected.root / "tools/heinzel/lib").glob("python*/site-packages/uv-*.dist-info"))
     interpreter = selected.root / "tools/heinzel/bin/python"
-    updated = subprocess.run(
+    updated = fixture_run(
         [str(interpreter), "-I", "-m", "offline_uninstall_fixture", "system", "update", "--source", str(candidate)],
         env=environment,
         cwd=selected.home,
@@ -477,7 +629,7 @@ def normal_embedded_uv_paths(selected, environment, candidate):
     environment = environment | {"PATH": f"{prefix / 'bin'}{os.pathsep}{environment['PATH']}"}
 
     def run(*arguments):
-        result = subprocess.run(
+        result = fixture_run(
             [str(prefix / "bin/python"), "-I", "-m", "offline_uninstall_fixture", *arguments],
             env=environment,
             cwd=selected.home,
@@ -489,7 +641,7 @@ def normal_embedded_uv_paths(selected, environment, candidate):
         assert result.returncode == 0, result.stdout + result.stderr
         return result.stdout
 
-    discovery = subprocess.run(
+    discovery = fixture_run(
         [
             str(prefix / "bin/python"),
             "-I",
@@ -504,9 +656,7 @@ def normal_embedded_uv_paths(selected, environment, candidate):
         timeout=30,
     )
     assert discovery.stdout.strip() == str(prefix / "bin/hz")
-    version = subprocess.run(
-        [str(prefix / "bin/uv"), "--version"], capture_output=True, text=True, check=True, timeout=15
-    )
+    version = fixture_run([str(prefix / "bin/uv"), "--version"], capture_output=True, text=True, check=True, timeout=15)
     assert version.stdout.startswith("uv 0.13.7")
     probe = selected.root / "probe-source"
     probe.mkdir()
@@ -540,7 +690,7 @@ def prepare_calendar_workers(selected, environment):
         base = selected.home / name
         profile = {"HZ_CONFIG_HOME": str(base / "config"), "HZ_CONFIG": ""}
         profile.update({f"HZ_{field.upper()}_DIR": str(base / field) for field in ("state", "data", "cache", "log")})
-        result = subprocess.run(
+        result = fixture_run(
             [
                 str(selected.root / "tools/heinzel/bin/python"),
                 "-I",
@@ -562,7 +712,7 @@ def prepare_calendar_workers(selected, environment):
         retained = base / "data/reminder-consent-and-replay"
         retained.parent.mkdir(parents=True, exist_ok=True)
         retained.write_text("retained")
-        result = subprocess.run(
+        result = fixture_run(
             [
                 str(selected.root / "tools/heinzel/bin/python"),
                 "-I",
@@ -582,7 +732,7 @@ def prepare_calendar_workers(selected, environment):
         stored = [path for path in (base / "state/notify").iterdir() if path.is_file()]
         assert any(path.name == "notices.json" for path in stored)
         data.extend((path, path.read_bytes()) for path in [retained, base / "config/config.toml", *stored])
-    listed = subprocess.run(
+    listed = fixture_run(
         [str(selected.root / "tools/heinzel/bin/uv"), "--offline", "--no-config", "tool", "list", "--show-paths"],
         env=environment,
         cwd=selected.home,
@@ -597,6 +747,85 @@ def prepare_calendar_workers(selected, environment):
     return paths, data
 
 
+def prepare_released_web(selected, environment):
+    configuration = user_config_dir() / "config.toml"
+    configuration.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    configuration.write_text(
+        '[hz]\nfeatures=["persistent_web"]\nupdate_check=false\nauto_update=false\n'
+        '[org]\nname="Tester"\nhandle="tester"\nrole="engineer"\ntimezone="UTC"\n[team]\nname="Examples"\n'
+        "[system.notify]\nnative=false\n"
+    )
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    result = fixture_run(
+        [
+            str(selected.root / "tools/heinzel/bin/python"),
+            "-I",
+            "-m",
+            "offline_uninstall_fixture",
+            "ui",
+            "install",
+            "--port",
+            str(port),
+            "--json",
+        ],
+        env=environment,
+        cwd=selected.home,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["status"]["installed"]
+    state = Config.load(selected.home).settings(Settings, "hz").state_dir
+    marker = state / "ui/service.json"
+    record = json.loads(marker.read_text())
+    assert " ui --no-browser " in record["launcher"], (
+        "The immutable published015 generator creates this actual old launcher"
+    )
+    (selected.root / "published015-web-record.json").write_bytes(marker.read_bytes())
+    return [Path(record["unit"]), state / "ui/launch.sh", marker]
+
+
+def migrate_released_web(selected, environment, paths):
+    record = json.loads(paths[2].read_text())
+    poison = selected.root / "migration-poison"
+    poison.mkdir()
+    (poison / "uv").write_text("#!/bin/sh\nexit 98\n")
+    (poison / "uv").chmod(0o700)
+    result = fixture_run(
+        deny_network(
+            [
+                str(selected.root / "tools/heinzel/bin/python"),
+                "-I",
+                "-m",
+                "offline_uninstall_fixture",
+                "ui",
+                "install",
+                "--port",
+                str(record["port"]),
+                "--json",
+            ]
+        ),
+        env=environment | {"PATH": str(poison)},
+        cwd=selected.home,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["changed"]
+    replacement = json.loads(paths[2].read_text())
+    assert " ui serve --no-browser " in replacement["launcher"]
+    assert ".heinzel-maintenance" in replacement["launcher"]
+    assert replacement["uv"] == str(selected.root / "tools/heinzel/bin/uv")
+    assert replacement["profile"] == record["profile"]
+    assert replacement["generation"] != record["generation"]
+
+
 def installed_uninstall(selected, environment, change):
     interpreter = selected.root / "tools/heinzel/bin/python"
     # Execute the installed isolated module, even when the public hz script itself is the negative target.
@@ -606,9 +835,9 @@ def installed_uninstall(selected, environment, change):
     (poisoned / "uv").write_text("#!/bin/sh\necho unsafe-PATH-uv >&2\nexit 98\n")
     (poisoned / "uv").chmod(0o700)
     environment = environment | {"PATH": str(poisoned)}
-    if change in {"recovery", "calendar-recovery"}:
+    if change in {"recovery", "calendar-recovery", "old015-web-recovery"}:
         environment["HZ_OFFLINE_INTERRUPT_FIXTURE"] = "1"
-    result = subprocess.run(
+    result = fixture_run(
         deny_network(command),
         env=environment,
         cwd=selected.home,
@@ -627,6 +856,10 @@ def installed_uninstall(selected, environment, change):
     [
         "none",
         "old015-upgrade",
+        "old015-web-migrate",
+        "old015-web-retire",
+        "old015-web-recovery",
+        "old015-web-foreign",
         "recovery",
         "calendar",
         "calendar-recovery",
@@ -640,13 +873,13 @@ def installed_uninstall(selected, environment, change):
 def test_installed_uninstall_needs_no_network_or_discovery_and_keeps_user_work(
     sandbox, wheel, monkeypatch, change, request
 ):
-    candidate = request.getfixturevalue("candidate_016") if change == "old015-upgrade" else None
+    candidate = request.getfixturevalue("candidate_016") if change.startswith("old015") else None
     selected = Sandbox(sandbox.root, sandbox.python_directory, sandbox.python, own_home=True)
     selected.home.mkdir(mode=0o700)
     environment = isolated_environment(selected, monkeypatch)
     monkeypatch.setattr(daemon, "_quiescence_command", absent_manager)
     monkeypatch.setattr(daemon, "_linux_user_manager_identity", lambda: (1, 2, 3))
-    if change == "old015-upgrade":
+    if change.startswith("old015"):
         wheel = request.getfixturevalue("published_015")
     fixture = manager_wheel(selected.root)
     artifacts = [
@@ -670,16 +903,42 @@ def test_installed_uninstall_needs_no_network_or_discovery_and_keeps_user_work(
     settings = Config.load(selected.home).settings(Settings, "hz")
     paths = install.prepare(profile, settings.data_dir / "app-artifacts", set())
     assert install._managed_install(profile, artifacts, paths, settings, set()) == 0
-    if change == "old015-upgrade":
+    if change.startswith("old015-web"):
+        trapped = fixture_run(
+            [
+                str(selected.root / "tools/heinzel/bin/python"),
+                "-I",
+                "-m",
+                "offline_uninstall_fixture",
+                "fixture",
+                "manager-trap",
+            ],
+            env=environment,
+            cwd=selected.home,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        assert trapped.returncode == 0, trapped.stdout + trapped.stderr
+        assert "trapped before execution" in trapped.stdout
+    web_paths = prepare_released_web(selected, environment) if change.startswith("old015-web") else []
+    if change.startswith("old015"):
         upgrade_published_015(selected, environment, candidate)
-        normal_embedded_uv_paths(selected, environment, candidate)
+        if change == "old015-upgrade":
+            normal_embedded_uv_paths(selected, environment, candidate)
+    if change == "old015-web-migrate":
+        migrate_released_web(selected, environment, web_paths)
+    if change == "old015-web-foreign":
+        web_paths[1].write_bytes(web_paths[1].read_bytes() + b"\n# foreign launcher change\n")
+    web_expected = {path: path.read_bytes() for path in web_paths}
     data = settings.data_dir / "retained-work.txt"
     data.write_text("retained user work")
     foreign = selected.root / "tools/unrelated"
     foreign.mkdir()
     (foreign / "kept.txt").write_text("another tool")
     calendar_paths, calendar_data = (
-        prepare_calendar_workers(selected, environment) if change.startswith("calendar") else ([], [])
+        prepare_calendar_workers(selected, environment) if change.startswith(("calendar", "old015-web")) else ([], [])
     )
     if change == "calendar-foreign":
         calendar_paths[0].write_bytes(calendar_paths[0].read_bytes() + b"\n# foreign change\n")
@@ -687,25 +946,51 @@ def test_installed_uninstall_needs_no_network_or_discovery_and_keeps_user_work(
     receipt = selected.root / "tools/heinzel/uv-receipt.toml"
     alter_installation(change, receipt, selected, settings)
     result, environment = installed_uninstall(selected, environment, change)
-    if change in {"recovery", "calendar-recovery"}:
+    if change in {"recovery", "calendar-recovery", "old015-web-recovery"}:
         result = recover_installed_interruption(selected, settings, environment, result)
     assert data.read_text() == "retained user work"
     assert (foreign / "kept.txt").read_text() == "another tool"
-    _assert_removal_outcome(change, result, selected, receipt, (calendar_paths, calendar_data, calendar_expected))
+    _assert_removal_outcome(
+        change,
+        result,
+        selected,
+        receipt,
+        ((calendar_paths, calendar_data, calendar_expected), (web_paths, web_expected)),
+    )
 
 
-def _assert_removal_outcome(change, result, selected, receipt, calendar):
+def _assert_removal_outcome(change, result, selected, receipt, owned):
+    calendar, web = owned
+    web_paths, web_expected = web
     calendar_paths, calendar_data, calendar_expected = calendar
-    if change in {"none", "old015-upgrade", "recovery", "calendar", "calendar-recovery"}:
+    if web_paths:
+        assert result.returncode == (1 if change == "old015-web-foreign" else 0), result.stdout + result.stderr
+        if change == "old015-web-foreign":
+            assert {path: path.read_bytes() for path in web_paths} == web_expected
+            assert json.loads((selected.root / "web-manager.json").read_text())["active"]
+        else:
+            assert all(not path.exists() for path in web_paths)
+            assert not json.loads((selected.root / "web-manager.json").read_text())["active"]
+    if change in {
+        "none",
+        "old015-upgrade",
+        "recovery",
+        "calendar",
+        "calendar-recovery",
+        "old015-web-migrate",
+        "old015-web-retire",
+        "old015-web-recovery",
+    }:
         assert result.returncode == 0, result.stderr
-        if change not in {"recovery", "calendar-recovery"}:
+        if change not in {"recovery", "calendar-recovery", "old015-web-recovery"}:
             assert json.loads(result.stdout)["removed"] is True
+            assert json.loads(result.stdout)["web_removed"] is bool(web_paths)
         assert not (selected.root / "tools/heinzel").exists()
         assert not selected.hz_bin.exists()
         calls = [json.loads(line) for line in (selected.root / "manager-calls.jsonl").read_text().splitlines()]
         assert calls
         assert all(call[0] in {"/bin/launchctl", "/usr/bin/systemctl"} for call in calls)
-        if not change.startswith("calendar"):
+        if not calendar_paths and not web_paths:
             assert not any("bootout" in call or "disable" in call or "stop" in call for call in calls)
         else:
             manager = json.loads((selected.root / "calendar-manager.json").read_text())
@@ -716,7 +1001,7 @@ def _assert_removal_outcome(change, result, selected, receipt, calendar):
     else:
         assert result.returncode == 1
         assert receipt.exists()
-        if change == "calendar-foreign":
+        if change in {"calendar-foreign", "old015-web-foreign"}:
             manager = json.loads((selected.root / "calendar-manager.json").read_text())
             assert all(item["active"] for item in manager.values())
             assert all(path.read_bytes() == content for path, content in calendar_expected.items())
@@ -752,7 +1037,7 @@ def test_network_denial_blocks_ip_but_preserves_local_unix_ipc(tmp_path):
                 f"assert result in ({errno.EPERM},{errno.EACCES}), result\n"
                 f"ipc=socket.socket(socket.AF_UNIX); ipc.connect({address!r}); ipc.sendall(b'local manager IPC')\n"
             )
-            result = subprocess.run(
+            result = fixture_run(
                 deny_network([sys.executable, "-I", "-c", code]), capture_output=True, text=True, check=False, timeout=5
             )
             assert result.returncode == 0, result.stderr

@@ -551,10 +551,54 @@ def _finish_owned_links(journal: dict[str, Any]) -> None:
             os.close(directory)
 
 
-def _require_gate(journal: dict[str, Any]) -> None:
-    if read(Path(journal["gate"]), 1024).decode() != journal["gate_content"]:
-        msg = "The installation recovery gate changed"
+def gate_paths(journal: dict[str, Any]) -> tuple[Path, ...]:
+    """The primary SDK gate and every exact historical compatibility fence, all authority-hashed."""
+    return (Path(journal["gate"]), *(Path(row["path"]) for row in journal.get("compatibility_gates", [])))
+
+
+def _gate_parent(journal: dict[str, Any], path: Path) -> None:
+    physical(path.parent)
+    for row in journal.get("compatibility_gates", []):
+        if row["path"] == str(path):
+            info = path.parent.lstat()
+            if [info.st_dev, info.st_ino, info.st_mode, info.st_uid] != row["parent_identity"]:
+                msg = "Compatibility gate directory changed"
+                raise ValueError(msg)
+
+
+def publish_gate(journal: dict[str, Any], path: Path) -> None:
+    """Exclusively publish only a journal-named physical gate; never replace foreign or existing bytes.
+
+    Raises:
+        ValueError: If the path is not part of the hash-bound authority.
+    """
+    if path not in gate_paths(journal):
+        msg = "Unknown installation recovery gate"
         raise ValueError(msg)
+    _gate_parent(journal, path)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w") as stream:
+        stream.write(journal["gate_content"])
+        stream.flush()
+        os.fsync(stream.fileno())
+    sync(path.parent)
+
+
+def require_gates(journal: dict[str, Any]) -> None:
+    """Require every journal-bound exact fence before any removal or integration effect.
+
+    Raises:
+        ValueError: If a present gate is foreign or changed.
+    """
+    for path in gate_paths(journal):
+        _gate_parent(journal, path)
+        if read(path, 1024).decode() != journal["gate_content"]:
+            msg = "The installation recovery gate changed"
+            raise ValueError(msg)
+
+
+def _require_gate(journal: dict[str, Any]) -> None:
+    require_gates(journal)
 
 
 def _finished_targets(journal: dict[str, Any]) -> None:
@@ -572,33 +616,87 @@ def _finished_targets(journal: dict[str, Any]) -> None:
 
 def _gate_authority(journal: dict[str, Any]) -> bool:
     try:
-        _require_gate(journal)
+        require_gates(journal)
     except FileNotFoundError:
-        if journal["phase"] not in {"removed", "complete"}:
+        permitted = (
+            {"cleaned", "complete"} if journal.get("compatibility_gates") else {"removed", "cleaned", "complete"}
+        )
+        if journal["phase"] not in permitted:
             msg = "The recovery gate is missing before finished cleanup"
             raise ValueError(msg) from None
         _finished_targets(journal)
+        _remaining_gates(journal)
         return False
-    if journal["phase"] == "complete":
+    if journal["phase"] in {"cleaned", "complete"}:
         _finished_targets(journal)
+        return False
     return True
 
 
-def _resume_finished(journal: dict[str, Any], path: Path) -> None:
-    # A crash after gate unlink may leave phase=removed. This path never invokes uv or any unlink helper.
-    managers_absent(journal)
+def _remaining_gates(journal: dict[str, Any]) -> tuple[Path, ...]:
+    remaining: list[Path] = []
+    for path in gate_paths(journal):
+        _gate_parent(journal, path)
+        if os.path.lexists(path):
+            if read(path, 1024).decode() != journal["gate_content"]:
+                msg = "The installation recovery gate changed"
+                raise ValueError(msg)
+            remaining.append(path)
+    return tuple(reversed(remaining))
+
+
+def finish_gate_cleanup(journal: dict[str, Any], path: Path, *, terminal: bool = False) -> None:
+    """Clear only exact own gates after every target is absent; never retry uv or target cleanup.
+
+    Raises:
+        ValueError: If a present gate changed or terminal cleanup is not proven.
+    """
+    if not terminal:
+        require_gates(journal)
     _finished_targets(journal)
-    gate = Path(journal["gate"])
-    try:
-        gate.lstat()
-    except FileNotFoundError:
-        pass
-    else:
-        msg = "The installation recovery gate changed"
-        raise ValueError(msg)
-    sync(gate.parent)
+    remaining = _remaining_gates(journal)
+    journal["phase"] = "cleaned"
+    write(path, journal)
+    for gate in remaining:
+        if read(gate, 1024).decode() != journal["gate_content"]:
+            msg = "The installation recovery gate changed"
+            raise ValueError(msg)
+        gate.unlink()
+        sync(gate.parent)
     journal["phase"] = "complete"
     write(path, journal)
+
+
+def _resume_finished(journal: dict[str, Any], path: Path) -> None:
+    managers_absent(journal)
+    finish_gate_cleanup(journal, path, terminal=True)
+
+
+def _complete_prepared_gates(journal: dict[str, Any]) -> None:
+    paths = gate_paths(journal)
+    missing = [path for path in paths if not os.path.lexists(path)]
+    if not missing or not journal.get("compatibility_gates") or journal["phase"] != "prepared":
+        return
+    if paths[0] in missing:
+        msg = "The primary SDK gate is missing before prepared publication can resume"
+        raise ValueError(msg)
+    _remaining_gates(journal)
+    prefix = Path(journal["prefix"])
+    if [prefix.stat().st_dev, prefix.stat().st_ino] != journal["prefix_identity"] or manifest(prefix) != journal[
+        "manifest"
+    ]:
+        msg = "The prepared installation changed before compatibility publication"
+        raise ValueError(msg)
+    for row in journal["files"]:
+        if not os.path.lexists(row["path"]):
+            msg = "A prepared integration file is missing"
+            raise ValueError(msg)
+        _verify_owned(row)
+    managers_absent(journal)
+    for gate in missing:
+        _remaining_gates(journal)
+        publish_gate(journal, gate)
+    require_gates(journal)
 
 
 def _remove_remaining(journal: dict[str, Any], path: Path) -> None:
@@ -657,12 +755,8 @@ def _finish_cleanup(journal: dict[str, Any], path: Path) -> None:
         _owned_unlink(row)
     if journal["platform"] == "linux":
         _manager(["/usr/bin/systemctl", "--user", "daemon-reload"], "linux")
-    gate = Path(journal["gate"])
     _require_gate(journal)
-    gate.unlink()
-    sync(gate.parent)
-    journal["phase"] = "complete"
-    write(path, journal)
+    finish_gate_cleanup(journal, path)
 
 
 @contextmanager
@@ -713,10 +807,11 @@ def recover(directory: Path, expected: str = EXPECTED_AUTHORITY) -> dict[str, An
     if Path(sys.executable).resolve(strict=True) != python or python_continuity(python) != journal["python_continuity"]:
         msg = "The original recovery interpreter changed; no removal was attempted"
         raise ValueError(msg)
-    if journal["phase"] not in {"prepared", "stopped", "removing", "removed", "complete"}:
+    if journal["phase"] not in {"prepared", "stopped", "removing", "removed", "cleaned", "complete"}:
         msg = "Unknown removal phase; inspect its local recovery record"
         raise ValueError(msg)
     with _locks(journal):
+        _complete_prepared_gates(journal)
         if not _gate_authority(journal):
             _resume_finished(journal, path)
             return journal

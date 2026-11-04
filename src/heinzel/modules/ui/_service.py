@@ -16,14 +16,19 @@ from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from heinzel import Config, HeinzelError, Kernel, Settings
 from heinzel.kernel import (
+    HostServiceManager,
     Installation,
     MaintenanceLocks,
     PrivateControl,
+    boot,
+    host_maintenance_gate,
+    host_maintenance_lock,
     installation_mutation_paths,
     installation_mutation_pending,
     private_directory,
@@ -32,7 +37,10 @@ from heinzel.kernel import (
     private_socket_directory,
     private_write,
 )
+from heinzel.kernel._offline_uv import verified_installed_path
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
+from heinzel.modules.ui._historical_launcher import HistoricalLauncher
+from heinzel.modules.ui._launcher_transition import Action, LauncherTransition
 from heinzel.modules.ui._profile import (
     default_profile,
     environment_command,
@@ -87,14 +95,23 @@ class WebChange(BaseModel):
     status: WebStatus = Field(description="The independently observed service state.")
 
 
+class WebStop(Protocol):
+    """Stopping a historical launcher additionally requires the coordinator's exact compatibility token."""
+
+    def __call__(self, token: str | None = None) -> None:
+        """Stop only after every required fence is owned by this operation."""
+        ...
+
+
 @dataclass(frozen=True)
 class WebRemoval:
     """One held, preflighted integration: stopping and final file cleanup are separate operations."""
 
     files: tuple[OwnedFile, ...]
-    stop: Callable[[], None]
+    stop: WebStop
     finish: Callable[[], WebChange]
     manager_units: dict[str, dict[str, object]]
+    compatibility_gates: tuple[Path, ...] = ()
 
 
 class WebService:
@@ -146,7 +163,7 @@ class WebService:
         """Use user scope and the current installation's verified stable uv bin entry point.
 
         Raises:
-            HeinzelError: If uv is absent or its bin directory cannot be read.
+            HeinzelError: If the selected standard tool or fixed user-manager authority cannot be verified.
         """
         config = Config.load(Path.home())
         settings = config.settings(Settings, "hz")
@@ -154,21 +171,19 @@ class WebService:
             msg = "Persistent web availability requires an absolute hz.state_dir in your user configuration."
             raise HeinzelError(msg)
         installation = kernel.resolve(Installation)
-        uv = shutil.which("uv")
-        if uv is None:
-            msg = "Install uv before installing the persistent web service."
-            raise HeinzelError(msg)
-        result = _run([uv, "tool", "dir", "--bin"])
-        binary = Path(result.stdout.strip())
-        if result.returncode != 0 or not binary.is_absolute():
-            msg = "The uv tool executable directory could not be verified."
-            raise HeinzelError(msg)
+        _store, binary = installation.tool_destination()
+        uv = installation.prefix / "bin/uv"
+        manager = boot(builtin_only=True, cwd=Path.home(), maintenance=True).resolve_builtin_service(
+            HostServiceManager, "system.daemon"
+        )
         return cls(
             settings.state_dir,
             Path.home(),
             binary / "hz",
             prefix=installation.prefix.resolve(strict=True),
-            uv=Path(uv).absolute(),
+            uv=uv,
+            runner=lambda command: manager.command(list(command)),
+            which=lambda name: "/bin/launchctl" if name == "launchctl" else "/usr/bin/systemctl",
             profile=user_profile(
                 config, settings, Path.home(), installation.prefix.resolve(strict=True), binary / "hz"
             ),
@@ -177,6 +192,7 @@ class WebService:
                 installation.is_tool
                 and installation.startup_state_matches()
                 and (binary / "hz").samefile(installation.prefix / "bin/hz")
+                and verified_installed_path(installation.prefix) == uv
             ),
         )
 
@@ -274,43 +290,68 @@ class WebService:
             "[Install]\nWantedBy=default.target\n"
         )
 
+    def historical_record(self, record: dict[str, JsonValue] | None) -> bool:
+        """Recognized historical authority remains distinct from a current operational launcher."""
+        if record is None:
+            return False
+        profile = validated_profile(
+            record.get("profile"), self.home, self.directory.parent, self.prefix, self.executable
+        )
+        return profile is not None and (
+            record["uv"] != str(self.uv)
+            or record["launcher"] != self._launch_content(int(str(record["port"])), str(record["generation"]), profile)
+        )
+
+    def compatibility_gate(self) -> Path:
+        """A frozen historical shell consumes this profile fence before importing mutable SDK code."""
+        return self.directory.parent / "daemon/standard-install-pending.json"
+
+    def valid_record_value(self, value: dict[str, JsonValue]) -> bool:
+        """Validate only exact current or historical tuples; this does not authorize files, a manager or effects."""
+        if set(value) != {
+            "port",
+            "generation",
+            "executable",
+            "unit",
+            "content",
+            "launcher",
+            "prefix",
+            "uv",
+            "profile",
+        }:
+            return False
+        profile = validated_profile(
+            value.get("profile"), self.home, self.directory.parent, self.prefix, self.executable
+        )
+        port, generation, uv = value.get("port"), value.get("generation"), value.get("uv")
+        if (
+            profile is None
+            or type(port) is not int
+            or not 1 <= port <= MAX_PORT
+            or not isinstance(generation, str)
+            or re.fullmatch(r"[0-9a-f]{32}", generation) is None
+            or value["executable"] != str(self.executable)
+            or value["prefix"] != str(self.prefix)
+            or value["unit"] != str(self.unit)
+            or value["content"] != self._content()
+            or not isinstance(uv, str)
+            or not Path(uv).is_absolute()
+            or len(uv) > 4 * 1024
+            or "\x00" in uv
+        ):
+            return False
+        historical = HistoricalLauncher(self.prefix, self.directory, self.executable, Path(uv), profile)
+        return (
+            value["uv"] == str(self.uv) and value["launcher"] == self._launch_content(port, generation, profile)
+        ) or value["launcher"] in {
+            historical.render(port, generation),
+            historical.render(port, generation, legacy=True),
+        }
+
     def _record(self) -> dict[str, JsonValue] | None:
         try:
             value = TypeAdapter(dict[str, JsonValue]).validate_json(private_read(self.marker))
-            if set(value) != {
-                "port",
-                "generation",
-                "executable",
-                "unit",
-                "content",
-                "launcher",
-                "prefix",
-                "uv",
-                "profile",
-            }:
-                return None
-            profile = validated_profile(
-                value.get("profile"), self.home, self.directory.parent, self.prefix, self.executable
-            )
-            port, generation = value.get("port"), value.get("generation")
-            if (
-                profile is None
-                or type(port) is not int
-                or not 1 <= port <= MAX_PORT
-                or not isinstance(generation, str)
-                or re.fullmatch(r"[0-9a-f]{32}", generation) is None
-                or value["executable"] != str(self.executable)
-                or value["prefix"] != str(self.prefix)
-                or value["uv"] != str(self.uv)
-                or value["unit"] != str(self.unit)
-                or value["content"] != self._content()
-                or value["launcher"]
-                not in {
-                    self._launch_content(port, generation, profile),
-                    self._launch_content(port, generation, profile, legacy=True),
-                }
-                or private_read(self.launcher) != value["launcher"]
-            ):
+            if not self.valid_record_value(value) or private_read(self.launcher) != value["launcher"]:
                 return None
             info = self.unit.lstat()
             if not stat.S_ISREG(info.st_mode) or info.st_uid != self.uid or info.st_mode & 0o022:
@@ -426,6 +467,12 @@ class WebService:
         result = WebStatus(installed=record is not None, loaded=loaded, ready=False, pid=pid)
         if record is not None:
             result.port = int(str(record["port"]))
+            if os.path.lexists(LauncherTransition(self.directory, self.prefix, self.executable).path):
+                result.problem = "The web launcher transition requires its original install or uninstall command."
+                return result
+            if self.historical_record(record):
+                result.problem = "The owned web launcher needs migration. Run `hz ui install` with its recorded port."
+                return result
         if record is None or pid is None:
             if installation_mutation_pending(self.prefix, self.directory.parent):
                 result.problem = (
@@ -450,6 +497,9 @@ class WebService:
         """
         if dry_run:
             return self._install(port, dry_run=True)
+        if self._transition_needed():
+            with MaintenanceLocks((host_maintenance_lock(self.prefix), self.directory / "lifecycle.lock")) as locks:
+                return self._transition("migrate", locks=locks, port=port)
         with private_lock(self.directory / "lifecycle.lock"):
             return self._install(port)
 
@@ -468,10 +518,7 @@ class WebService:
         existing = self._record()
         loaded, _ = self._manager(existing)
         if existing is not None:
-            if existing["port"] != port:
-                msg = "Uninstall the existing owned web service before changing its port."
-                raise HeinzelError(msg)
-            return WebChange(changed=False, dry_run=dry_run, status=self.status())
+            return self._existing_install(existing, port, dry_run=dry_run)
         if any(path.exists() or path.is_symlink() for path in (self.marker, self.unit, self.launcher)) or loaded:
             msg = "Existing web integration is not owned; it was left unchanged."
             raise HeinzelError(msg)
@@ -529,6 +576,158 @@ class WebService:
             status=status,
         )
 
+    def _existing_install(self, existing: dict[str, JsonValue], port: int, *, dry_run: bool) -> WebChange:
+        if existing["port"] != port:
+            msg = "Uninstall the existing owned web service before changing its port."
+            raise HeinzelError(msg)
+        if self.historical_record(existing):
+            if not dry_run:
+                msg = "The owned launcher changed before migration; retry `hz ui install` with its recorded port."
+                raise HeinzelError(msg)
+            selected = validated_profile(
+                existing["profile"], self.home, self.directory.parent, self.prefix, self.executable
+            )
+            proposal = self._launch_content(port, str(existing["generation"]), selected)
+            return WebChange(changed=False, dry_run=True, files={str(self.launcher): proposal}, status=self.status())
+        return WebChange(changed=False, dry_run=dry_run, status=self.status())
+
+    def _transition_needed(self) -> bool:
+        return os.path.lexists(
+            LauncherTransition(self.directory, self.prefix, self.executable).path
+        ) or self.historical_record(self._record())
+
+    def _prepare_transition(
+        self, action: Action, port: int | None, retiring_instance: str | None, locks: MaintenanceLocks
+    ) -> LauncherTransition:
+        if not self.verify() or not self.executable.is_file():
+            msg = "Verify the selected standard Heinzel SDK before changing its historical web launcher."
+            raise HeinzelError(msg)
+        transition = LauncherTransition(self.directory, self.prefix, self.executable, locks)
+        if os.path.lexists(transition.path):
+            value = transition.load()
+        else:
+            old = self._record()
+            if old is None or not self.historical_record(old):
+                msg = "The historical web integration changed; no transition was started."
+                raise HeinzelError(msg)
+            if installation_mutation_pending(self.prefix, self.directory.parent):
+                msg = "An existing installation change needs recovery before web launcher migration or retirement."
+                raise HeinzelError(msg)
+            profile = validated_profile(old["profile"], self.home, self.directory.parent, self.prefix, self.executable)
+            require_installation_profile(profile, self.unsupported)
+            if port is not None and old["port"] != port:
+                msg = "Use the historical web service's recorded port for migration."
+                raise HeinzelError(msg)
+            self._manager(old)
+            new = None
+            if action == "migrate":
+                new = old | {"generation": secrets.token_hex(16), "uv": str(self.uv)}
+                new["launcher"] = self._launch_content(int(str(old["port"])), str(new["generation"]), profile)
+                if len(json.dumps(new).encode()) > 16 * 1024:
+                    msg = "The canonical web record exceeds its existing control-file budget; no job was stopped."
+                    raise HeinzelError(msg)
+            transition.prepare(
+                action, (old, new), (self.unit, self.launcher, self.marker), retiring_instance=retiring_instance
+            )
+            value = transition.record
+        transition.validate(
+            action, (self.unit, self.launcher, self.marker), self.valid_record_value, self.historical_record
+        )
+        if port is not None and value.old["port"] != port:
+            msg = "Use the historical web service's recorded port for migration."
+            raise HeinzelError(msg)
+        self._manager(value.old)
+        return transition
+
+    def _transition(
+        self, action: Action, *, locks: MaintenanceLocks, port: int | None = None, retiring_instance: str | None = None
+    ) -> WebChange:
+        transition = self._prepare_transition(action, port, retiring_instance, locks)
+        try:
+            self._apply_transition(transition)
+        except (OSError, ValueError, HeinzelError, subprocess.SubprocessError) as error:
+            command = (
+                f"hz ui install --port {transition.record.old['port']}" if action == "migrate" else "hz ui uninstall"
+            )
+            msg = (
+                "The web launcher transition is incomplete; its exact recovery fences and user data were kept. "
+                f"Retry `{command}`."
+            )
+            raise HeinzelError(msg) from error
+        return WebChange(changed=True, status=self.status())
+
+    def _apply_transition(self, transition: LauncherTransition) -> None:
+        value = transition.record
+        if value.phase in {"cleaned", "complete"}:
+            transition.require_gates(terminal=True)
+            transition.finish()
+            return
+        if value.phase == "prepared":
+            if self._record() != value.old:
+                msg = "The original web launcher changed before its first stop."
+                raise HeinzelError(msg)
+            transition.publish()
+            self._stop_owned(value.old, fence=transition.require_gates)
+            transition.require_gates()
+            transition.phase("stopped")
+        transition.require_gates()
+        transition.check_files()
+        if transition.record.phase == "stopped":
+            self._replace_or_retire(transition)
+        if transition.record.phase in {"canonical", "loaded"}:
+            self._load_transition(transition)
+        elif transition.record.phase == "retired":
+            self._finish_retirement(transition)
+        if not self.verify():
+            msg = "The selected SDK changed during web launcher transition; its fences were kept."
+            raise HeinzelError(msg)
+        transition.finish()
+
+    def _replace_or_retire(self, transition: LauncherTransition) -> None:
+        value = transition.record
+        if not self._stop_complete(value.old):
+            msg = "The historical web job is not proven quiescent; its recovery fence remains."
+            raise HeinzelError(msg)
+        if value.kind == "web-launcher-migrate":
+            transition.replace()
+        else:
+            transition.retire()
+
+    def _finish_retirement(self, transition: LauncherTransition) -> None:
+        value = transition.record
+        transition.require_gates()
+        if self.platform == "linux" and self.runner(self._command("daemon-reload")).returncode:
+            msg = "The retired web definitions need a verified user-manager reload."
+            raise HeinzelError(msg)
+        if not self._stop_complete(value.old):
+            msg = "The retired web job is not proven stopped; its recovery fence remains."
+            raise HeinzelError(msg)
+
+    def _load_transition(self, transition: LauncherTransition) -> None:
+        new = transition.record.new
+        if new is None or self._record() != new:
+            msg = "The canonical web launcher is not coherent; its recovery fence remains."
+            raise HeinzelError(msg)
+        transition.require_gates()
+        loaded, _ = self._manager(new)
+        if transition.record.phase != "loaded" or not loaded:
+            self._stop_owned(new, fence=transition.require_gates)
+            self._prepare_install(int(str(new["port"])))
+            commands = (
+                [self._command("bootstrap", f"gui/{self.uid}", str(self.unit))]
+                if self.platform == "darwin"
+                else [self._command("daemon-reload"), self._command("enable", "--now", UNIT)]
+            )
+            for command in commands:
+                transition.require_gates()
+                if self.runner(command).returncode:
+                    msg = "The canonical web launcher could not be loaded; retry its explicit migration command."
+                    raise HeinzelError(msg)
+            if not self._manager(new)[0]:
+                msg = "The manager did not confirm the canonical launcher; its recovery fence remains."
+                raise HeinzelError(msg)
+            transition.phase("loaded")
+
     def _prepare_install(self, port: int) -> None:
         if not self.verify() or not self.executable.is_file():
             msg = "Install and verify the persistent uv tool app before enabling its web service."
@@ -566,6 +765,9 @@ class WebService:
         except FileNotFoundError:
             return None
         record = self._record()
+        if self._transition_needed():
+            msg = "Complete the owned launcher migration with `hz ui install` before opening this service."
+            raise HeinzelError(msg)
         loaded, pid = self._manager(record)
         if record is None or not loaded or pid is None:
             msg = "The installed web service is not ready. Inspect `hz ui status`."
@@ -586,6 +788,28 @@ class WebService:
         Raises:
             HeinzelError: If exact ownership or readiness cannot be established.
         """
+        if self._transition_needed():
+            with MaintenanceLocks((host_maintenance_lock(self.prefix), self.directory / "lifecycle.lock")) as locks:
+                transition = LauncherTransition(self.directory, self.prefix, self.executable)
+                if os.path.lexists(transition.path):
+                    prior = transition.load()
+                    instance = prior.retiring_instance
+                    if instance is None:
+                        msg = "Complete the pending launcher operation with its original install or uninstall command."
+                        raise HeinzelError(msg)
+                else:
+                    record = self._record()
+                    loaded, pid = self._manager(record)
+                    if record is None or not loaded or pid is None:
+                        msg = "No owned running historical service can restart; use `hz ui install` to migrate it."
+                        raise HeinzelError(msg)
+                    instance = str(self._control(record, pid, "status")["instance"])
+                self._transition("migrate", locks=locks, retiring_instance=instance)
+                return WebRestart(
+                    requested=True,
+                    retiring_instance=instance,
+                    message="Launcher migrated and restart requested. Use `hz ui status` to verify the replacement.",
+                )
         record = self._record()
         loaded, pid = self._manager(record)
         if record is None or not loaded or pid is None:
@@ -613,6 +837,9 @@ class WebService:
         """
         path = self.directory / "lifecycle.lock"
         with locks.guard(path) if locks is not None else private_lock(path):
+            if os.path.lexists(LauncherTransition(self.directory, self.prefix, self.executable).path):
+                msg = "Complete the web launcher's explicit migration or retirement before removing the SDK."
+                raise HeinzelError(msg)
             record = self._record()
             if not self._integration_absent() and record is None:
                 msg = "The web service is foreign or changed; it was left unchanged."
@@ -620,9 +847,10 @@ class WebService:
             self._manager(record)
             files = tuple(owned_file(path) for path in (self.unit, self.launcher, self.marker)) if record else ()
 
-            def stop() -> None:
-                if record:
-                    self._stop_owned(record)
+            compatibility = (self.compatibility_gate(),) if self.historical_record(record) else ()
+
+            def stop(token: str | None = None) -> None:
+                self._removal_stop(record, compatibility, token)
 
             def finish() -> WebChange:
                 if record and not self._stop_complete(record):
@@ -644,7 +872,23 @@ class WebService:
                     "directory": str(self.home),
                     "disabled": True,
                 }
-            yield WebRemoval(files, stop, finish, manager_units)
+            yield WebRemoval(files, stop, finish, manager_units, compatibility)
+
+    def _removal_stop(
+        self, record: dict[str, JsonValue] | None, compatibility: tuple[Path, ...], token: str | None
+    ) -> None:
+        def fence() -> None:
+            if token is None or any(
+                private_read(path) != json.dumps({"token": token}, indent=2) + "\n"
+                for path in (*compatibility, host_maintenance_gate(self.prefix))
+            ):
+                msg = "The historical web launcher needs its exact paired fences before stopping."
+                raise HeinzelError(msg)
+
+        if compatibility:
+            fence()
+        if record:
+            self._stop_owned(record, fence=fence if token is not None else None)
 
     def uninstall(self) -> WebChange:
         """Remove exact owned integration under one exclusive lifecycle writer.
@@ -652,6 +896,9 @@ class WebService:
         Raises:
             HeinzelError: If loaded or filesystem ownership cannot be established.
         """
+        if self._transition_needed():
+            with MaintenanceLocks((host_maintenance_lock(self.prefix), self.directory / "lifecycle.lock")) as locks:
+                return self._transition("retire", locks=locks)
         with private_lock(self.directory / "lifecycle.lock"):
             return self._uninstall()
 
@@ -736,7 +983,7 @@ class WebService:
             raise HeinzelError(msg)
         return WebChange(changed=True, status=self.status())
 
-    def _stop_owned(self, record: dict[str, JsonValue]) -> None:
+    def _stop_owned(self, record: dict[str, JsonValue], *, fence: Callable[[], None] | None = None) -> None:
         """Stop only the exact loaded integration, preserving its files until removal is confirmed.
 
         Raises:
@@ -749,6 +996,8 @@ class WebService:
                 if self.platform == "darwin"
                 else self._command("disable", "--now", UNIT)
             )
+            if fence is not None:
+                fence()
             if self.runner(command).returncode:
                 msg = "The owned web service could not be unloaded; its files were retained."
                 raise HeinzelError(msg)

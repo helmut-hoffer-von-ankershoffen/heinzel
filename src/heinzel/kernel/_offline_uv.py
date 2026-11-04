@@ -104,6 +104,12 @@ def _installed_bytes(prefix: Path) -> tuple[bytes, list[bytes]]:
     return binary, [files[f"licenses/{name}"] for name in LICENSE_HASHES]
 
 
+def verified_installed_path(prefix: Path) -> Path:
+    """Authenticate current packaged uv metadata and opened bytes without executing or importing its package."""
+    _installed_bytes(prefix)
+    return prefix / "bin/uv"
+
+
 @dataclass(frozen=True)
 class VerifiedUV:
     """A publisher-verified binary copied to a private physical recovery directory."""

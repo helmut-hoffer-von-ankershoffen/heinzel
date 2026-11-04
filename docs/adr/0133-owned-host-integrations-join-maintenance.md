@@ -38,6 +38,24 @@ empty namespaces. Recovery bounded-rescans the physical definition directories a
 effects, refusing extra, changed or unrecorded workers without importing owner code. It requires quiescence and
 rechecks the exact gate after durable phase writes immediately before native removal, as well as at final cleanup.
 
+Exact published 0.9.15 and main 505 web launchers remain an owned historical category, distinct from current operational
+ownership. Their frozen four-path grammar and complete marker/profile/unit tuple authorize inspection and explicit
+migration or retirement; edited scripts refuse. The historical uv spelling is inert input to that byte comparison.
+Current operations select and verify the installed pinned uv artifact and the fixed user-session manager authority.
+
+Historical shells consume a profile compatibility fence in addition to the SDK-wide gate. Offline recovery hash-binds
+both fences and their physical authority, requires both before effects and retains them through target cleanup. A
+prepared partial publication can fill only its exact missing fence after full revalidation under all recorded locks;
+foreign gates and missing fences after stopping refuse. A durable cleaned phase separates target effects from final
+own-gate cleanup, so a crash while clearing gates never authorizes another native removal.
+
+Explicit web install or restart migrates historical launchers before loading or restarting. A separate operation-kind
+journal binds old/new bytes, private staged inodes, profile, SDK, manager and deterministic SDK/web lock authority.
+After verified stop, it conditionally replaces launcher and marker with the coherent canonical tuple, verifies loading,
+then clears only its own fences. Interrupted migration or retirement resumes through its original explicit command;
+it never restores or relaunches unfenced historical bytes. The new journal has a separate 256 KiB budget; existing
+16 KiB control-file and all service/SDK-removal limits remain unchanged.
+
 ### Consequences
 
 Recovery remains usable after the SDK is absent and never invokes arbitrary journal callbacks. Real OS-manager and provider acceptance remain distinct from

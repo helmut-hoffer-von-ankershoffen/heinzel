@@ -1199,7 +1199,14 @@ class DaemonService:
         if self.owned_unit_state(binary):
             self._quiescence_advice = None
 
-    def _quiescent_snapshot(self, binary: Path, token: str | None = None, *, gate: Path | None = None) -> bool:
+    def _quiescent_snapshot(
+        self,
+        binary: Path,
+        token: str | None = None,
+        *,
+        gate: Path | None = None,
+        compatibility_gates: tuple[Path, ...] = (),
+    ) -> bool:
         self._quiescence_problem = "The selected installation destination could not be verified."
         if self._platform not in {"darwin", "linux"} or not self._quiescence_target(binary):
             return False
@@ -1214,7 +1221,13 @@ class DaemonService:
                 return (
                     installation is not None
                     and gate == host_maintenance_gate(installation.prefix)
-                    and _safely_absent(self.state_dir / "standard-install-pending.json")
+                    and (
+                        private_read(self.state_dir / "standard-install-pending.json")
+                        == json.dumps({"token": token}, indent=2) + "\n"
+                        if compatibility_gates == (self.state_dir / "standard-install-pending.json",)
+                        else not compatibility_gates
+                        and _safely_absent(self.state_dir / "standard-install-pending.json")
+                    )
                     and private_read(gate) == json.dumps({"token": token}, indent=2) + "\n"
                 )
             if self._quiescence_installation is not None and not _safely_absent(
@@ -1618,10 +1631,17 @@ class DaemonService:
         return [owned_file(path) for path in paths if os.path.lexists(path)]
 
     def _offline_stop(
-        self, binary: Path, files: list[OwnedFile], state: ManagerState, token: str, *, gate: Path | None = None
+        self,
+        binary: Path,
+        files: list[OwnedFile],
+        state: ManagerState,
+        token: str,
+        *,
+        fence: tuple[Path | None, tuple[Path, ...]] = (None, ()),
     ) -> None:
         from heinzel.modules.system.daemon._units import LABEL, SYSTEMD_NAME  # noqa: PLC0415 - fixed manager names
 
+        gate, compatibility_gates = fence
         if any(owned_file(file.path) != file for file in files) or self.owned_manager_state(binary) != state:
             msg = "The daemon changed before stopping; it was left unchanged."
             raise HeinzelError(msg)
@@ -1641,7 +1661,7 @@ class DaemonService:
             if self._offline_probe(command) is None:
                 msg = "The owned daemon could not be stopped; its files and installation were retained."
                 raise HeinzelError(msg)
-        if not self._quiescent_snapshot(binary, token, gate=gate):
+        if not self._quiescent_snapshot(binary, token, gate=gate, compatibility_gates=compatibility_gates):
             msg = (
                 "The daemon is not proven quiescent; the installation was retained. Inspect its local service manager."
             )
@@ -1668,7 +1688,12 @@ class DaemonService:
 
     @contextmanager
     def offline_removal_guard(
-        self, binary: Path, *, locks: MaintenanceLocks | None = None, gate: Path | None = None
+        self,
+        binary: Path,
+        *,
+        locks: MaintenanceLocks | None = None,
+        gate: Path | None = None,
+        compatibility_gates: tuple[Path, ...] = (),
     ) -> Generator[DaemonRemoval, None, None]:
         """Hold daemon lifecycle/tick authority while a durable coordinator stops and removes one tool.
 
@@ -1691,7 +1716,7 @@ class DaemonService:
             state = self.owned_manager_state(binary)
 
             def stop(token: str) -> None:
-                self._offline_stop(binary, files, state, token, gate=gate)
+                self._offline_stop(binary, files, state, token, fence=(gate, compatibility_gates))
 
             def finish() -> None:
                 if self._quiescence_installation is None or not _safely_absent(self._quiescence_installation.prefix):

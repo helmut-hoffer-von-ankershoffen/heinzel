@@ -208,7 +208,7 @@ def _change_after_journal(change, descriptors, manager):
         descriptors[0].unit.write_text("changed definition after journal capture")
 
 
-def _calendar_record(calendar, tmp_path, monkeypatch):
+def _calendar_record(calendar, tmp_path, monkeypatch, *, compatibility=False, begin=True):
     installation, owner, descriptors, _manager, _profiles = calendar
     directory = tmp_path / "recovery"
     directory.mkdir(mode=0o700)
@@ -243,9 +243,11 @@ def _calendar_record(calendar, tmp_path, monkeypatch):
                 labels=tuple(item.name for item in descriptors),
                 integrations=descriptors,
                 scopes=owner.discovery_scopes(),
+                compatibility_gates=(state / "daemon/standard-install-pending.json",) if compatibility else (),
             ),
         )
-        record.begin()
+        if begin:
+            record.begin()
     return record
 
 
@@ -490,3 +492,119 @@ def test_post_removal_recovery_retains_all_files_when_namespace_grows(calendar, 
     assert calls == []
     assert all(item.unit.exists() for item in descriptors)
     assert record.gate.exists()
+
+
+def copied_calendar_recovery(record, manager, monkeypatch, calls, installation):
+    module = copy_module(record)
+    monkeypatch.setattr(module, "_linux_identity", lambda: (1, 2, 3))
+    monkeypatch.setattr(module, "_manager", lambda command, platform: manager.command(command).stdout)
+    monkeypatch.setattr(module.subprocess, "run", successful_uv(installation, calls))
+    return module
+
+
+def test_historical_compatibility_gate_is_exclusive_before_either_fence_is_published(calendar, tmp_path, monkeypatch):
+    installation, _owner, descriptors, _manager, _profiles = calendar
+    record = _calendar_record(calendar, tmp_path, monkeypatch, compatibility=True, begin=False)
+    compatibility = Path(record.value["compatibility_gates"][0]["path"])
+    private_write(compatibility, "foreign operation")
+    with pytest.raises(FileExistsError):
+        record.begin()
+    assert not record.gate.exists()
+    assert compatibility.read_text() == "foreign operation"
+    assert installation.prefix.exists()
+    assert all(item.unit.exists() for item in descriptors)
+
+
+@pytest.mark.parametrize("change", ["foreign", "missing"])
+def test_changed_historical_fence_after_stopped_refuses_native_removal_and_cleanup(
+    calendar, tmp_path, monkeypatch, change
+):
+    installation, _owner, descriptors, manager, _profiles = calendar
+    record = _calendar_record(calendar, tmp_path, monkeypatch, compatibility=True)
+    record.phase("stopped")
+    manager.active.clear()
+    compatibility = Path(record.value["compatibility_gates"][0]["path"])
+    if change == "foreign":
+        private_write(compatibility, "foreign operation")
+    else:
+        compatibility.unlink()
+    calls = []
+    module = copied_calendar_recovery(record, manager, monkeypatch, calls, installation)
+    with pytest.raises((ValueError, OSError)):
+        module.recover(record.directory, module.EXPECTED_AUTHORITY)
+    assert calls == []
+    assert installation.prefix.exists()
+    assert all(item.unit.exists() for item in descriptors)
+    assert record.gate.exists()
+    assert compatibility.read_text() == "foreign operation" if change == "foreign" else not compatibility.exists()
+
+
+def test_prepared_partial_fence_publication_revalidates_and_completes_only_its_exact_missing_gate(
+    calendar, tmp_path, monkeypatch
+):
+    from heinzel.kernel import _uninstall_journal as journals
+
+    installation, _owner, descriptors, manager, _profiles = calendar
+    record = _calendar_record(calendar, tmp_path, monkeypatch, compatibility=True, begin=False)
+    compatibility = Path(record.value["compatibility_gates"][0]["path"])
+    original = journals.recovery.publish_gate
+
+    def interrupt(value, path):
+        if path == compatibility:
+            msg = "publication interrupted"
+            raise OSError(msg)
+        original(value, path)
+
+    monkeypatch.setattr(journals.recovery, "publish_gate", interrupt)
+    with pytest.raises(OSError, match="publication interrupted"):
+        record.begin()
+    monkeypatch.setattr(journals.recovery, "publish_gate", original)
+    assert record.gate.exists()
+    assert not compatibility.exists()
+    calls = []
+    module = copied_calendar_recovery(record, manager, monkeypatch, calls, installation)
+    with pytest.raises(ValueError, match=r"still loaded|not proven stopped"):
+        module.recover(record.directory, module.EXPECTED_AUTHORITY)
+    assert calls == []
+    assert not compatibility.exists()
+    manager.active.clear()
+    outcome = module.recover(record.directory, module.EXPECTED_AUTHORITY)
+    assert outcome["phase"] == "complete"
+    assert len(calls) == 1
+    assert not installation.prefix.exists()
+    assert all(not item.unit.exists() for item in descriptors)
+    assert not compatibility.exists()
+    assert not record.gate.exists()
+
+
+@pytest.mark.parametrize("foreign", [False, True])
+def test_terminal_paired_gate_cleanup_with_sdk_absent_never_repeats_target_effects(
+    calendar, tmp_path, monkeypatch, foreign
+):
+    installation, _owner, descriptors, manager, _profiles = calendar
+    record = _calendar_record(calendar, tmp_path, monkeypatch, compatibility=True)
+    compatibility = Path(record.value["compatibility_gates"][0]["path"])
+    for path in installation.tool_entrypoints():
+        path.unlink()
+    shutil.rmtree(installation.prefix)
+    for item in descriptors:
+        item.unit.unlink()
+    record.phase("cleaned")
+    manager.active.clear()
+    if foreign:
+        private_write(compatibility, "foreign terminal operation")
+    else:
+        compatibility.unlink()
+    calls = []
+    module = copied_calendar_recovery(record, manager, monkeypatch, calls, installation)
+    monkeypatch.setattr(module, "_owned_unlink", lambda *_: pytest.fail("No target cleanup remains"))
+    if foreign:
+        with pytest.raises(ValueError, match="gate changed"):
+            module.recover(record.directory, module.EXPECTED_AUTHORITY)
+        assert record.gate.exists()
+        assert compatibility.read_text() == "foreign terminal operation"
+    else:
+        assert module.recover(record.directory, module.EXPECTED_AUTHORITY)["phase"] == "complete"
+        assert not record.gate.exists()
+        assert not compatibility.exists()
+    assert calls == []

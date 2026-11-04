@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 from heinzel.kernel import _uninstall_recovery as recovery
 from heinzel.kernel._installation_continuity import tool_python
 from heinzel.kernel._offline_uv import VerifiedUV, fsync_directory
-from heinzel.kernel._private_control import private_directory, private_read
+from heinzel.kernel._private_control import private_directory
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file
 
 
@@ -31,6 +31,7 @@ class RemovalCapture:
     labels: tuple[str, ...] = ()
     integrations: tuple["HostIntegration", ...] = ()
     scopes: tuple["HostIntegrationScope", ...] = ()
+    compatibility_gates: tuple[Path, ...] = ()
 
 
 class RemovalJournal:
@@ -130,6 +131,7 @@ class RemovalJournal:
             "locks": lock_names,
             "gate": str(self.gate),
             "gate_content": self.gate_content,
+            "compatibility_gates": [self._gate(path) for path in captured.compatibility_gates],
         }
         self.value["lock_identities"] = {
             name: [Path(name).lstat().st_dev, Path(name).lstat().st_ino] for name in lock_names
@@ -176,19 +178,28 @@ class RemovalJournal:
             "manager_prefix": scope.manager_prefix,
         }
 
+    @staticmethod
+    def _gate(path: Path) -> dict[str, object]:
+        private_directory(path.parent, create=False)
+        if os.path.lexists(path):
+            msg = "An existing compatibility gate requires recovery; no service was stopped."
+            raise ValueError(msg)
+        info = path.parent.lstat()
+        return {"path": str(path), "parent_identity": [info.st_dev, info.st_ino, info.st_mode, info.st_uid]}
+
     def begin(self) -> None:
         """Exclusively publish the cooperative gate durably before stopping any owned job.
 
         Raises:
             FileExistsError: If another operation already owns the gate; its bytes remain unchanged.
         """
-        private_directory(self.gate.parent, create=False)
-        descriptor = os.open(self.gate, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-        with os.fdopen(descriptor, "w") as stream:
-            stream.write(self.gate_content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        fsync_directory(self.gate.parent)
+        paths = recovery.gate_paths(self.value)
+        if any(os.path.lexists(path) for path in paths):
+            msg = "An existing uninstall gate requires recovery; no service was stopped."
+            raise FileExistsError(msg)
+        for path in paths:
+            private_directory(path.parent, create=False)
+            recovery.publish_gate(self.value, path)
 
     def phase(self, phase: str) -> None:
         """Durably record an observed phase; a later failure never fabricates rollback or completion."""
@@ -201,9 +212,7 @@ class RemovalJournal:
         Raises:
             ValueError: If the current gate differs from this operation.
         """
-        if private_read(self.gate) != self.gate_content:
-            msg = "The uninstall recovery gate changed"
-            raise ValueError(msg)
+        recovery.require_gates(self.value)
 
     def complete(self) -> None:
         """Clear only this exact recovery gate after integration cleanup and durable manager reload.
@@ -211,9 +220,4 @@ class RemovalJournal:
         Raises:
             ValueError: If the current gate differs from the recorded removal.
         """
-        if private_read(self.gate) != self.gate_content:
-            msg = "The uninstall recovery gate changed"
-            raise ValueError(msg)
-        self.gate.unlink()
-        fsync_directory(self.gate.parent)
-        self.phase("complete")
+        recovery.finish_gate_cleanup(self.value, self.path)

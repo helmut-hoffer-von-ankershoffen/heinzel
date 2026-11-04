@@ -169,7 +169,9 @@ def _compose_removal(context: _RemovalContext, on_recovery: Callable[[str], None
         plans = tuple(owner.guard(item, manager, locks) for owner, items in inventory for item in items)
         with (
             web.removal_guard(locks=locks) as remove_web,
-            daemon.offline_removal_guard(binary, locks=locks, gate=gate) as daemon_removal,
+            daemon.offline_removal_guard(
+                binary, locks=locks, gate=gate, compatibility_gates=remove_web.compatibility_gates
+            ) as daemon_removal,
         ):
             if not installation.startup_state_matches() or installation.startup_fingerprint() != before:
                 msg = "The Heinzel installation changed during inspection; nothing was removed."
@@ -198,6 +200,7 @@ def _compose_removal(context: _RemovalContext, on_recovery: Callable[[str], None
                     labels=tuple(item.name for item in integrations),
                     integrations=integrations,
                     scopes=scopes,
+                    compatibility_gates=remove_web.compatibility_gates,
                 ),
             )
             if not installation.startup_state_matches() or installation.startup_fingerprint() != before:
@@ -232,7 +235,7 @@ def _apply_removal(
             journal.require_gate()
             integration.stop()
         journal.require_gate()
-        remove_web.stop()
+        remove_web.stop(journal.token)
         journal.require_gate()
         daemon_removal.stop(journal.token)
         revalidate()
