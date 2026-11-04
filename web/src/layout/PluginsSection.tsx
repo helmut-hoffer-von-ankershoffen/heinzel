@@ -17,7 +17,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { SchemaPluginCandidate, SchemaPluginChange, SchemaPluginInfo } from "@/api/client";
 import {
   type PluginChangeRequest,
@@ -27,6 +27,7 @@ import {
   usePluginOperation,
   usePluginPreview,
   usePluginSearch,
+  usePluginShowcase,
   usePlugins,
 } from "@/api/queries";
 import { Loaded } from "@/components/common";
@@ -780,6 +781,11 @@ function Yours({
                           </Button>
                         </div>
                       </div>
+                      <PluginGallery
+                        spec={installedGallerySpec(plugin)}
+                        name={displayName(plugin.name, plugin.summary)}
+                        privateSource={plugin.private_repository === true}
+                      />
                       {slot?.key === rowKey && slot.node}
                     </li>
                   );
@@ -936,10 +942,165 @@ function Discover({
                     {checking === `discover:${plugin.name}` ? t("plugins.checking") : t("plugins.install")}
                   </Button>
                 </div>
+                <PluginGallery
+                  spec={plugin.install_spec}
+                  name={displayName(plugin.short_name, plugin.description)}
+                  privateSource={plugin.private_repository === true}
+                />
                 {slot?.key === `discover:${plugin.name}` && slot.node}
               </li>
             ))}
           </ul>
+        );
+      }}
+    </Loaded>
+  );
+}
+
+/** Recover an installed source's immutable project path without fetching or loading the plugin. */
+export function installedGallerySpec(plugin: SchemaPluginInfo): string | null {
+  const source = plugin.source_url ?? plugin.homepage;
+  if (!source) return null;
+  try {
+    const url = new URL(source);
+    if (url.protocol !== "https:" || url.hostname !== "github.com" || url.port || url.username || url.password)
+      return null;
+    const [owner, repository, tree, revision, ...path] = url.pathname.split("/").filter(Boolean);
+    if (!owner || !repository || (tree && tree !== "tree")) return null;
+    const identity = `${plugin.distribution} @ git+https://github.com/${owner}/${repository.replace(/\.git$/, "")}`;
+    const immutable = /^[a-f0-9]{40}$/.test(plugin.revision ?? "") ? plugin.revision : revision;
+    if (immutable) return `${identity}@${immutable}${path.length ? `#subdirectory=${path.join("/")}` : ""}`;
+    return identity;
+  } catch {
+    return null;
+  }
+}
+
+/** Read owner-declared media only after a person asks to see the selected plugin. */
+export function PluginGallery({
+  spec,
+  name,
+  privateSource = false,
+}: {
+  spec: string | null;
+  name: string;
+  privateSource?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const galleryId = useId();
+  return (
+    <div className="mt-2 min-w-0">
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-expanded={open}
+        aria-controls={open ? galleryId : undefined}
+        aria-label={t("plugins.screenshotsFor", { name })}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {t("plugins.screenshots")}
+      </Button>
+      {open && (
+        <section
+          id={galleryId}
+          aria-label={t("plugins.galleryFor", { name })}
+          className="mt-2 min-w-0 rounded-lg border border-border bg-muted/30 p-3"
+        >
+          {privateSource ? (
+            <p className="text-sm text-muted-foreground">{t("plugins.privateGallery")}</p>
+          ) : spec ? (
+            <GalleryContents key={spec} spec={spec} />
+          ) : (
+            <p className="text-sm text-muted-foreground">{t("plugins.unknownGallery")}</p>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function GalleryContents({ spec }: { spec: string }) {
+  const query = usePluginShowcase(spec);
+  const [selected, setSelected] = useState(0);
+  return (
+    <Loaded query={query}>
+      {(gallery) => {
+        const shots = gallery.screenshots ?? [];
+        const shot = shots[selected] ?? shots[0];
+        return (
+          <div className="min-w-0 space-y-3">
+            {shot ? (
+              <>
+                <figure className="min-w-0">
+                  <a
+                    href={shot.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    aria-label={t("plugins.fullSizeFor", { caption: shot.caption })}
+                  >
+                    <img
+                      src={shot.url}
+                      alt={shot.caption}
+                      referrerPolicy="no-referrer"
+                      className="max-h-96 w-full rounded-md border border-border object-contain"
+                    />
+                  </a>
+                  <figcaption className="mt-2 break-words text-sm text-muted-foreground">
+                    <span className="mr-2 font-medium">{shot.surface.toUpperCase()}</span>
+                    {shot.caption}
+                  </figcaption>
+                </figure>
+                <fieldset className="flex min-w-0 flex-wrap gap-2">
+                  <legend className="sr-only">{t("plugins.chooseScreenshot")}</legend>
+                  {shots.map((image, index) => (
+                    <button
+                      key={`${image.url}-${image.caption}-${image.surface}`}
+                      type="button"
+                      aria-pressed={selected === index}
+                      aria-label={`${image.surface.toUpperCase()}: ${image.caption}`}
+                      onClick={() => setSelected(index)}
+                      className={cn(
+                        "min-h-11 rounded-md border border-border p-1",
+                        selected === index && "ring-2 ring-ring",
+                      )}
+                    >
+                      <img
+                        src={image.url}
+                        alt=""
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        className="h-14 w-24 rounded-sm object-contain"
+                      />
+                      <span className="block text-xs">{image.surface.toUpperCase()}</span>
+                    </button>
+                  ))}
+                </fieldset>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">{gallery.notice || t("plugins.noScreenshots")}</p>
+            )}
+            {(gallery.soundscapes?.length ?? 0) > 0 && (
+              <div>
+                <h4 className="text-sm font-medium">{t("plugins.soundscapes")}</h4>
+                <p className="text-xs text-muted-foreground">{t("plugins.youtubeOnClick")}</p>
+                <ul className="space-y-1">
+                  {gallery.soundscapes?.map((sound) => (
+                    <li key={sound.url}>
+                      <a
+                        href={sound.url}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="inline-flex min-h-11 items-center gap-2 break-words text-sm underline underline-offset-4"
+                      >
+                        {sound.title} · {t("plugins.watchSoundscape")}
+                        <ExternalLink aria-hidden className="size-3 shrink-0" />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         );
       }}
     </Loaded>

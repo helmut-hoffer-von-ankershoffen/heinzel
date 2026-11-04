@@ -91,4 +91,3 @@ research/daemon-head/index.html:pipes
 CONTRIBUTING.md:paragraph
 docs/adr/0114-green-main-releases-to-edge-and-acceptance-promotes-to-stable.md:filler
 docs/adr/0114-green-main-releases-to-edge-and-acceptance-promotes-to-stable.md:paragraph
-docs/adr/0114-green-main-releases-to-edge-and-acceptance-promotes-to-stable.md:command

@@ -27,7 +27,7 @@ from pydantic import SecretStr
 
 from heinzel import HeinzelError, __version__
 from heinzel.kernel import CORE_DISTRIBUTION, subprocess_environment
-from heinzel.modules.system._github import GITHUB_API, get_json
+from heinzel.modules.system._github import GITHUB_API, RateLimitedError, get_json, rate_limit_in
 
 PREFIX = "heinzel-"
 PYPI = "https://pypi.org"
@@ -359,7 +359,7 @@ def github_getter(token: SecretStr | None) -> JsonGetter:
     def through_gh(path: str) -> Any:  # noqa: ANN401 - free-form JSON
         try:
             result = subprocess.run(  # noqa: S603 - resolved gh, fixed arguments, no shell
-                [gh or "gh", "api", "-H", "Accept: application/vnd.github+json", path],
+                [gh or "gh", "api", "--cache", "10m", "-H", "Accept: application/vnd.github+json", path],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -373,6 +373,8 @@ def github_getter(token: SecretStr | None) -> JsonGetter:
             problem = result.stderr.strip() or f"gh api {path} failed"
             if "gh auth login" in problem or "not logged" in problem.lower():
                 return through_https(path)
+            if rate_limit_in(problem):
+                raise RateLimitedError(None, authenticated=True)
             if "404" in problem or "Not Found" in problem:
                 raise LookupError(problem)
             raise OSError(problem)
