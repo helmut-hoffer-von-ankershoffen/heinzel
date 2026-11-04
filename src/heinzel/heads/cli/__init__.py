@@ -214,12 +214,13 @@ def main() -> None:
     try:
         # Root discovery/help/version still build the complete tree. Click parses the same UI group,
         # including service subcommands and invalid options, for an invocation beginning with `ui`.
-        build(
-            kernel,
-            ui_only=sys.argv[1:2] == ["ui"]
+        ui_only = (
+            sys.argv[1:2] == ["ui"]
             and any(record.module.name == "ui" for record in kernel.children(None))
-            and not any(arg in {"--help", "-h", "--command-tree", "--version", "-V"} for arg in sys.argv[2:]),
-        )()
+            and not any(arg in {"--help", "-h", "--command-tree", "--version", "-V"} for arg in sys.argv[2:])
+        )
+        app = build(kernel, ui_only=True) if ui_only else build(kernel)
+        app()
     finally:
         if check is not None:
             check.wait()

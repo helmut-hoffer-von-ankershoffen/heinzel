@@ -73,12 +73,12 @@ def test_entrypoint_selects_only_direct_ui(arguments, expected, monkeypatch, mak
     monkeypatch.setattr(cli.sys, "argv", ["hz", *arguments])
 
     def build(*args, **kwargs):
-        seen.append(kwargs["ui_only"])
+        seen.append(dict(kwargs))
         return lambda: None
 
     monkeypatch.setattr(cli, "build", build)
     cli.main()
-    assert seen == [expected]
+    assert seen == [{"ui_only": True} if expected else {}]
 
 
 def test_disabled_ui_keeps_plugin_aliases_on_complete_tree(monkeypatch, make_kernel):
@@ -96,7 +96,7 @@ def test_disabled_ui_keeps_plugin_aliases_on_complete_tree(monkeypatch, make_ker
     seen = []
 
     def build(kernel, **kwargs):
-        seen.append(kwargs["ui_only"])
+        seen.append(dict(kwargs))
         app = original(kernel, **kwargs)
         result = CliRunner().invoke(app, ["ui", "legacy", "--json"])
         assert result.exit_code == 0, result.output
@@ -108,4 +108,4 @@ def test_disabled_ui_keeps_plugin_aliases_on_complete_tree(monkeypatch, make_ker
     monkeypatch.setattr(cli.sys, "argv", ["hz", "ui", "legacy", "--json"])
     monkeypatch.setattr(cli, "build", build)
     cli.main()
-    assert seen == [False]
+    assert seen == [{}]
