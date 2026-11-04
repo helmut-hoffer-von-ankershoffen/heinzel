@@ -80,7 +80,7 @@ def loaded(state):
         "default environment = {\nPATH => /usr/bin:/bin\n}\n"
         f"inherited environment = {{\nHOME => {Path.home()}\n}}\nstate = not running\n"
     )
-    return ProcessOutcome(0, output, "")
+    return ProcessOutcome(0, f"gui/{os.getuid()}/{LABEL} = {{\n{output}}}\n", "")
 
 
 def runner(command):

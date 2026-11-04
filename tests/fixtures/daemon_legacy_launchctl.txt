@@ -1,0 +1,188 @@
+gui/@UID@/io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon = {
+	active count = 0
+	path = @UNIT@
+	type = LaunchAgent
+	state = not running
+
+	program = @EXECUTABLE@
+	arguments = {
+		@EXECUTABLE@
+		system
+		daemon
+		tick
+	}
+
+	stdout path = /dev/null
+	stderr path = @HOME@/daemon.err.log
+	inherited environment = {
+		SSH_AUTH_SOCK => /fixture/ssh-auth.sock
+	}
+
+	default environment = {
+		PATH => /usr/bin:/bin:/usr/sbin:/sbin
+	}
+
+	environment = {
+		OSLogRateLimit => 64
+		PATH => @PATH@
+		XPC_SERVICE_NAME => io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+	}
+
+	domain = gui/@UID@ [100015]
+	asid = 100015
+	minimum runtime = 10
+	exit timeout = 5
+	nice = 10
+	runs = 276
+	last exit code = 0
+
+	event triggers = {
+		io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon.268435897 => {
+			keepalive = 0
+			service = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 20
+			}
+		}
+		io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon.268435896 => {
+			keepalive = 0
+			service = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 15
+			}
+		}
+		io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon.268435895 => {
+			keepalive = 0
+			service = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 10
+			}
+		}
+		io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon.268435904 => {
+			keepalive = 0
+			service = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 55
+			}
+		}
+		io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon.268435894 => {
+			keepalive = 0
+			service = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 5
+			}
+		}
+		io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon.268435903 => {
+			keepalive = 0
+			service = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 50
+			}
+		}
+		io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon.268435893 => {
+			keepalive = 0
+			service = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 0
+			}
+		}
+		io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon.268435902 => {
+			keepalive = 0
+			service = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 45
+			}
+		}
+		io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon.268435899 => {
+			keepalive = 0
+			service = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 30
+			}
+		}
+		io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon.268435901 => {
+			keepalive = 0
+			service = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 40
+			}
+		}
+		io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon.268435898 => {
+			keepalive = 0
+			service = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 25
+			}
+		}
+		io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon.268435900 => {
+			keepalive = 0
+			service = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+			stream = com.apple.launchd.calendarinterval
+			monitor = com.apple.UserEventAgent-Aqua
+			descriptor = {
+				"Minute" => 35
+			}
+		}
+	}
+
+	event channels = {
+		"com.apple.launchd.calendarinterval" = {
+			port = 0x41953
+			active = 0
+			managed = 1
+			reset = 0
+			hide = 0
+			watching = 1
+		}
+	}
+
+	resource coalition = {
+		ID = 259439
+		type = resource
+		state = active
+		active count = 1
+		name = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+	}
+
+	jetsam coalition = {
+		ID = 259440
+		type = jetsam
+		state = active
+		active count = 1
+		name = io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon
+	}
+
+	spawn type = background (5)
+	jetsam priority = 40
+	jetsam memory limit (active) = (unlimited)
+	jetsam memory limit (inactive) = (unlimited)
+	jetsamproperties category = daemon
+	jetsam thread limit = 32
+	cpumon = default
+	job state = exited
+	sanitizer flags = 0x0
+
+	properties = low priority i/o | inferred program
+}
