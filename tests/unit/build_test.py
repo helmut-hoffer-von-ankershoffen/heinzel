@@ -34,7 +34,10 @@ def test_backend_preparation_does_not_change_the_callers_environment(monkeypatch
     assert "--require-hashes" in backend[0]
     assert "--requirements" in backend[0]
     assert backend[1] == {}
-    assert controller == (("sync", "--frozen", "--all-groups", "--no-install-project", "--quiet"), {})
+    assert controller == (
+        ("sync", "--frozen", "--all-groups", "--no-install-project"),
+        {"timeout": 600},
+    )
     assert editable[0][:8] == (
         "pip",
         "install",
@@ -97,3 +100,34 @@ def test_backend_only_preparation_leaves_the_running_controller_installed(monkey
     assert calls[-1][:2] == ("pip", "install")
     assert "--require-hashes" in calls[-1]
     assert all("--editable" not in args and args[0] != "sync" for args in calls)
+
+
+@pytest.mark.parametrize("action", [["sync"], ["prepare"], ["--wheel", "--out-dir", "dist"]])
+def test_only_controller_dependency_sync_has_the_setup_job_budget(monkeypatch, action):
+    calls = []
+    monkeypatch.setattr(build.subprocess, "run", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    build.main(action)
+
+    assert build.CONTROLLER_SYNC_TIMEOUT == 600
+    for (command,), options in calls:
+        controller_sync = command[1:] == ["sync", "--frozen", "--all-groups", "--no-install-project"]
+        assert options["timeout"] == (600 if controller_sync else 300)
+        assert options["check"] is True
+    assert sum(options["timeout"] == 600 for _, options in calls) == (action == ["sync"])
+
+
+def test_controller_dependency_sync_failure_stops_before_editable_build(monkeypatch):
+    calls = []
+
+    def run(command, **options):
+        calls.append(command)
+        if command[1] == "sync":
+            raise subprocess.TimeoutExpired(command, options["timeout"])
+
+    monkeypatch.setattr(build.subprocess, "run", run)
+    with pytest.raises(subprocess.TimeoutExpired) as error:
+        build.main(["sync"])
+    assert error.value.timeout == 600
+    assert len(calls) == 4
+    assert all("--editable" not in command for command in calls)

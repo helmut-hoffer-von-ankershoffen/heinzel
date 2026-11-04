@@ -16,11 +16,12 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+CONTROLLER_SYNC_TIMEOUT = 600
 
 
-def run(*args: str, env: dict[str, str] | None = None) -> None:
+def run(*args: str, env: dict[str, str] | None = None, timeout: int = 300) -> None:
     """Run uv in this checkout, preserving its normal cache and interpreter selection."""
-    subprocess.run(["uv", *args], cwd=ROOT, env=env, check=True, timeout=300)  # noqa: S603, S607 - fixed executable and trusted build flags
+    subprocess.run(["uv", *args], cwd=ROOT, env=env, check=True, timeout=timeout)  # noqa: S603, S607 - fixed executable and trusted build flags
 
 
 def main(args: list[str]) -> None:
@@ -57,7 +58,9 @@ def main(args: list[str]) -> None:
             )
             if args == ["sync"]:
                 # Download controller dependencies before the project backend is allowed to execute.
-                run("sync", "--frozen", "--all-groups", "--no-install-project", "--quiet")
+                # Native dependency builds share the setup job's original ten-minute ceiling.
+                # Keep uv's normal progress so a cold build is distinguishable from a stalled fetch.
+                run("sync", "--frozen", "--all-groups", "--no-install-project", timeout=CONTROLLER_SYNC_TIMEOUT)
                 python = str(Path(os.environ.get("UV_PROJECT_ENVIRONMENT", ".venv")) / "bin" / "python")
                 run("pip", "install", "--python", python, "--no-deps", "--editable", ".", *isolation, "--quiet")
         else:

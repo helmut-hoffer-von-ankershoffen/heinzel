@@ -39,6 +39,11 @@ lock supplies both downloaded artifacts and build constraints without changing i
 - Frontend tool and package fetching follows the existing behavior: the web build hook can still fetch pinned
   pnpm and frontend dependencies. The build process is not a network sandbox.
 - Constraints are scoped to these subprocesses; no index, receipt, build-isolation or application policy changes.
+- Controller dependency sync has a finite 600-second subprocess budget, correcting the preparation helper's
+  initial 300-second cap. Before the helper, this sync had no subprocess timeout. The setup job retains its
+  original ten-minute total deadline, including subsequent setup and doctor steps. Other helper subprocesses,
+  including backend preparation and wheel builds, retain 300 seconds. Sync exposes normal uv progress so native
+  dependency builds are visible on platforms without compatible wheels.
 
 ### Consequences
 
