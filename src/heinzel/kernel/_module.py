@@ -147,7 +147,11 @@ class Module:
         self.inspects = parse_requirements(inspects)
         for inspection in self.inspects:
             capability = CAPABILITIES[inspection.capability]
-            if inspection.adapter or inspection.modes != {"read"} or not capability.inspection_methods:
+            if (
+                inspection.adapter
+                or ("read" not in inspection.modes or "write" in inspection.modes)
+                or not capability.inspection_methods
+            ):
                 msg = f"Module {name!r} inspection {inspection} must name an unpinned read inventory capability"
                 raise ValueError(msg)
         self.name = name

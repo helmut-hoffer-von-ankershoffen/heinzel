@@ -48,3 +48,11 @@ remain independent and require their actual manager/ownership proofs before onbo
 The daemon ownership/profile safety integration remains a separate required reviewed source input. Hosted CI,
 real launchd/systemd installation, notification permission/delivery and complete uvx standard-composition first-use
 acceptance are not verified by these fixtures. No public push, release or current live installation was changed.
+
+
+The subsequent strict-type check exposed 61 bootstrap JSON-narrowing and inspection-mode comparison errors.
+The bootstrap now validates managed JSON objects, configuration field identities and sources, string-only required
+fields and profile enum choices at runtime, without casts or type suppressions. Malformed notifier identity and
+non-boolean delivery evidence remain refusals. Focused strict Pyright, Ruff and 145 affected bootstrap/profile/module
+tests pass after that repair; normal commit hooks separately retain the full mypy check. These checks do not stand
+in for the pending daemon ownership ABI integration or final combined review and validation.

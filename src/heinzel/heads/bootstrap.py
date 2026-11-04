@@ -7,12 +7,70 @@ import sys
 import time
 from pathlib import Path
 
-from pydantic import ValidationError
+from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from heinzel import Config, HeinzelError, Progress, Prompter, Settings
 from heinzel.heads import install
 from heinzel.heads._tool_install import inspection_guidance, resolve_target
 from heinzel.kernel import Installation
+
+_JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
+_JSON_OBJECTS = TypeAdapter(list[dict[str, JsonValue]])
+_STRINGS = TypeAdapter(list[str])
+
+
+def _json_object(raw: str) -> dict[str, JsonValue]:
+    """Validate external JSON without echoing profile values or service output in an error.
+
+    Raises:
+        HeinzelError: If the managed command returns malformed JSON or a non-object result.
+    """
+    try:
+        return _JSON_OBJECT.validate_json(raw, strict=True)
+    except ValidationError as exc:
+        msg = "The managed app returned invalid JSON; inspect its command before continuing setup."
+        raise HeinzelError(msg) from exc
+
+
+def _object_rows(value: JsonValue) -> list[dict[str, JsonValue]]:
+    try:
+        return _JSON_OBJECTS.validate_python(value, strict=True)
+    except ValidationError as exc:
+        msg = "The profile settings could not be verified; inspect `hz system config show`."
+        raise HeinzelError(msg) from exc
+
+
+def _setting_rows(value: JsonValue) -> list[dict[str, JsonValue]]:
+    rows = _object_rows(value)
+    if any(not isinstance(row.get(key), str) for row in rows for key in ("section", "key", "source")):
+        msg = "The configuration field identities and sources could not be verified; inspect `hz system config show`."
+        raise HeinzelError(msg)
+    return rows
+
+
+def _missing_fields(profile: dict[str, JsonValue]) -> list[str]:
+    try:
+        return _STRINGS.validate_python(profile.get("missing"), strict=True)
+    except ValidationError as exc:
+        msg = "The profile declared invalid requirements; inspect `hz org show`."
+        raise HeinzelError(msg) from exc
+
+
+def _profile_choices(schema: JsonValue) -> list[str]:
+    if not isinstance(schema, dict):
+        msg = "The profile field schema could not be verified; inspect `hz system config show`."
+        raise HeinzelError(msg)
+    variants = [schema]
+    if "anyOf" in schema:
+        variants.extend(_object_rows(schema["anyOf"]))
+    for variant in variants:
+        if "enum" in variant:
+            try:
+                return _STRINGS.validate_python(variant["enum"], strict=True)
+            except ValidationError as exc:
+                msg = "The profile choices could not be verified; inspect `hz system config show`."
+                raise HeinzelError(msg) from exc
+    return []
 
 
 def installed_app() -> Path | None:
@@ -86,7 +144,7 @@ def _install_services(executable: Path, choices: list[tuple[str, ...]], environm
             msg = f"Service installation did not complete. Inspect `hz {' '.join(service)} status` before retrying."
             raise HeinzelError(msg)
         if service == ("system", "notify"):
-            result = json.loads(installed.stdout)
+            result = _json_object(installed.stdout)
             _notifier_result(result)
             if installed_app() != executable:
                 msg = "The managed installation changed during notifier setup; inspect it before launching."
@@ -109,7 +167,7 @@ def _install_services(executable: Path, choices: list[tuple[str, ...]], environm
         sys.stderr.write(f"{'Daemon' if service == ('system', 'daemon') else 'Web server'} installed and loaded.\n")
 
 
-def _service_status(executable: Path, service: tuple[str, ...], environment: dict[str, str]) -> dict[str, object]:
+def _service_status(executable: Path, service: tuple[str, ...], environment: dict[str, str]) -> dict[str, JsonValue]:
     command = [str(executable.parent / "python"), "-I", "-m", "heinzel"]
     deadline = time.monotonic() + 12
     while True:
@@ -121,8 +179,8 @@ def _service_status(executable: Path, service: tuple[str, ...], environment: dic
             check=False,
             timeout=max(0.1, deadline - time.monotonic()),
         )
-        status = json.loads(observed.stdout) if observed.returncode == 0 else {}
-        if not isinstance(status, dict) or status.get("installed") is not True or status.get("loaded") is not True:
+        status = _json_object(observed.stdout) if observed.returncode == 0 else {}
+        if status.get("installed") is not True or status.get("loaded") is not True:
             msg = f"Service installation could not be verified. Inspect `hz {' '.join(service)} status`."
             raise HeinzelError(msg)
         if service != ("ui",) or status.get("ready") is True:
@@ -138,19 +196,25 @@ def _service_status(executable: Path, service: tuple[str, ...], environment: dic
 
 
 def _notifier_result(result: object) -> None:
-    if not isinstance(result, dict) or "notifier" not in result or type(result.get("shown")) is not bool:
+    try:
+        result = _JSON_OBJECT.validate_python(result, strict=True)
+    except ValidationError as exc:
+        msg = "Notifier setup returned no verifiable result. Inspect `hz system notify list --json`."
+        raise HeinzelError(msg) from exc
+    if "notifier" not in result or type(result.get("shown")) is not bool:
         msg = "Notifier setup returned no verifiable result. Inspect `hz system notify list --json`."
         raise HeinzelError(msg)
-    if result.get("notifier") is None:
+    notifier = result.get("notifier")
+    if notifier is None:
         sys.stderr.write(
             "Native notifications are unavailable on this platform or desktop. "
             "Run `hz system notify install` for guidance.\n"
         )
         return
-    if result.get("notifier") == "heinzel-notifier" and result.get("state") not in {"current", "installed"}:
+    if notifier == "heinzel-notifier" and result.get("state") != "current" and result.get("state") != "installed":
         msg = "The notifier companion could not be verified. Inspect `hz system notify install` before retrying."
         raise HeinzelError(msg)
-    if result.get("notifier") not in {"heinzel-notifier", "notify-send", "osascript"}:
+    if not isinstance(notifier, str) or notifier not in {"heinzel-notifier", "notify-send", "osascript"}:
         msg = "The notifier identity could not be verified. Inspect `hz system notify list --json`."
         raise HeinzelError(msg)
     if result.get("shown") is True:
@@ -175,21 +239,21 @@ def _workspace_command(executable: Path, environment: dict[str, str], choices: l
     if discovery.returncode:
         msg = "The installed app's commands could not be verified; inspect `hz --command-tree` before launching."
         raise HeinzelError(msg)
-    tree = json.loads(discovery.stdout)
-    if not isinstance(tree, dict) or tree.get("schema_version") != 1 or not isinstance(tree.get("root"), dict):
+    tree = _json_object(discovery.stdout)
+    root = tree.get("root")
+    if type(tree.get("schema_version")) is not int or tree.get("schema_version") != 1 or not isinstance(root, dict):
         msg = "The installed app returned an unknown command schema; inspect it before launching."
         raise HeinzelError(msg)
-    children = tree["root"].get("commands", [])
+    children = root.get("commands", [])
     if not isinstance(children, list):
         msg = "The installed app returned invalid command discovery; inspect it before launching."
         raise HeinzelError(msg)
-    ui = next((item for item in children if isinstance(item, dict) and item.get("command") == "hz ui"), {})
-    if not ui or not isinstance(ui.get("commands"), list):
+    ui = next((item for item in children if isinstance(item, dict) and item.get("command") == "hz ui"), None)
+    subcommands = ui.get("commands") if ui is not None else None
+    if not isinstance(subcommands, list):
         msg = "The installed app's web commands are unavailable; inspect `hz --command-tree`."
         raise HeinzelError(msg)
-    commands = {
-        item["command"] for item in ui["commands"] if isinstance(item, dict) and isinstance(item.get("command"), str)
-    }
+    commands = {name for item in subcommands if isinstance(item, dict) and isinstance(name := item.get("command"), str)}
     if {"hz ui open", "hz ui serve"}.issubset(commands):
         return ["ui", "open"]
     if choices:
@@ -198,7 +262,7 @@ def _workspace_command(executable: Path, environment: dict[str, str], choices: l
     return ["ui"]  # A verified older standard app retains its published foreground entry point.
 
 
-def _managed_json(executable: Path, environment: dict[str, str], arguments: list[str]) -> object:
+def _managed_json(executable: Path, environment: dict[str, str], arguments: list[str]) -> dict[str, JsonValue]:
     if installed_app() != executable:
         msg = "The managed installation changed before setup; inspect it before continuing."
         raise HeinzelError(msg)
@@ -213,7 +277,7 @@ def _managed_json(executable: Path, environment: dict[str, str], arguments: list
     if result.returncode:
         msg = "Setup could not verify the managed command's result; inspect `hz system doctor` before continuing."
         raise HeinzelError(msg)
-    return json.loads(result.stdout)
+    return _json_object(result.stdout)
 
 
 def _complete_profile(executable: Path, environment: dict[str, str], prompter: Prompter | None = None) -> None:
@@ -226,23 +290,14 @@ def _complete_profile(executable: Path, environment: dict[str, str], prompter: P
     prompter.say("Your profile stays on this computer. Existing values will be kept.")
     profile = _managed_json(executable, environment, ["org", "show"])
     report = _managed_json(executable, environment, ["system", "config", "show"])
-    if not isinstance(profile, dict) or not isinstance(profile.get("missing"), list) or not isinstance(report, dict):
-        msg = "The profile requirements could not be verified; run `hz org show --json` before continuing."
-        raise HeinzelError(msg)
-    settings = report.get("settings")
-    if not isinstance(settings, list):
-        msg = "The profile settings could not be verified; inspect `hz system config show`."
-        raise HeinzelError(msg)
-    if not all(isinstance(key, str) for key in profile["missing"]):
-        msg = "The profile declared invalid requirements; inspect `hz org show`."
-        raise HeinzelError(msg)
-    required = ["org.name", "team.name", *profile["missing"]]
+    settings = _setting_rows(report.get("settings"))
+    required = ["org.name", "team.name", *_missing_fields(profile)]
     for key in dict.fromkeys(required):
-        if not isinstance(key, str) or not key.startswith(("org.", "team.")):
+        if not key.startswith(("org.", "team.")):
             msg = "The profile declared unexpected requirements; inspect `hz org show`."
             raise HeinzelError(msg)
         field = next(
-            (item for item in settings if isinstance(item, dict) and f"{item.get('section')}.{item.get('key')}" == key),
+            (item for item in settings if f"{item.get('section')}.{item.get('key')}" == key),
             None,
         )
         if field is None:
@@ -251,12 +306,7 @@ def _complete_profile(executable: Path, environment: dict[str, str], prompter: P
         value = field.get("value")
         if value is not None and (not isinstance(value, str) or value.strip()):
             continue
-        schema = field.get("json_schema") or {}
-        variants = [schema, *schema.get("anyOf", [])] if isinstance(schema, dict) else []
-        options: list[object] = next(
-            (item["enum"] for item in variants if isinstance(item, dict) and isinstance(item.get("enum"), list)), []
-        )
-        choices = [item for item in options if isinstance(item, str)]
+        choices = _profile_choices(field.get("json_schema"))
         title = {
             "org.name": "Your name",
             "team.name": "Team name",
@@ -277,25 +327,20 @@ def _complete_profile(executable: Path, environment: dict[str, str], prompter: P
 
 def _require_profile(executable: Path, environment: dict[str, str]) -> None:
     profile = _managed_json(executable, environment, ["org", "show"])
-    if not isinstance(profile, dict) or not isinstance(profile.get("missing"), list):
-        msg = "Setup could not verify your required profile; run `hz org show --json`."
-        raise HeinzelError(msg)
-    if profile["missing"]:
+    if _missing_fields(profile):
         msg = "Setup is incomplete: run `uvx heinzel@latest` in an interactive terminal to complete your real profile."
         raise HeinzelError(msg)
 
 
 def _configure_ai(executable: Path, environment: dict[str, str], prompter: Prompter | None = None) -> None:
     report = _managed_json(executable, environment, ["system", "config", "show"])
-    if not isinstance(report, dict) or not isinstance(report.get("settings"), list):
-        msg = "AI setup intent could not be verified; inspect configuration before continuing."
-        raise HeinzelError(msg)
+    settings = _setting_rows(report.get("settings"))
     undecided = [
-        item["key"]
-        for item in report["settings"]
-        if isinstance(item, dict)
-        and item.get("section") == "capabilities"
-        and item.get("key") in {"ai_access", "agent_runner"}
+        key
+        for item in settings
+        if item.get("section") == "capabilities"
+        and isinstance(key := item.get("key"), str)
+        and key in {"ai_access", "agent_runner"}
         and item.get("source") == "default"
     ]
     if not undecided:
@@ -315,7 +360,7 @@ def _configure_ai(executable: Path, environment: dict[str, str], prompter: Promp
 
 def _verify_setup(executable: Path, environment: dict[str, str]) -> None:
     health = _managed_json(executable, environment, ["system", "doctor"])
-    if not isinstance(health, dict) or health.get("status") != "up":
+    if health.get("status") != "up":
         msg = "Setup is not complete: system health is not green. Run `hz system doctor` and resolve its real findings."
         raise HeinzelError(msg)
     sys.stderr.write("Setup complete; system health is up.\n")

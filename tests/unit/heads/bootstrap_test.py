@@ -454,3 +454,45 @@ def test_daemon_selection_cannot_complete_without_authoritative_ownership(monkey
     )
     with pytest.raises(HeinzelError, match="ownership and selected profile"):
         bootstrap._install_services(executable, [("system", "daemon")], {})
+
+
+@pytest.mark.parametrize("raw", ["[]", "null", '"text"', '{"incomplete":'])
+def test_managed_json_boundary_refuses_non_objects_and_malformed_output(monkeypatch, tmp_path, raw):
+    executable = tmp_path / "persistent/bin/hz"
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: executable)
+    monkeypatch.setattr(
+        bootstrap.subprocess, "run", lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, raw, "")
+    )
+    with pytest.raises(HeinzelError, match="invalid JSON"):
+        bootstrap._managed_json(executable, {}, ["org", "show"])
+
+
+@pytest.mark.parametrize("missing", [None, "org.handle", [1], [False], ["org.handle", {}]])
+def test_profile_requirement_schema_never_coerces_untrusted_fields(missing):
+    with pytest.raises(HeinzelError, match="invalid requirements"):
+        bootstrap._missing_fields({"missing": missing})
+
+
+@pytest.mark.parametrize("rows", [[None], [{"section": "org", "key": "name", "source": True}], {}])
+def test_profile_settings_reject_unknown_field_and_source_shapes(rows):
+    with pytest.raises(HeinzelError, match="could not be verified"):
+        bootstrap._setting_rows(rows)
+
+
+@pytest.mark.parametrize("schema", [None, {"anyOf": {}}, {"enum": ["engineer", 1]}])
+def test_profile_choices_are_runtime_validated_without_value_coercion(schema):
+    with pytest.raises(HeinzelError, match="could not be verified"):
+        bootstrap._profile_choices(schema)
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {"notifier": [], "shown": True},
+        {"notifier": "heinzel-notifier", "state": {}, "shown": True},
+        {"notifier": "notify-send", "shown": 1},
+    ],
+)
+def test_notifier_identity_and_shown_evidence_are_not_coerced(result):
+    with pytest.raises(HeinzelError, match=r"could not be verified|no verifiable result"):
+        bootstrap._notifier_result(result)
