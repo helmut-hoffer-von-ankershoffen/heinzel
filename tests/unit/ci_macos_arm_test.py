@@ -14,21 +14,39 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def runner_labels(job):
     """Inspect runner and matrix declarations, including labels embedded in fromJSON expressions."""
-    return set(re.findall(r"macos-[A-Za-z0-9-]+", str((job.get("runs-on"), job.get("strategy", {}).get("matrix")))))
+    return {
+        label.lower()
+        for label in re.findall(
+            r"macos-[A-Za-z0-9-]+", str((job.get("runs-on"), job.get("strategy", {}).get("matrix"))), re.IGNORECASE
+        )
+    }
 
 
 def test_all_core_and_generated_macos_runner_labels_are_arm_only():
-    paths = [*(ROOT / ".github/workflows").glob("*.yml"), *(ROOT / "template/.github/workflows").glob("*.yml.jinja")]
+    paths = [
+        *[path for pattern in ("*.yml", "*.yaml") for path in (ROOT / ".github/workflows").glob(pattern)],
+        *[
+            path
+            for pattern in ("*.yml.jinja", "*.yaml.jinja")
+            for path in (ROOT / "template/.github/workflows").glob(pattern)
+        ],
+    ]
     found = set()
     for path in paths:
         for job in yaml.safe_load(path.read_text()).get("jobs", {}).values():
             labels = runner_labels(job)
             assert labels <= {"macos-latest"}, (path.name, labels)
+            if labels:
+                assert any(
+                    step.get("uses", "").split("@")[0].endswith("/.github/actions/setup-uv")
+                    or step.get("run") == "make ci-macos-arm"
+                    for step in job.get("steps", [])
+                ), (path.name, "macOS jobs must check the actual architecture")
             found.update(labels)
     assert found == {"macos-latest"}
 
 
-@pytest.mark.parametrize("label", ["macos-15-intel", "macos-26-intel", "macos-latest-large"])
+@pytest.mark.parametrize("label", ["macos-15-intel", "macos-26-intel", "macos-latest-large", "macOS-15-INTEL"])
 def test_intel_runner_labels_are_outside_the_approved_set(label):
     assert not runner_labels({"runs-on": label}) <= {"macos-latest"}
 
