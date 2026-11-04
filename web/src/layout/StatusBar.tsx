@@ -215,7 +215,8 @@ export function StatusBar({ onOpenCalendar = () => {} }: { onOpenCalendar?: () =
         <FooterPart id="@health" priority={90} label={t("health.title")}>
           <HealthStatus />
         </FooterPart>
-        <FooterPart id="@meeting" priority={925}>
+        {/* Even the generic error promotion keeps this contribution below the version priority. */}
+        <FooterPart id="@meeting" priority={725}>
           <MeetingItem now={now} onOpen={onOpenCalendar} />
         </FooterPart>
         <FooterMore />

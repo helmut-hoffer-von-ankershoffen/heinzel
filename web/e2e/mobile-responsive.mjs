@@ -247,12 +247,13 @@ async function footerPane(page, id, label, ready) {
   const direct = trigger.filter({ visible: true });
   const more = page
     .locator(
-      `footer:has([data-footer-part="${id}"][data-footer-hidden="overflow"]) [data-footer-content="@more"] button`,
+      `footer:has([data-footer-part="${id}"][data-footer-hidden="overflow"]) [data-footer-content="@more"] button[aria-expanded="false"]`,
     )
     .filter({ visible: true });
-  await direct.or(more).first().waitFor();
-  if (!(await direct.isVisible())) await more.tap();
-  await trigger.tap();
+  // Resolve the currently actionable path as part of the real touch action. A snapshot of direct visibility
+  // can become obsolete when an independent provider changes footer capacity before Playwright sends the tap.
+  await direct.or(more).first().tap();
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") await direct.tap();
   return page.getByRole("region", { name: label, exact: true }).locator("..");
 }
 

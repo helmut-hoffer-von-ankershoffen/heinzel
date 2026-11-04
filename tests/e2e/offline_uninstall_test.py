@@ -446,24 +446,57 @@ class Filter(ctypes.Structure):
     _fields_ = [('code',ctypes.c_ushort),('jt',ctypes.c_ubyte),('jf',ctypes.c_ubyte),('k',ctypes.c_uint)]
 class Program(ctypes.Structure):
     _fields_ = [('len',ctypes.c_ushort),('filter',ctypes.POINTER(Filter))]
-# Permit socket creation/bind for local availability checks; forbid outbound operations,
-# including asynchronous submissions. No destination is contacted by this fixture.
-arch, denied = {
-    'x86_64': (0xc000003e, (42, 44, 46, 307, 425)),
-    'aarch64': (0xc00000b7, (203, 206, 211, 269, 425)),
-}[platform.machine()]
+# Landlock handles TCP destinations; seccomp keeps UDP/raw and asynchronous paths closed.
+# Unix-domain IPC remains usable. No weaker policy is substituted on an unsupported kernel.
+architecture = {
+    'x86_64': (0xc000003e, 41, ((44, 3), (46, 2), (307, 3))),
+    'aarch64': (0xc00000b7, 198, ((206, 3), (211, 2), (269, 3))),
+}
+if platform.machine() not in architecture:
+    raise SystemExit('Offline network denial: unsupported Linux architecture')
+arch, socket_call, sends = architecture[platform.machine()]
+allow, denied = 0x7fff0000, 0x00050001
 rows = [(0x20,0,0,4),(0x15,1,0,arch),(0x06,0,0,0x80000000),(0x20,0,0,0)]
-for number in denied:
-    rows += [(0x15,0,1,number),(0x06,0,0,0x00050001)]
-# x86's alternate x32 syscall ABI must not bypass the native syscall-number checks.
 if platform.machine() == 'x86_64':
-    rows += [(0x45,0,1,0x40000000),(0x06,0,0,0x00050001)]
-rows += [(0x06,0,0,0x7fff0000)]
+    rows += [(0x45,0,1,0x40000000),(0x06,0,0,denied)]
+rows += [(0x15,0,1,425),(0x06,0,0,denied)]  # io_uring_setup
+# Older Landlock kernels do not mediate TCP Fast Open; inspect the scalar flags of every send variant.
+for number, argument in sends:
+    body = [(0x20,0,0,16+8*argument),(0x45,0,1,0x20000000),(0x06,0,0,denied),(0x06,0,0,allow)]
+    rows += [(0x15,0,len(body),number), *body]
+# Only Unix sockets or IPv4/IPv6 TCP streams (default or explicit TCP protocol) may be created.
+body = [
+    (0x20,0,0,16),(0x15,0,1,1),(0x06,0,0,allow),
+    (0x15,2,0,2),(0x15,1,0,10),(0x06,0,0,denied),
+    (0x20,0,0,24),(0x54,0,0,0xffffffff ^ (0x80000 | 0x800)),
+    (0x15,1,0,1),(0x06,0,0,denied),
+    (0x20,0,0,32),(0x15,2,0,0),(0x15,1,0,6),(0x06,0,0,denied),(0x06,0,0,allow),
+]
+rows += [(0x15,0,len(body),socket_call), *body, (0x06,0,0,allow)]
 filters = (Filter*len(rows))(*(Filter(*row) for row in rows))
 program = Program(len(rows),filters)
 libc = ctypes.CDLL(None,use_errno=True)
-assert libc.prctl(38,1,0,0,0) == 0, ctypes.get_errno()
-assert libc.prctl(22,2,ctypes.byref(program),0,0) == 0, ctypes.get_errno()
+libc.syscall.restype = ctypes.c_long
+
+def require(condition, stage):
+    if not condition:
+        raise SystemExit(f'Offline network denial unavailable: {stage}; errno={ctypes.get_errno()}')
+
+# Query the actual running kernel rather than inferring capability from its distribution or version.
+abi = libc.syscall(444, 0, 0, 1)
+require(abi >= 4, f'Landlock ABI >= 4 required, observed {abi}')
+require(libc.prctl(38,1,0,0,0) == 0, 'no_new_privs')
+class Ruleset(ctypes.Structure):
+    _fields_ = [('handled_access_fs',ctypes.c_uint64),('handled_access_net',ctypes.c_uint64)]
+ruleset = Ruleset(0, 2)  # CONNECT_TCP only, with no allowed ports; bind and filesystem access stay unchanged.
+fd = libc.syscall(444, ctypes.byref(ruleset), ctypes.sizeof(ruleset), 0)
+require(fd >= 0, 'Landlock TCP ruleset creation')
+try:
+    require(libc.syscall(446, fd, 0) == 0, 'Landlock TCP restriction')
+finally:
+    os.close(fd)
+require(libc.prctl(22,2,ctypes.byref(program),0,0) == 0, 'seccomp installation')
+print(f'Offline network denial active: Landlock ABI {abi}; TCP connect and non-TCP IP denied', file=sys.stderr)
 os.execvpe(sys.argv[1],sys.argv[1:],os.environ)
 """
 
