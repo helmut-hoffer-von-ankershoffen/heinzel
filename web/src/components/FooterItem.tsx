@@ -77,7 +77,7 @@ export function FooterItem({
   const timer = useRef<number | undefined>(undefined);
   const wrapper = useRef<HTMLSpanElement>(null);
   const pane = useRef<HTMLDivElement>(null);
-  const [at, setAt] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
+  const [positioned, setPositioned] = useState(false);
   const position = useRef<(() => void) | null>(null);
   const returningFocus = useRef(false);
   const visible = useFooterVisibility();
@@ -92,13 +92,15 @@ export function FooterItem({
   }, [visible]);
   useLayoutEffect(() => {
     if (!open) {
-      setAt(null);
+      setPositioned(false);
       return;
     }
     const anchor = wrapper.current,
       element = pane.current;
     if (!anchor || !element) return;
+    let active = true;
     const place = () => {
+      if (!active) return;
       const box = element.getBoundingClientRect(),
         trigger = anchor.getBoundingClientRect();
       const maxHeight = popoverHeight(trigger);
@@ -110,23 +112,32 @@ export function FooterItem({
         ...placePopover(target, { width: box.width, height: Math.min(box.height, maxHeight) }, "above"),
         maxHeight,
       };
-      setAt((current) =>
-        current?.left === next.left && current.top === next.top && current.maxHeight === next.maxHeight
-          ? current
-          : next,
-      );
+      // A descendant query can commit without rerendering this footer item. Place at its mutation
+      // checkpoint, before a physical press can finish against the child's new geometry.
+      for (const key of ["left", "top", "maxHeight"] as const) {
+        const value = `${next[key]}px`;
+        if (element.style[key] !== value) element.style[key] = value;
+      }
+      setPositioned(true);
     };
     position.current = place;
     place();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
     observer?.observe(anchor);
     observer?.observe(element);
+    const mutations = new MutationObserver((records) => {
+      // Ignore placement's own writes; content changes still need synchronous measurement.
+      if (records.some((record) => record.target !== element || record.attributeName !== "style")) place();
+    });
+    mutations.observe(element, { subtree: true, childList: true, characterData: true, attributes: true });
     const unwatchViewport = watchViewport(place);
     window.addEventListener(FOOTER_RELOCATED, place);
     window.addEventListener("scroll", place, true);
     return () => {
+      active = false;
       position.current = null;
       observer?.disconnect();
+      mutations.disconnect();
       unwatchViewport();
       window.removeEventListener(FOOTER_RELOCATED, place);
       window.removeEventListener("scroll", place, true);
@@ -221,7 +232,7 @@ export function FooterItem({
             ref={pane}
             id={id}
             className="viewport-popover fixed z-[var(--layer-popover,40)] overflow-y-auto rounded-xl"
-            style={at ?? { left: 0, top: 0, visibility: "hidden" }}
+            style={{ visibility: positioned ? undefined : "hidden" }}
             onMouseEnter={() => {
               window.clearTimeout(timer.current);
               setHovered(true);
