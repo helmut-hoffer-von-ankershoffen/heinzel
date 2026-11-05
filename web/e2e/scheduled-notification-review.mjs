@@ -6,7 +6,7 @@ try {
   await startChatJourney(page, url);
   await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });
-  const terms = page.getByRole("region", { name: "Proposed agent terms" });
+  const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
@@ -24,8 +24,8 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
-  await schedule.getByText("Recurring agent turns", { exact: true }).click();
+  const schedule = page.locator("details").filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) });
+  await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   const consent = await schedule.getByRole("checkbox", { name: /Allow the separately approved calendar.events/ });
   assert.equal(await consent.isChecked(), false);
   await consent.check();
@@ -36,7 +36,7 @@ try {
   await schedule.getByLabel("Requests per turn").fill("4");
   await schedule.getByRole("button", { name: "Propose recurring turns" }).click();
   await schedule.getByRole("button", { name: "Review this schedule" }).click();
-  const card = schedule.getByRole("heading", { name: "Review agent schedule" }).locator("../..");
+  const card = schedule.getByRole("heading", { name: "Review Heinzel schedule" }).locator("../..");
   assert.match((await card.textContent()) ?? "", /fixture-account/);
   assert.match((await card.textContent()) ?? "", /fixture-read/);
   assert.match((await card.textContent()) ?? "", /max_per_24h/);

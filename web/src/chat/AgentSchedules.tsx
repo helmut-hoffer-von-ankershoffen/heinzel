@@ -227,7 +227,7 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
   return (
     <>
       <details className="rounded border border-border p-3 text-sm">
-        <summary className="cursor-pointer font-medium">Recurring agent turns</summary>
+        <summary className="cursor-pointer font-medium">Recurring Heinzel turns</summary>
         <div className="space-y-3 pt-2">
           <p>{t("schedules.intro")}</p>
           <section className="space-y-2 rounded border border-border p-2" aria-label="Chat schedule suggestion">
@@ -274,7 +274,7 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
               </>
             )}
           </section>
-          {!contract.data?.accepted && <p>Accept the current agent terms before proposing recurring turns.</p>}
+          {!contract.data?.accepted && <p>Accept the current Heinzel terms before proposing recurring turns.</p>}
           {connected.data?.status === "approved" && connected.data.proposal && (
             <label className="block">
               <input

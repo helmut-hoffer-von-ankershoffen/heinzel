@@ -94,14 +94,14 @@ try {
   replyDisclosureTrace = await disclosureDiagnostics(page);
   const overflow = await replyEvents.evaluate((node) => node.scrollWidth > node.clientWidth);
   assert.equal(overflow, false, "recorded activity must fit the phone viewport");
-  const terms = page.getByRole("region", { name: "Proposed agent terms" });
+  const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await watchDisclosure(terms.getByText("Review proposed terms"), "proposed-terms");
   await terms.getByText("Review proposed terms").click();
   await terms.getByText("Prepare a private draft from my context.").waitFor();
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
-  const schedules = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
+  const schedules = page.locator("details").filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) });
   await watchDisclosure(schedules.locator("summary").first(), "recurring-turns");
   await schedules.locator("summary").first().click();
   await schedules.getByRole("button", { name: "Propose recurring turns" }).click();

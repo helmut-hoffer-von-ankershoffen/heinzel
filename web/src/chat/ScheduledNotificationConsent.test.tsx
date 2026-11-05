@@ -48,7 +48,7 @@ it("requires a separate opt-in and submits exact bounded terms for review", asyn
   });
   const user = userEvent.setup();
   show(<AgentSchedules sessionId={session} />);
-  await user.click(screen.getByText("Recurring agent turns"));
+  await user.click(screen.getByText("Recurring Heinzel turns"));
   const enabled = screen.getByRole("checkbox", { name: /Allow this agent to queue local notifications/ });
   expect(enabled).not.toBeChecked();
   await user.click(enabled);
@@ -84,7 +84,7 @@ it("requires an explicitly selected approved read for item revision deduplicatio
   });
   const user = userEvent.setup();
   show(<AgentSchedules sessionId={session} />);
-  await user.click(screen.getByText("Recurring agent turns"));
+  await user.click(screen.getByText("Recurring Heinzel turns"));
   await user.click(screen.getByRole("checkbox", { name: /Allow this agent to queue local notifications/ }));
   const selector = screen.getByLabelText("Notification deduplication");
   expect(screen.getByRole("option", { name: "Once per observed item revision" })).toBeDisabled();
@@ -125,7 +125,7 @@ it("preserves the exact item proposal after a lost acknowledgment and retries on
   });
   const user = userEvent.setup();
   const mounted = show(<AgentSchedules sessionId={session} />);
-  await user.click(screen.getByText("Recurring agent turns"));
+  await user.click(screen.getByText("Recurring Heinzel turns"));
   await user.click(screen.getByRole("checkbox", { name: /Allow this agent to queue local notifications/ }));
   await user.click(await screen.findByRole("checkbox", { name: /Allow the separately approved calendar.events read/ }));
   expect(screen.getByRole("option", { name: "Once per observed item revision" })).toBeDisabled();
@@ -134,7 +134,7 @@ it("preserves the exact item proposal after a lost acknowledgment and retries on
   await screen.findByRole("button", { name: "Retry same proposal" });
   mounted.unmount();
   show(<AgentSchedules sessionId={session} />);
-  await user.click(screen.getByText("Recurring agent turns"));
+  await user.click(screen.getByText("Recurring Heinzel turns"));
   const retry = await screen.findByRole("button", { name: "Retry same proposal" });
   expect(bodies).toHaveLength(1);
   expect(screen.getByLabelText("Notification deduplication")).toHaveValue("item");
@@ -171,7 +171,7 @@ it("requires the person to reselect a changed approved read before proposing", a
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  await user.click(screen.getByText("Recurring agent turns"));
+  await user.click(screen.getByText("Recurring Heinzel turns"));
   const source = await screen.findByRole("checkbox", { name: /Allow the separately approved calendar.events read/ });
   await user.click(source);
   await user.click(screen.getByRole("checkbox", { name: /Allow this agent to queue local notifications/ }));

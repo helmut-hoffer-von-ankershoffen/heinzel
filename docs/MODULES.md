@@ -91,7 +91,7 @@ Your Heinzelmännchen: durable Heinzels that draft your team's recurring work fo
 | Revoke future recurring draft and notice effects under the shared document fence. | `hz heinzel revoke-release-workflow` | — | — | `POST /api/heinzel/revoke-release-workflow` | yes |  |
 | Read exact private skill draft files and requested sharing scope. | `hz heinzel skill-draft` | `heinzel_skill_draft` | — | `GET /api/heinzel/skill-draft` |  |  |
 | List private draft references without file contents. | `hz heinzel skill-drafts` | `heinzel_skill_drafts` | — | `GET /api/heinzel/skill-drafts` |  |  |
-| Create a helper, retain its first prompt and answer it once through the selected chat backend. | `hz heinzel start-helper` | — | — | `POST /api/heinzel/start-helper` | yes |  |
+| Create a Heinzel, retain its first prompt and answer it once through the selected chat backend. | `hz heinzel start-helper` | — | — | `POST /api/heinzel/start-helper` | yes |  |
 | Inspect the latest suggested name and look; it has not been applied. | `hz heinzel latest-profile-proposal` | — | — | `GET /api/heinzel/latest-profile-proposal` |  |  |
 | Answer one authenticated user's accepted message; an interrupted request is never silently replayed. | `hz heinzel answer-chat` | — | — | `POST /api/heinzel/answer-chat` | yes |  |
 | Read the recorded turn state; unresolved may still be running. | `hz heinzel chat-turn-state` | — | — | `GET /api/heinzel/chat-turn-state` |  |  |
