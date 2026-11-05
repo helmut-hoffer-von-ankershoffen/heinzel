@@ -81,6 +81,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "merge-gate.yml": {
         "uv run --no-build --frozen --script scripts/merge_gate.py": "judges by public APIs, from the base branch",
     },
+    "acceptance-sharded.yml": {
+        "uv python install 3.13": "the isolated acceptance study interpreter",
+        '"$(uv python find 3.13)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
+    },
     "acceptance.yml": {
         "uv python install 3.13": "the interpreter the harness runs on",
         '"$(uv python find 3.13)" -I scripts/acceptance/': (

@@ -84,3 +84,30 @@ records the listener on 8737, the real tool receipt, shim and daemon units befor
 loading. This directory is excluded from ruff (`pyproject.toml`) because the hash pins forbid reformatting them, and the
 harness is a self-contained, stdlib-only program that runs under `python3 -I`; `tests/unit/acceptance_test.py` covers its
 verdict logic.
+
+## Isolated sharding study
+
+The manual `acceptance-sharded.yml` workflow is an experiment, separate from release acceptance. It does not run on
+pull requests, publish packages, or produce the production `acceptance-result-<OS>` artifacts. The existing serial
+workflow and release gates remain authoritative until independently reviewed source and observed comparisons qualify
+an integration.
+
+Four fresh hosted VMs per OS execute disjoint fixed groups: public commands (1–5, 13), update (6, 10), plugin CLI and
+retention (7, 9), browser and explicit limits (8, 11, 12). Every case creates its own complete `Case`, including private
+HOME, managed interpreter, caches and service-manager spies; `Case` copies its context, so case-local mutations do not
+feed another case. Preflight is repeated on every VM and must agree exactly. Separate VMs also isolate the OS user
+service-manager domain; parallel processes with only separate HOME directories would not suffice.
+
+`--shard` requires explicit versions plus pinned Core and profile hashes and forbids arbitrary case or diagnostic
+selection. Individual shards remain partial verdicts. `reduce.py` requires all four shards, every one of the 13 cases
+exactly once, matching reviewed harness/vendor identities, matching release inputs, unchanged isolation, and the same
+repository, source SHA, workflow, run ID and run attempt. It retains every raw receipt and recomputes the full verdict;
+failed cases remain failed, candidate evidence remains candidate evidence, and missing, duplicate or mixed evidence
+cannot become acceptance. The study artifacts have the distinct `acceptance-study-` prefix.
+
+A study dispatch allocates four ARM Mac and four Linux execution jobs, plus two lightweight Linux reducers; reserve
+release capacity first. Keep every original attempt and artifact. Compare workflow creation, each job's queue/start/end,
+preflight and case durations against the serial control; report preparation, PR gates, candidate validation, publication,
+acceptance and automatic rollout separately. This experiment has no observed latency result yet and establishes no
+release-time claim. Three consecutive successful controlled release trials are a measurement convention for assessing
+reliability, not a replacement for any release gate.

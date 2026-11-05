@@ -94,6 +94,14 @@ CASES = {
     "12": "private_plugin",
     "13": "default_is_stable",
 }
+# Each shard owns a fresh hosted VM, including its OS user/service-manager domain. Cases already create
+# independent roots; only immutable preflight identity and the final verdict are shared across shards.
+SHARDS = {
+    "public": ("1", "2", "3", "4", "5", "13"),
+    "update": ("6", "10"),
+    "plugins": ("7", "9"),
+    "browser": ("8", "11", "12"),
+}
 PUBLIC_CASES = ("1", "2", "3", "4", "5")
 BOOTSTRAPS = ("literal", "candidate-launcher", "explicit", "candidate-app")
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -2365,6 +2373,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--case", action="append", choices=sorted(CASES, key=int), help="Repeatable; default all, serially"
     )
+    parser.add_argument("--shard", choices=sorted(SHARDS), help="One fixed hosted-VM shard; never a full acceptance")
     parser.add_argument("--accept-wheel-sha256", help="Independently accepted Core wheel hash")
     parser.add_argument("--accept-profile-sha256", help="Independently accepted standard.json hash")
     parser.add_argument("--accept-install-sh-sha256", help="Accepted live install.sh hash if main moved past the tag")
@@ -2410,6 +2419,14 @@ def parse_args(argv=None):
         or "published" in (args.expect_version, args.expect_app_version)
     ):
         parser.error("a release-candidate run takes explicit versions and no other candidate or diagnostic option")
+    if args.shard:
+        if args.case or args.candidate_wheel or args.bootstrap != "literal" or args.diagnostic_explicit_profile:
+            parser.error("--shard cannot be combined with case selection or diagnostic options")
+        if "published" in (args.expect_version, args.expect_app_version):
+            parser.error("--shard requires explicit release versions")
+        if not args.accept_profile_sha256 or not (args.accept_wheel_sha256 or args.candidate_wheel_sha256):
+            parser.error("--shard requires independently pinned Core and profile hashes")
+        args.case = list(SHARDS[args.shard])
     return args
 
 
@@ -2469,6 +2486,8 @@ def main():
         "verdict": "INCOMPLETE",
         "cases": {},
     }
+    if args.shard:
+        result["shard"] = {"name": args.shard, "cases": list(SHARDS[args.shard])}
     if args.diagnostic_explicit_profile:
         result["limits"] = [
             "DIAGNOSTIC: HZ_APP_PROFILE selected the app, bypassing discovery. Nothing here is acceptance evidence "
@@ -2492,6 +2511,7 @@ def main():
     except Refused as error:
         result["host"]["service_manager"] = {"refused": str(error)}
     candidate = None
+    preflight_started = time.monotonic()
     try:
         if release_run:
             result["expectation_supplied"] = True
@@ -2500,12 +2520,14 @@ def main():
             result["expectation_supplied"] = resolve_published(args)
             report, profile = preflight(args, parent / "accepted")
     except (StepFailed, OSError, ValueError, KeyError, zipfile.BadZipFile) as error:
+        result["preflight_seconds"] = round(time.monotonic() - preflight_started, 1)
         result["preflight_failure"] = redact(f"{type(error).__name__}: {error}")[:500]
         result["verdict"] = "PREFLIGHT_FAILED"
         write_result(path, result, secrets)
         copy_result(path)
         print(json.dumps({"verdict": result["verdict"], "why": result["preflight_failure"], "result": str(path)}))
         return exit_code(result["verdict"])
+    result["preflight_seconds"] = round(time.monotonic() - preflight_started, 1)
     result["published" if not release_run else "candidate_release"] = report
     if args.candidate_wheel:
         candidate = bind_candidate(args.candidate_wheel, parent)
