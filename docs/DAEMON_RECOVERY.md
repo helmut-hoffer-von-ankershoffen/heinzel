@@ -3,11 +3,17 @@
 Older daemon records did not identify their configuration profile. Ordinary install, update and removal retain
 unknown legacy definitions. Do not edit their records or unload an unverified label to bypass that refusal.
 
-A reviewed candidate containing ADR 0132 provides a separate module console before the persistent SDK is updated.
-Use an exact verified candidate requirement or wheel path in place of `<candidate>`:
+If `uvx heinzel@latest` reports that a retained daemon cannot be verified, inspect its status first:
 
 ```sh
-uv run --no-project --with '<candidate>' python -I -m heinzel.heads.daemon_recovery plan
+uvx --from heinzel hz system daemon status --json
+```
+
+The recovery console is available in published Heinzel releases from 0.9.16 onward. It can inspect an older daemon
+before replacing it. Use the current release for normal recovery; this does not permanently pin your installation:
+
+```sh
+uv run --no-project --with heinzel python -I -m heinzel.heads.daemon_recovery plan
 ```
 
 Planning is read-only. The initial recovery protocol supports recognized macOS 0.9.14 and 0.9.15 definitions only,
@@ -28,14 +34,20 @@ To approve removal of only the shown registration and preservation of its exact 
 current digest:
 
 ```sh
-uv run --no-project --with '<candidate>' python -I -m heinzel.heads.daemon_recovery retire --confirm PLAN_SHA256
+uv run --no-project --with heinzel python -I -m heinzel.heads.daemon_recovery retire --confirm PLAN_SHA256
 ```
 
 Any drift refuses. Pause, configuration, data and schedules remain. A completed retirement has a separate historical
 receipt and preserved originals.
 
-It is not a new installation or a continuity checkpoint. Then use the installed
-SDK's supported update command and the new SDK's ordinary daemon installer; retirement does neither automatically.
+Retirement is not a new installation or a continuity checkpoint. After successful retirement, run the normal
+installer again and choose the services you want:
+
+```sh
+uvx heinzel@latest
+```
+
+Retirement does not install or update those services automatically.
 Repeating a completed retirement digest reports that historical result and never retires newly installed units.
 
 An interruption leaves a private transaction and may retain a blocking lifecycle gate. Never remove that gate or
@@ -43,8 +55,8 @@ retry a manager effect by hand. Inspect an explicit restoration plan, then confi
 the intended original registration and files:
 
 ```sh
-uv run --no-project --with '<candidate>' python -I -m heinzel.heads.daemon_recovery restore RETIREMENT_SHA256
-uv run --no-project --with '<candidate>' python -I -m heinzel.heads.daemon_recovery restore RETIREMENT_SHA256 --confirm RESTORE_PLAN_SHA256
+uv run --no-project --with heinzel python -I -m heinzel.heads.daemon_recovery restore RETIREMENT_SHA256
+uv run --no-project --with heinzel python -I -m heinzel.heads.daemon_recovery restore RETIREMENT_SHA256 --confirm RESTORE_PLAN_SHA256
 ```
 
 Restoration refuses changed targets, foreign state and completed retirement. An uncertain outcome remains gated;
