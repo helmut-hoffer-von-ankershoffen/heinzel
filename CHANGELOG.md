@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.16](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.16) - 2026-11-05
 
-0.9.16 adds CLI-created release-draft workflows, calendar views and reminders, profile onboarding, optional-feature health, offline removal and supervised web serving. Settings search stays readable on phones and compact layouts. Source access review waits until the current reply settles. Google/Slack/GitHub companion publication and real-provider acceptance remain separate. Activity-detail scrolling remains under investigation.
+0.9.16 adds CLI-created release-draft workflows, calendar views and reminders, profile onboarding, optional-feature health, offline removal and supervised web serving. Settings search stays readable on phones and compact layouts. Source access review waits until the current reply settles. Update actions stay in place when status details load. Google/Slack/GitHub companion publication and real-provider acceptance remain separate. Activity-detail scrolling remains under investigation.
 
 Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and reinstall. After 0.9.16 publication, run `uv run --no-project --with heinzel==0.9.16 python -I -m heinzel.heads.daemon_recovery plan`. Review the entire plan; historical profile ownership remains unknown. Repeat with `retire --confirm PLAN_SHA256`, using the exact current plan digest. After successful retirement, use `hz system update --source 'heinzel==0.9.16'`, then `hz system daemon install`; separately choose `hz ui install` for supervised web serving. Preserve the existing profile; never purge data or bypass refusals. Recovery is macOS-only; see docs/DAEMON_RECOVERY.md. Future ordinary supervised updates remain intended in place. Native migration acceptance is pending; historical automatic-handover and WebKit incidents are not claimed fixed.
 
@@ -30,12 +30,14 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 - **kernel:** Preserve bytecode policy in inventory probes ([13a8307](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/13a83077bf7a7442d942ca7df85e9ae4801239c0))
 - **chat:** Use Heinzel terminology ([aed1724](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/aed1724edfcbcaa89eb6e85691ea071987ca6255))
 - **chat:** Refine Heinzel copy ([d9a2b96](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/d9a2b96ae960e852dc5893bc1063fdad9b002623))
+- **web:** Place popovers at content mutation delivery ([fb2b39b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/fb2b39bb34577e6648ba7e9e75a28bc130f16d4a))
 
 ### 📚 Documentation
 
 - **release:** Describe readable search fields ([8ec7ea8](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/8ec7ea8ad1ff259a1fd04e15023774212060600e))
 - **release:** Include the search field fix in release notes ([ca3cafd](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/ca3cafdbe36bce860c6a7380abffc464d42af03a))
 - **release:** Describe reply-aware source review ([18f60e0](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/18f60e08c5f8e91efce118d5596adb7ff5342cd2))
+- **release:** Record validated fixes and open scroll incident ([543f0e3](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/543f0e3866b35caa581c21fd19a8494e87affaed))
 
 ### 🧪 Testing
 
