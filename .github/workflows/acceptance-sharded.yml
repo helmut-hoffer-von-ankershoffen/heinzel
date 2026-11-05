@@ -49,7 +49,7 @@ jobs:
   shards:
     name: Acceptance study (${{ matrix.os }}, ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 240
+    timeout-minutes: 20
     permissions:
       contents: read
     strategy:
@@ -75,7 +75,9 @@ jobs:
         with:
           enable-cache: false
       - run: uv python install 3.13
+      # READY_DEADLINE is 600s: allow 15min for the study, retaining 5min job margin for setup/evidence.
       - name: Run the acceptance harness
+        timeout-minutes: 15
         env:
           TMPDIR: /tmp
         run: >-
@@ -101,6 +103,14 @@ jobs:
           path: /tmp/hz-acceptance-*/case*/shots/*.png
           if-no-files-found: ignore
           retention-days: 3
+      # Partial progress is diagnostic only. Its namespace never matches the reducer's completed-receipt pattern.
+      - name: Preserve latest raw progress even when the harness was interrupted
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-study-partial-${{ runner.os }}-${{ matrix.shard }}
+          path: /tmp/hz-acceptance-*/result.json
+          if-no-files-found: warn
       - name: Preserve every first-attempt shard receipt
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -114,7 +124,7 @@ jobs:
     needs: shards
     if: always()
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: 10
     permissions:
       contents: read
     strategy:
@@ -144,15 +154,15 @@ jobs:
           --runner-os "$TARGET_OS"
           --wheel-sha256 "$WHEEL_SHA256"
           --profile-sha256 "$PROFILE_SHA256"
-          --output reports/acceptance/result.json
+          --output reports/acceptance-study/result.json
       - name: Summarize the result
         if: always()
         run: >-
-          "$(uv python find 3.13)" -I scripts/acceptance/summary.py >> "$GITHUB_STEP_SUMMARY"
+          "$(uv python find 3.13)" -I scripts/acceptance/summary.py reports/acceptance-study/result.json >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve study reduction (never a release receipt)
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: acceptance-study-result-${{ matrix.runner_os }}
-          path: reports/acceptance/result.json
+          path: reports/acceptance-study/result.json
           if-no-files-found: error

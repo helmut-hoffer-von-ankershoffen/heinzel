@@ -2,6 +2,8 @@
 
 import argparse
 import copy
+import datetime
+import math
 import importlib.util
 import json
 import os
@@ -49,6 +51,7 @@ def reduce_receipts(receipts, runner_os, expected_ci, wheel_sha256, profile_sha2
     roots = set()
     baseline = None
     args = None
+    timing = {}
     for receipt in receipts:
         require(receipt.get("schema") == 2, "Unknown receipt schema")
         shard = receipt.get("shard", {})
@@ -106,6 +109,21 @@ def reduce_receipts(receipts, runner_os, expected_ci, wheel_sha256, profile_sha2
             "Profile differs from accepted hash",
         )
         require(receipt.get("started") and receipt.get("finished"), "Unfinished shard")
+        started = datetime.datetime.fromisoformat(receipt["started"])
+        finished = datetime.datetime.fromisoformat(receipt["finished"])
+        require(started.utcoffset() is not None and finished.utcoffset() is not None, "Unzoned shard timing")
+        require(finished >= started, "Reversed shard timing")
+        preflight_seconds = receipt.get("preflight_seconds")
+        require(
+            type(preflight_seconds) in (int, float) and math.isfinite(preflight_seconds) and preflight_seconds >= 0,
+            "Missing or invalid preflight timing",
+        )
+        timing[name] = {
+            "started": receipt["started"],
+            "finished": receipt["finished"],
+            "preflight_seconds": preflight_seconds,
+            "harness_wall_seconds": (finished - started).total_seconds(),
+        }
         require(
             not receipt.get("preflight_failure") and not receipt.get("harness_warnings"),
             "Failed shard preflight or isolation",
@@ -168,26 +186,37 @@ def reduce_receipts(receipts, runner_os, expected_ci, wheel_sha256, profile_sha2
                 )
         sources[name] = copy.deepcopy(receipt)
     require(set(combined) == set(HARNESS.CASES), "Incomplete full acceptance")
-    result = copy.deepcopy(baseline)
-    result.pop("shard")
-    result["cases"] = dict(sorted(combined.items(), key=lambda item: int(item[0])))
-    result["verdict"] = HARNESS.verdict(args, result["cases"])
-    result["lifecycle"] = copy.deepcopy(sources["update"]["lifecycle"])
-    result["proof_root"] = None
-    result["started"] = min(r["started"] for r in receipts)
-    result["finished"] = max(r["finished"] for r in receipts)
-    result["shard_assembly"] = {
-        "schema": 1,
-        "reducer_sha256": HARNESS.file_sha256(Path(__file__)),
+    combined_case_verdict = HARNESS.verdict(args, combined)
+    earliest = min(datetime.datetime.fromisoformat(r["started"]) for r in receipts)
+    latest = max(datetime.datetime.fromisoformat(r["finished"]) for r in receipts)
+    return {
+        "schema": "acceptance-sharding-study/v1",
+        "mode": "acceptance_sharding_study",
+        "public_path_proof": False,
+        "release_eligible": False,
+        "verdict": "STUDY_COMPLETE" if HARNESS.exit_code(combined_case_verdict) == 0 else "STUDY_CASES_FAILED",
+        "combined_case_verdict": combined_case_verdict,
+        "tested_mode": baseline["mode"],
+        "release_identity": copy.deepcopy(baseline["candidate_release" if args.candidate_wheel_url else "published"]),
+        "source_ci": {key: expected_ci[key] for key in CI_KEYS},
+        "target_runner_os": runner_os,
+        "cases": dict(sorted(combined.items(), key=lambda item: int(item[0]))),
+        "lifecycle": copy.deepcopy(sources["update"]["lifecycle"]),
+        "timing": {
+            "scope": "Harness execution only; excludes workflow queue, runner setup, native prerequisites and upload",
+            "earliest_harness_started": earliest.isoformat(),
+            "latest_harness_finished": latest.isoformat(),
+            "harness_wall_span_seconds": (latest - earliest).total_seconds(),
+            "shards": timing,
+        },
+        "reviewed_sources": {
+            "harness_sha256": expected_harness,
+            "guardian_sha256": HARNESS.GUARDIAN_SHA256,
+            "provenance_sha256": HARNESS.PROVENANCE_SHA256,
+            "reducer_sha256": HARNESS.file_sha256(Path(__file__)),
+        },
         "receipts": sources,
     }
-    # The component isolation evidence belongs to separate hosts, never to the reducer's Linux host.
-    result["isolation"] = {
-        "live_untouched": True,
-        "logs_containing_session_tokens": 0,
-        "scope": "Each independent hosted VM; see shard_assembly.receipts",
-    }
-    return result
 
 
 def main():
@@ -224,7 +253,7 @@ def main():
     with os.fdopen(descriptor, "w") as stream:
         stream.write(json.dumps(result, indent=2) + "\n")
     print(json.dumps({"verdict": result["verdict"], "result": str(args.output)}))
-    return HARNESS.exit_code(result["verdict"])
+    return 0 if result["verdict"] == "STUDY_COMPLETE" else 1
 
 
 if __name__ == "__main__":

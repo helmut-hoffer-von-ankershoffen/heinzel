@@ -103,10 +103,30 @@ selection. Individual shards remain partial verdicts. `reduce.py` requires all f
 exactly once, matching reviewed harness/vendor identities, matching release inputs, unchanged isolation, and the same
 repository, source SHA, workflow, run ID and run attempt. It retains every raw receipt and recomputes the full verdict;
 failed cases remain failed, candidate evidence remains candidate evidence, and missing, duplicate or mixed evidence
-cannot become acceptance. The study artifacts have the distinct `acceptance-study-` prefix.
+cannot become acceptance. The reduction uses schema `acceptance-sharding-study/v1`, mode `acceptance_sharding_study`,
+`public_path_proof: false` and a `STUDY_*` verdict. Its `combined_case_verdict` describes the underlying case evidence
+only; it is never a production receipt. The study artifacts have the distinct `acceptance-study-` prefix.
 
-A study dispatch allocates four ARM Mac and four Linux execution jobs, plus two lightweight Linux reducers; reserve
-release capacity first. Keep every original attempt and artifact. Compare workflow creation, each job's queue/start/end,
+Raw in-progress receipts under the private proof roots are uploaded separately with `always()` under
+`acceptance-study-partial-`; the reducer never downloads this namespace. Interrupted/incomplete evidence remains
+diagnostic and fails reduction. Upload after step cancellation is best effort: runner loss or exhaustion of the whole
+job deadline can prevent any final upload. Shards have a 15-minute harness step cap and a 20-minute whole-job cap,
+leaving five minutes for setup and evidence handling. The harness already has a 600-second readiness budget; the
+explicit larger study cap accommodates it without changing any internal case deadline. Reducers have a ten-minute
+job cap. Production acceptance retains its existing limits. A cap expiry is a failed study, never permission to skip
+cases. These are bounded first observations, with no automatic retry.
+
+The partition groups related behavior; it has not been balanced using measurements. The first study must measure
+per-shard preflight and case times before claiming it shortens the critical path. The reduction exposes each shard's
+start, finish and preflight duration, plus harness-only wall bounds; it never labels one shard's duration as an
+aggregate. Queue time and native prerequisites remain outside these harness-only bounds and must be accounted for
+from complete workflow/job timestamps. Slow cold OS package downloads are an independent possible bottleneck;
+sharding adds cold hosts and does not fix mirror latency or justify increasing a prerequisite's deadline.
+
+One frozen study dispatch allocates four ARM Mac and four Linux execution jobs, plus two lightweight Linux reducers.
+Dispatch only after the preceding release no longer needs critical runner capacity; stop after these first attempts,
+with no reruns. Preserve timeouts and inconclusive observations as well as failures. Keep every original attempt and
+artifact. Compare workflow creation, each job's queue/start/end,
 preflight and case durations against the serial control; report preparation, PR gates, candidate validation, publication,
 acceptance and automatic rollout separately. This experiment has no observed latency result yet and establishes no
 release-time claim. Three consecutive successful controlled release trials are a measurement convention for assessing

@@ -68,6 +68,7 @@ def receipts(candidate=False, runner_os="macOS"):
                     "profile_sha256": PROFILE,
                     "artifacts": {"heinzel": {"sha256": WHEEL}},
                 },
+                "preflight_seconds": 2.5,
                 "started": "2026-01-01T00:00:00+0000",
                 "finished": "2026-01-01T00:01:00+0000",
                 "isolation": {
@@ -108,12 +109,20 @@ def test_complete_isolated_shards_retain_candidate_semantics_and_all_raw_receipt
     values = receipts(candidate, runner_os)
     original = copy.deepcopy(values)
     result = reduce(values, runner_os)
-    assert result["verdict"] == ("CANDIDATE_" if candidate else "") + "ACCEPTED_EXCEPT_UNPROVABLE"
-    assert result["public_path_proof"] is not candidate
+    assert result["verdict"] == "STUDY_COMPLETE"
+    assert result["combined_case_verdict"] == ("CANDIDATE_" if candidate else "") + "ACCEPTED_EXCEPT_UNPROVABLE"
+    assert result["public_path_proof"] is False
+    assert result["release_eligible"] is False
+    assert result["schema"] == "acceptance-sharding-study/v1"
+    assert result["mode"] == "acceptance_sharding_study"
+    assert harness.exit_code(result["verdict"]) != 0
+    assert result["target_runner_os"] == runner_os
     assert set(result["cases"]) == set(harness.CASES)
     assert result["lifecycle"]["from_app"] == {"version": "1.2.2"}
-    assert result["proof_root"] is None
-    assert list(result["shard_assembly"]["receipts"].values()) == values == original
+    assert not {"proof_root", "host", "ci", "preflight_seconds", "started", "finished"} & result.keys()
+    assert list(result["receipts"].values()) == values == original
+    assert result["timing"]["harness_wall_span_seconds"] == 60
+    assert {s["preflight_seconds"] for s in result["timing"]["shards"].values()} == {2.5}
 
 
 @pytest.mark.parametrize("field", reducer.CI_KEYS)
@@ -200,7 +209,8 @@ def test_a_real_case_failure_or_refusal_is_preserved_in_final_verdict(candidate,
     values[0]["verdict"] = "CANDIDATE_REJECTED" if candidate and state == "FAIL" else expected
     result = reduce(values)
     assert result["cases"]["1"]["status"] == state
-    assert result["verdict"] == values[0]["verdict"]
+    assert result["verdict"] == "STUDY_CASES_FAILED"
+    assert result["combined_case_verdict"] == values[0]["verdict"]
     assert harness.exit_code(result["verdict"]) != 0
 
 
@@ -283,7 +293,7 @@ def test_study_is_manual_and_cannot_replace_or_publish_normal_release_receipts()
                 assert step["with"]["name"].startswith("acceptance-study-")
 
 
-@pytest.mark.parametrize("defect", ["none", "missing", "wrong-name", "duplicate-json"])
+@pytest.mark.parametrize("defect", ["none", "missing", "wrong-name", "partial-only", "duplicate-json"])
 def test_isolated_reducer_cli_uses_exact_artifact_inventory_and_never_overwrites(tmp_path, defect):
     values = receipts()
     for receipt in values:
@@ -296,6 +306,8 @@ def test_isolated_reducer_cli_uses_exact_artifact_inventory_and_never_overwrites
         public.unlink()
     elif defect == "wrong-name":
         public.parent.rename(public.parent.with_name("different"))
+    elif defect == "partial-only":
+        public.parent.rename(public.parent.with_name("acceptance-study-partial-macOS-public"))
     elif defect == "duplicate-json":
         public.write_text('{"cases": {}, "cases": {}}')
     output = tmp_path / "result.json"
@@ -330,7 +342,71 @@ def test_isolated_reducer_cli_uses_exact_artifact_inventory_and_never_overwrites
         return
     assert result.returncode == 0, result.stderr
     original = output.read_bytes()
-    assert json.loads(original)["verdict"] == "ACCEPTED_EXCEPT_UNPROVABLE"
+    assert json.loads(original)["verdict"] == "STUDY_COMPLETE"
     second = subprocess.run(command, env=env, capture_output=True, text=True, check=False, timeout=3)
     assert second.returncode != 0
     assert output.read_bytes() == original
+
+
+def test_study_summary_cannot_be_mistaken_for_production_acceptance():
+    spec = importlib.util.spec_from_file_location("acceptance_summary", DIRECTORY / "summary.py")
+    assert spec
+    assert spec.loader
+    summary = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(summary)
+    text = summary.summarize(reduce(receipts()))
+    assert "Study verdict: STUDY_COMPLETE" in text
+    assert "Not eligible for release acceptance" in text
+    assert "Combined case verdict (study evidence only)" in text
+    assert "excludes workflow queue" in text
+    assert "Preflight seconds" in text
+    assert "**Verdict: ACCEPTED" not in text
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("preflight_seconds", None),
+        ("preflight_seconds", -1),
+        ("preflight_seconds", float("inf")),
+        ("preflight_seconds", True),
+        ("finished", "2025-12-31T23:59:00+0000"),
+        ("started", "2026-01-01T00:00:00"),
+    ],
+)
+def test_missing_or_misleading_timing_cannot_be_assembled(field, value):
+    values = receipts()
+    values[0][field] = value
+    with pytest.raises(ValueError, match=r"timing"):
+        reduce(values)
+
+
+def test_partial_progress_is_preserved_separately_and_never_downloaded_by_reducer():
+    workflow = yaml.safe_load((ROOT / ".github/workflows/acceptance-sharded.yml").read_text())
+    shards = workflow["jobs"]["shards"]
+    assert shards["timeout-minutes"] == 20
+    run = next(s for s in shards["steps"] if s.get("name") == "Run the acceptance harness")
+    assert run["timeout-minutes"] == 15
+    partial = next(
+        s for s in shards["steps"] if s.get("with", {}).get("name", "").startswith("acceptance-study-partial-")
+    )
+    assert partial["if"] == "always()"
+    assert partial["with"]["path"] == "/tmp/hz-acceptance-*/result.json"  # noqa: S108 - exact existing harness artifact path
+    reducer_job = workflow["jobs"]["reduce"]
+    assert reducer_job["timeout-minutes"] == 10
+    download = next(s for s in reducer_job["steps"] if s.get("uses", "").startswith("actions/download-artifact@"))
+    assert download["with"]["pattern"] == "acceptance-study-shard-${{ matrix.runner_os }}-*"
+
+
+def test_wall_bounds_and_preflight_durations_describe_all_shards_not_the_first():
+    values = receipts()
+    values[0]["started"] = "2026-01-01T00:00:10+0000"
+    values[0]["preflight_seconds"] = 10
+    values[-1]["finished"] = "2026-01-01T00:02:00+0000"
+    values[-1]["preflight_seconds"] = 20
+    result = reduce(values)
+    assert result["timing"]["harness_wall_span_seconds"] == 120
+    assert result["timing"]["shards"]["public"]["harness_wall_seconds"] == 50
+    assert result["timing"]["shards"]["public"]["preflight_seconds"] == 10
+    assert result["timing"]["shards"]["browser"]["preflight_seconds"] == 20
+    assert "preflight_seconds" not in result
