@@ -84,6 +84,8 @@ try {
     assert.ok(scrollOrigin > 120, "the controlled press must have real workspace scroll distance");
     await page.mouse.down();
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    // Keep the real press held beyond the observed hosted 184ms interval; no retargeting or click replay.
+    await new Promise((resolve) => setTimeout(resolve, 250));
     await page.mouse.up();
   } else await replyActivity.click();
   const replyEvents = replyActivity.locator("..");

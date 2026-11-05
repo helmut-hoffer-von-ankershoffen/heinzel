@@ -30,15 +30,26 @@ export async function watchDisclosure(summary, label) {
     };
     const geometry = (node) => {
       const style = getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
       return {
         ...identity(node),
-        rect: Object.values(node.getBoundingClientRect().toJSON()).map((value) => Math.round(value * 100) / 100),
+        rect: [rect.x, rect.y, rect.width, rect.height, rect.top, rect.right, rect.bottom, rect.left].map(
+          (value) => Math.round(value * 100) / 100,
+        ),
         scrollTop: node.scrollTop,
         clientHeight: node.clientHeight,
+        offsetTop: node.offsetTop,
+        offsetHeight: node.offsetHeight,
+        scrollHeight: node.scrollHeight,
         overflowX: style.overflowX,
         overflowY: style.overflowY,
       };
     };
+    const outer = original.closest(".workspace-scroll");
+    const panel = original.closest(".workspace-panel");
+    const pageBlock = panel?.previousElementSibling;
+    let lastScrollRequest;
+    let lastRevealRequest;
     let point;
     const text = original.textContent;
     const matches = () => [...document.querySelectorAll("summary")].filter((node) => node.textContent === text);
@@ -52,6 +63,18 @@ export async function watchDisclosure(summary, label) {
       const style = current && getComputedStyle(current);
       const hit = rect && document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
       return {
+        active: identity(document.activeElement),
+        workspaceState: {
+          selected: ["page", "chat", "terminal", "calendar"].includes(panel?.dataset.active)
+            ? panel.dataset.active
+            : "other",
+          pageHeight: pageBlock?.offsetHeight,
+          pageTop: pageBlock?.offsetTop,
+          panelTop: panel?.offsetTop,
+          outerHeight: outer?.scrollHeight,
+        },
+        lastScrollRequest,
+        lastRevealRequest,
         ancestors: [
           ...(function* () {
             let node = current?.parentElement;
@@ -108,7 +131,50 @@ export async function watchDisclosure(summary, label) {
           requestAnimationFrame(() => record("press-frame2", undefined, undefined, true));
         });
     };
-    const changed = (event) => record(event.type);
+    const changed = (event) => record(event.type, undefined, undefined, event.type === "focusin");
+    const ownValue = (value, key) => {
+      try {
+        const descriptor = value && typeof value === "object" ? Object.getOwnPropertyDescriptor(value, key) : null;
+        return descriptor && "value" in descriptor ? descriptor.value : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+    const previousScrollTo = outer?.scrollTo;
+    const ownedScrollTo = outer && Object.hasOwn(outer, "scrollTo");
+    function observeScroll(...args) {
+      const options = args[0];
+      const behavior = ownValue(options, "behavior");
+      const top = ownValue(options, "top");
+      lastScrollRequest = {
+        behavior: ["auto", "instant", "smooth"].includes(behavior) ? behavior : "other",
+        top: typeof top === "number" && Number.isFinite(top) ? top : null,
+        before: outer.scrollTop,
+      };
+      record("scroll-request", undefined, undefined, true);
+      const result = previousScrollTo.apply(this, args);
+      record("scroll-return", undefined, undefined, true);
+      return result;
+    }
+    if (outer && previousScrollTo) outer.scrollTo = observeScroll;
+    const previousReveal = Element.prototype.scrollIntoView;
+    function observeReveal(...args) {
+      const observed = this instanceof Element && outer?.contains(this);
+      if (observed) {
+        const options = args[0];
+        lastRevealRequest = {
+          target: identity(this),
+          argumentKind: args.length === 0 ? "default" : typeof options === "boolean" ? "legacy" : "options",
+          legacyAlignment: typeof options === "boolean" ? options : null,
+        };
+        record("reveal-request", undefined, undefined, true);
+      }
+      const result = previousReveal.apply(this, args);
+      if (observed) record("reveal-return", undefined, undefined, true);
+      return result;
+    }
+    if (outer && typeof previousReveal === "function") Element.prototype.scrollIntoView = observeReveal;
+
     const pointerEvents = ["pointerdown", "pointerup", "click"];
     const stateEvents = ["toggle", "scroll", "focusin"];
     for (const type of pointerEvents) document.addEventListener(type, pointer, true);
@@ -137,6 +203,11 @@ export async function watchDisclosure(summary, label) {
       capture: () => record("failure"),
       stop: () => {
         observer.disconnect();
+        if (Element.prototype.scrollIntoView === observeReveal) Element.prototype.scrollIntoView = previousReveal;
+        if (outer?.scrollTo === observeScroll) {
+          if (ownedScrollTo) outer.scrollTo = previousScrollTo;
+          else delete outer.scrollTo;
+        }
         for (const type of pointerEvents) document.removeEventListener(type, pointer, true);
         for (const type of stateEvents) document.removeEventListener(type, changed, true);
       },
