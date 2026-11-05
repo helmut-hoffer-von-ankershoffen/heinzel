@@ -209,10 +209,10 @@ def _interrupted_transport(error: OSError | http.client.HTTPException) -> bool:
 
 
 def http_get(url: str) -> bytes:
-    """The URL's body, with at most three attempts for interrupted transfers.
+    """The URL's body, with at most three attempts for interrupted transfers or transient gateways.
 
     Retry socket timeouts use the original budget's remaining time. Redirects and proxies use urllib's defaults.
-    Certificate and HTTP errors fail immediately.
+    Certificate, protocol and HTTP errors other than 502/503/504 fail immediately.
 
     Raises:
         OSError: the connection or TLS verification failed.
@@ -229,10 +229,13 @@ def http_get(url: str) -> bytes:
             ) as response:
                 return bytes(response.read())
         except (OSError, http.client.HTTPException) as error:
+            transient_gateway = isinstance(error, urllib.error.HTTPError) and error.code in (502, 503, 504)
+            if isinstance(error, urllib.error.HTTPError):
+                error.close()
             attempt += 1
             delay = 0.5 * attempt
             if (
-                not _interrupted_transport(error)
+                not (transient_gateway or _interrupted_transport(error))
                 or attempt == DOWNLOAD_ATTEMPTS
                 or deadline - time.monotonic() <= delay
             ):
