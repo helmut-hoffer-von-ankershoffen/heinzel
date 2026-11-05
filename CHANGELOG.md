@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.16](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.16) - 2026-11-05
 
-0.9.16 adds CLI-created release-draft workflows, calendar views and reminders, profile onboarding, optional-feature health, offline removal and supervised web serving. Settings search stays readable on phones and compact layouts. Google/Slack/GitHub companion publication and real-provider acceptance remain separate.
+0.9.16 adds CLI-created release-draft workflows, calendar views and reminders, profile onboarding, optional-feature health, offline removal and supervised web serving. Settings search stays readable on phones and compact layouts. Activity controls stay usable while the workspace scrolls. Google/Slack/GitHub companion publication and real-provider acceptance remain separate.
 
 Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and reinstall. After 0.9.16 publication, run `uv run --no-project --with heinzel==0.9.16 python -I -m heinzel.heads.daemon_recovery plan`. Review the entire plan; historical profile ownership remains unknown. Repeat with `retire --confirm PLAN_SHA256`, using the exact current plan digest. After successful retirement, use `hz system update --source 'heinzel==0.9.16'`, then `hz system daemon install`; separately choose `hz ui install` for supervised web serving. Preserve the existing profile; never purge data or bypass refusals. Recovery is macOS-only; see docs/DAEMON_RECOVERY.md. Future ordinary supervised updates remain intended in place. Native migration acceptance is pending; historical automatic-handover and WebKit incidents are not claimed fixed.
 
@@ -24,10 +24,13 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 - **system:** Recover verified legacy daemon registrations ([#506](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/506)) ([555c4fe](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/555c4fe2e96e68da0c34c25b1d6e7a97e86b27e0))
 - Stabilize update clicks and isolate service tests ([#509](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/509)) ([f7c86e5](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f7c86e5c03dfc4016265a519fd0f13bfd8860e69))
 - **web:** Keep search text readable before focus ([7ab324b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/7ab324b4f368b4efc42997012265db89d665905d))
+- **web:** Stop workspace scroll on pressed controls ([178182c](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/178182c15ae97cd0dc6fad0440feaf4f8ac33f33))
+- **heads:** Preserve explicit no-bytecode mode across exec ([1dd32a9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/1dd32a9ac8298c8b44ce36ba3e0bc5ca830082eb))
 
 ### 📚 Documentation
 
 - **release:** Describe readable search fields ([8ec7ea8](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/8ec7ea8ad1ff259a1fd04e15023774212060600e))
+- **release:** Include the search field fix in release notes ([ca3cafd](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/ca3cafdbe36bce860c6a7380abffc464d42af03a))
 
 ### 🧪 Testing
 
