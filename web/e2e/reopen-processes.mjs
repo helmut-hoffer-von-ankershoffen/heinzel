@@ -46,6 +46,16 @@ export function nativeFrames(sample) {
   return categories.filter(([, pattern]) => lines.some((line) => pattern.test(line))).map(([name]) => name);
 }
 
+export function nativeFailure(error) {
+  // execFile errors can include the whole command, native report and arbitrary stderr. Project metadata only.
+  if (error?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return "output-limit";
+  if (error?.killed === true) return "terminated";
+  if (error?.code === "ENOENT") return "tool-missing";
+  if (error?.code === "EACCES" || error?.code === "EPERM") return "permission";
+  if (Number.isSafeInteger(error?.code) && error.code >= 0 && error.code <= 255) return `exit-${error.code}`;
+  return "unknown";
+}
+
 export async function explainOwnedBrowser(note, run = execute, platform = process.platform) {
   if (platform !== "darwin") return;
   try {
@@ -61,8 +71,8 @@ export async function explainOwnedBrowser(note, run = execute, platform = proces
             maxBuffer: 1024 * 1024,
           });
           note(`owned native sample ${kind} pid=${pid} ${JSON.stringify(nativeFrames(sample))}`);
-        } catch {
-          note(`owned native sample ${kind} pid=${pid} unavailable`);
+        } catch (error) {
+          note(`owned native sample ${kind} pid=${pid} unavailable (${nativeFailure(error)})`);
         }
       }),
     );
