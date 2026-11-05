@@ -325,6 +325,8 @@ def test_a_second_consumer_does_not_recover_an_active_claim(flow):
         thread.start()
         try:
             assert finished.wait(1)
+            if errors:
+                raise errors[0]
             assert counts == [0]
             assert flow.provider.writes == 0
             assert flow.channel.settlements == []
@@ -337,6 +339,7 @@ def test_a_second_consumer_does_not_recover_an_active_claim(flow):
         count = flow.service.apply_channel_replies()
     assert not thread.is_alive()
     if errors:
+        # Provider callbacks cross an isolation boundary that redacts ordinary exceptions.
         raise errors[0]
     assert count == 1
     assert counts == [0]
