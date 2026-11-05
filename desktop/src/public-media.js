@@ -6,11 +6,20 @@ export function publicMediaUrl(target) {
   try {
     const url = new URL(target);
     if (url.href !== target || url.protocol !== "https:" || url.username || url.password || url.port || url.hash) return null;
-    if (url.hostname === "www.youtube.com" && url.pathname === "/watch" && /^\?v=[A-Za-z0-9_-]{11}$/.test(url.search)) return target;
+    const video = /^\?v=([A-Za-z0-9_-]{11})$/.exec(url.search);
+    if (url.hostname === "www.youtube.com" && url.pathname === "/watch" && video) {
+      const watch = new URL("https://www.youtube.com/watch");
+      watch.searchParams.set("v", video[1]);
+      return watch.href;
+    }
     if (url.hostname !== "raw.githubusercontent.com" || url.search) return null;
     const path = url.pathname.slice(1);
     if (!/^[A-Za-z0-9_./-]+$/.test(path) || path.split("/").some((part) => !part || part === "." || part === "..")) return null;
-    return /^[A-Za-z0-9_-][A-Za-z0-9_.-]*\/[A-Za-z0-9_-][A-Za-z0-9_.-]*\/[a-f0-9]{40}\/.+\.(png|jpg|webp)$/.test(path) ? target : null;
+    if (!/^[A-Za-z0-9_-][A-Za-z0-9_.-]*\/[A-Za-z0-9_-][A-Za-z0-9_.-]*\/[a-f0-9]{40}\/.+\.(png|jpg|webp)$/.test(path)) return null;
+    // Construct the outgoing URL with its own fixed authority; the renderer supplies only the validated path.
+    const raster = new URL("https://raw.githubusercontent.com/");
+    raster.pathname = "/" + path;
+    return raster.href;
   } catch {
     return null;
   }

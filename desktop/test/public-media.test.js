@@ -19,6 +19,8 @@ test("only bounded canonical immutable rasters and exact watch identities may re
     screenshot.replace("raw.githubusercontent.com", "raw.githubusercontent.com.evil.example"),
     screenshot.replace("raw.githubusercontent.com", "user:secret@raw.githubusercontent.com"),
     screenshot.replace("a".repeat(40), "main"), screenshot.replace("docs/ui.png", "docs/../ui.png"),
+    screenshot.replace("docs/ui.png", "docs//ui.png"), screenshot.replace("docs/ui.png", "docs/%2e%2e/ui.png"),
+    screenshot.replace("docs/ui.png", "docs/%2f%2fevil.example/ui.png"),
     screenshot.replace("ui.png", "ui.svg"), screenshot.replace("ui.png", "%75i.png"), screenshot + "?token=secret",
     screenshot + "#secret", screenshot.replace("https:", "http:")]) assert.equal(publicMediaUrl(url), null);
 });
