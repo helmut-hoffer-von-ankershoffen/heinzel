@@ -64,6 +64,20 @@ SYSTEMD_UNITS = ("hz-daemon.service", "hz-daemon.timer")
 FINAL_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 FETCH_HOSTS = {"github.com", "heinzel.team", "astral.sh", "pypi.org", "files.pythonhosted.org", "api.github.com"}
 UPGRADES_PLUGINS_ON_ADD = {"0.9.8", "0.9.9"}
+FOREGROUND_UI = {
+    **{f"0.9.{patch}": ("ui",) for patch in range(8, 16)},
+    "0.9.16": ("ui", "serve"),
+    "0.9.17": ("ui", "serve"),
+    "0.9.18": ("ui", "serve"),
+    "0.9.19": ("ui", "serve"),
+}
+PROFILE_FIXTURE = {
+    "HZ_ORG__NAME": "Mira Example",
+    "HZ_ORG__HANDLE": "mira-example",
+    "HZ_ORG__ROLE": "engineer",
+    "HZ_ORG__TIMEZONE": "Europe/Berlin",
+    "HZ_TEAM__NAME": "Example Team",
+}
 RELEASE_WHEEL_URL = re.compile(
     r"https://github\.com/helmut-hoffer-von-ankershoffen/heinzel/releases/download/"
     r"(?:v(?=[0-9.]+/)|edge-v(?=[0-9.]+\.dev))(?P<version>[0-9]+\.[0-9]+\.[0-9]+(?:\.dev[0-9]+)?)"
@@ -94,6 +108,14 @@ CASES = {
     "12": "private_plugin",
     "13": "default_is_stable",
 }
+# Each shard owns a fresh hosted VM, including its OS user/service-manager domain. Cases already create
+# independent roots; only immutable preflight identity and the final verdict are shared across shards.
+SHARDS = {
+    "public": ("1", "2", "3", "4", "5", "13"),
+    "update": ("6", "10"),
+    "plugins": ("7", "9"),
+    "browser": ("8", "11", "12"),
+}
 PUBLIC_CASES = ("1", "2", "3", "4", "5")
 BOOTSTRAPS = ("literal", "candidate-launcher", "explicit", "candidate-app")
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -116,7 +138,7 @@ OLD_STATUSES = ("UNPROVABLE", "SKIPPED")
 LIMITS = [
     "REAL: public URLs, PyPI, GitHub release assets, uv, managed Python, foreground server, loopback HTTP, read-only "
     "service-manager queries (launchctl managername/manageruid/list on macOS, systemctl --user list-unit-files on Linux).",
-    "SIMULATED: on macOS, daemon registration in cases 3 and 10 uses the installed SDK with an intercepted runner; the "
+    "SIMULATED: on macOS, daemon registration in cases 3 and 10 uses the installed SDK with a stateful intercepted manager probe; the "
     "unit is never loaded. This is real manager absence, not active-daemon handover or restart proof. On Linux the "
     "unit steps of cases 3 and 10 are UNPROVABLE: the quiescence proof needs the user manager's private socket, which a "
     "hosted runner does not have.",
@@ -485,6 +507,9 @@ class Case:
             HZ_SYSTEM_CREDENTIAL__BACKEND="environment",
             HZ_SYSTEM_DAEMON__UNIT_DIR=str(self.root / "units"),
         )
+        # Noninteractive setup requires explicit profile input, supplied only inside this private case.
+        self.env.update(PROFILE_FIXTURE)
+        self.notes["fictional_profile_fixture"] = dict(PROFILE_FIXTURE)
         for key in ("CONFIG_HOME", "DATA_DIR", "CACHE_DIR", "STATE_DIR", "LOG_DIR"):
             self.env["HZ_" + key] = str(self.root / key.lower())
         if ctx["explicit_profile"]:
@@ -899,41 +924,98 @@ def uninstall(case, label):
     return {"uninstalled": tail(out + err, lines=1, chars=120)}
 
 
-FIXTURE = """
-import json, shutil, subprocess, sys
+FIXTURE = r"""
+import json, os, plistlib, shutil, stat, subprocess, sys
 from datetime import timedelta
 from pathlib import Path
 from heinzel import Config, Progress, Settings
-from heinzel.kernel import Installation, boot
+from heinzel.kernel import Installation, ProcessOutcome, boot
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
+from heinzel.modules.system.daemon._service import _quiescence_command
 
 action, binary = sys.argv[1], Path(sys.argv[2])
+assert action in ("install", "check")
 uv = shutil.which("uv")
-calls = []
+uid = os.getuid()
+label = "io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon"
+target = f"gui/{uid}/{label}"
+unit = Path(os.environ["HZ_SYSTEM_DAEMON__UNIT_DIR"]) / (label + ".plist")
+reads = [["/bin/launchctl", verb] for verb in ("managername", "manageruid", "list")]
+reads.append(["/bin/launchctl", "print", target])
+uv_query = [uv, "tool", "dir", "--bin"]
+native_popen = subprocess.Popen
+
+# An injection gap must fail before any native manager mutation, even with an absolute executable path.
+def guarded_popen(command, *args, **kwargs):
+    assert command == uv_query or (action == "check" and command in reads), "Unexpected native subprocess"
+    return native_popen(command, *args, **kwargs)
+
+subprocess.Popen = guarded_popen
 
 def runner(command, *_args, **_kwargs):
-    if command == [uv, "tool", "dir", "--bin"]:
-        return subprocess.run(command, capture_output=True, text=True, check=False, timeout=15)
-    if command[-1:] == ["managername"]:
-        # The desktop-session check of newer SDKs. The harness itself refuses a non-Aqua session before any case.
-        return subprocess.CompletedProcess(command, 0, "Aqua", "")
-    calls.append(command)  # Never executed: this is the interception.
-    return subprocess.CompletedProcess(command, 0, "", "")
+    assert command == uv_query, "Unexpected legacy runner command"
+    return subprocess.run(command, capture_output=True, text=True, check=False, timeout=15)
+
+class Capture:
+    def __init__(self):
+        self.calls, self.reads, self.loaded = [], [], None
+
+    def __call__(self, command):
+        if command in reads:
+            self.reads.append(command)
+            verb = command[1]
+            if verb == "managername":
+                return ProcessOutcome(0, "Aqua", "")
+            if verb == "manageruid":
+                return ProcessOutcome(0, str(uid), "")
+            if verb == "list":
+                listing = "PID\tStatus\tLabel\n" + (f"-\t0\t{label}\n" if self.loaded else "")
+                return ProcessOutcome(0, listing, "")
+            if self.loaded is None:
+                return ProcessOutcome(113, "", "Could not find service")
+            data = self.loaded
+            output = (f"path = {unit}\nprogram = {data['ProgramArguments'][0]}\narguments = {{\n"
+                      + "".join(f"  {arg}\n" for arg in data["ProgramArguments"]) + "}\n"
+                      + f"working directory = {data['WorkingDirectory']}\nenvironment = {{\n"
+                      + "".join(f"  {key} => {value}\n" for key, value in data["EnvironmentVariables"].items())
+                      + "}\n")
+            return ProcessOutcome(0, output, "")
+        assert command == ["/bin/launchctl", "bootstrap", f"gui/{uid}", str(unit)], "Unexpected manager mutation"
+        assert self.loaded is None, "Duplicate registration"
+        info = unit.lstat()
+        assert stat.S_ISREG(info.st_mode) and info.st_uid == uid and not info.st_mode & 0o077
+        data = plistlib.loads(unit.read_bytes())
+        assert data["Label"] == label
+        assert data["ProgramArguments"] == [str(binary / "hz"), "system", "daemon", "tick"]
+        assert data["WorkingDirectory"] == str(Path.home())
+        for key in ("HZ_CONFIG_HOME", "HZ_DATA_DIR", "HZ_CACHE_DIR", "HZ_STATE_DIR", "HZ_LOG_DIR",
+                    "HZ_SYSTEM_DAEMON__UNIT_DIR"):
+            assert data["EnvironmentVariables"][key] == os.environ[key], "Different profile routing"
+        assert data["EnvironmentVariables"]["HOME"] == str(Path.home())
+        self.loaded = data
+        self.calls.append(command)
+        return ProcessOutcome(0, "", "")
+
+def read_only_probe(command):
+    assert command in reads, "A quiescence check requested a mutation"
+    return _quiescence_command(command)
 
 config = Config.load(Path.home())
 installation = Installation(Progress(), prefix=Path(sys.prefix), uv=uv)
+capture = Capture()
 service = DaemonService(
     boot(), config.settings(Settings, "hz"), config.settings(DaemonSettings, "system.daemon"),
     runner=runner, which=lambda name: uv if name == "uv" else "/intercepted/" + name,
     quiescence_installation=installation, continuity_fingerprint=installation.startup_fingerprint,
+    quiescence_probe=capture if action == "install" else read_only_probe, profile_config=config,
 )
 if action == "install":
     service.install(timedelta(minutes=5))
     service.pause()
-    print(json.dumps({"calls": calls}))
+    print(json.dumps({"calls": capture.calls, "reads": capture.reads}))
 else:
     accepted = service._quiescent_snapshot(binary)
-    print(json.dumps({"accepted": accepted, "problem": getattr(service, "_quiescence_problem", None), "calls": calls}))
+    print(json.dumps({"accepted": accepted, "problem": getattr(service, "_quiescence_problem", None), "calls": []}))
 """
 
 
@@ -948,13 +1030,9 @@ def install_fixture(case):
     uid = os.getuid()
     plist = case.root / "units" / f"{LABEL}.plist"
     expected = [
-        ["/intercepted/launchctl", "bootout", f"gui/{uid}/{LABEL}"],
-        ["/intercepted/launchctl", "bootstrap", f"gui/{uid}", str(plist)],
+        ["/bin/launchctl", "bootstrap", f"gui/{uid}", str(plist)],
     ]
-    # Newer SDKs also read the registration back after loading it. Reading changes nothing, so it may repeat; every
-    # command that could change the manager must still be exactly these, in this order.
-    reads = {("/intercepted/launchctl", "print", f"gui/{uid}/{LABEL}")}
-    changes = [call for call in result["calls"] if tuple(call) not in reads]
+    changes = result["calls"]
     check(changes == expected, f"The installed SDK asked for unexpected registration commands: {changes}")
     check(plist.is_file(), "The fixture unit was not written inside this case")
     return {"intercepted_commands_validated": len(expected), "executed": 0, "registration": "simulated"}
@@ -1456,7 +1534,21 @@ def snapshot_files(root):
 
 def ui_app(case, label):
     """Start the installed app the way a user does after installation; returns its foreground session."""
-    return case.foreground([str(case.bin / "hz"), "ui"], label)
+    _, out, _ = case.run(
+        [
+            str(case.prefix / "bin/python"),
+            "-I",
+            "-c",
+            "from importlib.metadata import version; print(version('heinzel'))",
+        ],
+        f"{label}-installed-version",
+        SHORT_DEADLINE,
+    )
+    lines = out.splitlines()
+    check(len(lines) == 1 and lines[0] in FOREGROUND_UI, "The installed Core has no recognized foreground UI command")
+    version = lines[0]
+    check(version == case.expect_version, "The installed Core version differs from the case's expected version")
+    return case.foreground([str(case.bin / "hz"), *FOREGROUND_UI[version]], label)
 
 
 def run_update(case, label):
@@ -1589,9 +1681,32 @@ def _second_update(case, target):
     return {"repeat": result.get("message")}
 
 
+def plugin_update_version(case):
+    """Freeze the governed clock version only when PyPI still independently designates these exact bytes."""
+    artifacts = [a for a in case.ctx["profile"]["artifacts"] if a["name"] == "heinzel-clock"]
+    check(len(artifacts) == 1, "The bound profile must contain exactly one clock artifact")
+    artifact = artifacts[0]
+    index = json.loads(fetch("https://pypi.org/pypi/heinzel-clock/json", 8 * 1024 * 1024))
+    check(index["info"]["version"] == artifact["version"], "Clock latest differs from the bound profile snapshot")
+    wheels = [a for a in index["urls"] if a["packagetype"] == "bdist_wheel" and not a.get("yanked")]
+    check(
+        len(wheels) == 1 and wheels[0]["digests"]["sha256"] == artifact["sha256"],
+        "Clock latest wheel differs from the bound profile hash",
+    )
+    check(
+        release_key(artifact["version"]) > release_key("0.9.2"),
+        "The clock update target must be newer than the older pin",
+    )
+    case.notes["clock_update_target"] = {"version": artifact["version"], "sha256": artifact["sha256"]}
+    return artifact["version"]
+
+
 def case_plugin_cli(case):
     case.provide_uv()
     bootstrap(case, "install")
+    clock_version = case.step(
+        "bind the clock update to the profile and independent index", lambda: plugin_update_version(case)
+    )
 
     def preview():
         before = plugin_map(case, "plugins-before")
@@ -1613,7 +1728,7 @@ def case_plugin_cli(case):
     case.step("inventory and checkpoint after install", lambda: verify_state(case, "installed"))
     case.step("pin an older plugin version (CLI)", lambda: add("heinzel-clock==0.9.2", "clock-older", "0.9.2"))
     case.step(
-        "update the plugin to the newest (CLI re-add replaces)", lambda: add("heinzel-clock", "clock-update", "0.9.3")
+        "update the plugin to the newest (CLI re-add replaces)", lambda: add("heinzel-clock", "clock-update", clock_version)
     )
 
     def toggle():
@@ -1639,13 +1754,6 @@ def case_plugin_cli(case):
     case.step("inventory and checkpoint after removal", lambda: verify_state(case, "removed"))
 
 
-UI_NAV = (
-    ("button", "Profile", True),
-    ("[role=menuitem]", "Settings", True),
-    ("button", "Plugins", True),
-)
-
-
 def ui_remaining(deadline, limit):
     """Keep navigation, restart and the row check inside the same change deadline."""
     if deadline is None:
@@ -1655,19 +1763,40 @@ def ui_remaining(deadline, limit):
     return min(left, limit)
 
 
+def account_trigger(browser):
+    """The real account-menu button for this case's explicitly supplied fictional identity."""
+    title = PROFILE_FIXTURE["HZ_ORG__NAME"] + " · " + PROFILE_FIXTURE["HZ_ORG__ROLE"]
+    selector = "button[aria-haspopup='menu'][title=" + json.dumps(title, ensure_ascii=False) + "]"
+    candidate = browser.locate(selector, PROFILE_FIXTURE["HZ_ORG__NAME"].split()[0], False)
+    return (
+        "(()=>{const matches=[...document.querySelectorAll(" + json.dumps(selector) + ")]"
+        ".filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&"
+        "getComputedStyle(e).visibility!=='hidden'});return matches.length===1?" + candidate + ":null})()"
+    )
+
+
 def ui_open_plugins(browser, case, *, deadline=None):
-    """Navigate Profile menu -> Settings -> Plugins, dismissing a first-run setup if it appears."""
+    """Navigate the fictional account menu -> Settings -> Plugins, dismissing a first-run setup if it appears."""
     time.sleep(ui_remaining(deadline, 3))  # a first-run setup dialog may open late; a user dismisses it first
     if browser.present("button", "Close setup"):
         browser.click("button", "Close setup", timeout=ui_remaining(deadline, 60))
         browser.wait("!document.querySelector('[role=dialog]')", "the setup dialog to close", ui_remaining(deadline, 30))
-    profile = browser.locate("button", "Profile", "suffix")
-    browser.wait(
-        f"(()=>{{const e={profile};if(!e)return false;e.focus();return document.activeElement===e}})()",
-        "the Profile button to receive keyboard focus",
-        ui_remaining(deadline, 60),
+    # The account trigger is named for this case's fictional person. Reach it with actual Tab events.
+    account = account_trigger(browser)
+    focus_deadline = time.monotonic() + ui_remaining(deadline, 60)
+    while not browser.evaluate(f"(()=>{{const e={account};return !!e&&document.activeElement===e}})()"):
+        check(time.monotonic() < focus_deadline, "The fictional account menu was not reachable by keyboard")
+        browser.press("Tab", "Tab", 9)
+    check(
+        browser.evaluate(f"(()=>{{const e={account};return !!e&&e.getAttribute('aria-expanded')==='false'}})()"),
+        "The fictional account menu is not closed before Enter",
     )
     browser.press("Enter", "Enter", 13)
+    browser.wait(
+        f"(()=>{{const e={account};return !!e&&e.getAttribute('aria-expanded')==='true'}})()",
+        "the account menu opened with Enter",
+        ui_remaining(focus_deadline, 60),
+    )
     browser.click("[role=menuitem]", "Settings", False, timeout=ui_remaining(deadline, 60))
     browser.click("button", "Plugins", timeout=ui_remaining(deadline, 60))
     browser.wait(
@@ -1686,7 +1815,7 @@ def ui_apply(browser, what, expected):
     browser.evaluate("window.__hzAcceptancePluginRestart = true")
     browser.click("button", "Restart and apply Plugins", timeout=ui_remaining(deadline, 60))
     browser.wait(
-        "window.__hzAcceptancePluginRestart === undefined&&" + browser.exists("button", "Profile", "suffix"),
+        "window.__hzAcceptancePluginRestart === undefined&&" + ("!!" + account_trigger(browser)),
         f"the new document after {what}",
         ui_remaining(deadline, 360),
     )
@@ -1754,6 +1883,9 @@ def row_has(name, version):
 def case_plugin_ui(case):
     case.provide_uv()
     bootstrap(case, "install")
+    clock_version = case.step(
+        "bind the clock update to the profile and independent index", lambda: plugin_update_version(case)
+    )
     holder = {}
 
     def launch():
@@ -1763,7 +1895,7 @@ def case_plugin_ui(case):
         holder["browser"] = browser
         browser.goto(f"{session.base}/#token={session.token}")
         browser.wait(
-            "document.body.innerText.length>50&&" + browser.exists("button", "Profile", "suffix"),
+            "document.body.innerText.length>50&&" + ("!!" + account_trigger(browser)),
             "the app to render",
             120,
         )
@@ -1806,7 +1938,7 @@ def case_plugin_ui(case):
     def update():
         browser = holder["browser"]
         results = {}
-        for spec, expected, shot in (("heinzel-clock==0.9.2", "0.9.2", "04"), ("heinzel-clock", "0.9.3", "05")):
+        for spec, expected, shot in (("heinzel-clock==0.9.2", "0.9.2", "04"), ("heinzel-clock", clock_version, "05")):
             text = ui_add(browser, case, spec, f"{shot}-preview", ["heinzel-clock", expected])
             check("Replaces" in text, f"The preview of {spec} does not say it replaces a version")
             ui_apply(browser, f"the {spec} change", row_has("heinzel-clock", expected))
@@ -2365,6 +2497,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--case", action="append", choices=sorted(CASES, key=int), help="Repeatable; default all, serially"
     )
+    parser.add_argument("--shard", choices=sorted(SHARDS), help="One fixed hosted-VM shard; never a full acceptance")
     parser.add_argument("--accept-wheel-sha256", help="Independently accepted Core wheel hash")
     parser.add_argument("--accept-profile-sha256", help="Independently accepted standard.json hash")
     parser.add_argument("--accept-install-sh-sha256", help="Accepted live install.sh hash if main moved past the tag")
@@ -2410,6 +2543,14 @@ def parse_args(argv=None):
         or "published" in (args.expect_version, args.expect_app_version)
     ):
         parser.error("a release-candidate run takes explicit versions and no other candidate or diagnostic option")
+    if args.shard:
+        if args.case or args.candidate_wheel or args.bootstrap != "literal" or args.diagnostic_explicit_profile:
+            parser.error("--shard cannot be combined with case selection or diagnostic options")
+        if "published" in (args.expect_version, args.expect_app_version):
+            parser.error("--shard requires explicit release versions")
+        if not args.accept_profile_sha256 or not (args.accept_wheel_sha256 or args.candidate_wheel_sha256):
+            parser.error("--shard requires independently pinned Core and profile hashes")
+        args.case = list(SHARDS[args.shard])
     return args
 
 
@@ -2469,6 +2610,8 @@ def main():
         "verdict": "INCOMPLETE",
         "cases": {},
     }
+    if args.shard:
+        result["shard"] = {"name": args.shard, "cases": list(SHARDS[args.shard])}
     if args.diagnostic_explicit_profile:
         result["limits"] = [
             "DIAGNOSTIC: HZ_APP_PROFILE selected the app, bypassing discovery. Nothing here is acceptance evidence "
@@ -2492,6 +2635,7 @@ def main():
     except Refused as error:
         result["host"]["service_manager"] = {"refused": str(error)}
     candidate = None
+    preflight_started = time.monotonic()
     try:
         if release_run:
             result["expectation_supplied"] = True
@@ -2500,12 +2644,14 @@ def main():
             result["expectation_supplied"] = resolve_published(args)
             report, profile = preflight(args, parent / "accepted")
     except (StepFailed, OSError, ValueError, KeyError, zipfile.BadZipFile) as error:
+        result["preflight_seconds"] = round(time.monotonic() - preflight_started, 1)
         result["preflight_failure"] = redact(f"{type(error).__name__}: {error}")[:500]
         result["verdict"] = "PREFLIGHT_FAILED"
         write_result(path, result, secrets)
         copy_result(path)
         print(json.dumps({"verdict": result["verdict"], "why": result["preflight_failure"], "result": str(path)}))
         return exit_code(result["verdict"])
+    result["preflight_seconds"] = round(time.monotonic() - preflight_started, 1)
     result["published" if not release_run else "candidate_release"] = report
     if args.candidate_wheel:
         candidate = bind_candidate(args.candidate_wheel, parent)

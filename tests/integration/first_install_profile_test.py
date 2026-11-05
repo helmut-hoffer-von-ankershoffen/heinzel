@@ -31,9 +31,9 @@ def managed_profile(monkeypatch, make_kernel, tmp_path):
         if result.exit_code:
             msg = "Managed command refused invalid configuration"
             raise HeinzelError(msg)
-        return json.loads(result.stdout)
+        return result.stdout
 
-    monkeypatch.setattr(bootstrap, "_managed_json", managed)
+    monkeypatch.setattr(bootstrap, "_managed_command", managed)
     return kernel, directory, calls
 
 
@@ -96,7 +96,7 @@ def test_defer_ai_is_explicit_persistent_and_preserves_existing_selection(manage
     config = Config.load(directory)
     assert config.data["capabilities"] == {"ai_access": "gateway", "agent_runner": "none"}
     assert [call[3:] for call in calls if call[:3] == ["system", "config", "set"]] == [
-        ["capabilities.agent_runner", "none"]
+        ["capabilities.agent_runner", '"none"']
     ]
     bootstrap._configure_ai(Path("/fixture/persistent/bin/hz"), {}, ScriptedPrompter([]))
     assert len([call for call in calls if call[:3] == ["system", "config", "set"]]) == 1
@@ -262,3 +262,29 @@ def test_both_profile_paths_refuse_ambiguous_or_invalid_rows_before_questions_or
     with pytest.raises(HeinzelError, match=r"could not be verified|is unavailable|is invalid"):
         check()
     assert calls == [["org", "show"], ["system", "config", "show"]]
+
+
+def test_real_config_write_results_are_json_paths_and_all_setup_writes_are_read_back(managed_profile):
+    _kernel, directory, calls = managed_profile
+    bootstrap._complete_profile(
+        Path("/fixture/persistent/bin/hz"),
+        {},
+        ScriptedPrompter(["Mira", "Payments", "mira", "engineer", "Europe/Berlin"]),
+    )
+    bootstrap._configure_ai(Path("/fixture/persistent/bin/hz"), {}, ScriptedPrompter([""]))
+    written = [call[3] for call in calls if call[:3] == ["system", "config", "set"]]
+    read_back = [call[3] for call in calls if call[:3] == ["system", "config", "get"]]
+    assert written == read_back
+    assert set(written) == {
+        "org.name",
+        "team.name",
+        "org.handle",
+        "org.role",
+        "org.timezone",
+        "capabilities.ai_access",
+        "capabilities.agent_runner",
+    }
+    result = CliRunner().invoke(build(_kernel), ["system", "config", "set", "org.handle", '"mira"', "--json"])
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == str(directory / "config.toml")
+    assert isinstance(json.loads(result.stdout), str)
