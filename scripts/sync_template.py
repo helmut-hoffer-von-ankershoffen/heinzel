@@ -178,6 +178,13 @@ def _without_core_browser_setup(text: str) -> str:
     )
 
 
+def _without_release_candidate(text: str) -> str:
+    """Keep owner-Core candidate selection and source proof out of independent plugin CI."""
+    text = text.replace(" && needs.changes.outputs.full_release != 'true'", "")
+    text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
+    return re.sub(r"\n  release-candidate-source:\n.*?(?=\n  ci-ok:)", "", text, flags=re.DOTALL)
+
+
 def _without_core_node_selection(text: str) -> str:
     """Keep independent plugin Python lanes and their existing dependency groups unchanged."""
     text = text.replace(
@@ -209,7 +216,7 @@ def ci_workflow() -> str:
     )
     text = text.replace("needs: [admission, ", "needs: [")
     # Plugins have no changed-path job; preserve their existing macOS matrix.
-    text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
+    text = _without_release_candidate(_without_core_node_selection(text))
     text = text.replace(
         "PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.",
         "PRs run the newest version; non-PR runs cover all versions.",
@@ -284,6 +291,7 @@ def ci_workflow() -> str:
         "local-plugin-plan",
         "local-plugin-check",
         "core-wheel",
+        "release-candidate-source",
     }
     text = re.sub(
         r"(?m)^    needs: \[([^\n]+)\]$",

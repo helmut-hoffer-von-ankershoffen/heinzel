@@ -18,6 +18,7 @@ from heinzel import Config, Settings
 from heinzel.heads import install
 from heinzel.kernel import ProcessOutcome, user_config_dir
 from heinzel.modules.system.daemon import _service as daemon
+from tests.e2e._candidate_wheel import CANDIDATE_VERSION, candidate_wheel
 from tests.e2e.tool_install_test import REPO, Sandbox, sandbox, seed_uv_cache, wheel
 
 __all__ = ["sandbox", "seed_uv_cache", "wheel"]
@@ -388,9 +389,9 @@ def manager_wheel(directory: Path) -> Path:
 
 
 @pytest.fixture(scope="module")
-def candidate_016(tmp_path_factory):
-    """Build real current source under isolated release metadata; published 015 bytes stay immutable."""
-    root = tmp_path_factory.mktemp("candidate-016")
+def current_candidate(tmp_path_factory):
+    """Build exact current source metadata; published015 bytes stay immutable."""
+    root = tmp_path_factory.mktemp("candidate-current")
     for name in (
         "pyproject.toml",
         "uv.lock",
@@ -410,20 +411,12 @@ def candidate_016(tmp_path_factory):
             ignore=shutil.ignore_patterns("node_modules", "__pycache__", "test-results", "work", ".vite"),
         )
     fixture_run(["git", "init", "--quiet", str(root)], check=True, timeout=15)
-    project = root / "pyproject.toml"
-    project.write_text(project.read_text().replace('version = "0.9.15"', 'version = "0.9.16"', 1))
-    lock = root / "uv.lock"
-    lock.write_text(
-        lock.read_text().replace('name = "heinzel"\nversion = "0.9.15"', 'name = "heinzel"\nversion = "0.9.16"', 1)
-    )
     fixture_run(
         [sys.executable, str(root / "scripts/build.py"), "--wheel", "--out-dir", str(root / "dist")],
         check=True,
         timeout=300,
     )
-    target = root / "dist/heinzel-0.9.16-py3-none-any.whl"
-    assert target.is_file()
-    return target
+    return candidate_wheel(root)
 
 
 @pytest.fixture(scope="module")
@@ -661,7 +654,7 @@ def upgrade_published_015(selected, environment, candidate):
     )
     (selected.root / "old015-update-result.txt").write_text(updated.stdout + updated.stderr)
     assert updated.returncode == 0, updated.stdout + updated.stderr
-    assert "0.9.16" in updated.stdout
+    assert CANDIDATE_VERSION in updated.stdout
     installed = list((selected.root / "tools/heinzel/lib").glob("python*/site-packages/uv-0.13.7.dist-info"))
     assert len(installed) == 1, "The immutable 015 updater must resolve the new runtime dependency"
 
@@ -717,7 +710,7 @@ def normal_embedded_uv_paths(selected, environment, candidate):
     assert "heinzel-offline-probe" in run("system", "plugin", "list", "--json")
     assert json.loads(run("system", "plugin", "remove", "heinzel-offline-probe", "--json"))["done"]
     assert "heinzel-offline-probe" not in run("system", "plugin", "list", "--json")
-    assert "0.9.16" in run("system", "update", "--source", str(candidate))
+    assert CANDIDATE_VERSION in run("system", "update", "--source", str(candidate))
     receipt = (prefix / "uv-receipt.toml").read_text()
     assert str(selected.root / "bin") in receipt
     assert str(candidate) in receipt
@@ -916,7 +909,7 @@ def installed_uninstall(selected, environment, change):
 def test_installed_uninstall_needs_no_network_or_discovery_and_keeps_user_work(
     sandbox, wheel, monkeypatch, change, request
 ):
-    candidate = request.getfixturevalue("candidate_016") if change.startswith("old015") else None
+    candidate = request.getfixturevalue("current_candidate") if change.startswith("old015") else None
     selected = Sandbox(sandbox.root, sandbox.python_directory, sandbox.python, own_home=True)
     selected.home.mkdir(mode=0o700)
     environment = isolated_environment(selected, monkeypatch)
