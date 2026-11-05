@@ -178,6 +178,24 @@ def _without_core_browser_setup(text: str) -> str:
     )
 
 
+def _without_core_node_selection(text: str) -> str:
+    """Keep independent plugin Python lanes and their existing dependency groups unchanged."""
+    text = text.replace(
+        "\n    env:\n"
+        "      # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.\n"
+        "      CI_NODE_GROUP_ARGUMENT: ${{ matrix.levels != 'integration' && '--group=build' || '' }}\n",
+        "\n",
+    )
+    text = text.replace(' ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"}', "")
+    text = text.replace("--group test --group build", "--group test")
+    return re.sub(
+        r"\n      - name: Select the locked wheel Node without executing it\n"
+        r"(?:        if: [^\n]*\n)?        run: uv run --no-sync python scripts/ci_node.py",
+        "",
+        text,
+    )
+
+
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
@@ -207,7 +225,7 @@ def ci_workflow() -> str:
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
     # The web head's app (ADR 0039) and ATTRIBUTIONS.md, the notices of what it bundles: plugins have neither.
     text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
-    text = _without_core_browser_setup(text)
+    text = _without_core_node_selection(_without_core_browser_setup(text))
     text = re.sub(r"\n      - run: make managed-backend-[^\n]*", "", text)
     # Only the core daemon uses the host's user service manager; plugins ship no such probe.
     text = re.sub(

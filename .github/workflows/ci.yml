@@ -327,6 +327,9 @@ jobs:
         # under that same cap. PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.
         include:
           ${{ fromJSON(github.event_name == 'pull_request' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+    env:
+      # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.
+      CI_NODE_GROUP_ARGUMENT: ${{ matrix.levels != 'integration' && '--group=build' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -339,12 +342,15 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install wheel dependencies
         if: matrix.python != '3.15'
-        run: uv sync --frozen --no-build --no-dev --group test
+        run: uv sync --frozen --no-build --no-dev --group test ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"}
       - name: Install Python 3.15 dependencies with the verified PyYAML compatibility build
         if: matrix.python == '3.15'
         run: |
-          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
+          uv sync --frozen --no-build --no-dev --group test ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"} --no-install-package pyyaml
           bash scripts/bootstrap-pyyaml.sh
+      - name: Select the locked wheel Node without executing it
+        if: matrix.levels != 'integration'
+        run: uv run --no-sync python scripts/ci_node.py
       - name: Inspect the Linux user manager without starting services
         if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.12' # a cell every pull request runs
         env:
@@ -380,7 +386,9 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.14"
-      - run: uv sync --frozen --no-build --no-dev --group test
+      - run: uv sync --frozen --no-build --no-dev --group test --group build
+      - name: Select the locked wheel Node without executing it
+        run: uv run --no-sync python scripts/ci_node.py
       - run: make test
       - name: Record the total for the merge gate
         run: uv run --no-build coverage report --format=total --precision=2 > coverage-total.txt
