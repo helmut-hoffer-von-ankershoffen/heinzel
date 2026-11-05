@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.16](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.16) - 2026-11-05
 
-0.9.16 adds CLI-created release-draft workflows, calendar views and reminders, profile onboarding, optional-feature health, offline removal and supervised web serving. Settings search stays readable on phones and compact layouts. Activity controls stay usable while the workspace scrolls. Source access review waits until the current reply settles. Google/Slack/GitHub companion publication and real-provider acceptance remain separate.
+0.9.16 adds CLI-created release-draft workflows, calendar views and reminders, profile onboarding, optional-feature health, offline removal and supervised web serving. Settings search stays readable on phones and compact layouts. Source access review waits until the current reply settles. Google/Slack/GitHub companion publication and real-provider acceptance remain separate. Activity-detail scrolling remains under investigation.
 
 Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and reinstall. After 0.9.16 publication, run `uv run --no-project --with heinzel==0.9.16 python -I -m heinzel.heads.daemon_recovery plan`. Review the entire plan; historical profile ownership remains unknown. Repeat with `retire --confirm PLAN_SHA256`, using the exact current plan digest. After successful retirement, use `hz system update --source 'heinzel==0.9.16'`, then `hz system daemon install`; separately choose `hz ui install` for supervised web serving. Preserve the existing profile; never purge data or bypass refusals. Recovery is macOS-only; see docs/DAEMON_RECOVERY.md. Future ordinary supervised updates remain intended in place. Native migration acceptance is pending; historical automatic-handover and WebKit incidents are not claimed fixed.
 
@@ -27,16 +27,21 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 - **web:** Stop workspace scroll on pressed controls ([178182c](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/178182c15ae97cd0dc6fad0440feaf4f8ac33f33))
 - **heads:** Preserve explicit no-bytecode mode across exec ([1dd32a9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/1dd32a9ac8298c8b44ce36ba3e0bc5ca830082eb))
 - **chat:** Defer source preparation until owned replies settle ([0c392ca](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/0c392ca3bf488eb465fd50ea0e8bd122a82093b4))
+- **kernel:** Preserve bytecode policy in inventory probes ([13a8307](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/13a83077bf7a7442d942ca7df85e9ae4801239c0))
+- **chat:** Use Heinzel terminology ([aed1724](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/aed1724edfcbcaa89eb6e85691ea071987ca6255))
+- **chat:** Refine Heinzel copy ([d9a2b96](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/d9a2b96ae960e852dc5893bc1063fdad9b002623))
 
 ### 📚 Documentation
 
 - **release:** Describe readable search fields ([8ec7ea8](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/8ec7ea8ad1ff259a1fd04e15023774212060600e))
 - **release:** Include the search field fix in release notes ([ca3cafd](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/ca3cafdbe36bce860c6a7380abffc464d42af03a))
+- **release:** Describe reply-aware source review ([18f60e0](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/18f60e08c5f8e91efce118d5596adb7ff5342cd2))
 
 ### 🧪 Testing
 
 - Isolate lifecycle fixtures from host clocks and Python ([#512](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/512)) ([87dc0a2](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/87dc0a25b62b0bc59a60607c301f516d062f231a))
 - **web:** Guard optional pointer diagnostics ([47a4c6d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/47a4c6d83b03b2f5501cb1be240857ffa34bb36a))
+- **web:** Distinguish scroll owners during physical presses ([e015794](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e01579480d3dc79bc1837aa242d6915dbc2b1dad))
 
 ### 🧹 Miscellaneous
 
