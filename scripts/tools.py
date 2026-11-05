@@ -36,6 +36,7 @@ import tempfile
 import time
 import tomllib
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from collections.abc import Callable, Iterable
@@ -54,6 +55,7 @@ REQUIRED = frozenset({"build", "web"})
 WEB_APP = ROOT / "web" / "package.json"
 TIMEOUT = 120
 DOWNLOAD_ATTEMPTS = 3
+DOWNLOAD_ERROR_PATH_LIMIT = 256
 SHA256 = re.compile(r"[0-9a-f]{64}")
 # CA bundles of common Linux distributions, for Pythons whose OpenSSL looks elsewhere.
 CA_BUNDLES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt")
@@ -209,17 +211,17 @@ def _interrupted_transport(error: OSError | http.client.HTTPException) -> bool:
 
 
 def http_get(url: str) -> bytes:
-    """The URL's body, with at most three attempts for interrupted transfers.
+    """The URL's body, with at most three attempts for interrupted transfers or transient gateways.
 
     Retry socket timeouts use the original budget's remaining time. Redirects and proxies use urllib's defaults.
-    Certificate and HTTP errors fail immediately.
+    Certificate, protocol and HTTP errors other than 502/503/504 fail immediately.
 
     Raises:
         OSError: the connection or TLS verification failed.
         http.client.HTTPException: the response was interrupted or invalid.
     """
     deadline = time.monotonic() + TIMEOUT
-    timeout = TIMEOUT
+    timeout: float = TIMEOUT
     attempt = 0
     while True:
         request = urllib.request.Request(url, headers={"User-Agent": "heinzel-dev-tools"})  # noqa: S310 - https only (load)
@@ -229,19 +231,49 @@ def http_get(url: str) -> bytes:
             ) as response:
                 return bytes(response.read())
         except (OSError, http.client.HTTPException) as error:
+            transient_gateway = isinstance(error, urllib.error.HTTPError) and error.code in (502, 503, 504)
+            if isinstance(error, urllib.error.HTTPError):
+                error.close()
             attempt += 1
             delay = 0.5 * attempt
             if (
-                not _interrupted_transport(error)
+                not (transient_gateway or _interrupted_transport(error))
                 or attempt == DOWNLOAD_ATTEMPTS
                 or deadline - time.monotonic() <= delay
             ):
+                error.add_note(f"heinzel-download-attempts={attempt}")
                 raise
             # Restart from byte zero; fetch still checks the entire body before caching or installing it.
             time.sleep(delay)
             timeout = deadline - time.monotonic()
             if timeout <= 0:
+                error.add_note(f"heinzel-download-attempts={attempt}")
                 raise
+
+
+def _download_failure_detail(error: OSError | http.client.HTTPException) -> str:
+    notes: list[str] = getattr(error, "__notes__", [])
+    prefix = "heinzel-download-attempts="
+    counts = [note.removeprefix(prefix) for note in notes if note.startswith(prefix)]
+    attempts = next((count for count in reversed(counts) if count in {"1", "2", "3"}), None)
+    detail = str(error) or type(error).__name__
+    if isinstance(error, urllib.error.HTTPError):
+        # HTTP error text and signed query strings can contain credentials. Only the
+        # parsed hostname/path belong in the extra observation; no headers or body.
+        detail = f"HTTP Error {error.code}"
+        try:
+            parsed = urllib.parse.urlsplit(error.url)
+            host = "".join(char for char in parsed.hostname or "" if char.isprintable() and not char.isspace())[:253]
+            path = "".join(char for char in parsed.path if char.isprintable() and not char.isspace())
+            if len(path) > DOWNLOAD_ERROR_PATH_LIMIT:
+                path = path[:DOWNLOAD_ERROR_PATH_LIMIT] + "..."
+            if host:
+                detail += f"; last HTTP endpoint={host}{path}"
+        except ValueError:
+            pass  # Malformed remote URL metadata must not hide the original failure.
+    if attempts is not None:
+        detail += f"; attempts={attempts}"
+    return detail
 
 
 def download_bytes(url: str, get: FetchBytes[str] = http_get) -> bytes:
@@ -253,7 +285,7 @@ def download_bytes(url: str, get: FetchBytes[str] = http_get) -> bytes:
     try:
         return get(url)
     except (OSError, http.client.HTTPException) as error:
-        msg = f"download failed ({error or type(error).__name__})"
+        msg = f"download failed ({_download_failure_detail(error)})"
         raise ToolError(msg) from error
 
 

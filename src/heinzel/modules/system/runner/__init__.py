@@ -80,7 +80,7 @@ module.prerequisite(
 
 ASK_TIMEOUT = timedelta(minutes=3)
 ASK_PREAMBLE = (
-    "You answer in the chat of Heinzelmännchen (hz), open-source helpers for product teams. Answer briefly, in "
+    "You answer in the chat of Heinzelmännchen (hz), open-source Heinzels for product teams. Answer briefly, in "
     "Markdown. You can't run hz or change anything; when the user should run a command, name it. What follows is the "
     "conversation so far, or just a question; answer its last message.\n\n"
 )

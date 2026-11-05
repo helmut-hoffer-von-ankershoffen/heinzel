@@ -1,5 +1,6 @@
 """Read a selected tool's distribution metadata without starting its interpreter."""
 
+import hashlib
 import json
 import os
 import re
@@ -285,6 +286,73 @@ def validate_constraint_policy(requirements: list[str], constraints: tuple[str, 
         raise HeinzelError(msg) from exc
 
 
+def _local_wheel_identity(candidate: Requirement) -> tuple[Path, str | None]:
+    """Read one canonical absolute local wheel identity.
+
+    Raises:
+        ValueError: If the URL or hash fragment is ambiguous or unsupported.
+    """
+    raw_base, separator, fragment = (candidate.url or "").partition("#")
+    if separator and not fragment:
+        raise ValueError
+    source = urlsplit(candidate.url or "")
+    if source.scheme != "file" or source.netloc or source.query or not source.path.startswith("/"):
+        raise ValueError
+    path = Path(unquote(source.path))
+    if ".." in path.parts or path.as_uri() != raw_base:
+        raise ValueError
+    name, _, _, _ = parse_wheel_filename(path.name)
+    if name != canonicalize_name(candidate.name):
+        raise ValueError
+    if source.fragment and not re.fullmatch(r"sha256=[a-f0-9]{64}", source.fragment):
+        raise ValueError
+    return path, source.fragment.removeprefix("sha256=") if source.fragment else None
+
+
+def _wheel_file_identity(info: os.stat_result) -> tuple[int, ...]:
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
+def _verify_local_wheel_hash(wheel: Path, digest: str) -> None:
+    """Verify stable owned source bytes without following an ambiguous or nonregular file.
+
+    Raises:
+        ValueError: If the selected wheel is missing, changed, foreign-owned or unsafe to read.
+    """
+    try:
+        if wheel.resolve(strict=True) != wheel or not wheel.is_file():
+            raise ValueError
+        with os.fdopen(os.open(wheel, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() or before.st_mode & 0o022:
+                raise ValueError
+            actual = hashlib.file_digest(stream, "sha256").hexdigest()
+            if actual != digest or _wheel_file_identity(os.fstat(stream.fileno())) != _wheel_file_identity(before):
+                raise ValueError
+            if _wheel_file_identity(wheel.lstat()) != _wheel_file_identity(before):
+                raise ValueError
+    except OSError as exc:
+        raise ValueError from exc
+
+
+def _reconciled_wheel_source(direct: list[Requirement]) -> Requirement:
+    """Reconcile uv's fragmentless local receipt path with the same verified hash-bound wheel.
+
+    Raises:
+        ValueError: If more than this exact serialization difference is present, or the wheel differs.
+    """
+    identities = [_local_wheel_identity(candidate) for candidate in direct]
+    paths = {path for path, _ in identities}
+    hashed = [
+        (candidate, digest) for candidate, (_, digest) in zip(direct, identities, strict=True) if digest is not None
+    ]
+    if len(paths) != 1 or len({digest for _, digest in hashed}) != 1:
+        raise ValueError
+    selected, digest = hashed[0]
+    _verify_local_wheel_hash(next(iter(paths)), digest)
+    return selected
+
+
 def _requirement_policies(
     requirements: list[str], constraints: tuple[str, ...]
 ) -> list[tuple[Requirement, list[Requirement], Requirement]]:
@@ -297,9 +365,13 @@ def _requirement_policies(
         if requirement.marker is not None or any(candidate.marker is not None for candidate in relevant):
             raise ValueError
         direct = [candidate for candidate in [requirement, *relevant] if candidate.url is not None]
-        if len({candidate.url for candidate in direct}) > 1:
-            raise ValueError
-        source = direct[0] if direct else requirement
+        source = (
+            _reconciled_wheel_source(direct)
+            if len({candidate.url for candidate in direct}) > 1
+            else direct[0]
+            if direct
+            else requirement
+        )
         versions = [
             Version(spec.version)
             for candidate in [requirement, *relevant]

@@ -6,17 +6,22 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from heinzel import Config, HeinzelError, Progress, Prompter, Settings
 from heinzel.heads import install
 from heinzel.heads._tool_install import inspection_guidance, resolve_target
-from heinzel.kernel import Installation
+from heinzel.kernel import FILENAME, Installation
+
+if TYPE_CHECKING:
+    from rich.console import Console
 
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
 _JSON_OBJECTS = TypeAdapter(list[dict[str, JsonValue]])
 _STRINGS = TypeAdapter(list[str])
+_JSON_STRING = TypeAdapter(str)
 
 
 def _json_object(raw: str) -> dict[str, JsonValue]:
@@ -121,14 +126,44 @@ def installed_app() -> Path | None:
     return executable
 
 
-def _service_choices(arguments: list[str]) -> list[tuple[str, ...]]:
-    if arguments or not sys.stdin.isatty() or not sys.stdout.isatty():
-        return []
-    from rich.console import Console  # noqa: PLC0415 - interactive consent only
+def _human_console() -> "Console":
+    """Use the CLI's terminal policy and shared hat colour for human setup on stderr."""
+    from rich.console import Console  # noqa: PLC0415 - interactive presentation only
 
+    from heinzel.heads.cli import _playful  # noqa: PLC0415 - one shared brand and terminal policy
+
+    console = Console(file=sys.stderr)
+    settings = Config.load(Path.home()).settings(Settings, "hz")
+    if _playful.allowed(settings, console):
+        console.style = _playful.HAT
+    return console
+
+
+def _welcome() -> None:
+    from heinzel.heads.cli import _playful  # noqa: PLC0415 - only the bare interactive launcher
+    from heinzel.heads.cli._branding import TAGLINE  # noqa: PLC0415 - reuse the CLI's shared wording
+
+    console = _human_console()
+    if _playful.allowed(Config.load(Path.home()).settings(Settings, "hz"), console):
+        console.print(_playful.banner(["Heinzelmännchen", TAGLINE, "Let's set up your Heinzel."]), end="")
+
+
+def _interactive_launch(arguments: list[str]) -> bool:
+    return bool(
+        not arguments
+        and sys.stdin.isatty()
+        and sys.stdout.isatty()
+        and Config.load(Path.home()).settings(Settings, "hz").output_format != "json"
+    )
+
+
+def _service_choices(arguments: list[str]) -> list[tuple[str, ...]]:
+    if not _interactive_launch(arguments):
+        return []
+    _welcome()
     from heinzel.heads.cli._setup import ConsolePrompter  # noqa: PLC0415 - reuse the CLI's explicit consent boundary
 
-    prompter = ConsolePrompter(Console(file=sys.stderr))
+    prompter = ConsolePrompter(_human_console())
     choices: list[tuple[str, ...]] = []
     if prompter.confirm("Install the daemon to run scheduled Heinzels after login?", default=True):
         choices.append(("system", "daemon"))
@@ -276,7 +311,7 @@ def _workspace_command(executable: Path, environment: dict[str, str], choices: l
     return ["ui"]  # A verified older standard app retains its published foreground entry point.
 
 
-def _managed_json(executable: Path, environment: dict[str, str], arguments: list[str]) -> dict[str, JsonValue]:
+def _managed_command(executable: Path, environment: dict[str, str], arguments: list[str]) -> str:
     if installed_app() != executable:
         msg = "The managed installation changed before setup; inspect it before continuing."
         raise HeinzelError(msg)
@@ -291,7 +326,51 @@ def _managed_json(executable: Path, environment: dict[str, str], arguments: list
     if result.returncode:
         msg = "Setup could not verify the managed command's result; inspect `hz system doctor` before continuing."
         raise HeinzelError(msg)
-    return _json_object(result.stdout)
+    return result.stdout
+
+
+def _managed_json(executable: Path, environment: dict[str, str], arguments: list[str]) -> dict[str, JsonValue]:
+    """Object-returning reads retain their strict object-only response contract."""
+    return _json_object(_managed_command(executable, environment, arguments))
+
+
+def _write_setting(executable: Path, environment: dict[str, str], key: str, value: str) -> None:
+    """Require the config setter's exact user-file path and independent effective-value readback.
+
+    Raises:
+        HeinzelError: If the path result, selected file or persisted setting cannot be verified.
+    """
+    report = _managed_json(executable, environment, ["system", "config", "show"])
+    files = _object_rows(report.get("files"))
+    user = [item.get("path") for item in files if item.get("scope") == "user"]
+    if (
+        len(user) != 1
+        or not isinstance(user[0], str)
+        or not Path(user[0]).is_absolute()
+        or Path(user[0]).name != FILENAME
+        or ".." in Path(user[0]).parts
+    ):
+        msg = "The user configuration file could not be verified; inspect `hz system config show`."
+        raise HeinzelError(msg)
+    raw = _managed_command(executable, environment, ["system", "config", "set", key, json.dumps(value)])
+    try:
+        path = _JSON_STRING.validate_json(raw, strict=True)
+    except ValidationError as exc:
+        msg = "The configuration command returned an invalid file result; inspect `hz system config show`."
+        raise HeinzelError(msg) from exc
+    if path != user[0]:
+        msg = "The configuration command changed an unexpected file; inspect `hz system config show`."
+        raise HeinzelError(msg)
+    observed = _managed_json(executable, environment, ["system", "config", "get", key])
+    row = _setting_rows([observed])[0]
+    if (
+        f"{row['section']}.{row['key']}" != key
+        or row["source"] != "user"
+        or not isinstance(row.get("value"), str)
+        or row["value"] != value
+    ):
+        msg = "The saved setting could not be confirmed; inspect `hz system config show` before continuing."
+        raise HeinzelError(msg)
 
 
 def _profile_gaps(executable: Path, environment: dict[str, str]) -> list[tuple[str, dict[str, JsonValue]]]:
@@ -320,11 +399,9 @@ def _profile_gaps(executable: Path, environment: dict[str, str]) -> list[tuple[s
 
 def _complete_profile(executable: Path, environment: dict[str, str], prompter: Prompter | None = None) -> None:
     if prompter is None:
-        from rich.console import Console  # noqa: PLC0415 - interactive setup only
-
         from heinzel.heads.cli._setup import ConsolePrompter  # noqa: PLC0415 - same terminal boundary as service consent
 
-        prompter = ConsolePrompter(Console(file=sys.stderr))
+        prompter = ConsolePrompter(_human_console())
     prompter.say("Your profile stays on this computer. Existing values will be kept.")
     for key, field in _profile_gaps(executable, environment):
         choices = _profile_choices(field.get("json_schema"))
@@ -342,7 +419,7 @@ def _complete_profile(executable: Path, environment: dict[str, str], prompter: P
                 title, validate=lambda value: None if value.strip() else "Enter a real value to complete your profile."
             )
         )
-        _managed_json(executable, environment, ["system", "config", "set", key, json.dumps(answer)])
+        _write_setting(executable, environment, key, answer)
     prompter.say("Profile saved through Heinzel configuration. Existing values were preserved.")
 
 
@@ -366,15 +443,13 @@ def _configure_ai(executable: Path, environment: dict[str, str], prompter: Promp
     if not undecided:
         return
     if prompter is None:
-        from rich.console import Console  # noqa: PLC0415 - interactive setup only
-
         from heinzel.heads.cli._setup import ConsolePrompter  # noqa: PLC0415 - no silent noninteractive selection
 
-        prompter = ConsolePrompter(Console(file=sys.stderr))
+        prompter = ConsolePrompter(_human_console())
     if not prompter.confirm("Set up AI later? Existing explicit AI selections will be kept.", default=True):
         return
     for key in undecided:
-        _managed_json(executable, environment, ["system", "config", "set", f"capabilities.{key}", "none"])
+        _write_setting(executable, environment, f"capabilities.{key}", "none")
     prompter.say("AI is intentionally not configured for deferred uses. Choose access when you need it.")
 
 
@@ -415,7 +490,7 @@ def main() -> None:
         cli_main()
         return
     try:
-        interactive = not arguments and sys.stdin.isatty() and sys.stdout.isatty()
+        interactive = _interactive_launch(arguments)
         choices = _service_choices(arguments)
         executable = installed_app()
         if executable is None:

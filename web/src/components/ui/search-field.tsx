@@ -100,7 +100,7 @@ export function SearchField({
           onBlur?.(event);
         }}
         className={cn(
-          "w-full bg-transparent text-ui text-foreground outline-none placeholder:text-muted-foreground",
+          "search-field-input w-full bg-transparent text-foreground outline-none placeholder:text-muted-foreground",
           inputClassName,
         )}
       />

@@ -65,6 +65,7 @@ def test_other_marker_modes_keep_normal_collection(reporter, tmp_path, expressio
 def test_marker_reclassification_is_checked_even_after_deselection(reporter, tmp_path, full):
     markers = {"unit": object()}
     item = SimpleNamespace(
+        nodeid="tests/unit/example_test.py::test_example",
         path=tmp_path / "tests" / "unit" / "example_test.py",
         get_closest_marker=markers.get,
     )
@@ -83,7 +84,11 @@ def test_paths_without_a_lane_are_collected_then_rejected(reporter, tmp_path):
     path.parent.mkdir()
     path.touch()
     assert reporter.pytest_ignore_collect(path, configuration()) is None
-    item = SimpleNamespace(path=path, get_closest_marker=lambda name: object() if name == "integration" else None)
+    item = SimpleNamespace(
+        nodeid="tests/unowned_test.py::test_example",
+        path=path,
+        get_closest_marker=lambda name: object() if name == "integration" else None,
+    )
     with pytest.raises(pytest.UsageError, match="expected a unit, integration or e2e directory"):
         list(reporter.pytest_collection_modifyitems_layout(configuration(), [item]))
 
@@ -91,6 +96,7 @@ def test_paths_without_a_lane_are_collected_then_rejected(reporter, tmp_path):
 def test_missing_or_mixed_markers_fail_before_a_lane_can_omit_them(reporter, tmp_path):
     for levels in (set(), {"unit", "integration"}):
         item = SimpleNamespace(
+            nodeid="tests/unit/example_test.py::test_example",
             path=tmp_path / "tests" / "unit" / "example_test.py",
             get_closest_marker=lambda name, levels=levels: object() if name in levels else None,
         )

@@ -498,7 +498,7 @@ class HeinzelSettings(ModuleSettings):
         gt=0,
         allow_inf_nan=False,
         title="Most per durable chat",
-        description="The most one saved chat with a helper may cost in US dollars on direct API replies.",
+        description="The most one saved chat with a Heinzel may cost in US dollars on direct API replies.",
         json_schema_extra={"x-unit": "usd"},
     )
     message_max_usd: float = Field(
@@ -506,7 +506,7 @@ class HeinzelSettings(ModuleSettings):
         ge=0,
         allow_inf_nan=False,
         title="Most per message",
-        description="The most one direct API reply in a saved chat with a helper may cost in US dollars.",
+        description="The most one direct API reply in a saved chat with a Heinzel may cost in US dollars.",
         json_schema_extra={"x-unit": "usd"},
     )
 

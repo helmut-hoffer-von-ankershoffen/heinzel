@@ -363,6 +363,12 @@ body {
   padding-left: max(1rem, var(--hz-safe-area-left, env(safe-area-inset-left, 0px)));
 }
 
+/* The shared search field needs its minimum before autofocus, regardless of input mode. It also preserves
+   larger UI tokens; text-ui beside a text colour is ambiguous to the utility class merger. */
+:root input.search-field-input {
+  font-size: max(16px, var(--text-ui));
+}
+
 /* Small form text makes iOS zoom the entire page on focus, stranding fixed controls off screen. */
 @media (pointer: coarse) {
   :root input,

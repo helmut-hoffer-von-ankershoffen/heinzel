@@ -235,7 +235,7 @@ export function AgentScheduleReview({
           <ActionCard
             action={action}
             busy={busy}
-            proposalTitle="Review agent schedule"
+            proposalTitle="Review Heinzel schedule"
             onDecide={(confirm) => void decide(confirm)}
           />
         </ol>

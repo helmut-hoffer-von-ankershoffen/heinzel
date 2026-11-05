@@ -1,6 +1,7 @@
 """Genuine published015 -> explicit candidate recovery -> actual015 updater -> new ordinary install.
 
 Only the OS-manager protocol is an immutable installed double. This is not native launchd acceptance.
+The real CLI disables unused native notifier delivery; no native maintenance belongs in this protocol proof.
 """
 
 import base64
@@ -20,6 +21,7 @@ from heinzel import Config, Settings
 from heinzel.heads import install
 from heinzel.kernel import ProcessOutcome
 from heinzel.modules.system.daemon import _service as daemon
+from tests.e2e._candidate_wheel import CANDIDATE_VERSION, candidate_wheel
 from tests.e2e.tool_install_test import REPO, Sandbox
 
 pytestmark = [
@@ -62,9 +64,9 @@ def sandbox(tmp_path, fixture_managed_python):
 
 
 @pytest.fixture(scope="module")
-def candidate_016(tmp_path_factory):
-    """Version a copied source fixture only; do not alter or claim a released016 artifact."""
-    root = tmp_path_factory.mktemp("legacy-candidate-016")
+def current_candidate(tmp_path_factory):
+    """Build exact current source metadata; published014/015 bytes stay immutable."""
+    root = tmp_path_factory.mktemp("legacy-candidate-current")
     for name in (
         "pyproject.toml",
         "uv.lock",
@@ -84,15 +86,10 @@ def candidate_016(tmp_path_factory):
             ignore=shutil.ignore_patterns("node_modules", "__pycache__", "test-results", "work", ".vite"),
         )
     subprocess.run(["git", "init", "--quiet", root], check=True, timeout=15)
-    for name in ("pyproject.toml", "uv.lock"):
-        path = root / name
-        text = path.read_text()
-        old = 'version = "0.9.15"' if name == "pyproject.toml" else 'name = "heinzel"\nversion = "0.9.15"'
-        path.write_text(text.replace(old, old.replace("0.9.15", "0.9.16"), 1))
     subprocess.run(
         [sys.executable, root / "scripts/build.py", "--wheel", "--out-dir", root / "dist"], check=True, timeout=300
     )
-    return root / "dist/heinzel-0.9.16-py3-none-any.whl"
+    return candidate_wheel(root)
 
 
 @pytest.fixture(scope="module")
@@ -168,7 +165,7 @@ def retain_fixture_source(selected, run):
 def handover_evidence(settings, root):
     """Report only fixed presence/liveness facts, never child output, configuration or identities."""
     directory = settings.state_dir / "daemon"
-    facts = {
+    facts: dict[str, object] = {
         name: (directory / filename).exists()
         for name, filename in (
             ("marker", "install.json"),
@@ -190,6 +187,54 @@ def handover_evidence(settings, root):
         path = root / f"tick-{name}.txt"
         facts[f"{name}_present"] = path.exists()
         facts[f"{name}_nonempty"] = path.exists() and path.stat().st_size > 0
+    phases = root / "tick-phases.jsonl"
+    if phases.exists():
+        allowed = {"tick-enter", "native-notices-enter", "native-notices-return", "tick-main-return", "tick-watchdog"}
+        stacks = {
+            "tick",
+            "_post_notices",
+            "post_native",
+            "lock_until_finished",
+            "_wait",
+            "wait",
+            "communicate",
+            "join",
+            "look",
+            "ensure",
+            "clean",
+            "unregister_strays",
+            "_ui_url",
+        }
+        with phases.open("rb") as stream:
+            raw = stream.read(16_384)
+        records = []
+        for line in raw.splitlines():
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if (
+                isinstance(record, dict)
+                and isinstance(record.get("phase"), str)
+                and isinstance(record.get("stacks"), list)
+            ):
+                records.append(record)
+        facts["phases"] = [record["phase"] for record in records[-16:] if record.get("phase") in allowed]
+        facts["sdk_versions"] = sorted(
+            {
+                record.get("sdk")
+                for record in records
+                if isinstance(record.get("sdk"), str) and record.get("sdk") in {"0.9.14", "0.9.15", CANDIDATE_VERSION}
+            }
+        )
+        facts["stack_categories"] = sorted(
+            {
+                value
+                for record in records
+                for value in record.get("stacks", [])
+                if isinstance(value, str) and value in stacks
+            }
+        )
     return facts
 
 
@@ -217,10 +262,27 @@ def wait_for_genuine_handover(settings, root):
     raise AssertionError(message)
 
 
+def assert_native_isolation(run, root):
+    assert json.loads(run("system", "config", "get", "system.notify.native", "--json"))["value"] is False
+    assert not (root / "native-exec-attempts.jsonl").exists(), "Protocol fixture attempted native OS work"
+    for proof in root.glob("proof-*.json"):
+        assert "native-exec-observer-failed" not in json.loads(proof.read_text())["stderr"]
+
+
+def configure_native_isolation(run, root):
+    run("system", "config", "set", "system.notify.native", "false", "--json")
+    assert_native_isolation(run, root)
+
+
 def create_completed_history(run, settings, selected, published_015):
     run("automatic-015")
     wait_for_genuine_handover(settings, selected.root)
     assert "0.9.15" in run("--version")
+    for filename in ("install.json", "heartbeat.json", "handover-observation.json"):
+        assert json.loads((settings.state_dir / "daemon" / filename).read_text())["version"] == "0.9.15"
+    assert handover_evidence(settings, selected.root)["sdk_versions"] == ["0.9.15"]
+    assert_native_isolation(run, selected.root)
+    assert "native-exec-observer-failed" not in (selected.root / "tick-stderr.txt").read_text()
     site = next((selected.root / "tools/heinzel/lib").glob("python*/site-packages"))
     with zipfile.ZipFile(published_015) as archive:
         for name in archive.namelist():
@@ -231,8 +293,8 @@ def create_completed_history(run, settings, selected, published_015):
 
 @pytest.mark.long_running
 @pytest.mark.timeout(300)
-def test_published014_auto015_handover_then_explicit_retirement_and_real015_updater_to016(
-    sandbox, candidate_016, published_014, published_015, monkeypatch
+def test_published014_auto015_handover_then_explicit_retirement_and_real015_updater_to_current(
+    sandbox, current_candidate, published_014, published_015, monkeypatch
 ):
     selected = Sandbox(sandbox.root, sandbox.python_directory, sandbox.python, own_home=True)
     selected.home.mkdir(mode=0o700)
@@ -264,7 +326,7 @@ def test_published014_auto015_handover_then_explicit_retirement_and_real015_upda
                 "run",
                 "--no-project",
                 "--with",
-                str(candidate_016),
+                str(current_candidate),
                 "--with",
                 str(fixture),
                 "python",
@@ -295,6 +357,9 @@ def test_published014_auto015_handover_then_explicit_retirement_and_real015_upda
 
     # Retain the unpublished fixture through the genuine local-source plugin operation, before creating legacy units.
     retain_fixture_source(selected, run)
+    # This manager-protocol proof does not own the desktop notifier. Use the real supported setting,
+    # retained by the actual updater, rather than replacing any immutable SDK notification implementation.
+    configure_native_isolation(run, selected.root)
     run("system", "daemon", "install", "--json")
     create_completed_history(run, settings, selected, published_015)
     marker = settings.state_dir / "daemon/install.json"
@@ -311,8 +376,8 @@ def test_published014_auto015_handover_then_explicit_retirement_and_real015_upda
     assert result["status"] == "retired"
     assert not marker.exists()
     assert not (settings.state_dir / "daemon/standard-install-pending.json").exists()
-    run("system", "update", "--source", str(candidate_016))  # Actual published015 updater, not direct uv swapping.
-    assert "0.9.16" in run("--version")
+    run("system", "update", "--source", str(current_candidate))  # Actual published015 updater, not direct uv swapping.
+    assert CANDIDATE_VERSION in run("--version")
     run("system", "daemon", "install", "--json")
     status = json.loads(run("system", "daemon", "status", "--json"))
     assert status["installed"]
@@ -323,10 +388,12 @@ def test_published014_auto015_handover_then_explicit_retirement_and_real015_upda
     replay = json.loads(run("retire", "--confirm", plan["digest"], candidate=True))
     assert replay["status"] == "retired"
     assert marker.read_bytes() == new_marker
-    with zipfile.ZipFile(candidate_016) as archive:
+    with zipfile.ZipFile(current_candidate) as archive:
         installed = next(
             (selected.root / "tools/heinzel/lib").glob(
                 "python*/site-packages/heinzel/modules/system/daemon/_legacy_retirement.py"
             )
         )
         assert installed.read_bytes() == archive.read("heinzel/modules/system/daemon/_legacy_retirement.py")
+
+    assert_native_isolation(run, selected.root)

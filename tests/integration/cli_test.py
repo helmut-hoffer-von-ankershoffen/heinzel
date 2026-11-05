@@ -248,6 +248,7 @@ def test_system_info_json(app):
         "system.capability": {
             "ai.access test → ai-access:read": "claude-code → api.anthropic.com",
             "org agenda → calendar:read": "optional: not connected: no adapter bound",
+            "org calendar → calendar:read": "optional: not connected: no adapter bound",
             "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
             "system.runner.chat send → agent-runner:read": "claude-code → api.anthropic.com",
         },
@@ -584,6 +585,7 @@ def test_commands_are_sorted(app):
         "state",
         "theme",
         "ui",
+        "uninstall",
         "update",
     ]
     assert system.list_commands(None) == expected
@@ -707,7 +709,7 @@ def test_every_operation_accepts_json(make_kernel):
     assert set(leaves_without_json(typer.main.get_command(app))) == SERVERS | SETUP
     help_text = " ".join(click.unstyle(runner.invoke(app, ["--help"]).output).split())  # CI forces colours
     assert "Every operation accepts --json" in help_text
-    assert "Heinzelmännchen: helpers accelerating product teams" not in help_text
+    assert "Heinzelmännchen: Heinzels accelerating product teams" not in help_text
 
 
 def test_the_cli_loads_no_serving_stack():

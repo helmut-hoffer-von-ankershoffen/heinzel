@@ -1,6 +1,17 @@
 // The notification center: every notice hz recorded (ADR 0043), newest first, beside the sidebar. Read state is this
 // browser's: notices after the last one seen count as unread, on the bell and in the list.
-import { AlertTriangle, Bell, BellRing, FileText, Gift, Puzzle, Sparkles, Stethoscope, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Bell,
+  BellRing,
+  CalendarClock,
+  FileText,
+  Gift,
+  Puzzle,
+  Sparkles,
+  Stethoscope,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import type { SchemaNotice } from "@/api/client";
@@ -88,6 +99,7 @@ const icons = {
   release: Gift,
   plugin: Puzzle,
   heinzel: Sparkles,
+  calendar: CalendarClock,
   test: BellRing,
 } as const;
 
@@ -125,6 +137,7 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
     "plugin",
     "test",
     "heinzel",
+    "calendar",
   ];
   return (
     <section

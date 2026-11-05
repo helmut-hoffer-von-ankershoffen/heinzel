@@ -12,8 +12,10 @@ from heinzel.kernel import (
     DaemonLegacyRecovery,
     DaemonOverview,
     DaemonRecoverySelection,
+    HostServiceManager,
     parse_duration,
 )
+from heinzel.modules.system.daemon._maintenance import SystemHostServiceManager
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
     DaemonStatus,
@@ -65,6 +67,7 @@ module = Module("daemon", "Run modules' jobs in the background, supervised by la
 `hz system daemon pause`, `hz system daemon uninstall`, or by disabling the module that brings them."""
 module.settings(DaemonSettings)
 module.service(DaemonService, DaemonService.for_user)
+module.service(HostServiceManager, SystemHostServiceManager)
 
 
 def _attestation(service: DaemonService) -> DaemonAttestation:

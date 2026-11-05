@@ -1,4 +1,4 @@
-"""Opt-in request progress for the isolated reopen fixture; never record request content."""
+"""Request progress for the isolated reopen fixture; never record request content."""
 
 import json
 import os

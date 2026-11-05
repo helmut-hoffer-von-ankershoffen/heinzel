@@ -319,7 +319,7 @@ class HostToolCatalog:
             raise HeinzelError(msg)
         try:
             result = self._kernel.invoke(item.operation, **validated)
-            text = json.dumps(to_jsonable_python(result, fallback=str), ensure_ascii=False)
+            text = json.dumps(to_jsonable_python(result, fallback=str), ensure_ascii=False, separators=(",", ":"))
             if len(text.encode()) > _MAX_RESULT:
                 msg = "The operation result exceeds the safe limit"
                 raise OperationFailedError(msg)  # noqa: TRY301 - an invoked operation failed to produce usable output

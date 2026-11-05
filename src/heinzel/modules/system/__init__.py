@@ -12,9 +12,11 @@ from heinzel.kernel import (
     CoreMetadataVerifier,
     DaemonInstallationLifecycle,
     Installation,
+    OfflineUninstall,
     PluginReleases,
     ReleaseSource,
     Settings,
+    UninstallResult,
 )
 from heinzel.modules.system._announced import Announcement, ToolSnapshot, trial_start
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
@@ -30,6 +32,7 @@ from heinzel.modules.system._models import (
 )
 from heinzel.modules.system._plugin_releases import plugin_releases
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
+from heinzel.modules.system._uninstall import SystemOfflineUninstall
 from heinzel.modules.system._update import UpdateService
 from heinzel.modules.system.config._service import ConfigService
 
@@ -71,6 +74,7 @@ def render_update(result: UpdateResult) -> RenderableType:
 
 module = Module("system", "Inspect, configure, diagnose and update Heinzelmännchen itself.", essential=True)
 module.service(SystemService)
+module.service(OfflineUninstall, SystemOfflineUninstall)
 module.service(CoreMetadataVerifier, CoreMetadataIdentity)
 
 
@@ -171,6 +175,14 @@ def update(
         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
     """
     return service.update(source, channel=channel or kernel.settings.update_channel)
+
+
+@module.operation(read_only=False, heads={"cli"}, audience="everyday")
+def uninstall() -> UninstallResult:
+    """Uninstall the verified Heinzel tool offline, keeping your data and configuration."""
+    from heinzel.modules.system._uninstall import uninstall_installation  # noqa: PLC0415 - only explicit offline removal
+
+    return uninstall_installation()
 
 
 @module.operation(private=True, read_only=False, heads={"auto-update"}, audience="everyday")

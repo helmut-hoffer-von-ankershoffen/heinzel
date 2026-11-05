@@ -701,7 +701,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
               if (event.currentTarget.open) setShowProposal(true);
             }}
           >
-            <summary className="cursor-pointer text-sm font-medium">Scheduled agent terms</summary>
+            <summary className="cursor-pointer text-sm font-medium">Scheduled Heinzel terms</summary>
             {showProposal && <AgentProposal sessionId={sessionId} />}
           </details>
         )}
@@ -714,7 +714,11 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         )}
         {query.data?.session_id === sessionId && (
           <>
-            <ConnectedReadReview key={`connected:${sessionId}`} sessionId={sessionId} />
+            <ConnectedReadReview
+              key={`connected:${sessionId}`}
+              sessionId={sessionId}
+              conversationBusy={busy || !!pending || !!agentPending}
+            />
             <ConnectedReadSetReview
               key={`connected-set:${sessionId}`}
               sessionId={sessionId}

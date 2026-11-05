@@ -87,7 +87,9 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    "scripts/ci_node.py": "selects Node for core's Python unit lanes; independent plugins own their CI runtime setup",
     "scripts/build.py": "prepares the core web hook and controller build group; plugin builds have no core assets",
+    "scripts/release_candidate.py": "verifies full Core release-candidate CI source and exact job inventory",
     "scripts/main_batch.py": "validates only the core repository merge queue; plugin CI has no batch admissions",
     "scripts/merge_gate.py": "judges a public repo's SonarCloud project; a new plugin has none until it is set up",
     "scripts/merge_gate.py.lock": "the lock of scripts/merge_gate.py, which plugins don't get by default",
@@ -137,6 +139,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     ".github/workflows/acceptance.yml": "installs the published core with the public commands on hosted runners",
     "scripts/acceptance/README.md": "documents the core's public installer acceptance harness",
     "scripts/acceptance/run_acceptance.py": "public installer acceptance of the published core; plugins have none",
+    ".github/workflows/acceptance-sharded.yml": "manual hosted-VM acceptance study, separate from release acceptance",
+    "scripts/acceptance/reduce.py": "fails closed on incomplete or mixed acceptance study shards",
     "scripts/acceptance/summary.py": "summarizes the acceptance harness's result.json for a job summary",
     "scripts/acceptance/vendor/artifact_provenance.py": "hash-pinned reviewed copy the acceptance harness loads",
     "scripts/acceptance/vendor/guardian.py": "hash-pinned reviewed copy the acceptance harness loads",

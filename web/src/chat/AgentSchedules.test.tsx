@@ -35,7 +35,7 @@ it("requires an explicit choice before including a connected read in a new sched
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  await user.click(screen.getByText("Recurring agent turns"));
+  await user.click(screen.getByText("Recurring Heinzel turns"));
   const choice = await screen.findByRole("checkbox", { name: /Allow the separately approved sample.read/ });
   expect(choice).not.toBeChecked();
   await user.click(choice);
@@ -80,7 +80,7 @@ it("uses an explicit interval suggestion only after a human chooses it, while ke
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  await user.click(screen.getByText("Recurring agent turns"));
+  await user.click(screen.getByText("Recurring Heinzel turns"));
   const interval = await screen.findByText(/Suggested interval: every 7 minutes/);
   expect(interval).toBeInTheDocument();
   expect(screen.getByLabelText("Every (minutes)")).toHaveValue(5);

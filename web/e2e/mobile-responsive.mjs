@@ -247,12 +247,13 @@ async function footerPane(page, id, label, ready) {
   const direct = trigger.filter({ visible: true });
   const more = page
     .locator(
-      `footer:has([data-footer-part="${id}"][data-footer-hidden="overflow"]) [data-footer-content="@more"] button`,
+      `footer:has([data-footer-part="${id}"][data-footer-hidden="overflow"]) [data-footer-content="@more"] button[aria-expanded="false"]`,
     )
     .filter({ visible: true });
-  await direct.or(more).first().waitFor();
-  if (!(await direct.isVisible())) await more.tap();
-  await trigger.tap();
+  // Resolve the currently actionable path as part of the real touch action. A snapshot of direct visibility
+  // can become obsolete when an independent provider changes footer capacity before Playwright sends the tap.
+  await direct.or(more).first().tap();
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") await direct.tap();
   return page.getByRole("region", { name: label, exact: true }).locator("..");
 }
 
@@ -328,13 +329,14 @@ try {
       await page.goto(url);
       await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
       await statusRequested.promise;
-      const opening = footerPane(page, entry.id, "Share probe");
-      // Observe the held state after opening starts: shell readiness does not publish status items.
+      // Other real contributions can already require More. A held, unpublished item must have neither its
+      // trigger nor an overflow entry; shell readiness alone cannot make that item actionable.
       const held = await page.evaluate(() => ({
         target: !!document.querySelector('[data-footer-content="probe:share"] button'),
-        more: getComputedStyle(document.querySelector('[data-footer-content="@more"] button')).visibility,
+        overflow: !!document.querySelector('[data-footer-part="probe:share"][data-footer-hidden="overflow"]'),
       }));
-      assert.deepEqual(held, { target: false, more: "hidden" });
+      assert.deepEqual(held, { target: false, overflow: false });
+      const opening = footerPane(page, entry.id, "Share probe");
       publishStatus.resolve();
       const pane = await opening;
       const copy = pane.getByRole("button", { name: "Copy URL", exact: true });
@@ -551,9 +553,21 @@ try {
       `${spec.name}: settings close`,
     );
     const searchField = page.getByRole("searchbox", { name: "Filter settings" });
+    const settingsFont = await searchField.evaluate((element) => ({
+      fontSize: getComputedStyle(element).fontSize,
+      parentFontSize: getComputedStyle(element.parentElement).fontSize,
+      coarse: matchMedia("(pointer: coarse)").matches,
+      anyCoarse: matchMedia("(any-pointer: coarse)").matches,
+      hover: matchMedia("(hover: hover)").matches,
+      width: innerWidth,
+      touchPoints: navigator.maxTouchPoints,
+    }));
+    writeFileSync(join(shots, "settings-font.json"), `${JSON.stringify(settingsFont, null, 2)}\n`);
+    console.error(`MOBILE_SETTINGS_FONT:${JSON.stringify({ viewport: spec.name, ...settingsFont })}`);
+    await page.screenshot({ path: join(shots, `mobile-${spec.name}-settings-font.png`) });
     assert.ok(
-      (await searchField.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))) >= 16,
-      `${spec.name}: focused phone form text must not trigger Safari zoom`,
+      Number.parseFloat(settingsFont.fontSize) >= 16,
+      `${spec.name}: focused phone form text must not trigger Safari zoom: ${JSON.stringify(settingsFont)}`,
     );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-settings.png`) });
     const settingsPages = await settingsDialog
@@ -676,7 +690,7 @@ try {
     await page.getByRole("textbox", { name: "Your message" }).fill("A draft to keep.");
     await assertContained(
       page,
-      page.getByRole("button", { name: "Create a helper and take this message" }),
+      page.getByRole("button", { name: "Create a Heinzel and take this message" }),
       `${spec.name}: workshop agent handoff`,
     );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-agent-handoff.png`) });
@@ -850,6 +864,7 @@ try {
     result.cases.push({
       ...spec,
       viewport: facts,
+      settingsFont,
       accountMenu: menuBox,
       targets: { navigation: navTarget, settings: settingsTarget },
       composer: composerBox,
@@ -897,7 +912,7 @@ try {
       });
     });
     await page.getByRole("textbox", { name: "Your message" }).fill("Keep my notes current.");
-    await page.getByRole("button", { name: "Create a helper and take this message" }).click();
+    await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
     await page.getByLabel("Message your Heinzel").waitFor();
     await page.getByText(/Customize.*suggested look/).click();
     const useSuggestion = page.getByRole("button", { name: "Use suggested identity" });
@@ -994,25 +1009,68 @@ try {
     assert.equal((await lastScroll()).behavior, "smooth", "repeated panel selection scrolls again");
     const startTop = await workspaceScroll.evaluate((element) => element.scrollTop);
     await scrollPage.getByRole("tab", { name: "Specimen", exact: true }).focus();
-    await scrollPage.keyboard.press("Home");
-    const pageTab = scrollPage.getByRole("tab", { name: "Page", exact: true });
-    await pageTab.waitFor({ state: "visible" });
-    await scrollPage.waitForFunction(
-      () => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Page",
-      null,
-      { timeout: 1000 },
-    );
-    assert.ok(await pageTab.evaluate((element) => element === document.activeElement), "Page tab keeps keyboard focus");
-    await scrollPage.waitForFunction(
-      (start) => {
-        const top = document.querySelector(".workspace-scroll").scrollTop;
-        return top > 2 && top < start - 2;
-      },
-      startTop,
-      { timeout: 5000 },
-    );
-    await atPage();
-    assert.equal((await lastScroll()).behavior, "smooth", "Page scrolls smoothly to the top");
+    // Observe before Home: driver round trips may outlast the native animation.
+    // Only actual owning-scroller events after one trusted Home can satisfy the
+    // original intermediate-position predicate, within its original 5000ms budget.
+    await workspaceScroll.evaluate((box, start) => {
+      let settle;
+      let timer;
+      let deadline = 0;
+      let done = false;
+      const samples = [];
+      const result = new Promise((resolve) => {
+        settle = resolve;
+      });
+      const finish = (intermediate = false) => {
+        if (done) return;
+        done = true;
+        window.removeEventListener("keydown", onHome, true);
+        box.removeEventListener("scroll", onScroll);
+        clearTimeout(timer);
+        settle({ intermediate, samples });
+      };
+      const onScroll = (event) => {
+        if (!event.isTrusted || !deadline || performance.now() > deadline) return;
+        const top = box.scrollTop;
+        if (samples.length < 32) samples.push(top);
+        if (top > 2 && top < start - 2) finish(true);
+      };
+      const onHome = (event) => {
+        if (!event.isTrusted || event.key !== "Home" || deadline) return;
+        window.homeMotion.armed = true;
+        deadline = performance.now() + 5000;
+        window.removeEventListener("keydown", onHome, true);
+        timer = setTimeout(() => finish(), 5000);
+      };
+      window.homeMotion = { result, armed: false, stop: finish };
+      window.addEventListener("keydown", onHome, { capture: true, passive: true });
+      box.addEventListener("scroll", onScroll, { passive: true });
+    }, startTop);
+    try {
+      await scrollPage.keyboard.press("Home");
+      assert.equal(
+        await scrollPage.evaluate(() => window.homeMotion.armed),
+        true,
+        "the motion budget starts at trusted Home",
+      );
+      const pageTab = scrollPage.getByRole("tab", { name: "Page", exact: true });
+      await pageTab.waitFor({ state: "visible" });
+      await scrollPage.waitForFunction(
+        () => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Page",
+        null,
+        { timeout: 1000 },
+      );
+      assert.ok(
+        await pageTab.evaluate((element) => element === document.activeElement),
+        "Page tab keeps keyboard focus",
+      );
+      const motion = await scrollPage.evaluate(() => window.homeMotion.result);
+      assert.equal(motion.intermediate, true, "Home must produce a native intermediate scroll position within 5000ms");
+      await atPage();
+      assert.equal((await lastScroll()).behavior, "smooth", "Page scrolls smoothly to the top");
+    } finally {
+      await scrollPage.evaluate(() => window.homeMotion.stop());
+    }
     await scrollPage.getByRole("button", { name: "Chat with your Heinzelmännchen" }).tap();
     await atPanel("chat");
     assert.equal((await lastScroll()).behavior, "smooth", "chat header scrolls smoothly");

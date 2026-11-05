@@ -122,6 +122,7 @@ export function OperationDialog() {
     Promise.all([
       client.invalidateQueries({ queryKey: ["ui"], refetchType: "all" }),
       client.invalidateQueries({ queryKey: daemonStatusKey, refetchType: "all" }),
+      client.invalidateQueries({ queryKey: ["org", "calendar-reminders-status"], refetchType: "all" }),
     ]).then(() => undefined);
   const go = () => void startOperation(() => void settled());
   return createPortal(
@@ -147,7 +148,11 @@ export function OperationDialog() {
           <p className="mt-1 text-muted-foreground">
             {persistent ? t(`op.daemon.${copy}.consent` as MessageKey) : t("contrib.confirm")}
           </p>
-          <code className="mt-2 block rounded bg-muted px-2 py-1 font-mono text-xs break-all">{run.call.command}</code>
+          {run.call.command && (
+            <code className="mt-2 block rounded bg-muted px-2 py-1 font-mono text-xs break-all">
+              {run.call.command}
+            </code>
+          )}
           <div className="mt-3 flex justify-end gap-2">
             <Button size="sm" variant="outline" autoFocus onClick={dismissOperation}>
               {t("contrib.cancel")}

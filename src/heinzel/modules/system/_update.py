@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
@@ -1054,6 +1055,7 @@ class UpdateService:
         )
         try:
             constraints = self._installation.tool_constraints()
+            constraints = self._constraint_wheel_hashes(requirement, candidates, constraints)
             if enabled and requirement.url is None and not pinned:
                 constraints.append(f"heinzel>={Version(current)}")
             captured = tuple(constraints)
@@ -1071,6 +1073,40 @@ class UpdateService:
             if scope is not None:
                 self._abort_or_leave_pending(scope)
             raise
+
+    def _constraint_wheel_hashes(self, core: Requirement, candidates: list[str], constraints: list[str]) -> list[str]:
+        """Retain hash identities when uv's receipt-derived local constraints would erase them.
+
+        Hashes strengthen only an existing source constraint. uv serializes these
+        transient hash fragments back to the same original path entries, so no
+        receipt constraint is added, replaced or silently removed.
+        """
+        parsed = [Requirement(item) for item in constraints]
+        selected = {canonicalize_name(Requirement(item).name) for item in candidates if Requirement(item).url is None}
+        local = {
+            canonicalize_name(item.name)
+            for item in parsed
+            if item.url is not None and urlsplit(item.url).scheme == "file" and urlsplit(item.url).path.endswith(".whl")
+        }
+        unchanged = sorted(str(name) for name in selected & local)
+        preserved = self._installation.preserved_tool_wheel_constraints(unchanged) if unchanged else ()
+        sources = {canonicalize_name(Requirement(item).name): Requirement(item) for item in preserved}
+        source = urlsplit(core.url or "")
+        if (
+            source.scheme == "file"
+            and not source.netloc
+            and not source.query
+            and re.fullmatch(r"sha256=[a-f0-9]{64}", source.fragment)
+        ):
+            sources[canonicalize_name(core.name)] = core
+        result: list[str] = []
+        for item in parsed:
+            hashed = sources.get(canonicalize_name(item.name))
+            if item.url is not None and hashed is not None:
+                self._installation.validate_install_constraints([str(hashed)], (str(item),))
+                item.url = hashed.url
+            result.append(str(item))
+        return result
 
     def _constraint_candidates(self, core: str, plugins: list[CorePin], before: dict[str, Installed]) -> list[str]:
         return [

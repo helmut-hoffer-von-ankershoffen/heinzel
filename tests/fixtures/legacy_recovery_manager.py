@@ -1,10 +1,12 @@
 """Immutable installed proof double: all native manager effects are recorded, never executed."""
 
+import contextlib
 import json
 import os
 import plistlib
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from heinzel import __version__
@@ -14,6 +16,84 @@ from heinzel.modules.system.daemon._units import LABEL
 
 ROOT = Path(os.environ["HZ_LEGACY_MANAGER_FIXTURE"])
 STATE = ROOT / "manager.json"
+
+
+def native_exec_observation(event, arguments):
+    """Observe attempts without changing execution; the external OS sandbox is the denial boundary."""
+    if event != "subprocess.Popen":
+        return
+    executable = arguments[0]
+    if not isinstance(executable, (str, bytes, os.PathLike)):
+        return
+    name = Path(os.fsdecode(executable)).name
+    category = {
+        "launchctl": "manager",
+        "lsregister": "registration",
+        "open": "application",
+        "osascript": "script",
+        "notifier": "notifier",
+        "heinzel-notifier": "notifier",
+    }.get(name)
+    if category is not None:
+        try:
+            with (ROOT / "native-exec-attempts.jsonl").open("a") as stream:
+                stream.write(json.dumps({"category": category}) + "\n")
+        except OSError:
+            # Observation must never replace the SDK's actual subprocess outcome.
+            with contextlib.suppress(OSError):
+                os.write(2, b"native-exec-observer-failed\n")
+
+
+sys.addaudithook(native_exec_observation)
+
+
+PHASES = frozenset({"tick-enter", "native-notices-enter", "native-notices-return", "tick-main-return", "tick-watchdog"})
+STACK_PHASES = frozenset(
+    {
+        "tick",
+        "_post_notices",
+        "post_native",
+        "lock_until_finished",
+        "_wait",
+        "wait",
+        "communicate",
+        "join",
+        "look",
+        "ensure",
+        "clean",
+        "unregister_strays",
+        "_ui_url",
+    }
+)
+
+
+def phase(name, *, stacks=False):
+    """Write fixed diagnostic categories only; no stack source, paths, arguments or identities."""
+    assert name in PHASES
+    categories = set()
+    if stacks:
+        for top in list(sys._current_frames().values())[:16]:
+            frame = top
+            for _ in range(64):
+                if frame.f_code.co_name in STACK_PHASES:
+                    categories.add(frame.f_code.co_name)
+                frame = frame.f_back
+                if frame is None:
+                    break
+    try:
+        with (ROOT / "tick-phases.jsonl").open("a") as stream:
+            stream.write(
+                json.dumps(
+                    {
+                        "phase": name,
+                        "stacks": sorted(categories),
+                        "sdk": __version__ if __version__ in {"0.9.14", "0.9.15", "0.9.16"} else "other",
+                    }
+                )
+                + "\n"
+            )
+    except OSError:
+        pass  # Diagnostic I/O never replaces the immutable SDK's actual outcome.
 
 
 def probe(command):
@@ -80,7 +160,7 @@ def loaded(state):
         "default environment = {\nPATH => /usr/bin:/bin\n}\n"
         f"inherited environment = {{\nHOME => {Path.home()}\n}}\nstate = not running\n"
     )
-    return ProcessOutcome(0, output, "")
+    return ProcessOutcome(0, f"gui/{os.getuid()}/{LABEL} = {{\n{output}}}\n", "")
 
 
 def runner(command):
@@ -104,6 +184,16 @@ def initialize(self, *args, **kwargs):
     self._runner = runner
     self._quiescence_probe = probe
     self._desktop_session = lambda: "Aqua"
+    original_notices = self._post_notices
+
+    def observed_notices(*arguments, **keywords):
+        phase("native-notices-enter")
+        try:
+            return original_notices(*arguments, **keywords)
+        finally:
+            phase("native-notices-return")
+
+    self._post_notices = observed_notices
 
 
 daemon.DaemonService.__init__ = initialize
@@ -161,9 +251,18 @@ elif sys.argv[1:2] == ["recovery"]:
 else:
     from heinzel.heads.cli import main
 
+    watchdog = None
+    if sys.argv[1:4] == ["system", "daemon", "tick"]:
+        phase("tick-enter")
+        watchdog = threading.Timer(10, lambda: phase("tick-watchdog", stacks=True))
+        watchdog.daemon = True
+        watchdog.start()
     try:
         main()
     finally:
+        if watchdog is not None:
+            watchdog.cancel()
+            phase("tick-main-return")
         if sys.argv[1:4] == ["system", "daemon", "tick"] and STATE.exists():
             state = json.loads(STATE.read_text())
             if state.get("pid") == os.getpid():

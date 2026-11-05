@@ -25,7 +25,7 @@ PLATFORMS = {
 def assert_bootstrap(action, manifest):
     """Reject ranges, remote discovery, missing targets and missing archive integrity."""
     steps = action["runs"]["steps"]
-    setup = steps[-1]
+    setup = next(step for step in steps if step.get("uses", "").startswith("astral-sh/setup-uv@"))
     assert setup["uses"] == "astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e"
     version = setup["with"]["version"]
     assert re.fullmatch(r"\d+\.\d+\.\d+", version)
@@ -75,7 +75,7 @@ def test_manifest_output_is_a_complete_offline_data_url(tmp_path):
 @pytest.mark.parametrize("bad_version", ["latest", "latest-known", ">=0.13.0", "0.13.*", "0.13.6"])
 def test_mutable_or_mismatched_resolution_is_rejected(bad_version):
     action = yaml.safe_load((ACTION / "action.yml").read_text())
-    action["runs"]["steps"][-1]["with"]["version"] = bad_version
+    next(step for step in action["runs"]["steps"] if "uses" in step)["with"]["version"] = bad_version
     with pytest.raises(AssertionError):
         assert_bootstrap(action, json.loads((ACTION / "uv-manifest.json").read_text()))
 
@@ -90,7 +90,9 @@ def test_archive_integrity_and_release_origin_are_required(field):
 
 def test_remote_manifest_resolution_is_rejected():
     action = yaml.safe_load((ACTION / "action.yml").read_text())
-    action["runs"]["steps"][-1]["with"]["manifest-file"] = "https://example.org/latest.ndjson"
+    next(step for step in action["runs"]["steps"] if "uses" in step)["with"]["manifest-file"] = (
+        "https://example.org/latest.ndjson"
+    )
     with pytest.raises(AssertionError):
         assert_bootstrap(action, json.loads((ACTION / "uv-manifest.json").read_text()))
 
@@ -146,3 +148,71 @@ def test_pretty_multiline_json_is_not_a_manifest_record():
     manifest = json.loads((ACTION / "uv-manifest.json").read_text())
     with pytest.raises(json.JSONDecodeError):
         [json.loads(line) for line in json.dumps(manifest, indent=2).splitlines() if line.strip()]
+
+
+def test_node_identity_reads_static_header_without_executing_or_reading_node(tmp_path):
+    """A symlinked launcher is identified even when its contents cannot be read."""
+    prefix = tmp_path / "installation"
+    binary = prefix / "bin" / "node"
+    binary.parent.mkdir(parents=True)
+    marker = tmp_path / "executed"
+    binary.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 97\n")
+    binary.chmod(0o111)
+    header = prefix / "include" / "node" / "node_version.h"
+    header.parent.mkdir(parents=True)
+    header.write_text("#define NODE_MAJOR_VERSION 22\n#define NODE_MINOR_VERSION 23\n#define NODE_PATCH_VERSION 4\n")
+    commands = tmp_path / "commands"
+    commands.mkdir()
+    (commands / "node").symlink_to(binary)
+    action = yaml.safe_load((ACTION / "action.yml").read_text())
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", action["runs"]["steps"][-1]["run"]],
+        env={"PATH": f"{commands}:/usr/bin:/bin", "ImageOS": "ubuntu24", "ImageVersion": "fixture"},
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=2,
+    )
+    assert f"lexical={commands}/node" in result.stdout
+    assert f"canonical={binary}" in result.stdout
+    assert "filesystem_type=regular-executable" in result.stdout
+    assert "NODE_MAJOR_VERSION 22" in result.stdout
+    assert "runtime_version=unobserved" in result.stdout
+    assert not marker.exists()
+
+
+def test_node_identity_reports_missing_node_without_changing_bootstrap_result(tmp_path):
+    action = yaml.safe_load((ACTION / "action.yml").read_text())
+    result = subprocess.run(
+        ["/bin/bash", "-e", "-o", "pipefail", "-c", action["runs"]["steps"][-1]["run"]],
+        env={"PATH": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=2,
+    )
+    assert "state=missing" in result.stdout
+
+
+def test_node_identity_escapes_newlines_and_bounds_static_header_reads(tmp_path):
+    commands = tmp_path / "commands"
+    commands.mkdir()
+    binary = commands / "node"
+    binary.write_text("never read or execute this file")
+    binary.chmod(0o111)
+    header = tmp_path / "include" / "node" / "node_version.h"
+    header.parent.mkdir(parents=True)
+    header.write_text("#define NODE_MAJOR_VERSION 22\n" + "x" * 16384 + "\n#define NODE_MINOR_VERSION 99\n")
+    action = yaml.safe_load((ACTION / "action.yml").read_text())
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", action["runs"]["steps"][-1]["run"]],
+        env={"PATH": f"{commands}:/usr/bin:/bin", "ImageOS": "fixture\n::error::injected"},
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=2,
+    )
+    assert not any(line.startswith("::") for line in result.stdout.splitlines())
+    assert "NODE_MAJOR_VERSION 22" in result.stdout
+    assert "NODE_MINOR_VERSION 99" not in result.stdout
+    assert len(result.stdout) < 4096
