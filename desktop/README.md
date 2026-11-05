@@ -34,8 +34,15 @@ blocked. Notification and audio-only microphone requests require a separate nati
 document; other permission requests remain denied. That confirmation does not establish an OS grant or prove
 delivery or audio capture. These restrictions are development limitations, not a completed native permission lifecycle.
 
+Marked public-media links use a separate trusted-click handoff: the isolated preload requires a real activated
+click, and the main process validates the owning frame and a narrow immutable-raster/YouTube URL allowlist before
+asking the OS browser to open it. The page has no callable opener. Failed handoffs show a message beside the link;
+ordinary browser links retain their normal behavior. See [ADR 0124](../docs/adr/0124-native-public-media-links-require-trusted-clicks.md).
+
 `pnpm test:navigation` separately exercises real Electron page navigation and redirects, including an initial
 fragment-bearing redirect, against isolated temporary servers. Cross-origin destinations receive no request.
+It also records trusted public-media handoffs with a stubbed OS opener, without opening a browser or contacting a
+media provider. Scripted clicks, unsafe destinations and popups remain refused.
 
 ## Local unsigned packaging
 

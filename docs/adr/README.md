@@ -119,6 +119,8 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0120](0120-channels-carry-notices-and-approval-claims.md) Channels carry notices and approval claims | proposed · 4 Nov<br>partial |  |
 | [0121](0121-confirm-each-captured-write-before-one-attempt.md) Confirm each captured write before one attempt | proposed · 4 Nov<br>partial |  |
 | [0122](0122-preserve-authoritative-chat-history.md) Preserve authoritative chat history independently of model context | proposed · 30 Oct<br>partial |  |
+| [0123](0123-plugin-previews-read-public-inert-metadata.md) Plugin previews read public inert metadata | proposed · 4 Nov<br>built | [#319](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/319) |
+| [0124](0124-native-public-media-links-require-trusted-clicks.md) Native public media links require trusted clicks | proposed · 4 Nov<br>built | [#319](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/319) |
 | [0125](0125-prepare-locked-isolated-build-dependencies.md) Prepare locked dependencies before isolated local builds | proposed · 4 Nov<br>built |  |
 | [0126](0126-calendar-reminders.md) Calendar reminder scheduling | proposed · 4 Nov<br>partial |  |
 | [0127](0127-publish-a-bounded-standing-draft-append-grant.md) Publish a bounded standing grant for draft append | proposed · 4 Nov<br>partial |  |

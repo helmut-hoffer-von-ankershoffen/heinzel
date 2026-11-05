@@ -1,8 +1,9 @@
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
+import { createPublicMediaHandler } from "./public-media.js";
 import { createOwnedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
 import { initializeDesktopIdentity } from "./identity.js";
@@ -63,6 +64,12 @@ const instance = createInstanceLifecycle({
 
 const ownedCli = createOwnedCli();
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
+  ipcMain.handle("hz:public-media", createPublicMediaHandler({
+    windows,
+    fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+    connection: () => (stopping || quitting ? null : instance.currentConnection()),
+    openExternal: (url) => shell.openExternal(url, { activate: true }),
+  }));
   ipcMain.handle("hz:lifecycle", createLifecycleHandler({
     windows,
     fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
