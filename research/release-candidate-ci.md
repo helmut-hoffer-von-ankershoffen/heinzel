@@ -23,6 +23,24 @@ coverage, native checks, any case deadline or the required final aggregate. A re
 required merge, publication, provenance and acceptance gate. No main validation or publication overlap is authorized
 by candidate evidence alone.
 
+## Main runs are classified by execution, not their display title
+
+At source `da61b7463b9ad78a0b139ac96771f1e54400a4c1`, the complete original-attempt inventories show two real full
+main workloads: push [42032503313](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/runs/42032503313)
+created at `13:04:19Z` and terminally updated at `13:23:41Z` (19m22s, 62 jobs), and scheduled
+[42035060613](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/runs/42035060613) created at `13:21:34Z`
+and updated at `13:51:52Z` (30m18s, 63 jobs). Both executed all four Linux and eight Mac Python cells and all eight
+E2E cells. The push legitimately skipped Electron by changed paths; the scheduled run executed both Electron cells,
+which explains the different totals. The scheduled admission job began at `13:23:43Z`, after the push run finished.
+The event is `schedule`, not a manually requested extra full run. Existing main and nightly coverage remain required.
+
+A display title containing “batch admission” does not establish delegation or a short run. Inspect the actual
+admission/delegation outcomes, exhaustive terminal job inventory, event and source identity. A nonterminal snapshot
+can prove that workloads were selected, never that they completed. Main push and scheduled evidence are not relabelled
+as release-candidate evidence. The prepared reader/coordinator never requests CI: it reads existing exact-head proof
+or fails closed. It does not issue another full dispatch when suitable evidence already exists. Verification of one
+full run for an actual multi-PR batch remains separate and unproven by these single-merge observations.
+
 ## Two entry paths, one candidate
 
 A normal `release.sh` PR must be in this repository, from this repository's `release/vX.Y.Z` branch into `main`, with

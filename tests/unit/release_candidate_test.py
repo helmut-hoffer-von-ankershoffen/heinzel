@@ -165,6 +165,7 @@ def test_non_candidate_events_never_authorize_candidate_proofs(event):
         ("run", "repository", {"full_name": "other/fork"}),
         ("run", "head_repository", {"full_name": "other/fork"}),
         ("run", "event", "push"),
+        ("run", "event", "schedule"),
         ("run", "head_branch", "feature/source"),
         ("proof", "head", "0" * 40),
         ("proof", "base", "0" * 40),

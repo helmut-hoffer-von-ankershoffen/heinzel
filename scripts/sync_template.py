@@ -185,6 +185,24 @@ def _without_release_candidate(text: str) -> str:
     return re.sub(r"\n  release-candidate-source:\n.*?(?=\n  ci-ok:)", "", text, flags=re.DOTALL)
 
 
+def _without_core_node_selection(text: str) -> str:
+    """Keep independent plugin Python lanes and their existing dependency groups unchanged."""
+    text = text.replace(
+        "\n    env:\n"
+        "      # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.\n"
+        "      CI_NODE_GROUP_ARGUMENT: ${{ matrix.levels != 'integration' && '--group=build' || '' }}\n",
+        "\n",
+    )
+    text = text.replace(' ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"}', "")
+    text = text.replace("--group test --group build", "--group test")
+    return re.sub(
+        r"\n      - name: Select the locked wheel Node without executing it\n"
+        r"(?:        if: [^\n]*\n)?        run: uv run --frozen --no-sync --no-build python scripts/ci_node.py",
+        "",
+        text,
+    )
+
+
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
@@ -198,7 +216,7 @@ def ci_workflow() -> str:
     )
     text = text.replace("needs: [admission, ", "needs: [")
     # Plugins have no changed-path job; preserve their existing macOS matrix.
-    text = _without_release_candidate(text)
+    text = _without_release_candidate(_without_core_node_selection(text))
     text = text.replace(
         "PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.",
         "PRs run the newest version; non-PR runs cover all versions.",
@@ -214,7 +232,7 @@ def ci_workflow() -> str:
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
     # The web head's app (ADR 0039) and ATTRIBUTIONS.md, the notices of what it bundles: plugins have neither.
     text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
-    text = _without_core_browser_setup(text)
+    text = _without_core_node_selection(_without_core_browser_setup(text))
     text = re.sub(r"\n      - run: make managed-backend-[^\n]*", "", text)
     # Only the core daemon uses the host's user service manager; plugins ship no such probe.
     text = re.sub(
