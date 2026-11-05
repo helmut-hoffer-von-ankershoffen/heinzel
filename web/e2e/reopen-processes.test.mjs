@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { explainOwnedBrowser, nativeFrames, ownedBrowserChildren } from "./reopen-processes.mjs";
+import { explainOwnedBrowser, nativeFailure, nativeFrames, ownedBrowserChildren } from "./reopen-processes.mjs";
 
 test("ownership follows descendants regardless of ps ordering and excludes unrelated browser/profile owners", () => {
   const table = `30 20 /private/profile/com.apple.WebKit.Networking.Development
@@ -73,4 +73,54 @@ Binary Images:
 /opt/private`;
   assert.deepEqual(nativeFrames(sample), ["webkit", "ipc", "network", "cookies"]);
   assert.ok(nativeFrames(sample).every((category) => /^[a-z-]+$/.test(category)));
+});
+
+test("native failures retain fixed metadata without printing error messages, stderr or reports", () => {
+  const privateFields = { message: "/private/profile credential=secret", stderr: "Bearer secret", stdout: "secret" };
+  for (const [metadata, expected] of [
+    [{ code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", killed: true }, "output-limit"],
+    [{ killed: true, signal: "SIGTERM" }, "terminated"],
+    [{ code: "ENOENT" }, "tool-missing"],
+    [{ code: "EACCES" }, "permission"],
+    [{ code: "EPERM" }, "permission"],
+    [{ code: 1 }, "exit-1"],
+    [{ code: 255 }, "exit-255"],
+    [{ code: 256 }, "unknown"],
+    [{ code: -1 }, "unknown"],
+    [{ code: "secret" }, "unknown"],
+  ]) {
+    assert.equal(nativeFailure({ ...privateFields, ...metadata }), expected);
+  }
+  assert.equal(nativeFailure(null), "unknown");
+  assert.equal(nativeFailure("secret"), "unknown");
+});
+
+test("native sampling failure keeps the original bounds and does not sample launchd auxiliaries", async () => {
+  const notes = [];
+  const commands = [];
+  await explainOwnedBrowser(
+    (note) => notes.push(note),
+    async (file, args, options) => {
+      commands.push({ file, args, options });
+      if (file === "/bin/ps") {
+        return {
+          stdout: `11 ${process.pid} /owned/Playwright.app/Contents/MacOS/Playwright\n12 1 /owned/com.apple.WebKit.Networking.Development`,
+        };
+      }
+      throw Object.assign(new Error("/private/profile credential=secret"), {
+        killed: true,
+        signal: "SIGTERM",
+        stderr: "secret",
+      });
+    },
+    "darwin",
+  );
+  assert.equal(commands.length, 2);
+  assert.deepEqual(commands[1].args, ["11", "1", "1", "-file", "/dev/stdout"]);
+  assert.equal(commands[1].options.timeout, 2000);
+  assert.equal(commands[1].options.maxBuffer, 1024 * 1024);
+  assert.deepEqual(notes, [
+    'owned browser children [{"pid":11,"kind":"browser"}]',
+    "owned native sample browser pid=11 unavailable (terminated)",
+  ]);
 });
