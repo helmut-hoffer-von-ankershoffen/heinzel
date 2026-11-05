@@ -1,4 +1,4 @@
-"""Real collection confines the owner's overall Node deadline to the six acceptance-row cases."""
+"""Real collection keeps the batched acceptance-row expressions under the normal unit deadline."""
 
 import json
 import subprocess
@@ -12,7 +12,7 @@ pytestmark = pytest.mark.integration
 ROW_NODE = "tests/unit/acceptance_test.py::test_a_row_check_reads_only_the_installed_version_in_its_own_header"
 
 
-def test_only_the_six_acceptance_row_cases_get_one_ten_second_deadline(tmp_path):
+def test_the_batched_acceptance_rows_and_adjacent_tests_keep_the_five_second_deadline(tmp_path):
     report = tmp_path / "timeouts.json"
     probe = """
 import json
@@ -46,7 +46,7 @@ raise SystemExit(pytest.main(
     collected = json.loads(report.read_text())
     row_cases = {node: marker for node, marker in collected.items() if node.split("[", 1)[0] == ROW_NODE}
     adjacent = {node: marker for node, marker in collected.items() if node not in row_cases}
-    assert len(row_cases) == 6
+    assert len(row_cases) == 1
     assert adjacent
-    assert all(marker == {"markers": [[10]], "effective": [10]} for marker in row_cases.values())
+    assert all(marker == {"markers": [[5]], "effective": [5]} for marker in row_cases.values())
     assert all(marker == {"markers": [[5]], "effective": [5]} for marker in adjacent.values())
