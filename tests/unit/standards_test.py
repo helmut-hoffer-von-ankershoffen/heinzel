@@ -89,6 +89,7 @@ SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
     "scripts/ci_node.py": "selects Node for core's Python unit lanes; independent plugins own their CI runtime setup",
     "scripts/build.py": "prepares the core web hook and controller build group; plugin builds have no core assets",
+    "scripts/release_candidate.py": "verifies full Core release-candidate CI source and exact job inventory",
     "scripts/main_batch.py": "validates only the core repository merge queue; plugin CI has no batch admissions",
     "scripts/merge_gate.py": "judges a public repo's SonarCloud project; a new plugin has none until it is set up",
     "scripts/merge_gate.py.lock": "the lock of scripts/merge_gate.py, which plugins don't get by default",
