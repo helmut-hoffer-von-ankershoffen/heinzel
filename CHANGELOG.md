@@ -32,6 +32,14 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 - **chat:** Refine Heinzel copy ([d9a2b96](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/d9a2b96ae960e852dc5893bc1063fdad9b002623))
 - **web:** Place popovers at content mutation delivery ([fb2b39b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/fb2b39bb34577e6648ba7e9e75a28bc130f16d4a))
 - **web:** Stop residual workspace scroll on pointer press ([e79f484](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e79f4840ba274bdc39572175adb31fba4b4728e5))
+- **web:** Acknowledge canceled native scroll before paint ([dc6b68a](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/dc6b68a5ecb54020af9c182f0296d7978d1abefc))
+- **web:** Preserve native focus for clipped controls ([797e521](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/797e521e2233b037aea180d70874e5669e4bf039))
+- **ci:** Record Node identity without starting the runtime ([e6ce3cf](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e6ce3cf6fc084a104d200119c2977eac5c5d9627))
+- **web:** Accept fractional viewport fringe presses ([dc214fb](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/dc214fbb6375122e086ff0b157896c99fd667fae))
+- **web:** Preserve exact visual viewport bounds ([e9be9b1](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e9be9b17aa164e415e67b9b951c8b1e3ffbb99a4))
+- **web:** Place footer panes when child queries commit ([f3e82fb](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f3e82fb58002970d60aa2280ca008cdbd647cfe0))
+- **web:** Keep clipped native workspace presses stable ([f83f393](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f83f393d90fc248e571291ceffd008cd4011640a))
+- **release:** Combine native press and test budget fixes ([b661871](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b6618710d236b1db09c91c60800d041021464f45))
 
 ### 📚 Documentation
 
@@ -41,6 +49,9 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 - **release:** Record validated fixes and open scroll incident ([543f0e3](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/543f0e3866b35caa581c21fd19a8494e87affaed))
 - **release:** Describe stable popup placement ([ac1820d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/ac1820d588ed66a2eb0ee6e645b761f194753f94))
 - **release:** Record existing-profile update validation ([85a8732](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/85a873247dc89b58f8a01028416fe8549acdbe7b))
+- **release:** Record batched acceptance checks ([9f42959](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/9f42959975d28b09035e618b666890f8e4df0fc5))
+- **release:** Describe bounded workspace scroll cancellation ([3716915](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/3716915fc69d1287efa7959ca92142948410096d))
+- **release:** Omit deferred batching documentation ([ecc1d21](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/ecc1d2177ef996a87507067674819dddd988929b))
 
 ### 🧪 Testing
 
@@ -48,6 +59,12 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 - **web:** Guard optional pointer diagnostics ([47a4c6d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/47a4c6d83b03b2f5501cb1be240857ffa34bb36a))
 - **web:** Distinguish scroll owners during physical presses ([e015794](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e01579480d3dc79bc1837aa242d6915dbc2b1dad))
 - **system:** Configure the existing update profile ([6750e5e](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/6750e5e79abc1247239de26236a1b2f558e183aa))
+- **release:** Batch isolated row predicates in one node process ([779a41b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/779a41bf6da857dc5a6097fe78b98871af3cf093))
+- **system:** Defer row batching until published acceptance ([446c1fb](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/446c1fb47c1ad1f226e92597d2b40b8f97685b6e))
+- **system:** Isolate legacy history from native notifier ([bcc2ff7](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/bcc2ff75f0237d8958d02f2a3fba3384416f7ac6))
+- **web:** Establish fractional scroll pressure at native press ([d931330](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/d9313301f1546b091eb7c6c7616d1ca590191efd))
+- **web:** Observe Home scroll motion before keyboard navigation ([8d8c365](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/8d8c365cd4326fc35d6aad767df0dfda41f9c45a))
+- **ci:** Scope the approved Node test deadline to ten seconds ([5e00949](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/5e009491b13d9cc2b770bac2782dca1727f44da7))
 
 ### 🧹 Miscellaneous
 
