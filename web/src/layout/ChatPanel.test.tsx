@@ -113,9 +113,9 @@ describe("ChatPanel", () => {
     expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Keep the chosen artifact current");
     await user.click(panel.getByRole("button", { name: "Queue message" }));
     expect(await panel.findByText("I prepared terms for review.")).toBeInTheDocument();
-    const review = within(await panel.findByRole("region", { name: "Proposed agent terms" }));
+    const review = within(await panel.findByRole("region", { name: "Proposed Heinzel terms" }));
     expect(review.getByText("Revision 1 · proposed terms")).toBeInTheDocument();
-    expect(review.getByText(/does not activate the agent/)).toBeInTheDocument();
+    expect(review.getByText(/does not activate the Heinzel/)).toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
   });
 

@@ -1353,9 +1353,10 @@ class Installation:
         Raises:
             HeinzelError: If the command fails.
         """
+        flags = ["-I", "-B"] if sys.dont_write_bytecode else ["-I"]
         try:
             result = subprocess.run(  # noqa: S603 - our own interpreter and module
-                [sys.executable, "-I", "-m", "heinzel", *args],
+                [sys.executable, *flags, "-m", "heinzel", *args],
                 capture_output=True,
                 text=True,
                 check=False,

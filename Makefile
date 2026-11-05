@@ -247,8 +247,10 @@ E2E_WORKERS := $(if $(filter Darwin,$(shell uname -s)),2,3)
 E2E_PYTEST := uv run pytest -m e2e -n $(E2E_WORKERS) -q --session-timeout=600 -x
 # Keep the mounted app sweep in its existing lane when a supervised journey uses a browser helper.
 # Classifying installed-server journeys first keeps their cold starts apart from unrelated browser builds.
-E2E_WEB_1 := $(filter-out $(E2E_SUPERVISED),$(foreach i,$(shell seq 1 2 $(words $(E2E_WEB_CANDIDATES))),$(word $(i),$(E2E_WEB_CANDIDATES))))
-E2E_WEB_2 := $(filter-out $(E2E_SUPERVISED),$(foreach i,$(shell seq 2 2 $(words $(E2E_WEB_CANDIDATES))),$(word $(i),$(E2E_WEB_CANDIDATES))))
+# The mounted UI sweep accounts for about half the measured browser work; alternating filenames overloaded its lane.
+# Keep every other browser file together in the other existing lane, with the same workers and deadlines.
+E2E_WEB_1 := $(filter tests/e2e/web_ui_test.py,$(E2E_WEB))
+E2E_WEB_2 := $(filter-out $(E2E_WEB_1),$(E2E_WEB))
 E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB) $(E2E_SUPERVISED), --ignore=$(f)))$(if $(filter supervised,$(SUITE)), $(E2E_SUPERVISED))$(if $(filter web-1,$(SUITE)),$(foreach f,$(E2E_WEB_1), $(f)))$(if $(filter web-2,$(SUITE)),$(foreach f,$(E2E_WEB_2), $(f)))
 
 test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers (2 on macOS); SUITE=cli (tool install, CLI), supervised (installed server and offline lifecycle), web-1 or web-2 (browser halves) runs one part

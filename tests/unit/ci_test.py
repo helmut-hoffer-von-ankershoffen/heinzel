@@ -41,6 +41,9 @@ def test_installed_browser_service_journey_keeps_cold_starts_out_of_browser_shar
     assert "tests/e2e/ui_service_test.py" not in browser
     assert first.isdisjoint(second)
     assert first | second == browser
+    # The mounted UI sweep already contains roughly half the observed browser phase time.
+    assert first == {"tests/e2e/web_ui_test.py"}
+    assert second == browser - first
 
 
 _SANDBOX_SCRIPT = REPO / "desktop" / "ci" / "restore_linux_sandbox.py"

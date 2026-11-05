@@ -1,6 +1,7 @@
 // Automatic updates against a fake newer release (ADR 0116): countdown, reload, postpone, the popup's return, apply.
 // node auto-update.mjs URL FOLDER    URL is the printed link; FOLDER is the fake release's (tests/fixtures/auto_update)
 
+import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { chromium } from "playwright-core";
 import { until } from "./until.mjs";
@@ -12,6 +13,16 @@ let watch;
 try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
   await page.goto(url);
+  const installedProfile = await page.evaluate(async () => {
+    const response = await fetch("/api/org/show", {
+      headers: { Authorization: `Bearer ${sessionStorage.getItem("hz.token") ?? ""}` },
+    });
+    if (!response.ok) throw new Error("The installed-profile precondition was unavailable");
+    return response.json();
+  });
+  assert.equal(installedProfile.complete, true, "The update journey requires an already configured profile");
+  const profileFields = (profile) => [profile.handle, profile.name, profile.role, profile.timezone];
+  assert.deepEqual(profileFields(installedProfile), ["mira", "Mira Example", "engineering-manager", "Europe/Berlin"]);
   await page.getByRole("contentinfo").waitFor({ timeout: 30000 });
   const api = (path, method = "GET") =>
     page.evaluate(
@@ -157,6 +168,10 @@ try {
   await message.waitFor({ timeout: 30000 });
   result.message = await message.textContent();
   result.signedIn = (await page.getByRole("contentinfo").count()) > 0;
+  const updatedProfile = await api("org/show");
+  result.profileRetained =
+    updatedProfile.complete === true &&
+    JSON.stringify(profileFields(updatedProfile)) === JSON.stringify(profileFields(installedProfile));
   result.after = (await api("auto-update")).phase;
   delete result.timeline; // only for a failure report
   console.log(JSON.stringify(result));

@@ -1,8 +1,11 @@
 """A failed genuine handover exposes fixed facts without disclosing retained output or identities."""
 
 import ast
+import contextlib
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -92,13 +95,26 @@ def test_handover_phase_projection_retains_only_fixed_categories(tmp_path):
     settings = SimpleNamespace(state_dir=tmp_path / "state")
     (tmp_path / "manager.json").write_text('{"pid": null}')
     (tmp_path / "tick-phases.jsonl").write_text(
-        json.dumps({"phase": "tick-watchdog", "stacks": ["post_native", "lock_until_finished", "secret-value"]})
+        json.dumps(
+            {
+                "phase": "tick-watchdog",
+                "stacks": ["post_native", "lock_until_finished", "secret-value"],
+                "sdk": "0.9.15",
+            }
+        )
         + "\n"
-        + json.dumps({"phase": "secret-phase", "stacks": ["/opt/private", "https://private/?token=secret"]})
+        + json.dumps(
+            {
+                "phase": "secret-phase",
+                "stacks": ["/opt/private", "https://private/?token=secret"],
+                "sdk": {"private": "secret"},
+            }
+        )
         + "\n"
     )
     facts = handover_evidence(settings, tmp_path)
     assert facts["phases"] == ["tick-watchdog"]
+    assert facts["sdk_versions"] == ["0.9.15"]
     assert facts["stack_categories"] == ["lock_until_finished", "post_native"]
     assert "secret" not in json.dumps(facts)
     assert "private" not in json.dumps(facts)
@@ -116,10 +132,91 @@ def test_installed_fixture_watchdog_projects_no_frame_text_or_locals(tmp_path):
         )
     ]
     frame = SimpleNamespace(f_code=SimpleNamespace(co_name="post_native"), f_back=None)
-    namespace = {"ROOT": tmp_path, "json": json, "sys": SimpleNamespace(_current_frames=lambda: {123: frame})}
+    namespace = {
+        "ROOT": tmp_path,
+        "json": json,
+        "sys": SimpleNamespace(_current_frames=lambda: {123: frame}),
+        "__version__": "0.9.15",
+    }
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(source), "exec"), namespace)  # noqa: S102 - fixed repository fixture
     namespace["phase"]("tick-watchdog", stacks=True)
     assert json.loads((tmp_path / "tick-phases.jsonl").read_text()) == {
         "phase": "tick-watchdog",
         "stacks": ["post_native"],
+        "sdk": "0.9.15",
     }
+
+
+@pytest.mark.parametrize(
+    ("executable", "category"),
+    [
+        ("/bin/launchctl", "manager"),
+        ("/fixed/lsregister", "registration"),
+        ("/usr/bin/open", "application"),
+        ("/usr/bin/osascript", "script"),
+        ("/fixed/Notifier.app/Contents/MacOS/notifier", "notifier"),
+    ],
+)
+def test_native_exec_observer_records_only_fixed_categories(tmp_path, executable, category):
+    source = Path(__file__).parents[1] / "fixtures/legacy_recovery_manager.py"
+    function = next(
+        node
+        for node in ast.parse(source.read_text()).body
+        if isinstance(node, ast.FunctionDef) and node.name == "native_exec_observation"
+    )
+    namespace = {"ROOT": tmp_path, "json": json, "os": os, "Path": Path}
+    exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), "exec"), namespace)  # noqa: S102 - fixed repository fixture
+    observe = namespace["native_exec_observation"]
+    observe("subprocess.Popen", ("/fixed/uv", ["fixture-private-value"], "/private", {"SECRET": "value"}))
+    assert not (tmp_path / "native-exec-attempts.jsonl").exists()
+    observe("subprocess.Popen", (executable, ["fixture-private-value"], "/private", {"SECRET": "value"}))
+    assert json.loads((tmp_path / "native-exec-attempts.jsonl").read_text()) == {"category": category}
+
+
+def test_actual_popen_audit_observes_without_replacing_exec_refusal(tmp_path):
+    source = Path(__file__).parents[1] / "fixtures/legacy_recovery_manager.py"
+    script = """
+import ast, json, os, subprocess, sys
+from pathlib import Path
+source = Path(sys.argv[1])
+function = next(node for node in ast.parse(source.read_text()).body
+                if isinstance(node, ast.FunctionDef) and node.name == 'native_exec_observation')
+namespace = {'ROOT': Path(sys.argv[2]), 'json': json, 'os': os, 'Path': Path}
+exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), 'exec'), namespace)
+sys.addaudithook(namespace['native_exec_observation'])
+try:
+    subprocess.Popen(['/nonexistent-fixture-directory/lsregister', 'fixture-private-argument'])
+except FileNotFoundError:
+    pass
+else:
+    raise AssertionError('The observer must not replace the genuine OS refusal')
+"""
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", script, str(source), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads((tmp_path / "native-exec-attempts.jsonl").read_text()) == {"category": "registration"}
+    assert "fixture-private" not in (tmp_path / "native-exec-attempts.jsonl").read_text()
+
+
+def test_observer_io_failure_is_reported_without_replacing_sdk_execution(tmp_path):
+    source = Path(__file__).parents[1] / "fixtures/legacy_recovery_manager.py"
+    function = next(
+        node
+        for node in ast.parse(source.read_text()).body
+        if isinstance(node, ast.FunctionDef) and node.name == "native_exec_observation"
+    )
+    root = tmp_path / "not-a-directory"
+    root.write_text("fixture")
+    warnings = []
+    observed_os = SimpleNamespace(
+        PathLike=os.PathLike, fsdecode=os.fsdecode, write=lambda fd, payload: warnings.append((fd, payload))
+    )
+    namespace = {"ROOT": root, "json": json, "os": observed_os, "Path": Path, "contextlib": contextlib}
+    exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), "exec"), namespace)  # noqa: S102 - fixed repository fixture
+    assert namespace["native_exec_observation"]("subprocess.Popen", ("/fixed/lsregister",)) is None
+    assert warnings == [(2, b"native-exec-observer-failed\n")]

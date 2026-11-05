@@ -1007,7 +1007,7 @@ def _register_frontdoor_operations(module: Module) -> None:
         service: SessionCrud,
         chat: UserChatService,
         request_id: Request,
-        name: Annotated[str, Field(description="Your helper's display name.", min_length=1, max_length=100)],
+        name: Annotated[str, Field(description="Your Heinzel's display name.", min_length=1, max_length=100)],
         prompt: Annotated[
             str,
             Field(
@@ -1017,13 +1017,13 @@ def _register_frontdoor_operations(module: Module) -> None:
             ),
         ],
     ) -> UserChatAnswer:
-        """Create a helper, retain its first prompt and answer it once through the selected chat backend.
+        """Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.
 
         Raises:
             HeinzelError: If the feature is off, request changed or selected model access is unavailable.
         """
         if not feature_enabled(kernel.settings, "connected_frontdoor"):
-            msg = "The connected helper frontdoor is not enabled"
+            msg = "The connected Heinzel frontdoor is not enabled"
             raise HeinzelError(msg)
         created = service.new_chat(request_id, name, initial_message=prompt)
         return asyncio.run(chat.answer(created.session_id, request_id))

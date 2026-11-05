@@ -45,7 +45,7 @@ try {
     ),
     "Done",
   );
-  const terms = page.getByRole("region", { name: "Proposed agent terms" });
+  const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await terms.getByText("Review proposed terms").click();
   await terms.getByText(/Inspect the approved source/).waitFor();
   await terms.getByRole("button", { name: "Review these terms" }).click();
@@ -64,19 +64,19 @@ try {
   await panel.getByRole("heading", { name: "Review connected read" }).waitFor();
   await panel.getByRole("button", { name: "Confirm", exact: true }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
-  await schedule.getByText("Recurring agent turns", { exact: true }).click();
+  const schedule = page.locator("details").filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) });
+  await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   const consent = schedule.getByRole("checkbox", { name: /Allow the separately approved calendar.events/ });
   assert.equal(await consent.isChecked(), false);
   await consent.check();
-  const notices = schedule.getByRole("checkbox", { name: /Allow this agent to queue local notifications/ });
+  const notices = schedule.getByRole("checkbox", { name: /Allow this Heinzel to queue local notifications/ });
   assert.equal(await notices.isChecked(), false);
   await notices.check();
   await schedule.getByLabel("Notification deduplication").selectOption("revision");
   await schedule.getByLabel("Requests per turn").fill("4");
   await schedule.getByRole("button", { name: "Propose recurring turns" }).click();
   await schedule.getByRole("button", { name: "Review this schedule" }).click();
-  const review = schedule.getByRole("heading", { name: "Review agent schedule" }).locator("../..");
+  const review = schedule.getByRole("heading", { name: "Review Heinzel schedule" }).locator("../..");
   await review.waitFor();
   await review.getByText(/300/).first().waitFor({ state: "visible" });
   await schedule.getByText(/at most one attempt per source item revision/i).waitFor({ state: "visible" });
@@ -149,7 +149,7 @@ try {
       )
       .catch(() => []),
     proposal: await page
-      .getByRole("region", { name: "Proposed agent terms" })
+      .getByRole("region", { name: "Proposed Heinzel terms" })
       .isVisible()
       .catch(() => false),
   };

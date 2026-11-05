@@ -634,11 +634,11 @@ describe("personal conversation links", () => {
     expect(panel.getByText("Subscription usage · cost unknown")).toBeInTheDocument();
     expect(panel.getByText(/Contract v1: proposed/)).toBeInTheDocument();
     expect(panel.getByText("Keep notes current.")).toBeInTheDocument();
-    const proposed = within(await panel.findByRole("region", { name: "Proposed agent terms" }));
+    const proposed = within(await panel.findByRole("region", { name: "Proposed Heinzel terms" }));
     expect(proposed.getByText("Revision 1 · proposed terms")).toBeInTheDocument();
     expect(proposed.getByText(/Subscription plan · cost unknown/)).toBeInTheDocument();
     expect(proposed.getByText("Use the user's context.")).toBeInTheDocument();
-    expect(proposed.getByText(/does not activate the agent/)).toBeInTheDocument();
+    expect(proposed.getByText(/does not activate the Heinzel/)).toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.includes("open-check-in"))).toBe(false);
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
   });
@@ -682,7 +682,7 @@ describe("personal conversation links", () => {
     const reviewButton = await screen.findByRole("button", { name: "Review these terms" });
     await waitFor(() => expect(reviewButton).toBeEnabled());
     fireEvent.click(reviewButton);
-    expect(await screen.findByRole("heading", { name: "Review agent terms" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Review Heinzel terms" })).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/confirm"))).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     if (changed) {
@@ -1009,7 +1009,7 @@ describe("personal conversation links", () => {
       "/api/heinzel/agent-schedules": { session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW", items: [], next_cursor: null },
     });
     renderAt(`/heinzel?chat=${sessionId}`);
-    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    fireEvent.click(await screen.findByText("Recurring Heinzel turns"));
     expect(await screen.findByText("Saved schedules are unavailable.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Pause future turns" })).not.toBeInTheDocument();
   });
@@ -1052,7 +1052,7 @@ describe("personal conversation links", () => {
     };
     const { calls } = mockApi(answers);
     const first = renderAt(`/heinzel?chat=${sessionId}`);
-    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    fireEvent.click(await screen.findByText("Recurring Heinzel turns"));
     const button = screen.getByRole("button", { name: "Propose recurring turns" });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
@@ -1060,7 +1060,7 @@ describe("personal conversation links", () => {
     first.unmount();
     mockApi(answers);
     renderAt(`/heinzel?chat=${sessionId}`);
-    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    fireEvent.click(await screen.findByText("Recurring Heinzel turns"));
     fireEvent.click(screen.getByRole("button", { name: "Retry same proposal" }));
     await waitFor(() => expect(attempts).toHaveLength(2));
     expect(attempts[1]).toEqual(attempts[0]);
@@ -1823,4 +1823,78 @@ it("does not display another session's action or request its associations", asyn
   expect(screen.queryByRole("heading", { name: "Personal helper" })).not.toBeInTheDocument();
   expect(screen.queryByText(/private-action/)).not.toBeInTheDocument();
   expect(calls.some((call) => new URL(call.url).pathname.endsWith("/personal-artifacts"))).toBe(false);
+});
+
+it("keeps source preparation unavailable while a displayed reply still has an unsettled owned answer", async () => {
+  let finishAnswer: (() => void) | undefined;
+  let answerStarted = false;
+  let displayed = { ...snapshot, messages: [...snapshot.messages] };
+  const { calls } = mockApi({
+    ...shell,
+    "/api/heinzel/session": () => displayed,
+    "/api/heinzel/connected-read-options": () => [
+      { capability: "calendar", method: "events", provider: "fixture", source: "fixture", input_schema: {} },
+    ],
+    "/api/heinzel/connected-read-state": () => ({
+      session_id: sessionId,
+      status: "none",
+      proposal: null,
+      descriptor: null,
+    }),
+    "/api/heinzel/chat": async (request: Request) => {
+      const body = await request.json();
+      return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 2 };
+    },
+    "/api/heinzel/answer-chat": async (request: Request) => {
+      const body = await request.json();
+      answerStarted = true;
+      await new Promise<void>((resolve) => {
+        finishAnswer = resolve;
+      });
+      return {
+        session_id: sessionId,
+        request_id: body.request_id,
+        message: { id: "answer", seq: 2, role: "assistant" },
+      };
+    },
+  });
+  sessionStorage.setItem("hz.token", "test-token");
+  const client = queryClient();
+  const router = createMemoryRouter(
+    [{ path: "/", element: <DurableSession sessionId={sessionId} onClose={() => {}} /> }],
+    { initialEntries: ["/"] },
+  );
+  render(
+    <Providers client={client}>
+      <RouterProvider router={router} />
+    </Providers>,
+  );
+  fireEvent.change(await screen.findByLabelText("Read operation"), { target: { value: "calendar.events" } });
+  expect(screen.getByRole("button", { name: "Prepare review" })).toBeEnabled();
+  fireEvent.change(screen.getByLabelText("Message your Heinzel"), { target: { value: "Suggest an interval" } });
+  fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+  await waitFor(() => expect(answerStarted).toBe(true));
+  displayed = {
+    ...snapshot,
+    messages: [
+      ...snapshot.messages,
+      { id: "answer", seq: 2, role: "assistant", text: "Read complete.", status: "pending" },
+    ],
+  };
+  // Polling can expose the saved reply before the owning answer response and writer have settled.
+  await act(async () => {
+    client.setQueryData(["heinzel", "session", sessionId], displayed);
+  });
+  expect(await screen.findByText("Read complete.")).toBeInTheDocument();
+  const prepare = screen.getByRole("button", { name: "Prepare review" });
+  try {
+    expect(prepare).toBeDisabled();
+    fireEvent.click(prepare);
+    expect(calls.filter((request) => new URL(request.url).pathname.includes("propose-connected-read"))).toHaveLength(0);
+  } finally {
+    await act(async () => {
+      finishAnswer?.();
+    });
+  }
+  await waitFor(() => expect(prepare).toBeEnabled());
 });

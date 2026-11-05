@@ -553,9 +553,21 @@ try {
       `${spec.name}: settings close`,
     );
     const searchField = page.getByRole("searchbox", { name: "Filter settings" });
+    const settingsFont = await searchField.evaluate((element) => ({
+      fontSize: getComputedStyle(element).fontSize,
+      parentFontSize: getComputedStyle(element.parentElement).fontSize,
+      coarse: matchMedia("(pointer: coarse)").matches,
+      anyCoarse: matchMedia("(any-pointer: coarse)").matches,
+      hover: matchMedia("(hover: hover)").matches,
+      width: innerWidth,
+      touchPoints: navigator.maxTouchPoints,
+    }));
+    writeFileSync(join(shots, "settings-font.json"), `${JSON.stringify(settingsFont, null, 2)}\n`);
+    console.error(`MOBILE_SETTINGS_FONT:${JSON.stringify({ viewport: spec.name, ...settingsFont })}`);
+    await page.screenshot({ path: join(shots, `mobile-${spec.name}-settings-font.png`) });
     assert.ok(
-      (await searchField.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))) >= 16,
-      `${spec.name}: focused phone form text must not trigger Safari zoom`,
+      Number.parseFloat(settingsFont.fontSize) >= 16,
+      `${spec.name}: focused phone form text must not trigger Safari zoom: ${JSON.stringify(settingsFont)}`,
     );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-settings.png`) });
     const settingsPages = await settingsDialog
@@ -852,6 +864,7 @@ try {
     result.cases.push({
       ...spec,
       viewport: facts,
+      settingsFont,
       accountMenu: menuBox,
       targets: { navigation: navTarget, settings: settingsTarget },
       composer: composerBox,
@@ -996,25 +1009,68 @@ try {
     assert.equal((await lastScroll()).behavior, "smooth", "repeated panel selection scrolls again");
     const startTop = await workspaceScroll.evaluate((element) => element.scrollTop);
     await scrollPage.getByRole("tab", { name: "Specimen", exact: true }).focus();
-    await scrollPage.keyboard.press("Home");
-    const pageTab = scrollPage.getByRole("tab", { name: "Page", exact: true });
-    await pageTab.waitFor({ state: "visible" });
-    await scrollPage.waitForFunction(
-      () => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Page",
-      null,
-      { timeout: 1000 },
-    );
-    assert.ok(await pageTab.evaluate((element) => element === document.activeElement), "Page tab keeps keyboard focus");
-    await scrollPage.waitForFunction(
-      (start) => {
-        const top = document.querySelector(".workspace-scroll").scrollTop;
-        return top > 2 && top < start - 2;
-      },
-      startTop,
-      { timeout: 5000 },
-    );
-    await atPage();
-    assert.equal((await lastScroll()).behavior, "smooth", "Page scrolls smoothly to the top");
+    // Observe before Home: driver round trips may outlast the native animation.
+    // Only actual owning-scroller events after one trusted Home can satisfy the
+    // original intermediate-position predicate, within its original 5000ms budget.
+    await workspaceScroll.evaluate((box, start) => {
+      let settle;
+      let timer;
+      let deadline = 0;
+      let done = false;
+      const samples = [];
+      const result = new Promise((resolve) => {
+        settle = resolve;
+      });
+      const finish = (intermediate = false) => {
+        if (done) return;
+        done = true;
+        window.removeEventListener("keydown", onHome, true);
+        box.removeEventListener("scroll", onScroll);
+        clearTimeout(timer);
+        settle({ intermediate, samples });
+      };
+      const onScroll = (event) => {
+        if (!event.isTrusted || !deadline || performance.now() > deadline) return;
+        const top = box.scrollTop;
+        if (samples.length < 32) samples.push(top);
+        if (top > 2 && top < start - 2) finish(true);
+      };
+      const onHome = (event) => {
+        if (!event.isTrusted || event.key !== "Home" || deadline) return;
+        window.homeMotion.armed = true;
+        deadline = performance.now() + 5000;
+        window.removeEventListener("keydown", onHome, true);
+        timer = setTimeout(() => finish(), 5000);
+      };
+      window.homeMotion = { result, armed: false, stop: finish };
+      window.addEventListener("keydown", onHome, { capture: true, passive: true });
+      box.addEventListener("scroll", onScroll, { passive: true });
+    }, startTop);
+    try {
+      await scrollPage.keyboard.press("Home");
+      assert.equal(
+        await scrollPage.evaluate(() => window.homeMotion.armed),
+        true,
+        "the motion budget starts at trusted Home",
+      );
+      const pageTab = scrollPage.getByRole("tab", { name: "Page", exact: true });
+      await pageTab.waitFor({ state: "visible" });
+      await scrollPage.waitForFunction(
+        () => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Page",
+        null,
+        { timeout: 1000 },
+      );
+      assert.ok(
+        await pageTab.evaluate((element) => element === document.activeElement),
+        "Page tab keeps keyboard focus",
+      );
+      const motion = await scrollPage.evaluate(() => window.homeMotion.result);
+      assert.equal(motion.intermediate, true, "Home must produce a native intermediate scroll position within 5000ms");
+      await atPage();
+      assert.equal((await lastScroll()).behavior, "smooth", "Page scrolls smoothly to the top");
+    } finally {
+      await scrollPage.evaluate(() => window.homeMotion.stop());
+    }
     await scrollPage.getByRole("button", { name: "Chat with your Heinzelmännchen" }).tap();
     await atPanel("chat");
     assert.equal((await lastScroll()).behavior, "smooth", "chat header scrolls smoothly");

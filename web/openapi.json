@@ -19957,7 +19957,7 @@
         "additionalProperties": false,
         "properties": {
           "name": {
-            "description": "Your helper's display name.",
+            "description": "Your Heinzel's display name.",
             "maxLength": 100,
             "minLength": 1,
             "title": "Name",
@@ -24188,7 +24188,7 @@
     },
     "/heinzel/start-helper": {
       "post": {
-        "description": "Create a helper, retain its first prompt and answer it once through the selected chat backend.\n\nRaises:\n    HeinzelError: If the feature is off, request changed or selected model access is unavailable.",
+        "description": "Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.\n\nRaises:\n    HeinzelError: If the feature is off, request changed or selected model access is unavailable.",
         "operationId": "heinzel_start_helper",
         "requestBody": {
           "content": {
@@ -24222,7 +24222,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create a helper, retain its first prompt and answer it once through the selected chat backend.",
+        "summary": "Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.",
         "tags": [
           "heinzel"
         ]

@@ -406,7 +406,7 @@ class ChatService:
                         kind="text",
                         ref=durable_session,
                         owner_id=self._store.personal_owner(),
-                        detail="Review agent contract for this personal agent.",
+                        detail="Review the Heinzel terms.",
                     ),
                     personal_session_id=durable_session,
                 )
@@ -417,7 +417,7 @@ class ChatService:
                     operation="accept-agent-contract",
                     tool="heinzel_accept_agent_contract",
                     arguments=arguments,
-                    command="Review agent contract",
+                    command="Review Heinzel terms",
                 )
             )
             return self._store.load(personal_chat.id)
@@ -665,7 +665,7 @@ class ChatService:
                         kind="text",
                         ref=durable_session,
                         owner_id=self._store.personal_owner(),
-                        detail="Review agent schedule for this personal agent.",
+                        detail="Review the Heinzel schedule.",
                     ),
                     personal_session_id=durable_session,
                 )
@@ -676,7 +676,7 @@ class ChatService:
                     operation="approve-agent-schedule",
                     tool="heinzel_approve_agent_schedule",
                     arguments=arguments,
-                    command="Review agent schedule",
+                    command="Review Heinzel schedule",
                 )
             )
             return self._store.load(personal_chat.id)

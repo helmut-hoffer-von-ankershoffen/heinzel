@@ -1,5 +1,6 @@
 """Immutable installed proof double: all native manager effects are recorded, never executed."""
 
+import contextlib
 import json
 import os
 import plistlib
@@ -15,6 +16,35 @@ from heinzel.modules.system.daemon._units import LABEL
 
 ROOT = Path(os.environ["HZ_LEGACY_MANAGER_FIXTURE"])
 STATE = ROOT / "manager.json"
+
+
+def native_exec_observation(event, arguments):
+    """Observe attempts without changing execution; the external OS sandbox is the denial boundary."""
+    if event != "subprocess.Popen":
+        return
+    executable = arguments[0]
+    if not isinstance(executable, (str, bytes, os.PathLike)):
+        return
+    name = Path(os.fsdecode(executable)).name
+    category = {
+        "launchctl": "manager",
+        "lsregister": "registration",
+        "open": "application",
+        "osascript": "script",
+        "notifier": "notifier",
+        "heinzel-notifier": "notifier",
+    }.get(name)
+    if category is not None:
+        try:
+            with (ROOT / "native-exec-attempts.jsonl").open("a") as stream:
+                stream.write(json.dumps({"category": category}) + "\n")
+        except OSError:
+            # Observation must never replace the SDK's actual subprocess outcome.
+            with contextlib.suppress(OSError):
+                os.write(2, b"native-exec-observer-failed\n")
+
+
+sys.addaudithook(native_exec_observation)
 
 
 PHASES = frozenset({"tick-enter", "native-notices-enter", "native-notices-return", "tick-main-return", "tick-watchdog"})
@@ -52,7 +82,16 @@ def phase(name, *, stacks=False):
                     break
     try:
         with (ROOT / "tick-phases.jsonl").open("a") as stream:
-            stream.write(json.dumps({"phase": name, "stacks": sorted(categories)}) + "\n")
+            stream.write(
+                json.dumps(
+                    {
+                        "phase": name,
+                        "stacks": sorted(categories),
+                        "sdk": __version__ if __version__ in {"0.9.14", "0.9.15", "0.9.16"} else "other",
+                    }
+                )
+                + "\n"
+            )
     except OSError:
         pass  # Diagnostic I/O never replaces the immutable SDK's actual outcome.
 

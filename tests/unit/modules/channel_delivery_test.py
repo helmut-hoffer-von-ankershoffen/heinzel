@@ -302,23 +302,47 @@ def test_a_second_consumer_does_not_recover_an_active_claim(flow):
     _reply(flow, terms)
     flow.provider.block = True
     counts = []
+    errors = []
+    finished = threading.Event()
 
     def consume():
-        with flow.current.local("daemon"):
-            counts.append(flow.service.apply_channel_replies())
+        try:
+            with flow.current.local("daemon"):
+                counts.append(flow.service.apply_channel_replies())
+        except BaseException as error:  # noqa: BLE001 - propagate the worker failure on the test thread
+            errors.append(error)
+        finally:
+            finished.set()
 
     thread = threading.Thread(target=consume)
-    thread.start()
-    try:
-        assert flow.provider.entered.wait(1)
-        with flow.current.local("daemon"):
-            assert flow.service.apply_channel_replies() == 0
-        assert flow.channel.settlements == []
-    finally:
-        flow.provider.release.set()
-        thread.join(1)
+
+    def while_claim_active():
+        # Start the competitor at the real write boundary, after durable authorization rather than on a startup timer.
+        assert len(flow.service._events(terms.session_id, "channel.claimed", terms.request_id)) == 1
+        events = flow.crud.repository.control_read(terms.session_id).events
+        assert len([event for event in events if event.kind == "write.attempted"]) == 1
+        assert flow.service._events(terms.session_id, "channel.closed", terms.request_id) == []
+        thread.start()
+        try:
+            assert finished.wait(1)
+            if errors:
+                raise errors[0]
+            assert counts == [0]
+            assert flow.provider.writes == 0
+            assert flow.channel.settlements == []
+        finally:
+            flow.provider.release.set()
+            thread.join(1)
+
+    flow.provider.before_write = while_claim_active
+    with flow.current.local("daemon"):
+        count = flow.service.apply_channel_replies()
     assert not thread.is_alive()
-    assert counts == [1]
+    if errors:
+        # Provider callbacks cross an isolation boundary that redacts ordinary exceptions.
+        raise errors[0]
+    assert count == 1
+    assert counts == [0]
     assert flow.provider.writes == 1
     assert flow.channel.settlements == ["approved"]
 
