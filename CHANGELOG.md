@@ -41,7 +41,6 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 - **release:** Record validated fixes and open scroll incident ([543f0e3](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/543f0e3866b35caa581c21fd19a8494e87affaed))
 - **release:** Describe stable popup placement ([ac1820d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/ac1820d588ed66a2eb0ee6e645b761f194753f94))
 - **release:** Record existing-profile update validation ([85a8732](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/85a873247dc89b58f8a01028416fe8549acdbe7b))
-- **release:** Record batched acceptance checks ([9f42959](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/9f42959975d28b09035e618b666890f8e4df0fc5))
 
 ### 🧪 Testing
 
