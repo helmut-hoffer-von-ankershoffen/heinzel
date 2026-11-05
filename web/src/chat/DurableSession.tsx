@@ -701,7 +701,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
               if (event.currentTarget.open) setShowProposal(true);
             }}
           >
-            <summary className="cursor-pointer text-sm font-medium">Scheduled agent terms</summary>
+            <summary className="cursor-pointer text-sm font-medium">Scheduled Heinzel terms</summary>
             {showProposal && <AgentProposal sessionId={sessionId} />}
           </details>
         )}

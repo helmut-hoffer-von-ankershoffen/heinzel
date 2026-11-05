@@ -1767,8 +1767,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Create a helper, retain its first prompt and answer it once through the selected chat backend.
-         * @description Create a helper, retain its first prompt and answer it once through the selected chat backend.
+         * Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.
+         * @description Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.
          *
          *     Raises:
          *         HeinzelError: If the feature is off, request changed or selected model access is unavailable.
@@ -15334,7 +15334,7 @@ export interface components {
         heinzel_start_helper_Input: {
             /**
              * Name
-             * @description Your helper's display name.
+             * @description Your Heinzel's display name.
              */
             name: string;
             /**

@@ -676,7 +676,7 @@ class SessionCrud(ApprovalIssuer):
             if (first is None and (request.request_id != first_id or digest != first_hash)) or (
                 first is not None and (first.kind != "message.accepted" or first.data.get("request_hash") != first_hash)
             ):
-                msg = "The helper's exact original prompt must be accepted first"
+                msg = "The Heinzel's exact original prompt must be accepted first"
                 raise HeinzelError(msg)
         prior = next((event for event in events if event.key == f"message-{request.request_id}"), None)
         if prior is not None:

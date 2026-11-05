@@ -634,11 +634,11 @@ describe("personal conversation links", () => {
     expect(panel.getByText("Subscription usage · cost unknown")).toBeInTheDocument();
     expect(panel.getByText(/Contract v1: proposed/)).toBeInTheDocument();
     expect(panel.getByText("Keep notes current.")).toBeInTheDocument();
-    const proposed = within(await panel.findByRole("region", { name: "Proposed agent terms" }));
+    const proposed = within(await panel.findByRole("region", { name: "Proposed Heinzel terms" }));
     expect(proposed.getByText("Revision 1 · proposed terms")).toBeInTheDocument();
     expect(proposed.getByText(/Subscription plan · cost unknown/)).toBeInTheDocument();
     expect(proposed.getByText("Use the user's context.")).toBeInTheDocument();
-    expect(proposed.getByText(/does not activate the agent/)).toBeInTheDocument();
+    expect(proposed.getByText(/does not activate the Heinzel/)).toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.includes("open-check-in"))).toBe(false);
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
   });
@@ -682,7 +682,7 @@ describe("personal conversation links", () => {
     const reviewButton = await screen.findByRole("button", { name: "Review these terms" });
     await waitFor(() => expect(reviewButton).toBeEnabled());
     fireEvent.click(reviewButton);
-    expect(await screen.findByRole("heading", { name: "Review agent terms" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Review Heinzel terms" })).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/confirm"))).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     if (changed) {
@@ -1009,7 +1009,7 @@ describe("personal conversation links", () => {
       "/api/heinzel/agent-schedules": { session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW", items: [], next_cursor: null },
     });
     renderAt(`/heinzel?chat=${sessionId}`);
-    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    fireEvent.click(await screen.findByText("Recurring Heinzel turns"));
     expect(await screen.findByText("Saved schedules are unavailable.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Pause future turns" })).not.toBeInTheDocument();
   });
@@ -1052,7 +1052,7 @@ describe("personal conversation links", () => {
     };
     const { calls } = mockApi(answers);
     const first = renderAt(`/heinzel?chat=${sessionId}`);
-    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    fireEvent.click(await screen.findByText("Recurring Heinzel turns"));
     const button = screen.getByRole("button", { name: "Propose recurring turns" });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
@@ -1060,7 +1060,7 @@ describe("personal conversation links", () => {
     first.unmount();
     mockApi(answers);
     renderAt(`/heinzel?chat=${sessionId}`);
-    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    fireEvent.click(await screen.findByText("Recurring Heinzel turns"));
     fireEvent.click(screen.getByRole("button", { name: "Retry same proposal" }));
     await waitFor(() => expect(attempts).toHaveLength(2));
     expect(attempts[1]).toEqual(attempts[0]);

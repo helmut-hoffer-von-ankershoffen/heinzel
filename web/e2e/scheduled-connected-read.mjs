@@ -103,7 +103,7 @@ try {
   await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
   await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });
-  const terms = page.getByRole("region", { name: "Proposed agent terms" });
+  const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
@@ -134,9 +134,9 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
-  await watchDisclosure(schedule.getByText("Recurring agent turns", { exact: true }), "recurring-turns");
-  await schedule.getByText("Recurring agent turns", { exact: true }).click();
+  const schedule = page.locator("details").filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) });
+  await watchDisclosure(schedule.getByText("Recurring Heinzel turns", { exact: true }), "recurring-turns");
+  await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   await schedule.getByText(/Suggested interval: every 7 minutes/).waitFor();
   assert.equal(await schedule.getByLabel("Every (minutes)").inputValue(), "5");
   await schedule.getByRole("button", { name: "Use interval in preview" }).click();
@@ -148,7 +148,7 @@ try {
   await schedule.getByRole("button", { name: "Propose recurring turns" }).click();
   await schedule.getByRole("button", { name: "Review this schedule" }).click();
   await schedule.getByText("Provider-reported candidate read: Candidate metadata may be filtered locally.").waitFor();
-  const card = schedule.getByRole("heading", { name: "Review agent schedule" }).locator("../..");
+  const card = schedule.getByRole("heading", { name: "Review Heinzel schedule" }).locator("../..");
   assert.match(await card.innerText(), /420/);
   assert.match(await card.innerText(), /fixture-account/);
   assert.match(await card.innerText(), /fixture-read/);
@@ -242,8 +242,8 @@ try {
   assert.deepEqual(saved, { status: 200, grant: "revoked" });
   await page.reload();
   await revealChat(page);
-  await watchDisclosure(schedule.getByText("Recurring agent turns", { exact: true }), "recurring-turns-after-reload");
-  await schedule.getByText("Recurring agent turns", { exact: true }).click();
+  await watchDisclosure(schedule.getByText("Recurring Heinzel turns", { exact: true }), "recurring-turns-after-reload");
+  await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   await schedule.getByText(/stale · contract revision/).waitFor();
   assert.equal(await panel.evaluate((node) => node.scrollWidth > node.clientWidth), false);
   console.log(JSON.stringify({ accepted: true }));
@@ -256,7 +256,7 @@ try {
   const layout = await page
     .evaluate(() => {
       const summary = [...document.querySelectorAll("summary")].find(
-        (node) => node.textContent === "Recurring agent turns",
+        (node) => node.textContent === "Recurring Heinzel turns",
       );
       const ancestors = [];
       for (let node = summary; node; node = node.parentElement) {
