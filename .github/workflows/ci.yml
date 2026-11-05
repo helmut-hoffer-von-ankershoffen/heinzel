@@ -350,7 +350,7 @@ jobs:
           bash scripts/bootstrap-pyyaml.sh
       - name: Select the locked wheel Node without executing it
         if: matrix.levels != 'integration'
-        run: uv run --no-sync python scripts/ci_node.py
+        run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - name: Inspect the Linux user manager without starting services
         if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.12' # a cell every pull request runs
         env:
@@ -388,7 +388,7 @@ jobs:
           python-version: "3.14"
       - run: uv sync --frozen --no-build --no-dev --group test --group build
       - name: Select the locked wheel Node without executing it
-        run: uv run --no-sync python scripts/ci_node.py
+        run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - run: make test
       - name: Record the total for the merge gate
         run: uv run --no-build coverage report --format=total --precision=2 > coverage-total.txt

@@ -190,7 +190,7 @@ def _without_core_node_selection(text: str) -> str:
     text = text.replace("--group test --group build", "--group test")
     return re.sub(
         r"\n      - name: Select the locked wheel Node without executing it\n"
-        r"(?:        if: [^\n]*\n)?        run: uv run --no-sync python scripts/ci_node.py",
+        r"(?:        if: [^\n]*\n)?        run: uv run --frozen --no-sync --no-build python scripts/ci_node.py",
         "",
         text,
     )

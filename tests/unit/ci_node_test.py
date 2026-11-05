@@ -110,7 +110,9 @@ def test_only_coverage_and_unit_bearing_python_cells_select_locked_node():
     coverage = jobs["coverage"]
     steps = coverage["steps"]
     sync = next(step for step in steps if step.get("run", "").startswith("uv sync"))
-    selected = next(step for step in steps if step.get("run") == "uv run --no-sync python scripts/ci_node.py")
+    selected = next(
+        step for step in steps if step.get("run") == "uv run --frozen --no-sync --no-build python scripts/ci_node.py"
+    )
     assert sync["run"] == "uv sync --frozen --no-build --no-dev --group test --group build"
     assert (
         steps.index(sync)
@@ -121,7 +123,11 @@ def test_only_coverage_and_unit_bearing_python_cells_select_locked_node():
     assert coverage["env"]["UV_NO_SYNC"] == "1"
     test = jobs["test"]
     assert test["env"]["CI_NODE_GROUP_ARGUMENT"] == "${{ matrix.levels != 'integration' && '--group=build' || '' }}"
-    selected = next(step for step in test["steps"] if step.get("run") == "uv run --no-sync python scripts/ci_node.py")
+    selected = next(
+        step
+        for step in test["steps"]
+        if step.get("run") == "uv run --frozen --no-sync --no-build python scripts/ci_node.py"
+    )
     assert selected["if"] == "matrix.levels != 'integration'"
     assert (
         next(step for step in test["steps"] if "bootstrap-pyyaml.sh" in step.get("run", ""))["if"]

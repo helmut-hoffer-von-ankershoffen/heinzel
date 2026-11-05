@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Select the installed locked Node wheel for Python tests without starting or reading Node."""
 
 import importlib.metadata

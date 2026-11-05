@@ -59,7 +59,7 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
-        "uv run --no-sync python scripts/ci_node.py": (
+        "uv run --frozen --no-sync --no-build python scripts/ci_node.py": (
             "exports the already installed locked runtime through GitHub's step-local GITHUB_PATH setup contract"
         ),
         "sudo sed -i 's|http://azure\\.archive\\.ubuntu\\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "
