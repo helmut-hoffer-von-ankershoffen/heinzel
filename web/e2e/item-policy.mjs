@@ -99,7 +99,7 @@ try {
         );
         await page.goto(`http://127.0.0.1:${address.port}/e2e/item-policy.html`);
         await page.getByText("Recurring Heinzel turns", { exact: true }).click();
-        const notice = page.getByRole("checkbox", { name: /Allow this agent to queue local notifications/ });
+        const notice = page.getByRole("checkbox", { name: /Allow this Heinzel to queue local notifications/ });
         assert.equal(await notice.isChecked(), false);
         await notice.check();
         assert.equal(

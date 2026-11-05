@@ -30,7 +30,7 @@ export function AgentProposalSummary({ sessionId }: { sessionId: string }) {
             : `Proposed API limit: $${query.data.max_usd} per turn`}
           {` · ${query.data.timeout_seconds} seconds. These terms are not enforced yet.`}
         </p>
-        <p>This proposal does not activate Heinzel or grant tool permissions.</p>
+        <p>This proposal does not activate the Heinzel or grant tool permissions.</p>
       </details>
       <AgentContractAcceptance sessionId={sessionId} proposal={query.data} />
     </section>

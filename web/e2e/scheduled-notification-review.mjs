@@ -29,7 +29,7 @@ try {
   const consent = await schedule.getByRole("checkbox", { name: /Allow the separately approved calendar.events/ });
   assert.equal(await consent.isChecked(), false);
   await consent.check();
-  const notification = schedule.getByRole("checkbox", { name: /Allow this agent to queue local notifications/ });
+  const notification = schedule.getByRole("checkbox", { name: /Allow this Heinzel to queue local notifications/ });
   assert.equal(await notification.isChecked(), false);
   await notification.check();
   await schedule.getByLabel("Every (minutes)").fill("60");

@@ -115,7 +115,7 @@ describe("ChatPanel", () => {
     expect(await panel.findByText("I prepared terms for review.")).toBeInTheDocument();
     const review = within(await panel.findByRole("region", { name: "Proposed Heinzel terms" }));
     expect(review.getByText("Revision 1 · proposed terms")).toBeInTheDocument();
-    expect(review.getByText(/does not activate Heinzel/)).toBeInTheDocument();
+    expect(review.getByText(/does not activate the Heinzel/)).toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
   });
 

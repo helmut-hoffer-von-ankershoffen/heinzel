@@ -638,7 +638,7 @@ describe("personal conversation links", () => {
     expect(proposed.getByText("Revision 1 · proposed terms")).toBeInTheDocument();
     expect(proposed.getByText(/Subscription plan · cost unknown/)).toBeInTheDocument();
     expect(proposed.getByText("Use the user's context.")).toBeInTheDocument();
-    expect(proposed.getByText(/does not activate Heinzel/)).toBeInTheDocument();
+    expect(proposed.getByText(/does not activate the Heinzel/)).toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.includes("open-check-in"))).toBe(false);
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
   });

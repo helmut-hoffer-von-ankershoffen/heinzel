@@ -69,7 +69,7 @@ try {
   const consent = schedule.getByRole("checkbox", { name: /Allow the separately approved calendar.events/ });
   assert.equal(await consent.isChecked(), false);
   await consent.check();
-  const notices = schedule.getByRole("checkbox", { name: /Allow this agent to queue local notifications/ });
+  const notices = schedule.getByRole("checkbox", { name: /Allow this Heinzel to queue local notifications/ });
   assert.equal(await notices.isChecked(), false);
   await notices.check();
   await schedule.getByLabel("Notification deduplication").selectOption("revision");
