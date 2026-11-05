@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import (
     Check,
@@ -18,7 +19,6 @@ from heinzel import (
     Status,
 )
 from heinzel.kernel import PREREQUISITE_READY
-from heinzel.modules.system.prerequisite._render import render_list, render_report
 from heinzel.modules.system.prerequisite._service import ToolPrerequisites
 
 module = Module("prerequisite", "Inspect and prepare the external tools modules need.", essential=True)
@@ -48,6 +48,20 @@ def _fix(item: PrerequisiteCheck) -> str:
     if item.automatic:
         return f"hz system prerequisite install --owner {item.requirement.module} --confirm"
     return item.detail
+
+
+def render_list(definitions: list[PrerequisiteDefinition]) -> RenderableType:
+    """Render declared tools when the CLI needs to present them."""
+    from heinzel.modules.system.prerequisite._render import render_list  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_list(definitions)
+
+
+def render_report(report: PrerequisiteReport) -> RenderableType:
+    """Render a prerequisite report when the CLI presents its results."""
+    from heinzel.modules.system.prerequisite._render import render_report  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_report(report)
 
 
 @module.operation(name="list", render=render_list)
