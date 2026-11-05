@@ -19,22 +19,95 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
     viewportHeight = scroller.clientHeight;
     viewportWidth = scroller.clientWidth;
   };
+  let cancelAcknowledgment = () => {};
+  const stopReveal = (event: Event) => {
+    cancelAcknowledgment();
+    const pointer = event as PointerEvent;
+    const target = event.target;
+    if (
+      event.type !== "pointerdown" ||
+      !interacting ||
+      !(target instanceof Element) ||
+      !scroller.scrollTo ||
+      scroller.scrollHeight <= scroller.clientHeight ||
+      (pointer.button !== undefined && pointer.button !== 0) ||
+      pointer.isPrimary === false ||
+      target.closest('input, textarea, select, label, [contenteditable]:not([contenteditable="false"])')
+    )
+      return;
+    const control = target.closest("button, summary, a[href], [tabindex]") ?? target;
+    const position = () => {
+      const rect = control.getBoundingClientRect();
+      const visual = window.visualViewport;
+      return [
+        page.offsetHeight,
+        workspace.offsetTop,
+        workspace.offsetHeight,
+        scroller.clientWidth,
+        scroller.clientHeight,
+        scroller.scrollHeight,
+        rect.top + scroller.scrollTop,
+        rect.left + scroller.scrollLeft,
+        rect.width,
+        rect.height,
+        visual?.width,
+        visual?.height,
+        visual?.offsetTop,
+        visual?.offsetLeft,
+      ];
+    };
+    const before = position();
+    const current = scroller.scrollTop;
+    const left = scroller.scrollLeft;
+    const navigation = [
+      "wheel",
+      "keydown",
+      "pointermove",
+      "touchmove",
+      "pointerup",
+      "pointercancel",
+      "touchend",
+      "touchcancel",
+    ];
+    const focus = (next: Event) => {
+      if (next.target !== control) cleanup();
+    };
+    const cleanup = () => {
+      cancelAnimationFrame(frame);
+      for (const name of navigation) document.removeEventListener(name, cleanup, true);
+      document.removeEventListener("focusin", focus, true);
+      window.removeEventListener("resize", cleanup);
+      window.visualViewport?.removeEventListener("resize", cleanup);
+      window.visualViewport?.removeEventListener("scroll", cleanup);
+      cancelAcknowledgment = () => {};
+    };
+    // Native compositor deltas can arrive after the synchronous abort. Acknowledge just that
+    // already-in-flight frame, before paint; never hold the position across user navigation.
+    scroller.scrollTo({ top: current, left, behavior: "instant" });
+    const frame = requestAnimationFrame(() => {
+      cleanup();
+      if (
+        active &&
+        scroller.isConnected &&
+        page.isConnected &&
+        scroller.contains(workspace) &&
+        control.isConnected &&
+        workspace.contains(control) &&
+        !workspace.hidden &&
+        position().every((value, index) => value === before[index])
+      )
+        scroller.scrollTo({ top: current, left, behavior: "instant" });
+    });
+    cancelAcknowledgment = cleanup;
+    for (const name of navigation) document.addEventListener(name, cleanup, { capture: true, passive: true });
+    document.addEventListener("focusin", focus, true);
+    window.addEventListener("resize", cleanup);
+    window.visualViewport?.addEventListener("resize", cleanup);
+    window.visualViewport?.addEventListener("scroll", cleanup);
+  };
   const interaction = (event: Event) => {
     interacting = event.target instanceof Node && workspace.contains(event.target) ? event.target : null;
-    // A running panel-reveal scroll must not carry a pressed control away before pointer release.
-    if (event.type === "pointerdown" && interacting && scroller.scrollTo) {
-      const current = scroller.scrollTop;
-      const left = scroller.scrollLeft;
-      const maximum = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-      // A same-position instant request can leave compositor scrolling active. Make a reachable
-      // nonzero offset change and restore the exact position in this task, before native focus/release.
-      // Nothing remains pinned: subsequent wheel, touch, keyboard and focus scrolling stay native.
-      if (maximum > 0 && current >= 0 && current <= maximum) {
-        const nudge = current < maximum ? Math.min(current + 1, maximum) : Math.max(0, current - 1);
-        scroller.scrollTo({ top: nudge, left, behavior: "instant" });
-        scroller.scrollTo({ top: current, left, behavior: "instant" });
-      }
-    }
+    if (event.type === "pointerdown") stopReveal(event);
     remember();
   };
   const moved = () => {
@@ -70,6 +143,7 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
   scroller.addEventListener("scroll", moved);
   return () => {
     active = false;
+    cancelAcknowledgment();
     observer.disconnect();
     mutations.disconnect();
     document.removeEventListener("pointerdown", interaction, true);

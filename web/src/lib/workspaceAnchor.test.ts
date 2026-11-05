@@ -2,6 +2,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { anchorWorkspace } from "./workspaceAnchor";
 
 let resized: () => void;
+let frames: Map<number, FrameRequestCallback>;
+let frameId: number;
+function render() {
+  const pending = [...frames.values()];
+  frames.clear();
+  for (const frame of pending) frame(16);
+}
 let mutated: () => void;
 const disconnected = vi.fn();
 const mutationDisconnected = vi.fn();
@@ -23,6 +30,13 @@ class Mutations {
 
 beforeEach(() => {
   mutated = () => {};
+  frames = new Map();
+  frameId = 0;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    frames.set(++frameId, callback);
+    return frameId;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
   vi.stubGlobal("ResizeObserver", Observer);
   vi.stubGlobal("MutationObserver", Mutations);
 });
@@ -191,45 +205,153 @@ it("stops an in-flight programmatic scroll when a pointer presses a workspace co
   view.button.dispatchEvent(new Event("focusin", { bubbles: true }));
   expect(stop).not.toHaveBeenCalled();
   view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-  expect(stop).toHaveBeenNthCalledWith(1, { top: 401, left: 0, behavior: "instant" });
+  expect(stop).toHaveBeenCalledOnce();
+  expect(stop).toHaveBeenLastCalledWith({ top: 400, left: 0, behavior: "instant" });
+  render();
   expect(stop).toHaveBeenNthCalledWith(2, { top: 400, left: 0, behavior: "instant" });
   view.page.dispatchEvent(new Event("pointerdown", { bubbles: true }));
   expect(stop).toHaveBeenCalledTimes(2);
   view.dispose();
 });
 
-it.each([0, 400, 123.5])("aborts modeled residual compositor motion at offset %s before a held press", (offset) => {
+it.each([0, 400, 123.5])("acknowledges one residual native compositor frame at offset %s", (offset) => {
   const view = layout();
   Object.defineProperty(view.scroller, "scrollHeight", { value: 1000 });
   view.scroller.scrollTop = offset;
   view.scroller.scrollLeft = 7.5;
-  let pendingNativeMotion = true;
-  const requests: ScrollToOptions[] = [];
-  view.scroller.scrollTo = (options?: ScrollToOptions | number, y?: number) => {
+  // Document-relative geometry stays fixed when the outer compositor scrolls.
+  vi.spyOn(view.button, "getBoundingClientRect").mockImplementation(
+    () =>
+      ({
+        top: 900 - view.scroller.scrollTop,
+        left: 50 - view.scroller.scrollLeft,
+        width: 80,
+        height: 20,
+      }) as DOMRect,
+  );
+  const stop = vi.fn((options?: ScrollToOptions | number, y?: number) => {
     const request = typeof options === "number" ? { left: options, top: y } : (options ?? {});
-    requests.push(request);
-    // Faithful failure model: a same-position instant request can be treated as a compositor no-op.
-    // A real offset change aborts the pending native animation; this does not assert a browser guarantee.
-    if (request.top !== view.scroller.scrollTop) pendingNativeMotion = false;
-    view.scroller.scrollTop = request.top ?? view.scroller.scrollTop;
-    view.scroller.scrollLeft = request.left ?? view.scroller.scrollLeft;
-  };
+    view.scroller.scrollTop = request.top ?? 0;
+    view.scroller.scrollLeft = request.left ?? 0;
+  });
+  view.scroller.scrollTo = stop;
   view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-  if (pendingNativeMotion) view.scroller.scrollTop = Math.max(0, offset - 18);
-  expect(pendingNativeMotion).toBe(false);
+  // The abort has returned, but the compositor's already-computed delta reaches Blink next frame.
+  view.scroller.scrollTop = Math.max(0, offset - 99);
+  view.scroller.dispatchEvent(new Event("scroll"));
+  render();
   expect(view.scroller.scrollTop).toBe(offset);
   expect(view.scroller.scrollLeft).toBe(7.5);
-  expect(requests).toHaveLength(2);
-  // A subsequent user scroll remains free: no pointer-up restoration or ongoing position pinning.
-  const wheel = new Event("wheel", { bubbles: true, cancelable: true });
-  const touch = new Event("touchmove", { bubbles: true, cancelable: true });
-  expect(view.button.dispatchEvent(wheel)).toBe(true);
-  expect(view.button.dispatchEvent(touch)).toBe(true);
-  expect(wheel.defaultPrevented).toBe(false);
-  expect(touch.defaultPrevented).toBe(false);
+  expect(stop).toHaveBeenCalledTimes(2);
+  render();
+  expect(stop).toHaveBeenCalledTimes(2);
   view.scroller.scrollTop = 37;
   view.scroller.dispatchEvent(new Event("scroll"));
+  render();
   expect(view.scroller.scrollTop).toBe(37);
+  expect(frames.size).toBe(0);
+  view.dispose();
+});
+
+it.each(["wheel", "keydown", "pointermove", "touchmove", "pointerup", "pointercancel", "touchend", "touchcancel"])(
+  "leaves native %s navigation free before acknowledgment",
+  (name) => {
+    const view = layout();
+    const stop = vi.fn();
+    view.scroller.scrollTo = stop;
+    view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    const event = new Event(name, { bubbles: true, cancelable: true });
+    expect(view.button.dispatchEvent(event)).toBe(true);
+    expect(event.defaultPrevented).toBe(false);
+    view.scroller.scrollTop = 37;
+    render();
+    expect(stop).toHaveBeenCalledOnce();
+    expect(view.scroller.scrollTop).toBe(37);
+    expect(frames.size).toBe(0);
+    view.dispose();
+  },
+);
+
+it.each(["input", "textarea", "select", "label", "editable"])("preserves native %s focus/reveal", (tag) => {
+  const view = layout();
+  const control = document.createElement(tag === "editable" ? "div" : tag);
+  if (tag === "editable") control.setAttribute("contenteditable", "true");
+  const child = document.createElement("span");
+  control.append(child);
+  view.workspace.append(control);
+  const stop = vi.fn();
+  view.scroller.scrollTo = stop;
+  child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  render();
+  expect(stop).not.toHaveBeenCalled();
+  view.dispose();
+});
+
+it.each(["secondary", "nonprimary"])("ignores %s pointer presses", (kind) => {
+  const view = layout();
+  const stop = vi.fn();
+  view.scroller.scrollTo = stop;
+  const event = new Event("pointerdown", { bubbles: true });
+  Object.defineProperty(event, kind === "secondary" ? "button" : "isPrimary", {
+    value: kind === "secondary" ? 2 : false,
+  });
+  view.button.dispatchEvent(event);
+  render();
+  expect(stop).not.toHaveBeenCalled();
+  view.dispose();
+});
+
+it.each(["growth", "viewport", "removed", "replaced", "hidden", "focus", "dispose", "window resize", "new press"])(
+  "abandons the pending acknowledgment after %s",
+  (reason) => {
+    const view = layout();
+    const stop = vi.fn();
+    view.scroller.scrollTo = stop;
+    view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    if (reason === "growth") view.grow(100);
+    if (reason === "viewport") view.resize(360, 400);
+    if (reason === "removed") view.button.remove();
+    if (reason === "replaced") view.button.replaceWith(document.createElement("button"));
+    if (reason === "hidden") view.workspace.hidden = true;
+    if (reason === "focus") view.page.dispatchEvent(new Event("focusin", { bubbles: true }));
+    if (reason === "dispose") view.dispose();
+    if (reason === "window resize") window.dispatchEvent(new Event("resize"));
+    if (reason === "new press") view.page.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    render();
+    expect(stop).toHaveBeenCalledOnce();
+    expect(frames.size).toBe(0);
+    if (reason !== "dispose") view.dispose();
+  },
+);
+
+it.each(["resize", "scroll"])("releases the acknowledgment on visual viewport %s", (name) => {
+  const viewport = new EventTarget();
+  vi.stubGlobal("visualViewport", viewport);
+  const view = layout();
+  const stop = vi.fn();
+  view.scroller.scrollTo = stop;
+  const added = vi.spyOn(viewport, "addEventListener");
+  const removed = vi.spyOn(viewport, "removeEventListener");
+  view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  viewport.dispatchEvent(new Event(name));
+  render();
+  expect(stop).toHaveBeenCalledOnce();
+  expect(frames.size).toBe(0);
+  for (const [event, listener] of added.mock.calls) expect(removed).toHaveBeenCalledWith(event, listener);
+  view.dispose();
+});
+
+it("allows the pressed control's ordinary native focus and removes temporary listeners", () => {
+  const view = layout();
+  const stop = vi.fn();
+  view.scroller.scrollTo = stop;
+  const added = vi.spyOn(document, "addEventListener");
+  const removed = vi.spyOn(document, "removeEventListener");
+  view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  view.button.focus();
+  render();
+  expect(stop).toHaveBeenCalledTimes(2);
+  for (const [name, listener] of added.mock.calls) expect(removed).toHaveBeenCalledWith(name, listener, true);
   view.dispose();
 });
 
