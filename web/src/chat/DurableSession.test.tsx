@@ -1,11 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Providers, queryClient } from "@/App";
+import { Providers, queryClient, routes } from "@/App";
 import { daemonStatusKey } from "@/api/daemon";
 import { DurableSession } from "@/chat/DurableSession";
 import { frame } from "@/test/chat";
-import { shell } from "@/test/fixtures";
+import { config, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { preserveUpdateWork } from "@/updates/work";
 
@@ -14,6 +14,19 @@ const snapshot = {
   session_id: sessionId,
   name: "Personal helper",
   messages: [{ id: "m1", seq: 1, role: "user", text: "Hello", status: "pending" }],
+};
+const historySearchConfig = {
+  ...config,
+  settings: [
+    ...config.settings,
+    {
+      section: "hz",
+      key: "features",
+      value: ["connected_history"],
+      description: "Preview features",
+      env: "HZ_FEATURES",
+    },
+  ],
 };
 
 const proposedSchedule = {
@@ -1897,4 +1910,112 @@ it("keeps source preparation unavailable while a displayed reply still has an un
     });
   }
   await waitFor(() => expect(prepare).toBeEnabled());
+});
+
+it("opens and highlights a search match beyond the loaded conversation page", async () => {
+  const { calls } = mockApi({
+    ...shell,
+    "/api/system/config/show": historySearchConfig,
+    "/api/heinzel/session": (request: Request) =>
+      new URL(request.url).searchParams.get("cursor") === "anchored-jump"
+        ? { ...snapshot, messages: [{ id: "old", seq: 154, role: "user", text: "Old matching message" }] }
+        : { ...snapshot, has_more: true, next_cursor: "next" },
+    "/api/heinzel/indexed-conversation-search": () => ({
+      session_id: sessionId,
+      items: [{ id: "old", seq: 154, text: "Old matching message", at: "2026-05-04T12:00:00Z" }],
+      jump_cursors: ["anchored-jump"],
+      next_cursor: null,
+      mode: "trigram",
+      completeness: "unknown",
+    }),
+  });
+  renderAt(`/heinzel?chat=${sessionId}`);
+  const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+  await panel.findByText("Hello");
+  fireEvent.click(await panel.findByText("Search conversation"));
+  const search = within(panel.getByRole("region", { name: "Search conversation" }));
+  fireEvent.change(search.getByLabelText("Text"), { target: { value: "matching" } });
+  fireEvent.click(search.getByRole("button", { name: "Search" }));
+  await search.findByText("Old matching message");
+  fireEvent.click(search.getByRole("button", { name: "Open message" }));
+  await waitFor(() => expect(panel.getByText("Search result")).toBeInTheDocument());
+  expect(panel.getByText("Search result").parentElement).toHaveTextContent("Old matching message");
+  expect(calls.some((request) => new URL(request.url).searchParams.get("cursor") === "anchored-jump")).toBe(true);
+});
+
+it("opens an owner-search match in its exact helper without confirming any action", async () => {
+  const target = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW";
+  const { calls } = mockApi({
+    ...shell,
+    "/api/system/config/show": historySearchConfig,
+    "/api/heinzel/session": (request: Request) => {
+      const terms = new URL(request.url).searchParams;
+      return terms.get("session_id") === target
+        ? {
+            ...snapshot,
+            session_id: target,
+            name: "Other helper",
+            messages: [{ id: "other", seq: 9, role: "user", text: "Other private match" }],
+          }
+        : snapshot;
+    },
+    "/api/heinzel/search-agent-conversations": () => ({
+      status: "results",
+      session_id: target,
+      items: [{ seq: 9, text: "Other private match", at: "2026-05-04T12:00:00Z" }],
+      jump_cursors: ["owner-match"],
+      next_cursor: null,
+      completeness: "unknown",
+    }),
+  });
+  sessionStorage.setItem("hz.token", "test-token");
+  const router = createMemoryRouter(routes, {
+    initialEntries: [
+      `/heinzel?chat=${sessionId}&contract-chat=old&schedule-chat=old&schedule-request=old&notification-chat=old&connected-chat=old`,
+    ],
+  });
+  render(
+    <Providers client={queryClient()}>
+      <RouterProvider router={router} />
+    </Providers>,
+  );
+  const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+  await panel.findByText("Hello");
+  fireEvent.click(await panel.findByText("Search all Heinzel conversations"));
+  const search = within(panel.getByRole("region", { name: "Search all conversations" }));
+  fireEvent.change(search.getByLabelText("Text"), { target: { value: "match" } });
+  fireEvent.click(search.getByRole("button", { name: "Search" }));
+  await search.findByText("Other private match");
+  fireEvent.click(search.getByRole("button", { name: "Open message" }));
+  await waitFor(() => expect(panel.getByText("Search result").parentElement).toHaveTextContent("Other private match"));
+  expect([...new URLSearchParams(router.state.location.search)]).toEqual([["chat", target]]);
+  expect(router.state.location.state).toBeNull();
+  expect(
+    calls.some((request) => {
+      const url = new URL(request.url);
+      return (
+        url.pathname === "/api/heinzel/session" &&
+        url.searchParams.get("session_id") === target &&
+        url.searchParams.get("cursor") === "owner-match"
+      );
+    }),
+  ).toBe(true);
+  expect(calls.filter((request) => request.method === "POST").map((request) => new URL(request.url).pathname)).toEqual([
+    "/api/heinzel/search-agent-conversations",
+  ]);
+});
+
+it("keeps search dark by default and ignores cursor text in the browser URL", async () => {
+  const { calls } = mockApi({ ...shell, "/api/heinzel/session": () => snapshot });
+  renderAt(`/heinzel?chat=${sessionId}&history=unexpected-cursor`);
+  const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+  await panel.findByText("Hello");
+  expect(panel.queryByText("Search conversation")).not.toBeInTheDocument();
+  expect(panel.queryByText("Search all Heinzel conversations")).not.toBeInTheDocument();
+  expect(
+    calls.some((request) => {
+      const url = new URL(request.url);
+      return url.pathname.includes("conversation-search") || url.searchParams.get("cursor") === "unexpected-cursor";
+    }),
+  ).toBe(false);
 });
