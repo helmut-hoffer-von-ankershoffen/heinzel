@@ -351,15 +351,16 @@ it.each(["top", "left", "right", "bottom"])(
   (edge) => {
     for (const clipping of [0.25, 0.5, 0.75]) {
       const view = layout();
+      vi.spyOn(view.scroller, "getBoundingClientRect").mockReturnValue({ top: 50, left: 50 } as DOMRect);
       const top = edge === "top" ? -clipping : edge === "bottom" ? 580 + clipping : 20;
       const left = edge === "left" ? -clipping : edge === "right" ? 280 + clipping : 20;
       vi.spyOn(view.button, "getBoundingClientRect").mockImplementation(
         () =>
           ({
-            top: top + 400 - view.scroller.scrollTop,
-            bottom: top + 420 - view.scroller.scrollTop,
-            left,
-            right: left + 80,
+            top: top + 450 - view.scroller.scrollTop,
+            bottom: top + 470 - view.scroller.scrollTop,
+            left: left + 50,
+            right: left + 130,
             width: 80,
             height: 20,
           }) as DOMRect,
@@ -383,15 +384,15 @@ it.each(["top", "left", "right", "bottom"])(
   },
 );
 
-it("leaves a control clipped by the visual viewport to native focus", () => {
+it.each([0.25, 0.5, 10])("leaves a control clipped %s pixels by the visual viewport to native focus", (clipping) => {
   const viewport = Object.assign(new EventTarget(), { width: 360, height: 400, offsetLeft: 0, offsetTop: 100 });
   vi.stubGlobal("visualViewport", viewport);
   const view = layout();
   vi.spyOn(view.button, "getBoundingClientRect").mockReturnValue({
     left: 20,
-    top: 90,
+    top: 100 - clipping,
     right: 100,
-    bottom: 110,
+    bottom: 120 - clipping,
     width: 80,
     height: 20,
   } as DOMRect);
