@@ -71,8 +71,35 @@ try {
   await page.getByText("I prepared proposals for your review.").waitFor({ timeout: 30000 });
   const replyActivity = page.getByText("Tool activity for this reply · 4 events");
   await watchDisclosure(replyActivity, "reply-activity");
-  if (process.argv[6] === "smooth") {
+  const fractionalScroll = process.argv[6] === "fractional";
+  if (process.argv[6] === "smooth" || fractionalScroll) {
     await replyActivity.hover();
+    if (fractionalScroll) {
+      // Exercise the real mounted control at the fractional viewport edge observed under late layout.
+      // Position it before acquiring the physical pointer; no click dispatch, capture or retargeting.
+      await replyActivity.evaluate((node) => {
+        const scroller = node.closest(".workspace-scroll");
+        const desiredBottom = scroller.getBoundingClientRect().bottom + 0.25;
+        scroller.scrollTo({
+          top: scroller.scrollTop - (desiredBottom - node.getBoundingClientRect().bottom),
+          behavior: "instant",
+        });
+        node.style.translate = `0 ${desiredBottom - node.getBoundingClientRect().bottom}px`;
+        document.addEventListener(
+          "pointerdown",
+          (event) => {
+            window.__hzFractionalPress = {
+              summary: event.target === node,
+              clipping: node.getBoundingClientRect().bottom - scroller.getBoundingClientRect().bottom,
+            };
+          },
+          { capture: true, once: true },
+        );
+      });
+      const point = await replyActivity.boundingBox();
+      assert.ok(point);
+      await page.mouse.move(point.x + point.width / 2, point.y + point.height / 2);
+    }
     const box = await replyActivity.boundingBox();
     assert.ok(box);
     const scrollOrigin = await replyActivity.evaluate((node) => {
@@ -83,6 +110,15 @@ try {
     });
     assert.ok(scrollOrigin > 120, "the controlled press must have real workspace scroll distance");
     await page.mouse.down();
+    if (fractionalScroll) {
+      const press = await page.evaluate(() => window.__hzFractionalPress);
+      assert.equal(
+        press?.summary,
+        true,
+        "the fractional pressure must be a genuine native press on the current summary",
+      );
+      assert.equal(press.clipping, 0.25, "the pressed control must meet the actual quarter-pixel viewport fringe");
+    }
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     // Keep the real press held beyond the observed hosted 184ms interval; no retargeting or click replay.
     await new Promise((resolve) => setTimeout(resolve, 250));

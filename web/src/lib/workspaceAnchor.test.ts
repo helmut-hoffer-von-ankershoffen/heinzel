@@ -346,15 +346,53 @@ it.each([
   view.dispose();
 });
 
-it("leaves a control clipped by the visual viewport to native focus", () => {
+it.each(["top", "left", "right", "bottom"])(
+  "keeps fractional %s fringe presses stable without admitting larger clipping",
+  (edge) => {
+    for (const clipping of [0.25, 0.5, 0.75]) {
+      const view = layout();
+      vi.spyOn(view.scroller, "getBoundingClientRect").mockReturnValue({ top: 50, left: 50 } as DOMRect);
+      const top = edge === "top" ? -clipping : edge === "bottom" ? 580 + clipping : 20;
+      const left = edge === "left" ? -clipping : edge === "right" ? 280 + clipping : 20;
+      vi.spyOn(view.button, "getBoundingClientRect").mockImplementation(
+        () =>
+          ({
+            top: top + 450 - view.scroller.scrollTop,
+            bottom: top + 470 - view.scroller.scrollTop,
+            left: left + 50,
+            right: left + 130,
+            width: 80,
+            height: 20,
+          }) as DOMRect,
+      );
+      const stop = vi.fn((options?: ScrollToOptions | number, y?: number) => {
+        const request = typeof options === "number" ? { left: options, top: y } : (options ?? {});
+        view.scroller.scrollTop = request.top ?? 0;
+      });
+      view.scroller.scrollTo = stop;
+      view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      view.button.focus();
+      // The original native compositor commits after the synchronous pointerdown abort.
+      view.scroller.scrollTop = 300;
+      view.scroller.dispatchEvent(new Event("scroll"));
+      render();
+      expect(stop).toHaveBeenCalledTimes(clipping <= 0.5 ? 2 : 0);
+      expect(view.scroller.scrollTop).toBe(clipping <= 0.5 ? 400 : 300);
+      expect(frames.size).toBe(0);
+      view.dispose();
+    }
+  },
+);
+
+it.each([0.25, 0.5, 10])("leaves a control clipped %s pixels by the visual viewport to native focus", (clipping) => {
   const viewport = Object.assign(new EventTarget(), { width: 360, height: 400, offsetLeft: 0, offsetTop: 100 });
   vi.stubGlobal("visualViewport", viewport);
   const view = layout();
   vi.spyOn(view.button, "getBoundingClientRect").mockReturnValue({
     left: 20,
-    top: 90,
+    top: 100 - clipping,
     right: 100,
-    bottom: 110,
+    bottom: 120 - clipping,
     width: 80,
     height: 20,
   } as DOMRect);

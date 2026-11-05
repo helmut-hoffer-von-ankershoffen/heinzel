@@ -23,6 +23,7 @@ class ChatJourney:
     engine: str
     late_page: bool
     activity_scroll: bool
+    fractional_scroll: bool = False
 
 
 def _mounted_generic_agent_chat(make_kernel, tmp_path, monkeypatch, journey: ChatJourney):
@@ -121,7 +122,7 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
                 engine,
                 "late-page" if late_page else "normal",
                 str(tmp_path),
-                "smooth" if activity_scroll else "normal",
+                "fractional" if journey.fractional_scroll else "smooth" if activity_scroll else "normal",
             ],
             cwd=REPO,
             capture_output=True,
@@ -155,4 +156,18 @@ def test_reply_disclosure_remains_clickable_during_workspace_scroll(make_kernel,
     """A real physical press stops an in-flight workspace scroll before its release can hit a different node."""
     _mounted_generic_agent_chat(
         make_kernel, tmp_path, monkeypatch, ChatJourney(engine=engine, late_page=True, activity_scroll=True)
+    )
+
+
+@pytest.mark.timeout(600)
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_fractional_reply_disclosure_remains_clickable_during_workspace_scroll(
+    make_kernel, tmp_path, monkeypatch, engine
+):
+    """A quarter-pixel layout fringe must not leave a native reveal moving under a genuine held press."""
+    _mounted_generic_agent_chat(
+        make_kernel,
+        tmp_path,
+        monkeypatch,
+        ChatJourney(engine=engine, late_page=True, activity_scroll=True, fractional_scroll=True),
     )
