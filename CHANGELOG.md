@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.16](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.16) - 2026-11-05
 
-0.9.16 adds CLI-created release-draft workflows, calendar views and reminders, profile onboarding, optional-feature health, offline removal and supervised web serving. Settings search stays readable on phones and compact layouts. Activity controls stay usable while the workspace scrolls. Google/Slack/GitHub companion publication and real-provider acceptance remain separate.
+0.9.16 adds CLI-created release-draft workflows, calendar views and reminders, profile onboarding, optional-feature health, offline removal and supervised web serving. Settings search stays readable on phones and compact layouts. Activity controls stay usable while the workspace scrolls. Source access review waits until the current reply settles. Google/Slack/GitHub companion publication and real-provider acceptance remain separate.
 
 Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and reinstall. After 0.9.16 publication, run `uv run --no-project --with heinzel==0.9.16 python -I -m heinzel.heads.daemon_recovery plan`. Review the entire plan; historical profile ownership remains unknown. Repeat with `retire --confirm PLAN_SHA256`, using the exact current plan digest. After successful retirement, use `hz system update --source 'heinzel==0.9.16'`, then `hz system daemon install`; separately choose `hz ui install` for supervised web serving. Preserve the existing profile; never purge data or bypass refusals. Recovery is macOS-only; see docs/DAEMON_RECOVERY.md. Future ordinary supervised updates remain intended in place. Native migration acceptance is pending; historical automatic-handover and WebKit incidents are not claimed fixed.
 
@@ -26,6 +26,7 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 - **web:** Keep search text readable before focus ([7ab324b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/7ab324b4f368b4efc42997012265db89d665905d))
 - **web:** Stop workspace scroll on pressed controls ([178182c](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/178182c15ae97cd0dc6fad0440feaf4f8ac33f33))
 - **heads:** Preserve explicit no-bytecode mode across exec ([1dd32a9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/1dd32a9ac8298c8b44ce36ba3e0bc5ca830082eb))
+- **chat:** Defer source preparation until owned replies settle ([0c392ca](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/0c392ca3bf488eb465fd50ea0e8bd122a82093b4))
 
 ### 📚 Documentation
 
@@ -35,6 +36,11 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 ### 🧪 Testing
 
 - Isolate lifecycle fixtures from host clocks and Python ([#512](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/512)) ([87dc0a2](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/87dc0a25b62b0bc59a60607c301f516d062f231a))
+- **web:** Guard optional pointer diagnostics ([47a4c6d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/47a4c6d83b03b2f5501cb1be240857ffa34bb36a))
+
+### 🧹 Miscellaneous
+
+- **web:** Format optional pointer diagnostics ([1c4e315](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/1c4e3151b06042108dd357dab9af838188e81eb5))
 
 ## [0.9.15](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.15) - 2026-11-04
 
