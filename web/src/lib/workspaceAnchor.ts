@@ -21,6 +21,9 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
   };
   const interaction = (event: Event) => {
     interacting = event.target instanceof Node && workspace.contains(event.target) ? event.target : null;
+    // A running panel-reveal scroll must not carry a pressed control away before pointer release.
+    if (event.type === "pointerdown" && interacting)
+      scroller.scrollTo?.({ top: scroller.scrollTop, behavior: "instant" });
     remember();
   };
   const moved = () => {

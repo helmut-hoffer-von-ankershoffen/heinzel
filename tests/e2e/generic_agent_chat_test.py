@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 import threading
+from dataclasses import dataclass
 from typing import ClassVar
 from urllib.parse import parse_qs, urlsplit
 
@@ -17,10 +18,15 @@ from tests.e2e.durable_five_minute_journey_test import BROWSER_CACHE, REPO, web_
 pytestmark = pytest.mark.e2e
 
 
-@pytest.mark.timeout(600)
-@pytest.mark.parametrize("engine", ["chromium", "webkit"])
-@pytest.mark.parametrize("late_page", [False, True])
-def test_mounted_generic_agent_chat(make_kernel, tmp_path, monkeypatch, engine, late_page):
+@dataclass(frozen=True)
+class ChatJourney:
+    engine: str
+    late_page: bool
+    activity_scroll: bool
+
+
+def _mounted_generic_agent_chat(make_kernel, tmp_path, monkeypatch, journey: ChatJourney):
+    engine, late_page, activity_scroll = journey.engine, journey.late_page, journey.activity_scroll
     web_build.ensure_built()
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(BROWSER_CACHE))
@@ -114,6 +120,8 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
                 urls[0],
                 engine,
                 "late-page" if late_page else "normal",
+                str(tmp_path),
+                "smooth" if activity_scroll else "normal",
             ],
             cwd=REPO,
             capture_output=True,
@@ -130,3 +138,21 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
             RecordedServer.instances[0].should_exit = True
         thread.join(15)
         assert not thread.is_alive()
+
+
+@pytest.mark.timeout(600)
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+@pytest.mark.parametrize("late_page", [False, True])
+def test_mounted_generic_agent_chat(make_kernel, tmp_path, monkeypatch, engine, late_page):
+    _mounted_generic_agent_chat(
+        make_kernel, tmp_path, monkeypatch, ChatJourney(engine=engine, late_page=late_page, activity_scroll=False)
+    )
+
+
+@pytest.mark.timeout(600)
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_reply_disclosure_remains_clickable_during_workspace_scroll(make_kernel, tmp_path, monkeypatch, engine):
+    """A real physical press stops an in-flight workspace scroll before its release can hit a different node."""
+    _mounted_generic_agent_chat(
+        make_kernel, tmp_path, monkeypatch, ChatJourney(engine=engine, late_page=True, activity_scroll=True)
+    )

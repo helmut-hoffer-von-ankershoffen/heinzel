@@ -182,3 +182,16 @@ it.each(["pointerdown", "wheel"])("stops anchoring after %s with Page or cleanup
   expect(view.scroller.scrollTop).toBe(400);
   expect(disconnected).toHaveBeenCalledOnce();
 });
+
+it("stops an in-flight programmatic scroll when a pointer presses a workspace control", () => {
+  const view = layout();
+  const stop = vi.fn();
+  view.scroller.scrollTo = stop;
+  view.button.dispatchEvent(new Event("focusin", { bubbles: true }));
+  expect(stop).not.toHaveBeenCalled();
+  view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  expect(stop).toHaveBeenCalledExactlyOnceWith({ top: 400, behavior: "instant" });
+  view.page.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  expect(stop).toHaveBeenCalledTimes(1);
+  view.dispose();
+});

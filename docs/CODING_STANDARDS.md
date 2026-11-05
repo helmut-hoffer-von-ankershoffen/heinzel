@@ -152,7 +152,8 @@ discarded by class merging.
 Keep one scroll owner per pane, make flex children shrink with `min-h-0` / `min-w-0`, and scroll oversized content
 inside its pane. Settings rows wrap to the available pane width; native selectors must cap their intrinsic width,
 including long provider labels. Exercise advanced settings as well as basic settings in the mobile sweep.
-An expanded menu must not hide its own trigger or dismiss control.
+An expanded menu must not hide its own trigger or dismiss control. A pointer press inside the workspace stops its active
+programmatic scroll, so that reveal animation cannot carry the pressed control away before release.
 
 `mobile-standards.test.ts` rejects layout-viewport heights and independent absolute dropdowns. The mobile browser
 sweep discovers static router paths and settings sections automatically; add interactive flows there when introducing a
