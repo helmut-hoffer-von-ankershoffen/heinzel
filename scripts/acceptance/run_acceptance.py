@@ -67,6 +67,7 @@ UPGRADES_PLUGINS_ON_ADD = {"0.9.8", "0.9.9"}
 FOREGROUND_UI = {
     **{f"0.9.{patch}": ("ui",) for patch in range(8, 16)},
     "0.9.16": ("ui", "serve"),
+    "0.9.17": ("ui", "serve"),
 }
 PROFILE_FIXTURE = {
     "HZ_ORG__NAME": "Mira Example",

@@ -132,7 +132,11 @@ def test_only_x_y_z_is_a_final_version(version, final):
 
 @pytest.mark.parametrize(
     ("version", "command"),
-    [*[(f"0.9.{patch}", ["ui"]) for patch in range(8, 16)], ("0.9.16", ["ui", "serve"])],
+    [
+        *[(f"0.9.{patch}", ["ui"]) for patch in range(8, 16)],
+        ("0.9.16", ["ui", "serve"]),
+        ("0.9.17", ["ui", "serve"]),
+    ],
 )
 def test_installed_metadata_selects_the_canonical_foreground_command(version, command, tmp_path):
     calls = []
@@ -174,7 +178,11 @@ def test_installed_metadata_selects_the_canonical_foreground_command(version, co
     [
         ("0.9.15", "0.9.16"),
         ("0.9.16", "0.9.15"),
-        ("0.9.17", "0.9.17"),
+        ("0.9.17", "0.9.16"),
+        ("0.9.16", "0.9.17"),
+        ("0.9.18", "0.9.18"),
+        ("0.9.17.dev1", "0.9.17.dev1"),
+        ("0.9.17rc1", "0.9.17rc1"),
         ("1.0.0", "1.0.0"),
         ("0.9.7", "0.9.7"),
         ("0.9.16.dev1", "0.9.16.dev1"),

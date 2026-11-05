@@ -46,3 +46,36 @@ This SDK proof does not establish installation of the governed standard app, plu
 onboarding, Linux behavior or public-path acceptance. The original published 0.9.15 failures remain failures. Literal
 public installation commands, provenance and identity checks, authentication, service assertions, cleanup, deadlines
 and verdict rules remain in the harness for the real composed-app runs.
+
+## Explicit 0.9.17 contract preparation
+
+The foreground-command allowlist now names 0.9.17 explicitly alongside 0.9.16. Unknown 0.9.18, development and release
+candidate versions still refuse startup. Installed metadata must still equal the case's expected version, including
+when one side is 0.9.17 and the other is 0.9.16. Every acceptance case, deadline and verdict is unchanged.
+
+The GitHub comparison from `v0.9.16` to SDK fix PR #515 source
+`e93d2d14695db11963ac59190b34d31a4b389524` lists only `src/heinzel/kernel/_installed_metadata.py` and its owning test.
+There are no CLI-head or UI-module changes; the canonical command remains `hz ui serve`. There is no published
+`v0.9.17` tag at this inspection, so this is source-contract preparation, not proof of installed 0.9.17 artifacts.
+
+The actual workflow has three entry points: path-filtered `pull_request`, explicit `workflow_dispatch` and
+`workflow_call`. PR runs take both versions as `published`; the selected latest app profile must select the same
+Core as PyPI latest. It has no push, release or schedule trigger. A push updating this PR's changed harness paths
+will request the public dry run again. Existing run `42013402847` failed on both operating systems before cases:
+`PREFLIGHT_FAILED: The profile selects a different Core: a stale app is a failure`. Those failures remain required
+evidence; local structural checks do not replace acceptance.
+
+With public Core 0.9.16 and no app 0.9.16, neither a harness change nor a retry repairs that public mismatch. First
+finish and review the SDK fix and this explicit support change without treating failed acceptance as passed. The
+release coordinator must decide how the required failed-check policy is resolved before merging; this work grants
+no exception. If proceeding to SDK 0.9.17, use the reviewed governed release source and its matching verified composed
+app profile. Candidate acceptance binds the held release wheel URL, digest and matching profile and proves only those
+bytes. It cannot establish the public installation path. After coordinated publication/designation, run explicit
+public acceptance with matching Core/app versions and pinned digests on both operating systems. A pre-0.9.17 repair
+of the public 0.9.16 app is a separate coordinated release decision. Do not substitute an arbitrary harness ref,
+change defaults to hide the mismatch, waive failures or weaken acceptance gates to break the sequencing dependency.
+
+Validation: the acceptance verdict/command tests, CI workflow structural tests, real collection deadline guard and
+CLI/UI integration tests passed together: 392 tests, two workers, 11.44 seconds. Ruff lint/format and diff whitespace
+checks passed. No installed 0.9.17 runtime, composed app or both-OS public acceptance was exercised; no dispatch,
+rerun, push, merge, release or live service mutation was performed.
