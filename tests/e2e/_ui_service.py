@@ -1,7 +1,10 @@
 """Owned child lifecycle diagnostics without installed-tool fixture imports."""
 
 import math
+import os
 import re
+import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -14,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from heinzel.kernel import HeinzelError
+from tests.e2e._ui_service_metadata import installed_versions
 
 _TRACEBACK_FILES = {
     "__init__.py",
@@ -116,6 +120,16 @@ _STARTUP_MODULES = {
     "asyncio/base_events.py",
     "selectors.py",
 }
+_FATAL_EXTENSIONS = {
+    "pydantic_core._pydantic_core": "pydantic-core",
+    "yaml._yaml": "pyyaml",
+    "httptools.parser.parser": "httptools",
+    "uvloop.loop": "uvloop",
+    "orjson.orjson": "orjson",
+    "greenlet._greenlet": "greenlet",
+    "_ssl": "stdlib-ssl",
+    "_sqlite3": "stdlib-sqlite",
+}
 
 
 # Fixed public identifiers, never names discovered from the installed SDK or a traceback. Builtin discovery
@@ -214,6 +228,12 @@ def startup_diagnostics(prefix, directory):
         # The stable shim execs isolated Python before importing hz; observe that app, not its short-lived shim.
         "if sys.flags.isolated:\n"
         f"    _hz_stacks = os.open({str(destination)!r}, os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW)\n"
+        # A regular file cannot fill an undrained subprocess pipe while the fatal handler writes before exit.
+        "    if sys.platform == 'linux':\n"
+        "        if sys.version_info >= (3, 14):\n"
+        "            faulthandler.enable(file=_hz_stacks, all_threads=False, c_stack=False)\n"
+        "        else:\n"
+        "            faulthandler.enable(file=_hz_stacks, all_threads=False)\n"
         "    faulthandler.dump_traceback_later(4, repeat=False, file=_hz_stacks)\n"
     )
     with target.open("x") as handle:
@@ -225,6 +245,21 @@ def _sample_role(line):
     if "com.apple.main-thread" in line:
         return "main"
     return "publication" if "(when_started)" in line else "other"
+
+
+def _startup_frame(line):
+    match = re.match(r'  File "([^"\n]{1,512})", line ([1-9][0-9]{0,6}) in ', line)
+    if match is None:
+        return None
+    normalized = match[1].replace("\\", "/")
+    frozen = {
+        "<frozen importlib._bootstrap>": "_bootstrap",
+        "<frozen importlib._bootstrap_external>": "_bootstrap_external",
+    }
+    label = frozen.get(normalized) or next(
+        (name for name in _STARTUP_MODULES if normalized.endswith("/" + name)), "other"
+    )
+    return label, int(match[2])
 
 
 class RunningService:
@@ -286,10 +321,14 @@ class RunningService:
             returncode = self.processes[-1].poll()
             if returncode is not None:
                 output, errors = self.processes[-1].communicate(timeout=1)
+                fatal = ""
+                if sys.platform == "linux" and returncode == -signal.SIGSEGV:
+                    evidence = self.segfault_evidence(initial=previous is None and len(self.processes) == 1)
+                    fatal = f" Linux SIGSEGV evidence={evidence}."
                 pytest.fail(
                     "The owned web server exited before readiness; "
                     f"owned process exit={returncode}, signal={-returncode if returncode < 0 else None}, "
-                    f"publication failure={self.publication_failure(output + errors)}."
+                    f"publication failure={self.publication_failure(output + errors)}.{fatal}"
                 )
             changed.wait(0.02)
         pytest.fail(
@@ -370,6 +409,58 @@ class RunningService:
             return []
         return self.startup_frames(report)
 
+    def segfault_evidence(self, *, initial):
+        """After a Linux SIGSEGV, report only static metadata and the initial owned child's sanitized dump."""
+        prefix = getattr(self.service, "prefix", None)
+        installed = installed_versions(prefix) if isinstance(prefix, Path) else {"result": "unavailable"}
+        fatal = self.fatal_metadata() if initial else {"result": "not-initial-startup"}
+        return {"fatal": fatal, "installed": installed}
+
+    def fatal_metadata(self):
+        """Read a bounded suffix of the private startup file after the owned child exited."""
+        path = getattr(self.service, "directory", None)
+        if not isinstance(path, Path):
+            return {"result": "unavailable"}
+        try:
+            descriptor = os.open(path / "startup-stacks.txt", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(descriptor, "rb") as handle:
+                info = os.fstat(handle.fileno())
+                if (
+                    not stat.S_ISREG(info.st_mode)
+                    or info.st_uid != os.getuid()
+                    or info.st_mode & 0o077
+                    or info.st_nlink != 1
+                ):
+                    return {"result": "unavailable"}
+                handle.seek(max(0, info.st_size - 64 * 1024))
+                report = handle.read(64 * 1024).decode("ascii", errors="replace")
+        except OSError:
+            return {"result": "unavailable"}
+        return self.fatal_frames(report)
+
+    @staticmethod
+    def fatal_frames(report):
+        """Discard raw crash text and recognize only the single-thread SIGSEGV dump."""
+        _, marker, payload = ("\n" + report).rpartition("\nFatal Python error: Segmentation fault\n")
+        if not marker:
+            return {"result": "unavailable"}
+        lines = payload.splitlines()
+        frames = []
+        for index, line in enumerate(lines):
+            if line == "Stack (most recent call first):":
+                for candidate in islice(lines, index + 1, index + 33):
+                    if not candidate.startswith("  "):
+                        break
+                    if (frame := _startup_frame(candidate)) is not None:
+                        frames.append(frame)
+                break
+        extensions = set()
+        for line in lines:
+            if match := re.fullmatch(r"Extension modules: (.{1,8192}) \(total: [0-9]{1,4}\)", line):
+                extensions.update(_FATAL_EXTENSIONS[name] for name in match[1].split(", ") if name in _FATAL_EXTENSIONS)
+                break
+        return {"result": "reported", "frames": frames, "extensions": sorted(extensions)}
+
     @staticmethod
     def startup_frames(report):
         """Discard thread identifiers, paths, source text and arbitrary names before formatting diagnostics."""
@@ -382,18 +473,8 @@ class RunningService:
                 frames = []
                 snapshots.append(frames)
             elif frames is not None and len(frames) < 32:
-                match = re.match(r'  File "([^"\n]{1,512})", line ([1-9]\d{0,6}) in ', line)
-                if match is None:
-                    continue
-                normalized = match[1].replace("\\", "/")
-                frozen = {
-                    "<frozen importlib._bootstrap>": "_bootstrap",
-                    "<frozen importlib._bootstrap_external>": "_bootstrap_external",
-                }
-                label = frozen.get(normalized) or next(
-                    (name for name in _STARTUP_MODULES if normalized.endswith("/" + name)), "other"
-                )
-                frames.append((label, int(match[2])))
+                if (frame := _startup_frame(line)) is not None:
+                    frames.append(frame)
         return snapshots
 
     def native_state(self):
