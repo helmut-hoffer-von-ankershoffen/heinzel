@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import os
+import shlex
 import subprocess
 import sys
 import zipfile
@@ -350,7 +351,7 @@ def test_recorder_binds_real_git_tree_and_exact_project_version(tmp_path, monkey
     for source in (candidate.WORKFLOW, candidate.RECORDER):
         path = tmp_path / source
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("reviewed fixture source")
+        path.write_text((ROOT / source).read_text())
     (tmp_path / "pyproject.toml").write_text('[project]\nversion = "0.9.16"\n')
     git("add", ".")
     git("commit", "--quiet", "-m", "chore: initialize fixture")
@@ -379,6 +380,32 @@ def test_recorder_binds_real_git_tree_and_exact_project_version(tmp_path, monkey
         "GITHUB_RUN_ATTEMPT": "1",
     }.items():
         monkeypatch.setenv(key, value)
+    # Execute the literal workflow commands with no dependency cache or uv resolution.
+    workflow = (ROOT / candidate.WORKFLOW).read_text()
+    cold = tmp_path / "cold"
+    cold.mkdir()
+    output = tmp_path / "outputs"
+    env = {key: value for key, value in os.environ.items() if key.startswith("GITHUB_")}
+    env.update(
+        PATH=os.environ["PATH"],
+        HOME=str(cold),
+        UV_CACHE_DIR=str(cold / "uv"),
+        UV_FROZEN="1",
+        GITHUB_OUTPUT=str(output),
+        GIT_CONFIG_GLOBAL=os.devnull,
+    )
+    for role in ("select", "record"):
+        line = next(
+            line.strip()[5:]
+            for line in workflow.splitlines()
+            if line.strip().startswith("run: ") and f"release_candidate.py {role} " in line
+        )
+        argv = shlex.split(line.replace('"$GITHUB_OUTPUT"', str(output)))
+        assert argv[:3] == ["python3", "-I", "scripts/release_candidate.py"]
+        subprocess.run(argv, cwd=tmp_path, env=env, check=True, capture_output=True, text=True, timeout=3)
+    assert output.read_text() == "full_release=true\n"
+    assert json.loads((tmp_path / "reports/release-candidate.json").read_text())["tree"] == tree
+    assert not (cold / "uv").exists()
     result = candidate.record(tmp_path)
     assert result["head"] == head
     assert result["base"] == base

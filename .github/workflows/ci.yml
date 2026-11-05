@@ -109,7 +109,7 @@ jobs:
           enable-cache: false
       - id: release
         name: Recognize the owner-repository canonical release candidate
-        run: uv run --no-build --frozen --script scripts/release_candidate.py select --output "$GITHUB_OUTPUT"
+        run: python3 -I scripts/release_candidate.py select --output "$GITHUB_OUTPUT"
       - id: paths
         name: Heinzel Notifier is built always, except on a pull request that leaves its sources alone
         env:
@@ -988,7 +988,7 @@ jobs:
         with:
           enable-cache: false
       - name: Bind the actual tested tree to the exact release head
-        run: uv run --no-build --frozen --script scripts/release_candidate.py record --output reports/release-candidate.json
+        run: python3 -I scripts/release_candidate.py record --output reports/release-candidate.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-candidate-source
