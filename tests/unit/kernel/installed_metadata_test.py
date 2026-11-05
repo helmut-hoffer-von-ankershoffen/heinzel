@@ -360,3 +360,24 @@ def test_local_receipt_reconciliation_requires_owned_safe_stable_source_bytes(tm
         monkeypatch.setattr(metadata.hashlib, "file_digest", change_during_read)
     with pytest.raises(HeinzelError, match="conflict with existing constraints"):
         metadata.validate_constraint_policy(["heinzel"], (plain, f"{plain}#sha256={digest}"))
+
+
+@pytest.mark.parametrize("suffix", ["#", "?", "?#", "?#sha256={digest}"])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_local_receipt_reconciliation_refuses_raw_empty_url_delimiters(tmp_path, suffix, reverse):
+    from packaging.requirements import Requirement
+
+    from heinzel.kernel._installed_metadata import validate_constraint_policy
+
+    wheel = tmp_path / "heinzel-0.4.0-py3-none-any.whl"
+    wheel.write_bytes(b"selected immutable wheel")
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    raw = wheel.as_uri() + suffix.format(digest=digest)
+    malformed = f"heinzel @ {raw}"
+    # packaging preserves these bytes; urlsplit alone hides empty delimiters.
+    assert Requirement(malformed).url == raw
+    constraints = [malformed, f"heinzel @ {wheel.as_uri()}#sha256={digest}"]
+    if reverse:
+        constraints.reverse()
+    with pytest.raises(HeinzelError, match="conflict with existing constraints"):
+        validate_constraint_policy(["heinzel"], tuple(constraints))

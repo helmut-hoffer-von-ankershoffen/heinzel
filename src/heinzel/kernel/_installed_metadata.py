@@ -292,11 +292,14 @@ def _local_wheel_identity(candidate: Requirement) -> tuple[Path, str | None]:
     Raises:
         ValueError: If the URL or hash fragment is ambiguous or unsupported.
     """
+    raw_base, separator, fragment = (candidate.url or "").partition("#")
+    if separator and not fragment:
+        raise ValueError
     source = urlsplit(candidate.url or "")
     if source.scheme != "file" or source.netloc or source.query or not source.path.startswith("/"):
         raise ValueError
     path = Path(unquote(source.path))
-    if ".." in path.parts or path.as_uri() != urlunsplit((source.scheme, source.netloc, source.path, "", "")):
+    if ".." in path.parts or path.as_uri() != raw_base:
         raise ValueError
     name, _, _, _ = parse_wheel_filename(path.name)
     if name != canonicalize_name(candidate.name):
