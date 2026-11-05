@@ -1,4 +1,6 @@
+import hashlib
 import json
+import tomllib
 
 import pytest
 
@@ -216,3 +218,166 @@ def test_preserved_wheel_metadata_requires_an_unambiguous_hash_bound_identity(tm
         distribution(tmp_path, "heinzel", "0.9.14", direct)
     with pytest.raises(HeinzelError, match="cannot be preserved safely"):
         preserved_wheel_constraints(tmp_path, ["heinzel"])
+
+
+@pytest.mark.parametrize("selected", ["index", "plain", "hashed"])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_uv_local_receipt_roundtrip_preserves_the_strongest_wheel_hash(tmp_path, selected, reverse):
+    from heinzel.kernel._installation import _constraints_from_receipt
+    from heinzel.kernel._installed_metadata import validate_constraint_policy
+
+    wheel = tmp_path / "heinzel-0.4.0-py3-none-any.whl"
+    wheel.write_bytes(b"selected immutable wheel")
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    plain = f"heinzel @ {wheel.as_uri()}"
+    hashed = f"{plain}#sha256={digest}"
+    # This is uv 0.13.7's actual local-constraint serialization: the hash is
+    # absent from its path entry, even when supplied on the initial command.
+    receipt = tmp_path / "uv-receipt.toml"
+    receipt.write_text(
+        '[tool]\nrequirements = [{name="heinzel"}]\nconstraints = [{name="heinzel",path='
+        + json.dumps(str(wheel))
+        + "}]\n"
+    )
+    original = receipt.read_bytes()
+    persisted = _constraints_from_receipt(tomllib.loads(receipt.read_text()))
+    assert persisted == [plain]
+    constraints = [*persisted, hashed]
+    if reverse:
+        constraints.reverse()
+    requirement = {"index": "heinzel>=0.4", "plain": plain, "hashed": hashed}[selected]
+    distribution(tmp_path, "heinzel", "0.4.0", {"url": wheel.as_uri(), "archive_info": {"hashes": {"sha256": digest}}})
+    validate_constraint_policy([requirement], tuple(constraints))
+    assert inspect_requirements(tmp_path, [requirement], "0.4.0", constraints=tuple(constraints)) == {
+        "heinzel": "0.4.0"
+    }
+    # A fragmentless entry must never win just because it was encountered first.
+    info = tmp_path / "lib/python3.14/site-packages/heinzel-0.4.0.dist-info/direct_url.json"
+    info.write_text(json.dumps({"url": wheel.as_uri(), "archive_info": {"hashes": {"sha256": "b" * 64}}}))
+    with pytest.raises(HeinzelError, match="metadata does not match"):
+        inspect_requirements(tmp_path, [requirement], "0.4.0", constraints=tuple(constraints))
+    assert receipt.read_bytes() == original
+
+
+@pytest.mark.parametrize("problem", ["missing", "corrupt", "symlink", "directory"])
+def test_local_receipt_reconciliation_requires_the_selected_wheel_bytes(tmp_path, problem):
+    from heinzel.kernel._installed_metadata import validate_constraint_policy
+
+    wheel = tmp_path / "heinzel-0.4.0-py3-none-any.whl"
+    content = b"selected immutable wheel"
+    digest = hashlib.sha256(content).hexdigest()
+    if problem == "corrupt":
+        wheel.write_bytes(b"corrupt wheel")
+    elif problem == "symlink":
+        target = tmp_path / "target.whl"
+        target.write_bytes(content)
+        wheel.symlink_to(target)
+    elif problem == "directory":
+        wheel.mkdir()
+    plain = f"heinzel @ {wheel.as_uri()}"
+    with pytest.raises(HeinzelError, match="conflict with existing constraints"):
+        validate_constraint_policy(["heinzel"], (plain, f"{plain}#sha256={digest}"))
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "path",
+        "hash",
+        "short-hash",
+        "unknown-fragment",
+        "additional-fragment",
+        "duplicate-fragment",
+        "remote",
+        "userinfo",
+        "query",
+        "relative",
+        "traversal",
+        "encoded-separator",
+        "version",
+    ],
+)
+def test_local_receipt_reconciliation_does_not_accept_a_different_or_ambiguous_source(tmp_path, problem):
+    from heinzel.kernel._installed_metadata import validate_constraint_policy
+
+    wheel = tmp_path / "heinzel-0.4.0-py3-none-any.whl"
+    wheel.write_bytes(b"selected immutable wheel")
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    uri = wheel.as_uri()
+    plain, hashed = f"heinzel @ {uri}", f"heinzel @ {uri}#sha256={digest}"
+    requirements = ["heinzel"]
+    constraints = [plain, hashed]
+    fragments = {
+        "short-hash": "sha256=abc",
+        "unknown-fragment": f"other={digest}",
+        "additional-fragment": f"sha256={digest}&other=1",
+        "duplicate-fragment": f"sha256={digest}&sha256={digest}",
+    }
+    if problem in fragments:
+        constraints[1] = f"{plain}#{fragments[problem]}"
+    elif problem == "path":
+        constraints[0] = plain.replace("heinzel-0.4.0", "other/heinzel-0.4.0")
+    elif problem == "hash":
+        constraints.append(f"{plain}#sha256={'b' * 64}")
+    elif problem in {"remote", "userinfo"}:
+        prefix = "https://example.test/" if problem == "remote" else "file://user:secret@host/"
+        constraints = [item.replace("file:///", prefix) for item in constraints]
+    elif problem == "query":
+        constraints = [plain + "?query=1", plain + f"?query=1#sha256={digest}"]
+    elif problem == "relative":
+        constraints = [item.replace(uri, "file:heinzel-0.4.0-py3-none-any.whl") for item in constraints]
+    elif problem == "traversal":
+        constraints = [item.replace(uri, uri.replace("/heinzel-", "/other/../heinzel-")) for item in constraints]
+    elif problem == "encoded-separator":
+        constraints = [item.replace(uri, uri.replace("/heinzel-", "%2Fheinzel-")) for item in constraints]
+    elif problem == "version":
+        constraints.append("heinzel<0.4.0")
+    with pytest.raises(HeinzelError, match=r"conflict|same distribution"):
+        validate_constraint_policy(requirements, tuple(constraints))
+
+
+@pytest.mark.parametrize("problem", ["foreign-owner", "group-writable", "world-writable", "changed-during-read"])
+def test_local_receipt_reconciliation_requires_owned_safe_stable_source_bytes(tmp_path, monkeypatch, problem):
+    from heinzel.kernel import _installed_metadata as metadata
+
+    wheel = tmp_path / "heinzel-0.4.0-py3-none-any.whl"
+    wheel.write_bytes(b"selected immutable wheel")
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    plain = f"heinzel @ {wheel.as_uri()}"
+    if problem == "foreign-owner":
+        owner = metadata.os.getuid()
+        monkeypatch.setattr(metadata.os, "getuid", lambda: owner + 1)
+    elif problem in {"group-writable", "world-writable"}:
+        wheel.chmod(0o664 if problem == "group-writable" else 0o646)
+    else:
+        original = metadata.hashlib.file_digest
+
+        def change_during_read(stream, algorithm):
+            result = original(stream, algorithm)
+            wheel.write_bytes(b"changed during the digest read")
+            return result
+
+        monkeypatch.setattr(metadata.hashlib, "file_digest", change_during_read)
+    with pytest.raises(HeinzelError, match="conflict with existing constraints"):
+        metadata.validate_constraint_policy(["heinzel"], (plain, f"{plain}#sha256={digest}"))
+
+
+@pytest.mark.parametrize("suffix", ["#", "?", "?#", "?#sha256={digest}"])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_local_receipt_reconciliation_refuses_raw_empty_url_delimiters(tmp_path, suffix, reverse):
+    from packaging.requirements import Requirement
+
+    from heinzel.kernel._installed_metadata import validate_constraint_policy
+
+    wheel = tmp_path / "heinzel-0.4.0-py3-none-any.whl"
+    wheel.write_bytes(b"selected immutable wheel")
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    raw = wheel.as_uri() + suffix.format(digest=digest)
+    malformed = f"heinzel @ {raw}"
+    # packaging preserves these bytes; urlsplit alone hides empty delimiters.
+    assert Requirement(malformed).url == raw
+    constraints = [malformed, f"heinzel @ {wheel.as_uri()}#sha256={digest}"]
+    if reverse:
+        constraints.reverse()
+    with pytest.raises(HeinzelError, match="conflict with existing constraints"):
+        validate_constraint_policy(["heinzel"], tuple(constraints))

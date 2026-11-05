@@ -44,8 +44,8 @@ quiescent" and HTTP 403. "Not proven quiescent" is allowed only in the malformed
 Each private case supplies an explicitly fictional name, handle, role, time zone and team through supported `HZ_ORG__*`
 and `HZ_TEAM__NAME` configuration. This is noninteractive setup input; it does not prove interactive onboarding or
 discover a real person's identity. Installed foreground starts read the private prefix's Core distribution metadata,
-require the case's expected version, and use `hz ui` for 0.9.8 through 0.9.15 or `hz ui serve` for 0.9.16 and 0.9.17. Unknown
-versions fail before foreground startup; command selection never substitutes for the installed-byte and runtime checks.
+require the case's expected version, and use `hz ui` for 0.9.8 through 0.9.15 or `hz ui serve` for the explicit
+0.9.16, 0.9.17, 0.9.18 and 0.9.19 contracts. Unknown versions fail before foreground startup; command selection never substitutes for the installed-byte and runtime checks.
 
 Preflight runs before any case and executes nothing: PyPI latest and its wheel digest, the governed latest app tag,
 `standard.json`, every release asset's hash, Core wheel equal on both sides, live `install.sh` equal to the release
@@ -90,3 +90,50 @@ records the listener on 8737, the real tool receipt, shim and daemon units befor
 loading. This directory is excluded from ruff (`pyproject.toml`) because the hash pins forbid reformatting them, and the
 harness is a self-contained, stdlib-only program that runs under `python3 -I`; `tests/unit/acceptance_test.py` covers its
 verdict logic.
+
+## Isolated sharding study
+
+The manual `acceptance-sharded.yml` workflow is an experiment, separate from release acceptance. It does not run on
+pull requests, publish packages, or produce the production `acceptance-result-<OS>` artifacts. The existing serial
+workflow and release gates remain authoritative until independently reviewed source and observed comparisons qualify
+an integration.
+
+Four fresh hosted VMs per OS execute disjoint fixed groups: public commands (1–5, 13), update (6, 10), plugin CLI and
+retention (7, 9), browser and explicit limits (8, 11, 12). Every case creates its own complete `Case`, including private
+HOME, managed interpreter, caches and service-manager spies; `Case` copies its context, so case-local mutations do not
+feed another case. Preflight is repeated on every VM and must agree exactly. Separate VMs also isolate the OS user
+service-manager domain; parallel processes with only separate HOME directories would not suffice.
+
+`--shard` requires explicit versions plus pinned Core and profile hashes and forbids arbitrary case or diagnostic
+selection. Individual shards remain partial verdicts. `reduce.py` requires all four shards, every one of the 13 cases
+exactly once, matching reviewed harness/vendor identities, matching release inputs, unchanged isolation, and the same
+repository, source SHA, workflow, run ID and run attempt. It retains every raw receipt and recomputes the full verdict;
+failed cases remain failed, candidate evidence remains candidate evidence, and missing, duplicate or mixed evidence
+cannot become acceptance. The reduction uses schema `acceptance-sharding-study/v1`, mode `acceptance_sharding_study`,
+`public_path_proof: false` and a `STUDY_*` verdict. Its `combined_case_verdict` describes the underlying case evidence
+only; it is never a production receipt. The study artifacts have the distinct `acceptance-study-` prefix.
+
+Raw in-progress receipts under the private proof roots are uploaded separately with `always()` under
+`acceptance-study-partial-`; the reducer never downloads this namespace. Interrupted/incomplete evidence remains
+diagnostic and fails reduction. Upload after step cancellation is best effort: runner loss or exhaustion of the whole
+job deadline can prevent any final upload. Shards have a 15-minute harness step cap and a 20-minute whole-job cap,
+leaving five minutes for setup and evidence handling. The harness already has a 600-second readiness budget; the
+explicit larger study cap accommodates it without changing any internal case deadline. Reducers have a ten-minute
+job cap. Production acceptance retains its existing limits. A cap expiry is a failed study, never permission to skip
+cases. These are bounded first observations, with no automatic retry.
+
+The partition groups related behavior; it has not been balanced using measurements. The first study must measure
+per-shard preflight and case times before claiming it shortens the critical path. The reduction exposes each shard's
+start, finish and preflight duration, plus harness-only wall bounds; it never labels one shard's duration as an
+aggregate. Queue time and native prerequisites remain outside these harness-only bounds and must be accounted for
+from complete workflow/job timestamps. Slow cold OS package downloads are an independent possible bottleneck;
+sharding adds cold hosts and does not fix mirror latency or justify increasing a prerequisite's deadline.
+
+One frozen study dispatch allocates four ARM Mac and four Linux execution jobs, plus two lightweight Linux reducers.
+Dispatch only after the preceding release no longer needs critical runner capacity; stop after these first attempts,
+with no reruns. Preserve timeouts and inconclusive observations as well as failures. Keep every original attempt and
+artifact. Compare workflow creation, each job's queue/start/end,
+preflight and case durations against the serial control; report preparation, PR gates, candidate validation, publication,
+acceptance and automatic rollout separately. This experiment has no observed latency result yet and establishes no
+release-time claim. Three consecutive successful controlled release trials are a measurement convention for assessing
+reliability, not a replacement for any release gate.
