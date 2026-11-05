@@ -61,7 +61,9 @@ export async function watchDisclosure(summary, label) {
             }
           })(),
         ].slice(0, 8),
-        pointHits: point ? document.elementsFromPoint(point.x, point.y).slice(0, 6).map(identity) : [],
+        pointHits: point && typeof document.elementsFromPoint === "function"
+          ? document.elementsFromPoint(point.x, point.y).slice(0, 6).map(identity)
+          : [],
         original: identity(original),
         originalConnected: original.isConnected,
         current: identity(current),

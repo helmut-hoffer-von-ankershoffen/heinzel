@@ -14,6 +14,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete document.elementFromPoint;
+  delete document.elementsFromPoint;
   window.__hzDisclosureDiagnostics?.stop();
   delete window.__hzDisclosureDiagnostics;
   document.body.replaceChildren();
@@ -45,6 +46,7 @@ test("a click elsewhere records its target without changing the closed disclosur
   const [{ records }] = await disclosureDiagnostics(page);
   const click = records.find((record) => record.kind === "click");
   assert.equal(click.target.tag, "BUTTON");
+  assert.deepEqual(click.pointHits, []);
   assert.equal(click.open, false);
   assert.equal(click.originalConnected, true);
   assert.equal(click.current.id, click.original.id);
@@ -78,4 +80,17 @@ test("opening and closing in one task retains the open mutation even when the fi
     [false, true],
   );
   assert.equal(details.open, false);
+});
+
+
+test("available pointer hit testing retains only bounded node identities", async () => {
+  document.body.innerHTML = '<details><summary class="Private fixture class">Private fixture text</summary></details>';
+  document.elementsFromPoint = () => Array(12).fill(document.querySelector("summary"));
+  await watchDisclosure(summaryLocator(), "reply-activity");
+  document.body.click();
+  const [{ records }] = await disclosureDiagnostics(page);
+  const click = records.find((record) => record.kind === "click");
+  assert.equal(click.pointHits.length, 6);
+  assert.ok(click.pointHits.every((hit) => hit.tag === "SUMMARY"));
+  assert.doesNotMatch(JSON.stringify(records), /Private fixture/);
 });
