@@ -344,13 +344,18 @@ def verify_provenance(proofs: list, manifest: dict, name: str, digest: str) -> N
     invocation = f"https://github.com/{REPOSITORY}/actions/runs/{producer['run_id']}/attempts/{producer['attempt']}"
     for proof in proofs:
         result = proof.get("verificationResult", {})
+        certificate = result.get("signature", {}).get("certificate", {})
         statement = result.get("statement", {})
         predicate = statement.get("predicate", {})
         definition = predicate.get("buildDefinition", {})
         workflow = definition.get("externalParameters", {}).get("workflow", {})
         if (
             statement.get("predicateType") == "https://slsa.dev/provenance/v1"
-            and result.get("signature", {}).get("certificate")
+            and certificate.get("runInvocationURI") == invocation
+            and certificate.get("buildConfigURI")
+            == f"https://github.com/{REPOSITORY}/{producer['workflow']}@{producer['source_ref']}"
+            and certificate.get("buildConfigDigest") == manifest["commit"]
+            and certificate.get("runnerEnvironment") == "github-hosted"
             and result.get("verifiedTimestamps")
             and predicate.get("runDetails", {}).get("metadata", {}).get("invocationId") == invocation
             and workflow

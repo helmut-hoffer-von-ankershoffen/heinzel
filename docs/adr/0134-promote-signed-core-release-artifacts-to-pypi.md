@@ -31,7 +31,9 @@ complete core payloads. It signs the distribution digests and a manifest binding
 source ref, run ID and attempt. PyPI preparation requires a genuine published final release and a completed successful
 official producer on protected main. GitHub cryptographic attestation verification pins the repository, reusable
 producer workflow, signer/source digest, source ref and hosted runners; verified SLSA statements also bind the exact
-invocation and each subject. Downloaded asset URLs, identities and SHA256 values must agree with release metadata and
+invocation and each subject. The verified certificate independently binds the exact producer run/attempt, caller
+workflow/ref/source digest and hosted runner; a matching workflow-controlled predicate cannot substitute them.
+Downloaded asset URLs, identities and SHA256 values must agree with release metadata and
 the signed manifest, and the existing distribution checks run on the downloaded bytes.
 
 The tag-only manual dispatcher retains required source confidentiality and runtime license checks. Its isolated

@@ -360,7 +360,14 @@ def promotion(artifacts, monkeypatch):
         return [
             {
                 "verificationResult": {
-                    "signature": {"certificate": {"trusted": True}},
+                    "signature": {
+                        "certificate": {
+                            "runInvocationURI": f"https://github.com/{release.REPOSITORY}/actions/runs/123/attempts/1",
+                            "buildConfigURI": f"https://github.com/{release.REPOSITORY}/{producer['workflow']}@{producer['source_ref']}",
+                            "buildConfigDigest": COMMIT,
+                            "runnerEnvironment": "github-hosted",
+                        }
+                    },
                     "verifiedTimestamps": ["verified"],
                     "statement": {
                         "predicateType": "https://slsa.dev/provenance/v1",
@@ -620,4 +627,33 @@ def test_promotion_rechecks_even_signed_payload_completeness(promotion):
     for asset in published["assets"]:
         asset["digest"] = "sha256:" + hashlib.sha256((directory / asset["name"]).read_bytes()).hexdigest()
     with pytest.raises(release.ReleaseError, match="lacks"):
+        release.promote(directory, "v1.2.3")
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("runInvocationURI", f"https://github.com/{release.REPOSITORY}/actions/runs/124/attempts/1"),
+        ("runInvocationURI", f"https://github.com/{release.REPOSITORY}/actions/runs/123/attempts/2"),
+        ("runInvocationURI", None),
+        ("buildConfigURI", f"https://github.com/{release.REPOSITORY}/.github/workflows/wrong.yml@refs/heads/main"),
+        (
+            "buildConfigURI",
+            f"https://github.com/{release.REPOSITORY}/.github/workflows/release-tag.yml@refs/heads/other",
+        ),
+        ("buildConfigDigest", "b" * 40),
+        ("runnerEnvironment", "self-hosted"),
+    ],
+)
+def test_matching_predicate_cannot_substitute_a_different_verified_certificate(promotion, monkeypatch, key, value):
+    directory, _, _, _, _, _, gh = promotion
+
+    def substituted(*args):
+        proof = gh(*args)
+        if args[0] == "attestation":
+            proof[0]["verificationResult"]["signature"]["certificate"][key] = value
+        return proof
+
+    monkeypatch.setattr(release, "_gh", substituted)
+    with pytest.raises(release.ReleaseError, match="provenance"):
         release.promote(directory, "v1.2.3")
