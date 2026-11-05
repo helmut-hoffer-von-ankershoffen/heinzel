@@ -21,6 +21,7 @@ from heinzel import Config, Settings
 from heinzel.heads import install
 from heinzel.kernel import ProcessOutcome
 from heinzel.modules.system.daemon import _service as daemon
+from tests.e2e._candidate_wheel import CANDIDATE_VERSION, candidate_wheel
 from tests.e2e.tool_install_test import REPO, Sandbox
 
 pytestmark = [
@@ -63,9 +64,9 @@ def sandbox(tmp_path, fixture_managed_python):
 
 
 @pytest.fixture(scope="module")
-def candidate_016(tmp_path_factory):
-    """Version a copied source fixture only; do not alter or claim a released016 artifact."""
-    root = tmp_path_factory.mktemp("legacy-candidate-016")
+def current_candidate(tmp_path_factory):
+    """Build exact current source metadata; published014/015 bytes stay immutable."""
+    root = tmp_path_factory.mktemp("legacy-candidate-current")
     for name in (
         "pyproject.toml",
         "uv.lock",
@@ -85,15 +86,10 @@ def candidate_016(tmp_path_factory):
             ignore=shutil.ignore_patterns("node_modules", "__pycache__", "test-results", "work", ".vite"),
         )
     subprocess.run(["git", "init", "--quiet", root], check=True, timeout=15)
-    for name in ("pyproject.toml", "uv.lock"):
-        path = root / name
-        text = path.read_text()
-        old = 'version = "0.9.15"' if name == "pyproject.toml" else 'name = "heinzel"\nversion = "0.9.15"'
-        path.write_text(text.replace(old, old.replace("0.9.15", "0.9.16"), 1))
     subprocess.run(
         [sys.executable, root / "scripts/build.py", "--wheel", "--out-dir", root / "dist"], check=True, timeout=300
     )
-    return root / "dist/heinzel-0.9.16-py3-none-any.whl"
+    return candidate_wheel(root)
 
 
 @pytest.fixture(scope="module")
@@ -228,7 +224,7 @@ def handover_evidence(settings, root):
             {
                 record.get("sdk")
                 for record in records
-                if isinstance(record.get("sdk"), str) and record.get("sdk") in {"0.9.14", "0.9.15", "0.9.16"}
+                if isinstance(record.get("sdk"), str) and record.get("sdk") in {"0.9.14", "0.9.15", CANDIDATE_VERSION}
             }
         )
         facts["stack_categories"] = sorted(
@@ -297,8 +293,8 @@ def create_completed_history(run, settings, selected, published_015):
 
 @pytest.mark.long_running
 @pytest.mark.timeout(300)
-def test_published014_auto015_handover_then_explicit_retirement_and_real015_updater_to016(
-    sandbox, candidate_016, published_014, published_015, monkeypatch
+def test_published014_auto015_handover_then_explicit_retirement_and_real015_updater_to_current(
+    sandbox, current_candidate, published_014, published_015, monkeypatch
 ):
     selected = Sandbox(sandbox.root, sandbox.python_directory, sandbox.python, own_home=True)
     selected.home.mkdir(mode=0o700)
@@ -330,7 +326,7 @@ def test_published014_auto015_handover_then_explicit_retirement_and_real015_upda
                 "run",
                 "--no-project",
                 "--with",
-                str(candidate_016),
+                str(current_candidate),
                 "--with",
                 str(fixture),
                 "python",
@@ -380,8 +376,8 @@ def test_published014_auto015_handover_then_explicit_retirement_and_real015_upda
     assert result["status"] == "retired"
     assert not marker.exists()
     assert not (settings.state_dir / "daemon/standard-install-pending.json").exists()
-    run("system", "update", "--source", str(candidate_016))  # Actual published015 updater, not direct uv swapping.
-    assert "0.9.16" in run("--version")
+    run("system", "update", "--source", str(current_candidate))  # Actual published015 updater, not direct uv swapping.
+    assert CANDIDATE_VERSION in run("--version")
     run("system", "daemon", "install", "--json")
     status = json.loads(run("system", "daemon", "status", "--json"))
     assert status["installed"]
@@ -392,7 +388,7 @@ def test_published014_auto015_handover_then_explicit_retirement_and_real015_upda
     replay = json.loads(run("retire", "--confirm", plan["digest"], candidate=True))
     assert replay["status"] == "retired"
     assert marker.read_bytes() == new_marker
-    with zipfile.ZipFile(candidate_016) as archive:
+    with zipfile.ZipFile(current_candidate) as archive:
         installed = next(
             (selected.root / "tools/heinzel/lib").glob(
                 "python*/site-packages/heinzel/modules/system/daemon/_legacy_retirement.py"
