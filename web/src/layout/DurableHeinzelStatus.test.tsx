@@ -38,7 +38,7 @@ describe("The durable Heinzel footer control", () => {
     const created = {
       session_id: sessionId,
       heinzel_id: sessionId,
-      name: "Personal helper",
+      name: "Personal Heinzel",
       schedule: null,
       messages: [],
     };
@@ -54,11 +54,11 @@ describe("The durable Heinzel footer control", () => {
     renderAt("/doctor");
     fireEvent.click(await screen.findByRole("button", { name: "0 Heinzelmännchen, off" }));
     fireEvent.click(await screen.findByRole("button", { name: "Create a personal Heinzel" }));
-    expect(await screen.findByRole("heading", { name: "Personal helper" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Personal Heinzel" })).toBeInTheDocument();
     const request = calls.find((item) => new URL(item.url).pathname.endsWith("/new-chat"));
     expect(request).toBeDefined();
     if (!request) throw new Error("The personal Heinzel creation request was not sent");
-    expect(await request.json()).toMatchObject({ name: "Personal helper" });
+    expect(await request.json()).toMatchObject({ name: "Personal Heinzel" });
   });
 
   it("shows a loading placeholder without implying a count before the persisted list arrives", async () => {

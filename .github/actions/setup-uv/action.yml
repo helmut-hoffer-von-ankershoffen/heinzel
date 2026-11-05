@@ -41,3 +41,39 @@ runs:
         save-cache: ${{ inputs.save-cache }}
         cache-dependency-glob: ${{ inputs.cache-dependency-glob }}
         python-version: ${{ inputs.python-version }}
+    - name: Record Node filesystem identity without starting it
+      shell: bash
+      run: |
+        # Do not execute, hash or read the executable: preserve first-start evidence.
+        image=${ImageOS:-unknown}
+        image_version=${ImageVersion:-unknown}
+        printf 'node_identity phase=bootstrap runtime_version=unobserved image=%q image_version=%q\n' "${image:0:128}" "${image_version:0:128}"
+        node_path=$(command -v node || true)
+        printf 'node_identity lexical=%q\n' "${node_path:0:1024}"
+        if [ -z "$node_path" ]; then
+          echo 'node_identity state=missing'
+          exit 0
+        fi
+        canonical=$node_path
+        for ((link=0; link<16; link++)); do
+          directory=$(cd -P -- "$(dirname -- "$canonical")" && pwd) || break
+          canonical=$directory/$(basename -- "$canonical")
+          [ -L "$canonical" ] || break
+          target=$(readlink -- "$canonical") || break
+          if [[ "$target" = /* ]]; then canonical=$target; else canonical=$directory/$target; fi
+        done
+        kind=other
+        if [ -L "$canonical" ]; then kind=unresolved-symlink;
+        elif [ -f "$canonical" ] && [ -x "$canonical" ]; then kind=regular-executable;
+        elif [ -f "$canonical" ]; then kind=regular-nonexecutable; fi
+        printf 'node_identity canonical=%q filesystem_type=%q\n' "${canonical:0:1024}" "$kind"
+        # This separate header describes an installation, not a verified runtime version.
+        header=$(dirname -- "$(dirname -- "$canonical")")/include/node/node_version.h
+        if [ -f "$header" ]; then
+          printf 'node_identity static_header=%q\n' "${header:0:1024}"
+          if ! head -c 16384 "$header" | awk 'NR <= 512 && found < 3 && /^#define NODE_(MAJOR|MINOR|PATCH)_VERSION [0-9][0-9]?[0-9]?$/ {print; found++}'; then
+            echo 'node_identity static_header=unreadable'
+          fi
+        else
+          echo 'node_identity static_header=unavailable'
+        fi

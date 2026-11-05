@@ -23,7 +23,7 @@ pytestmark = pytest.mark.unit
 REPO = Path(__file__).resolve().parents[2]
 
 
-def test_browser_service_journey_has_one_browser_shard_and_keeps_cli_service_tests_separate():
+def test_installed_browser_service_journey_keeps_cold_starts_out_of_browser_shards():
     recipe = "show-browser-allocation:\n\t@printf '%s\\n' '$(E2E_WEB)' '$(E2E_WEB_1)' '$(E2E_WEB_2)'"
     result = subprocess.run(
         ["make", "--no-print-directory", "-f", "Makefile", "-f", "-", "show-browser-allocation"],
@@ -36,11 +36,14 @@ def test_browser_service_journey_has_one_browser_shard_and_keeps_cli_service_tes
     )
     browser, first, second = [set(line.split()) for line in result.stdout.splitlines()]
     journey = "tests/e2e/ui_service_browser_test.py"
-    assert journey in browser
-    assert (journey in first) != (journey in second)
+    assert journey not in browser
+    assert journey not in first | second
     assert "tests/e2e/ui_service_test.py" not in browser
     assert first.isdisjoint(second)
     assert first | second == browser
+    # The mounted UI sweep already contains roughly half the observed browser phase time.
+    assert first == {"tests/e2e/web_ui_test.py"}
+    assert second == browser - first
 
 
 _SANDBOX_SCRIPT = REPO / "desktop" / "ci" / "restore_linux_sandbox.py"
@@ -56,6 +59,10 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
+        "sudo sed -i 's|http://azure\\.archive\\.ubuntu\\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "
+        "/etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources": (
+            "selects the same signed primary Ubuntu archive as Docs before browser dependency installation"
+        ),
         "uv run --no-build --script scripts/main_batch.py": "read-only bounded admission of an explicit main batch",
         "echo 'The validated aggregate base": "records that the final run consumed the aggregate base",
         'echo "Full CI is recorded': "links the intermediate admission to its exact final run",
@@ -81,6 +88,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ),
     },
     "docs.yml": {
+        "sudo sed -i ": "selects the primary signed Ubuntu archive before browser dependency installation",
         "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
         "uv run --quiet --frozen --no-build --group docs playwright install-deps": (
             "Chromium's system libraries, from the runner"

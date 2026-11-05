@@ -11,7 +11,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from heinzel import CallIdentity, CurrentUser, HeinzelError, Module, Principal
 from heinzel.kernel._exposure import exposed
 from heinzel.modules.heinzel._engine import TurnLimits
-from heinzel.modules.heinzel._host_tools import HostToolCatalog, _schema
+from heinzel.modules.heinzel._host_tools import HostToolCatalog, OperationFailedError, _schema
 from heinzel.modules.heinzel._interactive_turn import InteractiveTurn
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -20,6 +20,56 @@ from heinzel.modules.heinzel._session_repository import PersonalSessionRepositor
 from heinzel.modules.heinzel._tool_argument_policy import ExactArgumentPolicy
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize(
+    ("payload", "accepted"),
+    [(["x"] * 3999, True), (["x"] * 4000, False), (["é" * 7998], True), (["é" * 7999], False)],
+)
+def test_result_keeps_every_value_within_the_16000_utf8_byte_limit(make_kernel, tmp_path, payload, accepted):
+    module = Module("fixture", "Bounded result")
+
+    @module.operation()
+    def inspect() -> list[str]:
+        """Return a bounded local fixture value."""
+        return payload
+
+    kernel = make_kernel(fixture=module)
+    current = CurrentUser(tmp_path / "identity")
+    kernel.bind(CurrentUser, current)
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1))
+        session = crud.new_chat("bounded").session_id
+        catalog = HostToolCatalog(
+            kernel, current, crud, session, frozenset({"fixture:inspect"}), verified_code=lambda _: "a" * 64
+        )
+        descriptor = catalog.preview()[0]
+        grant = ModelGrant(
+            request_id="grant",
+            revision=1,
+            access="pydantic-ai",
+            model="openai:model",
+            requests=1,
+            total_tokens=1000,
+            output_tokens=100,
+            timeout_seconds=10,
+            message_cap_usd="1",
+            session_cap_usd="2",
+            owner_cap_usd="3",
+            allowed_tools={descriptor.identity: descriptor.binding_sha256},
+        )
+        grants = ModelGrants(crud)
+        grants.propose(session, grant)
+        grants.approve(session, "grant", grants.issue(session, "grant", "fixture-human-review"))
+        with repo.main_writer(session) as writer:
+            if accepted:
+                result = catalog.invoke(grant, "fixture:inspect", {}, turn_writer=writer)
+                assert len(result.encode("utf-8")) <= 16_000
+                assert json.loads(result) == payload
+            else:
+                with pytest.raises(OperationFailedError, match="did not produce a usable result"):
+                    catalog.invoke(grant, "fixture:inspect", {}, turn_writer=writer)
 
 
 def test_granted_read_fences_code_owner_turn_and_model_arguments(make_kernel, tmp_path):  # noqa: PLR0915

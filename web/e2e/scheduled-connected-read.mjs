@@ -35,6 +35,52 @@ if (lateActivity) {
     };
   });
 }
+// Only fixed stages, schema predicates and status categories: never request IDs, tokens or provider payloads.
+const proposalTrace = [];
+const proposalPaths = new Map([
+  ["/api/heinzel/propose-rolling-connected-read", "rolling"],
+  ["/api/heinzel/propose-connected-read", "fixed"],
+  ["/api/heinzel/prepare-suggested-source", "suggested"],
+]);
+const traceProposal = (event) => {
+  proposalTrace.push(event);
+  if (proposalTrace.length > 16) proposalTrace.shift();
+};
+page.on("request", (request) => {
+  const stage = proposalPaths.get(new URL(request.url()).pathname);
+  if (!stage || request.method() !== "POST") return;
+  let body;
+  try {
+    body = request.postDataJSON();
+  } catch {
+    /* Record no arbitrary parse output. */
+  }
+  traceProposal({
+    kind: "request",
+    stage,
+    windowPolicy: !!body?.window_policy,
+    fixedWindow: Object.hasOwn(body?.fixed_arguments ?? {}, "window"),
+    validLookback: Number.isInteger(body?.window_policy?.lookback_seconds),
+    validLookahead: Number.isInteger(body?.window_policy?.lookahead_seconds),
+    expectedTimezone: body?.window_policy?.timezone === "Europe/Berlin",
+  });
+});
+page.on("response", async (response) => {
+  const stage = proposalPaths.get(new URL(response.url()).pathname);
+  if (!stage || response.request().method() !== "POST") return;
+  let category = response.ok() ? "success" : "http-error";
+  if (!response.ok()) {
+    try {
+      const body = await response.json();
+      if (typeof body?.error === "string" && body.error.includes("This session has another writer"))
+        category = "busy-writer";
+      else if (Array.isArray(body?.detail)) category = "schema-validation";
+    } catch {
+      category = "unreadable-error";
+    }
+  }
+  traceProposal({ kind: "response", stage, status: response.status(), category });
+});
 const revocations = [];
 let latePage;
 const revocationPath = "/api/heinzel/revoke-connected-read";
@@ -54,10 +100,10 @@ try {
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
   if (!(await page.getByLabel("Your message").isVisible())) await revealChat(page);
   await page.getByLabel("Your message").fill("Read my selected source.");
-  await page.getByRole("button", { name: "Create a helper and take this message" }).click();
+  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
   await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });
-  const terms = page.getByRole("region", { name: "Proposed agent terms" });
+  const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
@@ -88,9 +134,9 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
-  await watchDisclosure(schedule.getByText("Recurring agent turns", { exact: true }), "recurring-turns");
-  await schedule.getByText("Recurring agent turns", { exact: true }).click();
+  const schedule = page.locator("details").filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) });
+  await watchDisclosure(schedule.getByText("Recurring Heinzel turns", { exact: true }), "recurring-turns");
+  await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   await schedule.getByText(/Suggested interval: every 7 minutes/).waitFor();
   assert.equal(await schedule.getByLabel("Every (minutes)").inputValue(), "5");
   await schedule.getByRole("button", { name: "Use interval in preview" }).click();
@@ -102,7 +148,7 @@ try {
   await schedule.getByRole("button", { name: "Propose recurring turns" }).click();
   await schedule.getByRole("button", { name: "Review this schedule" }).click();
   await schedule.getByText("Provider-reported candidate read: Candidate metadata may be filtered locally.").waitFor();
-  const card = schedule.getByRole("heading", { name: "Review agent schedule" }).locator("../..");
+  const card = schedule.getByRole("heading", { name: "Review Heinzel schedule" }).locator("../..");
   assert.match(await card.innerText(), /420/);
   assert.match(await card.innerText(), /fixture-account/);
   assert.match(await card.innerText(), /fixture-read/);
@@ -196,8 +242,8 @@ try {
   assert.deepEqual(saved, { status: 200, grant: "revoked" });
   await page.reload();
   await revealChat(page);
-  await watchDisclosure(schedule.getByText("Recurring agent turns", { exact: true }), "recurring-turns-after-reload");
-  await schedule.getByText("Recurring agent turns", { exact: true }).click();
+  await watchDisclosure(schedule.getByText("Recurring Heinzel turns", { exact: true }), "recurring-turns-after-reload");
+  await schedule.getByText("Recurring Heinzel turns", { exact: true }).click();
   await schedule.getByText(/stale · contract revision/).waitFor();
   assert.equal(await panel.evaluate((node) => node.scrollWidth > node.clientWidth), false);
   console.log(JSON.stringify({ accepted: true }));
@@ -210,7 +256,7 @@ try {
   const layout = await page
     .evaluate(() => {
       const summary = [...document.querySelectorAll("summary")].find(
-        (node) => node.textContent === "Recurring agent turns",
+        (node) => node.textContent === "Recurring Heinzel turns",
       );
       const ancestors = [];
       for (let node = summary; node; node = node.parentElement) {
@@ -238,8 +284,30 @@ try {
     })
     .catch(() => null);
   await page.screenshot({ path: join(process.argv[4], `scheduled-${process.argv[3]}-failure.png`) }).catch(() => {});
+  const form = await page
+    .getByRole("region", { name: "Connected read review" })
+    .evaluate((node) => {
+      const inputs = [...node.querySelectorAll("input")];
+      const textarea = node.querySelector("textarea");
+      let fixedObject = false;
+      try {
+        const value = JSON.parse(textarea?.value ?? "");
+        fixedObject = !!value && typeof value === "object" && !Array.isArray(value);
+      } catch {
+        /* Fixed predicate only. */
+      }
+      return {
+        rolling: inputs.some((input) => input.type === "checkbox" && input.checked),
+        numericTerms: inputs
+          .filter((input) => input.type === "number")
+          .map((input) => input.value !== "" && Number.isInteger(Number(input.value))),
+        expectedTimezone: inputs.some((input) => input.value === "Europe/Berlin"),
+        fixedObject,
+      };
+    })
+    .catch(() => null);
   const disclosures = await disclosureDiagnostics(page);
-  const diagnostic = `${message}\n${visible}\nLayout: ${JSON.stringify(layout)}\nDisclosure trace: ${JSON.stringify(disclosures)}\nRevocation trace: ${JSON.stringify(revocations.slice(-12))}`;
+  const diagnostic = `${message}\n${visible}\nLayout: ${JSON.stringify(layout)}\nDisclosure trace: ${JSON.stringify(disclosures)}\nRevocation trace: ${JSON.stringify(revocations.slice(-12))}\nProposal trace: ${JSON.stringify(proposalTrace)}\nProposal form: ${JSON.stringify(form)}`;
   process.stderr.write(`${diagnostic.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
   process.exitCode = 1;
 } finally {

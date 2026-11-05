@@ -1,8 +1,41 @@
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { openChatJourney, revealChat } from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 
 const { browser, context, page, token, url } = await openChatJourney();
+const latePage = process.argv[4] === "late-page";
+let replyDisclosureTrace = [];
+if (latePage) {
+  // Commit page DOM growth between press/release, while its resize
+  // notification arrives after release. Keep actual browser layout, response data and physical pointer events.
+  await page.addInitScript(() => {
+    const NativeObserver = window.ResizeObserver;
+    const pending = new Map();
+    window.__hzHoldPageResize = false;
+    window.__hzReleasePageResize = () => {
+      window.__hzHoldPageResize = false;
+      for (const [observer, deliver] of pending) {
+        pending.delete(observer);
+        deliver();
+      }
+    };
+    window.ResizeObserver = class extends NativeObserver {
+      constructor(callback) {
+        super((entries, observer) => {
+          if (window.__hzHoldPageResize && entries.some(({ target }) => target.querySelector("#content")))
+            pending.set(observer, () => callback(entries, observer));
+          else callback(entries, observer);
+        });
+      }
+      disconnect() {
+        pending.delete(this);
+        super.disconnect();
+      }
+    };
+  });
+}
 const trace = [];
 const watched = new Set([
   "/api/heinzel/chat",
@@ -30,7 +63,7 @@ try {
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
   const text = "Prepare a private draft and suggest an identity.";
   await page.getByLabel("Your message").fill(text);
-  await page.getByRole("button", { name: "Create a helper and take this message" }).click();
+  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();
   assert.equal(await message.inputValue(), text);
@@ -38,22 +71,99 @@ try {
   await page.getByText("I prepared proposals for your review.").waitFor({ timeout: 30000 });
   const replyActivity = page.getByText("Tool activity for this reply · 4 events");
   await watchDisclosure(replyActivity, "reply-activity");
-  await replyActivity.click();
+  const fractionalScroll = process.argv[6] === "fractional";
+  const partialScroll = process.argv[6] === "partial";
+  if (fractionalScroll || partialScroll) {
+    const clipping = partialScroll ? 5 : 0.25;
+    // Queue native animation at the exact fractional or partially clipped press.
+    // The separate smooth cases retain their already-running-at-down pressure.
+    await replyActivity.hover();
+    await replyActivity.evaluate((node, clipping) => {
+      const scroller = node.closest(".workspace-scroll");
+      const contentBottom = () => scroller.getBoundingClientRect().top + scroller.clientTop + scroller.clientHeight;
+      const desiredBottom = contentBottom() + clipping;
+      scroller.scrollTo({
+        top: scroller.scrollTop - (desiredBottom - node.getBoundingClientRect().bottom),
+        behavior: "instant",
+      });
+      node.style.translate = `0 ${desiredBottom - node.getBoundingClientRect().bottom}px`;
+      window.addEventListener(
+        "pointerdown",
+        (event) => {
+          const origin = scroller.scrollTop;
+          const press = {
+            trusted: event.isTrusted,
+            primary: event.isPrimary && event.button === 0,
+            summary: event.target === node && node.tagName === "SUMMARY",
+            clipping: node.getBoundingClientRect().bottom - contentBottom(),
+            origin,
+            destination: origin - 120,
+            documentObserved: false,
+          };
+          window.__hzFractionalPress = press;
+          // Window capture precedes the product's document capture handler. Observe
+          // propagation without intercepting it; both listeners remove themselves.
+          document.addEventListener(
+            "pointerdown",
+            () => {
+              press.documentObserved = true;
+            },
+            { capture: true, passive: true, once: true },
+          );
+          scroller.scrollTo({ top: press.destination, behavior: "smooth" });
+        },
+        { capture: true, passive: true, once: true },
+      );
+    }, clipping);
+    const point = await replyActivity.boundingBox();
+    assert.ok(point);
+    await page.mouse.move(point.x + point.width / 2, point.y + point.height / 2);
+    await page.mouse.down();
+    const press = await page.evaluate(() => window.__hzFractionalPress);
+    assert.equal(press?.trusted, true, "fractional pressure must originate from a trusted physical press");
+    assert.equal(press.primary, true, "fractional pressure must use the primary pointer and button");
+    assert.equal(press.summary, true, "fractional pressure must press the current native summary");
+    assert.equal(press.clipping, clipping, "the pressed control must meet the exact requested workspace clipping");
+    assert.ok(press.origin > 120, "the controlled press must have real workspace scroll distance");
+    assert.equal(press.origin - press.destination, 120);
+    assert.equal(press.documentObserved, true, "the queued native request must precede document capture");
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    // Keep the same native hold and release as the already-running pressure cases.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await page.mouse.up();
+  } else if (process.argv[6] === "smooth") {
+    await replyActivity.hover();
+    const box = await replyActivity.boundingBox();
+    assert.ok(box);
+    const scrollOrigin = await replyActivity.evaluate((node) => {
+      const scroller = node.closest(".workspace-scroll");
+      const before = scroller.scrollTop;
+      scroller.scrollTo({ top: before - 120, behavior: "smooth" });
+      return before;
+    });
+    assert.ok(scrollOrigin > 120, "the controlled press must have real workspace scroll distance");
+    await page.mouse.down();
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    // Keep the real press held beyond the observed hosted 184ms interval; no retargeting or click replay.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await page.mouse.up();
+  } else await replyActivity.click();
   const replyEvents = replyActivity.locator("..");
   await replyEvents.getByText("agent:propose · requested").waitFor();
   await replyEvents.getByText("agent:propose · completed").waitFor();
   await replyEvents.getByText("profile:propose · requested").waitFor();
   await replyEvents.getByText("profile:propose · completed").waitFor();
+  replyDisclosureTrace = await disclosureDiagnostics(page);
   const overflow = await replyEvents.evaluate((node) => node.scrollWidth > node.clientWidth);
   assert.equal(overflow, false, "recorded activity must fit the phone viewport");
-  const terms = page.getByRole("region", { name: "Proposed agent terms" });
+  const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await watchDisclosure(terms.getByText("Review proposed terms"), "proposed-terms");
   await terms.getByText("Review proposed terms").click();
   await terms.getByText("Prepare a private draft from my context.").waitFor();
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
-  const schedules = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
+  const schedules = page.locator("details").filter({ has: page.getByText("Recurring Heinzel turns", { exact: true }) });
   await watchDisclosure(schedules.locator("summary").first(), "recurring-turns");
   await schedules.locator("summary").first().click();
   await schedules.getByRole("button", { name: "Propose recurring turns" }).click();
@@ -101,10 +211,51 @@ try {
   await page.getByRole("checkbox", { name: /will not retry it or undo/ }).check();
   await page.getByRole("button", { name: "Set aside this turn" }).click();
   await page.getByText(/This turn was set aside/).waitFor();
+  const ready = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const inserted = Promise.withResolvers();
+  if (latePage) {
+    await page.route("**/api/system/doctor", async (route) => {
+      const response = await route.fetch();
+      ready.resolve();
+      await release.promise;
+      await route.fulfill({ response });
+      inserted.resolve();
+    });
+  }
   await page.reload();
   await revealChat(page);
   await page.getByText(/This turn was set aside/).waitFor();
-  await page.getByRole("button", { name: "Continue conversation" }).click();
+  const continueConversation = page.getByRole("button", { name: "Continue conversation" });
+  await watchDisclosure(continueConversation, "continue-conversation-after-reload");
+  if (latePage) {
+    await ready.promise;
+    await continueConversation.hover();
+    const box = await continueConversation.boundingBox();
+    assert.ok(box);
+    const pointer = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const priorHeight = await page.locator("#content").evaluate((node) => node.getBoundingClientRect().height);
+    await page.evaluate(() => {
+      window.__hzHoldPageResize = true;
+    });
+    try {
+      await page.mouse.down();
+      release.resolve();
+      await inserted.promise;
+      await page.waitForFunction(
+        (height) => document.getElementById("content").getBoundingClientRect().height > height,
+        priorHeight,
+      );
+      const stillUnderPointer = await continueConversation.evaluate(
+        (node, { x, y }) => node.contains(document.elementFromPoint(x, y)),
+        pointer,
+      );
+      await page.mouse.up();
+      assert.equal(stillUnderPointer, true, "late page loading keeps the pressed Continue control under the pointer");
+    } finally {
+      await page.evaluate(() => window.__hzReleasePageResize());
+    }
+  } else await continueConversation.click();
   const composer = page.getByLabel("Message your Heinzel");
   await composer.fill("Please continue with the draft.");
   const submit = page.getByRole("button", { name: "Queue message" });
@@ -122,6 +273,12 @@ try {
   const [acceptResponse, answerResponse] = await Promise.all([accepted, answered, rendered]);
   assert.equal(acceptResponse.status(), 200, "the new message must be accepted");
   assert.equal(answerResponse.status(), 200, "the new message must receive an answer");
+  const disclosures = await disclosureDiagnostics(page);
+  if (process.argv[5])
+    writeFileSync(
+      join(process.argv[5], "generic-disclosures.json"),
+      JSON.stringify([...replyDisclosureTrace, ...disclosures], null, 2),
+    );
   console.log(JSON.stringify({ accepted: true }));
 } catch (error) {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
@@ -130,6 +287,11 @@ try {
     .innerText()
     .catch(() => "");
   const disclosures = await disclosureDiagnostics(page);
+  if (process.argv[5])
+    writeFileSync(
+      join(process.argv[5], "generic-disclosures.json"),
+      JSON.stringify([...replyDisclosureTrace, ...disclosures], null, 2),
+    );
   const diagnostic = `${message}\n${visible}\nHTTP trace: ${trace.join(" | ")}\nDisclosure trace: ${JSON.stringify(disclosures)}`;
   process.stderr.write(`${diagnostic.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
   process.exitCode = 1;

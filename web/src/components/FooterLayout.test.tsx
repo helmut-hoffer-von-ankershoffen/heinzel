@@ -100,8 +100,24 @@ function measuredFooter(initialWidth: number, daemon?: ReactNode) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("measured footer controls", () => {
+  it("keeps newly mounted controls inert until their first capacity measurement commits", () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => frames.push(callback));
+    const { container } = measuredFooter(220);
+    const daemon = container.querySelector('[data-footer-part="daemon"]');
+    expect(daemon).toHaveAttribute("data-footer-hidden", "measuring");
+    expect(daemon).toHaveAttribute("inert");
+    expect(screen.queryByRole("button", { name: "Daemon" })).not.toBeInTheDocument();
+    act(() => {
+      for (const callback of frames.splice(0)) callback(0);
+    });
+    expect(daemon).toHaveAttribute("data-footer-hidden", "overflow");
+    expect(screen.getByRole("button", { name: "More status items" })).toBeInTheDocument();
+  });
+
   it("keeps fitting controls in a narrow parent without an attribution item", async () => {
     const { container, observed } = measuredFooter(375);
+    await screen.findByRole("button", { name: "Version" });
     await waitFor(() => expect(screen.queryByRole("button", { name: "More status items" })).not.toBeInTheDocument());
     for (const name of ["Version", "Daemon", "Update", "Health", "Clock"])
       expect(screen.getByRole("button", { name })).toBeInTheDocument();
@@ -122,6 +138,7 @@ describe("measured footer controls", () => {
 
   it("keeps keyboard focus reachable when resize moves a control into More and restores it when space returns", async () => {
     const { resize } = measuredFooter(375);
+    await screen.findByRole("button", { name: "Version" });
     await waitFor(() => expect(screen.queryByRole("button", { name: "More status items" })).not.toBeInTheDocument());
     screen.getByRole("button", { name: "Daemon" }).focus();
     await resize(220);
@@ -147,6 +164,23 @@ describe("measured footer controls", () => {
 });
 
 describe("single-instance overflow", () => {
+  it("anchors More above its trigger independently of asynchronously growing rows", async () => {
+    measuredFooter(220);
+    const more = await screen.findByRole("button", { name: "More status items" });
+    const original = vi.mocked(Element.prototype.getBoundingClientRect).getMockImplementation();
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      if (this === more) return new DOMRect(200, 700, 24, 24);
+      if (this.matches('section[aria-label="More status items"]'))
+        return new DOMRect(0, 0, 288, 18 + this.childElementCount * 56);
+      return original?.call(this) ?? new DOMRect();
+    });
+    fireEvent.click(more);
+    const popup = screen.getByRole("region", { name: "More status items" });
+    expect(popup.childElementCount).toBeGreaterThan(0);
+    expect(popup.style.top).toBe("694px");
+    expect(popup).toHaveClass("-translate-y-full");
+  });
+
   it("focuses the More list without opening a detail over its other controls", async () => {
     const user = userEvent.setup();
     measuredFooter(
@@ -184,7 +218,7 @@ describe("single-instance overflow", () => {
         </button>
       </FooterItem>,
     );
-    const original = screen.getByRole("button", { name: "Daemon" });
+    const original = await screen.findByRole("button", { name: "Daemon" });
     fireEvent.click(original);
     expect(await screen.findByRole("region", { name: "Daemon" })).toBeInTheDocument();
     await resize(220);
@@ -209,7 +243,7 @@ describe("single-instance overflow", () => {
   it("moves only hidden controls into More without remounting or resetting their state", async () => {
     const mounted = vi.fn();
     const { resize } = measuredFooter(500, <Counter mounted={mounted} />);
-    const original = screen.getByRole("button", { name: "Daemon 0" });
+    const original = await screen.findByRole("button", { name: "Daemon 0" });
     fireEvent.click(original);
     await resize(220);
     const more = await screen.findByRole("button", { name: "More status items" });

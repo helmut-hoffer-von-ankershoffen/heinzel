@@ -56,7 +56,13 @@ def selected(nodes: Counter[str], commands: list[list[str]]) -> Counter[str]:
 def test_ci_lanes_preserve_every_original_node_once_including_supervised_parameterizations(collected_e2e_nodes):
     groups = {suite: lane_commands(suite) for suite in ("", "cli", "supervised", "web-1", "web-2")}
     # Before the split, CLI ignored only browser files. Reconstruct that exact original selection.
-    groups["original-cli"] = [[arg for arg in groups["cli"][-1] if arg != "--ignore=tests/e2e/ui_service_test.py"]]
+    groups["original-cli"] = [
+        [
+            arg
+            for arg in groups["cli"][-1]
+            if arg not in {"--ignore=tests/e2e/ui_service_test.py", "--ignore=tests/e2e/offline_uninstall_test.py"}
+        ]
+    ]
     baseline = Counter(collected_e2e_nodes)
     lanes = {label: selected(baseline, commands) for label, commands in groups.items()}
     assert set(lanes) == set(groups)
@@ -65,7 +71,14 @@ def test_ci_lanes_preserve_every_original_node_once_including_supervised_paramet
     old_cli = lanes.pop("original-cli")
     assert all(count == 1 for count in default.values())
     old_cli.update({"tests/e2e/docs_test.py::test_readme_instructions": 1})
-    assert lanes["cli"] + lanes["supervised"] == old_cli
+    non_browser_supervised = Counter(
+        {
+            node: count
+            for node, count in lanes["supervised"].items()
+            if node.startswith(("tests/e2e/ui_service_test.py::", "tests/e2e/offline_uninstall_test.py::"))
+        }
+    )
+    assert lanes["cli"] + non_browser_supervised == old_cli
     actual = sum(lanes.values(), Counter())
     assert actual == default
     assert all(count == 1 for count in actual.values())
@@ -82,6 +95,35 @@ def test_ci_lanes_preserve_every_original_node_once_including_supervised_paramet
     )
     expected_supervised.add(
         "tests/e2e/ui_service_test.py::test_installed_account_free_complete_profile_has_green_doctor"
+    )
+    expected_supervised.update(
+        "tests/e2e/ui_service_browser_test.py::"
+        f"test_installed_server_restarts_from_settings_and_reconnects_the_selected_profile[{platform}-{engine}]"
+        for platform in ("linux", "darwin")
+        for engine in ("chromium", "webkit")
+    )
+    expected_supervised.update(
+        "tests/e2e/offline_uninstall_test.py::"
+        f"test_installed_uninstall_needs_no_network_or_discovery_and_keeps_user_work[{change}]"
+        for change in (
+            "none",
+            "old015-upgrade",
+            "old015-web-migrate",
+            "old015-web-retire",
+            "old015-web-recovery",
+            "old015-web-foreign",
+            "recovery",
+            "calendar",
+            "calendar-recovery",
+            "calendar-foreign",
+            "tampered-receipt",
+            "foreign-script",
+            "missing-remover",
+            "unsafe-remover",
+        )
+    )
+    expected_supervised.add(
+        "tests/e2e/offline_uninstall_test.py::test_network_denial_blocks_ip_but_preserves_local_unix_ipc"
     )
     assert set(lanes["supervised"]) == expected_supervised
     assert not set(lanes["supervised"]).intersection(lanes["cli"])

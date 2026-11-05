@@ -1,5 +1,6 @@
 """Actual loaded core registry only; no network, provider, or account access."""
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -55,7 +56,7 @@ def test_real_core_review_and_locked_invocation_deny_other_tools(make_kernel, tm
         grants.approve(session, "grant", grants.issue(session, "grant", "fixture-human-review"))
         with repo.main_writer(session) as writer:
             result = catalog.invoke(grant, "system:modules", {}, turn_writer=writer)
-            assert '"qualname": "system"' in result
+            assert any(item["qualname"] == "system" for item in json.loads(result))
             with pytest.raises(HeinzelError):
                 catalog.invoke(grant, "system:modules", {"account": "x"}, turn_writer=writer)
             with pytest.raises(HeinzelError):

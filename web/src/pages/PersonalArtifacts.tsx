@@ -107,7 +107,7 @@ export function PersonalArtifacts() {
       {sessionError ? (
         <p role="alert">{t("artifacts.loadError")}</p>
       ) : sessions === null ? (
-        <output>Loading personal helpers…</output>
+        <output>Loading personal Heinzels…</output>
       ) : (
         <label className="block space-y-1 text-sm">
           <span>{t("artifacts.choose")}</span>

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 360" role="img" aria-label="Heinzelmännchen: a small crowd of gnome-like helpers walking together">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 360" role="img" aria-label="Heinzelmännchen: a small crowd of gnome-like Heinzels walking together">
   <style>
     .g { transform-box: fill-box; transform-origin: 50% 100%; }
     @media (prefers-reduced-motion: no-preference) {
@@ -12,7 +12,7 @@
     @keyframes walk { 0%, 100% { transform: translateY(0) rotate(-1.5deg); } 50% { transform: translateY(-6px) rotate(1.5deg); } }
   </style>
   <text x="500" y="70" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="54" font-weight="700" fill="#1f2328">Heinzelmännchen</text>
-  <text x="500" y="104" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" fill="#59636e">open-source helpers that keep product development teams running</text>
+  <text x="500" y="104" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" fill="#59636e">open-source Heinzels that keep product development teams running</text>
   <line x1="60" y1="336" x2="940" y2="336" stroke="#d1d9e0" stroke-width="2" stroke-linecap="round"/>
   <g transform="translate(70 101.79999999999998) scale(0.27)">
     <g class="g g0">

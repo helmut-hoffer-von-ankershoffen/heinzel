@@ -126,7 +126,7 @@ def render_show(contract: CompiledContract) -> RenderableType:
 
 module = Module(
     "heinzel",
-    "Your Heinzelmännchen: durable helpers that draft your team's recurring work for your approval.",
+    "Your Heinzelmännchen: durable Heinzels that draft your team's recurring work for your approval.",
     renamed_from="workflow",
 )
 module.settings(HeinzelSettings)

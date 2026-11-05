@@ -22,7 +22,7 @@ try {
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
   const sentence = "Help me keep a private summary of my notes current";
   await page.getByLabel("Your message").fill(sentence);
-  await page.getByRole("button", { name: "Create a helper and take this message" }).click();
+  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();
   assert.equal(await message.inputValue(), sentence);
@@ -31,7 +31,7 @@ try {
   await message.fill("Use the example information and prepare a private summary");
   await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Draft ready for review").waitFor({ timeout: 30000 });
-  const terms = page.getByRole("region", { name: "Proposed agent terms" });
+  const terms = page.getByRole("region", { name: "Proposed Heinzel terms" });
   await terms.getByText("Review proposed terms").click();
   await terms.getByText(/Use the example information and prepare a private summary/).waitFor();
   await page.evaluate(axe);

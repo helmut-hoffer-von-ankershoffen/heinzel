@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { expect, it } from "vitest";
@@ -261,4 +261,29 @@ it("refuses review if the suggestion changed after it was displayed", async () =
   await user.click(await screen.findByRole("button", { name: "Review source" }));
   expect(await screen.findByRole("alert")).toBeInTheDocument();
   expect(calls.some((r) => new URL(r.url).pathname.endsWith("/prepare-suggested-source"))).toBe(false);
+});
+
+it("keeps invalid form parsing fail-closed before any proposal request", async () => {
+  sessionStorage.clear();
+  const { calls } = mockApi({
+    "/api/heinzel/connected-read-options": () => [
+      { capability: "example", method: "read", provider: "fixture", source: "fixture", input_schema: {} },
+    ],
+    "/api/heinzel/connected-read-state": () => ({
+      session_id: session,
+      status: "none",
+      proposal: null,
+      descriptor: null,
+    }),
+  });
+  const user = userEvent.setup();
+  show();
+  await user.selectOptions(await screen.findByLabelText("Read operation"), "example.read");
+  for (const value of ["{", "[]", "null"]) {
+    fireEvent.change(screen.getByLabelText("Fixed arguments (JSON)"), { target: { value } });
+    await user.click(screen.getByRole("button", { name: "Prepare review" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
+  }
+  expect(sessionStorage.getItem(`hz.connected-proposal:${session}`)).toBeNull();
 });

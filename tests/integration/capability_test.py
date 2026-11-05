@@ -228,13 +228,19 @@ def test_doctor_reports_met_requirements_as_up(kernel):
 
 def test_doctor_lists_only_the_core_s_own_requirements_when_no_plugin_declares_one(make_kernel):
     """The core needs the chat's agent runner (ADR 0039, 0045), which its default binding serves, and, optionally, a
-    calendar for the agenda, whose absence is no finding."""
+    calendar for the agenda and calendar view, whose absence is no finding."""
     code, report = hz(make_kernel(builtins=True), "system", "doctor")
     assert code == 0
     assert report["checks"]["system.capability"] == [
         {"name": "ai-access:read for ai.access test", "status": "up", "detail": "served by claude-code", "fix": ""},
         {
             "name": "calendar:read for org agenda",
+            "status": "up",
+            "detail": "optional: not connected; to use it: hz system plugin search --text calendar",
+            "fix": "",
+        },
+        {
+            "name": "calendar:read for org calendar",
             "status": "up",
             "detail": "optional: not connected; to use it: hz system plugin search --text calendar",
             "fix": "",
@@ -444,6 +450,7 @@ def test_capability_list_shows_the_new_capabilities_with_their_adapters(prepared
     assert [(u["requester"], u["requirement"], u["adapter"]) for u in report["uses"]] == [
         ("ai.access test", "ai-access:read", "claude-code"),
         ("org agenda", "calendar:read", "agenda"),
+        ("org calendar", "calendar:read", "agenda"),
         ("prep", "chat:read", "talk"),
         ("prep", "meetings:read", "rooms"),
         ("prep", "calendar:read", "agenda"),

@@ -11,7 +11,7 @@ from heinzel import Config, HeinzelError, Settings
 from heinzel.kernel import DaemonRecoverySelection, ProcessOutcome, private_write
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._legacy_retirement import LegacyRetirement, _file
-from heinzel.modules.system.daemon._units import launchd_plist, plist_path
+from heinzel.modules.system.daemon._units import LABEL, launchd_plist, plist_path
 from tests.fixtures.daemon_manager import RecordedManager, record_tool
 
 pytestmark = pytest.mark.unit
@@ -55,9 +55,10 @@ def legacy(tmp_path, monkeypatch, make_kernel):
         if command[1] == "print" and result.returncode == 0:
             return ProcessOutcome(
                 0,
-                result.stdout
+                f"gui/{os.getuid()}/{LABEL} = {{\n"
+                + result.stdout
                 + "state = not running\ndefault environment = {\n}\n"
-                + f"inherited environment = {{\nHOME => {home}\n}}\n",
+                + f"inherited environment = {{\nHOME => {home}\n}}\n}}\n",
                 "",
             )
         return result
@@ -756,3 +757,102 @@ def test_legacy_recovery_refuses_linux_before_manager_or_file_mutations(legacy, 
     assert manager.verbs() == []
     assert not recovery.root.exists()
     assert not (service.state_dir / "standard-install-pending.json").exists()
+
+
+def native_print_fixture(service):
+    """Preserve native launchctl structure, substituting only fictional test identities."""
+    import plistlib
+
+    from heinzel.modules.system.daemon._units import PATH
+
+    executable = Path(plistlib.loads(service._unit_paths()[0].read_bytes())["ProgramArguments"][0])
+    output = (Path(__file__).parents[2] / "fixtures/daemon_legacy_launchctl.txt").read_text()
+    for key, value in {
+        "@UID@": str(os.getuid()),
+        "@UNIT@": str(service._unit_paths()[0]),
+        "@EXECUTABLE@": str(executable),
+        "@HOME@": str(Path.home()),
+        "@PATH@": f"{executable.parent}:{PATH}",
+    }.items():
+        output = output.replace(key, value)
+    return output
+
+
+def test_native_coalition_states_do_not_override_the_job_state(legacy, monkeypatch):
+    recovery, service, manager = legacy
+    native_account(monkeypatch, Path.home())
+    output = native_print_fixture(service)
+    assert output.count("state = active") == 2
+    assert output.count("state = not running") == 1
+    original = service._quiescence_probe
+
+    def native_structure(command):
+        result = original(command)
+        return ProcessOutcome(0, output, "") if command[1] == "print" and result.returncode == 0 else result
+
+    service._quiescence_probe = native_structure
+    plan = recovery.plan()
+    assert plan.historical_profile == "unknown"
+    assert not recovery.root.exists()
+    assert manager.verbs() == []
+
+
+@pytest.mark.parametrize(
+    "drift",
+    [
+        "duplicate-state",
+        "duplicate-path",
+        "duplicate-program",
+        "duplicate-arguments",
+        "duplicate-environment",
+        "running",
+        "active-pid",
+        "duplicate-pid",
+        "hidden-state",
+        "unbalanced",
+        "outside-root",
+        "wrong-root",
+    ],
+)
+def test_native_top_level_conflicts_refuse_before_recovery_effects(legacy, monkeypatch, drift):
+    recovery, service, manager = legacy
+    native_account(monkeypatch, Path.home())
+    output = native_print_fixture(service)
+    replacements = {
+        "duplicate-state": ("\tstate = not running", "\tstate = not running\n\tstate = not running"),
+        "duplicate-path": ("\ttype = LaunchAgent", "\tpath = /foreign\n\ttype = LaunchAgent"),
+        "duplicate-program": ("\ttype = LaunchAgent", "\tprogram = /foreign\n\ttype = LaunchAgent"),
+        "duplicate-arguments": ("\ttype = LaunchAgent", "\targuments = {\n\t}\n\ttype = LaunchAgent"),
+        "duplicate-environment": ("\ttype = LaunchAgent", "\tenvironment = {\n\t}\n\ttype = LaunchAgent"),
+        "running": ("\tstate = not running", "\tstate = running"),
+        "active-pid": ("\tstate = not running", "\tstate = not running\n\tpid = 1234"),
+        "duplicate-pid": ("\tstate = not running", "\tstate = not running\n\tpid = 0\n\tpid = 0"),
+        "hidden-state": ("\tstate = not running", ""),
+        "unbalanced": ("\tresource coalition = {", "\tresource coalition = {\n\t\textra = {"),
+        "outside-root": ("\tstate = not running", "}\n\tstate = not running\nextra = {"),
+        "wrong-root": (f"gui/{os.getuid()}/", f"gui/{os.getuid() + 1}/"),
+    }
+    output = output.replace(*replacements[drift])
+    original = service._quiescence_probe
+
+    def native_structure(command):
+        result = original(command)
+        return ProcessOutcome(0, output, "") if command[1] == "print" and result.returncode == 0 else result
+
+    service._quiescence_probe = native_structure
+    before = [path.read_bytes() for path in (*service._unit_paths(), service.state_dir / "install.json")]
+    with pytest.raises(HeinzelError):
+        recovery.plan()
+    assert [path.read_bytes() for path in (*service._unit_paths(), service.state_dir / "install.json")] == before
+    assert not recovery.root.exists()
+    assert manager.verbs() == []
+
+
+def test_excessive_native_manager_nesting_refuses():
+    from heinzel.modules.system.daemon._legacy_retirement import MAX_MANAGER_DEPTH, _launchd_fields
+
+    output = f"gui/{os.getuid()}/{LABEL} = {{\n"
+    output += "nested = {\n" * MAX_MANAGER_DEPTH
+    output += "}\n" * (MAX_MANAGER_DEPTH + 1)
+    with pytest.raises(HeinzelError):
+        _launchd_fields(output)

@@ -1,6 +1,7 @@
 """Genuine published015 -> explicit candidate recovery -> actual015 updater -> new ordinary install.
 
 Only the OS-manager protocol is an immutable installed double. This is not native launchd acceptance.
+The real CLI disables unused native notifier delivery; no native maintenance belongs in this protocol proof.
 """
 
 import base64
@@ -165,6 +166,82 @@ def retain_fixture_source(selected, run):
     run("system", "plugin", "develop", str(source))
 
 
+def handover_evidence(settings, root):
+    """Report only fixed presence/liveness facts, never child output, configuration or identities."""
+    directory = settings.state_dir / "daemon"
+    facts: dict[str, object] = {
+        name: (directory / filename).exists()
+        for name, filename in (
+            ("marker", "install.json"),
+            ("observation", "handover-observation.json"),
+            ("heartbeat", "heartbeat.json"),
+        )
+    }
+    marker = directory / "install.json"
+    facts["handover_id_present"] = marker.exists() and "handover_id" in json.loads(marker.read_text())
+    pid = json.loads((root / "manager.json").read_text()).get("pid")
+    facts["manager_has_pid"] = type(pid) is int and pid > 0
+    try:
+        if facts["manager_has_pid"]:
+            os.kill(pid, 0)
+        facts["child_alive"] = facts["manager_has_pid"]
+    except ProcessLookupError:
+        facts["child_alive"] = False
+    for name in ("stdout", "stderr"):
+        path = root / f"tick-{name}.txt"
+        facts[f"{name}_present"] = path.exists()
+        facts[f"{name}_nonempty"] = path.exists() and path.stat().st_size > 0
+    phases = root / "tick-phases.jsonl"
+    if phases.exists():
+        allowed = {"tick-enter", "native-notices-enter", "native-notices-return", "tick-main-return", "tick-watchdog"}
+        stacks = {
+            "tick",
+            "_post_notices",
+            "post_native",
+            "lock_until_finished",
+            "_wait",
+            "wait",
+            "communicate",
+            "join",
+            "look",
+            "ensure",
+            "clean",
+            "unregister_strays",
+            "_ui_url",
+        }
+        with phases.open("rb") as stream:
+            raw = stream.read(16_384)
+        records = []
+        for line in raw.splitlines():
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if (
+                isinstance(record, dict)
+                and isinstance(record.get("phase"), str)
+                and isinstance(record.get("stacks"), list)
+            ):
+                records.append(record)
+        facts["phases"] = [record["phase"] for record in records[-16:] if record.get("phase") in allowed]
+        facts["sdk_versions"] = sorted(
+            {
+                record.get("sdk")
+                for record in records
+                if isinstance(record.get("sdk"), str) and record.get("sdk") in {"0.9.14", "0.9.15", "0.9.16"}
+            }
+        )
+        facts["stack_categories"] = sorted(
+            {
+                value
+                for record in records
+                for value in record.get("stacks", [])
+                if isinstance(value, str) and value in stacks
+            }
+        )
+    return facts
+
+
 def wait_for_genuine_handover(settings, root):
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
@@ -181,15 +258,35 @@ def wait_for_genuine_handover(settings, root):
             return
         time.sleep(0.05)
     message = (
-        "The real published SDK child tick did not complete its handover: " + (root / "tick-stderr.txt").read_text()
+        "The real published SDK child tick did not complete its handover: "
+        + json.dumps(handover_evidence(settings, root), sort_keys=True)
+        + "\n"
+        + (root / "tick-stderr.txt").read_text()
     )
     raise AssertionError(message)
+
+
+def assert_native_isolation(run, root):
+    assert json.loads(run("system", "config", "get", "system.notify.native", "--json"))["value"] is False
+    assert not (root / "native-exec-attempts.jsonl").exists(), "Protocol fixture attempted native OS work"
+    for proof in root.glob("proof-*.json"):
+        assert "native-exec-observer-failed" not in json.loads(proof.read_text())["stderr"]
+
+
+def configure_native_isolation(run, root):
+    run("system", "config", "set", "system.notify.native", "false", "--json")
+    assert_native_isolation(run, root)
 
 
 def create_completed_history(run, settings, selected, published_015):
     run("automatic-015")
     wait_for_genuine_handover(settings, selected.root)
     assert "0.9.15" in run("--version")
+    for filename in ("install.json", "heartbeat.json", "handover-observation.json"):
+        assert json.loads((settings.state_dir / "daemon" / filename).read_text())["version"] == "0.9.15"
+    assert handover_evidence(settings, selected.root)["sdk_versions"] == ["0.9.15"]
+    assert_native_isolation(run, selected.root)
+    assert "native-exec-observer-failed" not in (selected.root / "tick-stderr.txt").read_text()
     site = next((selected.root / "tools/heinzel/lib").glob("python*/site-packages"))
     with zipfile.ZipFile(published_015) as archive:
         for name in archive.namelist():
@@ -264,6 +361,9 @@ def test_published014_auto015_handover_then_explicit_retirement_and_real015_upda
 
     # Retain the unpublished fixture through the genuine local-source plugin operation, before creating legacy units.
     retain_fixture_source(selected, run)
+    # This manager-protocol proof does not own the desktop notifier. Use the real supported setting,
+    # retained by the actual updater, rather than replacing any immutable SDK notification implementation.
+    configure_native_isolation(run, selected.root)
     run("system", "daemon", "install", "--json")
     create_completed_history(run, settings, selected, published_015)
     marker = settings.state_dir / "daemon/install.json"
@@ -299,3 +399,5 @@ def test_published014_auto015_handover_then_explicit_retirement_and_real015_upda
             )
         )
         assert installed.read_bytes() == archive.read("heinzel/modules/system/daemon/_legacy_retirement.py")
+
+    assert_native_isolation(run, selected.root)

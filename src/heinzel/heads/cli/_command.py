@@ -5,7 +5,7 @@ from collections.abc import Callable
 from datetime import date, datetime, time
 from enum import StrEnum
 from types import UnionType
-from typing import Annotated, Any, get_args, get_origin
+from typing import Annotated, Any, Literal, get_args, get_origin
 
 import typer
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -89,7 +89,12 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
         # On a terminal, and not for scripts (--json), operations that ask (a plugin's preview) may ask.
         kernel.bind(Prompter, ConsolePrompter(console) if has_terminal() and not as_json else Prompter())
         try:
-            with kernel.resolve(CurrentUser).local("cli"):
+            # The supported service-manager tick is a trusted owner CLI entry point. MCP keeps its own
+            # context, so a model-triggered tick cannot obtain the daemon's standing-grant authority.
+            identity: Literal["daemon", "cli"] = (
+                "daemon" if module == "system.daemon" and operation.name == "tick" else "cli"
+            )
+            with kernel.resolve(CurrentUser).local(identity):
                 mark_presence(kernel, module)
                 result = kernel.invoke(operation, **kwargs)
         except HeinzelError as exc:

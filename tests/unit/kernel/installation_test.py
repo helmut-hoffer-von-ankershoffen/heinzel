@@ -105,9 +105,11 @@ def test_run_reports_failures_with_output(tmp_path):
         installation.run(["uv"], "Broke.", "Doing")
 
 
-def test_hz_runs_a_fresh_interpreter(tmp_path, monkeypatch):
+@pytest.mark.parametrize("dont_write_bytecode", [False, True])
+def test_hz_runs_a_fresh_interpreter(tmp_path, monkeypatch, dont_write_bytecode):
     # The real interpreter start is in tests/integration/installation_test.py; here only what is started and how a
     # failure is reported.
+    monkeypatch.setattr(sys, "dont_write_bytecode", dont_write_bytecode)
     commands = []
 
     def answering(command, **kwargs):
@@ -120,9 +122,10 @@ def test_hz_runs_a_fresh_interpreter(tmp_path, monkeypatch):
     assert installation.hz("--version") == "hz 9.9.9\n"
     with pytest.raises(HeinzelError, match="failed after the change:\nboom"):
         installation.hz("no-such-command")
+    flags = ["-I", "-B"] if dont_write_bytecode else ["-I"]
     assert commands == [
-        [sys.executable, "-I", "-m", "heinzel", "--version"],
-        [sys.executable, "-I", "-m", "heinzel", "no-such-command"],
+        [sys.executable, *flags, "-m", "heinzel", "--version"],
+        [sys.executable, *flags, "-m", "heinzel", "no-such-command"],
     ]
 
 

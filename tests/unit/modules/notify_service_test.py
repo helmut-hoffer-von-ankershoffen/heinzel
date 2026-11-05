@@ -1,5 +1,6 @@
 """NotifyService (ADR 0041) with a fake clock and a fake notifier: recording, showing once, the daemon's pop-ups."""
 
+import json
 import stat
 import subprocess
 from datetime import datetime, timedelta
@@ -116,6 +117,81 @@ def test_helper_metadata_survives_reload_and_durable_deduplication_without_chang
     legacy = notice.model_dump()
     legacy.pop("helper")
     assert Notice.model_validate(legacy).helper is None
+
+
+def test_expiry_and_withdrawal_stop_a_stale_claim_and_keep_the_replay_key(make, clock):
+    service = make(working_hours=False)
+    arguments = {"route": "/", "command": "hz org agenda", "key": "calendar:fixture"}
+    assert service.emit_once(
+        NoticeKind.HEINZEL, "Meeting", "Soon", expires=clock.now + timedelta(minutes=5), **arguments
+    )
+    pending = service.due()[0]
+    restarted = make(working_hours=False)
+    assert restarted.withdraw(arguments["key"])
+    assert restarted.deliver([pending.id], Delivery.WEB) == []
+    assert restarted.emit_once(NoticeKind.HEINZEL, "Meeting", "Soon", **arguments)
+    assert restarted.due() == []
+    assert len(restarted.recent()) == 1
+
+    arguments["key"] = "calendar:another"
+    assert restarted.emit_once(
+        NoticeKind.HEINZEL, "Meeting", "Soon", expires=clock.now + timedelta(minutes=5), **arguments
+    )
+    pending = restarted.due()[0]
+    clock.now += timedelta(minutes=5)
+    assert restarted.due() == []
+    assert restarted.deliver([pending.id], Delivery.DAEMON) == []
+
+
+def test_expiring_receipts_compact_without_replaying_on_clock_rollback(make, settings, clock):
+    service = make(calendar=True, working_hours=False)
+    start = clock.now
+    args = {"route": "/", "command": "hz org agenda"}
+    assert service.emit_once(
+        NoticeKind.CALENDAR, "Meeting", "Soon", key="old", expires=start + timedelta(minutes=5), **args
+    )
+    clock.now += timedelta(minutes=6)
+    assert service.emit_once(
+        NoticeKind.CALENDAR, "Meeting", "Next", key="new", expires=clock.now + timedelta(minutes=5), **args
+    )
+    state = json.loads((settings.state_dir / "notify" / "notices.json").read_text())
+    assert len(state["expiring_keys"]) == 1
+    clock.now = start
+    assert make(calendar=True, working_hours=False).emit_once(
+        NoticeKind.CALENDAR, "Meeting", "Soon", key="old", expires=start + timedelta(minutes=5), **args
+    )
+    assert len(service.recent()) == 2
+    assert next(notice for notice in service.recent() if notice.key == "old").held == "expired"
+
+
+def test_missing_expiring_receipts_fail_closed(make, settings, clock):
+    service = make(calendar=True, working_hours=False)
+    args = {"route": "/", "command": "hz org agenda", "key": "calendar"}
+    assert service.emit_once(NoticeKind.CALENDAR, "Meeting", "Soon", expires=clock.now + timedelta(minutes=5), **args)
+    path = settings.state_dir / "notify" / "notices.json"
+    state = json.loads(path.read_text())
+    del state["expiring_keys"]
+    path.write_text(json.dumps(state))
+    assert not service.emit_once(
+        NoticeKind.CALENDAR, "Meeting", "Soon", expires=clock.now + timedelta(minutes=5), **args
+    )
+    assert service.store.integrity_problem() is not None
+
+
+def test_expiring_receipt_capacity_fails_closed(make, settings, clock):
+    from heinzel.modules.system.notify._store import MAX_EXPIRING_KEYS
+
+    service = make(calendar=True, working_hours=False)
+    args = {"route": "/", "command": "hz org agenda", "key": "first"}
+    expiry = clock.now + timedelta(minutes=5)
+    assert service.emit_once(NoticeKind.CALENDAR, "Meeting", "Soon", expires=expiry, **args)
+    path = settings.state_dir / "notify" / "notices.json"
+    state = json.loads(path.read_text())
+    state["expiring_keys"] = {f"{number:064x}": expiry.isoformat() for number in range(MAX_EXPIRING_KEYS)}
+    path.write_text(json.dumps(state))
+    args["key"] = "another"
+    assert not service.emit_once(NoticeKind.CALENDAR, "Meeting", "Soon", expires=expiry, **args)
+    assert len(service.recent()) == 1
 
 
 @pytest.mark.parametrize("sound", [False, True])

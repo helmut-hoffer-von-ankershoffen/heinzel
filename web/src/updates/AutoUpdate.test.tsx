@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { useDurableDraft } from "@/chat/durableDraft";
@@ -117,16 +117,25 @@ describe("automatic updates", () => {
     let version = "1.0.0";
     const client = queryClient();
     sessionStorage.setItem("hz.token", "test-token");
-    mockApi({ "/api/auto-update": () => ({ ...base, phase: "idle", version, seconds_left: null }) });
+    mockApi({
+      "/api/auto-update": () => ({
+        ...base,
+        phase: "idle",
+        version,
+        seconds_left: null,
+        message: `hz is up to date: ${version}.`,
+      }),
+    });
     render(
       <Providers client={client}>
         <AutoUpdate />
       </Providers>,
     );
-    await vi.waitFor(() => expect(client.getQueryData(["web", "auto-update"])).toBeDefined());
+    // Query data arrives before React's scheduled notification; observe the original rendered version first.
+    await vi.waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("hz is up to date: 1.0.0."));
     version = "1.1.0";
     await act(() => client.refetchQueries({ queryKey: ["web", "auto-update"] }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Reload to finish the update.");
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Reload to finish the update."));
     await new Promise((resolve) => setTimeout(resolve, 1200));
     expect(reload).not.toHaveBeenCalled(); // the unsent text stays
     typing = false; // sent, and the answer is done
@@ -142,7 +151,15 @@ describe("automatic updates", () => {
       let version = "1.0.0";
       const client = queryClient();
       sessionStorage.setItem("hz.token", "test-token");
-      mockApi({ "/api/auto-update": () => ({ ...base, phase: "idle", version, seconds_left: null }) });
+      mockApi({
+        "/api/auto-update": () => ({
+          ...base,
+          phase: "idle",
+          version,
+          seconds_left: null,
+          message: `hz is up to date: ${version}.`,
+        }),
+      });
       render(
         <Providers client={client}>
           {kind === "update draft" ? <UpdateComposer /> : <DurableComposer />}
@@ -151,10 +168,11 @@ describe("automatic updates", () => {
       );
       const box = screen.getByRole("textbox", { name: "Message" });
       fireEvent.change(box, { target: { value: "Half a thought" } });
-      await vi.waitFor(() => expect(client.getQueryData(["web", "auto-update"])).toBeDefined());
+      // The composer can render before AutoUpdate receives its first version.
+      await vi.waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("hz is up to date: 1.0.0."));
       version = "1.1.0"; // the server restarted on the new version
       await act(() => client.refetchQueries({ queryKey: ["web", "auto-update"] }));
-      expect(await screen.findByRole("status")).toHaveTextContent("Reload to finish the update.");
+      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Reload to finish the update."));
       await new Promise((resolve) => setTimeout(resolve, 1200));
       expect(reload).not.toHaveBeenCalled();
       expect(box).toHaveValue("Half a thought");

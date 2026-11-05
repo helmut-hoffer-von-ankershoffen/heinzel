@@ -418,7 +418,7 @@ class ProfileProposal(BaseModel):
     """Private suggested identity and appearance; applying it requires a separate user save."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    session_id: SessionId = Field(description="The owner's agent receiving this suggested identity.")
+    session_id: SessionId = Field(description="The owner's Heinzel receiving this suggested identity.")
     request_id: RequestId = Field(description="The stable request identifying these exact suggested terms.")
     expected_revision: int = Field(ge=1, description="The current profile revision this suggestion is based on.")
     name: str = Field(min_length=1, max_length=100, description="The suggested display name, not yet applied.")

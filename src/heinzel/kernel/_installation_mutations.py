@@ -2,10 +2,13 @@
 
 from pathlib import Path
 
+from heinzel.kernel._host_maintenance import host_maintenance_gate
+
 
 def installation_mutation_paths(prefix: Path, state: Path) -> tuple[Path, ...]:
     """Return unresolved package-mutation gates, excluding ordinary verified daemon handover requests."""
     return (
+        host_maintenance_gate(prefix),
         state / "auto-update/before-update",
         state / "daemon/mutation-pending.json",
         state / "daemon/standard-install-pending.json",

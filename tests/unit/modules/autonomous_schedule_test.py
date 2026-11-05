@@ -387,7 +387,7 @@ def test_unstarted_resolution_must_follow_accepted_daemon_message(tmp_path, monk
 
 
 def test_schedule_binding_tracks_full_runner_configuration(tmp_path):
-    from heinzel.modules.heinzel._autonomous_schedule import _fingerprint
+    from heinzel.modules.heinzel._autonomous_schedule import model_binding_fingerprint
     from heinzel.modules.system.runner._models import RunnerSettings
 
     class ConfigWithRunnerChange(FixtureConfig):
@@ -407,9 +407,9 @@ def test_schedule_binding_tracks_full_runner_configuration(tmp_path):
         executable = fake_claude(tmp_path)
         config = [ConfigWithRunnerChange(executable, None)]
         chat = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: config[0])
-        original = _fingerprint(chat)
+        original = model_binding_fingerprint(chat)
         config[0] = ConfigWithRunnerChange(executable, "changed-model")
-        assert _fingerprint(chat) != original
+        assert model_binding_fingerprint(chat) != original
 
 
 def test_occurrence_expiring_during_model_call_refuses_reply_and_never_replays(tmp_path, monkeypatch):

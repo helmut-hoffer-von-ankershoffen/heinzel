@@ -59,7 +59,7 @@ _SCHEDULE_APPROVAL_LOCK = Lock()
 _SCHEDULE_APPROVAL_TIMEOUT_SECONDS = 60
 _SCHEDULE_APPROVAL_INPUT_LIMIT = 256
 INSTRUCTIONS = (
-    "Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything "
+    "Heinzelmännchen is an open-source crew of Heinzels that drafts your team's busywork and asks before anything "
     "leaves your machine. Tools are named after their command path: `system_doctor` is `hz system doctor`. Start "
     "with `system_info` or `system_doctor`; tools marked as not read-only change state, so ask the user before "
     "calling them unless they asked for exactly that."

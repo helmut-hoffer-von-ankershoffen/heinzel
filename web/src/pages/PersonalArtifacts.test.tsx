@@ -38,7 +38,7 @@ describe("local personal artifact associations", () => {
     });
     const user = userEvent.setup();
     const { container } = render(<PersonalArtifacts />);
-    const select = await screen.findByRole("combobox", { name: "Choose a personal helper" });
+    const select = await screen.findByRole("combobox", { name: "Choose a personal Heinzel" });
     expect(calls.some((request) => request.url.includes("personal-artifacts"))).toBe(false);
     await user.selectOptions(select, first);
     expect(await screen.findByRole("link", { name: /Google Doc/ })).toHaveAttribute(
@@ -69,7 +69,7 @@ describe("local personal artifact associations", () => {
     });
     const user = userEvent.setup();
     render(<PersonalArtifacts />);
-    await user.selectOptions(await screen.findByRole("combobox", { name: "Choose a personal helper" }), first);
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Choose a personal Heinzel" }), first);
     expect(await screen.findByRole("alert")).toHaveTextContent("could not be loaded or validated");
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
@@ -87,11 +87,11 @@ describe("local personal artifact associations", () => {
     });
     const user = userEvent.setup();
     render(<PersonalArtifacts />);
-    const select = await screen.findByRole("combobox", { name: "Choose a personal helper" });
+    const select = await screen.findByRole("combobox", { name: "Choose a personal Heinzel" });
     await user.selectOptions(select, first);
     await waitFor(() => expect(finish).toBeDefined());
     await user.selectOptions(select, second);
-    expect(await screen.findByText("No local file associations for this helper.")).toBeInTheDocument();
+    expect(await screen.findByText("No local file associations for this Heinzel.")).toBeInTheDocument();
     finish?.({ session_id: first, artifacts: [item("document", "document")] });
     await waitFor(() => expect(screen.queryByRole("link")).not.toBeInTheDocument());
   });
