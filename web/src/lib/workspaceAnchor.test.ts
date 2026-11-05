@@ -223,8 +223,10 @@ it.each([0, 400, 123.5])("acknowledges one residual native compositor frame at o
   vi.spyOn(view.button, "getBoundingClientRect").mockImplementation(
     () =>
       ({
-        top: 900 - view.scroller.scrollTop,
+        top: offset + 20 - view.scroller.scrollTop,
         left: 50 - view.scroller.scrollLeft,
+        right: 130 - view.scroller.scrollLeft,
+        bottom: offset + 40 - view.scroller.scrollTop,
         width: 80,
         height: 20,
       }) as DOMRect,
@@ -323,6 +325,47 @@ it.each(["growth", "viewport", "removed", "replaced", "hidden", "focus", "dispos
     if (reason !== "dispose") view.dispose();
   },
 );
+
+it.each([
+  { left: -1, top: 0, right: 79, bottom: 20 },
+  { left: 0, top: -1, right: 80, bottom: 19 },
+  { left: 300, top: 0, right: 380, bottom: 20 },
+  { left: 0, top: 590, right: 80, bottom: 610 },
+])("preserves native focus reveal for a clipped control %j", (rect) => {
+  const view = layout();
+  vi.spyOn(view.button, "getBoundingClientRect").mockReturnValue({ ...rect, width: 80, height: 20 } as DOMRect);
+  const stop = vi.fn();
+  view.scroller.scrollTo = stop;
+  view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  view.button.focus();
+  view.scroller.scrollTop = 430;
+  render();
+  expect(stop).not.toHaveBeenCalled();
+  expect(view.scroller.scrollTop).toBe(430);
+  expect(frames.size).toBe(0);
+  view.dispose();
+});
+
+it("leaves a control clipped by the visual viewport to native focus", () => {
+  const viewport = Object.assign(new EventTarget(), { width: 360, height: 400, offsetLeft: 0, offsetTop: 100 });
+  vi.stubGlobal("visualViewport", viewport);
+  const view = layout();
+  vi.spyOn(view.button, "getBoundingClientRect").mockReturnValue({
+    left: 20,
+    top: 90,
+    right: 100,
+    bottom: 110,
+    width: 80,
+    height: 20,
+  } as DOMRect);
+  const stop = vi.fn();
+  view.scroller.scrollTo = stop;
+  view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  render();
+  expect(stop).not.toHaveBeenCalled();
+  expect(frames.size).toBe(0);
+  view.dispose();
+});
 
 it.each(["resize", "scroll"])("releases the acknowledgment on visual viewport %s", (name) => {
   const viewport = new EventTarget();

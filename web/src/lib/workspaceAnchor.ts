@@ -36,6 +36,26 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
     )
       return;
     const control = target.closest("button, summary, a[href], [tabindex]") ?? target;
+    const rect = control.getBoundingClientRect();
+    const bounds = scroller.getBoundingClientRect();
+    const visual = window.visualViewport;
+    // A clipped control may legitimately reveal itself when native focus follows this press.
+    // Leave that reveal entirely to the browser rather than restoring over it next frame.
+    if (
+      rect.left < Math.max(bounds.left + scroller.clientLeft, visual?.offsetLeft ?? 0) ||
+      rect.top < Math.max(bounds.top + scroller.clientTop, visual?.offsetTop ?? 0) ||
+      rect.right >
+        Math.min(
+          bounds.left + scroller.clientLeft + scroller.clientWidth,
+          (visual?.offsetLeft ?? 0) + (visual?.width ?? window.innerWidth),
+        ) ||
+      rect.bottom >
+        Math.min(
+          bounds.top + scroller.clientTop + scroller.clientHeight,
+          (visual?.offsetTop ?? 0) + (visual?.height ?? window.innerHeight),
+        )
+    )
+      return;
     const position = () => {
       const rect = control.getBoundingClientRect();
       const visual = window.visualViewport;
