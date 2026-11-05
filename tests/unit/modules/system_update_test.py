@@ -1577,3 +1577,92 @@ def test_a_valid_edge_pointer_is_read():
 )
 def test_the_edge_pointer_is_read_only_from_github_over_https(url, allowed):
     assert asset_host(url) is allowed
+
+
+def test_update_forwards_explicit_and_checkpoint_wheel_hashes_without_changing_receipt_policy(tmp_path, monkeypatch):
+    import hashlib
+
+    uv = FakeUv("0.9.6")
+    target = installation(tmp_path, 'specifier = ">=0.9"', uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    core = tmp_path / "heinzel-0.9.6-py3-none-any.whl"
+    plugin = tmp_path / "heinzel_acme-1.0.0-py3-none-any.whl"
+    core.write_bytes(b"selected core")
+    plugin.write_bytes(b"unchanged plugin")
+    core_source = f"heinzel @ {core.as_uri()}#sha256={hashlib.sha256(core.read_bytes()).hexdigest()}"
+    plugin_source = f"heinzel-acme @ {plugin.as_uri()}#sha256={hashlib.sha256(plugin.read_bytes()).hexdigest()}"
+    receipt.write_text(
+        receipt.read_text() + f'constraints = [{{name="heinzel", path={str(core)!r}, extras=["openai"]}}, '
+        f'{{name="heinzel-acme", path={str(plugin)!r}}}, {{name="ordinary", specifier="<3"}}]\n'
+    )
+    original = receipt.read_bytes()
+    captured_names = []
+
+    def preserved(names):
+        captured_names.append(names)
+        return (plugin_source,)
+
+    monkeypatch.setattr(target, "preserved_tool_wheel_constraints", preserved)
+    service = UpdateService(target, FakeReleases())
+    with service._install_constraints(
+        core_source,
+        "0.9.6",
+        [core_source, "heinzel-acme", "heinzel-acme==1.0.0", "ordinary<3"],
+        enabled=False,
+        scope=None,
+    ) as (path, captured):
+        expected = (core_source.replace("heinzel @", "heinzel[openai] @"), plugin_source, "ordinary<3")
+        assert captured == expected
+        assert path.read_text() == "\n".join(expected) + "\n"
+    assert captured_names == [["heinzel-acme"]]
+    assert receipt.read_bytes() == original
+    assert not uv.commands
+
+
+def test_update_never_obtains_preserved_hash_authority_without_a_valid_checkpoint(tmp_path, monkeypatch):
+    from heinzel.kernel import _installation
+
+    uv = FakeUv("0.9.6")
+    target = installation(tmp_path, 'specifier = ">=0.9"', uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    wheel = tmp_path / "heinzel_acme-1.0.0-py3-none-any.whl"
+    receipt.write_text(receipt.read_text() + f'constraints = [{{name="heinzel-acme", path={str(wheel)!r}}}]\n')
+    original = receipt.read_bytes()
+    monkeypatch.setattr(
+        _installation._installed_metadata,
+        "preserved_wheel_constraints",
+        lambda *_: pytest.fail("Unverified metadata is not hash authority"),
+    )
+    service = UpdateService(target, FakeReleases())
+    with service._install_constraints("heinzel", "0.9.6", ["heinzel", "heinzel-acme"], enabled=True, scope=None) as (
+        path,
+        captured,
+    ):
+        assert captured == (f"heinzel-acme @ {wheel.as_uri()}", "heinzel>=0.9.6")
+        assert path.read_text() == "\n".join(captured) + "\n"
+    assert receipt.read_bytes() == original
+    assert not uv.commands
+
+
+@pytest.mark.parametrize("wrong", ["path", "hash"])
+def test_update_hash_forwarding_refuses_a_conflict_before_uv(tmp_path, wrong):
+    import hashlib
+
+    uv = FakeUv("0.9.6")
+    target = installation(tmp_path, 'specifier = ">=0.9"', uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    wheel = tmp_path / "heinzel-0.9.6-py3-none-any.whl"
+    wheel.write_bytes(b"selected core")
+    receipt.write_text(receipt.read_text() + f'constraints = [{{name="heinzel", path={str(wheel)!r}}}]\n')
+    original = receipt.read_bytes()
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    selected = tmp_path / "other/heinzel-0.9.6-py3-none-any.whl" if wrong == "path" else wheel
+    source = f"heinzel @ {selected.as_uri()}#sha256={digest if wrong == 'path' else 'b' * 64}"
+    service = UpdateService(target, FakeReleases())
+    with (
+        pytest.raises(HeinzelError, match="conflict with existing constraints"),
+        service._install_constraints(source, "0.9.6", [source], enabled=False, scope=None),
+    ):
+        pytest.fail("Conflicting source must not reach UV")
+    assert receipt.read_bytes() == original
+    assert not uv.commands
