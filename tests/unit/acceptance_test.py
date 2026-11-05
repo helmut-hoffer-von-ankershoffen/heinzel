@@ -485,3 +485,89 @@ def test_a_public_release_snapshot_rejects_replaced_bytes(field, tmp_path, monke
     setattr(args, field, "0" * 64)
     with pytest.raises(harness.StepFailed, match="differs from the accepted hash"):
         harness.preflight(args, tmp_path)
+
+
+@pytest.mark.parametrize("defect", [None, "index-version", "index-hash", "extra-wheel", "old-target", "missing-clock"])
+def test_plugin_update_expectation_is_bound_independently_before_mutating(defect, monkeypatch):
+    artifact = {"name": "heinzel-clock", "version": "0.9.5", "sha256": "c" * 64}
+    index = {
+        "info": {"version": "0.9.5"},
+        "urls": [{"packagetype": "bdist_wheel", "digests": {"sha256": "c" * 64}}],
+    }
+    case = SimpleNamespace(ctx={"profile": {"artifacts": [artifact]}}, notes={})
+    if defect == "index-version":
+        index["info"]["version"] = "0.9.6"
+    elif defect == "index-hash":
+        index["urls"][0]["digests"]["sha256"] = "d" * 64
+    elif defect == "extra-wheel":
+        index["urls"] *= 2
+    elif defect == "old-target":
+        artifact["version"] = index["info"]["version"] = "0.9.2"
+    elif defect == "missing-clock":
+        case.ctx["profile"]["artifacts"] = []
+
+    def metadata(url, _limit):
+        assert url == "https://pypi.org/pypi/heinzel-clock/json"
+        return json.dumps(index).encode()
+
+    monkeypatch.setattr(harness, "fetch", metadata)
+    if defect:
+        with pytest.raises(harness.StepFailed):
+            harness.plugin_update_version(case)
+        assert case.notes == {}
+    else:
+        assert harness.plugin_update_version(case) == "0.9.5"
+        assert case.notes == {"clock_update_target": {"version": "0.9.5", "sha256": "c" * 64}}
+
+
+class AccountBrowser:
+    """A new account trigger has no obsolete Profile suffix and accepts only keyboard focus."""
+
+    def __init__(self):
+        self.tabs, self.opened, self.clicks = 0, False, []
+
+    def locate(self, selector, name, exact):
+        assert selector == "button[aria-haspopup='menu'][title=\"Mira Example · engineer\"]"
+        assert name == "Mira"
+        assert exact is False
+        return "account"
+
+    def present(self, *_args):
+        return False
+
+    def evaluate(self, expression):
+        assert ".focus(" not in expression
+        if "document.activeElement" in expression:
+            return self.tabs == 2
+        assert "aria-expanded" in expression
+        assert "false" in expression
+        return not self.opened
+
+    def press(self, key, code, virtual):
+        if key == "Tab":
+            assert code == "Tab"
+            assert virtual == 9
+            self.tabs += 1
+        else:
+            assert (key, code, virtual) == ("Enter", "Enter", 13)
+            assert self.tabs == 2
+            self.opened = True
+
+    def wait(self, expression, _message, _timeout):
+        if "aria-expanded" in expression:
+            assert self.opened
+        else:
+            assert "Installed on this machine" in expression
+            assert self.clicks == [("[role=menuitem]", "Settings"), ("button", "Plugins")]
+
+    def click(self, selector, name, *_args, **_kwargs):
+        assert self.opened
+        self.clicks.append((selector, name))
+
+
+def test_account_navigation_requires_real_tab_enter_and_the_bound_menu_identity(monkeypatch):
+    monkeypatch.setattr(harness.time, "sleep", lambda _seconds: None)
+    browser = AccountBrowser()
+    harness.ui_open_plugins(browser, None)
+    assert browser.tabs == 2
+    assert browser.opened
