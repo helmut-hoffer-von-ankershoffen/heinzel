@@ -286,35 +286,28 @@ globalThis.document = {
 """
 
 
-def test_a_row_check_reads_only_the_installed_version_in_its_own_header():
-    """Execute every real page expression in fresh JS contexts under one five-second process budget."""
+@pytest.mark.parametrize(
+    ("installed", "pending", "single", "lookup", "shown"),
+    [
+        ("0.9.3", "", False, ("heinzel-clock", "0.9.3"), True),
+        ("0.9.3", "", False, ("heinzel-clock", "0.9.2"), False),
+        ("0.9.20", "", False, ("heinzel-clock", "0.9.2"), False),
+        ("0.9.3", "v0.9.2", True, ("heinzel-clock", "0.9.2"), False),
+        ("0.9.3", "v0.9.2", True, ("heinzel-clock", "0.9.3"), True),
+        ("0.9.3", "", False, ("heinzel-missing", "0.9.2"), False),
+    ],
+)
+def test_a_row_check_reads_only_the_installed_version_in_its_own_header(installed, pending, single, lookup, shown):
+    """Other plugins, pending changes and version prefixes cannot make an installed row look changed."""
     node = shutil.which("node")
     assert node, "node runs the page expression; the CI runner images have it"
-    cases = [
-        ("installed", "0.9.3", "", False, ("heinzel-clock", "0.9.3"), True),
-        ("other-plugin", "0.9.3", "", False, ("heinzel-clock", "0.9.2"), False),
-        ("version-prefix", "0.9.20", "", False, ("heinzel-clock", "0.9.2"), False),
-        ("pending-only", "0.9.3", "v0.9.2", True, ("heinzel-clock", "0.9.2"), False),
-        ("installed-with-pending", "0.9.3", "v0.9.2", True, ("heinzel-clock", "0.9.3"), True),
-        ("missing-plugin", "0.9.3", "", False, ("heinzel-missing", "0.9.2"), False),
-    ]
-    expressions = []
-    for case, installed, pending, single, lookup, _shown in cases:
-        setup = (
-            f"const CLOCK_VERSION={json.dumps(installed)}, PENDING_VERSION={json.dumps(pending)}, "
-            f"SINGLE_PLUGIN={json.dumps(single)};"
-        )
-        expressions.append({"case": case, "source": setup + FAKE_LIST + harness.row_has(*lookup)})
-    script = (
-        'const vm = require("node:vm");'
-        f"const cases = {json.dumps(expressions)};"
-        "console.log(JSON.stringify(cases.map(({case: id, source}) => "
-        "({case: id, shown: vm.runInNewContext(source, {}, {timeout: 5000})}))));"
+    setup = (
+        f"const CLOCK_VERSION={json.dumps(installed)}, PENDING_VERSION={json.dumps(pending)}, "
+        f"SINGLE_PLUGIN={json.dumps(single)};"
     )
+    script = setup + FAKE_LIST + f"console.log(JSON.stringify({harness.row_has(*lookup)}));"
     out = subprocess.run([node, "-e", script], capture_output=True, text=True, check=True, timeout=5)
-    for result, (case, *_inputs, shown) in zip(json.loads(out.stdout), cases, strict=True):
-        assert result["case"] == case
-        assert result["shown"] is shown, case
+    assert json.loads(out.stdout) is shown
 
 
 def test_plugin_navigation_cannot_restart_an_expired_change_budget(monkeypatch):
