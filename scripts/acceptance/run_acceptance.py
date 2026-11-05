@@ -64,6 +64,20 @@ SYSTEMD_UNITS = ("hz-daemon.service", "hz-daemon.timer")
 FINAL_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 FETCH_HOSTS = {"github.com", "heinzel.team", "astral.sh", "pypi.org", "files.pythonhosted.org", "api.github.com"}
 UPGRADES_PLUGINS_ON_ADD = {"0.9.8", "0.9.9"}
+FOREGROUND_UI = {
+    **{f"0.9.{patch}": ("ui",) for patch in range(8, 16)},
+    "0.9.16": ("ui", "serve"),
+    "0.9.17": ("ui", "serve"),
+    "0.9.18": ("ui", "serve"),
+    "0.9.19": ("ui", "serve"),
+}
+PROFILE_FIXTURE = {
+    "HZ_ORG__NAME": "Mira Example",
+    "HZ_ORG__HANDLE": "mira-example",
+    "HZ_ORG__ROLE": "engineer",
+    "HZ_ORG__TIMEZONE": "Europe/Berlin",
+    "HZ_TEAM__NAME": "Example Team",
+}
 RELEASE_WHEEL_URL = re.compile(
     r"https://github\.com/helmut-hoffer-von-ankershoffen/heinzel/releases/download/"
     r"(?:v(?=[0-9.]+/)|edge-v(?=[0-9.]+\.dev))(?P<version>[0-9]+\.[0-9]+\.[0-9]+(?:\.dev[0-9]+)?)"
@@ -493,6 +507,9 @@ class Case:
             HZ_SYSTEM_CREDENTIAL__BACKEND="environment",
             HZ_SYSTEM_DAEMON__UNIT_DIR=str(self.root / "units"),
         )
+        # Noninteractive setup requires explicit profile input, supplied only inside this private case.
+        self.env.update(PROFILE_FIXTURE)
+        self.notes["fictional_profile_fixture"] = dict(PROFILE_FIXTURE)
         for key in ("CONFIG_HOME", "DATA_DIR", "CACHE_DIR", "STATE_DIR", "LOG_DIR"):
             self.env["HZ_" + key] = str(self.root / key.lower())
         if ctx["explicit_profile"]:
@@ -1464,7 +1481,21 @@ def snapshot_files(root):
 
 def ui_app(case, label):
     """Start the installed app the way a user does after installation; returns its foreground session."""
-    return case.foreground([str(case.bin / "hz"), "ui"], label)
+    _, out, _ = case.run(
+        [
+            str(case.prefix / "bin/python"),
+            "-I",
+            "-c",
+            "from importlib.metadata import version; print(version('heinzel'))",
+        ],
+        f"{label}-installed-version",
+        SHORT_DEADLINE,
+    )
+    lines = out.splitlines()
+    check(len(lines) == 1 and lines[0] in FOREGROUND_UI, "The installed Core has no recognized foreground UI command")
+    version = lines[0]
+    check(version == case.expect_version, "The installed Core version differs from the case's expected version")
+    return case.foreground([str(case.bin / "hz"), *FOREGROUND_UI[version]], label)
 
 
 def run_update(case, label):
