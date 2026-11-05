@@ -72,8 +72,7 @@ extra:
 plugins:
   - search
   # Visitors' browsers contact only this site: at build time the plugin downloads every external image the pages embed
-  # (the README badges, the plugin screenshots from their repositories) and serves them from assets/external/. The
-  # price is that a badge shows the status of the last build; the Docs workflow rebuilds hourly. Fonts are the
+  # (such as plugin screenshots from their repositories) and serves them from assets/external/. Fonts are the
   # system fonts (theme.font is false), the repository link carries no live GitHub facts (docs/overrides/partials/
   # source.html), and scripts/site_check.py fails if a page requests any host not listed there with a reason.
   - privacy
