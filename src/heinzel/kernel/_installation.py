@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
 import tomlkit
 from packaging.requirements import InvalidRequirement, Requirement
+from packaging.specifiers import SpecifierSet
 from packaging.utils import (
     InvalidSdistFilename,
     InvalidWheelFilename,
@@ -461,10 +462,9 @@ def _unpinned_index_requirement(raw: bytes, distribution: str) -> tuple[str, byt
             raise HeinzelError(_UNPIN_ERROR)
         index = matches[0]
         entry = entries[index]
-        if set(entry) != {"name", "specifier"}:
+        if set(entry) != {"name", "specifier"} or not isinstance(entry["specifier"], str):
             raise HeinzelError(_UNPIN_ERROR)
-        requirement = Requirement(requirement_from_receipt(entry))
-        specifiers = list(requirement.specifier)
+        specifiers = list(SpecifierSet(entry["specifier"]))
         if len(specifiers) != 1 or specifiers[0].operator != "==" or "*" in specifiers[0].version:
             raise HeinzelError(_UNPIN_ERROR)
         version = str(Version(specifiers[0].version))

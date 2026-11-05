@@ -140,14 +140,27 @@ def test_unpin_refuses_checkpoint_restored_after_mutation_admission(pinned, monk
 
 
 @pytest.mark.parametrize(
-    "defect", ["range", "wildcard", "git", "path", "constraint", "duplicates", "metadata", "missing-plugin", "unowned"]
+    "defect",
+    [
+        "range",
+        "wildcard",
+        "extra-in-specifier",
+        "git",
+        "path",
+        "constraint",
+        "duplicates",
+        "metadata",
+        "missing-plugin",
+        "unowned",
+    ],
 )
 def test_unpin_refuses_unsupported_or_unverified_requirements_without_writes(pinned, defect):
     service, installation, receipt, _, lifecycle = pinned
     document = tomlkit.parse(receipt.read_text())
     entry = document["tool"]["requirements"][1]
-    if defect in {"range", "wildcard"}:
-        entry["specifier"] = ">=1.0.0" if defect == "range" else "==1.*"
+    specifiers = {"range": ">=1.0.0", "wildcard": "==1.*", "extra-in-specifier": "[feature]==1.0.0"}
+    if defect in specifiers:
+        entry["specifier"] = specifiers[defect]
     elif defect in {"git", "path"}:
         del entry["specifier"]
         entry["git" if defect == "git" else "path"] = (
