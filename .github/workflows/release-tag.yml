@@ -6,7 +6,7 @@ name: Release tag
 on:
   push:
     branches: [main]
-  workflow_dispatch: # fallback if a merge made with the GitHub token doesn't trigger the push event
+  workflow_dispatch: # fallback if a merge made with the GitHub token doesn't trigger the push event; promotion uses it
 
 permissions: {}
 
@@ -54,6 +54,7 @@ jobs:
     uses: ./.github/workflows/publish.yml
     with:
       tag: ${{ needs.tag.outputs.tag }}
+      hold: ${{ vars.RELEASE_CHANNELS == 'stable' }} # promotion finalizes it after acceptance (ADR 0114)
     secrets:
       CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
     permissions:

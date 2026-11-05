@@ -258,6 +258,16 @@ def test_oidc_authority_is_isolated_from_all_build_and_checkout_steps():
     }
 
 
+def test_upload_requires_acceptance_of_this_tag_once_promotion_is_active():
+    jobs = workflow()["jobs"]
+    assert jobs["notifier"]["needs"] == "acceptance"
+    guard = jobs["acceptance"]
+    assert guard["permissions"] == {"actions": "read"}
+    assert not any(step.get("uses", "").startswith("actions/checkout") for step in guard["steps"])
+    assert guard["steps"][0]["if"] == "vars.RELEASE_CHANNELS == 'stable'"
+    assert 'contains(\\"/$TAG/\\")' in guard["steps"][0]["run"]
+
+
 @pytest.mark.parametrize("change", [None, "bytes", "commit", "extra", "symlink"])
 def test_publish_job_rechecks_identity_and_bytes_without_project_code(artifacts, tmp_path, monkeypatch, change):
     dist = artifacts()

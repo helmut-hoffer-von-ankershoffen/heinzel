@@ -12,9 +12,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  acceptance:
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && startsWith(github.ref, 'refs/tags/v')
+    name: Require passing acceptance once promotion is active
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      # No checkout: this reads the run history only. Until promotion is active a maintainer's dispatch is the decision.
+      - if: vars.RELEASE_CHANNELS == 'stable'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          passed="$(gh run list --workflow acceptance.yml --limit 100 --json displayTitle,conclusion \
+            --jq "[.[] | select(.conclusion == \"success\" and (.displayTitle | contains(\"/$TAG/\")))] | length")"
+          test "$passed" -gt 0
+
   notifier:
     if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && startsWith(github.ref, 'refs/tags/v')
     name: Build the release notifier without publishing credentials
+    needs: acceptance
     runs-on: macos-latest
     timeout-minutes: 10
     permissions:

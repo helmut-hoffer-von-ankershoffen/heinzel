@@ -11,6 +11,10 @@ on:
       tag:
         required: true
         type: string
+      hold:
+        description: Create the release as a pre-release, never latest, until acceptance promotes it (ADR 0114)
+        type: boolean
+        default: false
     secrets:
       CONFIDENTIAL_TERMS:
         required: false
@@ -95,9 +99,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          HOLD: ${{ inputs.hold }}
         run: |
           cp "$BUNDLE" "dist/provenance.sigstore.json"
           # The bundles' DSSE envelopes are the signed in-toto SLSA provenance on its own, the format OpenSSF
           # Scorecard (Signed-Releases) and SLSA verifiers look for as *.intoto.jsonl.
           jq -c .dsseEnvelope "$BUNDLE" > "dist/provenance.intoto.jsonl"
-          gh release create "$TAG" dist/* --title "$TAG" --notes-file release-notes.md --verify-tag
+          hold=()
+          if [ "$HOLD" = true ]; then hold=(--prerelease --latest=false); fi
+          gh release create "$TAG" dist/* --title "$TAG" --notes-file release-notes.md --verify-tag "${hold[@]}"
