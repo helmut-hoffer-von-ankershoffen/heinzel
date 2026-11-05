@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
+import { createPublicMediaHandler } from "../src/public-media.js";
 import { stopWithReport } from "../src/shutdown.js";
 import { installSignalQuit } from "../src/signal-quit.js";
 
@@ -64,7 +65,7 @@ function quitHarness(result, rejects = false) {
     initializeDesktopIdentity: () => true,
     createInstanceLifecycle: () => ({ acquire: () => true }),
     createLifecycleHandler: () => () => {}, createOwnedCli: () => owned,
-    stopWithReport,
+    createPublicMediaHandler, stopWithReport,
     installSignalQuit: (options) => installSignalQuit({ ...options, setTimer: () => ({ unref() {} }) }),
   });
   return { proc, app, exits, dialogs, stops: () => stops };
