@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { openChatJourney, revealChat } from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 
 const { browser, context, page, token, url } = await openChatJourney();
 const latePage = process.argv[4] === "late-page";
+let replyDisclosureTrace = [];
 if (latePage) {
   // Commit page DOM growth between press/release, while its resize
   // notification arrives after release. Keep actual browser layout, response data and physical pointer events.
@@ -68,12 +71,27 @@ try {
   await page.getByText("I prepared proposals for your review.").waitFor({ timeout: 30000 });
   const replyActivity = page.getByText("Tool activity for this reply · 4 events");
   await watchDisclosure(replyActivity, "reply-activity");
-  await replyActivity.click();
+  if (process.argv[6] === "smooth") {
+    await replyActivity.hover();
+    const box = await replyActivity.boundingBox();
+    assert.ok(box);
+    const scrollOrigin = await replyActivity.evaluate((node) => {
+      const scroller = node.closest(".workspace-scroll");
+      const before = scroller.scrollTop;
+      scroller.scrollTo({ top: before - 120, behavior: "smooth" });
+      return before;
+    });
+    assert.ok(scrollOrigin > 120, "the controlled press must have real workspace scroll distance");
+    await page.mouse.down();
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.mouse.up();
+  } else await replyActivity.click();
   const replyEvents = replyActivity.locator("..");
   await replyEvents.getByText("agent:propose · requested").waitFor();
   await replyEvents.getByText("agent:propose · completed").waitFor();
   await replyEvents.getByText("profile:propose · requested").waitFor();
   await replyEvents.getByText("profile:propose · completed").waitFor();
+  replyDisclosureTrace = await disclosureDiagnostics(page);
   const overflow = await replyEvents.evaluate((node) => node.scrollWidth > node.clientWidth);
   assert.equal(overflow, false, "recorded activity must fit the phone viewport");
   const terms = page.getByRole("region", { name: "Proposed agent terms" });
@@ -193,6 +211,12 @@ try {
   const [acceptResponse, answerResponse] = await Promise.all([accepted, answered, rendered]);
   assert.equal(acceptResponse.status(), 200, "the new message must be accepted");
   assert.equal(answerResponse.status(), 200, "the new message must receive an answer");
+  const disclosures = await disclosureDiagnostics(page);
+  if (process.argv[5])
+    writeFileSync(
+      join(process.argv[5], "generic-disclosures.json"),
+      JSON.stringify([...replyDisclosureTrace, ...disclosures], null, 2),
+    );
   console.log(JSON.stringify({ accepted: true }));
 } catch (error) {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
@@ -201,6 +225,11 @@ try {
     .innerText()
     .catch(() => "");
   const disclosures = await disclosureDiagnostics(page);
+  if (process.argv[5])
+    writeFileSync(
+      join(process.argv[5], "generic-disclosures.json"),
+      JSON.stringify([...replyDisclosureTrace, ...disclosures], null, 2),
+    );
   const diagnostic = `${message}\n${visible}\nHTTP trace: ${trace.join(" | ")}\nDisclosure trace: ${JSON.stringify(disclosures)}`;
   process.stderr.write(`${diagnostic.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
   process.exitCode = 1;

@@ -1,4 +1,4 @@
-// Keep the pointer interaction unchanged: these bounded observations are printed only by the journey's failure handler.
+// Keep pointer interaction unchanged: bounded observations go to fixture artifacts and the journey failure handler.
 // Node identities distinguish a missed click from a disclosure replaced or closed after a successful click.
 export async function watchDisclosure(summary, label) {
   await summary.evaluate((original, label) => {
@@ -10,11 +10,36 @@ export async function watchDisclosure(summary, label) {
     if (history.length > 7) history.shift();
     const ids = new WeakMap();
     let nextId = 0;
+    const category = (node) => {
+      if (!(node instanceof Element)) return "other";
+      if (node.matches(".workspace-scroll")) return "workspace-scroll";
+      if (node.matches("#content")) return "page-content";
+      if (node.matches(".workspace-panel")) return "workspace-panel";
+      if (node.matches('[role="tabpanel"]')) return "tabpanel";
+      if (node.matches(".overflow-y-auto") && node.closest('[aria-label="Chat"]')) return "durable-scroll";
+      if (node.closest("footer")) return "footer";
+      if (node.closest("#splash")) return "startup-overlay";
+      if (node.closest(".viewport-popover")) return "popover";
+      if (node.closest("#content")) return "page-descendant";
+      return "other";
+    };
     const identity = (node) => {
       if (!node) return null;
       if (!ids.has(node)) ids.set(node, ++nextId);
-      return { id: ids.get(node), tag: node.nodeName };
+      return { id: ids.get(node), tag: node.nodeName, category: category(node) };
     };
+    const geometry = (node) => {
+      const style = getComputedStyle(node);
+      return {
+        ...identity(node),
+        rect: Object.values(node.getBoundingClientRect().toJSON()).map((value) => Math.round(value * 100) / 100),
+        scrollTop: node.scrollTop,
+        clientHeight: node.clientHeight,
+        overflowX: style.overflowX,
+        overflowY: style.overflowY,
+      };
+    };
+    let point;
     const text = original.textContent;
     const matches = () => [...document.querySelectorAll("summary")].filter((node) => node.textContent === text);
     const index = matches().indexOf(original);
@@ -27,6 +52,16 @@ export async function watchDisclosure(summary, label) {
       const style = current && getComputedStyle(current);
       const hit = rect && document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
       return {
+        ancestors: [
+          ...(function* () {
+            let node = current?.parentElement;
+            while (node) {
+              if (category(node) !== "other") yield geometry(node);
+              node = node.parentElement;
+            }
+          })(),
+        ].slice(0, 8),
+        pointHits: point ? document.elementsFromPoint(point.x, point.y).slice(0, 6).map(identity) : [],
         original: identity(original),
         originalConnected: original.isConnected,
         current: identity(current),
@@ -41,10 +76,10 @@ export async function watchDisclosure(summary, label) {
         centerHitsSummary: Boolean(current && hit && current.contains(hit)),
       };
     };
-    const record = (kind, event, openChanges) => {
+    const record = (kind, event, openChanges, force = false) => {
       const state = snapshot();
       const signature = JSON.stringify(state);
-      if (!event && !openChanges && signature === previous) return;
+      if (!force && !event && !openChanges && signature === previous) return;
       previous = signature;
       records.push({
         ms: Math.round(performance.now() - began),
@@ -61,10 +96,18 @@ export async function watchDisclosure(summary, label) {
       });
       if (records.length > 64) records.shift();
     };
-    const pointer = (event) => record(event.type, event);
+    const pointer = (event) => {
+      point = { x: event.clientX, y: event.clientY };
+      record(event.type, event);
+      if (event.type === "pointerdown")
+        requestAnimationFrame(() => {
+          record("press-frame1", undefined, undefined, true);
+          requestAnimationFrame(() => record("press-frame2", undefined, undefined, true));
+        });
+    };
     const changed = (event) => record(event.type);
     const pointerEvents = ["pointerdown", "pointerup", "click"];
-    const stateEvents = ["toggle", "scroll"];
+    const stateEvents = ["toggle", "scroll", "focusin"];
     for (const type of pointerEvents) document.addEventListener(type, pointer, true);
     for (const type of stateEvents) document.addEventListener(type, changed, true);
     const observer = new MutationObserver((mutations) => {
