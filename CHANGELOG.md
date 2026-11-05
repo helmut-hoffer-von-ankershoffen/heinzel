@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.16](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.16) - 2026-11-04
 
-0.9.16 adds CLI-created release-draft workflows, calendar views and reminders, profile onboarding, optional-feature health, offline removal and supervised web serving. Google/Slack/GitHub companion publication and real-provider acceptance remain separate.
+0.9.16 adds CLI-created release-draft workflows, calendar views and reminders, profile onboarding, optional-feature health, offline removal and supervised web serving. Settings search stays readable on phones and compact layouts. Google/Slack/GitHub companion publication and real-provider acceptance remain separate.
 
 Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and reinstall. After 0.9.16 publication, run `uv run --no-project --with heinzel==0.9.16 python -I -m heinzel.heads.daemon_recovery plan`. Review the entire plan; historical profile ownership remains unknown. Repeat with `retire --confirm PLAN_SHA256`, using the exact current plan digest. After successful retirement, use `hz system update --source 'heinzel==0.9.16'`, then `hz system daemon install`; separately choose `hz ui install` for supervised web serving. Preserve the existing profile; never purge data or bypass refusals. Recovery is macOS-only; see docs/DAEMON_RECOVERY.md. Future ordinary supervised updates remain intended in place. Native migration acceptance is pending; historical automatic-handover and WebKit incidents are not claimed fixed.
 
