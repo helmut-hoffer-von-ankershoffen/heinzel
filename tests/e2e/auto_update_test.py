@@ -50,6 +50,13 @@ def test_countdown_postpone_and_apply_with_a_fake_newer_release(tmp_path):
         "HZ_LOG_DIR": str(tmp_path / "log"),
         "HZ_SYSTEM_DAEMON__UNIT_DIR": str(tmp_path / "units"),
         "HZ_SYSTEM_CREDENTIAL__BACKEND": "environment",
+        # This is an existing installation's update journey, with a profile already supplied through normal config.
+        # First-run setup is exercised separately by the onboarding and CLI setup journeys.
+        "HZ_ORG__HANDLE": "mira",
+        "HZ_ORG__NAME": "Mira Example",
+        "HZ_ORG__ROLE": "engineering-manager",
+        "HZ_ORG__TIMEZONE": "Europe/Berlin",
+        "HZ_TEAM__NAME": "Demo team",
         # On by default: no HZ_AUTO_UPDATE, so both switches can change it. This hz runs from a checkout under pytest,
         # which is development; the test override lets it drive the real flow all the same.
         "HEINZEL_AUTO_UPDATE_TEST": "1",
@@ -109,5 +116,6 @@ def test_countdown_postpone_and_apply_with_a_fake_newer_release(tmp_path):
     assert result["restarted"] is True
     assert "updated automatically" in result["message"]
     assert result["signedIn"] is True
+    assert result["profileRetained"] is True
     assert result["after"] == "idle"
     assert (fake / "applied").read_text() == "fake update applied: 99.0.0 {'heinzel-example': '9.0.0'}\n"
