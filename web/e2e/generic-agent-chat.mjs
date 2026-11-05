@@ -73,6 +73,7 @@ try {
   await watchDisclosure(replyActivity, "reply-activity");
   const fractionalScroll = process.argv[6] === "fractional";
   const partialScroll = process.argv[6] === "partial";
+  let activityMinHeight;
   if (fractionalScroll || partialScroll) {
     const clipping = partialScroll ? 5 : 0.25;
     // Queue native animation at the exact fractional or partially clipped press.
@@ -132,20 +133,63 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 250));
     await page.mouse.up();
   } else if (process.argv[6] === "smooth") {
+    // Use the actual native summary with a swept hit area: its fixed pointer point
+    // stays inside throughout 120px of native travel, including before the press.
+    // Strict held-position checks below keep that larger area from hiding drift.
+    activityMinHeight = await replyActivity.evaluate((node) => {
+      const original = node.style.minHeight;
+      node.style.minHeight = "160px";
+      return original;
+    });
     await replyActivity.hover();
     const box = await replyActivity.boundingBox();
     assert.ok(box);
-    const scrollOrigin = await replyActivity.evaluate((node) => {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 10);
+    await replyActivity.evaluate((node) => {
       const scroller = node.closest(".workspace-scroll");
-      const before = scroller.scrollTop;
-      scroller.scrollTo({ top: before - 120, behavior: "smooth" });
-      return before;
+      const origin = scroller.scrollTop;
+      window.__hzSmoothOrigin = origin;
+      window.addEventListener(
+        "pointerdown",
+        (event) => {
+          window.__hzSmoothPress = {
+            trusted: event.isTrusted,
+            primary: event.isPrimary && event.button === 0,
+            summary: event.target === node && node.tagName === "SUMMARY",
+            origin,
+            destination: origin - 120,
+            down: scroller.scrollTop,
+            top: node.getBoundingClientRect().top,
+          };
+        },
+        { capture: true, passive: true, once: true },
+      );
+      scroller.scrollTo({ top: origin - 120, behavior: "smooth" });
     });
-    assert.ok(scrollOrigin > 120, "the controlled press must have real workspace scroll distance");
+    await page.waitForFunction(() => {
+      const scroller = document.querySelector(".workspace-scroll");
+      return scroller.scrollTop < window.__hzSmoothOrigin;
+    });
     await page.mouse.down();
+    const press = await page.evaluate(() => window.__hzSmoothPress);
+    assert.equal(press?.trusted, true, "scroll pressure must originate from a trusted physical press");
+    assert.equal(press.primary, true, "scroll pressure must use the primary pointer and button");
+    assert.equal(press.summary, true, "scroll pressure must press the current native summary");
+    assert.ok(press.origin > 120, "the controlled press must have real workspace scroll distance");
+    assert.equal(press.origin - press.destination, 120);
+    assert.ok(press.down < press.origin, "native smooth scrolling must progress before the physical press");
+    assert.ok(press.down > press.destination, "native smooth scrolling must still be unfinished at the press");
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     // Keep the real press held beyond the observed hosted 184ms interval; no retargeting or click replay.
     await new Promise((resolve) => setTimeout(resolve, 250));
+    const held = await replyActivity.evaluate((node) => ({
+      scroll: node.closest(".workspace-scroll").scrollTop,
+      top: node.getBoundingClientRect().top,
+    }));
+    if (process.argv[5])
+      writeFileSync(join(process.argv[5], "smooth-press.json"), JSON.stringify({ press, held }, null, 2));
+    assert.equal(held.scroll, press.down, "native scroll must remain at the physical press position");
+    assert.equal(held.top, press.top, "the pressed summary must remain at its physical press position");
     await page.mouse.up();
   } else await replyActivity.click();
   const replyEvents = replyActivity.locator("..");
@@ -153,6 +197,10 @@ try {
   await replyEvents.getByText("agent:propose · completed").waitFor();
   await replyEvents.getByText("profile:propose · requested").waitFor();
   await replyEvents.getByText("profile:propose · completed").waitFor();
+  if (activityMinHeight !== undefined)
+    await replyActivity.evaluate((node, original) => {
+      node.style.minHeight = original;
+    }, activityMinHeight);
   replyDisclosureTrace = await disclosureDiagnostics(page);
   const overflow = await replyEvents.evaluate((node) => node.scrollWidth > node.clientWidth);
   assert.equal(overflow, false, "recorded activity must fit the phone viewport");

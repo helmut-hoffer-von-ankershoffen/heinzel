@@ -172,6 +172,10 @@ def transport(monkeypatch):
 @pytest.mark.parametrize(
     "interruption",
     [
+        *[
+            urllib.error.HTTPError("https://example.com/x", status, "gateway unavailable", {}, None)
+            for status in (502, 503, 504)
+        ],
         ssl.SSLEOFError(8, "unexpected EOF"),
         urllib.error.URLError(ssl.SSLEOFError(8, "unexpected EOF")),
         ConnectionResetError("connection reset"),
@@ -204,31 +208,50 @@ def test_interrupted_download_restarts_and_caches_only_the_complete_verified_bod
     assert requests == [(download.url, 120), (download.url, 109.5)]
 
 
-def test_persistent_tls_eof_exhausts_three_attempts_without_caching(tmp_path, monkeypatch, transport):
+@pytest.mark.parametrize(
+    "error",
+    [
+        urllib.error.URLError(ssl.SSLEOFError(8, "unexpected EOF")),
+        *[
+            urllib.error.HTTPError("https://example.com/x", status, "gateway unavailable", {}, None)
+            for status in (502, 503, 504)
+        ],
+    ],
+)
+def test_persistent_transport_or_gateway_failure_exhausts_three_attempts_without_caching(
+    tmp_path, monkeypatch, transport, error
+):
     requests = []
 
     def open_(*args, **kwargs):
         requests.append(kwargs["timeout"])
-        raise urllib.error.URLError(ssl.SSLEOFError(8, "unexpected EOF"))
+        raise error
 
     monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
-    with pytest.raises(tools.ToolError, match="unexpected EOF"):
+    with pytest.raises(tools.ToolError, match="download failed"):
         tools.fetch(tools.Download("https://example.com/x", ZERO), tmp_path, tools.http_get)
     assert requests == [120, 119.5, 118.5]
     assert list(tmp_path.iterdir()) == []
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        ssl.SSLEOFError(8, "unexpected EOF"),
+        urllib.error.HTTPError("https://example.com/x", 504, "gateway unavailable", {}, None),
+    ],
+)
 @pytest.mark.parametrize("elapsed", [120, 119.5])
-def test_interruption_at_the_timeout_budget_fails_without_another_request(monkeypatch, transport, elapsed):
+def test_interruption_at_the_timeout_budget_fails_without_another_request(monkeypatch, transport, elapsed, error):
     requests = []
 
     def open_(*args, **kwargs):
         requests.append(kwargs["timeout"])
         transport[0] += elapsed
-        raise ssl.SSLEOFError(8, "unexpected EOF")
+        raise error
 
     monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
-    with pytest.raises(tools.ToolError, match="unexpected EOF"):
+    with pytest.raises(tools.ToolError, match="download failed"):
         tools.download_bytes("https://example.com/x", tools.http_get)
     assert requests == [120]
 
@@ -253,7 +276,10 @@ def test_backoff_delayed_past_the_timeout_budget_does_not_start_another_request(
         urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate rejected")),
         ssl.SSLError(1, "bad protocol"),
         urllib.error.HTTPError("https://example.com/x", 404, "not found", {}, None),
-        urllib.error.HTTPError("https://example.com/x", 503, "unavailable", {}, None),
+        *[
+            urllib.error.HTTPError("https://example.com/x", status, "permanent", {}, None)
+            for status in (400, 401, 403, 429, 500, 501, 505)
+        ],
     ],
 )
 def test_certificate_protocol_and_http_errors_fail_without_retries(monkeypatch, transport, error):
@@ -270,13 +296,22 @@ def test_certificate_protocol_and_http_errors_fail_without_retries(monkeypatch, 
     assert transport == [0.0]
 
 
-def test_recovered_download_with_wrong_checksum_is_refused_without_further_retries(tmp_path, monkeypatch, transport):
+@pytest.mark.parametrize(
+    "error",
+    [
+        ssl.SSLEOFError(8, "unexpected EOF"),
+        urllib.error.HTTPError("https://example.com/x", 503, "gateway unavailable", {}, None),
+    ],
+)
+def test_recovered_download_with_wrong_checksum_is_refused_without_further_retries(
+    tmp_path, monkeypatch, transport, error
+):
     requests = []
 
     def open_(*args, **kwargs):
         requests.append(args)
         if len(requests) == 1:
-            raise ssl.SSLEOFError(8, "unexpected EOF")
+            raise error
         return io.BytesIO(b"tampered")
 
     monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
@@ -627,3 +662,71 @@ def test_doctor_passes_the_web_app_once_installed(isolated):
 
 def test_doctor_says_nothing_about_web_tools_in_a_plugin(isolated):
     assert web_checks(isolated, app=False, modules=False) == []
+
+
+def test_persistent_gateway_failure_reports_attempts_and_sanitized_last_endpoint(monkeypatch, transport):
+    url = "https://username:password@release-assets.githubusercontent.com/archive.tar.gz?sig=private#token"
+    error = urllib.error.HTTPError(url, 504, "private upstream details", {"Set-Cookie": "private"}, None)
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(kwargs["timeout"])
+        raise error
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError) as raised:
+        tools.download_bytes("https://example.com/pinned", tools.http_get)
+    assert str(raised.value) == (
+        "download failed (HTTP Error 504; "
+        "last HTTP endpoint=release-assets.githubusercontent.com/archive.tar.gz; attempts=3)"
+    )
+    assert raised.value.__cause__ is error
+    assert requests == [120, 119.5, 118.5]
+    for private in ("username", "password", "private", "sig=", "#token", "Set-Cookie"):
+        assert private not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/line\x00break?secret",
+        "https://example.com/line\x85\u202ebreak?secret",
+        "https://example.com/" + "x" * 500,
+    ],
+)
+def test_http_failure_endpoint_has_no_control_characters_and_a_bounded_path(url, request):
+    error = urllib.error.HTTPError(url, 503, "private", {}, None)
+    request.addfinalizer(error.close)
+    with pytest.raises(tools.ToolError) as raised:
+        tools.download_bytes(url, lambda _: (_ for _ in ()).throw(error))
+    message = str(raised.value)
+    assert all(char.isprintable() for char in message)
+    assert len(message) < 360
+    assert "private" not in message
+    assert "secret" not in message
+    assert "attempts=" not in message  # A supplied fetch callback has no observed attempt count.
+    assert raised.value.__cause__ is error
+
+
+def test_malformed_http_error_url_keeps_status_and_original_cause(request):
+    error = urllib.error.HTTPError("https://[invalid", 504, "private", {}, None)
+    request.addfinalizer(error.close)
+    with pytest.raises(tools.ToolError, match=r"download failed \(HTTP Error 504\)") as raised:
+        tools.download_bytes("https://example.com/x", lambda _: (_ for _ in ()).throw(error))
+    assert raised.value.__cause__ is error
+
+
+def test_certificate_failure_retains_immediate_failure_with_one_observed_attempt(monkeypatch, transport):
+    error = urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate rejected"))
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(kwargs["timeout"])
+        raise error
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError, match=r"certificate rejected.*attempts=1") as raised:
+        tools.download_bytes("https://example.com/x", tools.http_get)
+    assert requests == [120]
+    assert transport == [0.0]
+    assert raised.value.__cause__ is error

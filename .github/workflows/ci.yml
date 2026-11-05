@@ -26,6 +26,7 @@ env:
 # and unknown changes also retain macOS setup, end-to-end and Electron checks. Every push to main, daily
 # run and dispatch keeps the full setup, Python/shard, end-to-end, notifier, macOS-only and Electron matrix, and
 # `CI OK` includes every scheduled job; macOS failures block after three clean full-suite main runs.
+# Canonical owner-repository release PRs select that full workload in one run; token-created PRs retain full dispatch.
 # Cheap checks cancel a failing same-repository pull request's run early; fork PRs finish with read-only tokens.
 # Provider-specific integration checks live with their owning plugins.
 jobs:
@@ -97,19 +98,28 @@ jobs:
       plugins: ${{ steps.paths.outputs.plugins }}
       site_only: ${{ steps.paths.outputs.site_only }}
       macos_full: ${{ steps.paths.outputs.macos_full }}
+      full_release: ${{ steps.release.outputs.full_release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - id: release
+        name: Recognize the owner-repository canonical release candidate
+        run: python3 -I scripts/release_candidate.py select --output "$GITHUB_OUTPUT"
       - id: paths
         name: Heinzel Notifier is built always, except on a pull request that leaves its sources alone
         env:
           EVENT: ${{ github.event_name }}
+          FULL_RELEASE: ${{ steps.release.outputs.full_release }}
           BASE: ${{ needs.admission.outputs.base || github.event.pull_request.base.sha || github.event.before }}
           BATCH_BASE: ${{ needs.admission.outputs.base }}
         run: |
           changed="$(git diff --name-only "$BASE...HEAD")" || changed=""
+          full_release="${FULL_RELEASE:-false}"
           # A push to main of prose alone: the pull request already ran everything on the same content. docs/ also
           # holds the install scripts, and release commits change CHANGELOG.md, so neither counts.
           prose_push=false
@@ -121,7 +131,7 @@ jobs:
           # README's commands, and nested Markdown can be a template or a skill, so those do not count. These paths
           # are documents and tooling to the pre-push scope too; ci_test.py pins that.
           site_only=false
-          if [ "$EVENT" = pull_request ] && [ -n "$changed" ] \
+          if [ "$EVENT" = pull_request ] && [ "$full_release" != true ] && [ -n "$changed" ] \
             && ! grep -qvE '^(docs/.*|[^/]*\.md|mkdocs\.yml|scripts/(site_[a-z_]+|check_docs)\.py|tests/unit/(site_[a-z_]+|docs_style|documentation)_test\.py)$' <<< "$changed" \
             && ! grep -qE '^(CHANGELOG|README)\.md$|^docs/.*\.sh$' <<< "$changed"; then
             site_only=true
@@ -131,7 +141,7 @@ jobs:
           # only known portable UI, model and CI paths omit them; build/dependency inputs and unknown paths keep them.
           # Non-PR runs always retain the complete macOS matrix.
           macos_full=true
-          if [ "$EVENT" = pull_request ] && [ -n "$changed" ] \
+          if [ "$EVENT" = pull_request ] && [ "$full_release" != true ] && [ -n "$changed" ] \
             && ! grep -qvE '^(src/heinzel/(kernel/_(contributions|exposure)\.py$|modules/team/_(models|render)\.py$)|web/(src/|e2e/|openapi\.json$)|tests/(unit/|integration/|e2e/)|scripts/(main_batch|sync_template|ci_logs|scoped_checks|merge_gate|source_review|review_tier)\.py$|docs/|\.github/(workflows/ci\.yml$|[^/]*\.md$)|template/\.github/workflows/ci\.yml\.jinja$|[^/]*\.md$)' <<< "$changed" \
             && ! grep -qE '^(tests/(e2e/.*(install|daemon|update|ui_service)|.*(macos|notifier|supervision|tool_install|session_io|reveal|acceptance))|web/e2e/.*(install|daemon|update|native|electron|desktop|macos|notifier)|docs/.*\.sh$)' <<< "$changed"; then
             macos_full=false
@@ -143,7 +153,7 @@ jobs:
           if [ "$prose_push" = true ]; then
             echo "core=false" >> "$GITHUB_OUTPUT"
             core_work=false
-          elif [ -n "${BATCH_BASE:-}" ] || [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ] \
+          elif [ "$full_release" = true ] || [ -n "${BATCH_BASE:-}" ] || [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ] \
             || [ -z "$changed" ] || grep -qvE '^plugins/' <<< "$changed"; then
             echo "core=true" >> "$GITHUB_OUTPUT"
             core_work=true
@@ -156,20 +166,20 @@ jobs:
           else
             echo "plugins=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$core_work" = true ] && { [ "$EVENT" != pull_request ] \
+          if [ "$core_work" = true ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] \
             || grep -qE '^(src/heinzel/modules/system/notify/macos/|scripts/notifier\.py$|scripts/tools\.toml$|Makefile$|pyproject\.toml$|\.github/workflows/ci\.yml$)' <<< "$changed"; }; then
             echo "notifier=true" >> "$GITHUB_OUTPUT"
           else
             echo "notifier=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$core_work" = true ] && { [ "$EVENT" != pull_request ] \
+          if [ "$core_work" = true ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] \
             || grep -qE '^(src/heinzel/kernel/|src/heinzel/__init__\.py$|src/heinzel/heads/|src/heinzel/modules/system/ui/|web/src/plugins/)' <<< "$changed"; }; then
             echo "contracts=true" >> "$GITHUB_OUTPUT"
           else
             echo "contracts=false" >> "$GITHUB_OUTPUT"
           fi
           # A push to main needs Electron only for the paths a pull request needs it for; an unknown diff runs it.
-          if [ "$core_work" = true ] && [ -f desktop/package.json ] && { [ "$EVENT" = schedule ] \
+          if [ "$core_work" = true ] && [ -f desktop/package.json ] && { [ "$full_release" = true ] || [ "$EVENT" = schedule ] \
             || [ "$EVENT" = workflow_dispatch ] || [ -z "$changed" ] \
             || { [ "$EVENT" = pull_request ] && [ "$macos_full" = true ] && [ "$site_only" = false ]; } \
             || grep -qE '^(desktop/|Makefile$|scripts/sync_template\.py$|\.github/workflows/ci\.yml$)' <<< "$changed"; }; then
@@ -322,11 +332,14 @@ jobs:
       matrix:
         os: [ubuntu-24.04]
         # Linux: oldest and newest Python on a pull request, every supported one on main, schedule and dispatch.
-        python: ${{ fromJSON(github.event_name == 'pull_request' && '["3.12","3.15"]' || '["3.12","3.13","3.14","3.15"]') }}
+        python: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '["3.12","3.15"]' || '["3.12","3.13","3.14","3.15"]') }}
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
         # under that same cap. PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.
         include:
-          ${{ fromJSON(github.event_name == 'pull_request' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+          ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+    env:
+      # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.
+      CI_NODE_GROUP_ARGUMENT: ${{ matrix.levels != 'integration' && '--group=build' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -339,12 +352,15 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install wheel dependencies
         if: matrix.python != '3.15'
-        run: uv sync --frozen --no-build --no-dev --group test
+        run: uv sync --frozen --no-build --no-dev --group test ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"}
       - name: Install Python 3.15 dependencies with the verified PyYAML compatibility build
         if: matrix.python == '3.15'
         run: |
-          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
+          uv sync --frozen --no-build --no-dev --group test ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"} --no-install-package pyyaml
           bash scripts/bootstrap-pyyaml.sh
+      - name: Select the locked wheel Node without executing it
+        if: matrix.levels != 'integration'
+        run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - name: Inspect the Linux user manager without starting services
         if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.12' # a cell every pull request runs
         env:
@@ -380,7 +396,9 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.14"
-      - run: uv sync --frozen --no-build --no-dev --group test
+      - run: uv sync --frozen --no-build --no-dev --group test --group build
+      - name: Select the locked wheel Node without executing it
+        run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - run: make test
       - name: Record the total for the merge gate
         run: uv run --no-build coverage report --format=total --precision=2 > coverage-total.txt
@@ -512,7 +530,7 @@ jobs:
       contents: read
     name: Heinzel Notifier (macOS app)
     needs: changes
-    if: github.event_name != 'pull_request' && needs.changes.outputs.notifier == 'true' # pull requests: macos-smoke
+    if: (github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.notifier == 'true' # ordinary pull requests: macos-smoke
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -535,7 +553,7 @@ jobs:
       contents: read
     name: macOS-specific tests
     needs: changes
-    if: github.event_name != 'pull_request' && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: (github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
@@ -564,7 +582,7 @@ jobs:
     # Every app PR checks the CLI and macOS-only tests; full-macOS PRs also run the other platform jobs.
     # Build the notifier so the real-launch tests cannot silently skip.
     needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     runs-on: macos-latest
     timeout-minutes: 10
     env:
@@ -953,12 +971,36 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
 
+  release-candidate-source:
+    name: Release candidate source
+    needs: changes
+    if: needs.changes.outputs.full_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - name: Bind the actual tested tree to the exact release head
+        run: python3 -I scripts/release_candidate.py record --output reports/release-candidate.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-candidate-source
+          path: reports/release-candidate.json
+          if-no-files-found: error
+
   ci-ok:
     permissions:
       contents: read
     name: CI OK
     if: always() && (github.event_name != 'push' || needs.admission.outputs.full != 'false')
-    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check]
+    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
