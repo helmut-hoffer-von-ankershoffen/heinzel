@@ -65,12 +65,14 @@ hz system channel --to stable --yes
 **Update channel** in Settings makes the same choice. It survives updates, and choosing a channel installs nothing
 until you update. Going back to stable never downgrades: edge stays installed until stable is as new, and then the next
 update moves you to stable. Your settings, plugins and data stay as they are.
+
 ## Tools the app uses
 
 Git and the GitHub CLI (`gh`) are part of the standard app: they clone team repositories and plugin sources.
 On macOS the installer shows what is missing and installs it with [Homebrew](https://brew.sh); it does not install
-Homebrew itself: without it, the installer links to brew.sh and the app still installs. On Linux it prints the
-steps for your distribution and installs nothing. Add `--no-tools` to `hz-install` to only check. After you install
+Homebrew itself: without it, the installer links to brew.sh and the app still installs.
+
+On Linux it prints the steps for your distribution and installs nothing. Add `--no-tools` to `hz-install` to only check. After you install
 a tool yourself, `hz system prerequisite check` tells you when everything is usable. Installing `gh` never signs you in:
 run `gh auth login` yourself.
 
