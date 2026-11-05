@@ -146,6 +146,9 @@ Every screen and overlay must remain usable at phone portrait and landscape size
 pinch zoom and device safe areas. New UI uses the shared `AnchoredPopover` for dropdowns, `viewport-overlay` for
 modal backdrops, and `lib/viewport.ts` / `lib/placement.ts` for measured overlays. Full-height layouts use the shell's
 scale-normalized visual height. Form fields on touch devices retain at least 16px text; do not disable user zoom.
+The shared search field keeps this minimum before autofocus for every input mode and preserves larger UI font tokens.
+Keep that intrinsic rule independent of pointer detection; custom font-size utilities beside text colours can be
+discarded by class merging.
 Keep one scroll owner per pane, make flex children shrink with `min-h-0` / `min-w-0`, and scroll oversized content
 inside its pane. Settings rows wrap to the available pane width; native selectors must cap their intrinsic width,
 including long provider labels. Exercise advanced settings as well as basic settings in the mobile sweep.
