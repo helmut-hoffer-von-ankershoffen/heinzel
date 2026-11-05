@@ -72,14 +72,16 @@ try {
   const replyActivity = page.getByText("Tool activity for this reply · 4 events");
   await watchDisclosure(replyActivity, "reply-activity");
   const fractionalScroll = process.argv[6] === "fractional";
-  if (fractionalScroll) {
-    // These two cases isolate fractional eligibility with newly queued native animation.
+  const partialScroll = process.argv[6] === "partial";
+  if (fractionalScroll || partialScroll) {
+    const clipping = partialScroll ? 5 : 0.25;
+    // Queue native animation at the exact fractional or partially clipped press.
     // The separate smooth cases retain their already-running-at-down pressure.
     await replyActivity.hover();
-    await replyActivity.evaluate((node) => {
+    await replyActivity.evaluate((node, clipping) => {
       const scroller = node.closest(".workspace-scroll");
       const contentBottom = () => scroller.getBoundingClientRect().top + scroller.clientTop + scroller.clientHeight;
-      const desiredBottom = contentBottom() + 0.25;
+      const desiredBottom = contentBottom() + clipping;
       scroller.scrollTo({
         top: scroller.scrollTop - (desiredBottom - node.getBoundingClientRect().bottom),
         behavior: "instant",
@@ -112,7 +114,7 @@ try {
         },
         { capture: true, passive: true, once: true },
       );
-    });
+    }, clipping);
     const point = await replyActivity.boundingBox();
     assert.ok(point);
     await page.mouse.move(point.x + point.width / 2, point.y + point.height / 2);
@@ -121,7 +123,7 @@ try {
     assert.equal(press?.trusted, true, "fractional pressure must originate from a trusted physical press");
     assert.equal(press.primary, true, "fractional pressure must use the primary pointer and button");
     assert.equal(press.summary, true, "fractional pressure must press the current native summary");
-    assert.equal(press.clipping, 0.25, "the pressed control must meet the actual quarter-pixel viewport fringe");
+    assert.equal(press.clipping, clipping, "the pressed control must meet the exact requested workspace clipping");
     assert.ok(press.origin > 120, "the controlled press must have real workspace scroll distance");
     assert.equal(press.origin - press.destination, 120);
     assert.equal(press.documentObserved, true, "the queued native request must precede document capture");
