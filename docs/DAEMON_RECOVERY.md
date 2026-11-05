@@ -3,6 +3,10 @@
 Older daemon records did not identify their configuration profile. Ordinary install, update and removal retain
 unknown legacy definitions. Do not edit their records or unload an unverified label to bypass that refusal.
 
+For normal removal, run `hz system uninstall`. It stops verified owned services before removing the installed
+program, and keeps your data and settings. Running `uv tool uninstall heinzel` removes the program and its command
+links without calling Heinzel to remove its services. It can therefore leave service records behind.
+
 If `uvx heinzel@latest` reports that a retained daemon cannot be verified, inspect its status first:
 
 ```sh
@@ -17,9 +21,9 @@ uv run --no-project --with heinzel python -I -m heinzel.heads.daemon_recovery pl
 ```
 
 Planning is read-only. The initial recovery protocol supports recognized macOS 0.9.14 and 0.9.15 definitions only,
-with the independently verified persistent standard app, safely owned exact files, the fixed user manager and no
+with the independently verified installed standard app, safely owned exact files, the fixed user manager and no
 running tick or pending lifecycle operation. A genuinely completed 0.9.15 update handover can qualify only when its
-request, observation, scheduled heartbeat, signatures and current verified SDK fingerprint/version agree. The plan
+request, observation, scheduled heartbeat, signatures and current verified program fingerprint/version agree. The plan
 explicitly archives that completed request; unknown or active requests refuse.
 
 Explicit or different configuration routing refuses. Linux legacy recovery is not implemented; ordinary lifecycle
