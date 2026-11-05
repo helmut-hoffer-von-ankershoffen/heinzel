@@ -22,6 +22,11 @@ class SessionRepository(Protocol):
         ...
 
     @property
+    def search_storage_id(self) -> str:
+        """Distinguish independent private roots in a process-local search cache."""
+        ...
+
+    @property
     def authentication(self) -> Authentication:
         """The verified current call's channel; never a request argument or approval claim."""
         ...
@@ -50,6 +55,29 @@ class SessionRepository(Protocol):
         """Verified turn/checkpoint/effect metadata, refusing a damaged authoritative spine."""
         ...
 
+    def search_catalog_page(
+        self, *, position: tuple[int, str | None], anchor: tuple[int, str | None] | None, limit: int
+    ) -> tuple[SessionRead, tuple[int, str | None]]:
+        """Read one bounded authenticated owner catalog page."""
+        ...
+
+    def search_body_inventory(
+        self, session_id: str, source: str, *, known: tuple[int, int, int, int] | None
+    ) -> tuple[tuple[int, int, int, int] | None, frozenset[str] | None]:
+        """Inspect retained body IDs under the current owner."""
+        ...
+
+    def control_indexed_page(
+        self,
+        session_id: str,
+        *,
+        position: tuple[int, str | None],
+        anchor: tuple[int, str | None] | None,
+        limit: int,
+    ) -> tuple[SessionRead, tuple[int, str | None]]:
+        """Read an owner-checked bounded derived event page."""
+        ...
+
     def control_read(self, session_id: str) -> SessionRead:
         """Verified accepted messages and acknowledged controls, without waiting for an active turn."""
         ...
@@ -60,6 +88,10 @@ class SessionRepository(Protocol):
 
     def is_main_writer(self, session_id: str, writer: SessionWriter) -> bool:
         """Verify an active writer is scoped to this principal's main journal."""
+        ...
+
+    def channel_writer(self, session_id: str) -> AbstractContextManager[SessionWriter]:
+        """Serialize channel claim/recovery without nesting captured-write main/control locks."""
         ...
 
     def control_writer(self, session_id: str) -> AbstractContextManager[SessionWriter]:

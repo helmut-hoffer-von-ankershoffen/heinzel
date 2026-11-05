@@ -1,6 +1,6 @@
 ---
-title: Helpers for good work
-description: The vision for Heinzelmännchen, the current foundation, and the principles behind helpers that draft a product team's busywork for approval.
+title: Heinzels for good work
+description: The vision for Heinzelmännchen, the current foundation, and the principles behind Heinzels that draft a product team's busywork for approval.
 ---
 
 <p class="hz-eyebrow">The direction is human</p>
@@ -8,16 +8,16 @@ description: The vision for Heinzelmännchen, the current foundation, and the pr
 # Busywork done. You decide.
 
 Every team has work nobody chose: the tracker row, the Friday report, the customer note that should have been
-filed yesterday. Heinzelmännchen are helpers that do the drafting. People approve.
+filed yesterday. Heinzelmännchen are Heinzels that do the drafting. People approve.
 
 The name comes from the helpers of Cologne, who finished the town's work at night. Ours are less magical: a
-helper reads your tools with your own logins, writes a draft where the work lives, and asks you.
+Heinzel reads your tools with your own logins, writes a draft where the work lives, and asks you.
 
 ## The goal
 
-A crew of durable agents that take over any busywork that can be automated. Documents, sheets and tickets are
-one kind; a calendar, a mailbox or a review queue are others. Each helper keeps one promise and has a name, a
-face, one continuous conversation and a record. Eventually the helpers of a team coordinate through shared
+A crew of durable Heinzels that take over any busywork that can be automated. Documents, sheets and tickets are
+one kind; a calendar, a mailbox or a review queue are others. Each Heinzel keeps one promise and has a name, a
+face, one continuous conversation and a record. Eventually the Heinzels of a team coordinate through shared
 artifacts, so one person's approved output becomes another's input. Nobody designs that workflow; it emerges
 from the promises people made.
 
@@ -27,17 +27,17 @@ in advance is opt-in, scoped, revocable and earned on a record.
 ## What exists today
 
 The foundation is released: a kernel and typed operations; CLI, MCP, REST and web heads; local drafts on a
-schedule; named helpers with their own chat; team repositories; and plugins with their own releases.
+schedule; named Heinzels with their own chat; team repositories; and plugins with their own releases.
 
 [Install the foundation](guides/install.md) · [Explore the catalog](CATALOG.md)
 
 ## What does not exist yet
 
 - No scheduled job has run end to end with a live provider.
-- No helper writes into a shared artifact, and no two helpers have worked together.
+- No Heinzel writes into a shared artifact, and no two Heinzels have worked together.
 - Learning from your edits is a plan.
 
-Jobs shown on this site as helpers are imagined unless a page says otherwise. A plugin in the catalog does not
+Jobs shown on this site as Heinzels are imagined unless a page says otherwise. A plugin in the catalog does not
 mean a finished workflow.
 
 ## Principles
@@ -45,7 +45,7 @@ mean a finished workflow.
 | Principle | In the software |
 | --- | --- |
 | You stay in control | Drafts first; approval and waiting states are visible. |
-| Your identity | A helper acts with your logins, never as a bot account. |
+| Your identity | A Heinzel acts with your logins, never as a bot account. |
 | Local by default | Your machine first; remote access is an explicit choice. |
 | Any model or agent | Typed operations and MCP work with different tools. |
 | Open and composable | Public contracts, independent plugins, MIT license. |

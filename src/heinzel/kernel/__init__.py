@@ -23,6 +23,26 @@ from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._capability_schema import capability_read_schema
 from heinzel.kernel._captured_source import captured_source_active
+from heinzel.kernel._captured_write import (
+    CapturedWriteAcknowledgement,
+    CapturedWriteDraft,
+    CapturedWriteLease,
+    CapturedWriteReview,
+    CapturedWriteService,
+    CapturedWriteTarget,
+)
+from heinzel.kernel._channels import (
+    ApprovalChannel,
+    ChannelApprovalReply,
+    ChannelApprovalRequest,
+    ChannelNotice,
+    ChannelReceipt,
+    ChannelReplyConsumer,
+    ChannelReplySource,
+    ChannelTarget,
+    NotificationChannel,
+    VerifiedChannelReply,
+)
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import (
     CheckInChatContext,
@@ -113,6 +133,24 @@ from heinzel.kernel._daemon_recovery import (
 )
 from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_reporting_lines
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
+from heinzel.kernel._draft_append import (
+    DraftAppendAttempt,
+    DraftAppendLease,
+    DraftAppendReceipt,
+    DraftAppendReview,
+    DraftAppendService,
+    DraftAppendTarget,
+    DraftSectionSnapshot,
+    OwnerNoticeChannel,
+    OwnerNoticeTarget,
+    ReleaseFeedBaseline,
+    ReleaseFeedIdentity,
+    ReleaseFeedLease,
+    ReleaseFeedService,
+    ReleasePage,
+    ReleaseRecord,
+    ReviewedLinkChannel,
+)
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
 from heinzel.kernel._exposure import MCP_HTTP, MCP_STDIO, Exposed, exposed, input_schema, restricts
@@ -124,6 +162,16 @@ from heinzel.kernel._git import (
     RunGitCommand,
     check_repository_url,
     git_command,
+)
+from heinzel.kernel._host_maintenance import (
+    HostIntegration,
+    HostIntegrationScope,
+    HostMaintenanceIntegration,
+    HostServiceManager,
+    MaintenanceLocks,
+    host_maintenance_directory,
+    host_maintenance_gate,
+    host_maintenance_lock,
 )
 from heinzel.kernel._identity import PRIVATE_WRITE, Authentication, CallIdentity, CurrentUser, Principal
 from heinzel.kernel._installation import (
@@ -174,6 +222,7 @@ from heinzel.kernel._local_web import LocalWebRuntime, PersistentWeb
 from heinzel.kernel._metadata_verifier import CoreMetadataVerifier
 from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import Delivery, Notice, NoticeHelper, NoticeKind, Notifications
+from heinzel.kernel._offline_uninstall import OfflineUninstall, UninstallResult
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
 from heinzel.kernel._paths import collapses, operation_path, owns_path, public_parameters
 from heinzel.kernel._playbooks import (
@@ -315,6 +364,18 @@ from heinzel.kernel._themes import (
     ThemeVariant,
     font_stack_problem,
 )
+from heinzel.kernel._tool_uninstall import (
+    OwnedFile as OwnedIntegrationFile,
+)
+from heinzel.kernel._tool_uninstall import (
+    owned_file as capture_owned_integration_file,
+)
+from heinzel.kernel._tool_uninstall import (
+    physical_directory as verify_integration_directory,
+)
+from heinzel.kernel._tool_uninstall import (
+    remove_owned_file as remove_owned_integration_file,
+)
 from heinzel.kernel._views import ViewLet, ViewSlot, read_view_asset
 
 __all__ = [
@@ -362,6 +423,7 @@ __all__ = [
     "AgentResult",
     "AgentRunner",
     "AiAccess",
+    "ApprovalChannel",
     "AssetType",
     "Authentication",
     "Avatar",
@@ -374,8 +436,21 @@ __all__ = [
     "Capability",
     "CapabilitySettings",
     "CapabilityView",
+    "CapturedWriteAcknowledgement",
+    "CapturedWriteDraft",
+    "CapturedWriteLease",
+    "CapturedWriteReview",
+    "CapturedWriteService",
+    "CapturedWriteTarget",
     "CardWidget",
     "CatchUp",
+    "ChannelApprovalReply",
+    "ChannelApprovalRequest",
+    "ChannelNotice",
+    "ChannelReceipt",
+    "ChannelReplyConsumer",
+    "ChannelReplySource",
+    "ChannelTarget",
     "Chat",
     "ChatDraftTemplate",
     "Check",
@@ -427,6 +502,13 @@ __all__ = [
     "DiscoveryHint",
     "Document",
     "Documents",
+    "DraftAppendAttempt",
+    "DraftAppendLease",
+    "DraftAppendReceipt",
+    "DraftAppendReview",
+    "DraftAppendService",
+    "DraftAppendTarget",
+    "DraftSectionSnapshot",
     "DraftedMail",
     "EdgeRelease",
     "Effect",
@@ -443,6 +525,10 @@ __all__ = [
     "GraphicWidget",
     "HealthLet",
     "HeinzelError",
+    "HostIntegration",
+    "HostIntegrationScope",
+    "HostMaintenanceIntegration",
+    "HostServiceManager",
     "How",
     "Icon",
     "InfoLet",
@@ -478,6 +564,7 @@ __all__ = [
     "MailMessage",
     "MailQuery",
     "MailThread",
+    "MaintenanceLocks",
     "McpChatSessions",
     "McpServer",
     "Meeting",
@@ -494,12 +581,17 @@ __all__ = [
     "Notice",
     "NoticeHelper",
     "NoticeKind",
+    "NotificationChannel",
     "Notifications",
+    "OfflineUninstall",
     "OpenUrl",
     "OperationCall",
     "OperationLet",
     "OrgContext",
     "Origin",
+    "OwnedIntegrationFile",
+    "OwnerNoticeChannel",
+    "OwnerNoticeTarget",
     "Participant",
     "PersistentWeb",
     "Person",
@@ -524,11 +616,18 @@ __all__ = [
     "Relation",
     "ReleaseCache",
     "ReleaseFacts",
+    "ReleaseFeedBaseline",
+    "ReleaseFeedIdentity",
+    "ReleaseFeedLease",
+    "ReleaseFeedService",
+    "ReleasePage",
+    "ReleaseRecord",
     "ReleaseSource",
     "ReportingDraft",
     "Requester",
     "Requirement",
     "RequirementLet",
+    "ReviewedLinkChannel",
     "RunCommand",
     "RunGitCommand",
     "RunOperation",
@@ -601,10 +700,12 @@ __all__ = [
     "Tracker",
     "Transcript",
     "TranscriptSegment",
+    "UninstallResult",
     "UsageCause",
     "UsageEntry",
     "UsageLog",
     "Verb",
+    "VerifiedChannelReply",
     "ViewLet",
     "ViewSlot",
     "Weather",
@@ -615,6 +716,7 @@ __all__ = [
     "Window",
     "boot",
     "capability_read_schema",
+    "capture_owned_integration_file",
     "captured_source_active",
     "check_repository_url",
     "check_target",
@@ -631,6 +733,9 @@ __all__ = [
     "format_duration",
     "free_busy_people",
     "git_command",
+    "host_maintenance_directory",
+    "host_maintenance_gate",
+    "host_maintenance_lock",
     "input_schema",
     "installation_mutation_paths",
     "installation_mutation_pending",
@@ -652,6 +757,7 @@ __all__ = [
     "read_view_asset",
     "record_usage",
     "redact_emails",
+    "remove_owned_integration_file",
     "requirement_from_receipt",
     "restricts",
     "run_bounded_process",
@@ -668,5 +774,6 @@ __all__ = [
     "toml_value",
     "user_config_dir",
     "using_tick_interval",
+    "verify_integration_directory",
     "walk",
 ]

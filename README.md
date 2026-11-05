@@ -18,11 +18,11 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.svg">
-    <img src="docs/assets/hero-light.svg" alt="Heinzelmännchen: a small crowd of gnome-like helpers, old and young, walking along together" width="860">
+    <img src="docs/assets/hero-light.svg" alt="Heinzelmännchen: a small crowd of gnome-like Heinzels, old and young, walking along together" width="860">
   </picture>
 </p>
 
-**Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.**
+**Heinzelmännchen is an open-source crew of Heinzels that drafts your team's busywork and asks before anything leaves your machine.**
 Each Heinzelmännchen keeps one promise: the Friday report, the tracker update, the meeting brief. It reads your tools
 with *your* logins, drafts the work, and waits for your yes. Nothing is published, sent or spent without it. Like the
 [Heinzelmännchen of Cologne](https://en.wikipedia.org/wiki/Heinzelm%C3%A4nnchen), who finished the town's work at
@@ -34,8 +34,8 @@ source, and we are grateful: [thank you](#standing-on-the-shoulders-of-giants) t
 
 **Where it stands, honestly.** The foundation is released: the kernel, five heads (CLI, web app, MCP, REST and a
 background daemon), contracts that draft locally on request or on a schedule, a team repository, a graph of who keeps
-which promise, and plugins. A helper does not yet write into a shared document, no run has been proven unattended with a
-live provider, and helpers do not yet work with each other. Drafts are saved on your machine for you to edit
+which promise, and plugins. A Heinzel does not yet write into a shared document, no run has been proven unattended with a
+live provider, and Heinzels do not yet work with each other. Drafts are saved on your machine for you to edit
 ([roadmap](INTENT.md#where-we-are)).
 
 <picture>
@@ -159,7 +159,10 @@ skills:
 
 Other agents: `hz system agent install` copies the skills into the directories set in `[system.agent] skill_dirs`.
 
-**Uninstall** with `/hz-uninstall` from Claude Code, or:
+**Uninstall offline:** current verified standard installations support `hz system uninstall`. It keeps your data,
+configuration, agent skills and notifier. See [offline removal and recovery](docs/guides/install.md#uninstall-offline).
+
+For other installations, uninstall with `/hz-uninstall` from Claude Code, or:
 
 <!-- docs-test -->
 ```bash
@@ -274,7 +277,7 @@ Built in today:
 - [`ai`](docs/MODULES.md#ai) — How hz reaches AI, and what it spends: tokens and cost per run.
 - [`ai.access`](docs/MODULES.md#aiaccess) — Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds.
 - [`graph`](docs/MODULES.md#graph) — Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the flow waits.
-- [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable helpers that draft your team's recurring work for your approval.
+- [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable Heinzels that draft your team's recurring work for your approval.
 - [`org`](docs/MODULES.md#org) — Your profile, and the team, org and company you work with.
 - [`report`](docs/MODULES.md#report) — Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`).
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
@@ -341,14 +344,14 @@ core artifact:
 Company plugins live in their own `heinzel-*` repositories, scaffolded with `hz system plugin new`.
 
 Workflows are Markdown files, not code: a `<name>.prose.md` contract in your workflows directory (or your team's
-state repository) names the capabilities it reads, the inputs to fetch and the helper's limits, and its body says what
+state repository) names the capabilities it reads, the inputs to fetch and the Heinzel's limits, and its body says what
 the draft must achieve. Drafts are saved locally; nothing is published by itself.
 
 ```bash
 hz heinzel new weekly-digest             # a starter contract, valid as written, with comments; creates the directory
 hz heinzel check                         # every problem by file and line
 hz heinzel show weekly-digest            # what it requires, what is bound, whether it is ready, what to run next
-hz heinzel wake weekly-digest --dry-run   # the packet the helper would get; nothing is spent
+hz heinzel wake weekly-digest --dry-run   # the packet the Heinzel would get; nothing is spent
 hz heinzel wake weekly-digest             # draft it now; then `hz heinzel drafts`
 ```
 

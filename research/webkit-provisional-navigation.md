@@ -16,7 +16,7 @@ independent request prove that the earlier browser request was accepted or answe
 
 ## Next observation
 
-`HZ_REOPEN_DIAGNOSTICS=1` opts this one fixture into synthetic-server receipts. They record only the progress of
+The paired-reopen fixture always sets `HZ_REOPEN_RECEIPTS` for its synthetic-server receipts. They record only the progress of
 `GET /`: time, a Fetch Metadata navigation boolean, client port, response status and send completion. They exclude
 request bodies, header text, URL queries, fragments, arbitrary paths and credentials. Receipt output is limited to
 at most 16 KiB and the failed driver invocation's last 30 complete events. A response send completion means the ASGI
@@ -26,7 +26,7 @@ The browser now reports navigation response headers separately from request comp
 navigation's Playwright timing fields on failure. The original persistent profile, allowed service workers, stale
 session injection, assertions and all deadlines remain unchanged. No retry or browser preference is added.
 
-Run the existing `stale-webkit` case once with that environment variable when a diagnostic run is warranted. A
+Run the existing `stale-webkit` case once when a changed diagnostic hypothesis warrants an experiment. A
 passing run is a diagnostic observation, never a fix or evidence that the incident is resolved. If the navigation
 has no server receipt, investigate the owned browser's worker/network initialization. If server receipts show a
 request without a send completion, investigate the owned server. A send completion without a browser response
@@ -67,3 +67,55 @@ browser showed inspector/run-loop/display-link frames; it was a control observat
 request, not a sample of the CI failure. Auxiliary WebKit processes were not proven descendants and were not sampled.
 Eight focused receipt tests pass, covering privacy, navigation/probe classification, streaming completion,
 unrelated-path/protocol pass-through, fixed read bounds on an oversized file and incomplete-record handling.
+
+## Current recurrence and bounded diagnostic design
+
+[Run 41984561333, job 127102371889](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/runs/41984561333/job/127102371889)
+failed on the `tab-webkit` case at release head `3f4080a33e96e3d4464958f22eccf9b62ecbe95b`.
+Pairing and reopening against the first server succeeded. The first reopen after the server restart failed before
+document commit. Unlike the earlier incident, this failure includes server receipts: the navigation reached
+`GET /`, the server started a 200 response after 58 ms, and its final ASGI send returned after 61 ms. Playwright
+reported no navigation response, all request timing phases remained unset, and the initial document was still
+`about:blank`. Those receipts rule out an unanswered application request; they do not prove socket delivery or
+destination service-worker progress. No response headers, body or credentials are needed to make that distinction.
+
+The only proven native descendant was the browser. Its one-second sample exceeded or otherwise failed within the
+existing two-second subprocess budget; the old `unavailable` message discarded the reason. The fixed projection now
+distinguishes output limits, subprocess termination, missing tools, spawn permission failures, numeric exit status
+and unknown failures. `terminated` deliberately does not assert that a native deadlock or a deadline caused it.
+The sample duration, two-second subprocess limit, byte limit and descendant restriction are unchanged. A controlled
+sample of an owned sleeping child completed locally in 1.14 seconds with this exact invocation; that control neither
+reproduces nor explains the hosted failure. One additional isolated, empty-profile WebKit control also completed
+the unchanged sampler successfully and emitted only fixed frame categories. It involved no application navigation,
+existing browser profile, service or account. Success on this host does not establish sampler availability on the
+hosted runner or reproduce the navigation failure.
+
+macOS can launch auxiliary WebKit services under launchd. A missing descendant therefore does not prove that no
+Networking or WebContent process exists. Matching process names, executable locations or before/after process lists
+cannot establish its relationship to this profile. No unowned process is sampled, and no raw native report is
+written to a diagnostic file or emitted to CI. This diagnostic repair leaves the navigation incident open.
+
+The next discriminating observation should retain the existing paired journey and its profile, worker policy,
+assertions and deadlines. It should add only these bounded, fixture-owned observations after a failed navigation:
+
+1. Use the failed invocation's navigation receipt to identify its loopback client port. Do not mistake the driver's
+   later independent health probe for the browser connection. If the receipt is absent or ambiguous, record that
+   ownership is unavailable rather than choosing a nearby request.
+2. In parallel with the existing one-second process inventory, inspect socket metadata for that isolated server
+   port. Match both loopback endpoints and the recorded client port, excluding the listener and reverse server
+   endpoint. Project only whether the tuple remains present, a fixed process kind and TCP state; never print raw
+   process arguments, paths, environment, socket listings or request content. Retain the same aggregate diagnostic
+   deadline and byte budget. A closed or missing socket is unavailable evidence, not a failed connection claim.
+3. A socket match attributes a connection, not exclusive ownership of an auxiliary process or profile. It must not
+   authorize auxiliary sampling. Establish an independent browser responsibility relationship before any such
+   sample; if that cannot be done without privilege or unrelated state, leave the process unsampled.
+4. Review and test any transport instrumentation separately. ASGI middleware cannot observe TCP acknowledgement.
+   A future hook must use this server's actual protocol transport, record only bounded counters/closure states, and
+   distinguish buffered writes from peer acknowledgement. A successful send or empty local write buffer must never
+   be labelled browser receipt, worker completion or document commit.
+
+Before using that additional observation, controlled disposable loopback cases must show that it selects the
+navigation connection while excluding the listener, independent probe, another client and a launchd-like unrelated
+process. Tests must also cover a closed socket, ambiguous receipt, truncated output, missing/denied tool and timeout
+without replacing the original navigation error. This is a design for review, not implemented socket diagnostics or
+evidence of a product fix. Repeating the existing broad local campaign provides no missing boundary evidence.

@@ -19,7 +19,7 @@ Product development teams don't drown in one big chore; they drown in the sum of
 tracker hygiene, agendas, reports, newsletters, keeping documents consistent. Managers lose the hours they need for
 people, engineers lose flow, and the people across a time zone or an org chart lose visibility.
 
-Heinzelmännchen is an **open-source crew of AI helpers for product development teams**. It drafts the busywork of
+Heinzelmännchen is an **open-source crew of Heinzels for product development teams**. It drafts the busywork of
 running a team — status, ticket updates, agendas, reports, recognition — and people approve it. It is built for
 every role on a team: engineers, product managers, engineering managers and the leadership they report to.
 
@@ -74,7 +74,7 @@ When in doubt, these decide.
 - The kernel: modules, lets and dependency injection.
 - Five heads on the same operations: CLI, web, MCP, REST and the daemon.
 - Contracts that draft locally on a schedule, with a cost cap.
-- Named helpers, each with its own chat.
+- Named Heinzels, each with its own chat.
 - Team repositories and the contract graph.
 - Plugins with their own releases.
 - Themes and soundscapes, the terminal, and a paired phone view.
@@ -87,7 +87,7 @@ When in doubt, these decide.
 - Lessons from your edits feeding back into a contract.
 - Auto-approval.
 - The team sink.
-- Helpers working together.
+- Heinzels working together.
 - An always-on runner.
 
 No end-to-end journey has been proven with a live provider yet.

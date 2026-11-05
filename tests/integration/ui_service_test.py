@@ -1,5 +1,7 @@
 """Persistent web integration uses isolated files and fake service managers; it never alters the host's jobs."""
 
+import ast
+import hashlib
 import json
 import os
 import plistlib
@@ -19,6 +21,7 @@ from heinzel.heads.cli import build
 from heinzel.heads.web._supervision import SupervisedWeb
 from heinzel.kernel import (
     PrivateControl,
+    host_maintenance_gate,
     private_lock,
     private_read,
     private_socket_directory,
@@ -499,20 +502,31 @@ def test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loadi
     expected.write_text("verified tool fixture")
     service.executable.unlink()
     service.executable.symlink_to(expected)
-    custom_uv = service.home / "custom uv/uv"
     monkeypatch.setenv("HZ_STATE_DIR", str(service.directory.parent))
-    monkeypatch.setattr(_service.shutil, "which", lambda name: str(custom_uv) if name == "uv" else None)
+    monkeypatch.setattr(_service.shutil, "which", lambda name: "/poison/uv" if name == "uv" else None)
+    monkeypatch.setattr(_service, "_run", lambda _: pytest.fail("No ambient subprocess"))
+    verified = []
     monkeypatch.setattr(
-        _service,
-        "_run",
-        lambda args: subprocess.CompletedProcess(args, 0, str(service.executable.parent), ""),
+        _service, "verified_installed_path", lambda prefix: verified.append(prefix) or prefix / "bin/uv"
     )
     kernel = make_kernel(builtins=True)
-    kernel.bind(Installation, SimpleNamespace(prefix=service.prefix, is_tool=True, startup_state_matches=lambda: True))
+    kernel.bind(
+        Installation,
+        SimpleNamespace(
+            prefix=service.prefix,
+            is_tool=True,
+            startup_state_matches=lambda: True,
+            tool_destination=lambda: (service.prefix.parent, service.executable.parent),
+        ),
+    )
     created = WebService.for_user(kernel)
     assert created.prefix == service.prefix
-    assert created.uv == custom_uv
+    assert created.uv == service.prefix / "bin/uv"
+    assert created.which("launchctl") == "/bin/launchctl"
+    assert created.which("systemctl") == "/usr/bin/systemctl"
+    assert verified == []
     assert created.verify()
+    assert verified == [service.prefix]
     assert manager.calls == []
 
 
@@ -803,7 +817,15 @@ def test_real_user_factory_binds_profile_and_refuses_process_behavior_before_man
         _service, "_run", lambda args: subprocess.CompletedProcess(args, 0, str(selected.executable.parent), "")
     )
     kernel = make_kernel(builtins=True, settings_=Settings(features={"persistent_web"}))
-    kernel.bind(Installation, SimpleNamespace(prefix=selected.prefix, is_tool=True, startup_state_matches=lambda: True))
+    kernel.bind(
+        Installation,
+        SimpleNamespace(
+            prefix=selected.prefix,
+            is_tool=True,
+            startup_state_matches=lambda: True,
+            tool_destination=lambda: (selected.prefix.parent, selected.executable.parent),
+        ),
+    )
     created = WebService.for_user(kernel)
     assert created.profile == {
         **environment,
@@ -964,12 +986,31 @@ def test_linux_unknown_stop_state_fails_immediately_and_retains_all_integration(
     assert len(stops) == 1
 
 
-def test_released_launcher_remains_owned_but_changed_legacy_bytes_are_refused(service):
+def released_launcher(service, port, record, version):
+    """Run frozen publisher/git-derived renderer sources, independent of the current production generator."""
+    name = "published015" if version == "published015" else "main505"
+    path = Path(__file__).parents[1] / "fixtures/web-launcher-history" / f"{name}.json"
+    digests = {
+        "published015": "1946fc63448a85038859e23d1df5c3d170ef418ea9fbdfb810e37c60c4a74408",
+        "main505": "e11673d252ec65b544c60c0204580665c5a8378710fcf2b94ee798ecc19d3397",
+    }
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == digests[name]
+    source = json.loads(path.read_text())
+    namespace = {"Path": Path, "shlex": shlex, "plistlib": plistlib, "LABEL": LABEL}
+    tree = ast.parse("\n\n".join(source[key] for key in ("session", "gates", "environment", "launcher", "unit")))
+    exec(compile(tree, str(path), "exec"), namespace)  # noqa: S102 - execute only SHA256-pinned historical renderer fixtures
+    assert namespace["_content"](service) == service.unit.read_text()
+    render = namespace["_launch_content"]
+    args = (service, port, record["generation"], record["profile"])
+    return render(*args) if name == "published015" else render(*args, legacy=version == "main505-legacy")
+
+
+@pytest.mark.parametrize("version", ["published015", "main505-canonical", "main505-legacy"])
+def test_released_launcher_remains_owned_but_changed_legacy_bytes_are_refused(service, version):
     service, manager, port = service
     service.install(port)
     record = json.loads(service.marker.read_text())
-    old = service._launch_content(port, record["generation"], record["profile"], legacy=True)
-    assert " ui --no-browser " in old
+    old = released_launcher(service, port, record, version)
     assert " ui serve --no-browser " in record["launcher"]
     record["launcher"] = old
     private_write(service.launcher, old)
@@ -980,3 +1021,169 @@ def test_released_launcher_remains_owned_but_changed_legacy_bytes_are_refused(se
     with pytest.raises(HeinzelError):
         service.uninstall()
     assert manager.loaded
+
+
+HISTORICAL_VERSIONS = ["published015", "main505-canonical", "main505-legacy"]
+
+
+def seed_released_service(service, version, *, previous_uv=False):
+    selected, manager, port = service
+    selected.install(port)
+    record = json.loads(selected.marker.read_text())
+    current_uv = selected.uv
+    if previous_uv:
+        selected.uv = selected.home / "previous-uv/uv"
+        record["uv"] = str(selected.uv)
+    record["launcher"] = released_launcher(selected, port, record, version)
+    selected.uv = current_uv
+    private_write(selected.launcher, record["launcher"])
+    private_write(selected.marker, json.dumps(record))
+    manager.calls.clear()
+    return selected, manager, port, record
+
+
+def manager_effects(manager):
+    return [
+        call
+        for call in manager.calls
+        if any(part in call for part in ("bootout", "disable", "bootstrap", "enable", "daemon-reload"))
+    ]
+
+
+@pytest.mark.parametrize("version", HISTORICAL_VERSIONS)
+def test_explicit_install_migrates_actual_historical_tuple_and_both_shell_fences(service, version):
+    selected, manager, port, old = seed_released_service(service, version, previous_uv=True)
+    compatibility = selected.compatibility_gate()
+    private_write(compatibility, "fixture fence")
+    cold = subprocess.run(["/bin/sh", str(selected.launcher)], env={}, capture_output=True, check=False, timeout=5)
+    assert cold.returncode == 75
+    compatibility.unlink()
+    assert not selected.status().ready
+    before_unit = selected.unit.read_bytes()
+    assert selected.install(port).changed
+    new = json.loads(selected.marker.read_text())
+    assert not selected.historical_record(new)
+    assert new["uv"] == str(selected.uv)
+    assert new["profile"] == old["profile"]
+    assert new["generation"] != old["generation"]
+    assert selected.unit.read_bytes() == before_unit
+    assert len([call for call in manager.calls if "bootout" in call or "disable" in call]) >= 1
+    assert not compatibility.exists()
+    assert not host_maintenance_gate(selected.prefix).exists()
+    assert list((selected.directory / "launcher-history").glob("*.json"))
+    private_write(host_maintenance_gate(selected.prefix), "fixture SDK fence")
+    cold = subprocess.run(["/bin/sh", str(selected.launcher)], env={}, capture_output=True, check=False, timeout=5)
+    assert cold.returncode == 75
+
+
+@pytest.mark.parametrize("version", HISTORICAL_VERSIONS)
+def test_explicit_restart_migrates_before_requesting_any_old_runtime_restart(service, version):
+    selected, manager, _port, old = seed_released_service(service, version)
+    control = start_control(selected, int(old["port"]), restart=lambda: pytest.fail("The old runtime must not restart"))
+    try:
+        result = selected.restart()
+        assert result.requested
+        assert result.retiring_instance == INSTANCE
+        assert not selected.historical_record(json.loads(selected.marker.read_text()))
+        assert manager_effects(manager)
+    finally:
+        control.close()
+
+
+@pytest.mark.parametrize("boundary", ["stopped", "launcher-replaced", "loaded", "compatibility-cleared"])
+def test_interrupted_historical_migration_keeps_exact_fences_and_can_resume(service, monkeypatch, boundary):
+    from heinzel.modules.ui._launcher_transition import LauncherTransition
+
+    selected, manager, port, _old = seed_released_service(service, "published015")
+    original_phase, original_replace, original_unlink = LauncherTransition.phase, Path.replace, Path.unlink
+
+    def phase(transition, value):
+        original_phase(transition, value)
+        if value == boundary:
+            msg = "fixture interruption"
+            raise OSError(msg)
+
+    def replace(path, target):
+        result = original_replace(path, target)
+        if boundary == "launcher-replaced" and path.name.endswith("-launcher.new"):
+            msg = "fixture interruption"
+            raise OSError(msg)
+        return result
+
+    def unlink(path, *args, **kwargs):
+        result = original_unlink(path, *args, **kwargs)
+        if boundary == "compatibility-cleared" and path == selected.compatibility_gate():
+            msg = "fixture interruption"
+            raise OSError(msg)
+        return result
+
+    monkeypatch.setattr(LauncherTransition, "phase", phase)
+    monkeypatch.setattr(Path, "replace", replace)
+    monkeypatch.setattr(Path, "unlink", unlink)
+    with pytest.raises(HeinzelError, match="incomplete"):
+        selected.install(port)
+    assert host_maintenance_gate(selected.prefix).exists()
+    assert selected.unit.exists()
+    effects_before = manager_effects(manager)
+    monkeypatch.setattr(LauncherTransition, "phase", original_phase)
+    monkeypatch.setattr(Path, "replace", original_replace)
+    monkeypatch.setattr(Path, "unlink", original_unlink)
+    assert selected.install(port).changed
+    assert not selected.historical_record(json.loads(selected.marker.read_text()))
+    assert not host_maintenance_gate(selected.prefix).exists()
+    assert not selected.compatibility_gate().exists()
+    if boundary == "compatibility-cleared":
+        assert manager_effects(manager) == effects_before
+
+
+@pytest.mark.parametrize("change", ["foreign", "missing", "edited-launcher", "edited-journal"])
+def test_interrupted_historical_transition_refuses_changed_authority_before_new_effects(service, monkeypatch, change):
+    from heinzel.modules.ui._launcher_transition import LauncherTransition
+
+    selected, manager, port, _old = seed_released_service(service, "main505-canonical")
+    original = LauncherTransition.phase
+
+    def stop_at_phase(transition, value):
+        original(transition, value)
+        if value == "stopped":
+            msg = "fixture interruption"
+            raise OSError(msg)
+
+    monkeypatch.setattr(LauncherTransition, "phase", stop_at_phase)
+    with pytest.raises(HeinzelError, match="incomplete"):
+        selected.install(port)
+    monkeypatch.setattr(LauncherTransition, "phase", original)
+    if change == "foreign":
+        private_write(selected.compatibility_gate(), "foreign operation")
+    elif change == "missing":
+        selected.compatibility_gate().unlink()
+    elif change == "edited-launcher":
+        private_write(selected.launcher, selected.launcher.read_text() + "# changed\n")
+    else:
+        path = selected.directory / "launcher-transition.json"
+        path.write_text(path.read_text() + " ")
+    before = manager_effects(manager)
+    with pytest.raises((HeinzelError, ValueError, OSError)):
+        selected.install(port)
+    assert manager_effects(manager) == before
+    assert selected.unit.exists()
+    assert host_maintenance_gate(selected.prefix).exists()
+    if change == "foreign":
+        assert selected.compatibility_gate().read_text() == "foreign operation"
+    if change == "missing":
+        assert not selected.compatibility_gate().exists()
+
+
+@pytest.mark.parametrize("version", HISTORICAL_VERSIONS)
+def test_explicit_uninstall_retires_historical_launcher_under_compatibility_fence(service, version):
+    selected, manager, _port, _old = seed_released_service(service, version)
+    retained = selected.directory / "retained-data"
+    retained.write_text("pairing/consent retained")
+    assert selected.uninstall().changed
+    assert not selected.unit.exists()
+    assert not selected.marker.exists()
+    assert not selected.launcher.exists()
+    assert retained.read_text() == "pairing/consent retained"
+    assert not host_maintenance_gate(selected.prefix).exists()
+    assert not selected.compatibility_gate().exists()
+    assert not manager.active

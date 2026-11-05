@@ -13,16 +13,16 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { t } from "@/i18n";
-import { placePopover, popoverHeight } from "@/lib/placement";
+import { placePopover } from "@/lib/placement";
 import { cn } from "@/lib/utils";
-import { watchViewport } from "@/lib/viewport";
+import { viewportBounds, watchViewport } from "@/lib/viewport";
 import { fitFooter, footerWidths } from "./footerFit";
 
 export const FOOTER_MORE = "@more";
 export const FOOTER_CREDIT = "@credit";
 export const FOOTER_RELOCATED = "hz:footer-relocated";
 type Registered = { element: HTMLElement; host: HTMLElement; priority: number; pinned: boolean };
-type Layout = { hidden: string[]; empty: string[]; compactCredit: boolean; width: number };
+type Layout = { measured: string[]; hidden: string[]; empty: string[]; compactCredit: boolean; width: number };
 type Context = Layout & {
   register: (id: string, item: Registered) => () => void;
   overflowOpen: boolean;
@@ -51,7 +51,7 @@ export function FooterLayout({ children, className, ...props }: ComponentPropsWi
   const lastFocused = useRef<string | null>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [overflowTarget, setOverflowTarget] = useState<HTMLElement | null>(null);
-  const [layout, setLayout] = useState<Layout>({ hidden: [], empty: [], compactCredit: false, width: 0 });
+  const [layout, setLayout] = useState<Layout>({ measured: [], hidden: [], empty: [], compactCredit: false, width: 0 });
   const queue = useCallback(() => {
     if (pending.current !== null) return;
     pending.current = requestAnimationFrame(() => {
@@ -122,6 +122,7 @@ export function FooterLayout({ children, className, ...props }: ComponentPropsWi
     );
     const moreWidth = registered.current.get(FOOTER_MORE)?.element.getBoundingClientRect().width ?? 24;
     const next = fitFooter(available, variants.items, gap, moreWidth);
+    const measuredIds = measured.map((item) => item.id);
     const empty = variants.items.filter((item) => item.width <= 0).map((item) => item.id);
     const concealedFocus = next.hidden.find((id) =>
       registered.current.get(id)?.element.contains(document.activeElement),
@@ -137,11 +138,18 @@ export function FooterLayout({ children, className, ...props }: ComponentPropsWi
     }
     setLayout((current) =>
       current.width === available &&
+      current.measured.join("\0") === measuredIds.join("\0") &&
       current.compactCredit === variants.compactCredit &&
       current.hidden.join("\0") === next.hidden.join("\0") &&
       current.empty.join("\0") === empty.join("\0")
         ? current
-        : { hidden: next.hidden, empty, compactCredit: variants.compactCredit, width: available },
+        : {
+            measured: measuredIds,
+            hidden: next.hidden,
+            empty,
+            compactCredit: variants.compactCredit,
+            width: available,
+          },
     );
   };
   useLayoutEffect(() => {
@@ -226,8 +234,10 @@ export function FooterPart({
   const anchor = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const [host] = useState(() => document.createElement("div"));
-  const { register, hidden, empty, overflowOpen, overflowTarget } = useFooterLayout();
-  const concealed = id === FOOTER_MORE ? hidden.length === 0 : hidden.includes(id) || empty.includes(id);
+  const { register, measured, hidden, empty, overflowOpen, overflowTarget } = useFooterLayout();
+  // A late contribution must not expose a temporary pointer target before its capacity decision commits.
+  const measuring = id !== FOOTER_MORE && !measured.includes(id);
+  const concealed = id === FOOTER_MORE ? hidden.length === 0 : measuring || hidden.includes(id) || empty.includes(id);
   const inOverflow = hidden.includes(id) && overflowOpen && !!overflowTarget;
   useLayoutEffect(() => {
     if (!content.current) return;
@@ -256,7 +266,9 @@ export function FooterPart({
       <div
         ref={anchor}
         data-footer-part={id}
-        data-footer-hidden={hidden.includes(id) ? "overflow" : empty.includes(id) ? "empty" : undefined}
+        data-footer-hidden={
+          measuring ? "measuring" : hidden.includes(id) ? "overflow" : empty.includes(id) ? "empty" : undefined
+        }
         aria-hidden={concealed || undefined}
         inert={concealed}
         className={cn(
@@ -334,15 +346,15 @@ export function FooterMore() {
     const panel = pane.current;
     const position = () => {
       if (!trigger.current) return;
-      const size = panel.getBoundingClientRect();
-      const maxHeight = popoverHeight(trigger.current.getBoundingClientRect());
+      const anchor = trigger.current.getBoundingClientRect();
+      const viewport = viewportBounds();
+      // Translate the pane upwards from a viewport-bounded bottom edge. Newly relocated or growing rows then
+      // extend upwards immediately, without waiting for ResizeObserver to replace an obsolete measured top.
+      const bottomEdge = Math.max(viewport.top + 8, Math.min(anchor.top - 6, viewport.top + viewport.height - 8));
       const next = {
-        ...placePopover(
-          trigger.current.getBoundingClientRect(),
-          { width: size.width, height: Math.min(size.height, maxHeight) },
-          "above",
-        ),
-        maxHeight,
+        left: placePopover(anchor, { width: panel.getBoundingClientRect().width, height: 0 }, "above").left,
+        top: bottomEdge,
+        maxHeight: Math.max(1, Math.min(viewport.height - 16, bottomEdge - viewport.top - 8)),
       };
       setAt((old) => (old.left === next.left && old.top === next.top && old.maxHeight === next.maxHeight ? old : next));
     };
@@ -403,7 +415,7 @@ export function FooterMore() {
             ref={panelRef}
             aria-label={t("status.more")}
             tabIndex={-1}
-            className="viewport-popover fixed z-(--layer-popover) flex w-72 max-w-[calc(var(--hz-viewport-width,100vw)-2rem)] flex-col overflow-y-auto rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
+            className="viewport-popover fixed z-(--layer-popover) flex w-72 -translate-y-full max-w-[calc(var(--hz-viewport-width,100vw)-2rem)] flex-col overflow-y-auto rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
             style={at}
           />,
           document.body,

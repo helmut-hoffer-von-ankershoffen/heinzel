@@ -308,8 +308,7 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
     """Pair once with the printed link; Ctrl-C and a new `hz ui` with a new session token keep it signed in."""
     env, _ = environment
     receipts = tmp_path / "navigation-receipts.jsonl"
-    if os.environ.get("HZ_REOPEN_DIAGNOSTICS") == "1":
-        env |= {"HZ_REOPEN_RECEIPTS": str(receipts)}
+    env |= {"HZ_REOPEN_RECEIPTS": str(receipts)}
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(
@@ -892,3 +891,52 @@ def test_plugin_gallery_is_lazy_accessible_and_responsive_in_both_engines(enviro
         output.close()
         if ui.stderr is not None:
             ui.stderr.close()
+
+
+@pytest.mark.timeout(600)
+def test_calendar_panel_on_phone_and_desktop_in_both_browsers(environment, tmp_path):
+    """Exercise the private calendar panel using fixture events on both browser engines."""
+    env, _recorded = environment
+    web_build.ensure_built()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    for engine in ("chromium", "webkit"):
+        subprocess.run([*run, "exec", "playwright-core", "install", engine], cwd=REPO, check=True, timeout=600)
+    ui = subprocess.Popen(
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE
+    )
+    capture = MobileServerOutput(ui)
+    try:
+        url = capture.wait_url()
+        result = subprocess.run(
+            [
+                *run,
+                "exec",
+                "node",
+                "e2e/calendar.mjs",
+                url,
+                str(Path(os.environ.get("HZ_SCREENSHOTS", tmp_path)) / "calendar"),
+            ],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+        )
+        assert result.returncode == 0, redact(result.stderr, parse_qs(urlsplit(url).fragment).get("token", [""])[0])
+    finally:
+        ui.terminate()
+        ui.wait(30)
+        capture.close()
+        if ui.stderr is not None:
+            ui.stderr.close()
+
+
+@pytest.mark.timeout(600)
+def test_settings_search_font_floor_precedes_focus_for_phone_input_modes(environment, tmp_path):
+    """The real search field retains its minimum and enlarged theme size before any autofocus."""
+    env, _recorded = environment
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run([*run, "exec", "playwright-core", "install", "webkit"], cwd=REPO, check=True, timeout=600)
+    result = drive_ui_script(env, tmp_path, "search-field-font.mjs")
+    assert len(result["cases"]) == 8
+    assert all(case["fontSize"] >= max(16, case["themeSize"]) for case in result["cases"])

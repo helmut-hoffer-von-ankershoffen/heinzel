@@ -13,8 +13,9 @@ from decimal import Decimal
 from pydantic import JsonValue, TypeAdapter
 from pydantic_ai.models import Model
 
-from heinzel import ConfiguredApiAccess, CurrentUser, HeinzelError, Kernel, SessionEvent
+from heinzel import ConfiguredApiAccess, CurrentUser, HeinzelError, Kernel, SessionEvent, SessionWriter
 from heinzel.modules.heinzel._budget_reservation import initialize_budget
+from heinzel.modules.heinzel._captured_write_tools import DocumentDraftTools, document_draft_schema, new_file_schema
 from heinzel.modules.heinzel._claude_subscription_model import ClaudeSubscriptionModel
 from heinzel.modules.heinzel._connected_grants import ConnectedReadFailedError, ConnectedReadGrants
 from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
@@ -67,6 +68,27 @@ class InteractiveTurn:
         if self._crud.repository.principal_id != self._owner:
             msg = "This turn belongs to a different authenticated owner"
             raise HeinzelError(msg)
+
+    def _dispatch_draft(  # noqa: PLR0913, PLR0917 - explicit owner-turn activity and tool binding
+        self,
+        tools: DocumentDraftTools | None,
+        session: str,
+        turn: str,
+        call: int,
+        name: str,
+        arguments: dict[str, JsonValue],
+    ) -> str:
+        self._event(session, turn, call, name, "requested")
+        if tools is None:
+            self._event(session, turn, call, name, "denied")
+            return "Document drafting is unavailable."
+        try:
+            result = (tools.dispatch if name == "document:draft" else tools.create)(arguments, call)
+        except (HeinzelError, ValueError):
+            self._event(session, turn, call, name, "denied")
+            return "The draft could not be recorded; inspect its current terms."
+        self._event(session, turn, call, name, "completed")
+        return result
 
     async def run_connected(  # noqa: PLR0913 - distinct trusted binding and turn policy values
         self,
@@ -186,6 +208,7 @@ class InteractiveTurn:
         connected_set: ConnectedReadSetApprovals | None = None,
         scheduled_notifications: ScheduledNotifications | None = None,
         prepare: Callable[[], None] | None = None,
+        draft_tools: Callable[[SessionWriter], DocumentDraftTools | None] | None = None,
     ) -> SessionMessage:
         """Execute one accepted message; an interrupted attempt never automatically re-executes.
 
@@ -343,6 +366,7 @@ class InteractiveTurn:
                 else None
             )
 
+            document_drafts = draft_tools(turn_writer) if draft_tools is not None else None
             calls = 0
             user_tools = (
                 UserProposalTools(
@@ -417,6 +441,8 @@ class InteractiveTurn:
                         return "The private proposal could not be recorded; inspect its current terms."
                     self._event(session_id, turn, calls, name, "completed")
                     return result
+                if name in {"document:draft", "document:create"}:
+                    return self._dispatch_draft(document_drafts, session_id, turn, calls, name, args)
                 if name in _READ_TOOLS and allow_ungranted_tools:
                     # The prototype's pure local tool is not part of the reviewed registered catalog.
                     if expected_grant is not None:
@@ -585,6 +611,12 @@ class InteractiveTurn:
                         [{"name": tool.identity, "schema": tool.schema} for tool in schemas]
                         + (skill_tool_schemas(expected_grant) if expected_grant else [])
                         + (user_proposal_schemas() if user_tools else [])
+                        + ([new_file_schema()] if document_drafts is not None else [])
+                        + (
+                            [document_draft_schema()]
+                            if document_drafts is not None and document_drafts.has_document
+                            else []
+                        )
                         + (playbook_tool_schemas() if playbook_tools else [])
                         + (schedule_suggestion_schemas() if schedule_tools else [])
                         + (source_suggestion_schemas() if source_tools else [])

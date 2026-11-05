@@ -73,6 +73,34 @@ describe("notification sound", () => {
     expect(await sound.dingForNotice("notice-4")).toBe(false);
   });
 
+  it("does not sound an expired meeting after waiting for the cross-tab Web Lock", async () => {
+    installAudio();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const sound = await import("./sound");
+    await sound.setNotificationSoundEnabled(true);
+    let instant = Date.parse("2026-11-04T10:00:00Z");
+    vi.spyOn(Date, "now").mockImplementation(() => instant);
+    const oscillator = vi.spyOn(FakeAudioContext.prototype, "createOscillator");
+    vi.stubGlobal("navigator", {
+      locks: {
+        request: async (_name: string, _options: object, claim: () => boolean) => {
+          instant += 1000;
+          return claim();
+        },
+      },
+    });
+    expect(
+      await sound.dingForStreamEvent({
+        event: "notice",
+        notice: {
+          id: "expired-meeting",
+          expires: "2026-11-04T10:00:01Z",
+        },
+      }),
+    ).toBe(false);
+    expect(oscillator).not.toHaveBeenCalled();
+  });
+
   it("does not play in a hidden tab", async () => {
     installAudio();
     const sound = await import("./sound");

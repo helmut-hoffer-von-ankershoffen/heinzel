@@ -41,6 +41,9 @@ def test_installed_browser_service_journey_keeps_cold_starts_out_of_browser_shar
     assert "tests/e2e/ui_service_test.py" not in browser
     assert first.isdisjoint(second)
     assert first | second == browser
+    # The mounted UI sweep already contains roughly half the observed browser phase time.
+    assert first == {"tests/e2e/web_ui_test.py"}
+    assert second == browser - first
 
 
 _SANDBOX_SCRIPT = REPO / "desktop" / "ci" / "restore_linux_sandbox.py"
@@ -56,6 +59,14 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
+        "python3 -I scripts/release_candidate.py": "selects or records release source",
+        "uv run --frozen --no-sync --no-build python scripts/ci_node.py": (
+            "exports the already installed locked runtime through GitHub's step-local GITHUB_PATH setup contract"
+        ),
+        "sudo sed -i 's|http://azure\\.archive\\.ubuntu\\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "
+        "/etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources": (
+            "selects the same signed primary Ubuntu archive as Docs before browser dependency installation"
+        ),
         "uv run --no-build --script scripts/main_batch.py": "read-only bounded admission of an explicit main batch",
         "echo 'The validated aggregate base": "records that the final run consumed the aggregate base",
         'echo "Full CI is recorded': "links the intermediate admission to its exact final run",
@@ -74,6 +85,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "merge-gate.yml": {
         "uv run --no-build --frozen --script scripts/merge_gate.py": "judges by public APIs, from the base branch",
     },
+    "acceptance-sharded.yml": {
+        "uv python install 3.13": "the isolated acceptance study interpreter",
+        '"$(uv python find 3.13)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
+    },
     "acceptance.yml": {
         "uv python install 3.13": "the interpreter the harness runs on",
         '"$(uv python find 3.13)" -I scripts/acceptance/': (
@@ -81,6 +96,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ),
     },
     "docs.yml": {
+        "sudo sed -i ": "selects the primary signed Ubuntu archive before browser dependency installation",
         "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
         "uv run --quiet --frozen --no-build --group docs playwright install-deps": (
             "Chromium's system libraries, from the runner"
@@ -669,7 +685,7 @@ def test_release_docs_only_publish_existing_recordings_even_when_the_caller_was_
 # A script named by path needs its executable bit, which copier drops when it follows the template's symlinks into a
 # plugin's scripts/. Through an interpreter, a script runs without it.
 SCRIPT = re.compile(r"(?<![\w/.-])(?:\./)?scripts/[\w.-]+\.(?:sh|py)\b")
-INTERPRETER = re.compile(r"(?:\bbash|\bpython3?|\buv run(?: -[\w-]+)*(?: --script| python3?))\s+$")
+INTERPRETER = re.compile(r"(?:\bbash|\bpython3?(?: -I)?|\buv run(?: -[\w-]+)*(?: --script| python3?))\s+$")
 
 
 def scripts_run_by_path(run: str) -> list[str]:
@@ -1013,10 +1029,14 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     assert '"os":"macos-latest","python":"3.15"' in jobs["test"]["strategy"]["matrix"]["include"]
 
 
-def _macos_include(matrix: dict, event: str, full: bool) -> list[dict]:
+def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = False) -> list[dict]:
     expression = re.fullmatch(r"\$\{\{ fromJSON\((.*)\) \}\}", matrix["include"].strip())
     assert expression
-    context = {"github.event_name": event, "needs.changes.outputs.macos_full": str(full).lower()}
+    context = {
+        "github.event_name": event,
+        "needs.changes.outputs.macos_full": str(full).lower(),
+        "needs.changes.outputs.full_release": str(release).lower(),
+    }
     for branch in expression[1].split(" || "):
         value = None
         for term in branch.split(" && "):
@@ -1218,7 +1238,9 @@ def ci_paths(tmp_path_factory):
     return script, directory
 
 
-def _changes_outputs(tmp_path, ci_paths, event: str, changed: str, git_exit: int = 0) -> set[str]:
+def _changes_outputs(  # noqa: PLR0913 - independent changed-path, event and release-selection fixture inputs
+    tmp_path, ci_paths, event: str, changed: str, git_exit: int = 0, *, release: bool = False
+) -> set[str]:
     script, directory = ci_paths
     output = tmp_path / "output"
     subprocess.run(
@@ -1226,6 +1248,7 @@ def _changes_outputs(tmp_path, ci_paths, event: str, changed: str, git_exit: int
         env={
             "PATH": f"{directory / 'bin'}:/usr/bin:/bin",
             "EVENT": event,
+            "FULL_RELEASE": str(release).lower(),
             "BASE": "base",
             "GITHUB_OUTPUT": str(output),
             "CHANGED_PATHS": changed,
@@ -1453,18 +1476,21 @@ def _ci_jobs() -> dict:
     return yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
 
 
-def _oses(value: str | list[str], event: str, *, macos_full: bool = False) -> list[str]:
+def _oses(value: str | list[str], event: str, *, macos_full: bool = False, release: bool = False) -> list[str]:
     """The matrix values for an event, from a plain list or a pull-request conditional."""
     if isinstance(value, list):
         return value
     match = re.fullmatch(
         r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && "
-        r"(?P<native>needs\.changes\.outputs\.macos_full != 'true' && )?'(?P<pr>.*)' "
+        r"(?P<native>needs\.changes\.outputs\.macos_full != 'true' && )?"
+        r"(?P<release>needs\.changes\.outputs\.full_release != 'true' && )?'(?P<pr>.*)' "
         r"\|\| '(?P<full>.*)'\) \}\}",
         value,
     )
     assert match, value
-    pr_lane = event == "pull_request" and (not match["native"] or not macos_full)
+    pr_lane = (
+        event == "pull_request" and (not match["native"] or not macos_full) and (not match["release"] or not release)
+    )
     return json.loads(match["pr"] if pr_lane else match["full"])
 
 
@@ -1504,7 +1530,7 @@ def test_a_pull_request_runs_one_small_macos_job_and_main_runs_the_full_macos_su
             if "macos" in runs_on or (oses is not None and any("macos" in os for os in _oses(oses, event))):
                 found.add(name)
     include = jobs["test"]["strategy"]["matrix"]["include"]
-    assert "github.event_name == 'pull_request' && '[]'" in include
+    assert "github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '[]'" in include
     assert on_pull_request == {"macos-smoke"}
     assert on_main == {"setup", "e2e", "notifier", "macos-specific", "electron"}  # and the test matrix's macOS shards
     assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], "push") == [
@@ -1610,3 +1636,46 @@ def test_release_acceptance_can_pin_public_artifacts_and_correlate_its_run():
     assert "inputs.release_attempt" in workflow["run-name"]
     assert workflow["permissions"] == {}
     assert job["permissions"] == {"contents": "read"}
+
+
+@pytest.mark.parametrize(
+    "changed", ["CHANGELOG.md\npyproject.toml\n", "docs/guides/install.md\n", "plugins/example/file.py\n"]
+)
+def test_release_candidates_force_the_whole_existing_matrix_for_every_changed_scope(tmp_path, ci_paths, changed):
+    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", changed, release=True)
+    assert {
+        "macos_full=true",
+        "site_only=false",
+        "core=true",
+        "notifier=true",
+        "contracts=true",
+        "electron=true",
+    } <= outputs
+    jobs = _ci_jobs()
+    assert _oses(jobs["test"]["strategy"]["matrix"]["python"], "pull_request", release=True) == [
+        "3.12",
+        "3.13",
+        "3.14",
+        "3.15",
+    ]
+    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "pull_request", full=True, release=True)) == 8
+    assert _oses(jobs["e2e"]["strategy"]["matrix"]["os"], "pull_request", macos_full=True) == [
+        "ubuntu-24.04",
+        "macos-latest",
+    ]
+    assert jobs["e2e"]["strategy"]["matrix"]["suite"] == ["cli", "supervised", "web-1", "web-2"]
+    assert "needs.changes.outputs.full_release == 'true'" in jobs["notifier"]["if"]
+    assert "needs.changes.outputs.full_release == 'true'" in jobs["macos-specific"]["if"]
+    assert "needs.changes.outputs.full_release != 'true'" in jobs["macos-smoke"]["if"]
+    assert "release-candidate-source" in jobs["ci-ok"]["needs"]
+
+
+def test_release_candidate_source_and_selector_never_reach_plugin_templates():
+    generated = _template_sync_module().ci_workflow()
+    assert "release_candidate.py" not in generated
+    assert "release-candidate-source" not in generated
+    assert "full_release" not in generated
+    assert (
+        "github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true'"
+        in (_ci_jobs()["test"]["strategy"]["matrix"]["python"])
+    )

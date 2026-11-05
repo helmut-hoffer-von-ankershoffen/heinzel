@@ -106,7 +106,7 @@ export function ScheduledNotificationConsent({
           disabled={disabled}
           onChange={(event) => onEnabled(event.target.checked)}
         />{" "}
-        Allow this agent to queue local notifications during these scheduled turns.
+        Allow this Heinzel to queue local notifications during these scheduled turns.
       </label>
       <p>{t("scheduledNotify.note")}</p>
       {enabled && (

@@ -99,7 +99,7 @@ async function claimNotice(id: string): Promise<boolean> {
 }
 
 /** A list refresh is not a new notice; call only for the stream's `notice` event. */
-export async function dingForNotice(id: string): Promise<boolean> {
+export async function dingForNotice(id: string, expires?: string | null): Promise<boolean> {
   if (seenThisTab.has(id)) return false;
   seenThisTab.add(id);
   if (!notificationSoundEnabled() || document.visibilityState !== "visible") return false;
@@ -108,13 +108,18 @@ export async function dingForNotice(id: string): Promise<boolean> {
   } catch {
     return false;
   }
+  // A queued Web Lock or suspended tab may resume after this meeting's boundary.
+  if (expires && !(Date.now() < Date.parse(expires))) return false;
+  if (!notificationSoundEnabled() || document.visibilityState !== "visible") return false;
   // Consume the ID even when browser autoplay policy suspended audio: reconnects must never replay an old notice.
   return playDing();
 }
 
 /** The stream's changed event refreshes history; only its due notice event can produce a sound. */
 export function dingForStreamEvent(
-  event: { event: "changed"; latest: string | null } | { event: "notice"; notice: { id: string } },
+  event:
+    | { event: "changed"; latest: string | null }
+    | { event: "notice"; notice: { id: string; expires?: string | null } },
 ): Promise<boolean> {
-  return event.event === "notice" ? dingForNotice(event.notice.id) : Promise.resolve(false);
+  return event.event === "notice" ? dingForNotice(event.notice.id, event.notice.expires) : Promise.resolve(false);
 }

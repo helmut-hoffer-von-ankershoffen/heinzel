@@ -2,6 +2,7 @@
 // node device-reopen.mjs ENGINE PROFILE_DIR STEP URL [stale]   STEP: pair | open | restart
 
 import { chromium, webkit } from "playwright-core";
+import { explainOwnedBrowser } from "./reopen-processes.mjs";
 import { until } from "./until.mjs";
 
 const [engineName, profile, step, url, mode] = process.argv.slice(2);
@@ -142,6 +143,7 @@ try {
   console.log(JSON.stringify({ step, signedIn, afterRestart, ...stored }));
 } catch (error) {
   if (current) await explain(current);
+  await explainOwnedBrowser(note);
   throw error;
 } finally {
   await context.close();

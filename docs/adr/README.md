@@ -108,7 +108,7 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0107](0107-propose-bounded-connected-read-sets.md) Propose bounded connected read sets separately | proposed · 30 Oct<br>built | [#299](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/299) |
 | [0108](0108-record-owned-installation-continuity-after-verified-changes.md) Record owned installation continuity after verified changes | proposed · 30 Oct<br>built | [#300](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/300) |
 | [0109](0109-adopt-plugin-playbook-terms-as-inert-chat-drafts.md) Adopt plugin playbook terms as inert chat drafts | proposed · 30 Oct<br>built | [#303](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/303), [#307](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/307) |
-| [0110](0110-one-versionless-launcher-installs-and-opens-the-standard-app.md) One versionless launcher installs and opens the standard app | proposed · 30 Oct<br>built | [#304](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/304), [#310](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/310) |
+| [0110](0110-one-versionless-launcher-installs-and-opens-the-standard-app.md) One versionless launcher installs and opens the standard app | proposed · 30 Oct<br>built | [#304](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/304), [#310](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/310), [#513](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/513) |
 | [0111](0111-plugins-recommend-the-default-theme-with-a-core-recovery-fallback.md) Plugins recommend the default theme with a Core recovery fallback | proposed · 30 Oct<br>built | [#304](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/304) |
 | [0114](0114-green-main-releases-to-edge-and-acceptance-promotes-to-stable.md) Green main releases to edge, and acceptance promotes to stable | proposed · 31 Oct<br>partial |  |
 | [0115](0115-merge-unfinished-work-dark-behind-named-feature-flags.md) Merge unfinished work dark behind named feature flags | accepted · 1 Nov<br>built | [#354](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/354) |
@@ -116,13 +116,20 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0117](0117-persistent-web-access-has-an-owned-os-controller.md) Persistent web access has an owned OS controller | proposed · 3 Nov<br>partial | [#485](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/485) |
 | [0118](0118-contribution-declared-footer-retention.md) Contributions declare footer retention priority | proposed · 3 Nov<br>built | [#488](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/488) |
 | [0119](0119-interactive-cli-reads-local-overview-records.md) Interactive CLI reads local overview records | proposed · 3 Nov<br>partial | [#492](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/492) |
+| [0120](0120-channels-carry-notices-and-approval-claims.md) Channels carry notices and approval claims | proposed · 4 Nov<br>partial |  |
+| [0121](0121-confirm-each-captured-write-before-one-attempt.md) Confirm each captured write before one attempt | proposed · 4 Nov<br>partial |  |
+| [0122](0122-preserve-authoritative-chat-history.md) Preserve authoritative chat history independently of model context | proposed · 30 Oct<br>partial |  |
 | [0123](0123-plugin-previews-read-public-inert-metadata.md) Plugin previews read public inert metadata | proposed · 4 Nov<br>built | [#319](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/319) |
 | [0124](0124-native-public-media-links-require-trusted-clicks.md) Native public media links require trusted clicks | proposed · 4 Nov<br>built | [#319](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/319) |
 | [0125](0125-prepare-locked-isolated-build-dependencies.md) Prepare locked dependencies before isolated local builds | proposed · 4 Nov<br>built |  |
+| [0126](0126-calendar-reminders.md) Calendar reminder scheduling | proposed · 4 Nov<br>partial |  |
+| [0127](0127-publish-a-bounded-standing-draft-append-grant.md) Publish a bounded standing grant for draft append | proposed · 4 Nov<br>partial |  |
 | [0128](0128-conditional-credential-health.md) Optional credentials do not degrade unused features | proposed · 4 Nov<br>partial |  |
 | [0129](0129-explicit-web-serving-and-separate-service-consent.md) Explicit web serving and separate service consent | proposed · 4 Nov<br>partial |  |
 | [0130](0130-on-demand-health-preserves-runtime-requirements.md) On-demand health preserves runtime requirements | proposed · 4 Nov<br>partial |  |
+| [0131](0131-offline-uninstall-has-private-installer-authority.md) Offline uninstall keeps private installer and recovery authority | proposed · 4 Nov<br>partial |  |
 | [0132](0132-explicit-legacy-daemon-retirement.md) Retire legacy daemon definitions only through an explicit bound recovery plan | proposed · 4 Nov<br>partial |  |
+| [0133](0133-owned-host-integrations-join-maintenance.md) Owned host integrations join one maintenance inventory | proposed · 4 Nov<br>partial |  |
 
 </div>
 <!-- adr-index:end -->

@@ -40,7 +40,7 @@ hz heinzel new weekly-report --team                      # the team's first cont
 
 ```bash
 hz heinzel check                                        # every problem by file and line
-hz heinzel wake team:weekly-report --dry-run            # what the helper would get; nothing is spent
+hz heinzel wake team:weekly-report --dry-run            # what the Heinzel would get; nothing is spent
 hz heinzel wake team:weekly-report                      # the first draft, a local file
 hz system doctor
 ```

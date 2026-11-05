@@ -157,8 +157,8 @@ export function AgentProposal({ sessionId }: { sessionId: string }) {
     }
   };
   return (
-    <section aria-label="Scheduled agent proposal" className="space-y-2 rounded-lg border border-border p-3 text-sm">
-      <h3 className="font-medium">Scheduled agent proposal</h3>
+    <section aria-label="Scheduled Heinzel proposal" className="space-y-2 rounded-lg border border-border p-3 text-sm">
+      <h3 className="font-medium">Scheduled Heinzel proposal</h3>
       <p>{t("proposal.intro")}</p>
       {loading ? (
         <p role="status">Loading proposal…</p>

@@ -173,7 +173,7 @@ export async function verifyFooter(page, shots, proofItems = false) {
     const shown = geometry.parts.filter((part) => !part.hidden);
     for (let index = 1; index < shown.length; index++)
       assert.ok(shown[index - 1].right <= shown[index].left + 1, `Footer controls overlap at ${width}px`);
-    if (width > 240) assert.equal(shown[0]?.id, "@version");
+    if (width > 240) assert.equal(shown[0]?.id, "@version", JSON.stringify({ width, geometry }));
     const hidden = geometry.parts.filter((part) => part.overflow);
     if (proofItems) {
       assert.ok(
@@ -349,6 +349,23 @@ export async function verifyFooter(page, shots, proofItems = false) {
       assert.ok(
         box && box.x >= 0 && box.x + box.width <= width + 1 && box.y >= 0 && box.y + box.height <= height + 1,
         JSON.stringify({ width, popup: box }),
+      );
+      // A late contribution can grow its row before ResizeObserver delivers. Keep the whole list on-screen
+      // during that same layout, rather than briefly extending down from an obsolete empty-pane measurement.
+      const growth = await popup.evaluate((panel) => {
+        const row = panel.querySelector("[data-footer-host]");
+        if (!(row instanceof HTMLElement)) return null;
+        const before = panel.getBoundingClientRect();
+        const original = row.style.minHeight;
+        row.style.minHeight = `${row.getBoundingClientRect().height + 48}px`;
+        const after = panel.getBoundingClientRect().toJSON();
+        row.style.minHeight = original;
+        return { before: before.toJSON(), after };
+      });
+      assert.ok(growth, "Overflow must contain its relocated provider rows");
+      assert.ok(
+        growth.after.y >= 0 && growth.after.y + growth.after.height <= height + 1,
+        `Growing overflow rows must remain contained before observer delivery: ${JSON.stringify({ width, growth })}`,
       );
       for (const part of hidden) assert.equal(await page.locator(`[data-footer-host="${part.id}"]`).count(), 1);
       await page.keyboard.press("Escape");

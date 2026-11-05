@@ -72,3 +72,28 @@ it("selects a surviving descriptor when the active contributed panel is removed"
   expect(screen.queryByText("Plugin content")).not.toBeInTheDocument();
   expect(screen.getAllByRole("tab").filter((tab) => tab.tabIndex === 0)).toHaveLength(1);
 });
+
+it("keeps the flowing Chat panel hidden while Page is the selected panel", () => {
+  render(
+    <WorkspacePanels
+      flowing
+      active="page"
+      onSelect={() => {}}
+      panels={[
+        { id: "page", title: "Page", content: <p>Page content</p> },
+        {
+          id: "chat",
+          title: "Chat",
+          content: (
+            <details>
+              <summary>Reply activity</summary>
+            </details>
+          ),
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByText("Page content")).toBeVisible();
+  expect(screen.getByText("Reply activity")).not.toBeVisible();
+  expect(screen.getByText("Reply activity").closest('[role="tabpanel"]')).toHaveAttribute("hidden");
+});

@@ -9,7 +9,11 @@ import yaml
 from tests._e2e_lanes import REPO, lane_commands
 
 pytestmark = pytest.mark.unit
-SUPERVISED = {"tests/e2e/ui_service_test.py", "tests/e2e/ui_service_browser_test.py"}
+SUPERVISED = {
+    "tests/e2e/ui_service_test.py",
+    "tests/e2e/ui_service_browser_test.py",
+    "tests/e2e/offline_uninstall_test.py",
+}
 README = "tests/e2e/docs_test.py::test_readme_instructions"
 
 
@@ -28,7 +32,7 @@ def test_all_e2e_lanes_keep_workers_and_deadlines_and_readme_runs_only_once(suit
     if suite == "cli":
         assert {f"--ignore={path}" for path in SUPERVISED} <= set(commands[-1])
     elif suite == "supervised":
-        assert set(commands[-1][-3:-1]) == SUPERVISED
+        assert set(commands[-1][10:-1]) == SUPERVISED
         assert not any(arg.startswith("--ignore=") for arg in commands[-1])
     elif not suite:
         assert not any(arg.startswith("--ignore=") or arg in SUPERVISED for arg in commands[-1])
@@ -86,3 +90,4 @@ def test_plugin_generation_keeps_one_complete_suite_without_core_lane_references
         assert "SUITE=" not in text
     assert "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x" in makefile
     assert "make test-e2e" in workflow
+    assert "Use Ubuntu's primary archive for browser dependencies" not in workflow

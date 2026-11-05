@@ -19,11 +19,11 @@ describe("ChatPanel", () => {
         return {
           session_id: id,
           heinzel_id: id,
-          name: id === next ? "New personal helper" : "Previous helper",
+          name: id === next ? "New personal Heinzel" : "Previous Heinzel",
           messages: [],
         };
       },
-      "/api/heinzel/new-chat": { session_id: next, heinzel_id: next, name: "New personal helper", messages: [] },
+      "/api/heinzel/new-chat": { session_id: next, heinzel_id: next, name: "New personal Heinzel", messages: [] },
       "/api/heinzel/sessions": { sessions: [] },
       "/api/system/runner/chat/show": oldChat,
     });
@@ -35,7 +35,7 @@ describe("ChatPanel", () => {
     await user.click(await screen.findByRole("button", { name: /switch chats/ }));
     await user.click(await screen.findByRole("button", { name: /^Create a personal Heinzel$/ }));
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
-    expect(await panel.findByRole("heading", { name: "New personal helper" })).toBeInTheDocument();
+    expect(await panel.findByRole("heading", { name: "New personal Heinzel" })).toBeInTheDocument();
     await user.type(await panel.findByLabelText("Message your Heinzel"), "Keep this in the new conversation");
     expect(panel.getByRole("button", { name: "Queue message" })).toBeEnabled();
     const created = calls.findIndex((request) => new URL(request.url).pathname.endsWith("/heinzel/new-chat"));
@@ -48,14 +48,14 @@ describe("ChatPanel", () => {
     const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const { calls } = mockApi({
       ...base,
-      "/api/heinzel/new-chat": { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] },
-      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] },
+      "/api/heinzel/new-chat": { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] },
+      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] },
       "/api/heinzel/sessions": { sessions: [] },
     });
     const user = userEvent.setup();
     renderAt("/doctor");
     await user.type(screen.getByLabelText("Your message"), "Keep my notes current");
-    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Keep my notes current");
     expect(panel.getByRole("button", { name: "Queue message" })).toBeEnabled();
@@ -69,7 +69,7 @@ describe("ChatPanel", () => {
     const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
     let messages: object[] = [];
     let proposed: object | null = null;
-    const session = () => ({ session_id: id, heinzel_id: id, name: "New personal helper", messages });
+    const session = () => ({ session_id: id, heinzel_id: id, name: "New personal Heinzel", messages });
     const { calls } = mockApi({
       ...base,
       "/api/heinzel/new-chat": session,
@@ -108,14 +108,14 @@ describe("ChatPanel", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     await user.type(screen.getByLabelText("Your message"), "Keep the chosen artifact current");
-    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Keep the chosen artifact current");
     await user.click(panel.getByRole("button", { name: "Queue message" }));
     expect(await panel.findByText("I prepared terms for review.")).toBeInTheDocument();
-    const review = within(await panel.findByRole("region", { name: "Proposed agent terms" }));
+    const review = within(await panel.findByRole("region", { name: "Proposed Heinzel terms" }));
     expect(review.getByText("Revision 1 · proposed terms")).toBeInTheDocument();
-    expect(review.getByText(/does not activate the agent/)).toBeInTheDocument();
+    expect(review.getByText(/does not activate the Heinzel/)).toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
   });
 
@@ -128,19 +128,19 @@ describe("ChatPanel", () => {
         new Promise<object>((resolve) => {
           finish = resolve;
         }),
-      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] },
+      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] },
       "/api/heinzel/sessions": { sessions: [] },
     });
     const user = userEvent.setup();
     renderAt("/doctor");
     const box = screen.getByLabelText("Your message");
     await user.type(box, "First request");
-    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
-    expect(await screen.findByText("Creating your helper…")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
+    expect(await screen.findByText("Creating your Heinzel…")).toBeInTheDocument();
     expect(box).toBeDisabled();
     await user.type(box, " later edit");
     expect(box).toHaveValue("First request");
-    finish?.({ session_id: id, heinzel_id: id, name: "New personal helper", messages: [] });
+    finish?.({ session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] });
     expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("First request");
   });
 
@@ -157,16 +157,16 @@ describe("ChatPanel", () => {
     const user = userEvent.setup();
     const first = renderAt("/doctor");
     await user.type(screen.getByLabelText("Your message"), "Preserve across reload");
-    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
     await waitFor(() => expect(requests).toHaveLength(1));
     first.unmount();
     mockApi({
       ...base,
       "/api/heinzel/new-chat": async (request: Request) => {
         requests.push((await request.json()).request_id);
-        return { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] };
+        return { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] };
       },
-      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] },
+      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] },
       "/api/heinzel/sessions": { sessions: [] },
     });
     renderAt("/doctor");
@@ -174,7 +174,7 @@ describe("ChatPanel", () => {
     expect(screen.getByLabelText("Your message")).toHaveAttribute("readonly");
     expect(screen.getByText(/earlier creation is unresolved/)).toBeInTheDocument();
     expect(requests).toHaveLength(1);
-    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
     expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("Preserve across reload");
     expect(requests).toEqual([requests[0], requests[0]]);
     expect(sessionStorage.getItem("hz.personal-heinzel.handoff")).toBeNull();
@@ -193,20 +193,20 @@ describe("ChatPanel", () => {
       ...base,
       "/api/heinzel/new-chat": async (request: Request) => {
         requests.push((await request.json()).request_id);
-        return { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] };
+        return { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] };
       },
-      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] },
+      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] },
       "/api/heinzel/sessions": { sessions: [] },
     });
     const user = userEvent.setup();
     renderAt("/doctor");
     const box = screen.getByLabelText("Your message");
     await user.type(box, "Preserve this request");
-    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(box).toHaveValue("Preserve this request");
     fail = false;
-    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
     expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("Preserve this request");
     expect(requests).toHaveLength(2);
     expect(requests[1]).toBe(requests[0]);
@@ -227,13 +227,13 @@ describe("ChatPanel", () => {
     sessionStorage.setItem(key, saved);
     mockApi({
       ...base,
-      "/api/heinzel/new-chat": { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] },
+      "/api/heinzel/new-chat": { session_id: id, heinzel_id: id, name: "New personal Heinzel", messages: [] },
     });
     const user = userEvent.setup();
     renderAt("/doctor");
     const box = screen.getByLabelText("Your message");
     await user.type(box, "A different request");
-    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a Heinzel and take this message" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(box).toHaveValue("A different request");
     expect(sessionStorage.getItem(key)).toBe(saved);
@@ -282,7 +282,7 @@ describe("ChatPanel", () => {
     });
     const user = userEvent.setup();
     const { container } = renderAt("/doctor");
-    const card = (await screen.findByRole("heading", { name: "The agent proposes" })).closest("li") as HTMLElement;
+    const card = (await screen.findByRole("heading", { name: "The Heinzel proposes" })).closest("li") as HTMLElement;
     expect(within(card).getByText(proposal.command)).toBeInTheDocument();
     expect(calls.some((request) => request.url.includes("/chat/confirm"))).toBe(false);
     await expectAccessible(container);
@@ -291,7 +291,7 @@ describe("ChatPanel", () => {
     const confirm = calls.find((request) => request.url.includes("/api/system/runner/chat/confirm"));
     expect(confirm?.method).toBe("POST");
     expect(new URL(confirm?.url ?? "").searchParams.get("action")).toBe("a1");
-    expect(screen.queryByRole("heading", { name: "The agent proposes" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "The Heinzel proposes" })).not.toBeInTheDocument();
   });
 
   it("declines a proposed action without running it", async () => {
@@ -305,7 +305,9 @@ describe("ChatPanel", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     await user.click(await screen.findByRole("button", { name: "Decline" }));
-    await waitFor(() => expect(screen.queryByRole("heading", { name: "The agent proposes" })).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "The Heinzel proposes" })).not.toBeInTheDocument(),
+    );
     expect(calls.some((request) => request.url.includes("/chat/decline"))).toBe(true);
     expect(calls.some((request) => request.url.includes("/chat/confirm"))).toBe(false);
   });
@@ -463,5 +465,5 @@ it("keeps a meeting-reminder request in workshop chat without silently creating 
       (request) => request.url.includes("/heinzel/new-chat") || request.url.includes("/heinzel/propose-check-in"),
     ),
   ).toBe(false);
-  expect(screen.getByRole("button", { name: "Create a helper and take this message" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Create a Heinzel and take this message" })).toBeInTheDocument();
 });

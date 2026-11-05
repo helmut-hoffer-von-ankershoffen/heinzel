@@ -14,10 +14,12 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
-from heinzel import Config, CurrentUser, HeinzelError, Kernel, Notifications
+from heinzel import Config, CurrentUser, HeinzelError, Kernel, Notifications, SessionWriter
 from heinzel.kernel import PRIVATE_WRITE, CapabilitySettings, RunnerSnapshot, RunnerSnapshotProvider
 from heinzel.kernel import ProcessOutcome as Outcome
 from heinzel.kernel import run_bounded_process as run_bounded
+from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
+from heinzel.modules.heinzel._captured_write_tools import DocumentDraftTools
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
 from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
 from heinzel.modules.heinzel._connected_read_set_reviews import ConnectedReadSetReviews
@@ -326,10 +328,42 @@ class UserChatService:
             prepare=prepare,
             connected=connected,
             connected_set=connected_set,
+            draft_tools=lambda writer: self._document_drafts(session, turn, connected, writer),
             scheduled_notifications=scheduled_notice,
             backend_binding=BackendBinding(backend="claude-code", mode="cli-model", revision=1),
         )
         return UserChatAnswer(session_id=session, request_id=request, message=message)
+
+    def _document_drafts(
+        self, session: str, turn: str, connected: ConnectedReadGrants | None, writer: SessionWriter
+    ) -> DocumentDraftTools | None:
+        """Offer inert proposals only through the source-bound default-off write service."""
+        if connected is None or self._playbook_kernel is None:
+            return None
+
+        def approved_reference() -> str | None:
+            try:
+                grant = connected.approved(session)
+                connected.verify_approved(session, grant)
+            except HeinzelError:
+                return None
+            ref = grant.review.fixed_arguments.get("ref")
+            return ref if grant.capability == "documents" and grant.method == "read" and isinstance(ref, str) else None
+
+        try:
+            selected = self._playbook_kernel.resolve(SelectedWriteService)
+            selected.check_available()
+        except HeinzelError:
+            return None
+        return DocumentDraftTools(
+            self._crud,
+            self.current,
+            selected,
+            session=session,
+            turn=turn,
+            writer=writer,
+            approved_reference=approved_reference,
+        )
 
     def turn_state(self, session: str, request: str) -> UserTurnState:
         """Read the exact turn state without retrying or claiming an unresolved process has stopped.

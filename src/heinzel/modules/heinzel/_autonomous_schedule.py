@@ -117,7 +117,7 @@ class ScheduleReviewPage(BaseModel):
     next_cursor: int | None = Field(default=None, ge=0, description="Cursor for the next page, if present.")
 
 
-def _fingerprint(chat: UserChatService) -> str:
+def model_binding_fingerprint(chat: UserChatService) -> str:
     """Observe selected CLI/settings, not provider account identity or publisher authenticity.
 
     Raises:
@@ -172,7 +172,7 @@ class AutonomousSchedules:
             or latest.revision != binding.contract_revision
             or latest.preview_sha256 != binding.contract_sha256
             or not ContractReview(self.crud).applied(session, binding.contract_request_id)
-            or binding.access_fingerprint != _fingerprint(self.chat)
+            or binding.access_fingerprint != model_binding_fingerprint(self.chat)
             or latest.max_usd is not None
             or binding.timeout_seconds > latest.timeout_seconds
         ):
@@ -228,7 +228,7 @@ class AutonomousSchedules:
             cadence_seconds=cadence_seconds,
             max_requests=max_requests,
             timeout_seconds=timeout_seconds,
-            access_fingerprint=_fingerprint(self.chat),
+            access_fingerprint=model_binding_fingerprint(self.chat),
             connected_grant=connected_grant,
             notification_policy=notification_policy,
         )

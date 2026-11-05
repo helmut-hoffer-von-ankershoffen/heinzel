@@ -134,7 +134,7 @@ def parse_etime(text: str) -> int | None:
 
 @dataclass(frozen=True, slots=True)
 class Look:
-    """Bounded native presentation from a helper's bundled face, text, sound and stable notice identity."""
+    """Bounded native presentation from a Heinzel's bundled face, text, sound and stable notice identity."""
 
     subtitle: str | None = None
     hat: str | None = None

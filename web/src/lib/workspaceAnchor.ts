@@ -19,8 +19,119 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
     viewportHeight = scroller.clientHeight;
     viewportWidth = scroller.clientWidth;
   };
+  let cancelAcknowledgment = () => {};
+  const stopReveal = (event: Event) => {
+    cancelAcknowledgment();
+    const pointer = event as PointerEvent;
+    const target = event.target;
+    if (
+      event.type !== "pointerdown" ||
+      !interacting ||
+      !(target instanceof Element) ||
+      !scroller.scrollTo ||
+      scroller.scrollHeight <= scroller.clientHeight ||
+      (pointer.button !== undefined && pointer.button !== 0) ||
+      pointer.isPrimary === false ||
+      target.closest('input, textarea, select, label, [contenteditable]:not([contenteditable="false"])')
+    )
+      return;
+    const control = target.closest("button, summary, a[href], [tabindex]") ?? target;
+    const rect = control.getBoundingClientRect();
+    const bounds = scroller.getBoundingClientRect();
+    const visual = window.visualViewport;
+    // A native button or disclosure can be pressed through its visible part while clipped.
+    // Preserve that press even when a reveal frame has moved the rest outside the viewport.
+    // Other controls retain conservative focus/reveal eligibility, including the half-pixel
+    // fringe from integer client dimensions; visual viewport bounds remain exact.
+    const rounding = 0.5;
+    if (
+      !control.matches("button, summary") &&
+      (rect.left < Math.max(bounds.left + scroller.clientLeft - rounding, visual?.offsetLeft ?? 0) ||
+        rect.top < Math.max(bounds.top + scroller.clientTop - rounding, visual?.offsetTop ?? 0) ||
+        rect.right >
+          Math.min(
+            bounds.left + scroller.clientLeft + scroller.clientWidth + rounding,
+            (visual?.offsetLeft ?? 0) + (visual?.width ?? window.innerWidth),
+          ) ||
+        rect.bottom >
+          Math.min(
+            bounds.top + scroller.clientTop + scroller.clientHeight + rounding,
+            (visual?.offsetTop ?? 0) + (visual?.height ?? window.innerHeight),
+          ))
+    )
+      return;
+    const position = () => {
+      const rect = control.getBoundingClientRect();
+      const visual = window.visualViewport;
+      return [
+        page.offsetHeight,
+        workspace.offsetTop,
+        workspace.offsetHeight,
+        scroller.clientWidth,
+        scroller.clientHeight,
+        scroller.scrollHeight,
+        rect.top + scroller.scrollTop,
+        rect.left + scroller.scrollLeft,
+        rect.width,
+        rect.height,
+        visual?.width,
+        visual?.height,
+        visual?.offsetTop,
+        visual?.offsetLeft,
+      ];
+    };
+    const before = position();
+    const current = scroller.scrollTop;
+    const left = scroller.scrollLeft;
+    const navigation = [
+      "wheel",
+      "keydown",
+      "pointermove",
+      "touchmove",
+      "pointerup",
+      "pointercancel",
+      "touchend",
+      "touchcancel",
+    ];
+    const focus = (next: Event) => {
+      if (next.target !== control) cleanup();
+    };
+    const cleanup = () => {
+      cancelAnimationFrame(frame);
+      for (const name of navigation) document.removeEventListener(name, cleanup, true);
+      document.removeEventListener("focusin", focus, true);
+      window.removeEventListener("resize", cleanup);
+      window.visualViewport?.removeEventListener("resize", cleanup);
+      window.visualViewport?.removeEventListener("scroll", cleanup);
+      cancelAcknowledgment = () => {};
+    };
+    // Native compositor deltas can arrive after the synchronous abort. Acknowledge just that
+    // already-in-flight frame, before paint; never hold the position across user navigation.
+    scroller.scrollTo({ top: current, left, behavior: "instant" });
+    const frame = requestAnimationFrame(() => {
+      cleanup();
+      if (
+        active &&
+        scroller.isConnected &&
+        page.isConnected &&
+        scroller.contains(workspace) &&
+        control.isConnected &&
+        workspace.contains(control) &&
+        !workspace.hidden &&
+        position().every((value, index) => value === before[index])
+      )
+        scroller.scrollTo({ top: current, left, behavior: "instant" });
+    });
+    cancelAcknowledgment = cleanup;
+    for (const name of navigation) document.addEventListener(name, cleanup, { capture: true, passive: true });
+    document.addEventListener("focusin", focus, true);
+    window.addEventListener("resize", cleanup);
+    window.visualViewport?.addEventListener("resize", cleanup);
+    window.visualViewport?.addEventListener("scroll", cleanup);
+  };
   const interaction = (event: Event) => {
     interacting = event.target instanceof Node && workspace.contains(event.target) ? event.target : null;
+    if (event.type === "pointerdown") stopReveal(event);
     remember();
   };
   const moved = () => {
@@ -56,6 +167,7 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
   scroller.addEventListener("scroll", moved);
   return () => {
     active = false;
+    cancelAcknowledgment();
     observer.disconnect();
     mutations.disconnect();
     document.removeEventListener("pointerdown", interaction, true);
