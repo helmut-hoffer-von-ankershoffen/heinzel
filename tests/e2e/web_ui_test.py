@@ -884,3 +884,14 @@ def test_calendar_panel_on_phone_and_desktop_in_both_browsers(environment, tmp_p
         capture.close()
         if ui.stderr is not None:
             ui.stderr.close()
+
+
+@pytest.mark.timeout(600)
+def test_settings_search_font_floor_precedes_focus_for_phone_input_modes(environment, tmp_path):
+    """The real search field retains its minimum and enlarged theme size before any autofocus."""
+    env, _recorded = environment
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run([*run, "exec", "playwright-core", "install", "webkit"], cwd=REPO, check=True, timeout=600)
+    result = drive_ui_script(env, tmp_path, "search-field-font.mjs")
+    assert len(result["cases"]) == 8
+    assert all(case["fontSize"] >= max(16, case["themeSize"]) for case in result["cases"])

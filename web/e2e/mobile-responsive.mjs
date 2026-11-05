@@ -553,9 +553,21 @@ try {
       `${spec.name}: settings close`,
     );
     const searchField = page.getByRole("searchbox", { name: "Filter settings" });
+    const settingsFont = await searchField.evaluate((element) => ({
+      fontSize: getComputedStyle(element).fontSize,
+      parentFontSize: getComputedStyle(element.parentElement).fontSize,
+      coarse: matchMedia("(pointer: coarse)").matches,
+      anyCoarse: matchMedia("(any-pointer: coarse)").matches,
+      hover: matchMedia("(hover: hover)").matches,
+      width: innerWidth,
+      touchPoints: navigator.maxTouchPoints,
+    }));
+    writeFileSync(join(shots, "settings-font.json"), `${JSON.stringify(settingsFont, null, 2)}\n`);
+    console.error(`MOBILE_SETTINGS_FONT:${JSON.stringify({ viewport: spec.name, ...settingsFont })}`);
+    await page.screenshot({ path: join(shots, `mobile-${spec.name}-settings-font.png`) });
     assert.ok(
-      (await searchField.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))) >= 16,
-      `${spec.name}: focused phone form text must not trigger Safari zoom`,
+      Number.parseFloat(settingsFont.fontSize) >= 16,
+      `${spec.name}: focused phone form text must not trigger Safari zoom: ${JSON.stringify(settingsFont)}`,
     );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-settings.png`) });
     const settingsPages = await settingsDialog
@@ -852,6 +864,7 @@ try {
     result.cases.push({
       ...spec,
       viewport: facts,
+      settingsFont,
       accountMenu: menuBox,
       targets: { navigation: navTarget, settings: settingsTarget },
       composer: composerBox,
