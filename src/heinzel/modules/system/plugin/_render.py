@@ -5,7 +5,7 @@ from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 
-from heinzel.modules.system.plugin._models import PluginChange, PluginInfo, PluginSearch
+from heinzel.modules.system.plugin._models import PluginChange, PluginInfo, PluginSearch, PluginUnpin
 
 RIGHTS = (
     "Plugins run with your rights. Community plugins are not reviewed by the Heinzelmännchen maintainers; "
@@ -18,6 +18,14 @@ class _PasteableGroup(Group):
     """A rendered result with a command people need to paste exactly as shown."""
 
     soft_wrap = True
+
+
+def render_unpin(result: PluginUnpin) -> RenderableType:
+    """Show the unchanged installed version and a pasteable exact confirmation command."""
+    return _PasteableGroup(
+        Text(result.message),
+        *(Text(command, no_wrap=True, overflow="ignore") for command in result.next),
+    )
 
 
 def render_search(result: PluginSearch) -> RenderableType:

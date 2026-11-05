@@ -214,6 +214,17 @@ class PluginChange(BaseModel):
     )
 
 
+class PluginUnpin(BaseModel):
+    """The exact installed plugin whose update policy would change or changed."""
+
+    distribution: str = Field(description="The installed distribution whose index pin is selected.")
+    version: str = Field(description="The installed version, which the unpin leaves in place.")
+    done: bool = Field(description="Whether the exact confirmed pin was removed.")
+    confirmation: str | None = Field(description="Digest binding this preview to the observed installed generation.")
+    message: str = Field(description="What happens to the current plugin and its future updates.")
+    next: list[str] = Field(description="Command that confirms this exact preview, if still applicable.")
+
+
 class PluginOperation(BaseModel):
     """Durable state of one plugin-add preview and its confirmation."""
 
@@ -229,9 +240,9 @@ class PluginEvent(BaseModel):
     """A plugin change as recorded in the history, one line of `plugins.jsonl` in the data directory."""
 
     at: datetime = Field(description="When it was carried out.")
-    action: Action = Field(description="`add`, `develop`, `remove`, `enable` or `disable`.")
+    action: Action | Literal["unpin"] = Field(description="The plugin or update-policy change that was carried out.")
     distribution: str | None = Field(description="The plugin changed, when known.")
-    requirement: str | None = Field(description="What was installed, exactly, for `add` and `develop`.")
+    requirement: str | None = Field(description="The selected requirement after `add`, `develop`, or `unpin`.")
     source: Source | None = Field(description="Where it came from, for `add` and `develop`.")
     version: str | None = Field(description="The version installed or removed, when known.")
     publisher: str | None = Field(description="Who publishes it, as shown before confirming.")

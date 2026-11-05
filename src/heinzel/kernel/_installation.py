@@ -439,6 +439,46 @@ def _requirements_from(raw: bytes, original: bytes, names: Sequence[str]) -> byt
         return replacement
 
 
+_UNPIN_ERROR = "This plugin does not have one supported exact index pin; no requirement was changed."
+
+
+def _unpinned_index_requirement(raw: bytes, distribution: str) -> tuple[str, bytes]:
+    """Project one exact plugin pin removal and preserve every other receipt value.
+
+    Raises:
+        HeinzelError: If the exact pin or the unchanged resolver policy cannot be established.
+    """
+    try:
+        text = raw.decode("utf-8")
+        data = tomllib.loads(text)
+        tool = _validate_receipt_policy(data)
+        if any(canonicalize_name(Requirement(item).name) == distribution for item in _constraints_from_receipt(data)):
+            msg = "This plugin has an additional tool constraint; no requirement was changed."
+            raise HeinzelError(msg)
+        entries = tool["requirements"]
+        matches = [i for i, entry in enumerate(entries) if canonicalize_name(entry["name"]) == distribution]
+        if len(matches) != 1 or matches[0] == 0:
+            raise HeinzelError(_UNPIN_ERROR)
+        index = matches[0]
+        entry = entries[index]
+        if set(entry) != {"name", "specifier"}:
+            raise HeinzelError(_UNPIN_ERROR)
+        requirement = Requirement(requirement_from_receipt(entry))
+        specifiers = list(requirement.specifier)
+        if len(specifiers) != 1 or specifiers[0].operator != "==" or "*" in specifiers[0].version:
+            raise HeinzelError(_UNPIN_ERROR)
+        version = str(Version(specifiers[0].version))
+        document = cast("Any", tomlkit.parse(text))
+        del document["tool"]["requirements"][index]["specifier"]
+        del entry["specifier"]
+        replacement = tomlkit.dumps(document).encode("utf-8")
+        if tomllib.loads(replacement.decode("utf-8")) != data:
+            raise HeinzelError(_UNPIN_ERROR)
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise HeinzelError(_UNPIN_ERROR) from exc
+    return version, replacement
+
+
 def _core_by_tag(raw: bytes, commit: str, tag: str) -> bytes:
     """The receipt with its core's git `rev` moved from `commit` to `tag`, and nothing else changed.
 
@@ -624,6 +664,15 @@ def pin_from_receipt(entry: dict[str, Any]) -> CorePin:
     return CorePin("index", requirement, entry.get("specifier") or None, name)
 
 
+@dataclass(frozen=True, slots=True)
+class IndexPluginPin:
+    """Exact version and installation generation observed before confirming a metadata-only unpin."""
+
+    distribution: str
+    version: str
+    generation: str
+
+
 class Installation:
     """The environment Heinzelmännchen runs in, and the commands that install into it. Injected by type."""
 
@@ -741,6 +790,52 @@ class Installation:
             return _requirements_from(receipt, original, names)
 
         return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
+
+    def index_plugin_pin(self, distribution: str) -> IndexPluginPin:
+        """Observe one removable exact index pin in a verified tool without executing installed code.
+
+        Raises:
+            HeinzelError: If the receipt, current package identity or installation continuity is unavailable.
+            OSError: If the selected tool's metadata cannot be read.
+        """
+        try:
+            name = canonicalize_name(distribution, validate=True)
+        except ValueError as exc:
+            raise HeinzelError(_UNPIN_ERROR) from exc
+        if name == CORE_DISTRIBUTION or not self.is_tool or not self.startup_state_matches():
+            msg = "Unpin requires a verified installed Heinzel tool and a separate plugin."
+            raise HeinzelError(msg)
+        generation = self.startup_fingerprint()
+        version, _ = _unpinned_index_requirement(self.receipt(), name)
+        requirements = self.requirements()
+        if requirements is None:
+            raise HeinzelError(_UNPIN_ERROR)
+        constraints = (*self.tool_constraints(), *self.preserved_tool_wheel_constraints(requirements))
+        installed = self.verify_installed_requirements(requirements, constraints=constraints)
+        actual = installed.get(name)
+        if actual is None or Version(actual) != Version(version):
+            raise HeinzelError(_UNPIN_ERROR)
+        if self.startup_fingerprint() != generation or not self.startup_state_matches():
+            msg = "The installation changed while observing the plugin pin; preview it again."
+            raise HeinzelError(msg)
+        return IndexPluginPin(name, actual, generation)
+
+    def unpin_index_plugin(self, observed: IndexPluginPin) -> str:
+        """Remove exactly the observed index pin through the existing receipt transaction, without reinstalling.
+
+        Raises:
+            HeinzelError: If the confirmed installed generation or receipt policy changed.
+            OSError: If receipt replacement cannot be made durable; retain existing recovery evidence.
+        """
+        if self.index_plugin_pin(observed.distribution) != observed:
+            msg = "The confirmed plugin pin changed; preview it again."
+            raise HeinzelError(msg)
+        return _installation_continuity.replace_receipt(
+            self.prefix,
+            self._continuity_authority,
+            observed.generation,
+            lambda: _unpinned_index_requirement(self.receipt(), observed.distribution)[1],
+        )
 
     def name_core_by_tag(self, *, expected: str, commit: str, tag: str) -> str:
         """Name the core in the receipt by its release `tag` again after it was installed from that tag's `commit`.
