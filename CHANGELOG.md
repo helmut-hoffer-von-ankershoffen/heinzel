@@ -31,6 +31,7 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 - **chat:** Use Heinzel terminology ([aed1724](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/aed1724edfcbcaa89eb6e85691ea071987ca6255))
 - **chat:** Refine Heinzel copy ([d9a2b96](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/d9a2b96ae960e852dc5893bc1063fdad9b002623))
 - **web:** Place popovers at content mutation delivery ([fb2b39b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/fb2b39bb34577e6648ba7e9e75a28bc130f16d4a))
+- **web:** Stop residual workspace scroll on pointer press ([e79f484](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e79f4840ba274bdc39572175adb31fba4b4728e5))
 
 ### 📚 Documentation
 
@@ -40,6 +41,7 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 - **release:** Record validated fixes and open scroll incident ([543f0e3](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/543f0e3866b35caa581c21fd19a8494e87affaed))
 - **release:** Describe stable popup placement ([ac1820d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/ac1820d588ed66a2eb0ee6e645b761f194753f94))
 - **release:** Record existing-profile update validation ([85a8732](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/85a873247dc89b58f8a01028416fe8549acdbe7b))
+- **release:** Record batched acceptance checks ([9f42959](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/9f42959975d28b09035e618b666890f8e4df0fc5))
 
 ### 🧪 Testing
 
@@ -47,7 +49,6 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 - **web:** Guard optional pointer diagnostics ([47a4c6d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/47a4c6d83b03b2f5501cb1be240857ffa34bb36a))
 - **web:** Distinguish scroll owners during physical presses ([e015794](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e01579480d3dc79bc1837aa242d6915dbc2b1dad))
 - **system:** Configure the existing update profile ([6750e5e](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/6750e5e79abc1247239de26236a1b2f558e183aa))
-- **release:** Batch isolated row predicates in one node process ([779a41b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/779a41bf6da857dc5a6097fe78b98871af3cf093))
 
 ### 🧹 Miscellaneous
 
