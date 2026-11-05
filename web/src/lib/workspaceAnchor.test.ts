@@ -43,6 +43,7 @@ function layout() {
   Object.defineProperty(page, "offsetHeight", { get: () => height });
   Object.defineProperty(workspace, "offsetTop", { get: () => height });
   Object.defineProperty(workspace, "offsetHeight", { value: 400 });
+  Object.defineProperty(scroller, "scrollHeight", { value: 1400, configurable: true });
   Object.defineProperty(scroller, "clientHeight", { get: () => viewportHeight });
   Object.defineProperty(scroller, "clientWidth", { get: () => viewportWidth });
   workspace.append(button);
@@ -190,8 +191,59 @@ it("stops an in-flight programmatic scroll when a pointer presses a workspace co
   view.button.dispatchEvent(new Event("focusin", { bubbles: true }));
   expect(stop).not.toHaveBeenCalled();
   view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-  expect(stop).toHaveBeenCalledExactlyOnceWith({ top: 400, behavior: "instant" });
+  expect(stop).toHaveBeenNthCalledWith(1, { top: 401, left: 0, behavior: "instant" });
+  expect(stop).toHaveBeenNthCalledWith(2, { top: 400, left: 0, behavior: "instant" });
   view.page.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-  expect(stop).toHaveBeenCalledTimes(1);
+  expect(stop).toHaveBeenCalledTimes(2);
+  view.dispose();
+});
+
+it.each([0, 400, 123.5])("aborts modeled residual compositor motion at offset %s before a held press", (offset) => {
+  const view = layout();
+  Object.defineProperty(view.scroller, "scrollHeight", { value: 1000 });
+  view.scroller.scrollTop = offset;
+  view.scroller.scrollLeft = 7.5;
+  let pendingNativeMotion = true;
+  const requests: ScrollToOptions[] = [];
+  view.scroller.scrollTo = (options?: ScrollToOptions | number, y?: number) => {
+    const request = typeof options === "number" ? { left: options, top: y } : (options ?? {});
+    requests.push(request);
+    // Faithful failure model: a same-position instant request can be treated as a compositor no-op.
+    // A real offset change aborts the pending native animation; this does not assert a browser guarantee.
+    if (request.top !== view.scroller.scrollTop) pendingNativeMotion = false;
+    view.scroller.scrollTop = request.top ?? view.scroller.scrollTop;
+    view.scroller.scrollLeft = request.left ?? view.scroller.scrollLeft;
+  };
+  view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  if (pendingNativeMotion) view.scroller.scrollTop = Math.max(0, offset - 18);
+  expect(pendingNativeMotion).toBe(false);
+  expect(view.scroller.scrollTop).toBe(offset);
+  expect(view.scroller.scrollLeft).toBe(7.5);
+  expect(requests).toHaveLength(2);
+  // A subsequent user scroll remains free: no pointer-up restoration or ongoing position pinning.
+  const wheel = new Event("wheel", { bubbles: true, cancelable: true });
+  const touch = new Event("touchmove", { bubbles: true, cancelable: true });
+  expect(view.button.dispatchEvent(wheel)).toBe(true);
+  expect(view.button.dispatchEvent(touch)).toBe(true);
+  expect(wheel.defaultPrevented).toBe(false);
+  expect(touch.defaultPrevented).toBe(false);
+  view.scroller.scrollTop = 37;
+  view.scroller.dispatchEvent(new Event("scroll"));
+  expect(view.scroller.scrollTop).toBe(37);
+  view.dispose();
+});
+
+it("does not manufacture scroll range or move a nested scroller", () => {
+  const view = layout();
+  Object.defineProperty(view.scroller, "scrollHeight", { value: 600 });
+  const stop = vi.fn();
+  view.scroller.scrollTo = stop;
+  const nested = document.createElement("div");
+  nested.scrollTop = 21;
+  nested.append(view.button);
+  view.workspace.append(nested);
+  view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  expect(stop).not.toHaveBeenCalled();
+  expect(nested.scrollTop).toBe(21);
   view.dispose();
 });

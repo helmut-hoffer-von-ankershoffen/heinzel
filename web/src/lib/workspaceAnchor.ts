@@ -22,8 +22,19 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
   const interaction = (event: Event) => {
     interacting = event.target instanceof Node && workspace.contains(event.target) ? event.target : null;
     // A running panel-reveal scroll must not carry a pressed control away before pointer release.
-    if (event.type === "pointerdown" && interacting)
-      scroller.scrollTo?.({ top: scroller.scrollTop, behavior: "instant" });
+    if (event.type === "pointerdown" && interacting && scroller.scrollTo) {
+      const current = scroller.scrollTop;
+      const left = scroller.scrollLeft;
+      const maximum = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      // A same-position instant request can leave compositor scrolling active. Make a reachable
+      // nonzero offset change and restore the exact position in this task, before native focus/release.
+      // Nothing remains pinned: subsequent wheel, touch, keyboard and focus scrolling stay native.
+      if (maximum > 0 && current >= 0 && current <= maximum) {
+        const nudge = current < maximum ? Math.min(current + 1, maximum) : Math.max(0, current - 1);
+        scroller.scrollTo({ top: nudge, left, behavior: "instant" });
+        scroller.scrollTo({ top: current, left, behavior: "instant" });
+      }
+    }
     remember();
   };
   const moved = () => {
