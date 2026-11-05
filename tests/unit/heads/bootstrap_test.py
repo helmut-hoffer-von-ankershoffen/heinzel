@@ -496,3 +496,115 @@ def test_profile_choices_are_runtime_validated_without_value_coercion(schema):
 def test_notifier_identity_and_shown_evidence_are_not_coerced(result):
     with pytest.raises(HeinzelError, match=r"could not be verified|no verifiable result"):
         bootstrap._notifier_result(result)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["{}", "[]", "null", "true", "7", '""', '"relative/config.toml"', '"/foreign/config.toml"', '{"path":"x"}', '"bad'],
+)
+def test_configuration_writes_refuse_non_path_and_unexpected_path_results(monkeypatch, tmp_path, raw):
+    executable = tmp_path / "persistent/bin/hz"
+    expected = str(tmp_path / "config.toml")
+    calls = []
+
+    def managed(_executable, _environment, arguments):
+        calls.append(arguments)
+        if arguments == ["system", "config", "show"]:
+            return json.dumps({"files": [{"scope": "user", "path": expected}]})
+        assert arguments == ["system", "config", "set", "org.handle", '"mira"']
+        return raw
+
+    monkeypatch.setattr(bootstrap, "_managed_command", managed)
+    with pytest.raises(HeinzelError, match=r"invalid file result|unexpected file"):
+        bootstrap._write_setting(executable, {}, "org.handle", "mira")
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"section": "org", "key": "handle", "source": "default", "value": "mira"},
+        {"section": "org", "key": "handle", "source": "user", "value": "other"},
+        {"section": "org", "key": "handle", "source": "user", "value": True},
+        {"section": "team", "key": "handle", "source": "user", "value": "mira"},
+        None,
+        [],
+        "mira",
+    ],
+)
+def test_configuration_writes_require_strict_independent_effective_readback(monkeypatch, tmp_path, row):
+    expected = str(tmp_path / "config.toml")
+
+    def managed(_executable, _environment, arguments):
+        if arguments == ["system", "config", "show"]:
+            return json.dumps({"files": [{"scope": "user", "path": expected}]})
+        if arguments[:3] == ["system", "config", "set"]:
+            return json.dumps(expected)
+        assert arguments == ["system", "config", "get", "org.handle"]
+        return json.dumps(row)
+
+    monkeypatch.setattr(bootstrap, "_managed_command", managed)
+    with pytest.raises(HeinzelError, match=r"could not be confirmed|invalid JSON"):
+        bootstrap._write_setting(tmp_path / "persistent/bin/hz", {}, "org.handle", "mira")
+
+
+@pytest.mark.parametrize("arguments", [["--help"], ["--version"], ["--command-tree"]])
+def test_explicit_information_never_enters_interactive_welcome(monkeypatch, arguments):
+    from heinzel.heads import cli
+
+    monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel", *arguments])
+    monkeypatch.setattr(cli, "main", lambda: None)
+    monkeypatch.setattr(bootstrap, "_welcome", lambda: pytest.fail("Information command entered welcome"))
+    monkeypatch.setattr(
+        bootstrap, "_service_choices", lambda _args: pytest.fail("Information command asked a question")
+    )
+    bootstrap.main()
+
+
+@pytest.mark.parametrize("arguments", [["--json"], ["system", "info", "--json"], ["ui", "serve"]])
+def test_explicit_runtime_arguments_cannot_enable_interactive_branding(monkeypatch, arguments):
+    monkeypatch.setattr(bootstrap.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(bootstrap.sys.stdout, "isatty", lambda: True)
+    assert bootstrap._interactive_launch(arguments) is False
+
+
+def test_json_output_policy_disables_bare_terminal_questions(monkeypatch):
+    monkeypatch.setattr(bootstrap.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(bootstrap.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setenv("HZ_OUTPUT_FORMAT", "json")
+    monkeypatch.setattr(bootstrap, "_welcome", lambda: pytest.fail("JSON policy entered welcome"))
+    assert bootstrap._interactive_launch([]) is False
+    assert bootstrap._service_choices([]) == []
+
+
+def test_interactive_welcome_reuses_shared_colour_art_on_stderr_only(monkeypatch, capsys):
+    import sys
+
+    from rich.console import Console
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    console = Console(file=sys.stderr, force_terminal=True, color_system="truecolor", width=80)
+    monkeypatch.setattr(bootstrap, "_human_console", lambda: console)
+    bootstrap._welcome()
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "Heinzelmännchen" in output.err
+    assert "Let's set up your Heinzel." in output.err
+    assert "\x1b[" in output.err
+    assert any(pixel in output.err for pixel in ("▀", "▄", "█"))
+
+
+@pytest.mark.parametrize(("key", "value"), [("NO_COLOR", "1"), ("CI", "1"), ("TERM", "dumb")])
+def test_welcome_respects_shared_plain_terminal_policy(monkeypatch, capsys, key, value):
+    import sys
+
+    from rich.console import Console
+
+    monkeypatch.setenv(key, value)
+    console = Console(file=sys.stderr, force_terminal=True, color_system="truecolor", width=80)
+    monkeypatch.setattr(bootstrap, "_human_console", lambda: console)
+    bootstrap._welcome()
+    output = capsys.readouterr()
+    assert output.out == output.err == ""
