@@ -499,10 +499,12 @@ class PluginService:
             if mutation is None or mutation.initial != pin.generation:
                 msg = "The confirmed installation generation changed; preview the unpin again."
                 raise HeinzelError(msg)
+            if not mutation.scope.checkpoint_matched:
+                msg = "The startup checkpoint did not match at admission; preview the unpin again."
+                raise HeinzelError(msg)
             mutation.generation = self._installation.unpin_index_plugin(pin)
             self._verify_candidate_generation(mutation)
             self._record("unpin", pin.distribution, requirement=pin.distribution, version=pin.version)
-            self._remember_package_change(mutation.generation)
         return PluginUnpin(
             distribution=pin.distribution,
             version=pin.version,

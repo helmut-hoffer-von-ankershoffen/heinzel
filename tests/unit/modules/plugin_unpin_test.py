@@ -66,8 +66,16 @@ def pinned(make_kernel, tool_env, monkeypatch):
     return service, installation, receipt, payload, lifecycle
 
 
-def test_unpin_preview_and_confirmation_keep_installed_files_and_other_policy_exact(pinned):
+def test_unpin_preview_and_confirmation_keep_installed_files_and_other_policy_exact(pinned, monkeypatch):
     service, installation, receipt, payload, lifecycle = pinned
+    checkpoints = []
+    record = installation.record_startup_state
+
+    def record_checkpoint(*, expected):
+        checkpoints.append(expected)
+        record(expected=expected)
+
+    monkeypatch.setattr(installation, "record_startup_state", record_checkpoint)
     before = receipt.read_bytes()
     package = payload.read_bytes(), payload.stat()
     preview = service.unpin(NAME)
@@ -85,6 +93,7 @@ def test_unpin_preview_and_confirmation_keep_installed_files_and_other_policy_ex
     assert (payload.read_bytes(), payload.stat()) == package
     assert installation.requirements() == ["heinzel", NAME, OTHER + "==2.0.0"]
     assert installation.startup_state_matches()
+    assert checkpoints == [installation.startup_fingerprint()]
     assert lifecycle == ["enter", installation.startup_fingerprint(), "handover"]
     assert [(event.action, event.distribution) for event in service.history()] == [("unpin", NAME)]
     with pytest.raises(HeinzelError, match="exact index pin"):
@@ -101,6 +110,32 @@ def test_unpin_confirmation_cannot_follow_a_new_verified_generation(pinned):
         service.unpin(NAME, confirm=preview.confirmation)
     assert receipt.read_bytes() == before
     assert not lifecycle
+    assert not service.history()
+
+
+def test_unpin_refuses_checkpoint_restored_after_mutation_admission(pinned, monkeypatch):
+    service, installation, receipt, _, lifecycle = pinned
+    preview = service.unpin(NAME)
+    before = receipt.read_bytes()
+    checkpoint_path = installation.prefix / ".heinzel-startup-state"
+    held_checkpoint = checkpoint_path.with_name("held-startup-state")
+    mutation = service._lifecycle.mutation
+
+    @contextmanager
+    def restore_after_admission(checkpoint, identity):
+        checkpoint_path.rename(held_checkpoint)
+        with mutation(checkpoint, identity) as scope:
+            assert scope.checkpoint_matched is False
+            held_checkpoint.rename(checkpoint_path)
+            assert checkpoint()
+            yield scope
+
+    monkeypatch.setattr(service._lifecycle, "mutation", restore_after_admission)
+    with pytest.raises(HeinzelError, match="startup checkpoint did not match at admission"):
+        service.unpin(NAME, confirm=preview.confirmation)
+    assert receipt.read_bytes() == before
+    assert installation.startup_state_matches()
+    assert lifecycle == ["enter", "abort"]
     assert not service.history()
 
 
