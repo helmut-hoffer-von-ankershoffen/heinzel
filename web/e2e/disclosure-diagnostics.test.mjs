@@ -82,7 +82,6 @@ test("opening and closing in one task retains the open mutation even when the fi
   assert.equal(details.open, false);
 });
 
-
 test("available pointer hit testing retains only bounded node identities", async () => {
   document.body.innerHTML = '<details><summary class="Private fixture class">Private fixture text</summary></details>';
   document.elementsFromPoint = () => Array(12).fill(document.querySelector("summary"));
