@@ -35,6 +35,52 @@ if (lateActivity) {
     };
   });
 }
+// Only fixed stages, schema predicates and status categories: never request IDs, tokens or provider payloads.
+const proposalTrace = [];
+const proposalPaths = new Map([
+  ["/api/heinzel/propose-rolling-connected-read", "rolling"],
+  ["/api/heinzel/propose-connected-read", "fixed"],
+  ["/api/heinzel/prepare-suggested-source", "suggested"],
+]);
+const traceProposal = (event) => {
+  proposalTrace.push(event);
+  if (proposalTrace.length > 16) proposalTrace.shift();
+};
+page.on("request", (request) => {
+  const stage = proposalPaths.get(new URL(request.url()).pathname);
+  if (!stage || request.method() !== "POST") return;
+  let body;
+  try {
+    body = request.postDataJSON();
+  } catch {
+    /* Record no arbitrary parse output. */
+  }
+  traceProposal({
+    kind: "request",
+    stage,
+    windowPolicy: !!body?.window_policy,
+    fixedWindow: Object.hasOwn(body?.fixed_arguments ?? {}, "window"),
+    validLookback: Number.isInteger(body?.window_policy?.lookback_seconds),
+    validLookahead: Number.isInteger(body?.window_policy?.lookahead_seconds),
+    expectedTimezone: body?.window_policy?.timezone === "Europe/Berlin",
+  });
+});
+page.on("response", async (response) => {
+  const stage = proposalPaths.get(new URL(response.url()).pathname);
+  if (!stage || response.request().method() !== "POST") return;
+  let category = response.ok() ? "success" : "http-error";
+  if (!response.ok()) {
+    try {
+      const body = await response.json();
+      if (typeof body?.error === "string" && body.error.includes("This session has another writer"))
+        category = "busy-writer";
+      else if (Array.isArray(body?.detail)) category = "schema-validation";
+    } catch {
+      category = "unreadable-error";
+    }
+  }
+  traceProposal({ kind: "response", stage, status: response.status(), category });
+});
 const revocations = [];
 let latePage;
 const revocationPath = "/api/heinzel/revoke-connected-read";
@@ -238,8 +284,30 @@ try {
     })
     .catch(() => null);
   await page.screenshot({ path: join(process.argv[4], `scheduled-${process.argv[3]}-failure.png`) }).catch(() => {});
+  const form = await page
+    .getByRole("region", { name: "Connected read review" })
+    .evaluate((node) => {
+      const inputs = [...node.querySelectorAll("input")];
+      const textarea = node.querySelector("textarea");
+      let fixedObject = false;
+      try {
+        const value = JSON.parse(textarea?.value ?? "");
+        fixedObject = !!value && typeof value === "object" && !Array.isArray(value);
+      } catch {
+        /* Fixed predicate only. */
+      }
+      return {
+        rolling: inputs.some((input) => input.type === "checkbox" && input.checked),
+        numericTerms: inputs
+          .filter((input) => input.type === "number")
+          .map((input) => input.value !== "" && Number.isInteger(Number(input.value))),
+        expectedTimezone: inputs.some((input) => input.value === "Europe/Berlin"),
+        fixedObject,
+      };
+    })
+    .catch(() => null);
   const disclosures = await disclosureDiagnostics(page);
-  const diagnostic = `${message}\n${visible}\nLayout: ${JSON.stringify(layout)}\nDisclosure trace: ${JSON.stringify(disclosures)}\nRevocation trace: ${JSON.stringify(revocations.slice(-12))}`;
+  const diagnostic = `${message}\n${visible}\nLayout: ${JSON.stringify(layout)}\nDisclosure trace: ${JSON.stringify(disclosures)}\nRevocation trace: ${JSON.stringify(revocations.slice(-12))}\nProposal trace: ${JSON.stringify(proposalTrace)}\nProposal form: ${JSON.stringify(form)}`;
   process.stderr.write(`${diagnostic.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
   process.exitCode = 1;
 } finally {

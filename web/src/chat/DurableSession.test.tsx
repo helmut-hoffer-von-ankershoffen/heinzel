@@ -1824,3 +1824,77 @@ it("does not display another session's action or request its associations", asyn
   expect(screen.queryByText(/private-action/)).not.toBeInTheDocument();
   expect(calls.some((call) => new URL(call.url).pathname.endsWith("/personal-artifacts"))).toBe(false);
 });
+
+it("keeps source preparation unavailable while a displayed reply still has an unsettled owned answer", async () => {
+  let finishAnswer: (() => void) | undefined;
+  let answerStarted = false;
+  let displayed = { ...snapshot, messages: [...snapshot.messages] };
+  const { calls } = mockApi({
+    ...shell,
+    "/api/heinzel/session": () => displayed,
+    "/api/heinzel/connected-read-options": () => [
+      { capability: "calendar", method: "events", provider: "fixture", source: "fixture", input_schema: {} },
+    ],
+    "/api/heinzel/connected-read-state": () => ({
+      session_id: sessionId,
+      status: "none",
+      proposal: null,
+      descriptor: null,
+    }),
+    "/api/heinzel/chat": async (request: Request) => {
+      const body = await request.json();
+      return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 2 };
+    },
+    "/api/heinzel/answer-chat": async (request: Request) => {
+      const body = await request.json();
+      answerStarted = true;
+      await new Promise<void>((resolve) => {
+        finishAnswer = resolve;
+      });
+      return {
+        session_id: sessionId,
+        request_id: body.request_id,
+        message: { id: "answer", seq: 2, role: "assistant" },
+      };
+    },
+  });
+  sessionStorage.setItem("hz.token", "test-token");
+  const client = queryClient();
+  const router = createMemoryRouter(
+    [{ path: "/", element: <DurableSession sessionId={sessionId} onClose={() => {}} /> }],
+    { initialEntries: ["/"] },
+  );
+  render(
+    <Providers client={client}>
+      <RouterProvider router={router} />
+    </Providers>,
+  );
+  fireEvent.change(await screen.findByLabelText("Read operation"), { target: { value: "calendar.events" } });
+  expect(screen.getByRole("button", { name: "Prepare review" })).toBeEnabled();
+  fireEvent.change(screen.getByLabelText("Message your Heinzel"), { target: { value: "Suggest an interval" } });
+  fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+  await waitFor(() => expect(answerStarted).toBe(true));
+  displayed = {
+    ...snapshot,
+    messages: [
+      ...snapshot.messages,
+      { id: "answer", seq: 2, role: "assistant", text: "Read complete.", status: "pending" },
+    ],
+  };
+  // Polling can expose the saved reply before the owning answer response and writer have settled.
+  await act(async () => {
+    client.setQueryData(["heinzel", "session", sessionId], displayed);
+  });
+  expect(await screen.findByText("Read complete.")).toBeInTheDocument();
+  const prepare = screen.getByRole("button", { name: "Prepare review" });
+  try {
+    expect(prepare).toBeDisabled();
+    fireEvent.click(prepare);
+    expect(calls.filter((request) => new URL(request.url).pathname.includes("propose-connected-read"))).toHaveLength(0);
+  } finally {
+    await act(async () => {
+      finishAnswer?.();
+    });
+  }
+  await waitFor(() => expect(prepare).toBeEnabled());
+});

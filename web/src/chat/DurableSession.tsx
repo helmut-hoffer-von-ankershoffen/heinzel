@@ -714,7 +714,11 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         )}
         {query.data?.session_id === sessionId && (
           <>
-            <ConnectedReadReview key={`connected:${sessionId}`} sessionId={sessionId} />
+            <ConnectedReadReview
+              key={`connected:${sessionId}`}
+              sessionId={sessionId}
+              conversationBusy={busy || !!pending || !!agentPending}
+            />
             <ConnectedReadSetReview
               key={`connected-set:${sessionId}`}
               sessionId={sessionId}
