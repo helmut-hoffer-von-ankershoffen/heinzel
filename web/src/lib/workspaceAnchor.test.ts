@@ -331,13 +331,17 @@ it.each([
   { left: 0, top: -1, right: 80, bottom: 19 },
   { left: 300, top: 0, right: 380, bottom: 20 },
   { left: 0, top: 590, right: 80, bottom: 610 },
-])("preserves native focus reveal for a clipped control %j", (rect) => {
+])("preserves native focus reveal for a clipped link %j", (rect) => {
   const view = layout();
-  vi.spyOn(view.button, "getBoundingClientRect").mockReturnValue({ ...rect, width: 80, height: 20 } as DOMRect);
+  const link = document.createElement("a");
+  link.href = "#target";
+  view.button.replaceWith(link);
+  const control = link;
+  vi.spyOn(control, "getBoundingClientRect").mockReturnValue({ ...rect, width: 80, height: 20 } as DOMRect);
   const stop = vi.fn();
   view.scroller.scrollTo = stop;
-  view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-  view.button.focus();
+  control.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  control.focus();
   view.scroller.scrollTop = 430;
   render();
   expect(stop).not.toHaveBeenCalled();
@@ -351,10 +355,13 @@ it.each(["top", "left", "right", "bottom"])(
   (edge) => {
     for (const clipping of [0.25, 0.5, 0.75]) {
       const view = layout();
+      const control = document.createElement("div");
+      control.tabIndex = 0;
+      view.button.replaceWith(control);
       vi.spyOn(view.scroller, "getBoundingClientRect").mockReturnValue({ top: 50, left: 50 } as DOMRect);
       const top = edge === "top" ? -clipping : edge === "bottom" ? 580 + clipping : 20;
       const left = edge === "left" ? -clipping : edge === "right" ? 280 + clipping : 20;
-      vi.spyOn(view.button, "getBoundingClientRect").mockImplementation(
+      vi.spyOn(control, "getBoundingClientRect").mockImplementation(
         () =>
           ({
             top: top + 450 - view.scroller.scrollTop,
@@ -370,8 +377,8 @@ it.each(["top", "left", "right", "bottom"])(
         view.scroller.scrollTop = request.top ?? 0;
       });
       view.scroller.scrollTo = stop;
-      view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-      view.button.focus();
+      control.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      control.focus();
       // The original native compositor commits after the synchronous pointerdown abort.
       view.scroller.scrollTop = 300;
       view.scroller.dispatchEvent(new Event("scroll"));
@@ -388,7 +395,10 @@ it.each([0.25, 0.5, 10])("leaves a control clipped %s pixels by the visual viewp
   const viewport = Object.assign(new EventTarget(), { width: 360, height: 400, offsetLeft: 0, offsetTop: 100 });
   vi.stubGlobal("visualViewport", viewport);
   const view = layout();
-  vi.spyOn(view.button, "getBoundingClientRect").mockReturnValue({
+  const control = document.createElement("a");
+  control.href = "#target";
+  view.button.replaceWith(control);
+  vi.spyOn(control, "getBoundingClientRect").mockReturnValue({
     left: 20,
     top: 100 - clipping,
     right: 100,
@@ -398,7 +408,7 @@ it.each([0.25, 0.5, 10])("leaves a control clipped %s pixels by the visual viewp
   } as DOMRect);
   const stop = vi.fn();
   view.scroller.scrollTo = stop;
-  view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  control.dispatchEvent(new Event("pointerdown", { bubbles: true }));
   render();
   expect(stop).not.toHaveBeenCalled();
   expect(frames.size).toBe(0);
@@ -448,5 +458,69 @@ it("does not manufacture scroll range or move a nested scroller", () => {
   view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
   expect(stop).not.toHaveBeenCalled();
   expect(nested.scrollTop).toBe(21);
+  view.dispose();
+});
+
+it.each(["button", "summary"])("stabilizes a pressed native %s through its visible clipped portion", (tag) => {
+  for (const edge of ["top", "bottom", "left", "right"]) {
+    for (const clipping of [0.25, 1.25, 5, 19]) {
+      const view = layout();
+      const control = document.createElement(tag);
+      if (tag === "summary") {
+        const details = document.createElement("details");
+        details.append(control);
+        view.button.replaceWith(details);
+      } else view.button.replaceWith(control);
+      const child = document.createElement("span");
+      control.append(child);
+      const top = edge === "top" ? -clipping : edge === "bottom" ? 580 + clipping : 20;
+      const left = edge === "left" ? -clipping : edge === "right" ? 280 + clipping : 20;
+      vi.spyOn(control, "getBoundingClientRect").mockImplementation(
+        () =>
+          ({
+            top: top + 400 - view.scroller.scrollTop,
+            bottom: top + 420 - view.scroller.scrollTop,
+            left,
+            right: left + 80,
+            width: 80,
+            height: 20,
+          }) as DOMRect,
+      );
+      const stop = vi.fn((options?: ScrollToOptions | number, y?: number) => {
+        const request = typeof options === "number" ? { left: options, top: y } : (options ?? {});
+        view.scroller.scrollTop = request.top ?? 0;
+      });
+      view.scroller.scrollTo = stop;
+      child.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      control.focus();
+      view.scroller.scrollTop = 300;
+      render();
+      expect(view.scroller.scrollTop).toBe(400);
+      expect(stop).toHaveBeenCalledTimes(2);
+      render();
+      expect(stop).toHaveBeenCalledTimes(2);
+      view.dispose();
+    }
+  }
+});
+
+it.each(["label", "focus transfer"])("keeps native button %s reveal authoritative", (kind) => {
+  const view = layout();
+  const input = document.createElement("input");
+  view.workspace.append(input);
+  if (kind === "label") {
+    const label = document.createElement("label");
+    view.button.replaceWith(label);
+    label.append(view.button);
+  }
+  const stop = vi.fn();
+  view.scroller.scrollTo = stop;
+  view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  input.focus();
+  view.scroller.scrollTop = 37;
+  render();
+  expect(stop).toHaveBeenCalledTimes(kind === "label" ? 0 : 1);
+  expect(view.scroller.scrollTop).toBe(37);
+  expect(frames.size).toBe(0);
   view.dispose();
 });

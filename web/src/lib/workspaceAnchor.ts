@@ -39,23 +39,25 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
     const rect = control.getBoundingClientRect();
     const bounds = scroller.getBoundingClientRect();
     const visual = window.visualViewport;
-    // Client dimensions use integer CSS pixels while control rectangles retain fractions. Admit
-    // only their half-pixel fringe; larger clipping can legitimately reveal itself on native focus.
-    // Visual viewport boundaries retain their exact fractional coordinates.
+    // A native button or disclosure can be pressed through its visible part while clipped.
+    // Preserve that press even when a reveal frame has moved the rest outside the viewport.
+    // Other controls retain conservative focus/reveal eligibility, including the half-pixel
+    // fringe from integer client dimensions; visual viewport bounds remain exact.
     const rounding = 0.5;
     if (
-      rect.left < Math.max(bounds.left + scroller.clientLeft - rounding, visual?.offsetLeft ?? 0) ||
-      rect.top < Math.max(bounds.top + scroller.clientTop - rounding, visual?.offsetTop ?? 0) ||
-      rect.right >
-        Math.min(
-          bounds.left + scroller.clientLeft + scroller.clientWidth + rounding,
-          (visual?.offsetLeft ?? 0) + (visual?.width ?? window.innerWidth),
-        ) ||
-      rect.bottom >
-        Math.min(
-          bounds.top + scroller.clientTop + scroller.clientHeight + rounding,
-          (visual?.offsetTop ?? 0) + (visual?.height ?? window.innerHeight),
-        )
+      !control.matches("button, summary") &&
+      (rect.left < Math.max(bounds.left + scroller.clientLeft - rounding, visual?.offsetLeft ?? 0) ||
+        rect.top < Math.max(bounds.top + scroller.clientTop - rounding, visual?.offsetTop ?? 0) ||
+        rect.right >
+          Math.min(
+            bounds.left + scroller.clientLeft + scroller.clientWidth + rounding,
+            (visual?.offsetLeft ?? 0) + (visual?.width ?? window.innerWidth),
+          ) ||
+        rect.bottom >
+          Math.min(
+            bounds.top + scroller.clientTop + scroller.clientHeight + rounding,
+            (visual?.offsetTop ?? 0) + (visual?.height ?? window.innerHeight),
+          ))
     )
       return;
     const position = () => {

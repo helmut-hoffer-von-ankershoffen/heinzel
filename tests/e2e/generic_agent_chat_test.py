@@ -24,6 +24,7 @@ class ChatJourney:
     late_page: bool
     activity_scroll: bool
     fractional_scroll: bool = False
+    partial_scroll: bool = False
 
 
 def _mounted_generic_agent_chat(make_kernel, tmp_path, monkeypatch, journey: ChatJourney):
@@ -122,7 +123,13 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
                 engine,
                 "late-page" if late_page else "normal",
                 str(tmp_path),
-                "fractional" if journey.fractional_scroll else "smooth" if activity_scroll else "normal",
+                "partial"
+                if journey.partial_scroll
+                else "fractional"
+                if journey.fractional_scroll
+                else "smooth"
+                if activity_scroll
+                else "normal",
             ],
             cwd=REPO,
             capture_output=True,
@@ -170,4 +177,18 @@ def test_fractional_reply_disclosure_remains_clickable_during_workspace_scroll(
         tmp_path,
         monkeypatch,
         ChatJourney(engine=engine, late_page=True, activity_scroll=True, fractional_scroll=True),
+    )
+
+
+@pytest.mark.timeout(600)
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_partially_clipped_reply_disclosure_remains_clickable_during_workspace_scroll(
+    make_kernel, tmp_path, monkeypatch, engine
+):
+    """A trusted native summary press stays clickable with five pixels beyond the workspace edge."""
+    _mounted_generic_agent_chat(
+        make_kernel,
+        tmp_path,
+        monkeypatch,
+        ChatJourney(engine=engine, late_page=True, activity_scroll=True, partial_scroll=True),
     )
