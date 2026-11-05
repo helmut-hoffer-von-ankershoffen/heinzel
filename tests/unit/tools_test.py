@@ -662,3 +662,71 @@ def test_doctor_passes_the_web_app_once_installed(isolated):
 
 def test_doctor_says_nothing_about_web_tools_in_a_plugin(isolated):
     assert web_checks(isolated, app=False, modules=False) == []
+
+
+def test_persistent_gateway_failure_reports_attempts_and_sanitized_last_endpoint(monkeypatch, transport):
+    url = "https://username:password@release-assets.githubusercontent.com/archive.tar.gz?sig=private#token"
+    error = urllib.error.HTTPError(url, 504, "private upstream details", {"Set-Cookie": "private"}, None)
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(kwargs["timeout"])
+        raise error
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError) as raised:
+        tools.download_bytes("https://example.com/pinned", tools.http_get)
+    assert str(raised.value) == (
+        "download failed (HTTP Error 504; "
+        "last HTTP endpoint=release-assets.githubusercontent.com/archive.tar.gz; attempts=3)"
+    )
+    assert raised.value.__cause__ is error
+    assert requests == [120, 119.5, 118.5]
+    for private in ("username", "password", "private", "sig=", "#token", "Set-Cookie"):
+        assert private not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/line\x00break?secret",
+        "https://example.com/line\x85\u202ebreak?secret",
+        "https://example.com/" + "x" * 500,
+    ],
+)
+def test_http_failure_endpoint_has_no_control_characters_and_a_bounded_path(url, request):
+    error = urllib.error.HTTPError(url, 503, "private", {}, None)
+    request.addfinalizer(error.close)
+    with pytest.raises(tools.ToolError) as raised:
+        tools.download_bytes(url, lambda _: (_ for _ in ()).throw(error))
+    message = str(raised.value)
+    assert all(char.isprintable() for char in message)
+    assert len(message) < 360
+    assert "private" not in message
+    assert "secret" not in message
+    assert "attempts=" not in message  # A supplied fetch callback has no observed attempt count.
+    assert raised.value.__cause__ is error
+
+
+def test_malformed_http_error_url_keeps_status_and_original_cause(request):
+    error = urllib.error.HTTPError("https://[invalid", 504, "private", {}, None)
+    request.addfinalizer(error.close)
+    with pytest.raises(tools.ToolError, match=r"download failed \(HTTP Error 504\)") as raised:
+        tools.download_bytes("https://example.com/x", lambda _: (_ for _ in ()).throw(error))
+    assert raised.value.__cause__ is error
+
+
+def test_certificate_failure_retains_immediate_failure_with_one_observed_attempt(monkeypatch, transport):
+    error = urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate rejected"))
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(kwargs["timeout"])
+        raise error
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError, match=r"certificate rejected.*attempts=1") as raised:
+        tools.download_bytes("https://example.com/x", tools.http_get)
+    assert requests == [120]
+    assert transport == [0.0]
+    assert raised.value.__cause__ is error
