@@ -39,6 +39,7 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 - **release:** Describe reply-aware source review ([18f60e0](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/18f60e08c5f8e91efce118d5596adb7ff5342cd2))
 - **release:** Record validated fixes and open scroll incident ([543f0e3](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/543f0e3866b35caa581c21fd19a8494e87affaed))
 - **release:** Describe stable popup placement ([ac1820d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/ac1820d588ed66a2eb0ee6e645b761f194753f94))
+- **release:** Record existing-profile update validation ([85a8732](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/85a873247dc89b58f8a01028416fe8549acdbe7b))
 
 ### 🧪 Testing
 
@@ -46,6 +47,7 @@ Legacy macOS 0.9.14/0.9.15 daemons may require one-time verified retirement and 
 - **web:** Guard optional pointer diagnostics ([47a4c6d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/47a4c6d83b03b2f5501cb1be240857ffa34bb36a))
 - **web:** Distinguish scroll owners during physical presses ([e015794](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e01579480d3dc79bc1837aa242d6915dbc2b1dad))
 - **system:** Configure the existing update profile ([6750e5e](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/6750e5e79abc1247239de26236a1b2f558e183aa))
+- **release:** Batch isolated row predicates in one node process ([779a41b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/779a41bf6da857dc5a6097fe78b98871af3cf093))
 
 ### 🧹 Miscellaneous
 
