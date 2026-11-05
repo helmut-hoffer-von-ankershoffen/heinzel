@@ -59,7 +59,7 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
-        "uv run --no-build --frozen --script scripts/release_candidate.py": "selects or records release source",
+        "python3 -I scripts/release_candidate.py": "selects or records release source",
         "uv run --frozen --no-sync --no-build python scripts/ci_node.py": (
             "exports the already installed locked runtime through GitHub's step-local GITHUB_PATH setup contract"
         ),
@@ -681,7 +681,7 @@ def test_release_docs_only_publish_existing_recordings_even_when_the_caller_was_
 # A script named by path needs its executable bit, which copier drops when it follows the template's symlinks into a
 # plugin's scripts/. Through an interpreter, a script runs without it.
 SCRIPT = re.compile(r"(?<![\w/.-])(?:\./)?scripts/[\w.-]+\.(?:sh|py)\b")
-INTERPRETER = re.compile(r"(?:\bbash|\bpython3?|\buv run(?: -[\w-]+)*(?: --script| python3?))\s+$")
+INTERPRETER = re.compile(r"(?:\bbash|\bpython3?(?: -I)?|\buv run(?: -[\w-]+)*(?: --script| python3?))\s+$")
 
 
 def scripts_run_by_path(run: str) -> list[str]:
