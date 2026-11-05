@@ -38,6 +38,8 @@ should choose the product rather than coordinate its distributions.
   help/version flags remain available without installation. `hz` remains the independently usable SDK/CLI entry point;
   `hz-install` remains the lower-level installer for automation and explicit candidate profiles.
   A namespace-independent entry shim re-executes the selected interpreter in isolated mode before importing Core.
+  It preserves an explicit no-bytecode mode (`-B`) across that re-execution; ordinary launches keep Python's default
+  bytecode behavior.
   All three packaged commands preserve their roles while ignoring stale checkout paths; managed delegation also
   removes those Python path overrides from its descendants.
 - The documented command uses `@latest` to refresh a stale bootstrap cache or bypass an older installed SDK.
