@@ -10,6 +10,10 @@ See how far your current meeting has progressed and when the next one starts fro
 
 - **web:** Add a calendar toolbar and footer summary ([#534](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/534)) ([e560f09](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e560f09bdc8647ec0a6710edc70cea3ba750d3b9))
 
+### 🐛 Bug fixes
+
+- **web:** Keep pinned footer actions clickable when a neighboring preview opens ([#537](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/537)).
+
 ## [0.9.21](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.21) - 2026-11-06
 
 Search your private Heinzel conversations and open the result in context. The installer now keeps the selected app profile when setting up services, and chat session indexing initializes in one transaction.
