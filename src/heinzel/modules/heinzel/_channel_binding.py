@@ -11,6 +11,8 @@ from heinzel import (
     HeinzelError,
     Kernel,
     NotificationChannel,
+    OwnerNoticeChannel,
+    ReviewedLinkChannel,
     ServiceLet,
     Settings,
 )
@@ -35,10 +37,16 @@ class ChannelBinding:
         self.contract: type[ApprovalChannel | NotificationChannel] = (
             ApprovalChannel if kind == "approval" else NotificationChannel
         )
+        # Draft workflow ports have their own binding and are not ordinary notice transports.
         candidates = [
             (record, let)
             for record, let in kernel.lets(ServiceLet)
-            if let.provides is not self.contract and issubclass(let.provides, self.contract)
+            if let.provides is not self.contract
+            and issubclass(let.provides, self.contract)
+            and not (
+                self.contract is NotificationChannel
+                and issubclass(let.provides, (OwnerNoticeChannel, ReviewedLinkChannel))
+            )
         ]
         matches: list[tuple[ModuleRecord, CapturedEntry, ApprovalChannel | NotificationChannel]] = []
         discovery = kernel.source_discovery
