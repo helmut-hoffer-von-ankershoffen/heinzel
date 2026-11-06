@@ -101,7 +101,7 @@ describe("AudioVisualizer", () => {
     expect(captureAudio).not.toHaveBeenCalled();
     fireEvent.click(button);
     const controls = screen.getByRole("region", { name: "Audio visualizer controls" });
-    expect(within(controls).getByText(/not recorded or uploaded/)).toBeVisible();
+    expect(within(controls).getByText(/does not record or upload audio or video/)).toBeVisible();
     expect(captureAudio).not.toHaveBeenCalled();
     fireEvent.click(within(controls).getByRole("button", { name: "Share audio" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Stop sharing audio" })).toBeInTheDocument());
