@@ -186,6 +186,8 @@ const en = {
   "health.more": "{count} more checks need attention.",
   "health.refresh": "Refresh health checks",
   "pluginsPending.title": "Plugins changed",
+  "pluginsPending.restartRequired": "Plugin changes need a restart",
+  "pluginsPending.finishChange": "Finish the current change in Plugins before restarting.",
   "pluginsPending.intro": "These plugins changed on this computer since hz started. Restart hz to load them.",
   "pluginsPending.installed": "{name} was installed",
   "pluginsPending.removed": "{name} was removed",
