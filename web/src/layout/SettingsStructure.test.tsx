@@ -279,6 +279,33 @@ describe("Settings: Preferences, Customize, This computer", () => {
     expect(within(dialog).getByText("v0.4.0")).toBeInTheDocument();
   });
 
+  it.each([
+    [true, "Sign-in found by the connector’s local check."],
+    [false, "No sign-in found."],
+    [null, "Sign-in status unavailable."],
+  ])("shows the connector’s local sign-in result (%s)", async (signedIn, expected) => {
+    const { calls } = mockApi({
+      ...answers,
+      "/api/system/connector/list": {
+        capabilities: [],
+        connectors: [
+          { name: "github", distribution: "heinzel-github", login: { signed_in: signedIn } },
+          { name: "other", distribution: "heinzel-other", login: { signed_in: true, account: "other account" } },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=connectors");
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    const card = (await within(dialog).findByText("Connects: code-host, tracker")).closest("button") as HTMLElement;
+    expect(calls.some((request) => new URL(request.url).pathname === "/api/system/connector/list")).toBe(false);
+    await user.click(card);
+
+    expect(await within(dialog).findByText(expected)).toBeVisible();
+    expect(within(dialog).queryByText("other account")).toBeNull();
+    expect(calls.some((request) => new URL(request.url).pathname === "/api/system/connector/test")).toBe(false);
+  });
+
   it("lists connectors as cards with what they connect, and opens one's settings inside Connectors", async () => {
     mockApi(answers);
     const user = userEvent.setup();
