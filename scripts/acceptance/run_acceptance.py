@@ -1533,6 +1533,11 @@ def snapshot_files(root):
     return {str(p): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file() and not p.name.startswith(".")}
 
 
+def foreground_ui_command(version):
+    check(version in FOREGROUND_UI, "The installed Core has no recognized foreground UI command")
+    return FOREGROUND_UI[version]
+
+
 def ui_app(case, label):
     """Start the installed app the way a user does after installation; returns its foreground session."""
     _, out, _ = case.run(
@@ -1546,10 +1551,11 @@ def ui_app(case, label):
         SHORT_DEADLINE,
     )
     lines = out.splitlines()
-    check(len(lines) == 1 and lines[0] in FOREGROUND_UI, "The installed Core has no recognized foreground UI command")
+    check(len(lines) == 1, "The installed Core has no recognized foreground UI command")
     version = lines[0]
+    command = foreground_ui_command(version)
     check(version == case.expect_version, "The installed Core version differs from the case's expected version")
-    return case.foreground([str(case.bin / "hz"), *FOREGROUND_UI[version]], label)
+    return case.foreground([str(case.bin / "hz"), *command], label)
 
 
 def run_update(case, label):
@@ -2567,10 +2573,26 @@ def resolve_published(args):
     return supplied
 
 
-def main():
-    args = parse_args()
+def require_isolated_python():
     if not sys.flags.isolated or sys.flags.optimize or sys.version_info < (3, 11):
         sys.exit("Run with python3 -I (3.11+, no -O).")
+
+
+def check_release_ui(arguments):
+    """Check the reviewed version entry without starting an acceptance run."""
+    require_isolated_python()
+    if len(arguments) != 1:
+        sys.exit("Usage: python3 -I scripts/acceptance/run_acceptance.py --check-foreground-ui VERSION")
+    try:
+        foreground_ui_command(arguments[0])
+    except StepFailed:
+        sys.exit("No reviewed foreground UI command for the release version. Add its exact version to FOREGROUND_UI.")
+    return 0
+
+
+def main():
+    args = parse_args()
+    require_isolated_python()
     if sys.platform not in ("darwin", "linux"):
         sys.exit("This harness targets macOS and Linux.")
     os.umask(0o077)
@@ -2729,4 +2751,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--check-foreground-ui"]:
+        sys.exit(check_release_ui(sys.argv[2:]))
     sys.exit(main())

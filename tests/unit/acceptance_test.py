@@ -26,6 +26,7 @@ def load(name: str):
 
 harness = load("run_acceptance")
 summary = load("summary")
+UNKNOWN_FOREGROUND_VERSION = f"{max(int(version.split('.')[0]) for version in harness.FOREGROUND_UI) + 1}.0.0"
 
 
 def run(**overrides):
@@ -189,7 +190,7 @@ def test_installed_metadata_selects_the_canonical_foreground_command(version, co
             for expected in ("0.9.17", "0.9.18", "0.9.19", "0.9.20")
             if installed != expected
         ],
-        ("0.9.21", "0.9.21"),
+        (UNKNOWN_FOREGROUND_VERSION, UNKNOWN_FOREGROUND_VERSION),
         *[
             (f"0.9.{patch}{suffix}", f"0.9.{patch}{suffix}")
             for patch in (17, 18, 19, 20)
@@ -198,7 +199,6 @@ def test_installed_metadata_selects_the_canonical_foreground_command(version, co
         ("0.9.018", "0.9.018"),
         ("v0.9.19", "v0.9.19"),
         ("0.9.19 ", "0.9.19"),
-        ("1.0.0", "1.0.0"),
         ("0.9.7", "0.9.7"),
         ("0.9.16.dev1", "0.9.16.dev1"),
         ("0.9.16rc1", "0.9.16rc1"),

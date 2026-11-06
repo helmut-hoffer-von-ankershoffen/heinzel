@@ -33,7 +33,7 @@ CALLERS = [
     *sorted((REPO / ".github" / "workflows").glob("*.yml")),
 ]
 CALL = re.compile(
-    r"(?P<runner>\buv run(?P<flags>(?: --python [0-9]+(?:\.[0-9]+)?| -[\w-]+)*)(?P<python> python3?)? )?"
+    r"(?P<runner>\buv run(?P<flags>(?: --python [0-9]+(?:\.[0-9]+)?| -[\w-]+)*)(?P<python> python3?(?: -I)?)? )?"
     r"(?P<isolated>\bpython3 -I )?scripts/(?P<name>[\w-]+\.py)\b"
 )
 FILE_TEST = re.compile(r"\[\s+-[ef]\s+(['\"]?)scripts/[\w-]+\.py\1\s+\]")
@@ -61,7 +61,7 @@ def metadata_problems(script: Path) -> list[str]:
     metadata = inline_metadata(script)
     if project_bound(script):
         problems = [] if metadata is None else ["is project-bound but has a `# /// script` block"]
-        if not re.search(r"(?m)^(from|import) heinzel\b", text):
+        if not re.search(r"(?m)^[ \t]*(from|import) heinzel\b", text):
             problems.append("is project-bound but doesn't import heinzel; give it a `# /// script` block instead")
         return problems
     if metadata is None:

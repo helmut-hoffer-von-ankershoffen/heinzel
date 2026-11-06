@@ -525,6 +525,18 @@ def test_producer_build_guards_precede_any_tooling_or_attestation():
         assert steps[2]["uses"] == "./.github/actions/setup-uv"
 
 
+def test_core_publication_checks_the_tagged_ui_contract_before_building():
+    steps = yaml.safe_load((ROOT / ".github/workflows/publish.yml").read_text())["jobs"]["publish"]["steps"]
+    names = [step.get("name") for step in steps]
+    index = names.index("Check the Core foreground UI release contract")
+    build = next(i for i, step in enumerate(steps) if step.get("run", "").startswith("make build"))
+    assert names.index("Check that the tag matches the project version") < index < build
+    guard = steps[index]
+    assert guard["if"] == f"github.repository == '{release.REPOSITORY}'"
+    assert guard["timeout-minutes"] == 1
+    assert guard["run"].endswith('python -I scripts/acceptance/run_acceptance.py --check-foreground-ui "${TAG#v}"')
+
+
 @pytest.mark.parametrize(
     "remote",
     ["", "b" * 40 + "\trefs/tags/v1.2.3", "c" * 40 + "\trefs/tags/v1.2.3\n" + "b" * 40 + "\trefs/tags/v1.2.3^{}"],

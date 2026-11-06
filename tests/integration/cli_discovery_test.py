@@ -1,6 +1,9 @@
 """Agent discovery describes executable commands and keeps UI operations reachable through the CLI."""
 
 import json
+import runpy
+import tomllib
+from pathlib import Path
 from typing import Annotated
 
 import pytest
@@ -82,6 +85,23 @@ def test_every_ui_operation_has_a_discoverable_cli_command_and_matching_input_sc
         assert name in commands, f"CLI operation is not discoverable: {name}"
     assert {"hz setup", "hz join", "hz ui", "hz chat", "hz system serve api"} <= commands.keys()
     assert commands["hz system expert"]["operation"]["name"] == "expert"
+
+
+@pytest.mark.parametrize("ui_only", [False, True])
+def test_project_version_maps_to_the_registered_foreground_ui(make_kernel, ui_only):
+    root = Path(__file__).resolve().parents[2]
+    version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    policy = runpy.run_path(str(root / "scripts/acceptance/run_acceptance.py"))
+    command = policy["FOREGROUND_UI"].get(version)
+    assert command == ("ui", "serve"), f"Review the exact foreground UI entry for Core {version}"
+    commands = command_catalog(build(make_kernel(builtins=True), ui_only=ui_only))
+    foreground = commands[" ".join(("hz", *command))]
+    assert foreground["hidden"] is False
+    assert foreground["deprecated"] is False
+    options = {
+        option for parameter in foreground["parameters"] for option in parameter["opts"] + parameter["secondary_opts"]
+    }
+    assert {"--port", "--no-browser"} <= options
 
 
 def test_cli_respects_head_restrictions(make_kernel):

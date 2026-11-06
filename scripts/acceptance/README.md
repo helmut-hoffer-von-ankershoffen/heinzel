@@ -44,9 +44,13 @@ quiescent" and HTTP 403. "Not proven quiescent" is allowed only in the malformed
 Each private case supplies an explicitly fictional name, handle, role, time zone and team through supported `HZ_ORG__*`
 and `HZ_TEAM__NAME` configuration. This is noninteractive setup input; it does not prove interactive onboarding or
 discover a real person's identity. Installed foreground starts read the private prefix's Core distribution metadata,
-require the case's expected version, and use `hz ui` for 0.9.8 through 0.9.15 or `hz ui serve` for the explicit
-0.9.16, 0.9.17, 0.9.18, 0.9.19 and 0.9.20 contracts. Unknown versions fail before foreground startup. The harness still
-checks the installed bytes and running app.
+require the case's expected version, and use `hz ui` for 0.9.8 through 0.9.15 or `hz ui serve` for the versions with
+explicit entries in `FOREGROUND_UI`. Unknown versions fail before foreground startup. The harness still checks the
+installed bytes and running app.
+
+Core release preparation verifies the current CLI command tree and adds the exact version to `FOREGROUND_UI` in the
+release PR. Candidate CI checks the declared version against the CLI command tree. Check an entry without running
+acceptance with `python3 -I scripts/acceptance/run_acceptance.py --check-foreground-ui VERSION`.
 
 Preflight runs before any case and executes nothing: PyPI latest and its wheel digest, the governed latest app tag,
 `standard.json`, every release asset's hash, Core wheel equal on both sides, live `install.sh` equal to the release
