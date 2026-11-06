@@ -94,3 +94,23 @@ it("keeps a footer action fixed at child-only query mutation delivery before res
   unmount();
   expect(disconnected).toHaveBeenCalledTimes(disconnectedBefore + 1);
 });
+
+it("keeps a pinned footer pane above a neighbouring hover preview", async () => {
+  const user = userEvent.setup();
+  render(
+    <>
+      <FooterItem label="Calendar" state="ok" text="Calendar">
+        <p>Meeting details</p>
+      </FooterItem>
+      <FooterItem label="Daemon" state="off" text="Daemon">
+        <p>Service details</p>
+      </FooterItem>
+    </>,
+  );
+  await user.click(screen.getByRole("button", { name: "Calendar" }));
+  await user.hover(screen.getByRole("button", { name: "Daemon" }));
+  expect(screen.getByRole("region", { name: "Calendar" }).parentElement).toHaveClass(
+    "z-[calc(var(--layer-popover,40)+1)]",
+  );
+  expect(screen.getByRole("region", { name: "Daemon" }).parentElement).toHaveClass("z-[var(--layer-popover,40)]");
+});
