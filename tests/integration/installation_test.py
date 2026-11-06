@@ -16,6 +16,21 @@ from heinzel.kernel import Installation
 pytestmark = pytest.mark.integration
 
 
+@pytest.fixture
+def target_environment(tmp_path):
+    environment = tmp_path / "tool"
+    # Both callers populate site-packages directly. Bootstrapping pip adds a subprocess and unused files.
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--without-pip", str(environment)],
+        check=True,
+        capture_output=True,
+        timeout=60,
+    )
+    site = environment / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    assert not (site / "pip").exists()
+    return environment, site
+
+
 def test_hz_runs_a_fresh_interpreter(tmp_path):
     installation = Installation(Progress(), prefix=tmp_path, uv="uv")
     assert installation.hz("--version").startswith("hz ")
@@ -23,10 +38,10 @@ def test_hz_runs_a_fresh_interpreter(tmp_path):
         installation.hz("no-such-command")
 
 
-def test_isolated_target_ignores_ambient_pythonpath_and_cwd_but_preserves_product_environment(tmp_path, monkeypatch):
-    environment = tmp_path / "tool"
-    subprocess.run([sys.executable, "-m", "venv", str(environment)], check=True, capture_output=True, timeout=60)
-    site = environment / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+def test_isolated_target_ignores_ambient_pythonpath_and_cwd_but_preserves_product_environment(
+    tmp_path, monkeypatch, target_environment
+):
+    environment, site = target_environment
     target = site / "heinzel"
     target.mkdir(parents=True)
     (target / "__init__.py").write_text("")
@@ -50,10 +65,10 @@ def test_isolated_target_ignores_ambient_pythonpath_and_cwd_but_preserves_produc
 
 
 @pytest.mark.parametrize("dont_write_bytecode", [False, True])
-def test_plugin_inventory_preserves_callers_bytecode_policy(tmp_path, monkeypatch, dont_write_bytecode):
-    environment = tmp_path / "tool"
-    subprocess.run([sys.executable, "-m", "venv", str(environment)], check=True, capture_output=True, timeout=60)
-    site = environment / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+def test_plugin_inventory_preserves_callers_bytecode_policy(
+    tmp_path, monkeypatch, dont_write_bytecode, target_environment
+):
+    environment, site = target_environment
     # A private installed-plugin fixture, using the real SDK and dependency set already under test.
     dependency_site = Path(pytest.__file__).resolve().parents[1]
     sdk_source = Path(heinzel.__file__).resolve().parents[1]
