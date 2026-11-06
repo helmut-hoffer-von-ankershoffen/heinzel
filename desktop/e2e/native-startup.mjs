@@ -106,6 +106,10 @@ try {
   const url = `http://127.0.0.1:${address.port}/#token=${token}`;
   await writeFile(fixtureCli, `#!/usr/bin/env node\nimport { createConnection } from "node:net";\nconst expected = ["ui", "serve", "--port", "0", "--no-browser"];\nif (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(expected)) process.exit(64);\nconst control = createConnection({ host: "127.0.0.1", port: Number(process.env.HZ_TEST_CONTROL_PORT) });\ncontrol.once("connect", () => { control.write("HELLO " + process.env.HZ_TEST_CONTROL_TOKEN + "\\n"); });\nlet input = "";\ncontrol.on("data", (chunk) => { input += chunk.toString("utf8"); if (input.includes("READY " + process.env.HZ_TEST_CONTROL_TOKEN + "\\n")) { process.stdout.write(process.env.HZ_TEST_URL + "\\n"); input = ""; } });\ncontrol.on("close", () => process.exit(0));\nprocess.on("SIGINT", () => { control.end(); process.exit(0); });\nsetInterval(() => {}, 1000);\n`, { mode: 0o700 });
   await chmod(fixtureCli, 0o700);
+  const receiptDir = join(fixtureDir, ".config", "heinzel");
+  await mkdir(receiptDir, { recursive: true });
+  await writeFile(join(receiptDir, "desktop-use.lock"), "", { mode: 0o600 });
+  await writeFile(join(receiptDir, "desktop-owned-cli.json"), JSON.stringify({ version: 1, executable: fixtureCli }), { mode: 0o600 });
   child = spawn(
     packagedExecutable ?? process.execPath,
     packagedExecutable ? [] : [electronCli, join(packageRoot, "e2e", "real-backend-bootstrap.mjs")],

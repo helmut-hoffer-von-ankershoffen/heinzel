@@ -85,6 +85,7 @@ def build(kernel: Kernel, *, plain: bool = False, ui_only: bool = False) -> type
     if ui_only:
         mount.ui(app)
         return app
+    from heinzel.heads.cli._app import desktop_group  # noqa: PLC0415 - only full CLI trees need desktop management
     from heinzel.heads.cli._chat import CHAT, chat_callback  # noqa: PLC0415 - only full CLI trees need these commands
     from heinzel.heads.cli._chat import HELP as CHAT_HELP  # noqa: PLC0415 - only full CLI trees need these commands
     from heinzel.heads.cli._join import HELP as JOIN_HELP  # noqa: PLC0415 - only full CLI trees need these commands
@@ -94,7 +95,7 @@ def build(kernel: Kernel, *, plain: bool = False, ui_only: bool = False) -> type
 
     footer = mount.footer
     progress = mount.progress
-    count = mount(app, None) + Count(commands=3)  # setup, join and ui: everyday, for everyone
+    count = mount(app, None) + Count(commands=5)  # setup, join, ui and two desktop app commands
     # Top level by the maintainer's decision, the one exception to ADR 0018, and the only way to run a step (ADR 0032).
     setup = SetupCommands(kernel, console, err_console).command()
     app.command(name="setup", help=SETUP_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(setup)
@@ -104,6 +105,7 @@ def build(kernel: Kernel, *, plain: bool = False, ui_only: bool = False) -> type
     # Top level too, by the maintainer's decision: the web head is how people who don't live in a terminal start
     # (ADR 0039, "a web head: a React app served by the API head").
     _mount_ui(app, mount.groups, kernel, err_console)
+    app.add_typer(desktop_group(kernel, console, err_console), name="app", cls=SortedGroup, rich_help_panel=CORE_PANEL)
     # `hz chat` at the top level as well, by the maintainer's decision: the chat is what a person talks to, and
     # without a subcommand it is the interactive chat (ADR 0045).
     if chat := mount.groups.get(CHAT):

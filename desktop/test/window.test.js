@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
-import { stopWithReport } from "../src/shutdown.js";
+import { shouldRefresh, stopWithReport } from "../src/shutdown.js";
 import { installSignalQuit } from "../src/signal-quit.js";
 
 const main = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
@@ -26,7 +26,7 @@ test("startup acquires the single-instance guard before launching the owned CLI"
 test("Electron readiness starts the CLI and reports startup errors", () => {
   assert.doesNotMatch(main, /await\s+app\.whenReady\(\)/);
   assert.match(main, /void app\.whenReady\(\)\.then\(\(\) => \{/);
-  assert.match(main, /return ownedCli\.start\(\)\.then\(\(connection\) =>/);
+  assert.ok(main.indexOf("acquireDesktopGate()") < main.indexOf("return ownedCli.start()"));
   assert.match(main, /showErrorBox\("Heinzelmännchen could not open", message\)/);
 });
 
@@ -39,7 +39,7 @@ test("Quit stops the owned CLI without adding background integration", () => {
 
 // Execute main's real quit handler with mocked Electron and an owned-CLI result: no native app or process starts.
 function quitHarness(result, rejects = false) {
-  const proc = Object.assign(new EventEmitter(), { argv: ["node", "fixture"] });
+  const proc = Object.assign(new EventEmitter(), { argv: ["node", "fixture"], env: {}, platform: "darwin" });
   const app = Object.assign(new EventEmitter(), {
     isPackaged: false,
     whenReady: () => new Promise(() => {}),
@@ -64,7 +64,7 @@ function quitHarness(result, rejects = false) {
     initializeDesktopIdentity: () => true,
     createInstanceLifecycle: () => ({ acquire: () => true }),
     createLifecycleHandler: () => () => {}, createOwnedCli: () => owned,
-    stopWithReport,
+    stopWithReport, shouldRefresh,
     installSignalQuit: (options) => installSignalQuit({ ...options, setTimer: () => ({ unref() {} }) }),
   });
   return { proc, app, exits, dialogs, stops: () => stops };

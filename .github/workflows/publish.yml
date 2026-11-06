@@ -52,10 +52,56 @@ jobs:
           name: notifier
           path: notifier.tar.gz
 
+  desktop:
+    name: Build Heinzel desktop (macOS ARM64) for ${{ inputs.tag || github.ref_name }}
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+    runs-on: macos-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind the exact official core source before tooling
+        run: |
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          tagged="$(git rev-parse --verify "refs/tags/$TAG^{commit}")"
+          test "$(git rev-parse HEAD)" = "$tagged"
+          test "$GITHUB_SHA" = "$tagged"
+          git merge-base --is-ancestor "$tagged" origin/main
+      - name: Require Apple silicon
+        run: make ci-macos-arm
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.15.0
+          run_install: false
+      - name: Build and verify the locked Electron bundle
+        run: make desktop-electron-package
+      - name: Archive the verified app and bind its release manifest
+        run: node desktop/ci/release-macos.mjs "$TAG" "$GITHUB_SHA" desktop-release
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-macos-arm64
+          path: desktop-release/
+          if-no-files-found: error
+          compression-level: 0
+
   publish:
     name: Build and publish ${{ inputs.tag || github.ref_name }}
-    needs: notifier
-    if: ${{ !cancelled() && needs.notifier.result != 'failure' }}
+    needs: [notifier, desktop]
+    if: >-
+      ${{ !cancelled() &&
+          (github.repository != 'helmut-hoffer-von-ankershoffen/heinzel' ||
+           (needs.notifier.result == 'success' && needs.desktop.result == 'success')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -127,6 +173,25 @@ jobs:
           cp "dist/heinzel-${TAG#v}-py3-none-any.whl" "dist/heinzel-${TAG#v}.tar.gz" core-dist/
           uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py producer "$TAG" "$SOURCE_COMMIT" core-dist dist/artifact-manifest.json
           rm -r core-dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+        with:
+          name: desktop-macos-arm64
+          path: desktop-release
+      - name: Bind the desktop assets before the official attestation
+        if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+        env:
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          archive="heinzel-desktop-${TAG#v}-darwin-arm64.tar.gz"
+          manifest="desktop-release/desktop-artifact-manifest.json"
+          digest="$(sha256sum "desktop-release/$archive" | cut -d' ' -f1)"
+          size="$(stat -c %s "desktop-release/$archive")"
+          jq -e --arg version "${TAG#v}" --arg commit "$SOURCE_COMMIT" --arg archive "$archive" \
+            --arg digest "$digest" --argjson size "$size" \
+            '. == {schema: 1, version: $version, commit: $commit, platform: "darwin", arch: "arm64",
+                    archive: {name: $archive, sha256: $digest, size: $size}}' "$manifest"
+          mv -- "$manifest" "desktop-release/$archive" dist/
       - id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

@@ -103,6 +103,8 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ),
     },
     "publish.yml": {
+        'node desktop/ci/release-macos.mjs "$TAG"': "archives the built app and emits its release identity",
+        'archive="heinzel-desktop-': "checks the transferred desktop assets before signing them",
         'test "v$(uv version --short)" = "$TAG"': "refuses a tag that doesn't match the project version",
         '[[ "$TAG" =~': "binds the exact core tag, checkout, caller source and main ancestry before tooling",
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py checkout": (
