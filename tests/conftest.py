@@ -76,9 +76,6 @@ _LEVELS = frozenset(CATEGORIES)
 _LEVEL_LAYOUT = all((_ROOT / "tests" / level).is_dir() for level in _LEVELS)
 _E2E_NODES = pytest.StashKey[tuple[str, ...]]()
 _E2E_FILES = pytest.StashKey[set[Path]]()
-_ACCEPTANCE_ROW_NODE = (
-    "tests/unit/acceptance_test.py::test_a_row_check_reads_only_the_installed_version_in_its_own_header"
-)
 
 
 def _argument_covers(config: pytest.Config, target: Path, *, allow_nodes: bool = False) -> bool:
@@ -198,11 +195,6 @@ def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool 
 @pytest.hookimpl(specname="pytest_collection_modifyitems", hookwrapper=True, tryfirst=True)
 def pytest_collection_modifyitems_layout(config: pytest.Config, items: list[pytest.Item]) -> Iterator[None]:
     """Validate each lane's actual markers, including cases another hook deselects or reclassifies."""
-    # The owner authorizes 10 s overall only for this Node test's six cases; its child keeps its 5 s deadline.
-    # Apply before the default-timeout hook so each case receives one explicit timeout marker.
-    for item in items:
-        if item.nodeid.split("[", 1)[0] == _ACCEPTANCE_ROW_NODE:
-            item.add_marker(pytest.mark.timeout(10))
     original = tuple(items) if _level_layout(config) else ()
     config.stash[_E2E_NODES] = tuple(item.nodeid for item in original if item.get_closest_marker("e2e") is not None)
     yield

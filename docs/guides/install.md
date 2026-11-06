@@ -42,6 +42,10 @@ persistent standard app. Noninteractive, help and machine-readable calls make no
 Unsupported native notification platforms or desktops are reported; OS permission and visible delivery remain
 separate checks.
 
+If macOS has notifications turned off for Heinzel Notifier, open **System Settings → Notifications → Heinzel
+Notifier** and enable **Allow notifications**. Run `hz system notify install` to send a test notification, then
+run `uvx heinzel@latest` again to finish setup.
+
 `hz ui` displays help. Use `hz ui serve` for foreground serving, stopped with **Ctrl-C**, or `hz ui open` to open
 the installed service and otherwise serve in the foreground. `hz ui install` is available without a preview flag;
 `hz ui status`, `restart` and `uninstall` manage its owned service. Run `hz setup` to configure AI access.

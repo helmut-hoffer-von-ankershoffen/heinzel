@@ -1,0 +1,168 @@
+name: Acceptance sharding study
+run-name: Acceptance sharding study ${{ inputs.expected_version }} ${{ inputs.release_attempt }}
+# Manual, bounded source study. This workflow does not replace release acceptance or publish production receipts.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_version:
+        description: "Core version PyPI latest must be (X.Y.Z)"
+        required: true
+        type: string
+      expected_app_version:
+        description: "App version the collection must designate (X.Y.Z)"
+        required: true
+        type: string
+      expected_wheel_sha256:
+        description: "Public run: require this exact Core wheel digest"
+        required: false
+        default: ""
+        type: string
+      expected_profile_sha256:
+        description: "Public run: require this exact standard.json digest"
+        required: false
+        default: ""
+        type: string
+      release_attempt:
+        description: "Optional opaque coordinator marker, used only to identify this run"
+        required: false
+        default: ""
+        type: string
+      candidate_wheel_url:
+        description: "Candidate run: the held release's Core wheel URL (empty for the public path)"
+        required: false
+        default: ""
+        type: string
+      candidate_wheel_sha256:
+        description: "Candidate run: the sha256 of that wheel"
+        required: false
+        default: ""
+        type: string
+      candidate_profile_url:
+        description: "Candidate run: the app release's standard.json that selects it"
+        required: false
+        default: ""
+        type: string
+
+permissions: {}
+
+jobs:
+  shards:
+    name: Acceptance study (${{ matrix.os }}, ${{ matrix.shard }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-24.04]
+        shard: [public, update, plugins, browser]
+    env:
+      EXPECTED_VERSION: ${{ inputs.expected_version }}
+      EXPECTED_APP_VERSION: ${{ inputs.expected_app_version }}
+      EXPECTED_WHEEL_SHA256: ${{ inputs.expected_wheel_sha256 }}
+      EXPECTED_PROFILE_SHA256: ${{ inputs.expected_profile_sha256 }}
+      CANDIDATE_WHEEL_URL: ${{ inputs.candidate_wheel_url }}
+      CANDIDATE_WHEEL_SHA256: ${{ inputs.candidate_wheel_sha256 }}
+      CANDIDATE_PROFILE_URL: ${{ inputs.candidate_profile_url }}
+      SHARD: ${{ matrix.shard }}
+      NO_SANDBOX: ${{ matrix.os == 'ubuntu-24.04' && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - run: uv python install 3.13
+      # READY_DEADLINE is 600s: allow 15min for the study, retaining 5min job margin for setup/evidence.
+      - name: Run the acceptance harness
+        timeout-minutes: 15
+        env:
+          TMPDIR: /tmp
+        run: >-
+          "$(uv python find 3.13)" -I scripts/acceptance/run_acceptance.py
+          --expect-version "$EXPECTED_VERSION"
+          --expect-app-version "$EXPECTED_APP_VERSION"
+          --accept-wheel-sha256 "$EXPECTED_WHEEL_SHA256"
+          --accept-profile-sha256 "$EXPECTED_PROFILE_SHA256"
+          --candidate-wheel-url "$CANDIDATE_WHEEL_URL"
+          --candidate-wheel-sha256 "$CANDIDATE_WHEEL_SHA256"
+          --candidate-profile-url "$CANDIDATE_PROFILE_URL"
+          --chrome-no-sandbox "$NO_SANDBOX"
+          --shard "$SHARD"
+      - name: Summarize the result
+        if: always()
+        run: >-
+          "$(uv python find 3.13)" -I scripts/acceptance/summary.py >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-study-screens-${{ runner.os }}-${{ matrix.shard }}
+          path: /tmp/hz-acceptance-*/case*/shots/*.png
+          if-no-files-found: ignore
+          retention-days: 3
+      # Partial progress is diagnostic only. Its namespace never matches the reducer's completed-receipt pattern.
+      - name: Preserve latest raw progress even when the harness was interrupted
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-study-partial-${{ runner.os }}-${{ matrix.shard }}
+          path: /tmp/hz-acceptance-*/result.json
+          if-no-files-found: warn
+      - name: Preserve every first-attempt shard receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-study-shard-${{ runner.os }}-${{ matrix.shard }}
+          path: reports/acceptance/result.json
+          if-no-files-found: error
+
+  reduce:
+    name: Acceptance study reduction (${{ matrix.runner_os }})
+    needs: shards
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        runner_os: [macOS, Linux]
+    env:
+      TARGET_OS: ${{ matrix.runner_os }}
+      WHEEL_SHA256: ${{ inputs.candidate_wheel_sha256 || inputs.expected_wheel_sha256 }}
+      PROFILE_SHA256: ${{ inputs.expected_profile_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - run: uv python install 3.13
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: acceptance-study-shard-${{ matrix.runner_os }}-*
+          path: reports/shards
+      - name: Reduce complete same-run evidence
+        run: >-
+          "$(uv python find 3.13)" -I scripts/acceptance/reduce.py
+          --receipts reports/shards
+          --runner-os "$TARGET_OS"
+          --wheel-sha256 "$WHEEL_SHA256"
+          --profile-sha256 "$PROFILE_SHA256"
+          --output reports/acceptance-study/result.json
+      - name: Summarize the result
+        if: always()
+        run: >-
+          "$(uv python find 3.13)" -I scripts/acceptance/summary.py reports/acceptance-study/result.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve study reduction (never a release receipt)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-study-result-${{ matrix.runner_os }}
+          path: reports/acceptance-study/result.json
+          if-no-files-found: error

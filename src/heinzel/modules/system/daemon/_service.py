@@ -1281,7 +1281,8 @@ class DaemonService:
         self._quiescence_advice = (
             "The retained daemon definition or its profile cannot be verified. Inspect the user service manager, "
             "the selected configuration and existing unit before changing them; "
-            "no definition was moved or unloaded."
+            "no definition was moved or unloaded. "
+            "For an older daemon, follow the explicit recovery guide: https://heinzel.team/DAEMON_RECOVERY/."
         )
         if self.owned_unit_state(binary):
             self._quiescence_advice = None
