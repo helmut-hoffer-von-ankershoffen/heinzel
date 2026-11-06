@@ -4,7 +4,9 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.23](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.23) - 2026-11-06
 
-Install and manage the desktop app from hz, and manage preview features in Settings. This release also improves supervised service startup during updates.
+On Apple silicon Macs, use `hz app install` to install the verified desktop app and `hz app uninstall` to remove it. Manage preview features in Settings.
+
+Automatic updates give macOS more time to acknowledge a daemon restart. If an earlier update was interrupted, check `hz system daemon status`. Recovery support for the specific 0.9.21-to-0.9.22 interruption requires verified incident evidence. Confirm the daemon runs a new scheduled check before treating it as recovered.
 
 ### ✨ Features
 
@@ -13,7 +15,7 @@ Install and manage the desktop app from hz, and manage preview features in Setti
 
 ### 🐛 Bug fixes
 
-- **system:** Recover interrupted daemon handover ([#539](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/539)) ([bb816a3](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/bb816a395ad59fb3f5ee00bbc5137c7eb5a7f210))
+- **system:** Give the supervised macOS daemon more time to restart during updates ([#539](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/539)) ([bb816a3](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/bb816a395ad59fb3f5ee00bbc5137c7eb5a7f210))
 
 ### 🧪 Testing
 
