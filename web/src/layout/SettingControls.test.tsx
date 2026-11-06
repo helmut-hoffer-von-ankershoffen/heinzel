@@ -425,3 +425,31 @@ it("disables preview switches overridden by the environment", () => {
   );
   expect(screen.getByRole("switch", { name: "Connected history" })).toBeDisabled();
 });
+
+it.each(["project", "explicit", "env"])(
+  "prevents applying staged preview flags after a %s override",
+  async (source) => {
+    const user = userEvent.setup();
+    const features = {
+      ...setting("user"),
+      section: "hz",
+      key: "features",
+      value: [],
+      json_schema: {
+        type: "array",
+        title: "Preview features",
+        "x-feature-catalog": { connected_history: "Private history preview" },
+      },
+    };
+    const { rerender } = render(<Row setting={features} />);
+    await user.click(screen.getByRole("switch", { name: "Connected history" }));
+    expect(screen.getByRole("button", { name: "Restart and apply: Preview features" })).toBeVisible();
+
+    rerender(<Row setting={{ ...features, source }} />);
+    expect(screen.getByRole("switch", { name: "Connected history" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Restart and apply: Preview features" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  },
+);

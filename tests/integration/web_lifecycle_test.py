@@ -90,6 +90,18 @@ def test_loaded_configuration_is_bound_to_instance_and_strict_json_types(make_ke
         assert not client.post("/api/lifecycle/verify", headers=AUTH, json=body).json()["matches"]
 
 
+def test_feature_flag_verification_ignores_order_but_requires_exact_flags(make_kernel, settings):
+    startup = settings.model_copy(update={"features": frozenset({"old_flag", "connected_history"})})
+    client = lifecycle_client(make_kernel(settings_=startup))
+    body = expectation(client, [{"section": "hz", "key": "features", "value": []}])
+    for flags in (["old_flag", "connected_history"], ["connected_history", "old_flag"]):
+        body["settings"][0]["value"] = flags
+        assert client.post("/api/lifecycle/verify", headers=AUTH, json=body).json()["matches"]
+    for flags in (["old_flag"], ["old_flag", "connected_history", "old_flag"], ["old_flag", True]):
+        body["settings"][0]["value"] = flags
+        assert not client.post("/api/lifecycle/verify", headers=AUTH, json=body).json()["matches"]
+
+
 def test_verification_reads_startup_snapshot_instead_of_changed_configuration(make_kernel, sample_module, tmp_path):
     path = tmp_path / "hz.toml"
     path.write_text("[sample]\ncount = 2\n")

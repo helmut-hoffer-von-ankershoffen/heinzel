@@ -20,6 +20,7 @@ CANT_RESTART = (
 )
 MAX_VERIFY_BYTES = 64 * 1024
 _ORIGIN_POLICY = ("hz", "ui_allowed_origins")
+_FEATURE_FLAGS = ("hz", "features")
 _SECRET = re.compile(
     r"(?:^|_)(?:token|password|passphrase|secret|api_key|credential|private_key)(?:$|_)", re.IGNORECASE
 )
@@ -108,10 +109,19 @@ def _loaded_settings(kernel: Kernel) -> dict[tuple[str, str], str]:
             try:
                 values = settings.model_dump(mode="json", include={key})
                 if key in values:
-                    loaded[section, key] = json.dumps(values[key], sort_keys=True, allow_nan=False)
+                    value = values[key]
+                    if (section, key) == _FEATURE_FLAGS and isinstance(settings, Settings):
+                        value = sorted(settings.features)
+                    loaded[section, key] = json.dumps(value, sort_keys=True, allow_nan=False)
             except ValueError:
                 continue  # A plugin's non-JSON setting cannot be proven by a JSON expectation.
     return loaded
+
+
+def _expected_value(key: tuple[str, str], value: JsonValue) -> str:
+    if key == _FEATURE_FLAGS and isinstance(value, list) and all(isinstance(flag, str) for flag in value):
+        return json.dumps(sorted(flag for flag in value if isinstance(flag, str)), allow_nan=False)
+    return json.dumps(value, sort_keys=True, allow_nan=False)
 
 
 def _expected_origins(value: JsonValue, startup: Settings) -> frozenset[str] | None:
@@ -193,7 +203,7 @@ def add_lifecycle(app: FastAPI, kernel: Kernel, restart: Callable[[], None] | No
             agrees = (
                 _expected_origins(setting.value, startup) == origin_policy
                 if key == _ORIGIN_POLICY
-                else loaded.get(key) == json.dumps(setting.value, sort_keys=True, allow_nan=False)
+                else loaded.get(key) == _expected_value(key, setting.value)
             )
             if key in seen or not agrees:
                 mismatched.append(f"{setting.section}.{setting.key}")
