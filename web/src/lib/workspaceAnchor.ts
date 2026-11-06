@@ -1,11 +1,17 @@
 /** Keep an interacting phone workspace in place when the page above it finishes loading. */
-export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, workspace: HTMLElement): () => void {
+export function anchorWorkspace(
+  scroller: HTMLElement,
+  page: HTMLElement,
+  workspace: HTMLElement,
+  tabPressOnly = false,
+): () => void {
   let height = page.offsetHeight;
   let top = workspace.offsetTop;
   let scroll = scroller.scrollTop;
   let viewportHeight = scroller.clientHeight;
   let viewportWidth = scroller.clientWidth;
-  let interacting: Node | null = workspace.contains(document.activeElement) ? document.activeElement : null;
+  let interacting: Node | null =
+    !tabPressOnly && workspace.contains(document.activeElement) ? document.activeElement : null;
   let active = true;
   const visible = () =>
     !workspace.hidden &&
@@ -130,8 +136,17 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
     window.visualViewport?.addEventListener("scroll", cleanup);
   };
   const interaction = (event: Event) => {
-    interacting = event.target instanceof Node && workspace.contains(event.target) ? event.target : null;
-    if (event.type === "pointerdown") stopReveal(event);
+    const target = event.target instanceof Node && workspace.contains(event.target) ? event.target : null;
+    const down = event.type === "pointerdown";
+    if (!tabPressOnly) interacting = target;
+    else if (down) {
+      const pointer = event as PointerEvent;
+      interacting =
+        pointer.isPrimary && pointer.button === 0 && target instanceof Element
+          ? target.closest('button[role="tab"][aria-selected="false"]')
+          : null;
+    } else if (event.type !== "focusin" || !interacting?.contains(target)) interacting = null;
+    if (down) stopReveal(event);
     remember();
   };
   const moved = () => {
@@ -164,6 +179,8 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
   document.addEventListener("pointerdown", interaction, true);
   document.addEventListener("focusin", interaction, true);
   document.addEventListener("wheel", interaction, { capture: true, passive: true });
+  const pressEnds = tabPressOnly ? ["pointerup", "pointercancel", "touchmove", "keydown"] : [];
+  for (const name of pressEnds) document.addEventListener(name, interaction, { capture: true, passive: true });
   scroller.addEventListener("scroll", moved);
   return () => {
     active = false;
@@ -173,6 +190,7 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
     document.removeEventListener("pointerdown", interaction, true);
     document.removeEventListener("focusin", interaction, true);
     document.removeEventListener("wheel", interaction, true);
+    for (const name of pressEnds) document.removeEventListener(name, interaction, true);
     scroller.removeEventListener("scroll", moved);
   };
 }

@@ -46,7 +46,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function layout() {
+function layout(tabPressOnly = false) {
   const scroller = document.createElement("div");
   const page = document.createElement("main");
   const workspace = document.createElement("aside");
@@ -64,7 +64,7 @@ function layout() {
   scroller.append(page, workspace);
   document.body.append(scroller);
   scroller.scrollTop = 400;
-  const dispose = anchorWorkspace(scroller, page, workspace);
+  const dispose = anchorWorkspace(scroller, page, workspace, tabPressOnly);
   return {
     scroller,
     page,
@@ -78,6 +78,51 @@ function layout() {
     },
   };
 }
+
+it("holds an inactive tab through page growth only for the duration of its primary press", () => {
+  const view = layout(true);
+  const { button, scroller } = view;
+  button.setAttribute("role", "tab");
+  button.setAttribute("aria-selected", "false");
+  button.focus();
+  view.grow(100);
+  mutated();
+  expect(scroller.scrollTop).toBe(400);
+
+  button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, isPrimary: true, button: 0 }));
+  button.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+  view.grow(1200);
+  mutated();
+  expect(scroller.scrollTop).toBe(1600);
+
+  button.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, isPrimary: true, button: 0 }));
+  view.grow(100);
+  mutated();
+  expect(scroller.scrollTop).toBe(1600);
+  view.dispose();
+});
+
+it.each(["Page tab", "Page content", "secondary button", "nonprimary pointer", "touch scroll"])(
+  "does not anchor page growth during %s with Page selected",
+  (interaction) => {
+    const view = layout(true);
+    view.button.setAttribute("role", "tab");
+    view.button.setAttribute("aria-selected", String(interaction === "Page tab"));
+    const target = interaction === "Page content" ? view.page : view.button;
+    target.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        isPrimary: interaction !== "nonprimary pointer",
+        button: interaction === "secondary button" ? 2 : 0,
+      }),
+    );
+    if (interaction === "touch scroll") view.button.dispatchEvent(new Event("touchmove", { bubbles: true }));
+    view.grow(1200);
+    mutated();
+    expect(view.scroller.scrollTop).toBe(400);
+    view.dispose();
+  },
+);
 
 it("keeps a pressed workspace control at the same visible position while the page grows", () => {
   const view = layout();
