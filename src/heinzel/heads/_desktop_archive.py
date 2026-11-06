@@ -59,7 +59,7 @@ def _validate_parents(entries: dict[str, tarfile.TarInfo], problem: str) -> None
         for parent in PurePosixPath(name).parents:
             if parent == PurePosixPath():
                 continue
-            entry = entries.get(parent.as_posix())
+            entry = entries.get(str(parent))
             if entry is None or not entry.isdir():
                 raise HeinzelError(problem)
 

@@ -41,7 +41,8 @@ export function installedCli(home = homedir()) {
         !same(info, lstatSync(receipt)) || beforeParents.some((parent, i) => !same(parent, afterParents[i])))
       throw new Error();
     const data = JSON.parse(bytes.subarray(0, length).toString("utf8"));
-    if (!data || Array.isArray(data) || Object.keys(data).sort().join(",") !== "executable,version" ||
+    if (!data || Array.isArray(data) || Object.keys(data).length !== 2 ||
+        !Object.hasOwn(data, "executable") || !Object.hasOwn(data, "version") ||
         data.version !== 1 || typeof data.executable !== "string" || !isAbsolute(data.executable) ||
         data.executable.includes("\0")) throw new Error();
     if (!statSync(data.executable).isFile()) throw new Error();

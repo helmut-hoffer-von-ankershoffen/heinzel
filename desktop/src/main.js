@@ -64,6 +64,7 @@ const instance = createInstanceLifecycle({
   }),
 });
 
+const managedMac = app.isPackaged && process.platform === "darwin";
 const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz" });
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:lifecycle", createLifecycleHandler({
@@ -123,7 +124,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
   });
   void app.whenReady().then(() => {
     if (stopping) return;
-    return (app.isPackaged ? acquireDesktopGate() : Promise.resolve(null)).then((gate) => {
+    return (managedMac ? acquireDesktopGate() : Promise.resolve(null)).then((gate) => {
       if (gate) {
         desktopGate = gate;
         gate.once("close", () => { if (!quitting && !gateReleasing) app.quit(); });
