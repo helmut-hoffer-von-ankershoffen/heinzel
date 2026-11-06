@@ -5,6 +5,7 @@ import importlib.util
 import json
 import shutil
 import subprocess
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -488,28 +489,55 @@ def test_a_public_release_snapshot_rejects_replaced_bytes(field, tmp_path, monke
         harness.preflight(args, tmp_path)
 
 
-@pytest.mark.parametrize("defect", [None, "index-version", "index-hash", "extra-wheel", "old-target", "missing-clock"])
-def test_plugin_update_expectation_is_bound_independently_before_mutating(defect, monkeypatch):
+@pytest.mark.parametrize(
+    "defect",
+    [
+        None,
+        "baseline-version",
+        "baseline-hash",
+        "target-hash",
+        "same-version-hash",
+        "extra-wheel",
+        "old-target",
+        "missing-clock",
+    ],
+)
+def test_plugin_update_expectation_is_bound_independently_before_mutating(defect, monkeypatch, tmp_path):
     artifact = {"name": "heinzel-clock", "version": "0.9.5", "sha256": "c" * 64}
-    index = {
+    payload = b"registry-selected wheel"
+    digest = harness.sha256(payload)
+    wheel_url = "https://files.pythonhosted.org/clock.whl"
+    baseline = {
         "info": {"version": "0.9.5"},
         "urls": [{"packagetype": "bdist_wheel", "digests": {"sha256": "c" * 64}}],
     }
-    case = SimpleNamespace(ctx={"profile": {"artifacts": [artifact]}}, notes={})
-    if defect == "index-version":
-        index["info"]["version"] = "0.9.6"
-    elif defect == "index-hash":
+    index = {
+        "info": {"version": "0.9.6"},
+        "urls": [{"packagetype": "bdist_wheel", "digests": {"sha256": digest}, "url": wheel_url}],
+    }
+    case = SimpleNamespace(ctx={"profile": {"artifacts": [artifact]}}, notes={}, root=tmp_path)
+    if defect == "baseline-version":
+        baseline["info"]["version"] = "0.9.6"
+    elif defect == "baseline-hash":
+        baseline["urls"][0]["digests"]["sha256"] = "d" * 64
+    elif defect == "target-hash":
         index["urls"][0]["digests"]["sha256"] = "d" * 64
     elif defect == "extra-wheel":
         index["urls"] *= 2
-    elif defect == "old-target":
-        artifact["version"] = index["info"]["version"] = "0.9.2"
+    elif defect in ("old-target", "same-version-hash"):
+        index["info"]["version"] = {"old-target": "0.9.2", "same-version-hash": "0.9.5"}[defect]
     elif defect == "missing-clock":
         case.ctx["profile"]["artifacts"] = []
 
-    def metadata(url, _limit):
-        assert url == "https://pypi.org/pypi/heinzel-clock/json"
-        return json.dumps(index).encode()
+    def metadata(url, _limit=None):
+        if url == wheel_url:
+            return payload
+        return json.dumps(
+            {
+                "https://pypi.org/pypi/heinzel-clock/0.9.5/json": baseline,
+                "https://pypi.org/pypi/heinzel-clock/json": index,
+            }[url]
+        ).encode()
 
     monkeypatch.setattr(harness, "fetch", metadata)
     if defect:
@@ -517,8 +545,35 @@ def test_plugin_update_expectation_is_bound_independently_before_mutating(defect
             harness.plugin_update_version(case)
         assert case.notes == {}
     else:
-        assert harness.plugin_update_version(case) == "0.9.5"
-        assert case.notes == {"clock_update_target": {"version": "0.9.5", "sha256": "c" * 64}}
+        assert harness.plugin_update_version(case) == "0.9.6"
+        assert case.notes == {
+            "clock_update_baseline": {"version": "0.9.5", "sha256": "c" * 64},
+            "clock_update_target": {"version": "0.9.6", "sha256": digest},
+        }
+        assert (tmp_path / "clock-update-target.whl").read_bytes() == payload
+
+
+@pytest.mark.parametrize("defect", [None, "installed-bytes", "registry-advanced"])
+def test_clock_update_verifies_installed_runtime_files(defect, tmp_path):
+    prefix = tmp_path / "tool"
+    site = prefix / "lib/python3.14/site-packages"
+    metadata = site / "heinzel_clock-0.9.6.dist-info/METADATA"
+    metadata.parent.mkdir(parents=True)
+    version = "0.9.7" if defect == "registry-advanced" else "0.9.6"
+    metadata.write_text(f"Version: {version}\n")
+    module = site / "heinzel_clock/__init__.py"
+    module.parent.mkdir()
+    module.write_bytes(b"changed" if defect == "installed-bytes" else b"accepted")
+    with zipfile.ZipFile(tmp_path / "clock-update-target.whl", "w") as wheel:
+        wheel.writestr("heinzel_clock/__init__.py", b"accepted")
+
+    case = SimpleNamespace(root=tmp_path.resolve(), prefix=prefix)
+    if defect:
+        match = "differs from the accepted wheel" if defect == "installed-bytes" else "expected 0.9.6"
+        with pytest.raises(harness.StepFailed, match=match):
+            harness.verify_clock_update(case, "0.9.6")
+    else:
+        assert harness.verify_clock_update(case, "0.9.6") == 1
 
 
 class AccountBrowser:

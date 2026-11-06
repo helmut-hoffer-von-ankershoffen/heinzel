@@ -1691,24 +1691,52 @@ def _second_update(case, target):
     return {"repeat": result.get("message")}
 
 
+def clock_index_wheel(index):
+    wheels = [a for a in index["urls"] if a["packagetype"] == "bdist_wheel" and not a.get("yanked")]
+    check(len(wheels) == 1, "Clock index must list exactly one unyanked wheel")
+    return wheels[0]
+
+
 def plugin_update_version(case):
-    """Freeze the governed clock version only when PyPI still independently designates these exact bytes."""
+    """Bind the immutable installed baseline and the live unpinned update target independently."""
     artifacts = [a for a in case.ctx["profile"]["artifacts"] if a["name"] == "heinzel-clock"]
     check(len(artifacts) == 1, "The bound profile must contain exactly one clock artifact")
-    artifact = artifacts[0]
-    index = json.loads(fetch("https://pypi.org/pypi/heinzel-clock/json", 8 * 1024 * 1024))
-    check(index["info"]["version"] == artifact["version"], "Clock latest differs from the bound profile snapshot")
-    wheels = [a for a in index["urls"] if a["packagetype"] == "bdist_wheel" and not a.get("yanked")]
+    baseline = artifacts[0]
+    base_version = baseline["version"]
+    check(is_final_version(base_version), "The Clock baseline must have a final version")
+    registry = "https://pypi.org/pypi/heinzel-clock"
+    base_index = json.loads(fetch(f"{registry}/{base_version}/json", 8 * 1024 * 1024))
+    check(base_index["info"]["version"] == base_version, "Clock baseline index version differs from the profile")
     check(
-        len(wheels) == 1 and wheels[0]["digests"]["sha256"] == artifact["sha256"],
-        "Clock latest wheel differs from the bound profile hash",
+        clock_index_wheel(base_index)["digests"]["sha256"] == baseline["sha256"],
+        "Clock baseline index wheel differs from the profile hash",
     )
+    latest = json.loads(fetch(f"{registry}/json", 8 * 1024 * 1024))
+    version = latest["info"]["version"]
     check(
-        release_key(artifact["version"]) > release_key("0.9.2"),
-        "The clock update target must be newer than the older pin",
+        is_final_version(version)
+        and release_key(version) >= release_key(base_version)
+        and release_key(version) > release_key("0.9.2"),
+        "Clock update target is older than the baseline or is not a newer final release",
     )
-    case.notes["clock_update_target"] = {"version": artifact["version"], "sha256": artifact["sha256"]}
-    return artifact["version"]
+    wheel = clock_index_wheel(latest)
+    digest = wheel["digests"]["sha256"]
+    check(version != base_version or digest == baseline["sha256"], "Clock index wheel hashes disagree")
+    check(urllib.parse.urlsplit(wheel["url"]).hostname == "files.pythonhosted.org", "Clock target is not a PyPI wheel")
+    payload = fetch(wheel["url"])
+    check(sha256(payload) == digest, "Clock target wheel differs from the registry hash")
+    (case.root / "clock-update-target.whl").write_bytes(payload)
+    case.notes["clock_update_baseline"] = {"version": base_version, "sha256": baseline["sha256"]}
+    case.notes["clock_update_target"] = {"version": version, "sha256": digest}
+    return version
+
+
+def verify_clock_update(case, version):
+    prefix = case.prefix.resolve(strict=True)
+    check(prefix.is_relative_to(case.root), "The tool environment is outside this case")
+    return compare_wheel(
+        case.root / "clock-update-target.whl", site_packages(prefix), "heinzel-clock", version, prefix
+    )
 
 
 def case_plugin_cli(case):
@@ -1731,7 +1759,10 @@ def case_plugin_cli(case):
         name = answer["distribution"]
         expect_plugins(case, **{name: {"enabled": True, "version": version}})
         check(plugin_map(case, label + "-list")[name]["version"] == version, f"{name} is not at {version}")
-        return {"installed": name, "version": version}
+        evidence = {"installed": name, "version": version}
+        if spec == "heinzel-clock":
+            evidence["wheel_files_identical"] = verify_clock_update(case, version)
+        return evidence
 
     case.step("preview installs nothing", preview)
     case.step("install a plugin (CLI)", lambda: add("heinzel-example", "example-add", "0.4.0"))
@@ -1955,6 +1986,8 @@ def case_plugin_ui(case):
             expect_plugins(case, heinzel_clock={"enabled": True, "version": expected})
             check(plugin_map(case, f"clock-{expected}")["heinzel-clock"]["version"] == expected, "CLI disagrees")
             results[spec] = {"screenshot": browser.shot(f"{shot}-done")}
+            if spec == "heinzel-clock":
+                results[spec]["wheel_files_identical"] = verify_clock_update(case, expected)
         return results
 
     def remove():
