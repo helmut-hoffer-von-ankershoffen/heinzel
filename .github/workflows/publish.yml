@@ -139,3 +139,10 @@ jobs:
           # Scorecard (Signed-Releases) and SLSA verifiers look for as *.intoto.jsonl.
           jq -c .dsseEnvelope "$BUNDLE" > "dist/provenance.intoto.jsonl"
           gh release create "$TAG" dist/* --title "$TAG" --notes-file release-notes.md --verify-tag
+
+      - name: Request the independent release docs refresh
+        if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+        timeout-minutes: 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" -f event_type=core-release-published
