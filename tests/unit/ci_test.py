@@ -108,6 +108,8 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py checkout": (
             "verifies the reviewed release source before producing its signed artifact manifest"
         ),
+        "uv run --no-project --frozen --no-build --python 3.14 python -I scripts/acceptance/run_acceptance.py "
+        "--check-foreground-ui": "checks the Core version contract without running acceptance",
         'if [ "$GITHUB_REPOSITORY" = helmut-hoffer-von-ankershoffen/heinzel ]; then': (
             "requires core's configured confidential terms while preserving the shared plugin publisher"
         ),

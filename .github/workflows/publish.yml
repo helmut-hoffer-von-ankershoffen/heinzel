@@ -85,6 +85,10 @@ jobs:
         run: uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py checkout "$TAG" >> "$GITHUB_OUTPUT"
       - name: Check that the tag matches the project version
         run: test "v$(uv version --short)" = "$TAG"
+      - name: Check the Core foreground UI release contract
+        if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+        timeout-minutes: 1
+        run: uv run --no-project --frozen --no-build --python 3.14 python -I scripts/acceptance/run_acceptance.py --check-foreground-ui "${TAG#v}"
       - name: Check the release for confidential terms
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
