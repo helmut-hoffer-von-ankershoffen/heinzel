@@ -331,7 +331,7 @@ def test_native_quarantine_and_process_detection(tmp_path):
     bundle = tmp_path / desktop.BUNDLE_NAME
     bundle.mkdir()
     desktop._quarantine(bundle)
-    quarantine = subprocess.check_output(["/usr/bin/xattr", "-p", "com.apple.quarantine", str(bundle)])
+    quarantine = subprocess.check_output(["/usr/bin/xattr", "-p", "com.apple.quarantine", str(bundle)], timeout=5)
     assert quarantine.startswith(b"0081;")
     sleep = Path(shutil.copyfile("/bin/sleep", bundle / "sleep"))
     sleep.chmod(0o700)
