@@ -38,6 +38,22 @@ it("opens the update details without installing until the button is chosen", asy
   expect(startUpdate).toHaveBeenCalledTimes(1);
 });
 
+it("shows inspection guidance without an unusable verify action after a lost acknowledgement", async () => {
+  mockApi({ ...shell, "/api/update-status": status });
+  sessionStorage.setItem("hz.update.receipt", JSON.stringify({ stage: "uncertain" }));
+  try {
+    renderAt("/");
+    const icon = await screen.findByRole("button", { name: /Updates available.*error/i });
+    await userEvent.setup().click(icon);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Run hz system info");
+    expect(screen.queryByRole("button", { name: "Verify update again" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
+    expect(startUpdate).not.toHaveBeenCalled();
+  } finally {
+    sessionStorage.removeItem("hz.update.receipt");
+  }
+});
+
 it("keeps a current core neutral because an empty plan cannot establish every plugin is current", async () => {
   mockApi({ ...shell, "/api/update-status": { ...status, latest: status.current, available: false } });
   renderAt("/");
