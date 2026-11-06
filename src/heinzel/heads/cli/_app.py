@@ -1,6 +1,6 @@
 """Commands for the managed native desktop app."""
 
-import sys
+import platform
 import time
 from pathlib import Path
 from subprocess import SubprocessError
@@ -39,7 +39,7 @@ def _eligible_for_refresh(kernel: Kernel) -> bool:
 
 def _refresh_after_exit(kernel: Kernel) -> None:
     """Refresh an owned bundle when the outgoing native process is no longer using it."""
-    if sys.platform != "darwin":
+    if platform.system() != "Darwin":
         return
     from heinzel.heads._desktop_installation import install_desktop  # noqa: PLC0415 - packaged app exit only
 

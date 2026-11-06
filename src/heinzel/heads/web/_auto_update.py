@@ -15,6 +15,7 @@ import importlib.metadata
 import json
 import logging
 import os
+import platform
 import random
 import sys
 import threading
@@ -632,7 +633,7 @@ class AutoUpdater:
 
     def _refresh_desktop(self) -> None:
         """Bring an already installed desktop shell up to this running stable Core."""
-        if sys.platform != "darwin":
+        if platform.system() != "Darwin":
             return
         receipt = Path.home() / ".config/heinzel/desktop-installation.json"
         if not os.path.lexists(receipt):

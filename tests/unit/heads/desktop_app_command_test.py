@@ -29,7 +29,7 @@ def test_exit_refresh_respects_current_settings_and_core_source(monkeypatch, tmp
     installation = SimpleNamespace(core_pin=lambda: pin, tool_entrypoints=lambda: (executable,))
     kernel = SimpleNamespace(config=config, resolve=lambda _service: installation)
     install = Mock(side_effect=["deferred", "updated"])
-    monkeypatch.setattr(_app.sys, "platform", "darwin")
+    monkeypatch.setattr(_app.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(_app.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(installer, "install_desktop", install)
 
