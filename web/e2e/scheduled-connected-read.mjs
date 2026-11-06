@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { publishJson } from "./atomic-json.mjs";
 import { openChatJourney, revealChat, runDaemonTurn } from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 import { settleRoutes } from "./route-settlement.mjs";
@@ -7,6 +9,12 @@ import { settleRoutes } from "./route-settlement.mjs";
 const { axe, browser, context, page, token, url } = await openChatJourney();
 const lateActivity = process.argv[6] === "late-activity";
 const rolling = process.argv[5] === "rolling";
+const lookbackStudy =
+  process.env.HZ_WEBKIT_LOOKBACK_COUNTERFACTUAL === "1" &&
+  process.platform === "linux" &&
+  process.argv[3] === "webkit" &&
+  process.argv[6] === "normal" &&
+  rolling;
 if (lateActivity) {
   // Reproduce the hosted ordering: page DOM growth is committed between press/release, while its resize
   // notification arrives after release. Keep actual browser layout, response data and physical pointer events.
@@ -85,6 +93,79 @@ page.on("response", async (response) => {
 const revocations = [];
 let latePage;
 let rollingInputTrace;
+let heldActivity;
+const activityTrace = { release: "none", response: "none", fulfilledDuringFill: false };
+let fillingLookback = false;
+
+async function boundedActivityWait(promise, fallback) {
+  const controller = new AbortController();
+  try {
+    return await Promise.race([promise, delay(5000, fallback, { signal: controller.signal })]);
+  } finally {
+    controller.abort();
+  }
+}
+
+async function armLookbackActivity() {
+  const session = new URL(page.url()).searchParams.get("chat");
+  assert.ok(session, "The lookback study requires the mounted session");
+  const ready = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  let answerStarted = false;
+  let claimed = false;
+  const noteAnswer = (request) => {
+    const target = new URL(request.url());
+    if (
+      target.origin === url.origin &&
+      target.pathname === "/api/heinzel/answer-chat" &&
+      request.method() === "POST" &&
+      request.frame() === page.mainFrame()
+    )
+      answerStarted = true;
+  };
+  page.on("request", noteAnswer);
+  heldActivity = {
+    ready: ready.promise,
+    stop() {
+      page.off("request", noteAnswer);
+      release.resolve("cleanup");
+    },
+  };
+  await page.exposeBinding("hzReleaseLookbackActivity", ({ frame }, kind) => {
+    if (frame === page.mainFrame() && fillingLookback && ["focus", "beforeinput", "input"].includes(kind))
+      release.resolve(kind);
+  });
+  // The session refetch renders the required second answer before DurableSession invalidates tool activity.
+  await page.route(
+    (target) =>
+      target.origin === url.origin &&
+      target.pathname === "/api/heinzel/tool-activity" &&
+      target.searchParams.get("session_id") === session,
+    async (route) => {
+      const request = route.request();
+      if (claimed || !answerStarted || request.method() !== "GET" || request.frame() !== page.mainFrame()) {
+        await route.continue();
+        return;
+      }
+      claimed = true;
+      page.off("request", noteAnswer);
+      try {
+        const response = await route.fetch({ timeout: 5000, maxRedirects: 0 });
+        activityTrace.response = response.ok() ? "held" : "non-success";
+        ready.resolve(response.ok());
+        if (response.ok()) activityTrace.release = await boundedActivityWait(release.promise, "hold-timeout");
+        await route.fulfill({ response });
+        activityTrace.fulfilledDuringFill = fillingLookback;
+        if (response.ok()) activityTrace.response = "forwarded";
+      } catch {
+        activityTrace.response = "route-error";
+        ready.resolve(false);
+        await route.abort().catch(() => {});
+      }
+    },
+  );
+}
+
 const rollingCheckpoint = (kind) =>
   page.evaluate((kind) => window.__hzRollingInputInteraction?.checkpoint(kind), kind).catch(() => {});
 const finishRollingInputTrace = (afterPrepare) =>
@@ -125,16 +206,22 @@ try {
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
   await page.getByLabel("Message your Heinzel").fill("Suggest an interval for this agent.");
+  if (lookbackStudy) await armLookbackActivity();
   await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Suggest an interval for this agent.").waitFor();
   await page.getByText("Read complete.").nth(1).waitFor({ timeout: 30000 });
   const panel = page.getByRole("region", { name: "Connected read review" });
   await panel.getByLabel("Read operation").selectOption("calendar.events");
   if (rolling) {
+    let reply = null;
+    if (lookbackStudy) {
+      assert.equal(await boundedActivityWait(heldActivity.ready, false), true, "No genuine activity response was held");
+      reply = await page.getByText("Read complete.").nth(1).locator("..").elementHandle({ timeout: 5000 });
+    }
     await panel.getByRole("checkbox", { name: /Use a rolling window/ }).check();
     // Observe only the two numeric terms without changing focus, validation or the physical interaction.
     await panel
-      .evaluate((region) => {
+      .evaluate((region, reply) => {
         const controller = new AbortController();
         const records = [];
         const fields = [
@@ -151,40 +238,89 @@ try {
           if (input.value === expected) return "expected-fixture";
           return Number.isInteger(input.valueAsNumber) ? "other-integer" : "noninteger";
         };
+        const candidates = () => [...region.querySelectorAll('input[type="number"]')];
+        const original = new Map();
+        if (reply) {
+          for (const input of candidates()) {
+            const field = observedField(input);
+            if (field) original.set(field.field, input);
+          }
+        }
+        const replyHasActivity = () =>
+          [...reply.querySelectorAll("details > summary")].some((node) =>
+            node.textContent?.trim().startsWith("Tool activity for this reply ·"),
+          );
         const state = ({ field, expected }, input) => ({
           field,
           value: valueKind(input, expected),
           valid: Boolean(input?.validity.valid),
           focused: Boolean(input && document.activeElement === input),
           connected: Boolean(input?.isConnected),
+          ...(reply && { sameNode: Boolean(input && original.get(field) === input) }),
         });
         const record = (kind, inputs) => {
-          records.push({ kind, inputs });
+          if (controller.signal.aborted) return;
+          records.push({ kind, inputs, ...(reply && { replyHasActivity: replyHasActivity() }) });
           if (records.length > 32) records.shift();
         };
         const checkpoint = (kind) => {
-          const candidates = [...region.querySelectorAll('input[type="number"]')];
+          const current = candidates();
           const inputs = fields.map((field) => {
-            const input = candidates.find((input) => observedField(input) === field);
+            const input = current.find((input) => observedField(input) === field);
             return state(field, input);
           });
           record(kind, inputs);
         };
-        window.__hzRollingInputInteraction = { records, checkpoint, stop: () => controller.abort() };
+        const activityObserver =
+          reply &&
+          new MutationObserver(() => {
+            if (replyHasActivity()) {
+              checkpoint("reply-activity-rendered");
+              activityObserver.disconnect();
+            }
+          });
+        activityObserver?.observe(reply, { childList: true, subtree: true, characterData: true });
+        window.__hzRollingInputInteraction = {
+          records,
+          checkpoint,
+          stop() {
+            controller.abort();
+            activityObserver?.disconnect();
+          },
+        };
         checkpoint("armed");
-        for (const kind of ["beforeinput", "input", "change", "blur"]) {
+        for (const kind of ["beforeinput", "input", "change", "blur", ...(reply ? ["focus"] : [])]) {
           document.addEventListener(
             kind,
             (event) => {
               const field = observedField(event.target);
-              if (field) record(kind, [state(field, event.target)]);
+              if (!field) return;
+              record(kind, [state(field, event.target)]);
+              if (!reply || field.field !== "lookback" || !["focus", "beforeinput", "input"].includes(kind)) return;
+              void window.hzReleaseLookbackActivity(kind).catch(() => {});
+              if (kind !== "focus") {
+                queueMicrotask(() => checkpoint(`${kind}-microtask`));
+                requestAnimationFrame(() => checkpoint(`${kind}-frame`));
+              }
             },
             { capture: true, passive: true, signal: controller.signal },
           );
         }
-      })
+      }, reply)
       .catch(() => {});
-    await panel.getByLabel("Lookback seconds").fill("60");
+    if (lookbackStudy) {
+      const armed = await page.evaluate(() => window.__hzRollingInputInteraction?.records[0]);
+      assert.ok(
+        armed?.replyHasActivity === false && armed.inputs.every(({ sameNode }) => sameNode),
+        "The two original inputs must be mounted and the held activity absent before filling",
+      );
+    }
+    fillingLookback = true;
+    try {
+      await panel.getByLabel("Lookback seconds").fill("60");
+    } finally {
+      fillingLookback = false;
+    }
     await rollingCheckpoint("after-lookback-fill");
     await panel.getByLabel("Lookahead seconds").fill("600");
     await rollingCheckpoint("after-lookahead-fill");
@@ -249,6 +385,14 @@ try {
     await panel.getByText("Account: fixture-account").waitFor();
   } finally {
     await page.evaluate(() => window.__hzPrepareInteraction?.stop()).catch(() => {});
+  }
+  if (lookbackStudy) {
+    assert.ok(["focus", "beforeinput", "input"].includes(activityTrace.release), "The fill must release the response");
+    assert.equal(activityTrace.response, "forwarded");
+    assert.ok(
+      rollingInputTrace.some(({ kind }) => kind === "reply-activity-rendered"),
+      "The held activity must render",
+    );
   }
   await panel.getByText("Provider-reported candidate read: Candidate metadata may be filtered locally.").waitFor();
   await panel.getByRole("button", { name: "Review access" }).click();
@@ -373,6 +517,7 @@ try {
   console.log(JSON.stringify({ accepted: true }));
 } catch (error) {
   const rollingInputs = rollingInputTrace ?? (rolling ? await finishRollingInputTrace(false) : []);
+  rollingInputTrace = rollingInputs;
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
   const visible = await page
     .locator("body")
@@ -438,7 +583,13 @@ try {
   process.exitCode = 1;
 } finally {
   try {
+    heldActivity?.stop();
     await settleRoutes(page, latePage?.release);
+    if (lookbackStudy)
+      publishJson(join(process.argv[4], "lookback-counterfactual.json"), {
+        activity: activityTrace,
+        inputs: rollingInputTrace ?? [],
+      });
   } finally {
     try {
       await context.close();
