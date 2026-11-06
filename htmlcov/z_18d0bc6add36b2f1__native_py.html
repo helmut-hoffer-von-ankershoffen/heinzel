@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_18d0bc6add36b2f1__policy_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-11-06 00:14 +0000
+            created at 2026-11-06 00:51 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -118,7 +118,7 @@
     <p class="run run2"><span class="n"><a id="t34" href="#t34">34</a></span><span class="t">    <span class="str">&quot;end run&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t35" href="#t35">35</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t36" href="#t36">36</a></span><span class="t"><span class="str">&quot;&quot;&quot;A fixed script: the strings are its arguments, never part of its source.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t37" href="#t37">37</a></span><span class="t"><span class="nam">_SESSION</span> <span class="op">=</span> <span class="op">(</span><span class="str">&quot;DBUS_SESSION_BUS_ADDRESS&quot;</span><span class="op">,</span> <span class="str">&quot;DISPLAY&quot;</span><span class="op">,</span> <span class="str">&quot;WAYLAND_DISPLAY&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t37" href="#t37">37</a></span><span class="t"><span class="nam">SESSION</span> <span class="op">=</span> <span class="op">(</span><span class="str">&quot;DBUS_SESSION_BUS_ADDRESS&quot;</span><span class="op">,</span> <span class="str">&quot;DISPLAY&quot;</span><span class="op">,</span> <span class="str">&quot;WAYLAND_DISPLAY&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t38" href="#t38">38</a></span><span class="t"><span class="str">&quot;&quot;&quot;Without one of these there is no desktop session to show a notification in.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t39" href="#t39">39</a></span><span class="t"><span class="nam">HEINZEL</span> <span class="op">=</span> <span class="str">&quot;heinzel-notifier&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t40" href="#t40">40</a></span><span class="t"><span class="nam">BANNERS</span> <span class="op">=</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -295,7 +295,7 @@
     <p class="run run2"><span class="n"><a id="t211" href="#t211">211</a></span><span class="t">            <span class="nam">detail</span><span class="op">=</span><span class="str">&quot;notify-send isn&#x27;t on PATH, so the daemon can&#x27;t pop up notifications&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t212" href="#t212">212</a></span><span class="t">            <span class="nam">fix</span><span class="op">=</span><span class="str">&quot;install libnotify (notify-send), e.g. `sudo apt install libnotify-bin`&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t213" href="#t213">213</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t214" href="#t214">214</a></span><span class="t">    <span class="key">if</span> <span class="key">not</span> <span class="nam">any</span><span class="op">(</span><span class="nam">environ</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="nam">name</span><span class="op">)</span> <span class="key">for</span> <span class="nam">name</span> <span class="key">in</span> <span class="nam">_SESSION</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t214" href="#t214">214</a></span><span class="t">    <span class="key">if</span> <span class="key">not</span> <span class="nam">any</span><span class="op">(</span><span class="nam">environ</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="nam">name</span><span class="op">)</span> <span class="key">for</span> <span class="nam">name</span> <span class="key">in</span> <span class="nam">SESSION</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t215" href="#t215">215</a></span><span class="t">        <span class="key">return</span> <span class="nam">Native</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t216" href="#t216">216</a></span><span class="t">            <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t217" href="#t217">217</a></span><span class="t">            <span class="nam">detail</span><span class="op">=</span><span class="str">&quot;no desktop session (headless), so the daemon can&#x27;t pop up notifications; &quot;</span>&nbsp;</span><span class="r"></span></p>
@@ -311,7 +311,7 @@
             <a class="nav" href="z_18d0bc6add36b2f1__policy_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-11-06 00:14 +0000
+            created at 2026-11-06 00:51 +0000
         </p>
     </div>
 </footer>
