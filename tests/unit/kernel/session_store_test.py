@@ -25,6 +25,30 @@ def append(sessions, session="one", kind="turn.started", **kwargs):
         return writer.append(kind, **kwargs)
 
 
+def test_session_index_schema_leaves_no_partial_tables_on_failure(tmp_path):
+    path = tmp_path / "index.sqlite"
+
+    def deny_event_lines(action, name, *_):
+        if action == sqlite3.SQLITE_CREATE_TABLE and name == "event_lines":
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    index = sqlite3.connect(path)
+    try:
+        index.execute("PRAGMA synchronous = FULL")
+        index.set_authorizer(deny_event_lines)
+        with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
+            index.executescript(_session_store.SCHEMA)
+    finally:
+        index.close()
+
+    index = sqlite3.connect(path)
+    try:
+        assert index.execute("SELECT name FROM sqlite_master").fetchall() == []
+    finally:
+        index.close()
+
+
 def test_the_envelope_chains_exact_bytes_and_fsyncs_before_indexing(tmp_path, monkeypatch):
     sessions = store(tmp_path)
     calls = []

@@ -43,6 +43,7 @@ from heinzel.kernel._session_io import (
 _MAX_INDEXED_PAGE = 200
 
 SCHEMA = """
+BEGIN;
 CREATE TABLE IF NOT EXISTS meta (version TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sessions (
     session TEXT PRIMARY KEY, seq INTEGER NOT NULL, hash TEXT, size INTEGER NOT NULL,
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS event_lines (
 );
 CREATE INDEX IF NOT EXISTS event_keys ON events(session, kind, key);
 CREATE INDEX IF NOT EXISTS event_turns ON events(session, turn, seq);
+COMMIT;
 """
 PROJECTION = TypeAdapter(dict[str, JsonValue])
 
