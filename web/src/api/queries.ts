@@ -254,10 +254,13 @@ export type PluginChangeRequest = (
   | { disable: string }
 ) & { signal?: AbortSignal; onProgress?: (text: string) => void };
 
+export const pluginChangeKey = ["system", "plugin", "change"] as const;
+
 /** `hz system plugin add --confirm|remove|enable|disable`: changes what code runs, so the UI asks first (ADR 0047). */
 export const useChangePlugin = () => {
   const client = useQueryClient();
   return useMutation({
+    mutationKey: pluginChangeKey,
     mutationFn: (variables: PluginChangeRequest) => {
       if ("add" in variables) {
         // The requirement the preview answered, pinned to what was shown, so the dialog's version is the one installed.

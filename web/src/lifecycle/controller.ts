@@ -59,6 +59,7 @@ export type ApplyOptions = {
   interval?: number;
   onPhase?: (phase: ApplyPhase) => void;
   onObservation?: (observation: RestartObservation) => void;
+  onAcknowledged?: (observation: RestartObservation) => void;
 };
 
 function abortReason(signal: AbortSignal): Error {
@@ -294,11 +295,13 @@ export function restartAndApply(
     if (!restartRequired) return before;
     options.onObservation?.(observation);
     options.onPhase?.("restarting");
+    let acknowledged = false;
     try {
       const answer = await bounded((signal) => transport.restart(signal), signal, options.requestTimeout ?? 4_000);
       if (answer.restarting !== true || typeof answer.instance !== "string" || !answer.instance.trim())
         throw new Error(t("lifecycle.noAcknowledgement"));
       if (!observation.retired.includes(answer.instance)) observation.retired.push(answer.instance);
+      acknowledged = true;
     } catch (error) {
       if (!transient(error) && !signal.aborted)
         throw new RestartApplyError(
@@ -307,6 +310,17 @@ export function restartAndApply(
           observation,
         );
       // A lost acknowledgement has an unknown outcome. Observe; never replay a potentially accepted mutation.
+    }
+    if (acknowledged) {
+      try {
+        options.onAcknowledged?.(observation);
+      } catch (error) {
+        throw new RestartApplyError(
+          "refused",
+          error instanceof Error ? error.message : t("lifecycle.restartOutcomeUnknown"),
+          observation,
+        );
+      }
     }
     return observe(observation, options, signal);
   });

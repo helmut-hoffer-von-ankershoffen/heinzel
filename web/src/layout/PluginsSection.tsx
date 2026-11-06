@@ -37,6 +37,17 @@ import { type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { RestartObservation } from "@/lifecycle/controller";
 import { RestartAndApply } from "@/lifecycle/RestartAndApply";
+import { PluginsPending } from "./PluginsPending";
+import {
+  acknowledgePluginRestart,
+  acquirePluginChange,
+  completePluginRestart,
+  pluginActivationBlocksChanges,
+  RECEIPT_STORAGE_KEY,
+  retainPluginRestart,
+  usePluginActivation,
+  validRestartObservation,
+} from "./pluginActivation";
 import { displayName } from "./settingsSections";
 
 type PluginKind = NonNullable<SchemaPluginInfo["kinds"]>[number];
@@ -215,28 +226,7 @@ function request(pending: Pending): PluginChangeRequest {
   }
 }
 
-const RECEIPT_STORAGE_KEY = "hz.plugin-add-operation.v1";
 const RESTART_STORAGE_KEY = "hz.plugin-add-restart.v1";
-
-function validRestartObservation(value: unknown): value is RestartObservation {
-  if (!value || typeof value !== "object") return false;
-  const observation = value as Partial<RestartObservation>;
-  return (
-    Array.isArray(observation.retired) &&
-    observation.retired.length > 0 &&
-    observation.retired.every((instance) => typeof instance === "string" && instance.trim()) &&
-    typeof observation.version === "string" &&
-    observation.version.trim().length > 0 &&
-    Array.isArray(observation.settings) &&
-    observation.settings.every(
-      (setting) =>
-        setting &&
-        typeof setting.section === "string" &&
-        typeof setting.key === "string" &&
-        Object.hasOwn(setting, "value"),
-    )
-  );
-}
 
 function restoredPluginFlow(): {
   receiptId: string | null;
@@ -355,6 +345,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   const attempted = useRef(false);
   const preview = usePluginPreview();
   const change = useChangePlugin();
+  const activation = usePluginActivation();
   const resolveReceipt = () => {
     if (!resolveArmed) {
       setResolveArmed(true);
@@ -388,7 +379,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       active ? "bg-accent text-foreground" : "text-muted-foreground",
     );
   const show = (value: string, rowKey: string | null = null) => {
-    if (change.isPending) return;
+    if (change.isPending || pluginActivationBlocksChanges()) return;
     if (restartObservation || restartBlocked) return;
     if (receiptId && operation.data?.status !== "previewed") return;
     change.reset();
@@ -414,7 +405,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     });
   };
   const ask = (value: Pending, rowKey: string | null = null) => {
-    if (change.isPending) return;
+    if (change.isPending || pluginActivationBlocksChanges()) return;
     setAnchor(rowKey);
     change.reset();
     completed.current = null;
@@ -425,6 +416,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   };
   const confirm = async (signal: AbortSignal) => {
     if (!pending) return false;
+    if (pluginActivationBlocksChanges()) throw new Error(t("pluginsPending.restartRequired"));
     if (completed.current) return completed.current.restart_required;
     if (attempted.current) throw new Error(t("plugins.resultUnknown"));
     setPluginProgress(null);
@@ -514,6 +506,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
                   `${actionText(pending.action)}: ${pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name}`,
                 ]}
                 preserve={confirm}
+                acquire={acquirePluginChange}
                 initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
                 onApplied={() => {
                   if (pending.action === "add") {
@@ -527,6 +520,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
                       // Keeping the receipt is safe; the next visit will read the completed result.
                     }
                   }
+                  if (pending.action !== "add") completePluginRestart();
                   setPending(null);
                   if (pending.action === "add") setTab("yours");
                   setAdding(false);
@@ -546,7 +540,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
                           setRestartObservation(observation);
                         },
                       }
-                    : {}),
+                    : { onObservation: retainPluginRestart, onAcknowledged: acknowledgePluginRestart }),
                 }}
               />
               {(pending.action !== "add" || operation.data?.status === "previewed") && (
@@ -560,7 +554,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
                     }
                     setPending(null);
                   }}
-                  disabled={change.isPending}
+                  disabled={change.isPending || activation.changing}
                 >
                   {t("plugins.cancel")}
                 </Button>
@@ -572,9 +566,11 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     </InlineSlot>
   ) : null;
   const slot: Slot | null = pending && anchor ? { key: anchor, node: card } : null;
-  const frozen = pending !== null || preview.isPending;
+  const activationInProgress = activation.pending || activation.observation !== undefined;
+  const frozen = pending !== null || preview.isPending || activationInProgress;
   return (
     <>
+      {!pending && !receiptId && !restartBlocked && <PluginsPending inline reload={reload} />}
       {restartBlocked && (
         <div className="mb-4 space-y-2 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm">
           <p role="alert">{t("plugins.operationUnavailable")}</p>
@@ -617,7 +613,12 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
           className="ml-auto py-1"
           inputClassName="w-36 text-sm"
         />
-        <Button variant="outline" size="sm" onClick={() => setAdding((value) => !value)}>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={activationInProgress}
+          onClick={() => setAdding((value) => !value)}
+        >
           <Plus aria-hidden />
           {t("plugins.add")}
         </Button>

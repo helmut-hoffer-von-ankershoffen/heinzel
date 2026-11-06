@@ -27,6 +27,7 @@ type Props = {
   onUnsupported?: () => Promise<void> | void;
   deferredMessage?: string;
   initialObservation?: RestartObservation;
+  acquire?: (resume?: RestartObservation) => (() => void) | null;
   options?: ApplyOptions;
 };
 
@@ -44,6 +45,7 @@ export function RestartAndApply({
   onUnsupported,
   deferredMessage,
   initialObservation,
+  acquire,
   options,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
@@ -66,6 +68,8 @@ export function RestartAndApply({
 
   const run = async (resume?: RestartObservation) => {
     if (controller.current) return;
+    const release = acquire?.(resume);
+    if (release === null) return;
     const active = new AbortController();
     controller.current = active;
     setConfirming(false);
@@ -115,6 +119,7 @@ export function RestartAndApply({
       }
     } finally {
       controller.current = null;
+      release?.();
       if (mounted.current) setPending(false);
     }
   };

@@ -154,10 +154,78 @@ describe("verified restart and apply", () => {
     const transport = server();
     transport.restart.mockResolvedValue({ restarting: true, instance: "intermediate" });
     transport.read.mockResolvedValueOnce({ ...after, instance: "intermediate" });
-    const result = restartAndApply({ confirmed: true, version: after.version }, { transport, interval: 10 });
+    const onAcknowledged = vi.fn();
+    const result = restartAndApply(
+      { confirmed: true, version: after.version },
+      { transport, interval: 10, onAcknowledged },
+    );
     await vi.runAllTimersAsync();
     await expect(result).resolves.toEqual(after);
+    expect(onAcknowledged).toHaveBeenCalledExactlyOnceWith({
+      retired: [before.instance, "intermediate"],
+      version: after.version,
+      settings: [],
+    });
     expect(transport.verify).toHaveBeenCalledOnce();
+    expect(transport.restart).toHaveBeenCalledOnce();
+  });
+
+  it("persists a changed acknowledgement before restoring observation in a new document", async () => {
+    const transport = server();
+    const stop = new AbortController();
+    const intermediate = { ...after, instance: "intermediate" };
+    let saved = "";
+    transport.restart.mockResolvedValue({ restarting: true, instance: intermediate.instance });
+
+    await expect(
+      restartAndApply(
+        { confirmed: true, version: after.version },
+        {
+          transport,
+          signal: stop.signal,
+          onObservation: (observation) => {
+            saved = JSON.stringify(observation);
+          },
+          onAcknowledged: (observation) => {
+            saved = JSON.stringify(observation);
+            stop.abort();
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ kind: "aborted" });
+    expect(transport.verify).not.toHaveBeenCalled();
+
+    transport.read.mockResolvedValueOnce(intermediate);
+    const recovered = resumeRestartAndApply(JSON.parse(saved), { transport, interval: 10 });
+    await vi.runAllTimersAsync();
+    await expect(recovered).resolves.toEqual(after);
+    expect(transport.verify).toHaveBeenCalledExactlyOnceWith(
+      { instance: after.instance, version: after.version, settings: [] },
+      expect.any(AbortSignal),
+    );
+    expect(transport.restart).toHaveBeenCalledOnce();
+  });
+
+  it("does not verify when saving acknowledged identities fails", async () => {
+    const transport = server();
+    transport.restart.mockResolvedValue({ restarting: true, instance: "intermediate" });
+
+    await expect(
+      restartAndApply(
+        { confirmed: true },
+        {
+          transport,
+          onAcknowledged: () => {
+            throw new Error("storage unavailable");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      kind: "refused",
+      observation: { retired: [before.instance, "intermediate"] },
+    });
+    expect(transport.restart).toHaveBeenCalledOnce();
+    expect(transport.verify).not.toHaveBeenCalled();
   });
 
   it.each([

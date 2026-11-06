@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { SchemaConfigReport, SchemaNavEntry, SchemaPluginInfo } from "@/api/client";
 import { config, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { ACTIVATION_STORAGE_KEY, RECEIPT_STORAGE_KEY } from "./pluginActivation";
 import { toToml } from "./settingSchema";
 import { displayName, inWords, PAGES, pageOf, settingsNav } from "./settingsSections";
 
@@ -277,6 +278,80 @@ describe("Settings: Preferences, Customize, This computer", () => {
     );
     const dialog = screen.getByRole("dialog", { name: "Settings" });
     expect(within(dialog).getByText("v0.4.0")).toBeInTheDocument();
+  });
+
+  it.each(["plugins", "connectors"])("offers pending plugin activation in %s settings", async (section) => {
+    mockApi({
+      ...answers,
+      "/api/system/plugin/pending": {
+        changes: [{ change: "installed", distribution: "heinzel-google", version: "0.1.0" }],
+      },
+    });
+    const user = userEvent.setup();
+    renderAt(`/doctor?settings=${section}`);
+
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    expect(await within(dialog).findByRole("heading", { name: "Plugin changes need a restart" })).toBeVisible();
+    expect(within(dialog).getByText("heinzel-google was installed")).toBeVisible();
+    await user.click(within(dialog).getByRole("button", { name: "Restart and apply" }));
+    expect(within(dialog).getByRole("alertdialog", { name: "Restart and apply Plugins" })).toBeVisible();
+  });
+
+  it("defers to a recorded install instead of offering a fresh restart in Connectors", async () => {
+    sessionStorage.setItem(RECEIPT_STORAGE_KEY, "existing-operation");
+    try {
+      mockApi({
+        ...answers,
+        "/api/system/plugin/pending": {
+          changes: [{ change: "installed", distribution: "heinzel-google", version: "0.1.0" }],
+        },
+      });
+      renderAt("/doctor?settings=connectors");
+      const dialog = await screen.findByRole("dialog", { name: "Settings" });
+      expect(await within(dialog).findByText("Finish the current change in Plugins before restarting.")).toBeVisible();
+      expect(within(dialog).queryByRole("button", { name: "Restart and apply" })).toBeNull();
+    } finally {
+      sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
+    }
+  });
+
+  it("keeps one plugin restart observer when switching Settings sections", async () => {
+    let running = { instance: "old", version: "0.9.23", restartable: true };
+    const { calls } = mockApi({
+      ...answers,
+      "/api/system/plugin/pending": {
+        changes: [{ change: "installed", distribution: "heinzel-google", version: "0.1.0" }],
+      },
+      "/api/lifecycle": () => running,
+      "/api/restart": () => {
+        expect(JSON.parse(sessionStorage.getItem(ACTIVATION_STORAGE_KEY) ?? "null")).toEqual({
+          acknowledged: false,
+          observation: { retired: ["old"], version: "0.9.23", settings: [] },
+        });
+        return { restarting: true, instance: "old" };
+      },
+      "/api/lifecycle/verify": () => ({ ...running, matches: true, mismatched: [] }),
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=plugins");
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    await user.click(await within(dialog).findByRole("button", { name: "Restart and apply" }));
+    await user.click(within(dialog).getByRole("button", { name: "Restart and apply Plugins" }));
+    await within(dialog).findByRole("button", { name: "Stop checking" });
+    expect(within(dialog).getByRole("button", { name: "Add" })).toBeDisabled();
+    const nav = within(dialog).getByRole("navigation", { name: "Settings" });
+    await user.click(within(nav).getByRole("button", { name: "Connectors" }));
+    await user.click(await within(dialog).findByRole("button", { name: "Stop checking" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Stopped checking");
+    expect(within(dialog).queryByRole("button", { name: "Restart and apply" })).toBeNull();
+
+    running = { ...running, instance: "new" };
+    await user.click(within(dialog).getByRole("button", { name: "Check again" }));
+    const callsTo = (path: string) => calls.filter((request) => new URL(request.url).pathname === path);
+    await waitFor(() => expect(callsTo("/api/lifecycle/verify")).toHaveLength(1));
+    expect(callsTo("/api/restart")).toHaveLength(1);
+    expect(await within(dialog).findByText("Applied")).toBeVisible();
+    expect(sessionStorage.getItem(ACTIVATION_STORAGE_KEY)).toBeNull();
   });
 
   it("lists connectors as cards with what they connect, and opens one's settings inside Connectors", async () => {

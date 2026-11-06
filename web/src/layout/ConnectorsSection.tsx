@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import type { SchemaSettingInfo } from "@/api/client";
 import { useCapabilities } from "@/api/queries";
 import { t } from "@/i18n";
+import { PluginsPending } from "./PluginsPending";
 import { BINDINGS, group, type SettingsNav } from "./settingsSections";
 
 type Connector = SettingsNav["connectors"][number];
@@ -37,6 +38,7 @@ export function ConnectorsSection({ connectors, open, settings, onOpen, renderSe
     const bound = used(open);
     return (
       <>
+        <PluginsPending inline />
         <button
           type="button"
           onClick={() => onOpen("connectors")}
@@ -65,6 +67,7 @@ export function ConnectorsSection({ connectors, open, settings, onOpen, renderSe
   const bindings = settings.filter((setting) => group(setting.section) === BINDINGS);
   return (
     <>
+      <PluginsPending inline />
       <h3 className="mb-1 text-ui font-medium">{t("connectors.title")}</h3>
       <p className="mb-4 text-sm text-muted-foreground">{t("connectors.intro")}</p>
       {connectors.length === 0 ? (
