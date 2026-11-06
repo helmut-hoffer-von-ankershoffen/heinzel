@@ -23,6 +23,12 @@ export const keys = {
 export const useDoctor = () => useQuery({ queryKey: keys.doctor, queryFn: () => unwrap(api.GET("/system/doctor")) });
 export const useConfig = () =>
   useQuery({ queryKey: keys.config, queryFn: () => unwrap(api.GET("/system/config/show")) });
+/** Preview controls follow the selected profile; each operation still enforces its own server gate. */
+export function usePreviewFeature(name: string): boolean {
+  const config = useConfig();
+  const features = config.data?.settings.find(({ section, key }) => section === "hz" && key === "features")?.value;
+  return Array.isArray(features) && features.includes(name);
+}
 /** Whether the Heinzelmännchen play along: `hz system config set playful false` (Settings → General) turns them off. */
 export function usePlayful(): boolean {
   const config = useConfig();
