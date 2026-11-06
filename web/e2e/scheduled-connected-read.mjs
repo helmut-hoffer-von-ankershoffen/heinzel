@@ -6,6 +6,7 @@ import { settleRoutes } from "./route-settlement.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
 const lateActivity = process.argv[6] === "late-activity";
+const rolling = process.argv[5] === "rolling";
 if (lateActivity) {
   // Reproduce the hosted ordering: page DOM growth is committed between press/release, while its resize
   // notification arrives after release. Keep actual browser layout, response data and physical pointer events.
@@ -83,6 +84,22 @@ page.on("response", async (response) => {
 });
 const revocations = [];
 let latePage;
+let rollingInputTrace;
+const rollingCheckpoint = (kind) =>
+  page.evaluate((kind) => window.__hzRollingInputInteraction?.checkpoint(kind), kind).catch(() => {});
+const finishRollingInputTrace = (afterPrepare) =>
+  page
+    .evaluate((afterPrepare) => {
+      const observer = window.__hzRollingInputInteraction;
+      if (!observer) return [];
+      try {
+        if (afterPrepare) observer.checkpoint("after-prepare");
+        return observer.records;
+      } finally {
+        observer.stop();
+      }
+    }, afterPrepare)
+    .catch(() => []);
 const revocationPath = "/api/heinzel/revoke-connected-read";
 page.on("request", (request) => {
   if (new URL(request.url()).pathname === revocationPath && request.method() === "POST")
@@ -113,19 +130,126 @@ try {
   await page.getByText("Read complete.").nth(1).waitFor({ timeout: 30000 });
   const panel = page.getByRole("region", { name: "Connected read review" });
   await panel.getByLabel("Read operation").selectOption("calendar.events");
-  if (process.argv[5] === "rolling") {
+  if (rolling) {
     await panel.getByRole("checkbox", { name: /Use a rolling window/ }).check();
+    // Observe only the two numeric terms without changing focus, validation or the physical interaction.
+    await panel
+      .evaluate((region) => {
+        const controller = new AbortController();
+        const records = [];
+        const fields = [
+          { field: "lookback", label: "Lookback seconds", expected: "60" },
+          { field: "lookahead", label: "Lookahead seconds", expected: "600" },
+        ];
+        const observedField = (input) => {
+          if (!(input instanceof HTMLInputElement) || input.type !== "number" || !region.contains(input)) return;
+          const label = input.closest("label")?.textContent?.trim();
+          return fields.find((field) => field.label === label);
+        };
+        const valueKind = (input, expected) => {
+          if (!input || input.value === "") return "empty";
+          if (input.value === expected) return "expected-fixture";
+          return Number.isInteger(input.valueAsNumber) ? "other-integer" : "noninteger";
+        };
+        const state = ({ field, expected }, input) => ({
+          field,
+          value: valueKind(input, expected),
+          valid: Boolean(input?.validity.valid),
+          focused: Boolean(input && document.activeElement === input),
+          connected: Boolean(input?.isConnected),
+        });
+        const record = (kind, inputs) => {
+          records.push({ kind, inputs });
+          if (records.length > 32) records.shift();
+        };
+        const checkpoint = (kind) => {
+          const candidates = [...region.querySelectorAll('input[type="number"]')];
+          const inputs = fields.map((field) => {
+            const input = candidates.find((input) => observedField(input) === field);
+            return state(field, input);
+          });
+          record(kind, inputs);
+        };
+        window.__hzRollingInputInteraction = { records, checkpoint, stop: () => controller.abort() };
+        checkpoint("armed");
+        for (const kind of ["beforeinput", "input", "change", "blur"]) {
+          document.addEventListener(
+            kind,
+            (event) => {
+              const field = observedField(event.target);
+              if (field) record(kind, [state(field, event.target)]);
+            },
+            { capture: true, passive: true, signal: controller.signal },
+          );
+        }
+      })
+      .catch(() => {});
     await panel.getByLabel("Lookback seconds").fill("60");
+    await rollingCheckpoint("after-lookback-fill");
     await panel.getByLabel("Lookahead seconds").fill("600");
+    await rollingCheckpoint("after-lookahead-fill");
     await panel.getByLabel("Display timezone (IANA)").fill("Europe/Berlin");
+    await rollingCheckpoint("after-timezone-fill");
     await panel.getByLabel("Fixed arguments (JSON)").fill("{}");
+    await rollingCheckpoint("after-arguments-fill");
   } else {
     await panel
       .getByLabel("Fixed arguments (JSON)")
       .fill(JSON.stringify({ window: { since: "2026-01-01T00:00:00Z", until: "2026-01-02T00:00:00Z" } }));
   }
-  await panel.getByRole("button", { name: "Prepare review" }).click();
-  await panel.getByText("Account: fixture-account").waitFor();
+  const prepare = panel.getByRole("button", { name: "Prepare review" });
+  await prepare.evaluate((button) => {
+    const controller = new AbortController();
+    const records = [];
+    const region = button.closest("section");
+    const select = region?.querySelector("select");
+    const snapshot = (kind, event) => {
+      const { x, y, width, height } = button.getBoundingClientRect();
+      const hit = event && document.elementFromPoint(event.clientX, event.clientY);
+      records.push({
+        kind,
+        trusted: event?.isTrusted ?? null,
+        targetInside: event ? event.composedPath().includes(button) : null,
+        pointInside: event ? Boolean(hit && button.contains(hit)) : null,
+        disabled: button.disabled,
+        connected: button.isConnected,
+        selectedOption: Boolean(select?.value && select.selectedOptions.length),
+        rect: [x, y, width, height].map((value) => Math.round(value * 100) / 100),
+        scroll: [button.closest(".overflow-y-auto")?.scrollTop, button.closest(".workspace-scroll")?.scrollTop],
+      });
+      if (records.length > 12) records.shift();
+    };
+    window.__hzPrepareInteraction = {
+      records,
+      stop() {
+        snapshot("after");
+        controller.abort();
+      },
+    };
+    snapshot("before");
+    for (const kind of ["pointerdown", "pointerup", "click"]) {
+      document.addEventListener(kind, (event) => snapshot(kind, event), {
+        capture: true,
+        passive: true,
+        signal: controller.signal,
+      });
+    }
+    try {
+      window.__hzRollingInputInteraction?.checkpoint("before-prepare");
+    } catch {
+      /* A diagnostic must not prevent the original click. */
+    }
+  });
+  try {
+    try {
+      await prepare.click();
+    } finally {
+      if (rolling) rollingInputTrace = await finishRollingInputTrace(true);
+    }
+    await panel.getByText("Account: fixture-account").waitFor();
+  } finally {
+    await page.evaluate(() => window.__hzPrepareInteraction?.stop()).catch(() => {});
+  }
   await panel.getByText("Provider-reported candidate read: Candidate metadata may be filtered locally.").waitFor();
   await panel.getByRole("button", { name: "Review access" }).click();
   await panel.getByRole("heading", { name: "Review connected read" }).waitFor();
@@ -248,6 +372,7 @@ try {
   assert.equal(await panel.evaluate((node) => node.scrollWidth > node.clientWidth), false);
   console.log(JSON.stringify({ accepted: true }));
 } catch (error) {
+  const rollingInputs = rollingInputTrace ?? (rolling ? await finishRollingInputTrace(false) : []);
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
   const visible = await page
     .locator("body")
@@ -307,7 +432,8 @@ try {
     })
     .catch(() => null);
   const disclosures = await disclosureDiagnostics(page);
-  const diagnostic = `${message}\n${visible}\nLayout: ${JSON.stringify(layout)}\nDisclosure trace: ${JSON.stringify(disclosures)}\nRevocation trace: ${JSON.stringify(revocations.slice(-12))}\nProposal trace: ${JSON.stringify(proposalTrace)}\nProposal form: ${JSON.stringify(form)}`;
+  const prepareInteraction = await page.evaluate(() => window.__hzPrepareInteraction?.records ?? []).catch(() => []);
+  const diagnostic = `${message}\n${visible}\nLayout: ${JSON.stringify(layout)}\nDisclosure trace: ${JSON.stringify(disclosures)}\nRevocation trace: ${JSON.stringify(revocations.slice(-12))}\nPrepare interaction: ${JSON.stringify(prepareInteraction)}\nRolling input interaction: ${JSON.stringify(rollingInputs)}\nProposal trace: ${JSON.stringify(proposalTrace)}\nProposal form: ${JSON.stringify(form)}`;
   process.stderr.write(`${diagnostic.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
   process.exitCode = 1;
 } finally {
