@@ -5,7 +5,7 @@ import { Providers, queryClient } from "@/App";
 import { daemonStatusKey } from "@/api/daemon";
 import { DurableSession } from "@/chat/DurableSession";
 import { frame } from "@/test/chat";
-import { shell } from "@/test/fixtures";
+import { config, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { preserveUpdateWork } from "@/updates/work";
 
@@ -1825,12 +1825,25 @@ it("does not display another session's action or request its associations", asyn
   expect(calls.some((call) => new URL(call.url).pathname.endsWith("/personal-artifacts"))).toBe(false);
 });
 
-it("keeps source preparation unavailable while a displayed reply still has an unsettled owned answer", async () => {
+it.each([false, true])("holds source review while the reply is unsettled (%s)", async (grouped) => {
   let finishAnswer: (() => void) | undefined;
   let answerStarted = false;
   let displayed = { ...snapshot, messages: [...snapshot.messages] };
   const { calls } = mockApi({
     ...shell,
+    "/api/system/config/show": {
+      ...config,
+      settings: [
+        ...config.settings,
+        {
+          section: "hz",
+          key: "features",
+          value: grouped ? ["connected_frontdoor"] : [],
+          description: "",
+          env: "HZ_FEATURES",
+        },
+      ],
+    },
     "/api/heinzel/session": () => displayed,
     "/api/heinzel/connected-read-options": () => [
       { capability: "calendar", method: "events", provider: "fixture", source: "fixture", input_schema: {} },
@@ -1870,6 +1883,7 @@ it("keeps source preparation unavailable while a displayed reply still has an un
     </Providers>,
   );
   fireEvent.change(await screen.findByLabelText("Read operation"), { target: { value: "calendar.events" } });
+  if (grouped) expect(await screen.findByRole("region", { name: "Review your helper" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Prepare review" })).toBeEnabled();
   fireEvent.change(screen.getByLabelText("Message your Heinzel"), { target: { value: "Suggest an interval" } });
   fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
