@@ -231,7 +231,10 @@ export function FooterItem({
           <div
             ref={pane}
             id={id}
-            className="viewport-popover fixed z-[var(--layer-popover,40)] overflow-y-auto rounded-xl"
+            className={cn(
+              "viewport-popover fixed overflow-y-auto rounded-xl",
+              pinned ? "z-[calc(var(--layer-popover,40)+1)]" : "z-[var(--layer-popover,40)]",
+            )}
             style={{ visibility: positioned ? undefined : "hidden" }}
             onMouseEnter={() => {
               window.clearTimeout(timer.current);
