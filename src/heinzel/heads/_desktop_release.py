@@ -1,7 +1,6 @@
 """Retrieve and verify the desktop assets from the official Core release."""
 
 import hashlib
-import json
 import re
 import shutil
 import subprocess
@@ -11,7 +10,7 @@ from typing import IO, Any, Literal, override
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from heinzel import HeinzelError
 from heinzel.heads._desktop_archive import MAX_ARCHIVE_BYTES
@@ -67,11 +66,7 @@ def _api(resource: str) -> dict[str, Any]:
     if len(data) > 4 * 1024 * 1024:
         msg = "The GitHub release identity response is too large."
         raise HeinzelError(msg)
-    result = json.loads(data)
-    if not isinstance(result, dict):
-        msg = "GitHub did not return a release identity object."
-        raise HeinzelError(msg)
-    return result
+    return TypeAdapter(dict[str, Any]).validate_json(data, strict=True)
 
 
 def _release_assets(tag: str, names: set[str]) -> dict[str, tuple[int, str]]:
@@ -189,7 +184,7 @@ def _verify(gh: str, asset: Path, proof: Path, core: _CoreManifest) -> None:
         timeout=60,
     )
     invocation = f"https://github.com/{REPOSITORY}/actions/runs/{producer.run_id}/attempts/{producer.attempt}"
-    verified = [] if result.returncode else json.loads(result.stdout)
+    verified = [] if result.returncode else TypeAdapter(list[dict[str, Any]]).validate_json(result.stdout, strict=True)
     if not any(
         entry["verificationResult"]["signature"]["certificate"].get("runInvocationURI") == invocation
         and entry["verificationResult"]["statement"]["predicate"]["runDetails"]["metadata"].get("invocationId")
