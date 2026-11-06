@@ -1,11 +1,11 @@
 // A durable personal session has a different id and service from the legacy runner chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
 import { ApiError, api, problem, type SchemaChatSession, type SchemaSessionSnapshot } from "@/api/client";
 import { useDaemonStatus } from "@/api/daemon";
-import { usePreviewFeature } from "@/api/queries";
+import { useConfig, usePreviewFeature } from "@/api/queries";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { AgentProposalSummary } from "@/chat/AgentProposalSummary";
 import { AgentSchedules } from "@/chat/AgentSchedules";
@@ -13,12 +13,15 @@ import { ConnectedReadReview } from "@/chat/ConnectedReadReview";
 import { ConnectedReadSetReview } from "@/chat/ConnectedReadSetReview";
 import { ContractHistory } from "@/chat/ContractHistory";
 import { ActionCard } from "@/chat/Conversation";
+import { ConversationSearch } from "@/chat/ConversationSearch";
 import { useDurableDraft } from "@/chat/durableDraft";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
 import { NotificationPanel } from "@/chat/NotificationPanel";
+import { OwnerConversationSearch } from "@/chat/OwnerConversationSearch";
 import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
 import { ToolEvents } from "@/chat/ToolEvents";
 import { UncertainTurnRecovery } from "@/chat/UncertainTurnRecovery";
+import { isDurableSession } from "@/chat/useChat";
 import { Button } from "@/components/ui/button";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
 import { t } from "@/i18n";
@@ -31,6 +34,21 @@ async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Re
 }
 
 const DAEMON_TICK_CLOCK_SKEW_MS = 60_000;
+
+function conversationJump(state: unknown, sessionId: string): string | null {
+  if (!state || typeof state !== "object" || !("conversationJump" in state)) return null;
+  const jump = state.conversationJump;
+  return jump &&
+    typeof jump === "object" &&
+    "sessionId" in jump &&
+    jump.sessionId === sessionId &&
+    "cursor" in jump &&
+    typeof jump.cursor === "string" &&
+    jump.cursor.length > 0 &&
+    jump.cursor.length <= 1024
+    ? jump.cursor
+    : null;
+}
 
 function inputComparison(status: "first" | "unchanged" | "changed"): string {
   if (status === "first") return "first recorded result";
@@ -69,6 +87,11 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const client = useQueryClient();
   const connectedFrontdoor = usePreviewFeature("connected_frontdoor");
   const [params, setParams] = useSearchParams();
+  const { state: routeState } = useLocation();
+  const config = useConfig();
+  const features = config.data?.settings.find(({ section, key }) => section === "hz" && key === "features")?.value;
+  const searchEnabled = Array.isArray(features) && features.includes("connected_history");
+  const pendingSearchJump = conversationJump(routeState, sessionId);
   const {
     state: composer,
     update: updateComposer,
@@ -88,6 +111,16 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const [activityLimit, setActivityLimit] = useState(20);
   const [historyCursors, setHistoryCursors] = useState<Array<string | null>>([null]);
   const historyCursor = historyCursors.at(-1) ?? null;
+  const [searchJump, setSearchJump] = useState(false);
+  const searchTarget = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!pendingSearchJump || config.isPending) return;
+    if (searchEnabled) {
+      setSearchJump(true);
+      setHistoryCursors([null, pendingSearchJump]);
+    }
+    setParams((current) => current, { replace: true, state: null });
+  }, [config.isPending, pendingSearchJump, searchEnabled, setParams]);
   const clearScheduleError = () => {
     setScheduleError(false);
     setScheduleErrorMessage(null);
@@ -113,6 +146,10 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     retry: false,
     placeholderData: (previous) => previous,
   });
+  useEffect(() => {
+    if (searchJump && query.data?.messages?.length && !query.isFetching && !query.isPlaceholderData && !query.isError)
+      searchTarget.current?.scrollIntoView?.({ block: "center" });
+  }, [searchJump, query.data, query.isFetching, query.isPlaceholderData, query.isError]);
   const profileProposal = useQuery({
     queryKey: ["heinzel", "profile-proposal", sessionId],
     queryFn: async () => {
@@ -750,6 +787,49 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         {!connectedFrontdoor && sourceReview}
         {query.data?.session_id === sessionId && <ContractHistory contracts={query.data.contracts ?? []} />}
         {query.data?.session_id === sessionId && <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />}
+        {searchEnabled && query.data?.session_id === sessionId && (
+          <>
+            <ConversationSearch
+              key={`search:${sessionId}`}
+              sessionId={sessionId}
+              onJump={(cursor) => {
+                setSearchJump(true);
+                setHistoryCursors([null, cursor]);
+              }}
+            />
+            <OwnerConversationSearch
+              key={`owner-search:${sessionId}`}
+              onJump={(target, cursor) => {
+                if (!isDurableSession(target)) return;
+                if (target === sessionId) {
+                  setSearchJump(true);
+                  setHistoryCursors([null, cursor]);
+                  return;
+                }
+                setParams(
+                  (current) => {
+                    const next = new URLSearchParams(current);
+                    for (const key of [
+                      "agent-chat",
+                      "approval-chat",
+                      "approval-request",
+                      "agent-open-request",
+                      "contract-chat",
+                      "schedule-chat",
+                      "schedule-request",
+                      "notification-chat",
+                      "connected-chat",
+                    ])
+                      next.delete(key);
+                    next.set("chat", target);
+                    return next;
+                  },
+                  { state: { conversationJump: { sessionId: target, cursor } } },
+                );
+              }}
+            />
+          </>
+        )}
         {(historyCursors.length > 1 || query.data?.has_more) && (
           <nav aria-label="Conversation history" className="space-y-2 rounded border border-border p-2 text-sm">
             {query.isFetching || query.isPlaceholderData ? (
@@ -775,7 +855,10 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                   size="sm"
                   variant="outline"
                   disabled={query.isFetching || busy || profileLocked}
-                  onClick={() => setHistoryCursors((cursors) => cursors.slice(0, -1))}
+                  onClick={() => {
+                    setSearchJump(false);
+                    setHistoryCursors((cursors) => cursors.slice(0, -1));
+                  }}
                 >
                   Earlier messages
                 </Button>
@@ -790,8 +873,10 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                   }
                   onClick={() => {
                     const next = query.data?.next_cursor;
-                    if (typeof next === "string" && next && !historyCursors.includes(next))
+                    if (typeof next === "string" && next && !historyCursors.includes(next)) {
+                      setSearchJump(false);
                       setHistoryCursors((cursors) => [...cursors, next]);
+                    }
                   }}
                 >
                   Newer messages
@@ -801,13 +886,26 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           </nav>
         )}
         {!connectedFrontdoor && schedules}
-        {query.data?.messages?.map((message) => {
+        {query.data?.messages?.map((message, index) => {
           const turnItems =
             message.role === "assistant" && message.turn_id
               ? (activity.data?.items ?? []).filter((item) => item.turn_id === message.turn_id)
               : [];
           return (
-            <div key={`${message.seq}-${message.id}`} className="space-y-1 text-sm">
+            <div
+              key={`${message.seq}-${message.id}`}
+              ref={
+                searchJump && index === 0 && !query.isFetching && !query.isPlaceholderData ? searchTarget : undefined
+              }
+              className={
+                searchJump && index === 0 && !query.isFetching && !query.isPlaceholderData
+                  ? "space-y-1 rounded border border-primary p-2 text-sm"
+                  : "space-y-1 text-sm"
+              }
+            >
+              {searchJump && index === 0 && !query.isFetching && !query.isPlaceholderData && (
+                <span className="text-xs font-medium">Search result</span>
+              )}
               <p className="whitespace-pre-wrap break-words">
                 <strong>
                   {message.role === "tool" ? "Tool activity" : message.origin === "daemon" ? "Daemon" : message.role}:
