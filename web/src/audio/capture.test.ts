@@ -45,11 +45,19 @@ describe("explicit ephemeral audio capture", () => {
   it("asks only when called, analyses the shared audio without speaker output, and stops every track", async () => {
     expect(choose).not.toHaveBeenCalled();
     const captured = await captureAudio(new AbortController().signal);
-    expect(choose).toHaveBeenCalledWith({ video: true, audio: true, systemAudio: "include" });
+    expect(choose).toHaveBeenCalledWith({
+      video: { displaySurface: "browser" },
+      audio: true,
+      systemAudio: "include",
+      preferCurrentTab: true,
+      selfBrowserSurface: "include",
+    });
     expect(context.createMediaStreamSource.mock.calls[0]?.[0]).toEqual({ tracks: [audio] });
     expect(source.connect).toHaveBeenCalledExactlyOnceWith(analyser);
     expect(analyser.fftSize).toBe(1024);
     expect(captured.label).toBe("audio source");
+    expect(video.stop).toHaveBeenCalledOnce();
+    expect(audio.stop).not.toHaveBeenCalled();
     captured.stop();
     captured.stop();
     expect(audio.stop).toHaveBeenCalledOnce();
@@ -62,6 +70,21 @@ describe("explicit ephemeral audio capture", () => {
     await expect(captureAudio(new AbortController().signal)).rejects.toThrow("No audio was shared");
     expect(video.stop).toHaveBeenCalledOnce();
     expect(context.close).toHaveBeenCalledOnce();
+  });
+
+  it("stops video before waiting for audio activation", async () => {
+    let resume!: () => void;
+    context.resume.mockReturnValue(new Promise<void>((resolve) => (resume = resolve)));
+    const pending = captureAudio(new AbortController().signal);
+    await Promise.resolve();
+    expect(video.stop).toHaveBeenCalledOnce();
+    expect(audio.stop).not.toHaveBeenCalled();
+    expect(source.connect).not.toHaveBeenCalled();
+    resume();
+    const captured = await pending;
+    captured.stop();
+    expect(video.stop).toHaveBeenCalledOnce();
+    expect(audio.stop).toHaveBeenCalledOnce();
   });
 
   it("does not open the picker after cancellation", async () => {

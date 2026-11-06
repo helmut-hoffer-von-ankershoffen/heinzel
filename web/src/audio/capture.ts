@@ -16,9 +16,15 @@ export async function captureAudio(signal: AbortSignal): Promise<CapturedAudio> 
   let source: MediaStreamAudioSourceNode | undefined;
   let analyser: AnalyserNode | undefined;
   let closed = false;
+  const stoppedTracks = new Set<MediaStreamTrack>();
+  const stopTrack = (track: MediaStreamTrack) => {
+    if (stoppedTracks.has(track)) return;
+    stoppedTracks.add(track);
+    track.stop();
+  };
   const stop = () => {
     signal.removeEventListener("abort", stop);
-    for (const track of stream?.getTracks() ?? []) track.stop();
+    for (const track of stream?.getTracks() ?? []) stopTrack(track);
     stream = undefined;
     source?.disconnect();
     source = undefined;
@@ -31,7 +37,14 @@ export async function captureAudio(signal: AbortSignal): Promise<CapturedAudio> 
   };
   signal.addEventListener("abort", stop, { once: true });
   try {
-    const options = { video: true, audio: true, systemAudio: "include" };
+    // Hints keep this tab (including its embedded player) available; the person still chooses the source.
+    const options = {
+      video: { displaySurface: "browser" },
+      audio: true,
+      systemAudio: "include",
+      preferCurrentTab: true,
+      selfBrowserSurface: "include",
+    };
     // Request the browser picker first in the initiating click, then resume analysis before activation expires.
     const sharing = navigator.mediaDevices.getDisplayMedia(options);
     const resumed = context.resume().then(
@@ -39,6 +52,8 @@ export async function captureAudio(signal: AbortSignal): Promise<CapturedAudio> 
       () => false,
     );
     stream = await sharing;
+    // The chooser requires video, but analysis needs only audio. Never retain screen imagery.
+    for (const track of stream.getTracks()) if (track.kind === "video") stopTrack(track);
     if (signal.aborted || closed) throw new DOMException("Capture cancelled", "AbortError");
     const tracks = stream.getAudioTracks();
     if (!tracks.length)

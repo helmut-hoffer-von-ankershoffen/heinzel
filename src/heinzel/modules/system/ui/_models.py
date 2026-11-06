@@ -30,7 +30,8 @@ class UiSettings(ModuleSettings):
         default=False,
         title="Audio visualizer",
         description="Show the optional audio sharing visualizer at the right edge of the app. Off by default; "
-        "turning it on asks you to choose a browser audio source before anything is captured.",
+        "turn it on to show Audio, then choose Share audio to select a browser source. "
+        "Nothing is captured until you share.",
     )
 
 

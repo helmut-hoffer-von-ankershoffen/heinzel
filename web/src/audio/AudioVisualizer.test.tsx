@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AudioVisualizer, spectrumGeometry, spectrumLevel } from "./AudioVisualizer";
 import { captureAudio } from "./capture";
@@ -65,8 +65,9 @@ describe("AudioVisualizer", () => {
     });
     try {
       render(<AudioVisualizer />);
-      fireEvent.click(screen.getByRole("button", { name: "Start audio visualization" }));
-      await waitFor(() => expect(screen.getByRole("button", { name: /Stop audio visualization/ })).toBeInTheDocument());
+      fireEvent.click(screen.getByRole("button", { name: /Audio visualizer,/ }));
+      fireEvent.click(screen.getByRole("button", { name: "Share audio" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Stop sharing audio" })).toBeInTheDocument());
       // The session button updates before its passive effect schedules the first animation frame.
       await waitFor(() => expect(frames.length).toBeGreaterThan(0));
       act(() => frames.at(-1)?.(1000));
@@ -96,30 +97,48 @@ describe("AudioVisualizer", () => {
   it("does not request capture until clicked, then exposes a stop control and stops the stream on unmount", async () => {
     vi.mocked(captureAudio).mockResolvedValue(captured);
     const view = render(<AudioVisualizer />);
-    const button = screen.getByRole("button", { name: "Start audio visualization" });
+    const button = screen.getByRole("button", { name: /Audio visualizer,/ });
     expect(captureAudio).not.toHaveBeenCalled();
-    expect(button.title).toContain("not recorded or uploaded");
     fireEvent.click(button);
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Stop audio visualization: Selected browser tab" }),
-      ).toBeInTheDocument(),
-    );
+    const controls = screen.getByRole("region", { name: "Audio visualizer controls" });
+    expect(within(controls).getByText(/does not record or upload audio or video/)).toBeVisible();
+    expect(captureAudio).not.toHaveBeenCalled();
+    fireEvent.click(within(controls).getByRole("button", { name: "Share audio" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Stop sharing audio" })).toBeInTheDocument());
     expect(captureAudio).toHaveBeenCalledOnce();
     view.unmount();
     expect(stop).toHaveBeenCalledOnce();
   });
 
+  it("describes the workspace-only consent route when the desktop exposes it", () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true });
+    try {
+      render(<AudioVisualizer />);
+      fireEvent.click(screen.getByRole("button", { name: /Audio visualizer,/ }));
+      expect(screen.getByRole("button", { name: "Share workspace audio" })).toBeVisible();
+      expect(screen.getByText(/Play audio in this workspace/)).toBeVisible();
+      expect(screen.queryByText(/Share tab audio/)).not.toBeInTheDocument();
+      expect(captureAudio).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("reports permission failures and cancels an in-flight picker when disabled", async () => {
     vi.mocked(captureAudio).mockRejectedValueOnce(new DOMException("Denied", "NotAllowedError"));
     render(<AudioVisualizer />);
-    fireEvent.click(screen.getByRole("button", { name: "Start audio visualization" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("cancelled or blocked");
+    fireEvent.click(screen.getByRole("button", { name: /Audio visualizer,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Share audio" }));
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("cancelled or blocked");
+    expect(status).toBeVisible();
+    expect(status).not.toHaveClass("sr-only");
     cleanup();
 
     vi.mocked(captureAudio).mockImplementationOnce((_signal) => new Promise(() => undefined));
     const { rerender } = render(<AudioVisualizer />);
-    fireEvent.click(screen.getByRole("button", { name: "Start audio visualization" }));
+    fireEvent.click(screen.getByRole("button", { name: /Audio visualizer,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Share audio" }));
     const signal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
     expect(signal?.aborted).toBe(false);
     rerender(<AudioVisualizer enabled={false} />);

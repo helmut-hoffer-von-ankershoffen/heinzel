@@ -1,4 +1,7 @@
+import { AudioLines } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { FooterItem, type State } from "@/components/FooterItem";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { type CapturedAudio, captureAudio } from "./capture";
 
@@ -13,11 +16,19 @@ export function spectrumLevel(value: number) {
   return Math.sqrt(Math.max(0, Math.min(255, value)) / 255);
 }
 
+function captureProblem(error: unknown) {
+  if (error instanceof DOMException && error.name === "AbortError") return "Audio sharing was cancelled.";
+  if (error instanceof DOMException && error.name === "NotAllowedError")
+    return "Audio sharing was cancelled or blocked. Your browser or operating system may not offer audio for this source.";
+  return error instanceof Error ? error.message : "Audio sharing is unavailable.";
+}
+
 /** A real spectrum at the right edge. Showing the control never starts capture; the person clicks to share. */
-export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
+export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean }) {
   const [session, setSession] = useState<CapturedAudio | null>(null);
   const [requesting, setRequesting] = useState(false);
   const [problem, setProblem] = useState("");
+  const [hasSignal, setHasSignal] = useState(false);
   const current = useRef<CapturedAudio | null>(null);
   const request = useRef<AbortController | null>(null);
   const generation = useRef(0);
@@ -29,6 +40,7 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
     current.current?.stop();
     current.current = null;
     setSession(null);
+    setHasSignal(false);
     setRequesting(false);
   }, []);
   useEffect(() => {
@@ -60,15 +72,7 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
     } catch (error) {
       if (generation.current !== revision) return;
       setRequesting(false);
-      setProblem(
-        error instanceof DOMException && error.name === "AbortError"
-          ? "Audio sharing was cancelled."
-          : error instanceof DOMException && error.name === "NotAllowedError"
-            ? "Audio sharing was cancelled or blocked. Your browser or operating system may not offer audio for this source."
-            : error instanceof Error
-              ? error.message
-              : "Audio sharing is unavailable.",
-      );
+      setProblem(captureProblem(error));
     }
   };
   useEffect(() => {
@@ -92,6 +96,8 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
     let frame = 0;
     let last = -Infinity;
+    let lastSound = -Infinity;
+    let audible = false;
     const paint = (now: number) => {
       if (document.visibilityState === "hidden") return;
       frame = requestAnimationFrame(paint);
@@ -108,6 +114,12 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
       drawing.clearRect(0, 0, width, height);
       drawing.fillStyle = getComputedStyle(element).color;
       session.analyser.getByteFrequencyData(data);
+      if (data.some((value) => value > 0)) lastSound = now;
+      const detected = now - lastSound < 2000;
+      if (detected !== audible) {
+        audible = detected;
+        setHasSignal(detected);
+      }
       const { columns, gap, columnWidth, maxBarHeight } = spectrumGeometry(width, height);
       for (let column = 0; column < columns; column += 1) {
         const from = Math.floor((column * data.length) / columns);
@@ -134,33 +146,75 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
     };
   }, [session]);
   if (!enabled) return null;
-  const label = requesting
-    ? "Cancel audio capture request"
-    : session
-      ? `Stop audio visualization: ${session.label}`
-      : "Start audio visualization";
+  const workspaceAudio =
+    (window as Window & { heinzelDesktop?: { workspaceAudio?: boolean } }).heinzelDesktop?.workspaceAudio === true;
+  let status = "Audio is not being shared.";
+  let state: State = "off";
+  let triggerLabel = "Audio visualizer";
+  let controlWord = "Audio";
+  let action = workspaceAudio ? "Share workspace audio" : "Share audio";
+  if (requesting) {
+    status = workspaceAudio
+      ? "Confirm audio sharing in the desktop dialog."
+      : "Choose a source and turn on Share audio in the browser picker.";
+    triggerLabel = "Audio sharing request";
+    controlWord = "Wait";
+    action = "Cancel audio request";
+  } else if (session) {
+    status = hasSignal
+      ? `Visualizing ${session.label}`
+      : `Audio shared from ${session.label}. Waiting for sound: play audio in that source.`;
+    state = hasSignal ? "ok" : "warn";
+    triggerLabel = "Audio sharing active";
+    controlWord = "On";
+    action = "Stop sharing audio";
+  }
+  if (problem) {
+    status = problem;
+    state = "bad";
+    triggerLabel = "Audio sharing problem";
+    controlWord = "Retry";
+  }
   return (
-    <button
-      type="button"
-      className="relative flex h-full min-h-0 w-6 shrink-0 items-stretch justify-center px-1 text-muted-foreground hover:text-foreground"
-      aria-label={label}
-      aria-pressed={Boolean(session)}
-      aria-describedby="audio-visualizer-help"
-      title={
-        problem ||
-        `${label}. You choose the browser source. Audio stays in this tab and is not recorded or uploaded. Browser or OS audio sharing may be unavailable.`
-      }
-      onClick={() => (session || requesting ? stop() : void start())}
-    >
-      <canvas ref={canvas} aria-hidden className="h-full w-full" />
-      <span id="audio-visualizer-help" className="sr-only">
-        {t("audio.visualizerHelp")}
-      </span>
-      {!session && <span aria-hidden className="absolute inset-x-1 top-1/2 h-0.5 bg-current opacity-40" />}
-      <span role="status" className="sr-only">
-        {problem ||
-          (requesting ? "Choose a source and share its audio." : session ? `Listening to ${session.label}` : "")}
-      </span>
-    </button>
+    <div className="flex h-full min-h-0 flex-col items-center text-muted-foreground">
+      <FooterItem
+        label="Audio visualizer"
+        paneName="Audio visualizer controls"
+        triggerLabel={triggerLabel}
+        state={state}
+        content={
+          <>
+            <AudioLines aria-hidden className="size-5" />
+            <span className="text-[10px]">{controlWord}</span>
+          </>
+        }
+        className={`h-12 min-w-11 flex-col gap-0.5 px-1 ${state === "bad" ? "text-bad" : "text-foreground"}`}
+        popoverClassName="w-80 max-w-[calc(100vw-1rem)] p-3"
+      >
+        <div className="space-y-3 px-1.5 pb-1">
+          <output className={problem ? "block break-words text-bad" : "block break-words text-foreground"}>
+            {status}
+          </output>
+          {!session && !requesting && (
+            <p className="text-xs text-muted-foreground">
+              {workspaceAudio
+                ? "Play audio in this workspace, then share workspace audio to visualize it."
+                : "Play audio, then share the tab playing it. For the embedded player, choose this app’s tab and turn on Share tab audio."}
+            </p>
+          )}
+          <Button className="min-h-11 w-full" onClick={() => (session || requesting ? stop() : void start())}>
+            {action}
+          </Button>
+          <p className="text-xs text-muted-foreground">{t("audio.visualizerHelp")}</p>
+          {!workspaceAudio && (
+            <p className="text-xs text-muted-foreground">
+              No audio option? Open hz in a Chrome browser tab and try tab sharing. Audio availability depends on your
+              browser and operating system.
+            </p>
+          )}
+        </div>
+      </FooterItem>
+      <canvas ref={canvas} role="img" aria-label="Shared audio spectrum" className="min-h-0 w-full flex-1 px-1" />
+    </div>
   );
 }
