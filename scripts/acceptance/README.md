@@ -57,9 +57,12 @@ Preflight runs before any case and executes nothing: PyPI latest and its wheel d
 tag. If main moved past the tag, pass `--accept-install-sh-sha256` after reviewing it. `--accept-wheel-sha256` and
 `--accept-profile-sha256` bind independently accepted identities.
 
-The plugin update target comes from the hash-verified app profile. PyPI latest and its wheel hash must agree before
-mutation. A newer index release or changed bytes fail this snapshot check; installed results never choose the expected
-version. Account navigation uses real Tab and Enter events and the fictional profile's unique visible menu trigger.
+The immutable app profile binds the installed Clock baseline, checked against the version-specific PyPI index.
+Before mutation, the live index independently binds the unpinned update target and its wheel hash. The CLI and UI
+must install that exact version, and its installed runtime files must match the downloaded wheel. If the registry
+advances and the updater selects a different version, the case fails and needs a fresh run. Installed results never
+choose the expected version. Account navigation uses real Tab and Enter events and the fictional profile's unique
+visible menu trigger.
 
 ## Candidates and verdicts
 
