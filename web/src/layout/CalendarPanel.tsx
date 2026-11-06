@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { X } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { token } from "@/api/token";
@@ -82,8 +83,14 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
       <OperationDialog />
       <header className="flex items-center justify-between gap-2 border-b border-border p-3">
         <h2 className="font-semibold">Calendar</h2>
-        <button type="button" className="min-h-10 px-2" onClick={onClose} aria-label="Close calendar">
-          Close
+        <button
+          type="button"
+          className="flex min-h-10 min-w-10 items-center justify-center rounded-lg hover:bg-accent"
+          onClick={onClose}
+          aria-label="Close calendar"
+          title="Close calendar"
+        >
+          <X aria-hidden className="size-4" />
         </button>
       </header>
       <div className="border-b border-border p-3 text-sm" aria-live="polite">

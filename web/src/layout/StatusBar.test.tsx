@@ -304,6 +304,8 @@ describe("Footer items are icons with a state and a pane", () => {
     const calendar = await within(bar).findByRole("button", { name: "Calendar unavailable, error" });
     expect(calendar).toHaveClass("text-bad");
     await user.click(calendar);
+    const summary = await screen.findByRole("region", { name: "Calendar summary" });
+    await user.click(within(summary).getByRole("button", { name: "Open calendar" }));
     const panel = await screen.findByRole("region", { name: "Calendar" });
     expect(await within(panel).findByText("No calendar connected.")).toBeInTheDocument();
     expect(await within(panel).findByText(/Calendar reminders need a background worker/)).toBeInTheDocument();
@@ -339,6 +341,10 @@ describe("Footer items are icons with a state and a pane", () => {
     const footer = await screen.findByRole("contentinfo");
     const calendar = await within(footer).findByRole("button", { name: /In Standup until .*Next: Review .* at/ });
     await user.click(calendar);
+    const summary = await screen.findByRole("region", { name: "Calendar summary" });
+    expect(within(summary).getByText(/In Standup · \d+ min remaining/)).toBeInTheDocument();
+    expect(within(summary).getByText(/Next: Review/)).toBeInTheDocument();
+    await user.click(within(summary).getByRole("button", { name: "Open calendar" }));
     const panel = await screen.findByRole("region", { name: "Calendar" });
     expect(await within(panel).findByText("Review")).toBeInTheDocument();
   });
@@ -374,6 +380,8 @@ describe("Footer items are icons with a state and a pane", () => {
         name: "Calendar unavailable, error",
       }),
     );
+    const summary = await screen.findByRole("region", { name: "Calendar summary" });
+    await user.click(within(summary).getByRole("button", { name: "Open calendar" }));
     const panel = await screen.findByRole("region", { name: "Calendar" });
     const links = await within(panel).findAllByRole("link", { name: "Join meeting" });
     expect(links).toHaveLength(2);

@@ -178,8 +178,36 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
           )}
         </span>
       }
-      onActivate={onOpen}
-    />
+      paneName="Calendar summary"
+      hideHeading
+    >
+      <div className="space-y-2 px-1.5 py-1">
+        <p className="font-medium">Calendar</p>
+        {agenda.isPending ? (
+          <p>Loading calendar…</p>
+        ) : agenda.isError ? (
+          <p>Calendar unavailable. Try again later.</p>
+        ) : agenda.data?.problem ? (
+          <p>{agenda.data.problem}</p>
+        ) : (
+          <>
+            <p>
+              {active
+                ? `In ${active.title} · ${Math.max(1, Math.ceil((Date.parse(active.end) - now.getTime()) / 60_000))} min remaining`
+                : "Not in a meeting"}
+            </p>
+            <p>
+              {upcoming
+                ? `Next: ${upcoming.title} · ${new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: agenda.data?.timezone ?? undefined }).format(new Date(upcoming.start))} at ${time(new Date(upcoming.start), agenda.data?.timezone)}`
+                : "None through tomorrow"}
+            </p>
+          </>
+        )}
+        <button type="button" className="min-h-10 text-primary underline" onClick={onOpen}>
+          Open calendar
+        </button>
+      </div>
+    </FooterItem>
   );
 }
 
