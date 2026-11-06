@@ -65,7 +65,7 @@ def _cell(upper: str, lower: str) -> tuple[str, Style | None]:
     return "▀", Style(color=rgb(upper), bgcolor=rgb(lower))
 
 
-def banner(lines: Sequence[str]) -> Text:
+def banner(lines: Sequence[str], *, body_style: str = "dim") -> Text:
     """The bust with `lines` of text beside its lower half; 80 columns at most."""
     art = pixels(BUST).split("\n")
     width = max(len(line) for line in art)
@@ -75,7 +75,7 @@ def banner(lines: Sequence[str]) -> Text:
         out.append_text(line)
         out.pad_right(width - len(line) + 2)
         if 0 <= (at := number - start) < len(lines):
-            out.append(lines[at], style="bold magenta" if at == 0 else "dim")
+            out.append(lines[at], style="bold magenta" if at == 0 else body_style)
         out.append("\n")
     return out
 

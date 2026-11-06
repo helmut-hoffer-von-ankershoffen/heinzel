@@ -605,7 +605,8 @@ def test_interactive_welcome_reuses_shared_colour_art_on_stderr_only(monkeypatch
     bootstrap._welcome()
     output = capsys.readouterr()
     assert output.out == ""
-    assert "Heinzelmännchen" in output.err
+    assert f"Heinzelmännchen {bootstrap.__version__}" in output.err
+    assert output.err.endswith("\n\n")
     assert "Let's set up your Heinzel." in output.err
     assert "\x1b[" in output.err
     assert any(pixel in output.err for pixel in ("▀", "▄", "█"))
