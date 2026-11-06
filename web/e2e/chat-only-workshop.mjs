@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { chromium, webkit } from "playwright-core";
+import { readWorkshopReload, watchWorkshopReload } from "./workshop-reload-diagnostics.mjs";
 
 const url = new URL(process.argv[2]);
 const token = url.hash.match(/(?:^#|&)token=([^&]+)/)?.[1] ?? "";
@@ -12,6 +13,7 @@ const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.mi
 const browser = await { chromium, webkit }[engine].launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
 const page = await context.newPage();
+let watchingReload = false;
 try {
   await page.goto(url.href);
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
@@ -48,6 +50,7 @@ try {
   const composerAfterReload = page.getByLabel("Message your Heinzel");
   const chatTabAfterReload = page.getByRole("tab", { name: "Chat", exact: true });
   await composerAfterReload.or(chatTabAfterReload).first().waitFor({ timeout: 30000 });
+  watchingReload = await watchWorkshopReload(page);
   if (!(await composerAfterReload.isVisible())) await chatTabAfterReload.click();
   await page.getByText("Draft ready for review").waitFor({ timeout: 30000 });
   assert.equal(new URL(page.url()).searchParams.get("chat"), session);
@@ -55,6 +58,8 @@ try {
 } catch (error) {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
   process.stderr.write(`${message.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
+  if (watchingReload)
+    process.stderr.write(`Workshop reload evidence ${JSON.stringify(await readWorkshopReload(page))}\n`);
   process.exitCode = 1;
 } finally {
   await context.close();
