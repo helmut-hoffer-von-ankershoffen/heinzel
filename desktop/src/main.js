@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, webContents } from "electron";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
+import { createWorkspaceAudio } from "./workspace-audio.js";
 import { initializeDesktopIdentity } from "./identity.js";
 import { refreshAfterQuit, shouldRefresh, stopWithReport } from "./shutdown.js";
 import { installSignalQuit } from "./signal-quit.js";
@@ -18,6 +19,7 @@ let stopping = false;
 let permissions;
 let desktopGate;
 let gateReleasing = false;
+let workspaceAudio;
 const signalQuit = installSignalQuit({
   proc: process,
   quit: () => app.quit(),
@@ -55,11 +57,28 @@ const instance = createInstanceLifecycle({
         prompt: (owner, options) => dialog.showMessageBox(owner, options),
       });
       permissions = windowPermissions;
-      window.webContents.session.setPermissionCheckHandler(windowPermissions.check);
-      window.webContents.session.setPermissionRequestHandler(windowPermissions.request);
+      const audio = createWorkspaceAudio({
+        windows,
+        fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+        fromFrame: (frame) => frame ? webContents.fromFrame(frame) : null,
+        connection: () => (stopping || quitting ? null : instance.currentConnection()),
+        prompt: (owner, options) => dialog.showMessageBox(owner, options),
+      });
+      workspaceAudio = audio;
+      window.webContents.session.setPermissionCheckHandler((contents, permission, origin, details) =>
+        permission === "display-capture" ? audio.check(contents, permission, origin, details) :
+          windowPermissions.check(contents, permission, origin, details));
+      window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) =>
+        permission === "display-capture" ? audio.request(contents, permission, callback, details) :
+          windowPermissions.request(contents, permission, callback, details));
+      window.webContents.session.setDisplayMediaRequestHandler(audio.display);
       window.webContents.on("did-start-navigation", windowPermissions.navigation);
+      window.webContents.on("did-start-navigation", audio.navigation);
+      window.webContents.on("render-process-gone", audio.revoke);
+      window.webContents.on("destroyed", audio.revoke);
+      window.on("blur", audio.revoke);
       guardUiNavigation(window.webContents, connection);
-      window.on("closed", () => { windowPermissions.revoke(); if (!quitting) app.quit(); });
+      window.on("closed", () => { audio.revoke(); windowPermissions.revoke(); if (!quitting) app.quit(); });
     },
   }),
 });
@@ -91,6 +110,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     if (stopping) return;
     stopping = true;
     permissions?.revoke();
+    workspaceAudio?.revoke();
     let unclean = false;
     void stopWithReport(ownedCli, () => {
       unclean = true;

@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-// A single fixed read operation; credential material never reaches the page.
+// The bridge exposes a fixed read operation and a capability label.
 contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
+  workspaceAudio: true,
   lifecycle: () => ipcRenderer.invoke("hz:lifecycle"),
 }));

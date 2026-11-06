@@ -603,7 +603,7 @@ function Layout() {
         )}
       </div>
       {showAudioVisualizer && (
-        <section aria-label="Audio visualizer" className="min-h-0 w-7 shrink-0 self-stretch border-l border-border">
+        <section aria-label="Audio visualizer" className="min-h-0 w-11 shrink-0 self-stretch border-l border-border">
           <AudioVisualizer />
         </section>
       )}

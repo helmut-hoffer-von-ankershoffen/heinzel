@@ -247,7 +247,7 @@ const en = {
   "scheduledNotify.note":
     "Optional and off by default. At most one attempt per turn. Content may appear on this device; queued does not mean shown. Item identities come from the provider and do not guarantee complete source history.",
   "audio.visualizerHelp":
-    "You choose the browser source. Audio stays in this tab and is not recorded or uploaded. Browser or operating system audio sharing may be unavailable.",
+    "Your browser opens its screen-sharing picker. hz analyzes the audio, with no microphone access. Audio and video are not recorded or uploaded.",
   "proposal.intro":
     "You write these terms for later review. They do not start a Heinzel or give approval; limits are not enforced. This preview cannot yet describe MCP, shell, or CLI permissions.",
   "proposal.askRevise": "Ask your Heinzel in chat to revise these subscription terms.",
