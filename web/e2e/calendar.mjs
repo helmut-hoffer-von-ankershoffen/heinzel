@@ -73,12 +73,18 @@ for (const [name, engine] of [
       await page.goto(url);
       await page.locator("#splash").waitFor({ state: "hidden" });
       const footer = page.locator("footer");
-      const button = footer.getByRole("button", {
-        name: /In Standup with an exceptionally long meeting title .*Next: Review with a very long title/,
-      });
+      const button = footer.getByRole("button", { name: "Calendar, off", exact: true });
       await button.waitFor({ state: "visible" });
+      await button.locator("path[stroke-dasharray]").first().waitFor({ state: "visible" });
+      assert.equal(await button.locator("path[stroke-dasharray]").count(), 2, "both calendar arcs are present");
+      assert.doesNotMatch(await button.textContent(), /Standup|Review/, "meeting names stay inside the pane");
       await page.screenshot({ path: join(shots, `${name}-${size}-footer.png`) });
-      const times = button.locator("time");
+      await button.click({ timeout: 10000 });
+      const summary = page.getByRole("region", { name: "Calendar summary", exact: true });
+      await summary.waitFor({ state: "visible" });
+      assert.match(await summary.textContent(), /In Standup with an exceptionally long meeting title/);
+      assert.match(await summary.textContent(), /Next: Review with a very long title/);
+      const times = summary.locator("time");
       assert.equal(await times.count(), 2);
       const expected = [current.end, next.start].map((value) =>
         new Intl.DateTimeFormat("en-GB", {
@@ -112,12 +118,7 @@ for (const [name, engine] of [
           "meeting time was clipped",
         );
       }
-      try {
-        await button.click({ timeout: 10000 });
-      } catch (error) {
-        await page.screenshot({ path: join(shots, `${name}-${size}-missing.png`) });
-        throw new Error(`Calendar button missing; footer: ${await footer.textContent()}; ${error}`);
-      }
+      await summary.getByRole("button", { name: "Open calendar", exact: true }).click({ timeout: 10000 });
       const panel = page.getByRole("region", { name: "Calendar", exact: true });
       try {
         await panel

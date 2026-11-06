@@ -112,9 +112,14 @@ function ReleaseNotes({ version }: { version: string }) {
 /** Two fixed half-rings preserve the icon footprint and distinguish elapsed time from the next start. */
 function MeetingIcon({ elapsed, approach }: { elapsed: number | null; approach: number | null }) {
   return (
-    <span className="relative grid size-5 place-items-center" aria-hidden>
+    <span className="relative grid size-4 place-items-center" aria-hidden>
       <Calendar className="size-3.5" />
-      <svg aria-hidden className="pointer-events-none absolute inset-0 size-full" viewBox="0 0 24 24" fill="none">
+      <svg
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 left-1/2 size-5 -translate-x-1/2 -translate-y-1/2"
+        viewBox="0 0 24 24"
+        fill="none"
+      >
         {elapsed !== null && (
           <>
             <path d="M 2 12 A 10 10 0 0 1 22 12" stroke="currentColor" className="opacity-25" />
@@ -171,15 +176,12 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
     : null;
   const nextMinutes = upcoming ? Math.ceil((Date.parse(upcoming.start) - now.getTime()) / 60_000) : null;
   const approach = nextMinutes === null ? null : Math.max(0, (100 * (60 - nextMinutes)) / 60);
+  const showProgress = !unavailable && (elapsed !== null || approach !== null);
   return (
     <FooterItem
       label="Calendar"
-      icon={Calendar}
-      content={
-        unavailable || (elapsed === null && approach === null) ? undefined : (
-          <MeetingIcon elapsed={elapsed} approach={approach} />
-        )
-      }
+      icon={showProgress ? undefined : Calendar}
+      content={showProgress ? <MeetingIcon elapsed={elapsed} approach={approach} /> : undefined}
       state={unavailable ? "bad" : "off"}
       paneName="Calendar summary"
       hideHeading
@@ -194,16 +196,36 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
           <p>{agenda.data.problem}</p>
         ) : (
           <>
-            <p>
-              {active
-                ? `In ${active.title} · ${Math.max(1, Math.ceil((Date.parse(active.end) - now.getTime()) / 60_000))} min remaining`
-                : "Not in a meeting"}
-            </p>
-            <p>
-              {upcoming
-                ? `Next: ${upcoming.title} · ${new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: agenda.data?.timezone ?? undefined }).format(new Date(upcoming.start))} at ${time(new Date(upcoming.start), agenda.data?.timezone)} · in ${nextMinutes} min`
-                : "None through tomorrow"}
-            </p>
+            {active ? (
+              <p className="break-words">
+                In {active.title} · {Math.max(1, Math.ceil((Date.parse(active.end) - now.getTime()) / 60_000))} min
+                remaining
+                {" · Ends at "}
+                <time className="inline-block" dateTime={active.end}>
+                  {time(new Date(active.end), agenda.data?.timezone)}
+                </time>
+              </p>
+            ) : (
+              <p>Not in a meeting</p>
+            )}
+            {upcoming ? (
+              <p className="break-words">
+                Next: {upcoming.title} ·{" "}
+                <time className="inline-block" dateTime={upcoming.start}>
+                  {new Intl.DateTimeFormat(undefined, {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    timeZone: agenda.data?.timezone ?? undefined,
+                  }).format(new Date(upcoming.start))}{" "}
+                  at {time(new Date(upcoming.start), agenda.data?.timezone)}
+                </time>
+                {" · in "}
+                {nextMinutes} min
+              </p>
+            ) : (
+              <p>None through tomorrow</p>
+            )}
           </>
         )}
         {!unavailable && (elapsed !== null || approach !== null) && (
