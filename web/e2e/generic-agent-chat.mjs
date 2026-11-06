@@ -145,10 +145,11 @@ try {
     const box = await replyActivity.boundingBox();
     assert.ok(box);
     await page.mouse.move(box.x + box.width / 2, box.y + box.height - 10);
+    await page.exposeFunction("__hzPressOnSmoothScroll", () => page.mouse.down());
     await replyActivity.evaluate((node) => {
       const scroller = node.closest(".workspace-scroll");
       const origin = scroller.scrollTop;
-      window.__hzSmoothOrigin = origin;
+      const destination = origin - 120;
       window.addEventListener(
         "pointerdown",
         (event) => {
@@ -157,28 +158,40 @@ try {
             primary: event.isPrimary && event.button === 0,
             summary: event.target === node && node.tagName === "SUMMARY",
             origin,
-            destination: origin - 120,
+            destination,
             down: scroller.scrollTop,
             top: node.getBoundingClientRect().top,
           };
         },
         { capture: true, passive: true, once: true },
       );
-      scroller.scrollTo({ top: origin - 120, behavior: "smooth" });
+      // A controller round trip after polling for progress can use up the rest of the animation.
+      // Ask Playwright for the one physical press directly from the first native scroll update.
+      const pressOnProgress = () => {
+        const first = scroller.scrollTop;
+        if (first >= origin) return;
+        scroller.removeEventListener("scroll", pressOnProgress);
+        window.__hzPressOnSmoothScroll().then(
+          () => (window.__hzSmoothDown = { first, press: window.__hzSmoothPress }),
+          (error) => (window.__hzSmoothDown = { error: String(error) }),
+        );
+      };
+      scroller.addEventListener("scroll", pressOnProgress, { passive: true });
+      scroller.scrollTo({ top: destination, behavior: "smooth" });
     });
-    await page.waitForFunction(() => {
-      const scroller = document.querySelector(".workspace-scroll");
-      return scroller.scrollTop < window.__hzSmoothOrigin;
-    });
-    await page.mouse.down();
-    const press = await page.evaluate(() => window.__hzSmoothPress);
+    const down = await page.waitForFunction(() => window.__hzSmoothDown);
+    const { first, press, error } = await down.jsonValue();
+    assert.equal(error, undefined, "Playwright must deliver the physical press");
     assert.equal(press?.trusted, true, "scroll pressure must originate from a trusted physical press");
     assert.equal(press.primary, true, "scroll pressure must use the primary pointer and button");
     assert.equal(press.summary, true, "scroll pressure must press the current native summary");
     assert.ok(press.origin > 120, "the controlled press must have real workspace scroll distance");
     assert.equal(press.origin - press.destination, 120);
     assert.ok(press.down < press.origin, "native smooth scrolling must progress before the physical press");
-    assert.ok(press.down > press.destination, "native smooth scrolling must still be unfinished at the press");
+    assert.ok(
+      press.down > press.destination,
+      `native smooth scrolling must still be unfinished at the press (first: ${first}, press: ${press.down}, destination: ${press.destination})`,
+    );
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     // Keep the real press held beyond the observed hosted 184ms interval; no retargeting or click replay.
     await new Promise((resolve) => setTimeout(resolve, 250));

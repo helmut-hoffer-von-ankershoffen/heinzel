@@ -1283,6 +1283,8 @@ try {
     await soundPage.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
     await soundPage.getByRole("button", { name: "Expand navigation" }).click();
     await soundPage.getByRole("button", { name: "Collapse navigation" }).waitFor();
+    // The expanding sidebar can move the sound button between mouse down and mouse up.
+    await soundPage.waitForFunction(() => !document.getAnimations().some((run) => run instanceof CSSTransition));
     await soundPage.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
     const soundDialog = soundPage.getByRole("dialog", { name: "Sound" });
     await soundDialog.getByText("Use your iPhone or iPad volume buttons to adjust YouTube audio.").waitFor();
