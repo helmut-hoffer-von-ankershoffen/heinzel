@@ -239,16 +239,9 @@ function Layout() {
     viewOpen ||
     retainedViews.some((id) => panelViews.some((view) => view.id === id));
   useLayoutEffect(() => {
-    if (
-      !flowingWorkspace ||
-      !workspaceShown ||
-      selectedPanel === "page" ||
-      !scroller.current ||
-      !pageContent.current ||
-      !workspace.current
-    )
-      return;
-    return anchorWorkspace(scroller.current, pageContent.current, workspace.current);
+    if (!flowingWorkspace || !workspaceShown || !scroller.current || !pageContent.current || !workspace.current) return;
+    // With Page selected, protect only the press that opens a workspace tab.
+    return anchorWorkspace(scroller.current, pageContent.current, workspace.current, selectedPanel === "page");
   }, [flowingWorkspace, workspaceShown, selectedPanel]);
   // An explicit navigation to the view can repeat the same URL, and should still bring it into view.
   const previousLocation = useRef(location);
