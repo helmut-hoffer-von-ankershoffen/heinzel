@@ -322,6 +322,7 @@ KERNEL = [
     "DaemonLegacyRecovery",
     "DaemonMutationScope",
     "DaemonOverview",
+    "DaemonPackageHandoverRecovery",
     "DaemonRecoveryPlan",
     "DaemonRecoveryResult",
     "DaemonRecoverySelection",

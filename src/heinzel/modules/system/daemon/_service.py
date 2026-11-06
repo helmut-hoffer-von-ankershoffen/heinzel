@@ -132,6 +132,9 @@ PLATFORMS = ("darwin", "linux")
 """launchd and systemd read unit files; they hold no secrets."""
 MODULE_SECTION = "system.daemon"
 MAX_SERVICE_MANAGER_OUTPUT = 1_000_000
+MANAGER_TIMEOUT = 5
+# launchd can defer a respawn for ten seconds (launchd.plist(5)); allow time for its reply as well.
+OWNED_KICKSTART_TIMEOUT = 15
 MAX_HANDOVER_FILE_BYTES = 256 * 1024
 MAX_HANDOVER_CONTRIBUTIONS = 512
 MAX_HANDOVER_TEXT = 512
@@ -324,6 +327,11 @@ def _manager_environment(command: list[str]) -> dict[str, str]:
     }
 
 
+def _manager_deadline(command: list[str]) -> float:
+    own_kickstart = command == ["/bin/launchctl", "kickstart", f"gui/{os.getuid()}/{LABEL}"]
+    return time.monotonic() + (OWNED_KICKSTART_TIMEOUT if own_kickstart else MANAGER_TIMEOUT)
+
+
 def bounded_manager_command(
     command: list[str], *, deadline: float | None = None, env: dict[str, str] | None = None
 ) -> ProcessOutcome:
@@ -335,7 +343,7 @@ def bounded_manager_command(
         stderr=subprocess.DEVNULL,
         env=env if env is not None else _manager_environment(command),
     )
-    deadline = deadline if deadline is not None else time.monotonic() + 5
+    deadline = deadline if deadline is not None else _manager_deadline(command)
     captured = bytearray()
     truncated = False
     try:
@@ -1661,6 +1669,28 @@ class DaemonService:
             and sorted(observed.contributions) == sorted(expected_contributions)
         )
         return DaemonHandoverAssessment(status="matched" if matched else "mismatched", observed=observed)
+
+    def idle_package_handover_matches(self, request: dict[str, str | int], binary: Path) -> bool:
+        """Verify the exact same-boot request and its unchanged, idle, active manager registration.
+
+        Raises:
+            HeinzelError: If the manager authority or loaded unit cannot be verified.
+        """
+        boot = self._current_boot_identity()
+        fence = self._request_birth_fence(request)
+        birth = self._process_birth()
+        return (
+            self._platform == "darwin"
+            and self._uid() == os.getuid()
+            and bool(boot)
+            and request.get("boot") == boot
+            and fence is not None
+            and birth is not None
+            and _process_birth.after_request(fence, birth)
+            and self._request_unit_matches(request)
+            and self.owned_unit_state(binary)
+            and self.owned_manager_state(binary) == ManagerState(registered=True, active=True, enabled=True)
+        )
 
     def _request_unit_matches(self, request: dict[str, str | int]) -> bool:
         signature = request.get("unit_signature")

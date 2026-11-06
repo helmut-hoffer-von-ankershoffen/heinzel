@@ -66,3 +66,41 @@ uv run --no-project --with heinzel python -I -m heinzel.heads.daemon_recovery re
 Restoration refuses changed targets, foreign state and completed retirement. An uncertain outcome remains gated;
 a later read is not an acknowledgement of an earlier manager request. Installed tests with a manager protocol
 double establish package and command behavior, not native manager acceptance or a completed published upgrade.
+
+## Interrupted macOS update from 0.9.21 to 0.9.22
+
+This recovery applies when the automatic updater installed and tested 0.9.22, but could not finish handing off the
+scheduled daemon. The old web server can still be serving 0.9.21. The published files cannot by themselves prove
+that a failed automatic update and a pending mutation belong to the same attempt. A manual update could leave
+a mutation that a later automatic attempt refused.
+
+Use this command only when independent evidence from the incident establishes that the automatic attempt reached
+the handover after its trial. Use the mutation, handover request and automatic update failure SHA-256 digests
+captured for that incident, and a reviewed release that offers this command:
+
+```sh
+uv run --no-project --with heinzel python -I -m heinzel.heads.daemon_recovery package-handover \
+  --incident-mutation MUTATION_SHA256 --incident-request REQUEST_SHA256 --incident-failure FAILURE_SHA256
+```
+
+The plan requires the existing installation checkpoint, an owned and idle launchd registration, and matching
+same-boot request, pending mutation and automatic update failure records. It refuses when a rollback copy or
+another mutation is present, the selected installation or profile is uncertain, or a new tick already ran. It
+does not rerun the package update, replace a checkpoint or start a service.
+
+Read the plan. If the independent incident evidence is missing or inconclusive, leave the gate in place. To
+confirm a supported recovery, pass the same incident digests and the current plan digest:
+
+```sh
+uv run --no-project --with heinzel python -I -m heinzel.heads.daemon_recovery package-handover \
+  --incident-mutation MUTATION_SHA256 --incident-request REQUEST_SHA256 --incident-failure FAILURE_SHA256 \
+  --confirm PLAN_SHA256
+```
+
+Confirmation moves the exact mutation marker to the archive shown in the plan. The original handover request
+stays in place. Wait for the existing schedule to start the daemon. Check `hz system daemon status --json` for
+an owned, loaded daemon with a fresh 0.9.22 tick and no version mismatch. Only then use `hz ui restart` if the
+owned web service is still serving 0.9.21, and check `hz ui status --json` for 0.9.22.
+
+If confirmation was interrupted, check the archive and status. An existing archive records the move. Only the
+daemon's own fresh tick proves the handover. Leave other pending markers in place.

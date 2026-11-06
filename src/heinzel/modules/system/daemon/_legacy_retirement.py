@@ -1,14 +1,11 @@
 """Explicit legacy retirement; never called by ordinary lifecycle operations (ADR 0132)."""
 
-import ctypes
 import hashlib
 import json
 import os
 import pwd
 import re
 import stat
-import sys
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Never
@@ -29,13 +26,24 @@ from heinzel.kernel import (
 )
 from heinzel.modules.system.daemon._models import DaemonSettings
 from heinzel.modules.system.daemon._ownership import profile_environment
+from heinzel.modules.system.daemon._recovery_files import (
+    RecoveryFile as _File,
+)
+from heinzel.modules.system.daemon._recovery_files import (
+    path_absent as _absent,
+)
+from heinzel.modules.system.daemon._recovery_files import (
+    recovery_file as _file,
+)
+from heinzel.modules.system.daemon._recovery_files import (
+    rename_exclusive as _rename_exclusive,
+)
 from heinzel.modules.system.daemon._runtime import fsync_dir
 from heinzel.modules.system.daemon._units import INTERVALS, LABEL, PATH, TICK, launchd_plist, plist_path
 
 if TYPE_CHECKING:
     from heinzel.modules.system.daemon._service import DaemonService
 
-LIMIT = 256 * 1024
 MANAGER_LIMIT = 1_000_000
 MAX_MANAGER_DEPTH = 32
 MANAGER_FIELD_DEPTH = 2
@@ -86,87 +94,6 @@ def _objects(value: object) -> list[dict[str, Any]]:
         _refuse()
     items = TypeAdapter(list[object]).validate_python(value, strict=True)
     return [_as_object(item) for item in items]
-
-
-@dataclass(frozen=True)
-class _File:
-    path: Path
-    content: bytes
-    identity: tuple[int, ...]
-
-    def facts(self) -> dict[str, Any]:
-        return {
-            "path": str(self.path),
-            "sha256": hashlib.sha256(self.content).hexdigest(),
-            "identity": list(self.identity),
-        }
-
-
-def _file(path: Path) -> _File:
-    # Reuse the daemon's physical-parent, no-follow file boundary, not Path.read_bytes().
-    from heinzel.modules.system.daemon._service import verified_handover_file  # noqa: PLC0415 - shared sibling boundary
-
-    with verified_handover_file(path) as handle:
-        info = os.fstat(handle.fileno())
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_uid != os.getuid()
-            or info.st_mode & 0o077
-            or info.st_nlink != 1
-            or info.st_size > LIMIT
-        ):
-            _refuse()
-        content = handle.read(LIMIT + 1)
-        after = os.fstat(handle.fileno())
-
-        def identity(i: os.stat_result) -> tuple[int, ...]:
-            return (i.st_dev, i.st_ino, i.st_mode, i.st_uid, i.st_size, i.st_mtime_ns, i.st_ctime_ns)
-
-        if len(content) > LIMIT or identity(info) != identity(after):
-            _refuse()
-        return _File(path, content, identity(info))
-
-
-def _absent(path: Path) -> bool:
-    try:
-        path.lstat()
-    except FileNotFoundError:
-        return True
-    return False
-
-
-def _rename_exclusive(source: Path, destination: Path) -> None:
-    """Atomically restore without replacing any destination.
-
-    Raises:
-        OSError: The exclusive native operation is unavailable or refuses the move.
-    """
-    # Darwin RENAME_EXCL=4 (xnu bsd/sys/stdio.h); Linux RENAME_NOREPLACE=1.
-    # Linux supports protocol-double tests only; real legacy recovery remains macOS-only.
-    if sys.platform == "darwin":
-        library = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
-        rename = library.renameatx_np
-        flags = 4
-    elif sys.platform == "linux":
-        library = ctypes.CDLL(None, use_errno=True)
-        rename = library.renameat2
-        flags = 1
-    else:
-        _refuse()
-    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-    rename.restype = ctypes.c_int
-    source_fd = os.open(source.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    try:
-        destination_fd = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            if rename(source_fd, os.fsencode(source.name), destination_fd, os.fsencode(destination.name), flags):
-                raise OSError(ctypes.get_errno(), "Exclusive legacy restoration refused")
-            os.fsync(destination_fd)
-            os.fsync(source_fd)
-        finally:
-            os.close(destination_fd)
-    finally:
-        os.close(source_fd)
 
 
 def _account() -> dict[str, Any]:
@@ -954,9 +881,10 @@ class LegacyRetirement:
             path = Path(item["original"]["path"])
             backup = self._directory(journal["digest"]) / f"original-{index}"
             _rename_exclusive(backup, path)
-            restored = _file(path).facts()
+            captured = _file(path)
+            restored = captured.facts()
             if (
-                restored["identity"][:2] != item["current"]["identity"][:2]
+                list(captured.identity[:2]) != item["current"]["identity"][:2]
                 or restored["sha256"] != item["current"]["sha256"]
             ):
                 _refuse()
