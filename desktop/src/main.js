@@ -1,12 +1,13 @@
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
-import { createOwnedCli } from "./owned-cli.js";
+import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
 import { initializeDesktopIdentity } from "./identity.js";
-import { stopWithReport } from "./shutdown.js";
+import { refreshAfterQuit, shouldRefresh, stopWithReport } from "./shutdown.js";
 import { installSignalQuit } from "./signal-quit.js";
 import { guardUiNavigation, openProductUi } from "./ui-navigation.js";
 
@@ -15,6 +16,8 @@ const windows = new WeakSet();
 let quitting = false;
 let stopping = false;
 let permissions;
+let desktopGate;
+let gateReleasing = false;
 const signalQuit = installSignalQuit({
   proc: process,
   quit: () => app.quit(),
@@ -61,7 +64,8 @@ const instance = createInstanceLifecycle({
   }),
 });
 
-const ownedCli = createOwnedCli();
+const managedMac = app.isPackaged && process.platform === "darwin";
+const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz" });
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:lifecycle", createLifecycleHandler({
     windows,
@@ -95,7 +99,15 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
         "Heinzelmännchen stopped unexpectedly",
         "The local service did not shut down cleanly. Check any work that was in progress before continuing.",
       );
-    }).then(() => {
+    }).then(async (result) => {
+      const eligible = shouldRefresh({
+        packaged: app.isPackaged, platform: process.platform, fixture: Boolean(process.env.HZ_NATIVE_TEST_ROOT),
+        serviceStarted, unexpectedExit: unexpectedExitReported, signal: signalQuit.received(), outcome: result.outcome,
+      });
+      if (eligible && desktopGate) {
+        gateReleasing = true;
+        await refreshAfterQuit({ eligible, gate: desktopGate, executable: installedCli, spawn });
+      }
       quitting = true;
       if (!signalQuit.exitIfUnclean(unclean)) app.quit();
     }).catch(() => {
@@ -112,8 +124,16 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
   });
   void app.whenReady().then(() => {
     if (stopping) return;
-    return ownedCli.start().then((connection) => {
-      if (stopping) return;
+    return (managedMac ? acquireDesktopGate() : Promise.resolve(null)).then((gate) => {
+      if (gate) {
+        desktopGate = gate;
+        gate.once("close", () => { if (!quitting && !gateReleasing) app.quit(); });
+        gate.once("error", () => { if (!quitting && !gateReleasing) app.quit(); });
+      }
+      if (stopping) return null;
+      return ownedCli.start();
+    }).then((connection) => {
+      if (stopping || !connection) return;
       if (!ownedCli.isRunning()) throw new Error("The local service stopped during startup.");
       instance.setConnection(connection);
       instance.setReady();

@@ -1,4 +1,7 @@
 import { spawn as nodeSpawn } from "node:child_process";
+import { accessSync, closeSync, constants, fstatSync, lstatSync, openSync, readSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { isAbsolute, join } from "node:path";
 import { parseConnection } from "./connection.js";
 
 const STARTUP_TIMEOUT_MS = 30_000;
@@ -6,9 +9,115 @@ const STOP_TIMEOUT_MS = 5_000;
 const FORCE_STOP_TIMEOUT_MS = 2_000;
 const OUTPUT_LIMIT = 4096;
 
+/** Read the installer-managed binding; never fall back to PATH in an installed app. */
+export function installedCli(home = homedir()) {
+  const parents = [home, join(home, ".config"), join(home, ".config", "heinzel")];
+  const receipt = join(parents[2], "desktop-owned-cli.json");
+  let fd;
+  try {
+    const uid = process.getuid();
+    const inspectParents = () => parents.map((parent) => {
+      const info = lstatSync(parent);
+      if (!info.isDirectory() || info.uid !== uid || (info.mode & 0o022)) throw new Error();
+      return info;
+    });
+    const same = (a, b) => a.dev === b.dev && a.ino === b.ino && a.mode === b.mode &&
+      a.uid === b.uid && a.nlink === b.nlink && a.size === b.size &&
+      a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs;
+    const beforeParents = inspectParents();
+    fd = openSync(receipt, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const info = fstatSync(fd);
+    if (!info.isFile() || info.uid !== uid || info.nlink !== 1 || (info.mode & 0o077) || info.size > 4096)
+      throw new Error();
+    const bytes = Buffer.alloc(4097);
+    let length = 0;
+    while (length < bytes.length) {
+      const count = readSync(fd, bytes, length, bytes.length - length, null);
+      if (!count) break;
+      length += count;
+    }
+    const afterParents = inspectParents();
+    if (length !== info.size || length > 4096 || !same(info, fstatSync(fd)) ||
+        !same(info, lstatSync(receipt)) || beforeParents.some((parent, i) => !same(parent, afterParents[i])))
+      throw new Error();
+    const data = JSON.parse(bytes.subarray(0, length).toString("utf8"));
+    if (!data || Array.isArray(data) || Object.keys(data).length !== 2 ||
+        !Object.hasOwn(data, "executable") || !Object.hasOwn(data, "version") ||
+        data.version !== 1 || typeof data.executable !== "string" || !isAbsolute(data.executable) ||
+        data.executable.includes("\0")) throw new Error();
+    if (!statSync(data.executable).isFile()) throw new Error();
+    accessSync(data.executable, constants.X_OK);
+    return data.executable;
+  } catch {
+    throw new Error("Heinzelmännchen could not find its installed local service.");
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+/** Hold the installer's exclusive gate until this process exits. */
+export function acquireDesktopGate(home = homedir(), { spawn = nodeSpawn, timeoutMs = 5000 } = {}) {
+  const parents = [home, join(home, ".config"), join(home, ".config", "heinzel")];
+  const lock = join(parents[2], "desktop-use.lock");
+  const journal = join(parents[2], "desktop-installation-journal.json");
+  let fd;
+  let child;
+  try {
+    const uid = process.getuid();
+    const safeParents = () => parents.map((name) => {
+      const info = lstatSync(name);
+      if (!info.isDirectory() || info.uid !== uid || (info.mode & 0o022)) throw new Error();
+      return info;
+    });
+    const identity = (a, b) => a.dev === b.dev && a.ino === b.ino && a.uid === b.uid && a.mode === b.mode && a.nlink === b.nlink;
+    const before = safeParents();
+    fd = openSync(lock, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const info = fstatSync(fd);
+    if (!info.isFile() || info.uid !== uid || info.nlink !== 1 || (info.mode & 0o077)) throw new Error();
+    child = spawn("/usr/bin/lockf", ["-t", "0", "/dev/fd/3", "/bin/sh", "-c", "printf 'ready\\n'; exec /bin/cat"], {
+      stdio: ["pipe", "pipe", "ignore", fd], shell: false,
+    });
+    closeSync(fd);
+    fd = undefined;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let output = "";
+      const fail = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        child.stdin.destroy();
+        child.kill();
+        reject(new Error("Heinzelmännchen could not secure its installation."));
+      };
+      const timer = setTimeout(fail, timeoutMs);
+      child.once("error", fail);
+      child.once("close", fail);
+      child.stdout.on("data", (data) => {
+        if (settled) return;
+        output += data.toString("utf8");
+        if (output !== "ready\n") { if (!"ready\n".startsWith(output)) fail(); return; }
+        try {
+          const after = safeParents();
+          if (!identity(info, lstatSync(lock)) || before.some((parent, i) => !identity(parent, after[i]))) throw new Error();
+          try { lstatSync(journal); throw new Error(); } catch (error) { if (error.code !== "ENOENT") throw error; }
+          settled = true;
+          clearTimeout(timer);
+          resolve(child);
+        } catch { fail(); }
+      });
+    });
+  } catch {
+    if (fd !== undefined) closeSync(fd);
+    child?.kill();
+    return Promise.reject(new Error("Heinzelmännchen could not secure its installation."));
+  }
+}
+
 /** Start and own one foreground `hz ui` process for the lifetime of the Electron app. */
 export function createOwnedCli({
   spawn = nodeSpawn,
+  executable = () => "hz",
   parse = parseConnection,
   startupTimeoutMs = STARTUP_TIMEOUT_MS,
   stopTimeoutMs = STOP_TIMEOUT_MS,
@@ -52,7 +161,7 @@ export function createOwnedCli({
       try {
         childClosed = false;
         childProcessError = false;
-        child = spawn("hz", ["ui", "serve", "--port", "0", "--no-browser"], {
+        child = spawn(executable(), ["ui", "serve", "--port", "0", "--no-browser"], {
           shell: false,
           windowsHide: true,
           stdio: ["ignore", "pipe", "ignore"],

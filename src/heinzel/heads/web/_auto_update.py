@@ -15,6 +15,7 @@ import importlib.metadata
 import json
 import logging
 import os
+import platform
 import random
 import sys
 import threading
@@ -24,13 +25,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from subprocess import SubprocessError
 from typing import IO, Any, Literal, cast
 
 from fastapi import FastAPI, HTTPException, Response
 from packaging.version import Version
 from pydantic import BaseModel, Field
 
-from heinzel import __version__
+from heinzel import HeinzelError, __version__
 from heinzel.heads._stream import WORK
 from heinzel.kernel import (
     KERNEL_SECTION,
@@ -608,7 +610,8 @@ class AutoUpdater:
         if self._held:  # just turned on (or update checks on again): look now, not at the next half hour
             self._held = False
             self._next_check = now
-        if now >= self._next_check:
+        checking = now >= self._next_check
+        if checking:
             self._next_check = now + CHECK_EVERY + self._between(timedelta(0), JITTER)
             self.check(now)
         waiting = self.waiting_for()
@@ -625,6 +628,27 @@ class AutoUpdater:
         if due:
             log.info("automatic update applies now: %s", update_summary(plan))
             self.apply()
+        elif checking and not waiting and not self.plan.core and not self.plan.plugins:
+            self._refresh_desktop()
+
+    def _refresh_desktop(self) -> None:
+        """Bring an already installed desktop shell up to this running stable Core."""
+        if platform.system() != "Darwin":
+            return
+        receipt = Path.home() / ".config/heinzel/desktop-installation.json"
+        if not os.path.lexists(receipt):
+            return
+        from heinzel.heads._desktop_installation import install_desktop  # noqa: PLC0415 - managed Mac app only
+
+        try:
+            entries = self._kernel.resolve(Installation).tool_entrypoints()
+            executable = next((entry for entry in entries if entry.name == "hz"), None)
+            if executable is not None:
+                status = install_desktop(self._version, executable, update_only=True)
+                if status in {"updated", "deferred"}:
+                    log.info("desktop automatic update: %s", status)
+        except (HeinzelError, OSError, SubprocessError) as exc:
+            log.warning("desktop automatic update could not finish: %s", exc)
 
     def check(self, now: datetime) -> None:
         """Ask for a newer stable hz and newer plugins old enough to install; what can't be asked stays as it was.

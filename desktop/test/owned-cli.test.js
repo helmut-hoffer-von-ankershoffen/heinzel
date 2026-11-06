@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync, symlinkSync, linkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { createOwnedCli } from "../src/owned-cli.js";
+import { acquireDesktopGate, createOwnedCli, installedCli } from "../src/owned-cli.js";
 
 const url = "http://127.0.0.1:43817/#token=abcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -362,4 +365,79 @@ test("can retry shutdown after a child did not close following the forced signal
     processError: false,
   });
   assert.deepEqual(child.kills, ["SIGINT", "SIGKILL", "SIGINT"]);
+});
+
+
+test("installed binding selects only a configured absolute executable", (t) => {
+  const home = mkdtempSync(join(tmpdir(), "hz-binding-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const directory = join(home, ".config", "heinzel");
+  mkdirSync(directory, { recursive: true });
+  const receipt = join(directory, "desktop-owned-cli.json");
+  const executable = join(home, "hz");
+  writeFileSync(executable, "#!/bin/sh\n", { mode: 0o700 });
+  const bind = (value) => writeFileSync(receipt, JSON.stringify(value), { mode: 0o600 });
+  assert.throws(() => installedCli(home), /could not find/);
+  bind({ version: 1, executable });
+  assert.equal(installedCli(home), executable);
+  for (const value of [
+    { version: 1, executable: "hz" }, { version: 2, executable },
+    { version: 1, executable, extra: true }, { version: 1, executable: home },
+    { version: 1, executable: join(home, "missing") },
+  ]) {
+    bind(value);
+    assert.throws(() => installedCli(home), /could not find/);
+  }
+  bind({ version: 1, executable });
+  chmodSync(receipt, 0o644);
+  assert.throws(() => installedCli(home), /could not find/);
+  chmodSync(receipt, 0o600);
+  const secondLink = join(home, "other-receipt");
+  linkSync(receipt, secondLink);
+  assert.throws(() => installedCli(home), /could not find/);
+  rmSync(secondLink);
+  chmodSync(directory, 0o777);
+  assert.throws(() => installedCli(home), /could not find/);
+  chmodSync(directory, 0o700);
+  assert.equal(installedCli(home), executable);
+  chmodSync(executable, 0o600);
+  assert.throws(() => installedCli(home), /could not find/);
+  rmSync(receipt);
+  symlinkSync(executable, receipt);
+  assert.throws(() => installedCli(home), /could not find/);
+});
+
+test("uses the resolved executable without shell lookup", async () => {
+  const child = makeChild();
+  let command;
+  const owned = createOwnedCli({ executable: () => "/owned/hz", spawn: (value) => { command = value; return child; } });
+  const started = owned.start();
+  child.stdout.write(`${url}\n`);
+  await started;
+  assert.equal(command, "/owned/hz");
+  await owned.stop();
+});
+
+
+test("desktop gate holds the installer lock and refuses a pending journal", { skip: process.platform !== "darwin" }, async (t) => {
+  const home = mkdtempSync(join(tmpdir(), "hz-gate-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const directory = join(home, ".config", "heinzel");
+  mkdirSync(directory, { recursive: true });
+  const lock = join(directory, "desktop-use.lock");
+  writeFileSync(lock, "", { mode: 0o600 });
+  const gate = await acquireDesktopGate(home);
+  const { spawnSync } = await import("node:child_process");
+  const probe = () => spawnSync("/usr/bin/python3", ["-c", "import fcntl,sys; f=open(sys.argv[1]); fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)", lock]);
+  assert.notEqual(probe().status, 0);
+  await assert.rejects(acquireDesktopGate(home), /could not secure/);
+  const closed = new Promise((resolve) => gate.once("close", resolve));
+  gate.stdin.end();
+  await closed;
+  assert.equal(probe().status, 0);
+  chmodSync(lock, 0o644);
+  await assert.rejects(acquireDesktopGate(home), /could not secure/);
+  chmodSync(lock, 0o600);
+  writeFileSync(join(directory, "desktop-installation-journal.json"), "{}", { mode: 0o600 });
+  await assert.rejects(acquireDesktopGate(home), /could not secure/);
 });

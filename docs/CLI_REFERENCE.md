@@ -19,6 +19,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `ai`: (expert) How hz reaches AI, and what it...
+* `app`: Manage the native Heinzel desktop app.
 * `chat`: Chat with the agent runner in this...
 * `graph`: Show your team&#x27;s contracts: who keeps...
 * `heinzel`: Your Heinzelmännchen: durable Heinzels...
@@ -172,6 +173,74 @@ $ hz ai usage [OPTIONS]
 * `--by <access|model|heinzel|cause>`: Break down by `access`, `model`, `heinzel` or `cause`.  [default: model]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz app`
+
+Manage the native Heinzel desktop app.
+
+**Usage**:
+
+```console
+$ hz app [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `install`: Install the desktop app for this version...
+* `refresh`: Refresh the managed app after an orderly...
+* `uninstall`: Remove the managed desktop app and keep...
+
+### `hz app install`
+
+Install the desktop app for this version of Heinzel.
+
+Raises:
+    typer.Exit: If the app cannot be installed now.
+
+**Usage**:
+
+```console
+$ hz app install [OPTIONS]
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+### `hz app refresh`
+
+Refresh the managed app after an orderly native exit.
+
+**Usage**:
+
+```console
+$ hz app refresh [OPTIONS]
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+### `hz app uninstall`
+
+Remove the managed desktop app and keep your Heinzel profile.
+
+Raises:
+    typer.Exit: If the app cannot be removed safely.
+
+**Usage**:
+
+```console
+$ hz app uninstall [OPTIONS]
+```
+
+**Options**:
+
 * `--help`: Show this message and exit.
 
 ## `hz chat`

@@ -525,6 +525,37 @@ def test_producer_build_guards_precede_any_tooling_or_attestation():
         assert steps[2]["uses"] == "./.github/actions/setup-uv"
 
 
+def test_desktop_release_assets_share_the_official_core_attestation():
+    jobs = yaml.safe_load((ROOT / ".github/workflows/publish.yml").read_text())["jobs"]
+    desktop = jobs["desktop"]
+    publish = jobs["publish"]
+    assert desktop["if"] == f"github.repository == '{release.REPOSITORY}'"
+    assert desktop["permissions"] == {"contents": "read"}
+    assert desktop["runs-on"] == "macos-latest"
+    assert desktop["steps"][0]["with"] == {
+        "ref": "refs/tags/${{ inputs.tag || github.ref_name }}",
+        "fetch-depth": 0,
+        "persist-credentials": False,
+    }
+    guard = desktop["steps"][1]["run"]
+    assert 'test "$GITHUB_SHA" = "$tagged"' in guard
+    assert 'git merge-base --is-ancestor "$tagged" origin/main' in guard
+    assert desktop["steps"][2]["run"] == "make ci-macos-arm"
+    assert desktop["steps"][3]["with"] == {"node-version": "24.19.0", "package-manager-cache": False}
+    assert desktop["steps"][4]["with"] == {"version": "12.15.0", "run_install": False}
+    assert desktop["steps"][5]["run"] == "make desktop-electron-package"
+    assert "desktop" in publish["needs"]
+    assert "needs.desktop.result == 'success'" in publish["if"]
+    steps = publish["steps"]
+    index = next(i for i, step in enumerate(steps) if step.get("id") == "attest")
+    download, bind, attest = steps[index - 2 : index + 1]
+    assert desktop["steps"][-1]["with"]["name"] == download["with"]["name"]
+    assert bind["if"] == desktop["if"]
+    assert bind["env"]["SOURCE_COMMIT"] == "${{ steps.source.outputs.commit }}"
+    assert 'mv -- "$manifest" "desktop-release/$archive" dist/' in bind["run"]
+    assert attest["with"]["subject-path"] == "dist/*"
+
+
 def test_core_publication_checks_the_tagged_ui_contract_before_building():
     steps = yaml.safe_load((ROOT / ".github/workflows/publish.yml").read_text())["jobs"]["publish"]["steps"]
     names = [step.get("name") for step in steps]
