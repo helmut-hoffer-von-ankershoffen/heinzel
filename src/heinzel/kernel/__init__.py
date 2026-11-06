@@ -154,7 +154,7 @@ from heinzel.kernel._draft_append import (
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
 from heinzel.kernel._exposure import MCP_HTTP, MCP_STDIO, Exposed, exposed, input_schema, restricts
-from heinzel.kernel._features import feature_enabled
+from heinzel.kernel._features import feature_catalog, feature_enabled
 from heinzel.kernel._git import (
     GIT_HARDENING,
     CommandFailed,
@@ -752,6 +752,7 @@ __all__ = [
     "env_prefix",
     "environment_variable",
     "exposed",
+    "feature_catalog",
     "feature_enabled",
     "font_stack_problem",
     "format_duration",

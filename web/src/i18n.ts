@@ -564,6 +564,7 @@ const en = {
   "settings.filesTitle": "Configuration files",
   "settings.results": "Matching settings",
   "settings.none": "No setting matches.",
+  "settings.featureOverride": "Set by a higher-priority configuration file. Change it there.",
   "settings.fromEnv": "Set by {env}; change it there.",
   "settings.reset": "Reset",
   "settings.showInFinder": "Show in Finder",

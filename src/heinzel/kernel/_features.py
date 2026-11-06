@@ -16,6 +16,11 @@ FEATURES: dict[str, str] = {
 """Every flag and what it switches on; everything is off unless named in the setting `features`."""
 
 
+def feature_catalog() -> dict[str, str]:
+    """Return the registered preview flags and their user-facing descriptions."""
+    return FEATURES.copy()
+
+
 def feature_enabled(settings: Settings, name: str) -> bool:
     """Whether the flag `name` is on.
 

@@ -79,14 +79,43 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
   const unit = unwrap(schema ?? undefined)?.["x-unit"];
   const secret = control.kind === "secret";
   // Lists get the row's whole width, under the label; single values sit on its right.
+  const catalog = schema?.["x-feature-catalog"];
   const wide =
-    control.kind === "table" || control.kind === "chips" || (control.kind === "installed" && control.multiple);
-  const disabled = fromEnv || managed !== null || save.isPending;
+    !!catalog ||
+    control.kind === "table" ||
+    control.kind === "chips" ||
+    (control.kind === "installed" && control.multiple);
+  const featureOverride = !!catalog && (setting.source === "project" || setting.source === "explicit");
+  const disabled = fromEnv || featureOverride || managed !== null || save.isPending;
   // A live setting needs no restart: the server reads it again by itself, so a change is saved at once.
   const live = schema?.["x-live"] === true;
   const commit = (next: unknown) =>
     live ? save.mutate({ key, value: next === null ? null : asConfig(next) }) : setStaged(next);
-  const editor = secret ? (
+  const selection = staged === undefined ? value : staged;
+  const selected = Array.isArray(selection) ? selection : [];
+  const editor = catalog ? (
+    <div className="space-y-3">
+      {Object.entries(catalog).map(([name, description]) => (
+        <div key={name} className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-ui">{label(name)}</p>
+            <p className="text-sm text-muted-foreground">{description}</p>
+          </div>
+          <Switch
+            labelledBy={`${inputId}-${name}`}
+            on={selected.includes(name)}
+            disabled={disabled}
+            onToggle={() =>
+              commit(selected.includes(name) ? selected.filter((item) => item !== name) : [...selected, name])
+            }
+          />
+          <span id={`${inputId}-${name}`} className="sr-only">
+            {label(name)}
+          </span>
+        </div>
+      ))}
+    </div>
+  ) : secret ? (
     <SecretValue id={inputId} disabled={disabled} onCommit={commit} />
   ) : typeof value === "boolean" || control.kind === "switch" ? (
     <Switch id={inputId} on={value === true && managed === null} disabled={disabled} onToggle={() => commit(!value)} />
@@ -145,6 +174,7 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
           <p className="mt-0.5 text-sm text-muted-foreground">{managed ?? setting.description}</p>
           {setting.key === "update_channel" && <ChannelStatement value={setting.value} />}
           {fromEnv && <p className="mt-1 text-xs text-warn">{t("settings.fromEnv", { env: setting.env })}</p>}
+          {featureOverride && <p className="mt-1 text-xs text-warn">{t("settings.featureOverride")}</p>}
           {save.error && (
             <p role="alert" className="mt-1 text-xs text-bad">
               {save.error.message}
@@ -166,32 +196,34 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
       )}
       {staged !== undefined && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-border p-3">
-          <RestartAndApply
-            target="hz ui"
-            changes={[title]}
-            // Secret values are intentionally excluded: the backend never exposes them in its loaded-settings proof.
-            settings={
-              secret
-                ? []
-                : [
-                    {
-                      section: setting.section,
-                      key: setting.key,
-                      value: staged === null ? (setting.default ?? null) : normalizeSettingValue(staged, schema),
-                    },
-                  ]
-            }
-            preserve={async () => {
-              await save.mutateAsync({ key, value: serializedStaged });
-              return true;
-            }}
-            onUnsupported={persistStaged}
-            deferredMessage={`Saved ${title}. This server cannot restart hz ui. Run \`hz ui\` in a terminal to apply this setting.`}
-            onApplied={() => {
-              setStaged(undefined);
-              setEditorVersion((version) => version + 1);
-            }}
-          />
+          {!(catalog && (fromEnv || featureOverride)) && (
+            <RestartAndApply
+              target="hz ui"
+              changes={[title]}
+              // Secret values are intentionally excluded: the backend never exposes them in its loaded-settings proof.
+              settings={
+                secret
+                  ? []
+                  : [
+                      {
+                        section: setting.section,
+                        key: setting.key,
+                        value: staged === null ? (setting.default ?? null) : normalizeSettingValue(staged, schema),
+                      },
+                    ]
+              }
+              preserve={async () => {
+                await save.mutateAsync({ key, value: serializedStaged });
+                return true;
+              }}
+              onUnsupported={persistStaged}
+              deferredMessage={`Saved ${title}. This server cannot restart hz ui. Run \`hz ui\` in a terminal to apply this setting.`}
+              onApplied={() => {
+                setStaged(undefined);
+                setEditorVersion((version) => version + 1);
+              }}
+            />
+          )}
           <button
             type="button"
             disabled={save.isPending}

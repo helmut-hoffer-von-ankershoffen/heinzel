@@ -383,3 +383,73 @@ describe("Declared duration and path formats", () => {
     expect(onChange).toHaveBeenCalledWith(["/tmp/sample", "/tmp/other"]);
   });
 });
+
+it("stages registered preview switches and preserves unknown configured values", async () => {
+  const user = userEvent.setup();
+  render(
+    <Row
+      setting={{
+        ...setting("user"),
+        section: "hz",
+        key: "features",
+        value: ["old_flag"],
+        json_schema: {
+          type: "array",
+          title: "Preview features",
+          "x-feature-catalog": { connected_history: "Private history preview" },
+        },
+      }}
+    />,
+  );
+  expect(screen.queryByRole("switch", { name: "Old flag" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("switch", { name: "Connected history" }));
+  expect(screen.getByTestId("expected-settings")).toHaveTextContent('"value":["old_flag","connected_history"]');
+  await user.click(screen.getByRole("button", { name: "Restart and apply: Preview features" }));
+  expect(mutateAsync).toHaveBeenCalledWith({ key: "hz.features", value: '["old_flag", "connected_history"]' });
+});
+
+it("disables preview switches overridden by the environment", () => {
+  render(
+    <Row
+      setting={{
+        ...setting("env"),
+        section: "hz",
+        key: "features",
+        value: [],
+        json_schema: {
+          type: "array",
+          "x-feature-catalog": { connected_history: "Private history preview" },
+        },
+      }}
+    />,
+  );
+  expect(screen.getByRole("switch", { name: "Connected history" })).toBeDisabled();
+});
+
+it.each(["project", "explicit", "env"])(
+  "prevents applying staged preview flags after a %s override",
+  async (source) => {
+    const user = userEvent.setup();
+    const features = {
+      ...setting("user"),
+      section: "hz",
+      key: "features",
+      value: [],
+      json_schema: {
+        type: "array",
+        title: "Preview features",
+        "x-feature-catalog": { connected_history: "Private history preview" },
+      },
+    };
+    const { rerender } = render(<Row setting={features} />);
+    await user.click(screen.getByRole("switch", { name: "Connected history" }));
+    expect(screen.getByRole("button", { name: "Restart and apply: Preview features" })).toBeVisible();
+
+    rerender(<Row setting={{ ...features, source }} />);
+    expect(screen.getByRole("switch", { name: "Connected history" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Restart and apply: Preview features" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  },
+);
