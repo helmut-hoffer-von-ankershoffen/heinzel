@@ -10409,16 +10409,24 @@
         "description": "A plugin change as recorded in the history, one line of `plugins.jsonl` in the data directory.",
         "properties": {
           "action": {
-            "description": "`add`, `develop`, `remove`, `enable` or `disable`.",
-            "enum": [
-              "add",
-              "develop",
-              "remove",
-              "enable",
-              "disable"
+            "anyOf": [
+              {
+                "enum": [
+                  "add",
+                  "develop",
+                  "remove",
+                  "enable",
+                  "disable"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "unpin",
+                "type": "string"
+              }
             ],
-            "title": "Action",
-            "type": "string"
+            "description": "The plugin or update-policy change that was carried out.",
+            "title": "Action"
           },
           "at": {
             "description": "When it was carried out.",
@@ -10471,7 +10479,7 @@
                 "type": "null"
               }
             ],
-            "description": "What was installed, exactly, for `add` and `develop`.",
+            "description": "The selected requirement after `add`, `develop`, or `unpin`.",
             "title": "Requirement"
           },
           "source": {

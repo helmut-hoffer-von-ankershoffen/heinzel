@@ -2933,6 +2933,7 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `remove`: (expert) Remove a plugin.
 * `sdk`: (expert) Export the versioned plugin view...
 * `search`: (expert) Find plugins to install:...
+* `unpin`: (expert) Remove an exact index version pin...
 
 #### `hz system plugin add`
 
@@ -3224,6 +3225,27 @@ $ hz system plugin search [OPTIONS]
 **Options**:
 
 * `--text <str>`: Words that name or describe the plugin, e.g. `calendar`; sent to GitHub&#x27;s search. All plugins if omitted.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin unpin`
+
+(expert) Remove an exact index version pin while keeping the installed plugin.
+
+**Usage**:
+
+```console
+$ hz system plugin unpin [OPTIONS] {distribution}
+```
+
+**Arguments**:
+
+* `distribution`: Distribution name, as `hz system plugin list` shows it.  [required]
+
+**Options**:
+
+* `--confirm <str>`: Confirm the exact installation generation and version shown by the unpin preview.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

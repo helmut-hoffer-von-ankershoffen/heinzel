@@ -9881,10 +9881,9 @@ export interface components {
         PluginEvent: {
             /**
              * Action
-             * @description `add`, `develop`, `remove`, `enable` or `disable`.
-             * @enum {string}
+             * @description The plugin or update-policy change that was carried out.
              */
-            action: "add" | "develop" | "remove" | "enable" | "disable";
+            action: ("add" | "develop" | "remove" | "enable" | "disable") | "unpin";
             /**
              * At
              * Format: date-time
@@ -9908,7 +9907,7 @@ export interface components {
             publisher: string | null;
             /**
              * Requirement
-             * @description What was installed, exactly, for `add` and `develop`.
+             * @description The selected requirement after `add`, `develop`, or `unpin`.
              */
             requirement: string | null;
             /**
