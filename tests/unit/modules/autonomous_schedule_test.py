@@ -7,7 +7,7 @@ import pytest
 
 from heinzel import CurrentUser, HeinzelError
 from heinzel.kernel._approval import ApprovalConfirmation
-from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
+from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules, ScheduleQuietHours
 from heinzel.modules.heinzel._contract_review import ContractReview
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionCosts
@@ -50,6 +50,7 @@ def test_separate_consent_daemon_occurrence_dedup_and_pause(tmp_path, monkeypatc
             asyncio.run(schedules.tick(session, "schedule", now))
         proof = schedules.issue(session, "schedule", "chat-confirm:test:schedule")
         review = binding.model_dump(mode="json")
+        assert "quiet_hours" not in review
         marker = ApprovalConfirmation()
         with pytest.raises(HeinzelError, match="invalid"):
             schedules.approve(session, "schedule", review, proof, marker)
@@ -255,7 +256,8 @@ def test_owner_can_resolve_unstarted_daemon_occurrence_without_replaying_it(tmp_
             asyncio.run(chat.answer(session, "scheduled-gap"))
 
 
-def test_expired_occurrence_cannot_launch_after_auth_delays(tmp_path, monkeypatch):
+@pytest.mark.parametrize("crosses_quiet_hours", [False, True])
+def test_occurrence_rechecks_slot_and_quiet_hours_after_auth_delays(tmp_path, monkeypatch, crosses_quiet_hours):
     from datetime import timedelta
 
     import heinzel.modules.heinzel._autonomous_schedule as schedule_module
@@ -271,7 +273,7 @@ def test_expired_occurrence_cannot_launch_after_auth_delays(tmp_path, monkeypatc
         contract = ContractReview(crud)
         contract.accept(session, "contract", contract.issue(session, "contract", "test-confirm"))
         executable = fake_claude(tmp_path)
-        start = datetime.now(UTC).replace(second=0, microsecond=0) + timedelta(seconds=1)
+        start = datetime(2026, 11, 6, 7, 1, 1, tzinfo=UTC)
         clock = [start]
 
         class Clock(datetime):
@@ -291,14 +293,19 @@ def test_expired_occurrence_cannot_launch_after_auth_delays(tmp_path, monkeypatc
             crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable), execute=execute
         )
         schedules = AutonomousSchedules(crud, chat)
-        binding = schedules.propose(session, "schedule", "contract", 60, 4, 30)
+        hours = ScheduleQuietHours(timezone="UTC", start="07:02", end="08:00") if crosses_quiet_hours else None
+        cadence = 300 if crosses_quiet_hours else 60
+        binding = schedules.propose(session, "schedule", "contract", cadence, 4, 30, quiet_hours=hours)
         proof = schedules.issue(session, "schedule", "test-confirm")
         marker = ApprovalConfirmation()
         review = binding.model_dump(mode="json")
         args = {"session_id": session, "request_id": "schedule", "review": review, "approval_proof": proof}
         with marker.using("heinzel", "approve-agent-schedule", args):
             schedules.approve(session, "schedule", review, proof, marker)
-        with current.local("daemon"), pytest.raises(HeinzelError, match="expired"):
+        with (
+            current.local("daemon"),
+            pytest.raises(HeinzelError, match="quiet hours" if crosses_quiet_hours else "expired"),
+        ):
             asyncio.run(schedules.tick(session, "schedule", start))
         assert not (tmp_path / "model-calls").exists()
         assert not any(e.kind == "message.accepted" for e in crud.repository.control_read(session).events)
@@ -462,3 +469,56 @@ def test_occurrence_expiring_during_model_call_refuses_reply_and_never_replays(t
         with current.local("daemon"), pytest.raises(HeinzelError, match="current schedule occurrence"):
             asyncio.run(schedules.tick(session, "schedule", start))
         assert (tmp_path / "model-calls").read_text() == "x"
+
+
+def test_approved_quiet_slot_does_not_dispatch_or_catch_up(tmp_path, monkeypatch):
+    import heinzel.modules.heinzel._autonomous_schedule as schedule_module
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    now = datetime(2026, 11, 6, 7, 2, tzinfo=UTC)
+    monkeypatch.setattr(schedule_module, "datetime", Clock)
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        crud = SessionCrud(
+            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2)
+        )
+        session = crud.new_chat("quiet-hours").session_id
+        crud.propose_scheduled_agent(session, "contract", "Status", None, 30)
+        contract = ContractReview(crud)
+        contract.accept(session, "contract", contract.issue(session, "contract", "test-confirm"))
+        executable = fake_claude(tmp_path)
+        chat = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+        schedules = AutonomousSchedules(crud, chat)
+        binding = schedules.propose(
+            session,
+            "schedule",
+            "contract",
+            300,
+            4,
+            30,
+            quiet_hours=ScheduleQuietHours(timezone="UTC", start="22:00", end="07:02"),
+        )
+        review = binding.model_dump(mode="json")
+        proof = schedules.issue(session, "schedule", "test-confirm")
+        marker = ApprovalConfirmation()
+        args = {"session_id": session, "request_id": "schedule", "review": review, "approval_proof": proof}
+        changed = {**review, "quiet_hours": {"timezone": "UTC", "start": "22:00", "end": "07:00"}}
+        with (
+            marker.using("heinzel", "approve-agent-schedule", {**args, "review": changed}),
+            pytest.raises(HeinzelError, match="reviewed schedule changed"),
+        ):
+            schedules.approve(session, "schedule", changed, proof, marker)
+        with marker.using("heinzel", "approve-agent-schedule", args):
+            schedules.approve(session, "schedule", review, proof, marker)
+
+        with current.local("daemon"):
+            assert asyncio.run(schedules.tick(session, "schedule", now)) is None
+            assert not (tmp_path / "model-calls").exists()
+            assert not any(e.kind == "message.accepted" for e in crud.repository.control_read(session).events)
+            now = datetime(2026, 11, 6, 7, 5, tzinfo=UTC)
+            assert asyncio.run(schedules.tick(session, "schedule", now))
+            assert (tmp_path / "model-calls").exists()

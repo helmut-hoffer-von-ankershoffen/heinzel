@@ -9,10 +9,11 @@ import hashlib
 import json
 import secrets
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from heinzel import HeinzelError, SessionEvent, SessionWriter
 from heinzel.kernel import PRIVATE_WRITE
@@ -35,6 +36,45 @@ from heinzel.modules.heinzel._turn_activity import interactive_turn_id
 from heinzel.modules.heinzel._user_chat import MAX_TURN_SECONDS, UserChatService
 
 _MAX_PAGE = 100
+
+
+class ScheduleQuietHours(BaseModel):
+    """Owner-approved local wall-clock interval for suppressing scheduled turns."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    timezone: str = Field(min_length=1, max_length=128, description="IANA time zone for the quiet interval.")
+    start: str = Field(pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$", description="Inclusive local start, HH:MM.")
+    end: str = Field(pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$", description="Exclusive local end, HH:MM.")
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> "ScheduleQuietHours":
+        """Require an available time zone and a nonempty interval.
+
+        Raises:
+            ValueError: If the zone is unavailable or the interval is empty.
+        """
+        try:
+            ZoneInfo(self.timezone)
+        except (ValueError, ZoneInfoNotFoundError) as exc:
+            msg = "Quiet hours require an available IANA time zone"
+            raise ValueError(msg) from exc
+        if self.start == self.end:
+            msg = "Quiet hours need distinct start and end times"
+            raise ValueError(msg)
+        return self
+
+    def contains(self, when: datetime) -> bool:
+        """Evaluate the interval at an exact instant, including DST folds.
+
+        Raises:
+            ValueError: If the instant has no time zone.
+        """
+        if when.utcoffset() is None:
+            msg = "Quiet hours require a time-zone-aware instant"
+            raise ValueError(msg)
+        local = when.astimezone(ZoneInfo(self.timezone)).time()
+        start, end = time.fromisoformat(self.start), time.fromisoformat(self.end)
+        return start <= local < end if start < end else local >= start or local < end
 
 
 class ScheduleBinding(BaseModel):
@@ -71,6 +111,17 @@ class ScheduleBinding(BaseModel):
     connected_grant: ConnectedGrant | None = Field(
         default=None, description="Exact separately approved connected read, or null for no external read."
     )
+
+    quiet_hours: ScheduleQuietHours | None = Field(
+        default=None,
+        exclude_if=lambda hours: hours is None,
+        description="Separately reviewed hours during which scheduled turns do not start.",
+    )
+
+    def in_quiet_hours(self, *instants: datetime) -> bool:
+        """Whether the approved interval contains any supplied instant."""
+        quiet = self.quiet_hours
+        return quiet is not None and any(quiet.contains(instant) for instant in instants)
 
     @field_validator("cadence_seconds")
     @classmethod
@@ -192,6 +243,7 @@ class AutonomousSchedules:
         timeout_seconds: int,
         connected_request_id: str | None = None,
         notification_policy: ScheduledNotificationPolicy | None = None,
+        quiet_hours: ScheduleQuietHours | None = None,
     ) -> ScheduleBinding:
         """Persist an inert proposal; no user decision or wake is created.
 
@@ -231,6 +283,7 @@ class AutonomousSchedules:
             access_fingerprint=model_binding_fingerprint(self.chat),
             connected_grant=connected_grant,
             notification_policy=notification_policy,
+            quiet_hours=quiet_hours,
         )
         if timeout_seconds > proposal.timeout_seconds:
             msg = "Schedule timeout exceeds the reviewed contract"
@@ -524,12 +577,7 @@ class AutonomousSchedules:
                 msg = "An earlier message must finish or be resolved before a scheduled turn"
                 raise HeinzelError(msg)
 
-    async def tick(self, session: str, request: str, when: datetime) -> str:
-        """Run one due generic turn under the trusted local daemon identity, never a model-supplied identity.
-
-        Raises:
-            HeinzelError: If schedule, owner, access, or occurrence authority is unavailable.
-        """
+    def _require_daemon_occurrence(self, when: datetime) -> None:
         context = self.chat.current.context()
         if context.authentication != "daemon" or context.principal != self.chat.current.owner():
             msg = "Only the owner-bound daemon may dispatch this schedule"
@@ -537,11 +585,23 @@ class AutonomousSchedules:
         if when.tzinfo is None or when.utcoffset() is None or when > datetime.now(UTC) + timedelta(seconds=1):
             msg = "The schedule occurrence time is invalid"
             raise HeinzelError(msg)
+
+    async def tick(self, session: str, request: str, when: datetime) -> str | None:
+        """Run one due generic turn under the trusted local daemon identity, never a model-supplied identity.
+
+        Raises:
+            HeinzelError: If schedule, owner, access, or occurrence authority is unavailable.
+        """
+        self._require_daemon_occurrence(when)
         binding = self.approved(session, request)
         slot = int(when.timestamp()) // binding.cadence_seconds
-        if slot != int(datetime.now(UTC).timestamp()) // binding.cadence_seconds:
+        now = datetime.now(UTC)
+        if slot != int(now.timestamp()) // binding.cadence_seconds:
             msg = "Only the current schedule occurrence can run"
             raise HeinzelError(msg)
+        slot_start = datetime.fromtimestamp(slot * binding.cadence_seconds, UTC)
+        if binding.in_quiet_hours(slot_start, now):
+            return None
         occurrence = "scheduled-" + hashlib.sha256(f"{session}\0{request}\0{slot}".encode()).hexdigest()
         contract = ContractReview(self.crud).current(session, binding.contract_request_id)
 
@@ -550,8 +610,12 @@ class AutonomousSchedules:
             if current.authentication != "daemon" or current.principal.id != binding.owner:
                 msg = "The scheduled owner identity changed"
                 raise HeinzelError(msg)
-            if int(datetime.now(UTC).timestamp()) // binding.cadence_seconds != slot:
+            current_time = datetime.now(UTC)
+            if int(current_time.timestamp()) // binding.cadence_seconds != slot:
                 msg = "The schedule occurrence expired before launch"
+                raise HeinzelError(msg)
+            if binding.in_quiet_hours(current_time):
+                msg = "The scheduled turn reached its quiet hours before execution could continue"
                 raise HeinzelError(msg)
             if not _same_binding(self.approved(session, request), binding):
                 msg = "The approved schedule changed"

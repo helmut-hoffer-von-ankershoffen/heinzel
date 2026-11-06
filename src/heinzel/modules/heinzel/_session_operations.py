@@ -26,6 +26,7 @@ from heinzel.kernel._features import feature_enabled
 from heinzel.modules.heinzel._autonomous_schedule import (
     AutonomousSchedules,
     ScheduleBinding,
+    ScheduleQuietHours,
     ScheduleReviewPage,
     ScheduleReviewView,
 )
@@ -758,6 +759,7 @@ def _register_autonomous_schedule_operations(module: Module) -> None:
             ),
         ] = None,
         notification_policy: ScheduledNotificationPolicy | None = None,
+        quiet_hours: ScheduleQuietHours | None = None,
     ) -> ScheduleBinding:
         """Propose scheduled turns; separate human confirmation is required to approve them."""
         return service.propose(
@@ -769,6 +771,7 @@ def _register_autonomous_schedule_operations(module: Module) -> None:
             timeout_seconds,
             connected_request_id,
             notification_policy,
+            quiet_hours,
         )
 
     @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")

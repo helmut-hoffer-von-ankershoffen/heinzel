@@ -11467,6 +11467,8 @@ export interface components {
              * @description Authenticated owner identity.
              */
             owner: string;
+            /** @description Separately reviewed hours during which scheduled turns do not start. */
+            quiet_hours?: components["schemas"]["ScheduleQuietHours"] | null;
             /**
              * Request Id
              * @description Stable schedule proposal request.
@@ -11489,6 +11491,27 @@ export interface components {
              * @description Maximum turn duration in seconds.
              */
             timeout_seconds: number;
+        };
+        /**
+         * ScheduleQuietHours
+         * @description Owner-approved local wall-clock interval for suppressing scheduled turns.
+         */
+        ScheduleQuietHours: {
+            /**
+             * End
+             * @description Exclusive local end, HH:MM.
+             */
+            end: string;
+            /**
+             * Start
+             * @description Inclusive local start, HH:MM.
+             */
+            start: string;
+            /**
+             * Timezone
+             * @description IANA time zone for the quiet interval.
+             */
+            timezone: string;
         };
         /**
          * ScheduleReviewPage
@@ -15153,6 +15176,7 @@ export interface components {
             /** Max Requests */
             max_requests: number;
             notification_policy?: components["schemas"]["ScheduledNotificationPolicy"] | null;
+            quiet_hours?: components["schemas"]["ScheduleQuietHours"] | null;
             /**
              * Request Id
              * @description A stable client request id; reuse it only for an exact retry.
@@ -15813,6 +15837,7 @@ export type SchemaRunOperation = components['schemas']['RunOperation'];
 export type SchemaScene = components['schemas']['Scene'];
 export type SchemaSceneStep = components['schemas']['SceneStep'];
 export type SchemaScheduleBinding = components['schemas']['ScheduleBinding'];
+export type SchemaScheduleQuietHours = components['schemas']['ScheduleQuietHours'];
 export type SchemaScheduleReviewPage = components['schemas']['ScheduleReviewPage'];
 export type SchemaScheduleReviewView = components['schemas']['ScheduleReviewView'];
 export type SchemaScheduleSuggestion = components['schemas']['ScheduleSuggestion'];
