@@ -87,10 +87,37 @@ it("preserves a lost-install acknowledgement and never repeats installation duri
   });
   await expect(startUpdate(new AbortController().signal, vi.fn(), transport)).rejects.toThrow("lost acknowledgement");
   expect(pendingUpdate()?.stage).toBe("uncertain");
-  await expect(finishUpdate(new AbortController().signal, transport)).rejects.toThrow(/needs inspection/);
+  await expect(finishUpdate(new AbortController().signal, transport)).rejects.toThrow(/needs more evidence/);
   await expect(startUpdate(new AbortController().signal, vi.fn(), transport)).rejects.toThrow(/will not be repeated/);
   expect(transport.install).toHaveBeenCalledTimes(1);
   expect(transport.reload).not.toHaveBeenCalled();
+});
+
+it("resumes frontend checks after a verified restart without repeating either mutation", async () => {
+  const { transport } = setup();
+  const signal = new AbortController().signal;
+  transport.frontend = vi.fn().mockRejectedValueOnce(new Error("frontend not ready")).mockResolvedValue(frontend);
+  await expect(startUpdate(signal, vi.fn(), transport)).rejects.toThrow("frontend not ready");
+  expect(pendingUpdate()).toMatchObject({ stage: "installed", running: after });
+  await expect(finishUpdate(signal, transport)).resolves.toMatch(/Reloading/);
+  await expect(finishUpdate(signal, transport)).resolves.toBe(result.message);
+  expect(transport.install).toHaveBeenCalledTimes(1);
+  expect(transport.lifecycle.restart).toHaveBeenCalledTimes(1);
+  expect(transport.reload).toHaveBeenCalledTimes(1);
+  expect(pendingUpdate()).toBeNull();
+});
+
+it("refuses frontend recovery if the verified backend has since changed", async () => {
+  const { transport } = setup();
+  const signal = new AbortController().signal;
+  transport.clean = vi.fn().mockRejectedValue(new Error("cleanup interrupted"));
+  await expect(startUpdate(signal, vi.fn(), transport)).rejects.toThrow("cleanup interrupted");
+  transport.lifecycle.read = vi.fn(async () => ({ ...after, instance: "another" }));
+  await expect(finishUpdate(signal, transport)).rejects.toThrow(/verified replacement/);
+  expect(transport.install).toHaveBeenCalledTimes(1);
+  expect(transport.lifecycle.restart).toHaveBeenCalledTimes(1);
+  expect(transport.reload).not.toHaveBeenCalled();
+  expect(pendingUpdate()?.stage).toBe("installed");
 });
 
 it("refuses before mutation when user work cannot be preserved", async () => {

@@ -6,7 +6,12 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
 import { useAutoUpdateStatus } from "@/updates/autoUpdateApi";
-import { finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
+import { canVerifyUpdate, finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
+
+function updateRecoveryState(): "none" | "inspect" | "verify" {
+  const receipt = pendingUpdate();
+  return receipt ? (canVerifyUpdate(receipt) ? "verify" : "inspect") : "none";
+}
 
 /** Inspect the pane first; its update button uses the existing installer and verified lifecycle. */
 export function UpdateStatus() {
@@ -22,7 +27,7 @@ export function UpdateStatus() {
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [recovery, setRecovery] = useState(false);
+  const [recovery, setRecovery] = useState<"none" | "inspect" | "verify">("none");
   const [message, setMessage] = useState<string | null>(null);
   const run = useCallback(async (resume: boolean) => {
     if (active.current) return;
@@ -38,15 +43,15 @@ export function UpdateStatus() {
           });
       if (mounted.current) {
         setMessage(answer);
-        setRecovery(!!pendingUpdate());
+        setRecovery(updateRecoveryState());
       }
     } catch (error) {
       if (mounted.current) {
         setProblem(error instanceof Error ? error.message : t("updates.failed"));
         try {
-          setRecovery(!!pendingUpdate());
+          setRecovery(updateRecoveryState());
         } catch {
-          setRecovery(true);
+          setRecovery("inspect");
         }
       }
     } finally {
@@ -67,7 +72,7 @@ export function UpdateStatus() {
         if (pendingUpdate()) void run(true);
       } catch (error) {
         setProblem(error instanceof Error ? error.message : t("updates.failed"));
-        setRecovery(true);
+        setRecovery("inspect");
       }
     });
     return () => {
@@ -90,7 +95,7 @@ export function UpdateStatus() {
     installed && !Number.isNaN(installed.getTime())
       ? installed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
       : null;
-  const canUpdate = status?.supported && !busy && !recovery;
+  const canUpdate = status?.supported && !busy && recovery === "none";
   const label = available ? t("updates.availableLabel") : t("updates.title");
   const summary = phase ?? message ?? (available ? null : t("updates.unknown"));
   return (
@@ -117,7 +122,7 @@ export function UpdateStatus() {
           </p>
         )}
         <AutoUpdateToggle />
-        {recovery && (
+        {recovery === "verify" && (
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(true)}>
             {t("updates.verify")}
           </Button>

@@ -184,6 +184,17 @@ export async function startUpdate(
     { confirmed: true, version: result.after },
     { signal, transport: transport.lifecycle },
   );
+  save({ stage: "installed", result, running });
+  return reloadVerifiedUpdate(result, running, signal, transport, onPhase);
+}
+
+async function reloadVerifiedUpdate(
+  result: SchemaUpdateResult,
+  running: Lifecycle,
+  signal: AbortSignal,
+  transport: UpdateTransport,
+  onPhase: (phase: string) => void = () => {},
+): Promise<string> {
   const frontend = await bounded((signal) => transport.frontend(signal), signal, 4_000);
   if (frontend.version !== running.version) throw new Error("The frontend belongs to a different backend version.");
   onPhase("Checking frontend assets…");
@@ -195,17 +206,41 @@ export async function startUpdate(
   return "Reloading to verify the updated app…";
 }
 
-/** After reload this only checks; it cannot repeat installation or restart. */
+export function canVerifyUpdate(receipt: Receipt): receipt is Receipt & Required<Pick<Receipt, "result" | "running">> {
+  const { stage, result, running, frontend } = receipt;
+  if (
+    result?.updated !== true ||
+    typeof result.after !== "string" ||
+    !result.after.trim() ||
+    typeof result.message !== "string" ||
+    typeof running?.instance !== "string" ||
+    !running.instance.trim() ||
+    running.version !== result.after
+  )
+    return false;
+  if (stage === "installed") return true;
+  if (stage !== "reloading" || !frontend || frontend.version !== running.version) return false;
+  try {
+    validFrontend(frontend);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Observe the recorded replacement and frontend without repeating installation or restart. */
 export async function finishUpdate(signal: AbortSignal, transport = updateTransport): Promise<string | null> {
   const receipt = pendingUpdate();
   if (!receipt) return null;
-  if (receipt.stage !== "reloading" || !receipt.running || !receipt.frontend || !receipt.result)
-    throw new Error("The update outcome needs inspection. Check hz system info; installation was not repeated.");
+  if (!canVerifyUpdate(receipt))
+    throw new Error("Update verification needs more evidence. Run hz system info to inspect the installation.");
+  const { result, running: expected } = receipt;
   const running = await bounded((signal) => transport.lifecycle.read(signal), signal, 4_000);
-  if (running.instance !== receipt.running.instance || running.version !== receipt.result.after)
+  if (running.instance !== expected.instance || running.version !== result.after)
     throw new Error("The reloaded app is not connected to the verified replacement version.");
+  if (receipt.stage === "installed") return reloadVerifiedUpdate(result, running, signal, transport);
   const frontend = await bounded((signal) => transport.frontend(signal), signal, 4_000);
-  if (frontend.version !== running.version || frontend.identity !== receipt.frontend.identity)
+  if (frontend.version !== running.version || frontend.identity !== receipt.frontend?.identity)
     throw new Error("The frontend build changed before reload verification completed.");
   await bounded((signal) => transport.assets(frontend, signal, true), signal, 30_000);
   sessionStorage.removeItem(KEY);
