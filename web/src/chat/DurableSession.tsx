@@ -9,6 +9,7 @@ import { useConfig, usePreviewFeature } from "@/api/queries";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { AgentProposalSummary } from "@/chat/AgentProposalSummary";
 import { AgentSchedules } from "@/chat/AgentSchedules";
+import { CapturedWriteActivity } from "@/chat/CapturedWriteActivity";
 import { ConnectedReadReview } from "@/chat/ConnectedReadReview";
 import { ConnectedReadSetReview } from "@/chat/ConnectedReadSetReview";
 import { ContractHistory } from "@/chat/ContractHistory";
@@ -31,6 +32,24 @@ async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Re
   const { data, error, response } = await call;
   if (response.ok && data !== undefined) return data;
   throw problem(response.status, error);
+}
+
+function savedWriteDecision(key: string): boolean {
+  try {
+    return sessionStorage.getItem(key) !== null;
+  } catch {
+    return true;
+  }
+}
+
+function recordWriteDecision(key: string): boolean {
+  if (savedWriteDecision(key)) return false;
+  try {
+    sessionStorage.setItem(key, "submitted");
+    return sessionStorage.getItem(key) === "submitted";
+  } catch {
+    return false;
+  }
 }
 
 const DAEMON_TICK_CLOCK_SKEW_MS = 60_000;
@@ -90,6 +109,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const { state: routeState } = useLocation();
   const config = useConfig();
   const features = config.data?.settings.find(({ section, key }) => section === "hz" && key === "features")?.value;
+  const capturedWrites = Array.isArray(features) && features.includes("captured_writes");
   const searchEnabled = Array.isArray(features) && features.includes("connected_history");
   const pendingSearchJump = conversationJump(routeState, sessionId);
   const {
@@ -264,12 +284,16 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const agentActions = (agentChat?.actions ?? []).filter(
     (action) =>
       action.module === "heinzel" &&
-      action.operation === "propose-check-in" &&
+      (action.operation === "propose-check-in" || (capturedWrites && action.operation === "execute-captured-write")) &&
       action.arguments?.session_id === sessionId,
   );
   const pendingAgentActions = agentActions.filter((action) => action.status === "pending");
-  const runningAgentActions = agentActions.filter((action) => action.status === "running");
-  const uncertainAgentActions = agentActions.filter((action) => action.status === "uncertain");
+  const runningAgentActions = agentActions.filter(
+    (action) => action.status === "running" && action.operation === "propose-check-in",
+  );
+  const uncertainAgentActions = agentActions.filter(
+    (action) => action.status === "uncertain" && action.operation === "propose-check-in",
+  );
   const approvalActions = (approvalChat?.actions ?? []).filter(
     (action) =>
       action.module === "heinzel" &&
@@ -886,6 +910,21 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           </nav>
         )}
         {!connectedFrontdoor && schedules}
+        {capturedWrites && query.data?.session_id === sessionId && (
+          <CapturedWriteActivity
+            key={sessionId}
+            sessionId={sessionId}
+            conversationBusy={busy || !!pending || !!agentPending}
+            onReview={(chat) => {
+              rememberChat(chat);
+              setParams((current) => {
+                const next = new URLSearchParams(current);
+                next.set("agent-chat", chat.id);
+                return next;
+              });
+            }}
+          />
+        )}
         {query.data?.messages?.map((message, index) => {
           const turnItems =
             message.role === "assistant" && message.turn_id
@@ -1094,47 +1133,77 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           )}
         {pendingAgentActions.length > 0 && (
           <ol className="space-y-2">
-            {pendingAgentActions.map((action) => (
-              <ActionCard
-                key={`${agentChat?.id}-${action.id}`}
-                action={action}
-                busy={busy}
-                proposalTitle={t("durable.scheduleActionTitle")}
-                onDecide={(confirm) => {
-                  if (!agentChat) return;
-                  void (async () => {
-                    setBusy(true);
-                    try {
-                      const updated = await result(
-                        confirm
-                          ? api.POST("/system/runner/chat/confirm", {
-                              params: { query: { session: agentChat.id, action: action.id } },
-                            })
-                          : api.POST("/system/runner/chat/decline", {
-                              params: { query: { session: agentChat.id, action: action.id } },
-                            }),
-                      );
-                      rememberChat(updated, agentChat.id);
-                      await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
-                    } catch (reason) {
+            {pendingAgentActions.map((action) => {
+              const isWrite = action.operation === "execute-captured-write";
+              const decisionKey = isWrite ? `hz.write-decision:${sessionId}:${agentChat?.id}:${action.id}` : null;
+              if (decisionKey && savedWriteDecision(decisionKey)) {
+                return (
+                  <li key={action.id} className="space-y-2" role="status">
+                    <p>Write decision submitted. Check the recorded outcome before taking another action.</p>
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => void agentChatQuery.refetch()}>
+                      Check outcome
+                    </Button>
+                  </li>
+                );
+              }
+              return (
+                <ActionCard
+                  key={`${agentChat?.id}-${action.id}`}
+                  action={action}
+                  busy={busy}
+                  proposalTitle={isWrite ? "Review document write" : t("durable.scheduleActionTitle")}
+                  onDecide={(confirm) => {
+                    if (!agentChat || busy) return;
+                    if (decisionKey && !recordWriteDecision(decisionKey)) {
                       setScheduleError(true);
-                      setScheduleErrorMessage(reason instanceof Error ? reason.message : null);
-                      try {
-                        const current = await result(
-                          api.GET("/system/runner/chat/show", { params: { query: { session: agentChat.id } } }),
-                        );
-                        rememberChat(current, agentChat.id);
-                        await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
-                      } catch {
-                        // Keep the recovery link; a later reload reads the same action without replaying it.
-                      }
-                    } finally {
-                      setBusy(false);
+                      setScheduleErrorMessage("Couldn’t safely record the write decision. No request was sent.");
+                      return;
                     }
-                  })();
-                }}
-              />
-            ))}
+                    void (async () => {
+                      setBusy(true);
+                      try {
+                        const updated = await result(
+                          confirm
+                            ? api.POST("/system/runner/chat/confirm", {
+                                params: { query: { session: agentChat.id, action: action.id } },
+                              })
+                            : api.POST("/system/runner/chat/decline", {
+                                params: { query: { session: agentChat.id, action: action.id } },
+                              }),
+                        );
+                        if (isWrite) {
+                          const recorded = updated.actions?.find((item) => item.id === action.id);
+                          if (
+                            recorded?.module !== action.module ||
+                            recorded.operation !== action.operation ||
+                            JSON.stringify(recorded.arguments) !== JSON.stringify(action.arguments)
+                          ) {
+                            throw new Error("The response did not match the reviewed write.");
+                          }
+                          await client.invalidateQueries({ queryKey: ["heinzel", "captured-write-activity"] });
+                        }
+                        rememberChat(updated, agentChat.id);
+                        await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
+                      } catch (reason) {
+                        setScheduleError(true);
+                        setScheduleErrorMessage(reason instanceof Error ? reason.message : null);
+                        try {
+                          const current = await result(
+                            api.GET("/system/runner/chat/show", { params: { query: { session: agentChat.id } } }),
+                          );
+                          rememberChat(current, agentChat.id);
+                          await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
+                        } catch {
+                          // Keep the recovery link; a later reload reads the same action without replaying it.
+                        }
+                      } finally {
+                        setBusy(false);
+                      }
+                    })();
+                  }}
+                />
+              );
+            })}
           </ol>
         )}
         {runningAgentActions.map((action) => (

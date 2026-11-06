@@ -8,6 +8,7 @@ from heinzel import CurrentUser, HeinzelError, Module
 from heinzel.kernel import CapturedWriteDraft, CapturedWriteService, Kernel
 from heinzel.kernel._approval import ApprovalConfirmation
 from heinzel.kernel._features import feature_enabled
+from heinzel.modules.heinzel._captured_write_activity import CapturedWriteActivityPage, captured_write_activity
 from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
 from heinzel.modules.heinzel._captured_write_host import CapturedWriteHost, CapturedWriteStatus
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -104,3 +105,21 @@ def register_captured_write_operations(module: Module) -> None:
     ) -> CapturedWriteStatus:
         """Read the owner's recorded disposition without repeating a provider operation."""
         return CapturedWriteHost(crud, current, CapturedWriteService()).projection(session_id, request_id)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def captured_write_activity_page(
+        crud: SessionCrud,
+        current: CurrentUser,
+        kernel: Kernel,
+        session_id: SessionId,
+        before: Annotated[int | None, Field(ge=1, description="Exclusive activity sequence before this page.")] = None,
+    ) -> CapturedWriteActivityPage:
+        """Inspect recorded write activity without contacting a provider or authorizing effects.
+
+        Raises:
+            HeinzelError: If captured writes are disabled or the activity cannot be verified.
+        """
+        if not feature_enabled(kernel.settings, "captured_writes"):
+            msg = "Captured writes are not enabled"
+            raise HeinzelError(msg)
+        return captured_write_activity(crud, current, session_id, before=before)

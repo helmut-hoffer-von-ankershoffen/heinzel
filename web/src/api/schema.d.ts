@@ -374,6 +374,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/captured-write-activity-page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect recorded write activity without contacting a provider or authorizing effects.
+         * @description Inspect recorded write activity without contacting a provider or authorizing effects.
+         *
+         *     Raises:
+         *         HeinzelError: If captured writes are disabled or the activity cannot be verified.
+         */
+        get: operations["heinzel_captured_write_activity_page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/captured-write-status": {
         parameters: {
             query?: never;
@@ -4939,6 +4962,80 @@ export interface components {
              * @description As declared, e.g. `documents:read` or `github:tracker:read`.
              */
             requirement: string;
+        };
+        /**
+         * CapturedWriteActivityItem
+         * @description One saved write draft or verified provider acknowledgement, without replacement text.
+         */
+        CapturedWriteActivityItem: {
+            /**
+             * Account
+             * @description Account recorded in the reviewed draft.
+             */
+            account: string;
+            /**
+             * At
+             * Format: date-time
+             * @description Time of the latest recorded activity.
+             */
+            at: string;
+            /**
+             * Provider
+             * @description Host-selected provider recorded with the draft.
+             */
+            provider: string;
+            /**
+             * Reference
+             * @description Exact artifact reference recorded in the reviewed draft.
+             */
+            reference: string;
+            /**
+             * Request Id
+             * @description Owner-scoped draft identity.
+             */
+            request_id: string;
+            /**
+             * Revision
+             * @description Provider-reported acknowledgement revision, if any.
+             */
+            revision: string | null;
+            /**
+             * Seq
+             * @description Latest recorded activity position.
+             */
+            seq: number;
+            /**
+             * Source
+             * @description Source identity recorded in the reviewed draft.
+             */
+            source: string;
+            /**
+             * Status
+             * @description Verified local attempt disposition.
+             * @enum {string}
+             */
+            status: "draft" | "discarded" | "uncertain" | "acknowledged";
+        };
+        /**
+         * CapturedWriteActivityPage
+         * @description A bounded owner-private page of verified captured-write activity.
+         */
+        CapturedWriteActivityPage: {
+            /**
+             * Items
+             * @description Latest verified activity, newest first.
+             */
+            items: components["schemas"]["CapturedWriteActivityItem"][];
+            /**
+             * Next Before
+             * @description Exclusive activity sequence for the next page, if available.
+             */
+            next_before: number | null;
+            /**
+             * Session Id
+             * @description The owner-scoped conversation.
+             */
+            session_id: string;
         };
         /**
          * CapturedWriteProposal
@@ -15650,6 +15747,8 @@ export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
 export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
+export type SchemaCapturedWriteActivityItem = components['schemas']['CapturedWriteActivityItem'];
+export type SchemaCapturedWriteActivityPage = components['schemas']['CapturedWriteActivityPage'];
 export type SchemaCapturedWriteProposal = components['schemas']['CapturedWriteProposal'];
 export type SchemaCapturedWriteReceipt = components['schemas']['CapturedWriteReceipt'];
 export type SchemaCapturedWriteStatus = components['schemas']['CapturedWriteStatus'];
@@ -16529,6 +16628,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PersonalArtifact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_captured_write_activity_page: {
+        parameters: {
+            query: {
+                session_id: string;
+                /** @description Exclusive activity sequence before this page. */
+                before?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapturedWriteActivityPage"];
                 };
             };
             /** @description Validation Error */

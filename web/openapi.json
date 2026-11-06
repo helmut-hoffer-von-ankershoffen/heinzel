@@ -1780,6 +1780,121 @@
         "title": "CapabilityUse",
         "type": "object"
       },
+      "CapturedWriteActivityItem": {
+        "description": "One saved write draft or verified provider acknowledgement, without replacement text.",
+        "properties": {
+          "account": {
+            "description": "Account recorded in the reviewed draft.",
+            "title": "Account",
+            "type": "string"
+          },
+          "at": {
+            "description": "Time of the latest recorded activity.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Host-selected provider recorded with the draft.",
+            "title": "Provider",
+            "type": "string"
+          },
+          "reference": {
+            "description": "Exact artifact reference recorded in the reviewed draft.",
+            "title": "Reference",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Owner-scoped draft identity.",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Provider-reported acknowledgement revision, if any.",
+            "title": "Revision"
+          },
+          "seq": {
+            "description": "Latest recorded activity position.",
+            "exclusiveMinimum": 0.0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "description": "Source identity recorded in the reviewed draft.",
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "description": "Verified local attempt disposition.",
+            "enum": [
+              "draft",
+              "discarded",
+              "uncertain",
+              "acknowledged"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "seq",
+          "at",
+          "provider",
+          "account",
+          "source",
+          "reference",
+          "status",
+          "revision"
+        ],
+        "title": "CapturedWriteActivityItem",
+        "type": "object"
+      },
+      "CapturedWriteActivityPage": {
+        "description": "A bounded owner-private page of verified captured-write activity.",
+        "properties": {
+          "items": {
+            "description": "Latest verified activity, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/CapturedWriteActivityItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exclusive activity sequence for the next page, if available.",
+            "title": "Next Before"
+          },
+          "session_id": {
+            "description": "The owner-scoped conversation.",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items",
+          "next_before"
+        ],
+        "title": "CapturedWriteActivityPage",
+        "type": "object"
+      },
       "CapturedWriteProposal": {
         "additionalProperties": false,
         "description": "Untrusted inert target terms; owner and provider binding are selected by the host.",
@@ -21246,6 +21361,67 @@
           }
         },
         "summary": "Associate a Google file locally; no access, provider ownership or permission is verified.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/captured-write-activity-page": {
+      "get": {
+        "description": "Inspect recorded write activity without contacting a provider or authorizing effects.\n\nRaises:\n    HeinzelError: If captured writes are disabled or the activity cannot be verified.",
+        "operationId": "heinzel_captured_write_activity_page",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exclusive activity sequence before this page.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exclusive activity sequence before this page.",
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapturedWriteActivityPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect recorded write activity without contacting a provider or authorizing effects.",
         "tags": [
           "heinzel"
         ]

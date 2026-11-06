@@ -1429,6 +1429,51 @@ describe("personal conversation links", () => {
     expect(new URL(secondProposal.url).searchParams.get("request_id")).toBe("review-request");
   });
 
+  it("keeps a submitted document decision read-only after remount even if the server still lists it as pending", async () => {
+    const chat = {
+      ...reviewChat,
+      actions: [
+        {
+          ...reviewChat.actions[0],
+          id: "write-decision",
+          operation: "execute-captured-write",
+          arguments: { session_id: sessionId, request_id: "write-draft", review: { content: "Exact draft" } },
+          command: "Review the exact write",
+          status: "pending",
+        },
+      ],
+    };
+    const key = `hz.write-decision:${sessionId}:${chat.id}:write-decision`;
+    const path = `/heinzel?chat=${sessionId}&agent-chat=${chat.id}`;
+    const { calls } = mockApi({
+      ...shell,
+      "/api/system/config/show": historySearchConfig("captured_writes"),
+      "/api/heinzel/session": snapshot,
+      "/api/system/runner/chat/show": chat,
+      "/api/system/runner/chat/confirm": () => {
+        throw new TypeError("Reply lost");
+      },
+    });
+    try {
+      const first = renderAt(path);
+      const heading = await screen.findByRole("heading", { name: "Review document write" });
+      const card = heading.closest("section");
+      if (!card) throw new Error("No write review");
+      fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
+      expect(await screen.findByText(/Write decision submitted/)).toBeVisible();
+      expect(sessionStorage.getItem(key)).toBe("submitted");
+      first.unmount();
+
+      renderAt(path);
+      const check = await screen.findByRole("button", { name: "Check outcome" });
+      fireEvent.click(check);
+      expect(screen.queryByRole("heading", { name: "Review document write" })).not.toBeInTheDocument();
+      expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/confirm"))).toHaveLength(1);
+    } finally {
+      sessionStorage.removeItem(key);
+    }
+  });
+
   it("starts a fresh exact-intent review after a person declines the previous proposal", async () => {
     const declinedChat = {
       ...reviewChat,
