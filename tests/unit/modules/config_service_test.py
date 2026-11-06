@@ -193,9 +193,9 @@ def test_a_failed_write_leaves_the_file_and_no_temporary(kernel, tmp_path, monke
 
 
 def test_report_lists_registered_preview_features(make_kernel):
-    from heinzel.kernel import FEATURES
+    from heinzel.kernel import feature_catalog
 
     report = ConfigService(make_kernel(builtins=True)).report()
     setting = next(s for s in report.settings if (s.section, s.key) == ("hz", "features"))
     assert setting.json_schema is not None
-    assert setting.json_schema["x-feature-catalog"] == FEATURES
+    assert setting.json_schema["x-feature-catalog"] == feature_catalog()

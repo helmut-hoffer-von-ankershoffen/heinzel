@@ -601,6 +601,7 @@ KERNEL = [
     "env_prefix",
     "environment_variable",
     "exposed",
+    "feature_catalog",
     "feature_enabled",
     "font_stack_problem",
     "format_duration",

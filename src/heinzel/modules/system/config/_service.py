@@ -21,11 +21,11 @@ from tomlkit.exceptions import ParseError
 
 from heinzel import Config, ConfigEditor, ConfigListChange, CurrentUser, HeinzelError, Kernel, ModuleSettings
 from heinzel.kernel import (
-    FEATURES,
     FILENAME,
     PROJECT_FILENAME,
     ConfigFile,
     env_prefix,
+    feature_catalog,
     jsonable,
     toml_value,
     user_config_dir,
@@ -77,7 +77,7 @@ class ConfigService(ConfigEditor):
         schemas = {type(settings): setting_schemas(type(settings)) for _, settings in sections}
         for section, settings in sections:
             if section == "hz" and "features" in schemas[type(settings)]:
-                schemas[type(settings)]["features"]["x-feature-catalog"] = FEATURES.copy()
+                schemas[type(settings)]["features"]["x-feature-catalog"] = feature_catalog()
         return ConfigReport(
             files=[self._file(file) for file in config.files],
             can_reveal=self.revealer.unsupported() is None,
