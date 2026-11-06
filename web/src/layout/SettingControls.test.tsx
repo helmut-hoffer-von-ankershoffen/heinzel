@@ -383,3 +383,45 @@ describe("Declared duration and path formats", () => {
     expect(onChange).toHaveBeenCalledWith(["/tmp/sample", "/tmp/other"]);
   });
 });
+
+it("stages registered preview switches and preserves unknown configured values", async () => {
+  const user = userEvent.setup();
+  render(
+    <Row
+      setting={{
+        ...setting("user"),
+        section: "hz",
+        key: "features",
+        value: ["old_flag"],
+        json_schema: {
+          type: "array",
+          title: "Preview features",
+          "x-feature-catalog": { connected_history: "Private history preview" },
+        },
+      }}
+    />,
+  );
+  expect(screen.queryByRole("switch", { name: "Old flag" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("switch", { name: "Connected history" }));
+  expect(screen.getByTestId("expected-settings")).toHaveTextContent('"value":["old_flag","connected_history"]');
+  await user.click(screen.getByRole("button", { name: "Restart and apply: Preview features" }));
+  expect(mutateAsync).toHaveBeenCalledWith({ key: "hz.features", value: '["old_flag", "connected_history"]' });
+});
+
+it("disables preview switches overridden by the environment", () => {
+  render(
+    <Row
+      setting={{
+        ...setting("env"),
+        section: "hz",
+        key: "features",
+        value: [],
+        json_schema: {
+          type: "array",
+          "x-feature-catalog": { connected_history: "Private history preview" },
+        },
+      }}
+    />,
+  );
+  expect(screen.getByRole("switch", { name: "Connected history" })).toBeDisabled();
+});

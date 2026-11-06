@@ -190,3 +190,12 @@ def test_a_failed_write_leaves_the_file_and_no_temporary(kernel, tmp_path, monke
         service.set("example.greeting", "Servus")
     assert sorted(p.name for p in tmp_path.iterdir()) == [".config.toml.lock", "config.toml"]
     assert "Moin" in (tmp_path / "config.toml").read_text(encoding="utf-8")
+
+
+def test_report_lists_registered_preview_features(make_kernel):
+    from heinzel.kernel import FEATURES
+
+    report = ConfigService(make_kernel(builtins=True)).report()
+    setting = next(s for s in report.settings if (s.section, s.key) == ("hz", "features"))
+    assert setting.json_schema is not None
+    assert setting.json_schema["x-feature-catalog"] == FEATURES

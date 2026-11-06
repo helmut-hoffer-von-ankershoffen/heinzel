@@ -145,7 +145,6 @@ class Settings(ModuleSettings):
         title="Preview features",
         description="Unfinished work to switch on by name; it may change or break. In the environment, separate them "
         "with commas.",
-        json_schema_extra={"x-expert": True},
     )
     disabled_modules: Annotated[frozenset[str], NoDecode] = Field(
         default=frozenset(),

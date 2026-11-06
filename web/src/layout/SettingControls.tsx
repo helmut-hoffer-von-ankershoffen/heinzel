@@ -79,14 +79,42 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
   const unit = unwrap(schema ?? undefined)?.["x-unit"];
   const secret = control.kind === "secret";
   // Lists get the row's whole width, under the label; single values sit on its right.
+  const catalog = schema?.["x-feature-catalog"];
   const wide =
-    control.kind === "table" || control.kind === "chips" || (control.kind === "installed" && control.multiple);
+    !!catalog ||
+    control.kind === "table" ||
+    control.kind === "chips" ||
+    (control.kind === "installed" && control.multiple);
   const disabled = fromEnv || managed !== null || save.isPending;
   // A live setting needs no restart: the server reads it again by itself, so a change is saved at once.
   const live = schema?.["x-live"] === true;
   const commit = (next: unknown) =>
     live ? save.mutate({ key, value: next === null ? null : asConfig(next) }) : setStaged(next);
-  const editor = secret ? (
+  const selection = staged === undefined ? value : staged;
+  const selected = Array.isArray(selection) ? selection : [];
+  const editor = catalog ? (
+    <div className="space-y-3">
+      {Object.entries(catalog).map(([name, description]) => (
+        <div key={name} className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-ui">{label(name)}</p>
+            <p className="text-sm text-muted-foreground">{description}</p>
+          </div>
+          <Switch
+            labelledBy={`${inputId}-${name}`}
+            on={selected.includes(name)}
+            disabled={disabled}
+            onToggle={() =>
+              commit(selected.includes(name) ? selected.filter((item) => item !== name) : [...selected, name])
+            }
+          />
+          <span id={`${inputId}-${name}`} className="sr-only">
+            {label(name)}
+          </span>
+        </div>
+      ))}
+    </div>
+  ) : secret ? (
     <SecretValue id={inputId} disabled={disabled} onCommit={commit} />
   ) : typeof value === "boolean" || control.kind === "switch" ? (
     <Switch id={inputId} on={value === true && managed === null} disabled={disabled} onToggle={() => commit(!value)} />
