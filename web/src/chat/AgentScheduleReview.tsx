@@ -179,6 +179,13 @@ export function AgentScheduleReview({
           Provider-reported candidate read: {proposal.connected_grant.review.candidate_read_disclosure}
         </p>
       )}
+      {proposal.quiet_hours && (
+        <p>
+          Skip scheduled turns from {proposal.quiet_hours.start} to {proposal.quiet_hours.end} (
+          {proposal.quiet_hours.timezone}). Missed turns do not catch up. A turn still running when quiet hours begin
+          may stop before it finishes.
+        </p>
+      )}
       {proposal.notification_policy && (
         <div className="space-y-1 break-words">
           <p>

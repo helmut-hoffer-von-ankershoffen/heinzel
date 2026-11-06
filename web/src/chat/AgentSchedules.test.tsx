@@ -43,7 +43,7 @@ it("requires an explicit choice before including a connected read in a new sched
   expect(submitted).toMatchObject({ session_id: session, connected_request_id: "grant" });
 });
 
-it("uses an explicit interval suggestion only after a human chooses it, while keeping cron inert", async () => {
+it.each([false, true])("proposes the chosen interval with quiet hours enabled: %s", async (quiet) => {
   const session = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
   const contract = {
     session_id: session,
@@ -54,6 +54,7 @@ it("uses an explicit interval suggestion only after a human chooses it, while ke
   };
   let trigger: Record<string, unknown> = { kind: "interval", cadence_seconds: 420 };
   let submitted: Record<string, unknown> | null = null;
+  let rejectQuiet = quiet;
   mockApi({
     "/api/heinzel/latest-scheduled-agent-proposal": () => contract,
     "/api/heinzel/agent-contract-review": () => ({ proposal: contract, accepted: true }),
@@ -69,6 +70,13 @@ it("uses an explicit interval suggestion only after a human chooses it, while ke
     }),
     "/api/heinzel/propose-agent-schedule": async (req: Request) => {
       submitted = await req.clone().json();
+      if (rejectQuiet) {
+        rejectQuiet = false;
+        return Response.json(
+          { detail: [{ loc: ["body", "quiet_hours"], msg: "Time zone unavailable" }] },
+          { status: 422 },
+        );
+      }
       return { ...submitted, connected_grant: null };
     },
   });
@@ -87,8 +95,29 @@ it("uses an explicit interval suggestion only after a human chooses it, while ke
   await user.click(screen.getByRole("button", { name: "Use interval in preview" }));
   expect(screen.getByLabelText("Every (minutes)")).toHaveValue(7);
   expect(submitted).toBeNull();
+  if (quiet) {
+    await user.click(screen.getByRole("checkbox", { name: "Skip scheduled turns during quiet hours" }));
+    const zone = screen.getByLabelText("Time zone");
+    await user.clear(zone);
+    await user.type(zone, "Europe/Berln");
+    expect(screen.getByRole("button", { name: "Propose recurring turns" })).toBeDisabled();
+    expect(submitted).toBeNull();
+    await user.clear(zone);
+    await user.type(zone, "Europe/Berlin");
+  }
   await user.click(screen.getByRole("button", { name: "Propose recurring turns" }));
+  if (quiet) {
+    expect(await screen.findByText("Enter a valid time zone such as Europe/Berlin.")).toHaveAttribute("role", "alert");
+    expect(screen.getByLabelText("Time zone")).toBeEnabled();
+    expect(sessionStorage.getItem(`hz.agent-schedule.proposal.${session}`)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Propose recurring turns" }));
+  }
   expect(submitted).toMatchObject({ cadence_seconds: 420 });
+  if (quiet) {
+    expect(submitted).toMatchObject({ quiet_hours: { start: "22:00", end: "07:00", timezone: "Europe/Berlin" } });
+  } else {
+    expect(submitted).not.toHaveProperty("quiet_hours");
+  }
   trigger = { cron: "*/7 * * * *", timezone: "UTC" };
   await user.click(screen.getByRole("button", { name: "Refresh suggestion" }));
   expect(await screen.findByText(/Calendar schedules are not supported here/)).toBeInTheDocument();

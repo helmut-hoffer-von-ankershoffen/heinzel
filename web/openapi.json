@@ -13037,6 +13037,17 @@
             "title": "Owner",
             "type": "string"
           },
+          "quiet_hours": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleQuietHours"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Separately reviewed hours during which scheduled turns do not start."
+          },
           "request_id": {
             "description": "Stable schedule proposal request.",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
@@ -13077,6 +13088,38 @@
           "access_fingerprint"
         ],
         "title": "ScheduleBinding",
+        "type": "object"
+      },
+      "ScheduleQuietHours": {
+        "additionalProperties": false,
+        "description": "Owner-approved local wall-clock interval for suppressing scheduled turns.",
+        "properties": {
+          "end": {
+            "description": "Exclusive local end, HH:MM.",
+            "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "description": "Inclusive local start, HH:MM.",
+            "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+            "title": "Start",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "IANA time zone for the quiet interval.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timezone",
+          "start",
+          "end"
+        ],
+        "title": "ScheduleQuietHours",
         "type": "object"
       },
       "ScheduleReviewPage": {
@@ -19502,6 +19545,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ScheduledNotificationPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quiet_hours": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleQuietHours"
               },
               {
                 "type": "null"

@@ -20,6 +20,52 @@ async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Re
   throw problem(response.status, error);
 }
 
+type QuietHours = components["schemas"]["ScheduleQuietHours"];
+
+function validQuietHours(value: unknown): value is QuietHours {
+  if (!value || typeof value !== "object" || Object.keys(value).length !== 3) return false;
+  const { start, end, timezone } = value as Partial<QuietHours>;
+  const clock = /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/;
+  return (
+    typeof start === "string" &&
+    typeof end === "string" &&
+    clock.test(start) &&
+    clock.test(end) &&
+    start !== end &&
+    typeof timezone === "string" &&
+    timezone.length > 0 &&
+    timezone.length <= 128
+  );
+}
+
+function availableTimeZone(timezone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: timezone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function rejectedQuietHours(status: number, body: unknown): boolean {
+  return (
+    status === 422 &&
+    !!body &&
+    typeof body === "object" &&
+    "detail" in body &&
+    Array.isArray(body.detail) &&
+    body.detail.some(
+      (item: { loc?: unknown }) => Array.isArray(item?.loc) && item.loc[0] === "body" && item.loc[1] === "quiet_hours",
+    )
+  );
+}
+
+function sameQuietHours(left?: QuietHours | null, right?: QuietHours | null): boolean {
+  return left == null || right == null
+    ? left == null && right == null
+    : left.start === right.start && left.end === right.end && left.timezone === right.timezone;
+}
+
 type Draft = {
   session_id: string;
   request_id: string;
@@ -28,6 +74,7 @@ type Draft = {
   max_requests: number;
   timeout_seconds: number;
   connected_request_id?: string | null;
+  quiet_hours?: QuietHours | null;
   notification_policy?: components["schemas"]["ScheduledNotificationPolicy"] | null;
 };
 
@@ -37,6 +84,12 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
   const key = `hz.agent-schedule.proposal.${sessionId}`;
   const [cursor, setCursor] = useState(0);
   const [minutes, setMinutes] = useState(5);
+  const [includeQuietHours, setIncludeQuietHours] = useState(false);
+  const [quietHours, setQuietHours] = useState<QuietHours>(() => ({
+    start: "22:00",
+    end: "07:00",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  }));
   const [requests, setRequests] = useState(1);
   const [seconds, setSeconds] = useState(30);
   const [includeConnected, setIncludeConnected] = useState(false);
@@ -69,6 +122,7 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  const [quietHoursRejected, setQuietHoursRejected] = useState(false);
   const [saved] = useState((): { pending: Draft | null; invalid: boolean } => {
     try {
       const stored = sessionStorage.getItem(key);
@@ -90,6 +144,7 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
         !Number.isInteger(value.timeout_seconds) ||
         value.timeout_seconds < 1 ||
         value.timeout_seconds > 120 ||
+        (value.quiet_hours != null && !validQuietHours(value.quiet_hours)) ||
         (value.notification_policy != null && !validNotificationPolicy(value.notification_policy))
       )
         throw new Error("Invalid saved schedule proposal");
@@ -176,16 +231,27 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
       max_requests: requests,
       timeout_seconds: seconds,
       connected_request_id: includeConnected && sourceAvailable ? selectedRead : undefined,
+      quiet_hours: includeQuietHours ? quietHours : undefined,
       notification_policy: includeNotifications ? notificationPolicy(noticeMax, noticeCooldown, noticeMode) : undefined,
     };
     setBusy(true);
     setError(false);
+    setQuietHoursRejected(false);
     try {
       const encoded = JSON.stringify(request);
       sessionStorage.setItem(key, encoded);
       if (sessionStorage.getItem(key) !== encoded) throw new Error("Cannot save request");
       setPending(request);
-      const value = await result(api.POST("/heinzel/propose-agent-schedule", { body: request }));
+      const reply = await api.POST("/heinzel/propose-agent-schedule", { body: request });
+      if (request.quiet_hours && rejectedQuietHours(reply.response.status, reply.error)) {
+        sessionStorage.removeItem(key);
+        setQuietHours(request.quiet_hours);
+        setIncludeQuietHours(true);
+        setPending(null);
+        setQuietHoursRejected(true);
+        return;
+      }
+      const value = await result(Promise.resolve(reply));
       if (
         value.session_id !== sessionId ||
         value.request_id !== request.request_id ||
@@ -194,6 +260,7 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
         value.max_requests !== request.max_requests ||
         value.timeout_seconds !== request.timeout_seconds ||
         (value.connected_grant?.request_id ?? null) !== (request.connected_request_id ?? null) ||
+        !sameQuietHours(value.quiet_hours, request.quiet_hours) ||
         !sameNotificationPolicy(value.notification_policy, request.notification_policy)
       )
         throw new Error("Unexpected proposal");
@@ -297,6 +364,47 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
           {connected.isError && (
             <p role="alert">Connected read status could not be verified; scheduled reads are unavailable.</p>
           )}
+          <fieldset disabled={!!pending || busy} className="space-y-2">
+            <legend>Quiet hours</legend>
+            <label className="block">
+              <input
+                type="checkbox"
+                checked={pending ? !!pending.quiet_hours : includeQuietHours}
+                onChange={(event) => setIncludeQuietHours(event.target.checked)}
+              />{" "}
+              Skip scheduled turns during quiet hours
+            </label>
+            {(pending ? pending.quiet_hours : includeQuietHours) && (
+              <div className="flex flex-wrap gap-3">
+                <label>
+                  Start{" "}
+                  <input
+                    type="time"
+                    value={pending?.quiet_hours?.start ?? quietHours.start}
+                    onChange={(event) => setQuietHours({ ...quietHours, start: event.target.value })}
+                  />
+                </label>
+                <label>
+                  End{" "}
+                  <input
+                    type="time"
+                    value={pending?.quiet_hours?.end ?? quietHours.end}
+                    onChange={(event) => setQuietHours({ ...quietHours, end: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Time zone{" "}
+                  <input
+                    value={pending?.quiet_hours?.timezone ?? quietHours.timezone}
+                    onChange={(event) => setQuietHours({ ...quietHours, timezone: event.target.value })}
+                  />
+                </label>
+              </div>
+            )}
+            {((includeQuietHours && !pending && !availableTimeZone(quietHours.timezone)) || quietHoursRejected) && (
+              <p role="alert">Enter a valid time zone such as Europe/Berlin.</p>
+            )}
+          </fieldset>
           <ScheduledNotificationConsent
             enabled={pending ? !!pending.notification_policy : includeNotifications}
             maxPer24h={pending?.notification_policy?.max_per_24h ?? noticeMax}
@@ -358,6 +466,7 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
                     !proposal.data ||
                     proposal.data.max_usd !== null ||
                     (includeConnected && !sourceAvailable) ||
+                    (includeQuietHours && (!validQuietHours(quietHours) || !availableTimeZone(quietHours.timezone))) ||
                     (includeNotifications &&
                       (!modeAvailable ||
                         !validNotificationPolicy(notificationPolicy(noticeMax, noticeCooldown, noticeMode)))) ||
@@ -398,6 +507,11 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
                   ? `Includes the approved ${binding.connected_grant.capability}.${binding.connected_grant.method} read.`
                   : "No external tools."}
               </p>
+              {binding.quiet_hours && (
+                <p>
+                  Quiet hours: {binding.quiet_hours.start}–{binding.quiet_hours.end} ({binding.quiet_hours.timezone}).
+                </p>
+              )}
               {binding.notification_policy && (
                 <p>
                   Local notifications: up to {binding.notification_policy.max_per_24h} attempts per rolling 24 hours,

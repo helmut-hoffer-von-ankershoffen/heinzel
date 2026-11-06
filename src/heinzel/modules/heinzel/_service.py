@@ -626,8 +626,8 @@ class HeinzelService:
         """A daemon tick uses its real slot; the user-approved binding is rechecked at launch."""
 
         def run(slot: datetime) -> JsonValue:
-            asyncio.run(schedules.tick(binding.session_id, binding.request_id, slot))
-            return {"status": "completed"}
+            result = asyncio.run(schedules.tick(binding.session_id, binding.request_id, slot))
+            return {"status": "quiet-hours" if result is None else "completed"}
 
         def unavailable() -> JsonValue:
             msg = "An agent schedule requires a daemon schedule slot"
