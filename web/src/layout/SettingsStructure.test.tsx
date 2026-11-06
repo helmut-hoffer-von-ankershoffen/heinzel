@@ -269,17 +269,6 @@ describe("Settings: Preferences, Customize, This computer", () => {
     expect(within(dialog).getByRole("group", { name: "Zones" })).toBeInTheDocument();
   });
 
-  it("heads a built-in module's settings with hz and its version", async () => {
-    mockApi({ ...answers, "/api/system/info": { version: "0.4.0", modules: [] } });
-    renderAt("/doctor?settings=org");
-    expect(await screen.findByRole("link", { name: "First-party" })).toHaveAttribute(
-      "href",
-      "https://github.com/helmut-hoffer-von-ankershoffen/heinzel",
-    );
-    const dialog = screen.getByRole("dialog", { name: "Settings" });
-    expect(within(dialog).getByText("v0.4.0")).toBeInTheDocument();
-  });
-
   it.each(["plugins", "connectors"])("offers pending plugin activation in %s settings", async (section) => {
     mockApi({
       ...answers,
@@ -352,6 +341,17 @@ describe("Settings: Preferences, Customize, This computer", () => {
     expect(callsTo("/api/restart")).toHaveLength(1);
     expect(await within(dialog).findByText("Applied")).toBeVisible();
     expect(sessionStorage.getItem(ACTIVATION_STORAGE_KEY)).toBeNull();
+  });
+
+  it("heads a built-in module's settings with hz and its version", async () => {
+    mockApi({ ...answers, "/api/system/info": { version: "0.4.0", modules: [] } });
+    renderAt("/doctor?settings=org");
+    expect(await screen.findByRole("link", { name: "First-party" })).toHaveAttribute(
+      "href",
+      "https://github.com/helmut-hoffer-von-ankershoffen/heinzel",
+    );
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    expect(within(dialog).getByText("v0.4.0")).toBeInTheDocument();
   });
 
   it("lists connectors as cards with what they connect, and opens one's settings inside Connectors", async () => {
