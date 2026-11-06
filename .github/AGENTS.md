@@ -30,8 +30,8 @@ Constraints per workflow:
   PRs trigger none). A maintainer reviews all checks before merging.
 - `edge.yml`: dark until `vars.RELEASE_CHANNELS` is set (ADR 0114); then publishes pre-releases `edge-v<version>`,
   never latest, never on PyPI.
-- `pypi.yml`: manual dispatch on a final version tag; builds without OIDC, uploads only core with trusted publishing
-  in environment `pypi`.
+- `pypi.yml`: manual dispatch on a final version tag; verifies and promotes the exact signed official GitHub release
+  wheel and sdist without rebuilding, uploads only core with isolated trusted publishing in environment `pypi`.
 - `release.yml`: manual dispatch for one optional plugin; never builds or tests core.
 - `source-review.yml`: dispatch on the protected ref `trusted/source-review` only (`make review PR=<n>`); paid, tool-free
   review of one PR's source; fails closed unless live head, base and protected ref equal the dispatch; core only.
