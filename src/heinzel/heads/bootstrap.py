@@ -502,7 +502,10 @@ def main() -> None:
         if executable is None:
             sys.stderr.write("Installation did not leave a usable standard app. Retry `uvx heinzel@latest`.\n")
             sys.exit(1)
-        environment = {key: value for key, value in os.environ.items() if key not in {"PYTHONPATH", "PYTHONHOME"}}
+        # The installer has consumed the app selector; it is not a runtime or service setting.
+        environment = {
+            key: value for key, value in os.environ.items() if key not in {"PYTHONPATH", "PYTHONHOME", "HZ_APP_PROFILE"}
+        }
         environment["PATH"] = f"{executable.parent}{os.pathsep}{os.environ.get('PATH', '')}"
         workspace = arguments or _workspace_command(executable, environment, choices)
         if not arguments:
