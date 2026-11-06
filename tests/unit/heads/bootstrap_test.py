@@ -32,15 +32,30 @@ def test_first_use_installs_defaults_and_later_use_opens_without_installing(monk
     installed, launched = [], []
     monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
     monkeypatch.setattr(bootstrap, "installed_app", lambda: sequence.pop(0) if sequence else executable)
-    monkeypatch.setattr(install, "main", lambda args: installed.append(args) or 0)
+    selector = "https://example.com/standard.json"
+    monkeypatch.setenv("HZ_APP_PROFILE", selector)
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path / "profile"))
+    monkeypatch.setattr(
+        install, "main", lambda args: installed.append((args, bootstrap.os.environ["HZ_APP_PROFILE"])) or 0
+    )
+    service_environment = []
+    monkeypatch.setattr(
+        bootstrap,
+        "_install_services",
+        lambda _app, _choices, env: service_environment.append((env.get("HZ_APP_PROFILE"), env.get("HZ_CONFIG_HOME"))),
+    )
     monkeypatch.setattr(bootstrap.os, "execve", lambda *args: launched.append(args))
     bootstrap.main()
-    assert installed == ([] if already_installed else [[]])
+    assert installed == ([] if already_installed else [([], selector)])
+    assert bootstrap.os.environ["HZ_APP_PROFILE"] == selector
+    assert service_environment == [(None, str(tmp_path / "profile"))]
     [program, args, environment] = launched[0]
     interpreter = str(executable.parent / "python")
     assert program == interpreter
     assert args == [interpreter, "-I", "-m", "heinzel", "ui", "open"]
     assert environment["PATH"].split(bootstrap.os.pathsep)[0] == str(executable.parent)
+    assert environment.get("HZ_APP_PROFILE") is None
+    assert environment["HZ_CONFIG_HOME"] == str(tmp_path / "profile")
 
 
 def test_explicit_arguments_keep_existing_cli_behavior(monkeypatch):
