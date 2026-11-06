@@ -116,6 +116,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
             "writes the release notes"
         ),
         'cp "$BUNDLE"': "attaches the provenance attestation and creates the GitHub release",
+        'gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" -f event_type=core-release-published': (
+            "requests a separate Pages build using the producer's existing repository token"
+        ),
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
         "unzip -l ": "asserts that the released wheel ships Heinzel Notifier",
@@ -672,10 +675,29 @@ def test_every_not_make_exemption_is_used():
     assert stale == [], "remove stale NOT_MAKE entries"
 
 
-def test_release_docs_only_publish_existing_recordings_even_when_the_caller_was_a_push():
+def test_release_docs_follow_the_successful_producer_without_recording_or_delaying_it():
     release = yaml.safe_load((REPO / ".github/workflows/release-tag.yml").read_text(encoding="utf-8"))
     docs = yaml.safe_load((REPO / ".github/workflows/docs.yml").read_text(encoding="utf-8"))
-    assert release["jobs"]["docs"].get("with", {}).get("site_only") is True
+    assert set(release["jobs"]) == {"tag", "publish"}
+    assert docs[True]["repository_dispatch"] == {"types": ["core-release-published"]}
+    publish = yaml.safe_load((REPO / ".github/workflows/publish.yml").read_text(encoding="utf-8"))
+    release_step, dispatch = publish["jobs"]["publish"]["steps"][-2:]
+    assert 'gh release create "$TAG"' in release_step["run"]
+    assert dispatch["timeout-minutes"] == 1
+    assert dispatch["if"] == "github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'"
+    assert (
+        dispatch["run"]
+        == 'gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" -f event_type=core-release-published'
+    )
+    site = docs["jobs"]["site"]
+    assert " ".join(site["if"].split()) == (
+        "github.event_name != 'repository_dispatch' || "
+        "(github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && "
+        "github.ref == 'refs/heads/main' && "
+        "github.event.sender.login == 'github-actions[bot]')"
+    )
+    assert site["steps"][0]["with"]["ref"] == "${{ github.event_name == 'pull_request' && github.sha || 'main' }}"
+    assert docs["jobs"]["pages"]["needs"] == "site"
     assert docs[True]["workflow_call"]["inputs"]["site_only"]["default"] is False
     assert docs["jobs"]["record"]["if"] == (
         "inputs.site_only != true && inputs.record == true && github.event_name != 'pull_request'"

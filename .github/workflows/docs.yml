@@ -23,6 +23,8 @@ on:
       - .github/workflows/docs.yml
   schedule:
     - cron: '17 * * * *'
+  repository_dispatch:
+    types: [core-release-published]
   workflow_call:
     inputs:
       site_only:
@@ -91,6 +93,12 @@ jobs:
 
   site:
     name: Build the site
+    # The producer only requests a refresh. Build from protected main without event-supplied inputs.
+    if: >-
+      github.event_name != 'repository_dispatch' ||
+      (github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' &&
+       github.ref == 'refs/heads/main' &&
+       github.event.sender.login == 'github-actions[bot]')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

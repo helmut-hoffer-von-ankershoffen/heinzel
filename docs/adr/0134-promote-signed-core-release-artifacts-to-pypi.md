@@ -47,8 +47,11 @@ unsuccessful producers and old unsigned releases refuse; there is no rebuilding 
 
 The duplicated PyPI notifier and distribution builds disappear. Existing releases without the signed producer
 manifest cannot use this route. The coordinator must await the original producer's terminal success before dispatch;
-release existence alone is insufficient. Final released-source alignment and observed queue/build timings remain
-publication requirements; this source change alone makes no release-duration claim.
+release existence alone is insufficient.
+
+After GitHub publication, the producer requests a separate docs refresh without sending a source ref or artifacts.
+Docs builds and deploys Pages from protected main, with no recording and its own independent outcome.
+Final released-source alignment and observed queue/build timings remain publication requirements.
 
 ### Confirmation
 
