@@ -21,6 +21,7 @@ blocked = {
     'heinzel.modules.system.plugin._render', 'heinzel.modules.system.state._render',
     'heinzel.modules.system.layer._render', 'heinzel.modules.system.daemon._render',
     'heinzel.modules.system.connector._render', 'heinzel.modules.system.plugin.docs._render',
+    'heinzel.modules.system.prerequisite._render',
 }
 class NoCliRenderers(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
@@ -33,7 +34,8 @@ from heinzel.kernel import boot, DaemonOverview
 from heinzel.heads import cli
 import typer
 kernel = boot(Settings(plugins_enabled=False, update_check=False, auto_update=False))
-assert len(kernel.modules) == 31
+assert len(kernel.modules) == 32
+assert any(record.qualname == 'system.prerequisite' for record in kernel.modules)
 assert 'ui' in typer.main.get_command(cli.build(kernel, ui_only=True)).commands
 from heinzel.heads.web import build
 from fastapi.testclient import TestClient

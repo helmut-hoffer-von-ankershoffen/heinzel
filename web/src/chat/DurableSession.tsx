@@ -5,6 +5,7 @@ import { Link, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
 import { ApiError, api, problem, type SchemaChatSession, type SchemaSessionSnapshot } from "@/api/client";
 import { useDaemonStatus } from "@/api/daemon";
+import { usePreviewFeature } from "@/api/queries";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { AgentProposalSummary } from "@/chat/AgentProposalSummary";
 import { AgentSchedules } from "@/chat/AgentSchedules";
@@ -66,6 +67,7 @@ function rejectedBeforeAcceptance(reason: unknown): boolean {
 
 export function DurableSession({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
   const client = useQueryClient();
+  const connectedFrontdoor = usePreviewFeature("connected_frontdoor");
   const [params, setParams] = useSearchParams();
   const {
     state: composer,
@@ -669,6 +671,35 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     }
   };
 
+  const hasSession = query.data?.session_id === sessionId;
+  const terms = query.data && (
+    <details
+      className="rounded-lg border border-border p-3"
+      onToggle={(event) => {
+        if (event.currentTarget.open) setShowProposal(true);
+      }}
+    >
+      <summary className="cursor-pointer text-sm font-medium">Scheduled Heinzel terms</summary>
+      {showProposal && <AgentProposal sessionId={sessionId} />}
+    </details>
+  );
+  const termsSummary = hasSession && <AgentProposalSummary sessionId={sessionId} />;
+  const sourceReview = hasSession && (
+    <>
+      <ConnectedReadReview
+        key={`connected:${sessionId}`}
+        sessionId={sessionId}
+        conversationBusy={busy || !!pending || !!agentPending}
+      />
+      <ConnectedReadSetReview
+        key={`connected-set:${sessionId}`}
+        sessionId={sessionId}
+        onAsk={() => composerInput.current?.focus()}
+      />
+    </>
+  );
+  const schedules = <AgentSchedules key={sessionId} sessionId={sessionId} />;
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
@@ -694,38 +725,29 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             />
           </details>
         )}
-        {query.data && (
-          <details
-            className="rounded-lg border border-border p-3"
-            onToggle={(event) => {
-              if (event.currentTarget.open) setShowProposal(true);
-            }}
-          >
-            <summary className="cursor-pointer text-sm font-medium">Scheduled Heinzel terms</summary>
-            {showProposal && <AgentProposal sessionId={sessionId} />}
-          </details>
+        {connectedFrontdoor && hasSession && (
+          <section aria-label="Review your helper" className="space-y-3 rounded-lg border border-border p-3 text-sm">
+            <h3 className="font-medium">Review your helper</h3>
+            <p>Review each part separately. Saved approvals remain separate if another step fails.</p>
+            <p className="font-medium">1. Agent terms</p>
+            {terms}
+            {termsSummary}
+            <p className="font-medium">2. Source access and time window</p>
+            {sourceReview}
+            <p className="font-medium">3. Recurring turns and local notices</p>
+            {schedules}
+            <p>Approval of one part never substitutes for another. Slack posting requires its own approval.</p>
+          </section>
         )}
+        {!connectedFrontdoor && terms}
         {query.data?.session_id === sessionId && (
           <PersonalArtifactLinks key={`artifacts:${sessionId}`} sessionId={sessionId} compact />
         )}
-        {query.data?.session_id === sessionId && <AgentProposalSummary sessionId={sessionId} />}
+        {!connectedFrontdoor && termsSummary}
         {query.data?.session_id === sessionId && (
           <NotificationPanel key={`notification:${sessionId}`} sessionId={sessionId} />
         )}
-        {query.data?.session_id === sessionId && (
-          <>
-            <ConnectedReadReview
-              key={`connected:${sessionId}`}
-              sessionId={sessionId}
-              conversationBusy={busy || !!pending || !!agentPending}
-            />
-            <ConnectedReadSetReview
-              key={`connected-set:${sessionId}`}
-              sessionId={sessionId}
-              onAsk={() => composerInput.current?.focus()}
-            />
-          </>
-        )}
+        {!connectedFrontdoor && sourceReview}
         {query.data?.session_id === sessionId && <ContractHistory contracts={query.data.contracts ?? []} />}
         {query.data?.session_id === sessionId && <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />}
         {(historyCursors.length > 1 || query.data?.has_more) && (
@@ -778,7 +800,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             </div>
           </nav>
         )}
-        <AgentSchedules key={sessionId} sessionId={sessionId} />
+        {!connectedFrontdoor && schedules}
         {query.data?.messages?.map((message) => {
           const turnItems =
             message.role === "assistant" && message.turn_id

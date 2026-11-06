@@ -1,6 +1,6 @@
 [project]
 name = "heinzel"
-version = "0.9.17"
+version = "0.9.19"
 description = "An open-source crew of Heinzels that drafts your team's busywork and asks before anything leaves your machine."
 readme = "PYPI.md"
 authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
@@ -235,7 +235,7 @@ example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
 [tool.bumpversion]
-current_version = "0.9.17"
+current_version = "0.9.19"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = false
@@ -369,7 +369,7 @@ forbidden_modules = ["heinzel.heads"]
 [[tool.importlinter.contracts]]
 name = "Every module could be a plugin: system's submodules don't import each other"
 type = "independence"
-modules = ["heinzel.modules.system.agent", "heinzel.modules.system.capability", "heinzel.modules.system.changelog", "heinzel.modules.system.claude", "heinzel.modules.system.state", "heinzel.modules.system.config", "heinzel.modules.system.connector", "heinzel.modules.system.lifecycle", "heinzel.modules.system.credential", "heinzel.modules.system.daemon", "heinzel.modules.system.directory", "heinzel.modules.system.doctor", "heinzel.modules.system.expert", "heinzel.modules.system.layer", "heinzel.modules.system.notify", "heinzel.modules.system.plugin", "heinzel.modules.system.runner", "heinzel.modules.system.skill", "heinzel.modules.system.sound", "heinzel.modules.system.theme", "heinzel.modules.system.ui"]
+modules = ["heinzel.modules.system.agent", "heinzel.modules.system.capability", "heinzel.modules.system.changelog", "heinzel.modules.system.claude", "heinzel.modules.system.state", "heinzel.modules.system.config", "heinzel.modules.system.connector", "heinzel.modules.system.lifecycle", "heinzel.modules.system.credential", "heinzel.modules.system.daemon", "heinzel.modules.system.directory", "heinzel.modules.system.doctor", "heinzel.modules.system.expert", "heinzel.modules.system.layer", "heinzel.modules.system.notify", "heinzel.modules.system.plugin", "heinzel.modules.system.prerequisite", "heinzel.modules.system.runner", "heinzel.modules.system.skill", "heinzel.modules.system.sound", "heinzel.modules.system.theme", "heinzel.modules.system.ui"]
 
 [[tool.importlinter.contracts]]
 name = "Every module could be a plugin: top-level modules don't import each other, they inject services by type"

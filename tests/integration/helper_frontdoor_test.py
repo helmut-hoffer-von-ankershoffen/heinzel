@@ -5,10 +5,11 @@ import json
 import pytest
 from typer.testing import CliRunner
 
-from heinzel import CurrentUser
+from heinzel import CurrentUser, Settings
 from heinzel.heads.cli import build
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._user_chat import UserChatService
+from tests.integration.chat_test import AUTH, web_client
 from tests.unit.modules.user_chat_test import FixtureConfig, fake_claude
 
 pytestmark = pytest.mark.integration
@@ -76,3 +77,40 @@ def test_frontdoor_is_off_by_default_and_creates_no_private_state(make_kernel):
     assert "not enabled" in result.output
     with kernel.resolve(CurrentUser).local("cli"):
         assert kernel.resolve(SessionCrud).listing().sessions == []
+
+
+def test_typed_browser_frontdoor_requires_owner_auth_and_retains_the_first_prompt(make_kernel, tmp_path, monkeypatch):
+    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_frontdoor"}))
+    current = CurrentUser(tmp_path / "identity")
+    kernel.bind(CurrentUser, current)
+    executable = fake_claude(
+        tmp_path,
+        tool="agent:propose",
+        arguments={"expected_revision": 0, "contract": "Prepare an inert proposal.", "timeout_seconds": 30},
+    )
+    chat = kernel.resolve(UserChatService)
+    monkeypatch.setattr(chat, "_load", lambda: FixtureConfig(executable))
+    client = web_client(kernel, tmp_path)
+    prompt = "Create Finch from this exact first prompt.\nOnly suggest a plan."
+    body = {"request_id": "web-first", "name": "Finch", "prompt": prompt}
+    assert client.post("/api/heinzel/start-helper", json=body).status_code == 401
+    assert not (tmp_path / "model-calls").exists()
+    response = client.post("/api/heinzel/start-helper", headers=AUTH, json=body)
+    assert response.status_code == 200, response.text
+    answer = response.json()
+    assert answer["request_id"] == body["request_id"]
+    crud = kernel.resolve(SessionCrud)
+    with current.local("cli"):
+        snapshot = crud.snapshot(answer["session_id"])
+        assert snapshot.name == "Finch"
+        assert [(item.role, item.text) for item in snapshot.messages] == [
+            ("user", prompt),
+            ("assistant", "A real recorded reply"),
+        ]
+        assert snapshot.schedule is None
+        proposal = crud.latest_scheduled_agent_proposal(snapshot.session_id)
+        assert proposal is not None
+        assert proposal.status == "proposed"
+        assert not any(
+            event.kind.endswith("approved") for event in crud.repository.control_read(snapshot.session_id).events
+        )

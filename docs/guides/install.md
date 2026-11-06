@@ -42,6 +42,10 @@ persistent standard app. Noninteractive, help and machine-readable calls make no
 Unsupported native notification platforms or desktops are reported; OS permission and visible delivery remain
 separate checks.
 
+If macOS has notifications turned off for Heinzel Notifier, open **System Settings → Notifications → Heinzel
+Notifier** and enable **Allow notifications**. Run `hz system notify install` to send a test notification, then
+run `uvx heinzel@latest` again to finish setup.
+
 `hz ui` displays help. Use `hz ui serve` for foreground serving, stopped with **Ctrl-C**, or `hz ui open` to open
 the installed service and otherwise serve in the foreground. `hz ui install` is available without a preview flag;
 `hz ui status`, `restart` and `uninstall` manage its owned service. Run `hz setup` to configure AI access.
@@ -65,6 +69,20 @@ hz system channel --to stable --yes
 **Update channel** in Settings makes the same choice. It survives updates, and choosing a channel installs nothing
 until you update. Going back to stable never downgrades: edge stays installed until stable is as new, and then the next
 update moves you to stable. Your settings, plugins and data stay as they are.
+
+## Tools the app uses
+
+Git and the GitHub CLI (`gh`) are part of the standard app: they clone team repositories and plugin sources.
+On macOS the installer shows what is missing and installs it with [Homebrew](https://brew.sh); it does not install
+Homebrew itself: without it, the installer links to brew.sh and the app still installs.
+
+On Linux it prints the steps for your distribution and installs nothing. Add `--no-tools` to `hz-install` to only check. After you install
+a tool yourself, `hz system prerequisite check` tells you when everything is usable. Installing `gh` never signs you in:
+run `gh auth login` yourself.
+
+Features bring their own tools only when you choose them: the Claude Code or Codex command line for the agent runner
+you select, for example. `hz setup` shows what a step needs, asks before installing it on macOS, and leaves the
+program in place if you later remove a plugin. Each plugin's page lists its prerequisites.
 
 ## Building a plugin? Start with the SDK
 
