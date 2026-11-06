@@ -1,6 +1,6 @@
 // The centre pane's header: the screen's title with a menu on the left, quick actions on the right.
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, Link2, RefreshCw, SquareTerminal } from "lucide-react";
+import { Calendar, Check, ChevronDown, Link2, RefreshCw, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { matchPath, useLocation } from "react-router";
 import { usePlayful } from "@/api/queries";
@@ -43,10 +43,20 @@ type Props = {
   onToggleChat: () => void;
   terminalOpen: boolean;
   onToggleTerminal: () => void;
+  calendarOpen: boolean;
+  onOpenCalendar: () => void;
   navigationMode?: boolean;
 };
 
-export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal, navigationMode = false }: Props) {
+export function TopBar({
+  chatOpen,
+  onToggleChat,
+  terminalOpen,
+  onToggleTerminal,
+  calendarOpen,
+  onOpenCalendar,
+  navigationMode = false,
+}: Props) {
   const { title, command } = useScreen();
   const queries = useQueryClient();
   const playful = usePlayful();
@@ -112,9 +122,6 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal,
       </div>
       <div className="ml-auto flex items-center gap-0.5 text-icon">
         <HeaderActions />
-        <Button variant="ghost" size="icon" onClick={refresh} aria-label={t("top.refresh")} title={t("top.refresh")}>
-          <RefreshCw aria-hidden />
-        </Button>
         <Button
           variant="ghost"
           size="icon"
@@ -125,6 +132,19 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal,
           className={cn(terminalOpen && "bg-accent text-accent-foreground")}
         >
           <SquareTerminal aria-hidden />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onOpenCalendar}
+          aria-label="Open calendar"
+          title="Open calendar"
+          aria-pressed={calendarOpen}
+        >
+          <Calendar aria-hidden />
+        </Button>
+        <Button variant="ghost" size="icon" onClick={refresh} aria-label={t("top.refresh")} title={t("top.refresh")}>
+          <RefreshCw aria-hidden />
         </Button>
         {/* The chat is a conversation with your Heinzelmännchen, so its button is a Heinzelmännchen head (not the sidebar's logo); open shows as a dot under it, never a background. */}
         <Button

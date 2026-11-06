@@ -109,6 +109,48 @@ function ReleaseNotes({ version }: { version: string }) {
   );
 }
 
+/** Two fixed half-rings preserve the icon footprint and distinguish elapsed time from the next start. */
+function MeetingIcon({ elapsed, approach }: { elapsed: number | null; approach: number | null }) {
+  return (
+    <span className="relative grid size-4 place-items-center" aria-hidden>
+      <Calendar className="size-3.5" />
+      <svg
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 left-1/2 size-5 -translate-x-1/2 -translate-y-1/2"
+        viewBox="0 0 24 24"
+        fill="none"
+      >
+        {elapsed !== null && (
+          <>
+            <path d="M 2 12 A 10 10 0 0 1 22 12" stroke="currentColor" className="opacity-25" />
+            <path
+              d="M 2 12 A 10 10 0 0 1 22 12"
+              pathLength="100"
+              stroke="currentColor"
+              strokeDasharray={`${elapsed} 100`}
+              strokeWidth="1.5"
+              className="text-ok"
+            />
+          </>
+        )}
+        {approach !== null && (
+          <>
+            <path d="M 22 12 A 10 10 0 0 1 2 12" stroke="currentColor" className="opacity-25" />
+            <path
+              d="M 22 12 A 10 10 0 0 1 2 12"
+              pathLength="100"
+              stroke="currentColor"
+              strokeDasharray={`${approach} 100`}
+              strokeWidth="1.5"
+              className="text-primary"
+            />
+          </>
+        )}
+      </svg>
+    </span>
+  );
+}
+
 /** The current and upcoming meetings share one compact entry to the calendar panel. */
 function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
   const agenda = useAgenda();
@@ -128,58 +170,72 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
     if (boundary.length) void agenda.refetch();
   }, [agenda.refetch, boundary.length]);
   if (!meeting) return null;
-  const label = agenda.isPending
-    ? "Loading calendar"
-    : agenda.isError || agenda.data?.problem
-      ? "Calendar unavailable"
-      : [
-          active ? `In ${active.title} until ${time(new Date(active.end), agenda.data?.timezone)}` : "Not in a meeting",
-          upcoming
-            ? `Next: ${upcoming.title} ${new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: agenda.data?.timezone ?? undefined }).format(new Date(upcoming.start))} at ${time(new Date(upcoming.start), agenda.data?.timezone)}`
-            : "None through tomorrow",
-        ].join(" · ");
+  const unavailable = agenda.isError || Boolean(agenda.data?.problem);
+  const elapsed = active
+    ? (100 * (now.getTime() - Date.parse(active.start))) / (Date.parse(active.end) - Date.parse(active.start))
+    : null;
+  const nextMinutes = upcoming ? Math.ceil((Date.parse(upcoming.start) - now.getTime()) / 60_000) : null;
+  const approach = nextMinutes === null ? null : Math.max(0, (100 * (60 - nextMinutes)) / 60);
+  const showProgress = !unavailable && (elapsed !== null || approach !== null);
   return (
     <FooterItem
-      label={label}
-      className={agenda.isError || agenda.data?.problem ? "h-auto min-h-8 text-bad" : "h-auto min-h-8"}
-      state={agenda.isError || agenda.data?.problem ? "bad" : "off"}
-      content={
-        <span className="flex max-w-44 items-center gap-1 sm:max-w-72">
-          <Calendar aria-hidden className="size-4 shrink-0" />
-          {agenda.isPending || agenda.isError || agenda.data?.problem ? (
-            <span className="truncate">{label}</span>
-          ) : (
-            <span className="flex min-w-0 flex-col leading-tight">
-              {active ? (
-                <span className="flex min-w-0 gap-1">
-                  <span className="min-w-0 truncate">In {active.title}</span>
-                  <time className="shrink-0 whitespace-nowrap" dateTime={active.end}>
-                    until {time(new Date(active.end), agenda.data?.timezone)}
-                  </time>
-                </span>
-              ) : (
-                <span>Not in a meeting</span>
-              )}
-              {upcoming ? (
-                <span className="flex min-w-0 gap-1">
-                  <span className="min-w-0 truncate">Next: {upcoming.title}</span>
-                  <time className="shrink-0 whitespace-nowrap" dateTime={upcoming.start}>
-                    {new Intl.DateTimeFormat(undefined, {
-                      weekday: "short",
-                      timeZone: agenda.data?.timezone ?? undefined,
-                    }).format(new Date(upcoming.start))}{" "}
-                    {time(new Date(upcoming.start), agenda.data?.timezone)}
-                  </time>
-                </span>
-              ) : (
-                <span>None through tomorrow</span>
-              )}
-            </span>
-          )}
-        </span>
-      }
-      onActivate={onOpen}
-    />
+      label="Calendar"
+      icon={showProgress ? undefined : Calendar}
+      content={showProgress ? <MeetingIcon elapsed={elapsed} approach={approach} /> : undefined}
+      state={unavailable ? "bad" : "off"}
+      paneName="Calendar summary"
+      hideHeading
+    >
+      <div className="space-y-2 px-1.5 py-1">
+        <p className="font-medium">Calendar</p>
+        {agenda.isPending ? (
+          <p>Loading calendar…</p>
+        ) : agenda.isError ? (
+          <p>Calendar unavailable. Try again later.</p>
+        ) : agenda.data?.problem ? (
+          <p>{agenda.data.problem}</p>
+        ) : (
+          <>
+            {active ? (
+              <p className="break-words">
+                In {active.title} · {Math.max(1, Math.ceil((Date.parse(active.end) - now.getTime()) / 60_000))} min
+                remaining
+                {" · Ends at "}
+                <time className="inline-block" dateTime={active.end}>
+                  {time(new Date(active.end), agenda.data?.timezone)}
+                </time>
+              </p>
+            ) : (
+              <p>Not in a meeting</p>
+            )}
+            {upcoming ? (
+              <p className="break-words">
+                Next: {upcoming.title} ·{" "}
+                <time className="inline-block" dateTime={upcoming.start}>
+                  {new Intl.DateTimeFormat(undefined, {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    timeZone: agenda.data?.timezone ?? undefined,
+                  }).format(new Date(upcoming.start))}{" "}
+                  at {time(new Date(upcoming.start), agenda.data?.timezone)}
+                </time>
+                {" · in "}
+                {nextMinutes} min
+              </p>
+            ) : (
+              <p>None through tomorrow</p>
+            )}
+          </>
+        )}
+        {!unavailable && (elapsed !== null || approach !== null) && (
+          <p className="text-xs text-muted-foreground">Top arc: meeting elapsed. Bottom arc: starts within an hour.</p>
+        )}
+        <button type="button" className="min-h-10 text-primary underline" onClick={onOpen}>
+          Open calendar
+        </button>
+      </div>
+    </FooterItem>
   );
 }
 

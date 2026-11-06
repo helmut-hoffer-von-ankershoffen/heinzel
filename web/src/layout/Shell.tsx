@@ -565,6 +565,11 @@ function Layout() {
         {createPortal(
           <TopBar
             navigationMode={!beside}
+            calendarOpen={calendarOpen && selectedPanel === "calendar"}
+            onOpenCalendar={() => {
+              setCalendarOpen(true);
+              selectPanel("calendar");
+            }}
             chatOpen={chatOpen && selectedPanel === "chat"}
             onToggleChat={() => {
               if (beside && chatOpen && selectedPanel === "chat") setChatOpen(false);
