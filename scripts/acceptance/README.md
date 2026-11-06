@@ -45,7 +45,8 @@ Each private case supplies an explicitly fictional name, handle, role, time zone
 and `HZ_TEAM__NAME` configuration. This is noninteractive setup input; it does not prove interactive onboarding or
 discover a real person's identity. Installed foreground starts read the private prefix's Core distribution metadata,
 require the case's expected version, and use `hz ui` for 0.9.8 through 0.9.15 or `hz ui serve` for the explicit
-0.9.16, 0.9.17, 0.9.18 and 0.9.19 contracts. Unknown versions fail before foreground startup; command selection never substitutes for the installed-byte and runtime checks.
+0.9.16, 0.9.17, 0.9.18, 0.9.19 and 0.9.20 contracts. Unknown versions fail before foreground startup. The harness still
+checks the installed bytes and running app.
 
 Preflight runs before any case and executes nothing: PyPI latest and its wheel digest, the governed latest app tag,
 `standard.json`, every release asset's hash, Core wheel equal on both sides, live `install.sh` equal to the release

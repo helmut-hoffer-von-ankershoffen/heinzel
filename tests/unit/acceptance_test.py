@@ -138,6 +138,7 @@ def test_only_x_y_z_is_a_final_version(version, final):
         ("0.9.17", ["ui", "serve"]),
         ("0.9.18", ["ui", "serve"]),
         ("0.9.19", ["ui", "serve"]),
+        ("0.9.20", ["ui", "serve"]),
     ],
 )
 def test_installed_metadata_selects_the_canonical_foreground_command(version, command, tmp_path):
@@ -184,14 +185,14 @@ def test_installed_metadata_selects_the_canonical_foreground_command(version, co
         ("0.9.16", "0.9.17"),
         *[
             (installed, expected)
-            for installed in ("0.9.17", "0.9.18", "0.9.19")
-            for expected in ("0.9.17", "0.9.18", "0.9.19")
+            for installed in ("0.9.17", "0.9.18", "0.9.19", "0.9.20")
+            for expected in ("0.9.17", "0.9.18", "0.9.19", "0.9.20")
             if installed != expected
         ],
-        ("0.9.20", "0.9.20"),
+        ("0.9.21", "0.9.21"),
         *[
             (f"0.9.{patch}{suffix}", f"0.9.{patch}{suffix}")
-            for patch in (17, 18, 19)
+            for patch in (17, 18, 19, 20)
             for suffix in ("+local", ".dev1", "rc1")
         ],
         ("0.9.018", "0.9.018"),
