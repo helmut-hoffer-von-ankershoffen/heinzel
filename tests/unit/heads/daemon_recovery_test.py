@@ -17,6 +17,8 @@ pytestmark = pytest.mark.unit
         ["install"],
         ["retire"],
         ["plan", "extra"],
+        ["package-handover"],
+        ["package-handover", "--confirm", "a" * 64],
         ["restore"],
         ["retire", "--target", "/foreign"],
     ],
@@ -286,3 +288,37 @@ def test_directory_entry_replacement_during_read_is_refused(monkeypatch, tmp_pat
     monkeypatch.setattr(head.os, "stat", replace_directory)
     with pytest.raises(HeinzelError, match="directory changed"):
         head._standard_receipt(data)
+
+
+def test_package_handover_uses_only_its_candidate_recovery_port(monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    from heinzel.kernel import DaemonPackageHandoverRecovery
+
+    calls = []
+    digest = "a" * 64
+    port = DaemonPackageHandoverRecovery(
+        lambda incident: {"digest": digest, "status": "confirmation-required", "incident": list(incident)},
+        lambda incident, confirmation: calls.append((incident, confirmation)) or {"status": "awaiting-scheduled-tick"},
+    )
+
+    def resolve(kind):
+        assert kind is DaemonPackageHandoverRecovery
+        return port
+
+    monkeypatch.setattr(head, "_selected_recovery_kernel", lambda: SimpleNamespace(resolve=resolve))
+    incident = ("b" * 64, "c" * 64, "d" * 64)
+    args = [
+        "package-handover",
+        "--incident-mutation",
+        incident[0],
+        "--incident-request",
+        incident[1],
+        "--incident-failure",
+        incident[2],
+    ]
+    assert head.main(args) == 0
+    assert not calls
+    assert head.main([*args, "--confirm", digest]) == 0
+    assert calls == [(incident, digest)]
+    assert '"status": "awaiting-scheduled-tick"' in capsys.readouterr().out

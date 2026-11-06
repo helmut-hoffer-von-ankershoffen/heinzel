@@ -11,6 +11,7 @@ from heinzel.kernel import (
     DaemonInstallationLifecycle,
     DaemonLegacyRecovery,
     DaemonOverview,
+    DaemonPackageHandoverRecovery,
     DaemonRecoverySelection,
     HostServiceManager,
     parse_duration,
@@ -102,6 +103,19 @@ def _legacy_recovery(service: DaemonService, kernel: Kernel) -> DaemonLegacyReco
 
 
 module.service(DaemonLegacyRecovery, _legacy_recovery)
+
+
+def _package_recovery_port(service: DaemonService, kernel: Kernel) -> DaemonPackageHandoverRecovery:
+    """Expose a separate, explicit forward recovery without old-SDK execution."""
+    from heinzel.modules.system.daemon._package_handover_recovery import (  # noqa: PLC0415 - explicit recovery only
+        PackageHandoverRecovery,
+    )
+
+    recovery = PackageHandoverRecovery(service, kernel.resolve(DaemonRecoverySelection))
+    return DaemonPackageHandoverRecovery(recovery.plan, recovery.resume)
+
+
+module.service(DaemonPackageHandoverRecovery, _package_recovery_port)
 module.service(DaemonInstallationLifecycle, _installation_lifecycle)
 
 INTERVAL_PATTERN = r"^[1-9][0-9]*m$|^1h$"

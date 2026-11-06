@@ -1,6 +1,7 @@
-"""Explicit candidate-only legacy daemon retirement, independent of the installed old CLI."""
+"""Explicit candidate-only daemon recovery, independent of the installed CLI."""
 
 import argparse
+import json
 import os
 import stat
 import sys
@@ -12,10 +13,12 @@ from heinzel.heads import install
 from heinzel.heads._tool_install import resolve_target
 from heinzel.kernel import (
     DaemonLegacyRecovery,
+    DaemonPackageHandoverRecovery,
     DaemonRecoveryPlan,
     DaemonRecoveryResult,
     DaemonRecoverySelection,
     Installation,
+    Kernel,
     boot,
 )
 
@@ -105,7 +108,7 @@ def _standard_receipt(data: Path) -> bytes:
         return content
 
 
-def recovery() -> DaemonLegacyRecovery:
+def _selected_recovery_kernel() -> Kernel:
     """Bind the independently verified persistent standard target before resolving recovery.
 
     Raises:
@@ -121,12 +124,17 @@ def recovery() -> DaemonLegacyRecovery:
     installation = Installation(Progress(), prefix=target.prefix, uv=uv)
     installation.verify_tool_destination(target.store, target.binary)
     if profile.format != install.PROFILE_FORMAT or not installation.startup_state_matches():
-        msg = "The persistent standard app cannot be verified; no legacy recovery was authorized."
+        msg = "The persistent standard app cannot be verified; no daemon recovery was authorized."
         raise HeinzelError(msg)
     kernel = boot(settings.model_copy(update={"plugins_enabled": False}))
     kernel.bind(Installation, installation)
     kernel.bind(DaemonRecoverySelection, DaemonRecoverySelection(receipt, content))
-    return kernel.resolve(DaemonLegacyRecovery)
+    return kernel
+
+
+def recovery() -> DaemonLegacyRecovery:
+    """Resolve the bound legacy recovery port."""
+    return _selected_recovery_kernel().resolve(DaemonLegacyRecovery)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -139,8 +147,25 @@ def main(argv: list[str] | None = None) -> int:
     restore = commands.add_parser("restore", help="Plan or confirm restoration of an interrupted retirement.")
     restore.add_argument("transaction", metavar="RETIREMENT_SHA256")
     restore.add_argument("--confirm", metavar="RESTORE_PLAN_SHA256")
+    handover = commands.add_parser(
+        "package-handover", help="Plan or resume the supported interrupted macOS package handover."
+    )
+    handover.add_argument("--incident-mutation", required=True, metavar="SHA256")
+    handover.add_argument("--incident-request", required=True, metavar="SHA256")
+    handover.add_argument("--incident-failure", required=True, metavar="SHA256")
+    handover.add_argument("--confirm", metavar="PLAN_SHA256")
     args = parser.parse_args(argv)
     try:
+        if args.command == "package-handover":
+            handover_service = _selected_recovery_kernel().resolve(DaemonPackageHandoverRecovery)
+            incident = (args.incident_mutation, args.incident_request, args.incident_failure)
+            package_result = (
+                handover_service.plan(incident)
+                if args.confirm is None
+                else handover_service.resume(incident, args.confirm)
+            )
+            sys.stdout.write(json.dumps(package_result, indent=2) + "\n")
+            return 0
         service = recovery()
         result: DaemonRecoveryPlan | DaemonRecoveryResult
         if args.command == "plan":
@@ -154,7 +179,10 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(result.model_dump_json(indent=2) + "\n")
     except (HeinzelError, OSError, ValueError, TypeError, KeyError):
         sys.stderr.write(
-            "Legacy daemon recovery refused: authority is unknown, changed or requires explicit recovery.\n"
+            "Package handover recovery refused: the required evidence is unavailable or changed. "
+            "If a confirmation was interrupted, inspect daemon status and preserved evidence.\n"
+            if args.command == "package-handover"
+            else "Legacy daemon recovery refused: authority is unknown, changed or requires explicit recovery.\n"
         )
         return 1
     return 0

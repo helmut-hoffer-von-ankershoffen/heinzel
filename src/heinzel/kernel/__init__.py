@@ -127,6 +127,7 @@ from heinzel.kernel._daemon_attestation import (
 )
 from heinzel.kernel._daemon_recovery import (
     DaemonLegacyRecovery,
+    DaemonPackageHandoverRecovery,
     DaemonRecoveryPlan,
     DaemonRecoveryResult,
     DaemonRecoverySelection,
@@ -505,6 +506,7 @@ __all__ = [
     "DaemonLegacyRecovery",
     "DaemonMutationScope",
     "DaemonOverview",
+    "DaemonPackageHandoverRecovery",
     "DaemonRecoveryPlan",
     "DaemonRecoveryResult",
     "DaemonRecoverySelection",

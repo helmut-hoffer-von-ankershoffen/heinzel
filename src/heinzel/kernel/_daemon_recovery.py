@@ -42,3 +42,12 @@ class DaemonLegacyRecovery:
     retire: Callable[[str], DaemonRecoveryResult]
     restore_plan: Callable[[str], DaemonRecoveryPlan]
     restore: Callable[[str, str], DaemonRecoveryResult]
+
+
+@dataclass(frozen=True, slots=True)
+class DaemonPackageHandoverRecovery:
+    """Candidate console for one verified post-trial automatic update interruption."""
+
+    # Separately reviewed incident SHA-256s: mutation, request, automatic updater failure.
+    plan: Callable[[tuple[str, str, str]], dict[str, JsonValue]]
+    resume: Callable[[tuple[str, str, str], str], dict[str, JsonValue]]
