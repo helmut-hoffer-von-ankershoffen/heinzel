@@ -649,6 +649,7 @@ SERVERS = {
     "hz chat",
 }
 SETUP: set[str] = set()  # `hz setup` and `hz join` take --json too (ADR 0032, amended)
+DESKTOP = {"hz app install", "hz app uninstall", "hz app refresh"}  # Native lifecycle commands, not operations.
 
 
 def leaves_without_json(command, path: str = "hz") -> list[str]:
@@ -706,7 +707,7 @@ def test_every_operation_accepts_json(make_kernel):
             **example_modules(),
         )
     )
-    assert set(leaves_without_json(typer.main.get_command(app))) == SERVERS | SETUP
+    assert set(leaves_without_json(typer.main.get_command(app))) == SERVERS | SETUP | DESKTOP
     help_text = " ".join(click.unstyle(runner.invoke(app, ["--help"]).output).split())  # CI forces colours
     assert "Every operation accepts --json" in help_text
     assert "Heinzelmännchen: Heinzels accelerating product teams" not in help_text
