@@ -24,14 +24,14 @@ def test_show_keeps_optional_providers_unknown():
     text = output.getvalue()
     assert "Scheduler: running · scheduler loaded; current tick unknown" in text
     assert "Web server: unknown" in text
-    assert "hz --help" in text
 
 
-def test_only_interactive_bare_invocation_skips_update_and_help(monkeypatch: pytest.MonkeyPatch):
+def test_interactive_bare_invocation_adds_status_to_banner_and_help(monkeypatch: pytest.MonkeyPatch):
     from heinzel.heads import cli
 
     kernel = Mock()
     show_screen = Mock()
+    banner = Mock()
     start_check = Mock(return_value=None)
     build = Mock(return_value=Mock())
     monkeypatch.setattr(cli, "boot", lambda: kernel)
@@ -40,12 +40,16 @@ def test_only_interactive_bare_invocation_skips_update_and_help(monkeypatch: pyt
     monkeypatch.setattr(cli, "start_check", start_check)
     monkeypatch.setattr(cli, "build", build)
     monkeypatch.setattr(cli, "show", show_screen)
+    monkeypatch.setattr(cli, "_banner", banner)
     monkeypatch.setattr(cli.sys, "argv", ["hz"])
     monkeypatch.setattr(cli.sys, "stdin", Mock(isatty=lambda: True))
     cli.main()
     show_screen.assert_called_once()
     start_check.assert_not_called()
-    build.assert_not_called()
+    banner.assert_called_once_with(kernel)
+    build.assert_called_once_with(kernel)
+    build.return_value.assert_called_once_with()
+    build.reset_mock()
 
     monkeypatch.setattr(cli.sys, "argv", ["hz", "--help"])
     cli.main()

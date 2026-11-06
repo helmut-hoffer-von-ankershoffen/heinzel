@@ -44,10 +44,8 @@ def show(kernel: Kernel, console: Console) -> None:
             observations.append((f"Sharing ({record.qualname})", cached_observation(state_dir, filename, deadline)))
     else:
         observations.append(("Sharing", LocalObservation("unknown", "no local observations declared")))
-    console.print("Heinzelmännchen", style="bold")
     for label, observation in observations:
         line = f"{label}: {observation.state}"
         if observation.detail:
             line += f" · {observation.detail}"
         console.print(TerminalSafe(Text(line)))
-    console.print("Commands: hz --help", style="dim")

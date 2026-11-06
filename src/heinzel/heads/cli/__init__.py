@@ -246,13 +246,15 @@ def main() -> None:
         err_console.print(message("Configuration error:", str(exc)))
         err_console.print("Check the files `hz system config show` lists and your HZ_* environment variables.")
         sys.exit(EX_CONFIG)
-    if not sys.argv[1:] and sys.stdout.isatty() and sys.stdin.isatty():
+    bare = not sys.argv[1:]
+    interactive = bare and sys.stdout.isatty() and sys.stdin.isatty()
+    # Interactive status and discovery stay offline.
+    check = None if interactive or "--command-tree" in sys.argv[1:] else start_check(kernel)
+    if bare:
+        _banner(kernel)
+    if interactive:
         show(kernel, console)
-        return
-    # Discovery stays offline; ordinary invocations check in the background at most once an hour (ADR 0031).
-    check = None if "--command-tree" in sys.argv[1:] else start_check(kernel)
-    if not sys.argv[1:]:
-        _banner(kernel)  # the bare `hz`: the start screen follows
+        console.print()
     try:
         # Root discovery/help/version still build the complete tree. Click parses the same UI group,
         # including service subcommands and invalid options, for an invocation beginning with `ui`.
