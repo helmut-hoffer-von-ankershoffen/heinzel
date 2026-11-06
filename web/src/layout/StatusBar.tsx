@@ -128,56 +128,11 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
     if (boundary.length) void agenda.refetch();
   }, [agenda.refetch, boundary.length]);
   if (!meeting) return null;
-  const label = agenda.isPending
-    ? "Loading calendar"
-    : agenda.isError || agenda.data?.problem
-      ? "Calendar unavailable"
-      : [
-          active ? `In ${active.title} until ${time(new Date(active.end), agenda.data?.timezone)}` : "Not in a meeting",
-          upcoming
-            ? `Next: ${upcoming.title} ${new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: agenda.data?.timezone ?? undefined }).format(new Date(upcoming.start))} at ${time(new Date(upcoming.start), agenda.data?.timezone)}`
-            : "None through tomorrow",
-        ].join(" · ");
   return (
     <FooterItem
-      label={label}
-      className={agenda.isError || agenda.data?.problem ? "h-auto min-h-8 text-bad" : "h-auto min-h-8"}
+      label="Calendar"
+      icon={Calendar}
       state={agenda.isError || agenda.data?.problem ? "bad" : "off"}
-      content={
-        <span className="flex max-w-44 items-center gap-1 sm:max-w-72">
-          <Calendar aria-hidden className="size-4 shrink-0" />
-          {agenda.isPending || agenda.isError || agenda.data?.problem ? (
-            <span className="truncate">{label}</span>
-          ) : (
-            <span className="flex min-w-0 flex-col leading-tight">
-              {active ? (
-                <span className="flex min-w-0 gap-1">
-                  <span className="min-w-0 truncate">In {active.title}</span>
-                  <time className="shrink-0 whitespace-nowrap" dateTime={active.end}>
-                    until {time(new Date(active.end), agenda.data?.timezone)}
-                  </time>
-                </span>
-              ) : (
-                <span>Not in a meeting</span>
-              )}
-              {upcoming ? (
-                <span className="flex min-w-0 gap-1">
-                  <span className="min-w-0 truncate">Next: {upcoming.title}</span>
-                  <time className="shrink-0 whitespace-nowrap" dateTime={upcoming.start}>
-                    {new Intl.DateTimeFormat(undefined, {
-                      weekday: "short",
-                      timeZone: agenda.data?.timezone ?? undefined,
-                    }).format(new Date(upcoming.start))}{" "}
-                    {time(new Date(upcoming.start), agenda.data?.timezone)}
-                  </time>
-                </span>
-              ) : (
-                <span>None through tomorrow</span>
-              )}
-            </span>
-          )}
-        </span>
-      }
       paneName="Calendar summary"
       hideHeading
     >

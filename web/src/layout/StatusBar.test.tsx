@@ -301,7 +301,7 @@ describe("Footer items are icons with a state and a pane", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const bar = await screen.findByRole("contentinfo");
-    const calendar = await within(bar).findByRole("button", { name: "Calendar unavailable, error" });
+    const calendar = await within(bar).findByRole("button", { name: "Calendar, error" });
     expect(calendar).toHaveClass("text-bad");
     await user.click(calendar);
     const summary = await screen.findByRole("region", { name: "Calendar summary" });
@@ -339,8 +339,9 @@ describe("Footer items are icons with a state and a pane", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const footer = await screen.findByRole("contentinfo");
-    const calendar = await within(footer).findByRole("button", { name: /In Standup until .*Next: Review .* at/ });
-    await user.click(calendar);
+    const calendar = await within(footer).findByRole("button", { name: "Calendar, off" });
+    expect(calendar).not.toHaveTextContent(/Standup|Review/);
+    await user.hover(calendar);
     const summary = await screen.findByRole("region", { name: "Calendar summary" });
     expect(within(summary).getByText(/In Standup · \d+ min remaining/)).toBeInTheDocument();
     expect(within(summary).getByText(/Next: Review/)).toBeInTheDocument();
@@ -377,7 +378,7 @@ describe("Footer items are icons with a state and a pane", () => {
     renderAt("/doctor");
     await user.click(
       await within(await screen.findByRole("contentinfo")).findByRole("button", {
-        name: "Calendar unavailable, error",
+        name: "Calendar, error",
       }),
     );
     const summary = await screen.findByRole("region", { name: "Calendar summary" });
