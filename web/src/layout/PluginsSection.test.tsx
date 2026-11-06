@@ -421,14 +421,50 @@ describe("PluginsSection", () => {
 
     const savedRestart = JSON.parse(sessionStorage.getItem("hz.plugin-add-restart.v1") ?? "null");
     expect(savedRestart.observation.retired).toContain("old");
+    expect(savedRestart.acknowledged).toBe(false);
     view.unmount();
     show({ reload, restartInterval: 1 });
-    expect(await screen.findByRole("alert")).toHaveTextContent("restart may already have been accepted");
+    expect(await screen.findByRole("alert")).toHaveTextContent("can’t verify the previous installation or restart");
     expect(screen.queryByRole("button", { name: "Restart and apply" })).not.toBeInTheDocument();
-    await user.click(await screen.findByRole("button", { name: "Check again" }));
-    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("button", { name: "Check again" })).not.toBeInTheDocument();
+    expect(reload).not.toHaveBeenCalled();
     expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(1);
     expect(calls.filter((call) => new URL(call.url).searchParams.get("confirm") === "true")).toHaveLength(1);
+  });
+
+  it("restores a confirmed restart receipt and skips every retiring instance", async () => {
+    const operationId = "previous-operation";
+    sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+    sessionStorage.setItem(
+      "hz.plugin-add-restart.v1",
+      JSON.stringify({
+        operation_id: operationId,
+        acknowledged: true,
+        observation: { retired: ["old", "intermediate"], version: "0.9.23", settings: [] },
+      }),
+    );
+    let reads = 0;
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/operation")
+        return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
+      if (url.pathname === "/api/lifecycle")
+        return {
+          body: { instance: reads++ === 0 ? "intermediate" : "replacement", version: "0.9.23", restartable: true },
+        };
+      if (url.pathname === "/api/lifecycle/verify")
+        return { body: { instance: "replacement", version: "0.9.23", matches: true, mismatched: [] } };
+      return base(url);
+    });
+    const user = userEvent.setup();
+    const reload = vi.fn();
+    show({ reload, restartInterval: 1 });
+    await user.click(await screen.findByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    const verifies = calls.filter((request) => new URL(request.url).pathname === "/api/lifecycle/verify");
+    expect(verifies).toHaveLength(1);
+    await expect(verifies[0]?.clone().json()).resolves.toMatchObject({ instance: "replacement" });
+    expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(0);
+    expect(calls.filter((call) => new URL(call.url).searchParams.get("confirm") === "true")).toHaveLength(0);
   });
 
   it("shows what a spec would install first, and installs the pinned requirement only on confirm", async () => {

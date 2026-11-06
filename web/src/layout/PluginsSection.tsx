@@ -228,6 +228,13 @@ function request(pending: Pending): PluginChangeRequest {
 
 const RESTART_STORAGE_KEY = "hz.plugin-add-restart.v1";
 
+function saveAddRestart(operationId: string, observation: RestartObservation, acknowledged: boolean) {
+  window.sessionStorage.setItem(
+    RESTART_STORAGE_KEY,
+    JSON.stringify({ operation_id: operationId, observation, acknowledged }),
+  );
+}
+
 function restoredPluginFlow(): {
   receiptId: string | null;
   restartObservation: RestartObservation | null;
@@ -239,10 +246,11 @@ function restoredPluginFlow(): {
     if (!restart) return { receiptId, restartObservation: null, blocked: false };
     const saved: unknown = JSON.parse(restart);
     if (!saved || typeof saved !== "object") return { receiptId, restartObservation: null, blocked: true };
-    const record = saved as { operation_id?: unknown; observation?: unknown };
+    const record = saved as { operation_id?: unknown; acknowledged?: unknown; observation?: unknown };
     if (
       typeof record.operation_id !== "string" ||
       record.operation_id !== receiptId ||
+      record.acknowledged !== true ||
       !validRestartObservation(record.observation)
     )
       return { receiptId, restartObservation: null, blocked: true };
@@ -467,104 +475,106 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       enable: t("plugins.enable"),
       disable: t("plugins.disable"),
     })[action];
-  const card = pending ? (
-    <InlineSlot>
-      <fieldset className="mb-4 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm">
-        <legend className="font-medium">{confirmText()}</legend>
-        {pending.action === "add" && <CandidateDetails candidate={pending.candidate} />}
-        <p className="mt-1 text-xs text-muted-foreground">{t("plugins.restartNote")}</p>
-        {change.error && (
-          <p role="alert" className="mt-1 text-xs text-bad">
-            {change.error.message}
-          </p>
-        )}
-        {change.isPending && pluginProgress && (
-          <p role="status" className="mt-1 text-xs text-muted-foreground">
-            {pluginProgress}
-          </p>
-        )}
-        <div className="mt-2">
-          {pending.action === "add" && operation.data?.status === "running" ? (
-            <p role="status" className="mt-2 text-xs text-muted-foreground">
-              {t("plugins.operationRunning")}
+  const card =
+    pending && !restartBlocked ? (
+      <InlineSlot>
+        <fieldset className="mb-4 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm">
+          <legend className="font-medium">{confirmText()}</legend>
+          {pending.action === "add" && <CandidateDetails candidate={pending.candidate} />}
+          <p className="mt-1 text-xs text-muted-foreground">{t("plugins.restartNote")}</p>
+          {change.error && (
+            <p role="alert" className="mt-1 text-xs text-bad">
+              {change.error.message}
             </p>
-          ) : pending.action === "add" && operation.data?.status === "unknown" ? (
-            <div className="mt-2 space-y-2">
-              <p role="alert" className="text-xs text-bad">
-                {t("plugins.operationUnknown")}
-              </p>
-              <p className="text-xs text-muted-foreground">{t("plugins.operationUnknownHelp")}</p>
-              <Button size="sm" variant="outline" onClick={resolveReceipt}>
-                {resolveArmed ? t("plugins.operationResolveConfirm") : t("plugins.operationResolve")}
-              </Button>
-            </div>
-          ) : (
-            <>
-              <RestartAndApply
-                target={t("plugins.title")}
-                changes={[
-                  `${actionText(pending.action)}: ${pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name}`,
-                ]}
-                preserve={confirm}
-                acquire={acquirePluginChange}
-                initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
-                onApplied={() => {
-                  if (pending.action === "add") {
-                    try {
-                      window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
-                      window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
-                      setReceiptId(null);
-                      setRestartObservation(null);
-                      setRestartBlocked(false);
-                    } catch {
-                      // Keeping the receipt is safe; the next visit will read the completed result.
-                    }
-                  }
-                  if (pending.action !== "add") completePluginRestart();
-                  setPending(null);
-                  if (pending.action === "add") setTab("yours");
-                  setAdding(false);
-                  setSpec("");
-                  if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
-                }}
-                options={{
-                  ...(pending.action === "add" || pending.action === "remove" ? { preserveTimeout: 20 * 60_000 } : {}),
-                  ...(restartInterval ? { interval: restartInterval } : {}),
-                  ...(pending.action === "add"
-                    ? {
-                        onObservation: (observation: RestartObservation) => {
-                          window.sessionStorage.setItem(
-                            RESTART_STORAGE_KEY,
-                            JSON.stringify({ operation_id: pending.operationId, observation }),
-                          );
-                          setRestartObservation(observation);
-                        },
-                      }
-                    : { onObservation: retainPluginRestart, onAcknowledged: acknowledgePluginRestart }),
-                }}
-              />
-              {(pending.action !== "add" || operation.data?.status === "previewed") && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    if (pending.action === "add") {
-                      setReceiptId(null);
-                      setRestartObservation(null);
-                    }
-                    setPending(null);
-                  }}
-                  disabled={change.isPending || activation.changing}
-                >
-                  {t("plugins.cancel")}
-                </Button>
-              )}
-            </>
           )}
-        </div>
-      </fieldset>
-    </InlineSlot>
-  ) : null;
+          {change.isPending && pluginProgress && (
+            <p role="status" className="mt-1 text-xs text-muted-foreground">
+              {pluginProgress}
+            </p>
+          )}
+          <div className="mt-2">
+            {pending.action === "add" && operation.data?.status === "running" ? (
+              <p role="status" className="mt-2 text-xs text-muted-foreground">
+                {t("plugins.operationRunning")}
+              </p>
+            ) : pending.action === "add" && operation.data?.status === "unknown" ? (
+              <div className="mt-2 space-y-2">
+                <p role="alert" className="text-xs text-bad">
+                  {t("plugins.operationUnknown")}
+                </p>
+                <p className="text-xs text-muted-foreground">{t("plugins.operationUnknownHelp")}</p>
+                <Button size="sm" variant="outline" onClick={resolveReceipt}>
+                  {resolveArmed ? t("plugins.operationResolveConfirm") : t("plugins.operationResolve")}
+                </Button>
+              </div>
+            ) : (
+              <>
+                <RestartAndApply
+                  target={t("plugins.title")}
+                  changes={[
+                    `${actionText(pending.action)}: ${pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name}`,
+                  ]}
+                  preserve={confirm}
+                  acquire={acquirePluginChange}
+                  initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
+                  onApplied={() => {
+                    if (pending.action === "add") {
+                      try {
+                        window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
+                        window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
+                        setReceiptId(null);
+                        setRestartObservation(null);
+                        setRestartBlocked(false);
+                      } catch {
+                        // Keeping the receipt is safe; the next visit will read the completed result.
+                      }
+                    }
+                    if (pending.action !== "add") completePluginRestart();
+                    setPending(null);
+                    if (pending.action === "add") setTab("yours");
+                    setAdding(false);
+                    setSpec("");
+                    if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
+                  }}
+                  options={{
+                    ...(pending.action === "add" || pending.action === "remove"
+                      ? { preserveTimeout: 20 * 60_000 }
+                      : {}),
+                    ...(restartInterval ? { interval: restartInterval } : {}),
+                    ...(pending.action === "add"
+                      ? {
+                          onObservation: (observation: RestartObservation) => {
+                            saveAddRestart(pending.operationId, observation, false);
+                            setRestartObservation(observation);
+                          },
+                          onAcknowledged: (observation: RestartObservation) =>
+                            saveAddRestart(pending.operationId, observation, true),
+                        }
+                      : { onObservation: retainPluginRestart, onAcknowledged: acknowledgePluginRestart }),
+                  }}
+                />
+                {(pending.action !== "add" || operation.data?.status === "previewed") && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      if (pending.action === "add") {
+                        setReceiptId(null);
+                        setRestartObservation(null);
+                      }
+                      setPending(null);
+                    }}
+                    disabled={change.isPending || activation.changing}
+                  >
+                    {t("plugins.cancel")}
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        </fieldset>
+      </InlineSlot>
+    ) : null;
   const slot: Slot | null = pending && anchor ? { key: anchor, node: card } : null;
   const activationInProgress = activation.pending || activation.observation !== undefined;
   const frozen = pending !== null || preview.isPending || activationInProgress;

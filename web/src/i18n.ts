@@ -659,7 +659,8 @@ const en = {
   "plugins.receiptStorageUnavailable": "This tab cannot save the server receipt, so no installation request was sent.",
   "plugins.operationRunning": "The server is still working on this installation. Check its status before continuing.",
   "plugins.operationUnknown": "The server cannot confirm how this installation ended. Do not retry it yet.",
-  "plugins.operationUnavailable": "The server could not read this installation receipt. Do not retry the install yet.",
+  "plugins.operationUnavailable":
+    "This tab can’t verify the previous installation or restart. Check the plugin before trying again.",
   "plugins.operationUnknownHelp":
     "Check that the earlier server operation has finished before clearing this tab's receipt.",
   "plugins.operationResolve": "Resolve after checking",
