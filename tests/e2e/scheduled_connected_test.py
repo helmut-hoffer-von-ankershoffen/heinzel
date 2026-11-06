@@ -200,7 +200,7 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
                     engine,
                     str(tmp_path),
                     "rolling" if rolling else "fixed",
-                    timing,
+                    "fixed-review-trace" if engine == "webkit" and not rolling and timing == "normal" else timing,
                 ],
                 cwd=REPO,
                 capture_output=True,
@@ -210,6 +210,11 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
         )
         if run.returncode:
             pytest.fail((run.stderr + "\n" + run.stdout).replace(token, "<redacted-session>"))
+        for line in run.stdout.splitlines():
+            if line.startswith("Fixed form trace: "):
+                (tmp_path / "fixed-review-form-trace.json").write_text(
+                    line.removeprefix("Fixed form trace: "), encoding="utf-8"
+                )
         assert json.loads(run.stdout.strip().splitlines()[-1])["accepted"] is True
         assert marker.read_text() == "xxxxxx"
         _assert_read(reads, rolling)

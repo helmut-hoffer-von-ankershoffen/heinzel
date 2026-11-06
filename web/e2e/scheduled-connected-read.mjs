@@ -6,6 +6,41 @@ import { settleRoutes } from "./route-settlement.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
 const lateActivity = process.argv[6] === "late-activity";
+const fixedReviewTrace = process.argv[6] === "fixed-review-trace";
+if (fixedReviewTrace) {
+  await page.addInitScript(() => {
+    const events = [];
+    const shape = (element) => {
+      try {
+        const value = JSON.parse(element.value);
+        return { json: true, hasWindow: Object.hasOwn(value, "window") };
+      } catch {
+        return { json: false, hasWindow: false };
+      }
+    };
+    for (const type of ["input", "change", "blur", "click"]) {
+      document.addEventListener(
+        type,
+        (event) => {
+          const node = event.target;
+          if (!(node instanceof HTMLElement)) return;
+          const panel = node.closest(
+            'section[aria-label="Connected read review"], [role="region"][aria-label="Connected read review"]',
+          );
+          if (!panel) return;
+          const field = panel.querySelector("textarea");
+          if (!field) return;
+          if (node !== field && !node.closest("button")?.textContent?.includes("Prepare review")) return;
+          events.push({ type, target: node === field ? "arguments" : "prepare", ...shape(field) });
+          if (events.length > 32) events.shift();
+        },
+        true,
+      );
+    }
+    window.__hzFixedReviewTrace = events;
+  });
+}
+
 if (lateActivity) {
   // Reproduce the hosted ordering: page DOM growth is committed between press/release, while its resize
   // notification arrives after release. Keep actual browser layout, response data and physical pointer events.
@@ -125,6 +160,9 @@ try {
       .fill(JSON.stringify({ window: { since: "2026-01-01T00:00:00Z", until: "2026-01-02T00:00:00Z" } }));
   }
   await panel.getByRole("button", { name: "Prepare review" }).click();
+  if (fixedReviewTrace) {
+    console.log("Fixed form trace:", JSON.stringify(await page.evaluate(() => window.__hzFixedReviewTrace)));
+  }
   await panel.getByText("Account: fixture-account").waitFor();
   await panel.getByText("Provider-reported candidate read: Candidate metadata may be filtered locally.").waitFor();
   await panel.getByRole("button", { name: "Review access" }).click();
