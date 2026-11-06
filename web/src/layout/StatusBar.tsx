@@ -109,6 +109,43 @@ function ReleaseNotes({ version }: { version: string }) {
   );
 }
 
+/** Two fixed half-rings preserve the icon footprint and distinguish elapsed time from the next start. */
+function MeetingIcon({ elapsed, approach }: { elapsed: number | null; approach: number | null }) {
+  return (
+    <span className="relative grid size-5 place-items-center" aria-hidden>
+      <Calendar className="size-3.5" />
+      <svg aria-hidden className="pointer-events-none absolute inset-0 size-full" viewBox="0 0 24 24" fill="none">
+        {elapsed !== null && (
+          <>
+            <path d="M 2 12 A 10 10 0 0 1 22 12" stroke="currentColor" className="opacity-25" />
+            <path
+              d="M 2 12 A 10 10 0 0 1 22 12"
+              pathLength="100"
+              stroke="currentColor"
+              strokeDasharray={`${elapsed} 100`}
+              strokeWidth="1.5"
+              className="text-ok"
+            />
+          </>
+        )}
+        {approach !== null && (
+          <>
+            <path d="M 22 12 A 10 10 0 0 1 2 12" stroke="currentColor" className="opacity-25" />
+            <path
+              d="M 22 12 A 10 10 0 0 1 2 12"
+              pathLength="100"
+              stroke="currentColor"
+              strokeDasharray={`${approach} 100`}
+              strokeWidth="1.5"
+              className="text-primary"
+            />
+          </>
+        )}
+      </svg>
+    </span>
+  );
+}
+
 /** The current and upcoming meetings share one compact entry to the calendar panel. */
 function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
   const agenda = useAgenda();
@@ -128,11 +165,22 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
     if (boundary.length) void agenda.refetch();
   }, [agenda.refetch, boundary.length]);
   if (!meeting) return null;
+  const unavailable = agenda.isError || Boolean(agenda.data?.problem);
+  const elapsed = active
+    ? (100 * (now.getTime() - Date.parse(active.start))) / (Date.parse(active.end) - Date.parse(active.start))
+    : null;
+  const nextMinutes = upcoming ? Math.ceil((Date.parse(upcoming.start) - now.getTime()) / 60_000) : null;
+  const approach = nextMinutes === null ? null : Math.max(0, (100 * (60 - nextMinutes)) / 60);
   return (
     <FooterItem
       label="Calendar"
       icon={Calendar}
-      state={agenda.isError || agenda.data?.problem ? "bad" : "off"}
+      content={
+        unavailable || (elapsed === null && approach === null) ? undefined : (
+          <MeetingIcon elapsed={elapsed} approach={approach} />
+        )
+      }
+      state={unavailable ? "bad" : "off"}
       paneName="Calendar summary"
       hideHeading
     >
@@ -153,10 +201,13 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
             </p>
             <p>
               {upcoming
-                ? `Next: ${upcoming.title} · ${new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: agenda.data?.timezone ?? undefined }).format(new Date(upcoming.start))} at ${time(new Date(upcoming.start), agenda.data?.timezone)}`
+                ? `Next: ${upcoming.title} · ${new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: agenda.data?.timezone ?? undefined }).format(new Date(upcoming.start))} at ${time(new Date(upcoming.start), agenda.data?.timezone)} · in ${nextMinutes} min`
                 : "None through tomorrow"}
             </p>
           </>
+        )}
+        {!unavailable && (elapsed !== null || approach !== null) && (
+          <p className="text-xs text-muted-foreground">Top arc: meeting elapsed. Bottom arc: starts within an hour.</p>
         )}
         <button type="button" className="min-h-10 text-primary underline" onClick={onOpen}>
           Open calendar
