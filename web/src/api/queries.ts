@@ -200,6 +200,14 @@ export const useOpenNotificationSettings = () =>
 export const useCapabilities = () =>
   useQuery({ queryKey: ["system", "capability", "list"], queryFn: () => unwrap(api.GET("/system/capability/list")) });
 
+/** Offline connector sign-in status from the connector's own checks. */
+export const useConnectorReport = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["system", "connector", "list"],
+    queryFn: ({ signal }) => unwrap(api.GET("/system/connector/list", { signal })),
+    enabled,
+  });
+
 /** `hz system plugin list` and `search`: what's installed, and what can be. */
 export const usePlugins = () =>
   useQuery({
