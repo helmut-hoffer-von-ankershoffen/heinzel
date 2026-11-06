@@ -12,53 +12,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  notifier:
+  verify:
     if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && startsWith(github.ref, 'refs/tags/v')
-    name: Build the release notifier without publishing credentials
-    runs-on: macos-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    env:
-      TAG: ${{ github.ref_name }}
-      GH_HOST: github.com
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: refs/tags/${{ github.ref_name }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Verify the exact tag before running build tooling
-        run: |
-          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
-          tagged="$(git rev-parse --verify "refs/tags/$TAG^{commit}")"
-          test "$(git rev-parse HEAD)" = "$tagged"
-          git merge-base --is-ancestor "$tagged" origin/main
-      - uses: ./.github/actions/setup-uv
-      - name: Verify the genuine published release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > release.json
-          uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py source "$TAG" release.json
-          rm release.json
-      - run: make notifier
-      - name: Pack the notifier with its executable bits and signature
-        run: tar -czf notifier.tar.gz -C src/heinzel/modules/system/notify/macos HeinzelNotifier.app
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: pypi-notifier
-          path: notifier.tar.gz
-          if-no-files-found: error
-
-  build:
-    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && startsWith(github.ref, 'refs/tags/v')
-    name: Build and verify only the core distributions
-    needs: notifier
+    name: Verify and promote the original GitHub release distributions
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
+      actions: read
+      attestations: read
     env:
       TAG: ${{ github.ref_name }}
       GH_HOST: github.com
@@ -68,52 +30,39 @@ jobs:
           ref: refs/tags/${{ github.ref_name }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify the exact tag before running build tooling
+      - name: Verify the exact tag before running verification tooling
         run: |
           [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           tagged="$(git rev-parse --verify "refs/tags/$TAG^{commit}")"
           test "$(git rev-parse HEAD)" = "$tagged"
           git merge-base --is-ancestor "$tagged" origin/main
       - uses: ./.github/actions/setup-uv
-      - name: Verify the genuine published release
-        id: source
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > release.json
-          uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py source "$TAG" release.json >> "$GITHUB_OUTPUT"
-          rm release.json
-      - name: Check the release for confidential terms
+        with:
+          enable-cache: false
+      - name: Retain the source confidentiality check
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
         run: uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require
-      - name: Check runtime license compatibility
+      - name: Retain runtime license compatibility verification
         run: make licenses
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: pypi-notifier
-      - name: Restore the verified-tag notifier
-        run: tar -xzf notifier.tar.gz -C src/heinzel/modules/system/notify/macos && rm notifier.tar.gz
-      - name: Build the complete core wheel and source distribution
-        run: uv build --package heinzel --out-dir dist
-      - name: Remove uv's generated build helper
-        run: make pypi-clean-build-marker
-      - name: Verify artifact identity, payloads and digests
+      - name: Download and independently verify the genuine signed release assets
         env:
-          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
-        run: uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py artifacts "$TAG" "$SOURCE_COMMIT" dist artifact-manifest.json
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${TAG#v}"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release-artifacts \
+            --pattern "heinzel-$version-py3-none-any.whl" --pattern "heinzel-$version.tar.gz" --pattern artifact-manifest.json
+          uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py promote "$TAG" release-artifacts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: core-pypi-distributions
-          path: |
-            dist/*
-            artifact-manifest.json
+          path: release-artifacts/
           if-no-files-found: error
 
   publish:
     if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && startsWith(github.ref, 'refs/tags/v')
     name: Upload verified core artifacts using PyPI trusted publishing
-    needs: build
+    needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     environment:

@@ -104,8 +104,12 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "publish.yml": {
         'test "v$(uv version --short)" = "$TAG"': "refuses a tag that doesn't match the project version",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py": (
-            "scans the tagged tree with the term list from the secret"
+        '[[ "$TAG" =~': "binds the exact core tag, checkout, caller source and main ancestry before tooling",
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py checkout": (
+            "verifies the reviewed release source before producing its signed artifact manifest"
+        ),
+        'if [ "$GITHUB_REPOSITORY" = helmut-hoffer-von-ankershoffen/heinzel ]; then': (
+            "requires core's configured confidential terms while preserving the shared plugin publisher"
         ),
         'name="$(uv version': "exports the release's CycloneDX bill of materials",
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/release_notes.py": (
@@ -130,16 +134,12 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "gh release view edge-channel": "moves the pointer the opt-in path reads",
     },
     "pypi.yml": {
-        '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before build tooling",
-        "gh api ": "verifies the published GitHub release and exports its exact source commit",
+        '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before verification tooling",
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
             "requires the configured release term list"
         ),
-        "tar -czf notifier.tar.gz": "preserves the notifier executable bits and signature across runners",
-        "tar -xzf notifier.tar.gz": "restores the notifier from the same validated tag",
-        "uv build --package heinzel": "builds only the registered core project, never unpublished workspace plugins",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py artifacts": (
-            "checks core metadata and complete packaged payloads"
+        'version="${TAG#v}"\ngh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release-artifacts': (
+            "verifies the original GitHub distributions and their producer, provenance, hashes and complete payloads"
         ),
         "python3 - <<'PY'": "rechecks hashes without checking out or running project code in the OIDC job",
     },
