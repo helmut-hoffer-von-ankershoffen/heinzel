@@ -15,19 +15,21 @@ const snapshot = {
   name: "Personal helper",
   messages: [{ id: "m1", seq: 1, role: "user", text: "Hello", status: "pending" }],
 };
-const historySearchConfig = {
-  ...config,
-  settings: [
-    ...config.settings,
-    {
-      section: "hz",
-      key: "features",
-      value: ["connected_history"],
-      description: "Preview features",
-      env: "HZ_FEATURES",
-    },
-  ],
-};
+function historySearchConfig(...otherFeatures: string[]) {
+  return {
+    ...config,
+    settings: [
+      ...config.settings,
+      {
+        section: "hz",
+        key: "features",
+        value: ["connected_history", ...otherFeatures],
+        description: "Preview features",
+        env: "HZ_FEATURES",
+      },
+    ],
+  };
+}
 
 const proposedSchedule = {
   summary: "Five-minute check-in",
@@ -1838,12 +1840,25 @@ it("does not display another session's action or request its associations", asyn
   expect(calls.some((call) => new URL(call.url).pathname.endsWith("/personal-artifacts"))).toBe(false);
 });
 
-it("keeps source preparation unavailable while a displayed reply still has an unsettled owned answer", async () => {
+it.each([false, true])("holds source review while the reply is unsettled (%s)", async (grouped) => {
   let finishAnswer: (() => void) | undefined;
   let answerStarted = false;
   let displayed = { ...snapshot, messages: [...snapshot.messages] };
   const { calls } = mockApi({
     ...shell,
+    "/api/system/config/show": {
+      ...config,
+      settings: [
+        ...config.settings,
+        {
+          section: "hz",
+          key: "features",
+          value: grouped ? ["connected_frontdoor"] : [],
+          description: "",
+          env: "HZ_FEATURES",
+        },
+      ],
+    },
     "/api/heinzel/session": () => displayed,
     "/api/heinzel/connected-read-options": () => [
       { capability: "calendar", method: "events", provider: "fixture", source: "fixture", input_schema: {} },
@@ -1883,6 +1898,7 @@ it("keeps source preparation unavailable while a displayed reply still has an un
     </Providers>,
   );
   fireEvent.change(await screen.findByLabelText("Read operation"), { target: { value: "calendar.events" } });
+  if (grouped) expect(await screen.findByRole("region", { name: "Review your helper" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Prepare review" })).toBeEnabled();
   fireEvent.change(screen.getByLabelText("Message your Heinzel"), { target: { value: "Suggest an interval" } });
   fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
@@ -1915,7 +1931,7 @@ it("keeps source preparation unavailable while a displayed reply still has an un
 it("opens and highlights a search match beyond the loaded conversation page", async () => {
   const { calls } = mockApi({
     ...shell,
-    "/api/system/config/show": historySearchConfig,
+    "/api/system/config/show": historySearchConfig(),
     "/api/heinzel/session": (request: Request) =>
       new URL(request.url).searchParams.get("cursor") === "anchored-jump"
         ? { ...snapshot, messages: [{ id: "old", seq: 154, role: "user", text: "Old matching message" }] }
@@ -1947,7 +1963,7 @@ it("opens an owner-search match in its exact helper without confirming any actio
   const target = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW";
   const { calls } = mockApi({
     ...shell,
-    "/api/system/config/show": historySearchConfig,
+    "/api/system/config/show": historySearchConfig("connected_frontdoor"),
     "/api/heinzel/session": (request: Request) => {
       const terms = new URL(request.url).searchParams;
       return terms.get("session_id") === target
@@ -1988,6 +2004,10 @@ it("opens an owner-search match in its exact helper without confirming any actio
   await search.findByText("Other private match");
   fireEvent.click(search.getByRole("button", { name: "Open message" }));
   await waitFor(() => expect(panel.getByText("Search result").parentElement).toHaveTextContent("Other private match"));
+  const review = within(panel.getByRole("region", { name: "Review your helper" }));
+  expect(review.getByText("1. Agent terms")).toBeInTheDocument();
+  expect(review.getByText("2. Source access and time window")).toBeInTheDocument();
+  expect(review.getByText("3. Recurring turns and local notices")).toBeInTheDocument();
   expect([...new URLSearchParams(router.state.location.search)]).toEqual([["chat", target]]);
   expect(router.state.location.state).toBeNull();
   expect(

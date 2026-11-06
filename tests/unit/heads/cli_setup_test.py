@@ -12,9 +12,13 @@ from heinzel import (
     CredentialLet,
     Credentials,
     HeinzelError,
+    Homebrew,
     Kernel,
+    ManualInstall,
     Module,
     ModuleSettings,
+    PrerequisiteService,
+    Progress,
     Prompter,
 )
 from heinzel.heads.cli import _setup
@@ -26,11 +30,14 @@ from heinzel.heads.cli._setup import (
     equivalent_commands,
     exit_code,
     is_configured,
+    prerequisite_owners,
     steps,
     summary,
 )
 from heinzel.kernel import INTERRUPT, ModuleRecord, Origin, ScriptedPrompter, ScriptExhausted, discover
+from heinzel.modules.system.prerequisite._service import ToolPrerequisites
 from heinzel.testing import MemoryBackend
+from tests._prerequisite_machine import Machine
 
 pytestmark = pytest.mark.unit
 
@@ -337,3 +344,257 @@ def test_the_console_prompter_refuses_a_secret_it_would_echo(monkeypatch):
     monkeypatch.setattr(_setup.getpass, "getpass", echoing)
     with pytest.raises(HeinzelError, match="can't hide what you type"):
         ConsolePrompter(Console(file=io.StringIO())).read("Token: ", secret=True)
+
+
+# Tools before steps (ADR 0112) ---------------------------------------------------------------------------------------
+
+LINUX_HELP = ManualInstall("Install it with your package manager.", "https://example.test/install")
+BREW = "/opt/homebrew/bin/brew"
+
+
+def tooled_module(*, when: str = "setup") -> Module:
+    module = greet_module()
+    module.prerequisite(
+        "tool", title="Tool", purpose="Greets in style.", linux=LINUX_HELP, macos=Homebrew("tool"), when=when
+    )
+    return module
+
+
+def tool_kernel(machine: Machine, module: Module | None = None, origin: Origin = PLUGIN) -> Kernel:
+    kernel = kernel_of(greet=(module or tooled_module(), origin))
+    kernel.bind(PrerequisiteService, ToolPrerequisites(kernel, Progress(), machine.host()))
+    return kernel
+
+
+def greet_plan(kernel: Kernel):
+    return [(record, let) for record, let in steps(kernel) if record.qualname == "greet"]
+
+
+def test_tools_that_work_leave_the_step_exactly_as_it_was(tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    machine = Machine(present={"/usr/bin/tool": "tool 1.0"})
+    kernel = tool_kernel(machine)
+    prompter = ScriptedPrompter(["Moin"])
+
+    [result] = Runner(kernel, prompter).run(greet_plan(kernel), offer_skip=False)
+
+    assert result.outcome is Outcome.DONE
+    assert prompter.transcript == ["", "greet (optional): Choose a greeting.", "Greeting [Hello]: Moin"]
+
+
+def test_a_missing_tool_is_installed_after_a_yes_and_before_the_owners_own_step(tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    machine = Machine(present={BREW: ""})
+    machine.provides["tool"] = {"/opt/homebrew/bin/tool": "tool 1.2"}
+    kernel = tool_kernel(machine)
+    prompter = ScriptedPrompter(["y", "Moin"])
+
+    [result] = Runner(kernel, prompter).run(greet_plan(kernel), offer_skip=False)
+
+    assert result.outcome is Outcome.DONE
+    assert machine.files["/opt/homebrew/bin/tool"] == "tool 1.2"
+    asked = [line for line in prompter.transcript if line.endswith(("[Y/n] y", ": Moin"))]
+    assert asked == ["Install tool with Homebrew now? [Y/n] y", "Greeting [Hello]: Moin"]
+    assert "Tool (tool) is not ready for greet: Greets in style." in prompter.transcript
+    assert 'greeting = "Moin"' in (tmp_path / "config.toml").read_text(encoding="utf-8")
+
+
+def test_declining_the_install_leaves_the_step_unrun_and_failed_with_the_reason(tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    machine = Machine(present={BREW: ""})
+    kernel = tool_kernel(machine)
+    prompter = ScriptedPrompter(["n"])
+
+    [result] = Runner(kernel, prompter).run(greet_plan(kernel), offer_skip=False)
+
+    assert result.outcome is Outcome.FAILED
+    assert result.detail.startswith("Its tools are not ready, so the step did not run: tool (")
+    assert not (tmp_path / "config.toml").exists()
+    assert not [c for c in machine.commands if c[:2] == [BREW, "install"]]
+    assert exit_code([result]) == 1
+
+
+def test_on_linux_the_owners_instructions_are_shown_and_nothing_is_asked_or_installed(tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    machine = Machine("linux")
+    kernel = tool_kernel(machine)
+    prompter = ScriptedPrompter([])
+
+    [result] = Runner(kernel, prompter).run(greet_plan(kernel), offer_skip=False)
+
+    assert result.outcome is Outcome.FAILED
+    assert "  Install it with your package manager. https://example.test/install" in prompter.transcript
+    assert machine.commands == []
+
+
+def test_without_a_person_nothing_is_installed_and_the_step_waits(tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    machine = Machine(present={BREW: ""})
+    kernel = tool_kernel(machine)
+    prompter = Prompter()
+    prompter.presets = {"greet.greeting": "Moin"}
+
+    [result] = Runner(kernel, prompter, from_file=False).run(greet_plan(kernel), offer_skip=False)
+
+    assert result.outcome is Outcome.FAILED
+    assert [c for c in machine.commands if c[0] == BREW] == []
+
+
+def test_a_failed_install_after_a_yes_is_shown_and_the_step_does_not_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    machine = Machine(present={BREW: ""})
+    machine.brew_code = 1
+    kernel = tool_kernel(machine)
+    prompter = ScriptedPrompter(["y"])
+
+    [result] = Runner(kernel, prompter).run(greet_plan(kernel), offer_skip=False)
+
+    assert result.outcome is Outcome.FAILED
+    assert any("exited with status 1" in line for line in prompter.transcript)
+    assert not (tmp_path / "config.toml").exists()
+
+
+class Listening(Prompter):
+    """Nobody to ask, but what the run says is kept."""
+
+    def __init__(self) -> None:
+        self.said: list[str] = []
+
+    def say(self, text: str) -> None:
+        self.said.append(text)
+
+
+def test_without_a_person_the_command_that_would_install_is_printed(tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    kernel = tool_kernel(Machine(present={BREW: ""}))
+    prompter = Listening()
+
+    Runner(kernel, prompter, from_file=False).run(greet_plan(kernel), offer_skip=False)
+
+    assert (
+        "  Nothing was installed. To install: hz system prerequisite install --owner greet --confirm" in prompter.said
+    )
+
+
+def test_tools_that_cannot_be_checked_leave_a_pending_row_not_a_crash():
+    kernel = tools_kernel(Machine("linux"))
+
+    def broken(*args: object, **kwargs: object) -> None:
+        msg = "probe exploded"
+        raise OSError(msg)
+
+    kernel.resolve(PrerequisiteService).check = broken  # type: ignore[method-assign]
+
+    [result] = Runner(kernel, ScriptedPrompter([])).run([], offer_skip=True, owners=[tools_owner(kernel)])
+
+    assert (result.outcome, result.prerequisites) == (Outcome.PENDING, True)
+    assert result.detail == "its tools could not be checked: probe exploded"
+
+
+def test_a_skipped_optional_step_installs_nothing(tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    machine = Machine(present={BREW: ""})
+    kernel = tool_kernel(machine)
+
+    [result] = Runner(kernel, ScriptedPrompter(["n"])).run(greet_plan(kernel), offer_skip=True)
+
+    assert result.outcome is Outcome.SKIPPED
+    assert machine.commands == []
+
+
+def test_a_feature_tool_is_requested_only_when_the_selection_needs_it(tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    module = greet_module()
+    module.prerequisite(
+        "tool", purpose="Greets.", linux=LINUX_HELP, when="feature", needed=lambda: False, condition="Chosen."
+    )
+    kernel = tool_kernel(Machine("linux"), module)
+
+    [result] = Runner(kernel, ScriptedPrompter(["Hi"])).run(greet_plan(kernel), offer_skip=False)
+
+    assert result.outcome is Outcome.DONE
+
+
+def test_a_kernel_without_the_prerequisite_service_runs_steps_as_before(tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    records = [
+        ModuleRecord(qualname="greet", module=tooled_module(), origin=PLUGIN),
+        *(record for record in discover(plugins=False)[0] if record.qualname not in {"org", "system.prerequisite"}),
+    ]
+    kernel = Kernel(records=records, config=Config.empty())
+    kernel.bind(Credentials, Credentials(MemoryBackend(), []))
+
+    [result] = Runner(kernel, ScriptedPrompter(["Hi"])).run(greet_plan(kernel), offer_skip=False)
+
+    assert result.outcome is Outcome.DONE
+
+
+def owner_only() -> Module:
+    module = Module("tools", "Needs a tool, asks nothing.")
+    module.prerequisite("tool", title="Tool", purpose="Helps.", linux=LINUX_HELP, macos=Homebrew("tool"))
+    return module
+
+
+def tools_kernel(machine: Machine) -> Kernel:
+    kernel = kernel_of(tools=(owner_only(), PLUGIN))
+    kernel.bind(PrerequisiteService, ToolPrerequisites(kernel, Progress(), machine.host()))
+    return kernel
+
+
+def tools_owner(kernel: Kernel) -> ModuleRecord:
+    return kernel.module("tools")
+
+
+def test_owners_without_a_step_are_the_modules_that_declare_tools_and_have_none():
+    kernel = kernel_of(greet=(tooled_module(), PLUGIN), tools=(owner_only(), PLUGIN))
+
+    owners = prerequisite_owners(kernel, steps(kernel))
+
+    assert [record.qualname for record in owners] == ["system", "system.notify", "system.runner", "tools"]
+
+
+def test_an_owner_without_a_step_whose_tools_work_says_nothing():
+    kernel = tools_kernel(Machine(present={"/usr/bin/tool": "tool 1.0"}))
+
+    assert Runner(kernel, ScriptedPrompter([])).run([], offer_skip=True, owners=[tools_owner(kernel)]) == []
+
+
+def test_an_owner_without_a_step_with_a_missing_tool_is_pending_not_failed():
+    machine = Machine("linux")
+    kernel = tools_kernel(machine)
+
+    results = Runner(kernel, ScriptedPrompter([])).run([], offer_skip=True, owners=[tools_owner(kernel)])
+
+    [result] = results
+    assert (result.module, result.outcome, result.prerequisites) == ("tools", Outcome.PENDING, True)
+    assert "tool: Install it with your package manager." in result.detail
+    assert exit_code(results) == 0
+
+
+def test_an_owner_without_a_step_is_prepared_after_a_yes():
+    machine = Machine(present={BREW: ""})
+    machine.provides["tool"] = {"/opt/homebrew/bin/tool": "tool 1.0"}
+    kernel = tools_kernel(machine)
+
+    [result] = Runner(kernel, ScriptedPrompter(["y"])).run([], offer_skip=True, owners=[tools_owner(kernel)])
+
+    assert (result.outcome, result.prerequisites) == (Outcome.DONE, True)
+
+
+def test_ctrl_c_while_preparing_an_owner_reaches_no_step(kernel):
+    machine = Machine(present={BREW: ""})
+    tooled = tools_kernel(machine)
+
+    results = Runner(tooled, ScriptedPrompter([INTERRUPT])).run(
+        steps(kernel), offer_skip=True, owners=[tools_owner(tooled)]
+    )
+
+    assert [r.outcome for r in results] == [Outcome.INTERRUPTED, *[Outcome.NOT_REACHED] * 3]
+    assert machine.commands == []
+
+
+def test_the_summary_names_the_tools_rows():
+    table = summary([StepResult(module="tools", required=False, outcome=Outcome.PENDING, prerequisites=True)])
+
+    assert [str(cell) for cell in table.columns[1].cells] == ["tools"]
+    assert [str(cell) for cell in table.columns[2].cells] == ["pending"]

@@ -5,8 +5,21 @@ from datetime import UTC, datetime
 
 import pytest
 
-from heinzel import ActionGate, Config, HeinzelError, ProposedCall
+from heinzel import (
+    ActionGate,
+    Config,
+    HeinzelError,
+    Module,
+    NotificationChannel,
+    OwnerNoticeChannel,
+    ProposedCall,
+    ReviewedLinkChannel,
+    ServiceLet,
+)
+from heinzel.kernel._source_loading import SourceDiscovery
+from heinzel.modules.heinzel._channel_binding import ChannelBinding
 from heinzel.modules.heinzel._channel_delivery import ChannelDelivery
+from heinzel.modules.heinzel._draft_workflow_notice import LocalDraftNotice
 from tests.integration import captured_write_chat_test
 from tests.integration.chat_test import AUTH
 
@@ -38,6 +51,23 @@ class FixtureChannel(ApprovalChannel):
         _STATE["settles"].append(outcome)
 module.service(FixtureChannel)
 """
+_NOTICE_CHANNEL = r"""
+from heinzel import ChannelReceipt, ChannelTarget, NotificationChannel
+_STATE["notice_posts"] = []
+class FixtureNotice(NotificationChannel):
+    name = "fixture"
+    def available(self):
+        return True
+    def delivery_target(self):
+        return ChannelTarget(account="fixture-account", destination="owner-inbox", scope="owner-review")
+    def deliver(self, notice):
+        raise AssertionError("Legacy notice delivery is not reviewed")
+    def deliver_reviewed(self, notice, target):
+        assert target == self.delivery_target()
+        _STATE["notice_posts"].append(notice)
+        return ChannelReceipt(channel="fixture", status="delivered", reference="notice-one")
+module.service(FixtureNotice)
+"""
 
 
 def _enable(kernel, monkeypatch):
@@ -65,6 +95,73 @@ def _stage(client, session, proposal):
     chat = staged.json()
     action = next(item for item in chat["actions"] if item["operation"] == "deliver-channel-item")
     return terms.json(), chat, action
+
+
+@pytest.mark.parametrize("captured_client", [_SOURCE + _NOTICE_CHANNEL], indirect=True, ids=["installed-notice"])
+def test_captured_notice_with_registered_builtin_workflow_channel(captured_client, monkeypatch):
+    client, kernel, _current, session, _proposal, state, _source = captured_client
+    _enable(kernel, monkeypatch)
+    assert any(record.origin.builtin and let.provides is LocalDraftNotice for record, let in kernel.lets(ServiceLet))
+
+    terms = client.post(
+        "/api/heinzel/propose-channel-item",
+        headers=AUTH,
+        json={
+            "session_id": session,
+            "request_id": "notice-one",
+            "channel": "fixture",
+            "notice": {"key": "notice", "helper": "Lotte", "title": "Ready", "body": "Fictional notice.", "route": ""},
+        },
+    )
+    assert terms.status_code == 200, terms.text
+    assert terms.json()["target"]["destination"] == "owner-inbox"
+    staged = client.post(
+        "/api/system/runner/chat/propose-channel-item",
+        headers=AUTH,
+        params={"durable_session": session, "request_id": "notice-one"},
+    )
+    assert staged.status_code == 200, staged.text
+    chat = staged.json()
+    (action,) = chat["actions"]
+    assert action["operation"] == "deliver-channel-item"
+    assert state["notice_posts"] == []
+    decision = {"session": chat["id"], "action": action["id"]}
+    assert client.post("/api/system/runner/chat/confirm", params=decision).status_code == 401
+    confirmed = client.post("/api/system/runner/chat/confirm", headers=AUTH, params=decision)
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["actions"][0]["status"] == "done"
+    assert client.post("/api/system/runner/chat/confirm", headers=AUTH, params=decision).status_code == 400
+    (notice,) = state["notice_posts"]
+    assert notice.title == "Ready"
+    assert notice.body == "Fictional notice."
+
+
+@pytest.mark.parametrize(
+    ("contract", "reason"),
+    [
+        (NotificationChannel, "The selected service has no reviewed source capture"),
+        (OwnerNoticeChannel, "Choose one available source-bound channel"),
+        (ReviewedLinkChannel, "Choose one available source-bound channel"),
+    ],
+)
+def test_ordinary_notice_refuses_uncaptured_and_workflow_only_transports(make_kernel, contract, reason):
+    class UncapturedNotice(contract):
+        name = "uncaptured"
+
+        def available(self) -> bool:
+            msg = "An uncaptured service must not be queried"
+            raise AssertionError(msg)
+
+        def deliver(self, notice):
+            msg = "An uncaptured service must not deliver"
+            raise AssertionError(msg)
+
+    module = Module("uncaptured", "Uncaptured ordinary transport")
+    module.service(UncapturedNotice)
+    kernel = make_kernel(uncaptured=module)
+    kernel.source_discovery = SourceDiscovery(installed=True)
+    with pytest.raises(HeinzelError, match=reason):
+        ChannelBinding(kernel, "uncaptured", "notice")
 
 
 @pytest.mark.parametrize("captured_client", [_SOURCE + _CHANNEL], indirect=True)

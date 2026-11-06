@@ -9,9 +9,11 @@ import {
   type SchemaProfileProposal,
   type SchemaSessionSnapshot,
 } from "@/api/client";
+import { usePreviewFeature } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
+import { StartHelper } from "@/heinzel/StartHelper";
 import { t } from "@/i18n";
 
 const sessionsKey = ["heinzel", "sessions"] as const;
@@ -151,6 +153,7 @@ function creationId(): string {
 
 export function PersonalHeinzels() {
   const client = useQueryClient();
+  const connectedFrontdoor = usePreviewFeature("connected_frontdoor");
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const creatingNow = useRef(false);
@@ -229,6 +232,7 @@ export function PersonalHeinzels() {
       <Button type="button" variant="outline" disabled={creating || locked} onClick={() => void create()}>
         {creationError ? t("personal.retryCreate") : t("personal.create")}
       </Button>
+      {connectedFrontdoor && <StartHelper />}
       {creationError && <p role="alert">{t("personal.createError")}</p>}
       {selected && session.isPending && <p role="status">{t("state.loading")}</p>}
       {selected && session.isError && <p role="alert">{t("personal.loadError")}</p>}
