@@ -43,6 +43,8 @@ for (const [name, engine] of [
         end: new Date(now + 600000).toISOString(),
         all_day: false,
         conference_url: "https://meet.example/test",
+        organizer: { name: "Ada Lovelace", email: "ada@example.com" },
+        attendees: [{ name: "Ada Lovelace" }, { email: "bob@example.com" }],
       };
       const next = {
         id: "b",
@@ -125,6 +127,9 @@ for (const [name, engine] of [
       }
       await summary.getByRole("button", { name: "Open calendar", exact: true }).click({ timeout: 10000 });
       const panel = page.getByRole("region", { name: "Calendar", exact: true });
+      await page
+        .getByRole("region", { name: "Calendar summary", exact: true })
+        .waitFor({ state: "detached", timeout: 10000 });
       try {
         await panel
           .getByText("Review with a very long title that must not hide the starting time", { exact: true })
@@ -149,7 +154,21 @@ for (const [name, engine] of [
       );
       assert.deepEqual(violations, []);
       await page.screenshot({ path: join(shots, `${name}-${size}.png`) });
+      await panel.getByRole("button", { name: /^Standup with an exceptionally long/ }).click();
+      const detail = panel.getByRole("article");
+      await detail.getByRole("link", { name: "Join meeting", exact: true }).waitFor({ timeout: 10000 });
+      assert.match(await detail.textContent(), /Organizer\s*Ada Lovelace/);
+      assert.match(await detail.textContent(), /bob@example\.com/);
+      await page.screenshot({ path: join(shots, `${name}-${size}-detail.png`) });
+      await detail.getByRole("button", { name: "Back to the week", exact: true }).click();
+      await detail.waitFor({ state: "detached" });
       assert.ok(!(await panel.textContent()).includes("hz org"), "setup exposed a terminal command");
+      const lingering = await page.getByRole("region", { name: "Calendar summary", exact: true }).count();
+      assert.equal(
+        lingering,
+        0,
+        `${name}/${size}: the footer pane is still open; focus=${await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 160))}`,
+      );
       await panel.getByRole("button", { name: "Set up reminder worker" }).click();
       const confirmation = page.getByRole("alertdialog");
       await confirmation.waitFor({ state: "visible" });

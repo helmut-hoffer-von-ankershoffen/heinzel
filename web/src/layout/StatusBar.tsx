@@ -131,6 +131,7 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
   const upcoming = next && Date.parse(next.start) > ms ? next : null;
   const unavailable = model.kind === "unknown";
   return (
+    // Opening the calendar closes this pane, so it never stays over the panel it opened.
     <FooterItem
       label="Calendar"
       triggerLabel={`Calendar: ${model.description}`}
@@ -141,29 +142,35 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
       hideHeading
       popoverClassName="w-[min(24rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
     >
-      {agenda.isPending ? (
-        <p className="p-3">Loading calendar…</p>
-      ) : agenda.isError ? (
-        <p className="p-3">Calendar unavailable. Try again later.</p>
-      ) : agenda.data?.problem ? (
-        <div className="space-y-2 p-3">
-          <p className="text-[17px] font-semibold">Calendar</p>
-          <p>{agenda.data.problem}</p>
-          <button type="button" className="min-h-11 text-primary underline" onClick={onOpen} aria-label="Open calendar">
-            Open calendar
-          </button>
-        </div>
-      ) : (
-        <CalendarSummary
-          model={model}
-          active={active}
-          upcoming={upcoming}
-          now={ms}
-          zone={zone}
-          clock={(iso) => time(new Date(iso), zone)}
-          onOpen={onOpen}
-        />
-      )}
+      {(close) => {
+        const open = () => {
+          close();
+          onOpen();
+        };
+        return agenda.isPending ? (
+          <p className="p-3">Loading calendar…</p>
+        ) : agenda.isError ? (
+          <p className="p-3">Calendar unavailable. Try again later.</p>
+        ) : agenda.data?.problem ? (
+          <div className="space-y-2 p-3">
+            <p className="text-[17px] font-semibold">Calendar</p>
+            <p>{agenda.data.problem}</p>
+            <button type="button" className="min-h-11 text-primary underline" onClick={open} aria-label="Open calendar">
+              Open calendar
+            </button>
+          </div>
+        ) : (
+          <CalendarSummary
+            model={model}
+            active={active}
+            upcoming={upcoming}
+            now={ms}
+            zone={zone}
+            clock={(iso) => time(new Date(iso), zone)}
+            onOpen={open}
+          />
+        );
+      }}
     </FooterItem>
   );
 }
