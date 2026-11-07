@@ -1,7 +1,7 @@
 import type { SchemaUpdateResult } from "@/api/client";
 import { stream } from "@/api/stream";
 import { token } from "@/api/token";
-import { type Phase, type PhaseState, parsePhase } from "@/lib/operationRun";
+import { mergePhase, type Phase, type PhaseState, parsePhase } from "@/lib/operationRun";
 import { compareCodeUnits } from "@/lib/sort";
 import {
   clearOwnedShellCaches,
@@ -188,10 +188,7 @@ class UpdateSteps {
   }
   /** A step the server reported; a later report of the same step replaces it. */
   readonly heard = (phase: Phase) => {
-    const known = this.server.some((entry) => entry.id === phase.id);
-    this.server = known
-      ? this.server.map((entry) => (entry.id === phase.id ? { ...entry, ...phase } : entry))
-      : [...this.server, phase];
+    this.server = mergePhase(this.server, phase);
     this.tell();
   };
   mark(id: string, state: PhaseState) {
