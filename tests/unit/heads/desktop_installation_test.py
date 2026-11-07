@@ -395,3 +395,20 @@ def test_interrupt_leaves_no_half_installed_bundle(monkeypatch, tmp_path, local_
     assert not bundle.exists()
     assert not list(bundle.parent.glob(".heinzel-desktop-*"))
     assert not list(config.glob(".heinzel-desktop-*"))
+
+
+def test_failed_verification_leaves_no_bundle_or_staging(monkeypatch, tmp_path, local_installation):
+    bundle, config, output, error, _out, err = _cli(monkeypatch, local_installation, tmp_path)
+
+    def refused(_version, _directory, _reporter=None):
+        msg = "The official desktop release provenance could not be verified."
+        raise desktop.HeinzelError(msg)
+
+    monkeypatch.setattr(desktop, "fetch_archive", refused)
+    with pytest.raises(typer.Exit) as stop:
+        _app._install(None, output, error)
+    assert stop.value.exit_code == 1
+    assert "could not be verified" in err.getvalue()
+    assert not bundle.exists()
+    assert not list(bundle.parent.glob(".heinzel-desktop-*"))
+    assert not list(config.glob(".heinzel-desktop-*"))

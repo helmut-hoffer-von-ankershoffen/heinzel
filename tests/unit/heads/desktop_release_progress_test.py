@@ -190,3 +190,41 @@ def test_confirm_never_prompts_without_a_terminal():
     assert confirm(console, "Remove it?", yes=True)
     with pytest.raises(HeinzelError, match="pass --yes to agree"):
         confirm(console, "Remove it?", yes=False)
+
+
+def test_transient_failures_are_retried_then_succeed():
+    from urllib.error import HTTPError, URLError
+
+    outcomes = iter([URLError(ConnectionResetError("reset")), HTTPError("u", 503, "busy", None, None), "ok"])  # pyright: ignore[reportArgumentType]
+
+    def action():
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    notes = _Notes()
+    assert release._retrying(action, "Asking GitHub", notes) == "ok"
+    assert [line.count("retrying") for line in notes.lines] == [1, 1]
+
+
+def test_verification_failure_and_timeout_stay_fatal(tmp_path, monkeypatch):
+    import subprocess
+
+    core = release._CoreManifest.model_construct(
+        version="1.2.3",
+        commit="a" * 40,
+        producer=release._Producer.model_construct(run_id=1, attempt=1, source_ref="refs/heads/main", workflow="w"),
+    )
+    failed = subprocess.CompletedProcess([], 1, b"", b"HTTP 401: not logged in\n")
+    monkeypatch.setattr(release, "_run_gh", lambda *_args: failed)
+    with pytest.raises(release.HeinzelError, match=r"could not be verified\. GitHub CLI said: HTTP 401"):
+        release._verify("gh", tmp_path / "a", tmp_path / "p", core)
+
+    def stalled(*_args):
+        command = "gh"
+        raise subprocess.TimeoutExpired(command, 60)
+
+    monkeypatch.setattr(release, "_run_gh", stalled)
+    with pytest.raises(release.HeinzelError, match="did not finish verifying"):
+        release._verify("gh", tmp_path / "a", tmp_path / "p", core)
