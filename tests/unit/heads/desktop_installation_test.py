@@ -4,13 +4,11 @@ import json
 import os
 import platform
 import plistlib
-import shutil
 import signal
 import struct
 import subprocess
 import sys
 from functools import partial
-from pathlib import Path
 
 import pytest
 
@@ -335,8 +333,10 @@ def test_native_quarantine_and_process_detection(tmp_path):
     desktop.mark_quarantined(bundle)
     quarantine = subprocess.check_output(["/usr/bin/xattr", "-p", "com.apple.quarantine", str(bundle)], timeout=5)
     assert quarantine.startswith(b"0081;")
-    sleep = Path(shutil.copyfile("/bin/sleep", bundle / "sleep"))
-    sleep.chmod(0o700)
+    # A link, never a copy: macOS kills a copied platform binary (launch constraints) and shows a "damaged app"
+    # dialog on the desktop. Through the link the system binary runs where it lives, and `ps` names the link's path.
+    sleep = bundle / "sleep"
+    sleep.symlink_to("/bin/sleep")
     with subprocess.Popen([str(sleep), "20"]) as process:
         try:
             assert desktop._in_use(bundle)

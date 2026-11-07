@@ -138,7 +138,7 @@ describe("Themes", () => {
     expect(acme.querySelector("img")).toHaveAttribute("src", "/theme-assets/acme/light.svg?v=1");
     const builtIn = screen.getByTestId("theme-preview-default");
     expect(builtIn.querySelector("img")).toBeNull();
-    expect(within(builtIn).getByTestId("heinzel-icon")).toBeInTheDocument();
+    expect(within(builtIn).getByTestId("heinzel-swarm")).toBeInTheDocument();
     expect(builtIn).toHaveTextContent("Heinzelmännchen");
   });
 
@@ -172,16 +172,17 @@ describe("Themes", () => {
     );
   });
 
-  it("shows the Heinzel and the app's name for a theme without a logo, the built-in one included", async () => {
+  it("shows the swarm and the app's name for a theme without a logo, the built-in one included", async () => {
     const logo = { light: "/theme-assets/default/light.svg", dark: "/x.svg", mark: null, alt: "x", height: "24px" };
     mockApi({ ...shell, "/api/system/theme/list": themeList("default", [theme({ logo }), acmeTheme]) });
     const user = userEvent.setup();
     renderAt("/doctor");
     const navigation = screen.getByRole("complementary", { name: "Main" });
-    expect(await within(navigation).findByText("Heinzelmännchen")).toBeInTheDocument();
-    expect(within(navigation).getByTestId("heinzel-icon").querySelector("svg")).toBeInTheDocument();
+    const lockup = await within(navigation).findByTestId("heinzel-wordmark");
+    expect(lockup).toHaveTextContent("Heinzelmännchen");
+    expect(within(lockup).getByTestId("heinzel-swarm")).toBeInTheDocument();
     expect(within(navigation).queryByRole("img")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
-    expect(within(navigation).getByTestId("heinzel-icon")).toBeInTheDocument();
+    expect(within(navigation).getByTestId("heinzel-swarm")).toBeInTheDocument();
   });
 });

@@ -181,7 +181,7 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
       className={cn(
         "viewport-popover fixed z-(--layer-media) overflow-y-auto bg-popover",
         docked
-          ? "border-y border-border"
+          ? "border-t border-border" // the account row's hairline closes it below, so no band or double line follows
           : "w-72 max-w-[calc(var(--hz-viewport-width,100vw)-1rem)] rounded-xl border border-border shadow-xl",
       )}
     >

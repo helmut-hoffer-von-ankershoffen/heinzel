@@ -1,9 +1,12 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
+import { Providers, queryClient } from "@/App";
 import { answered, at, base, empty, frame, mockWithHeldStream } from "@/test/chat";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { COST_NEAR_RATIO, Costs, costState } from "./Conversation";
 import { ago, switcherGroups } from "./SessionSwitcher";
+import type { Chat } from "./useChat";
 
 afterEach(() => {
   sessionStorage.clear();
@@ -95,11 +98,80 @@ describe("The chat's session switcher", () => {
     expect(screen.getByRole("button", { name: "New chat: switch chats" })).toBeInTheDocument();
   });
 
-  it("says what a message may cost in one line, the rest in its info", async () => {
+  it("keeps the cost out of the page: an info icon beside the model picker shows it on hover, focus and tap", async () => {
+    const user = userEvent.setup();
     mockApi(base);
     renderAt("/doctor");
-    expect(await screen.findByText(/^Up to \$0\.25 per message · this chat \$0\.00$/)).toBeInTheDocument();
-    expect(screen.getByTitle(/Runs your agent runner and may cost money/)).toBeInTheDocument();
+    const info = await screen.findByRole("button", { name: "What this chat may cost" });
+    const tip = screen.getByRole("tooltip", { hidden: true });
+    expect(tip).not.toBeVisible();
+    await waitFor(() => expect(info).toHaveAccessibleDescription(/Up to \$0\.25 per message · this chat \$0\.00/));
+    expect(info).toHaveAccessibleDescription(/Runs your agent runner and may cost money/);
+    await user.hover(info);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Up to $0.25 per message · this chat $0.00");
+    await user.unhover(info);
+    expect(tip).not.toBeVisible();
+    act(() => info.focus()); // keyboard focus and a tap both land here
+
+    expect(await screen.findByRole("tooltip")).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(tip).not.toBeVisible();
+    expect(info).toHaveAttribute("data-cost-state", "ok");
+  });
+
+  it("warns on the icon, not only in the tooltip, near and over the chat's cap", () => {
+    expect(costState(0, 5)).toBe("ok");
+    expect(costState(3.9, 5)).toBe("ok");
+    expect(costState(4, 5)).toBe("near");
+    expect(costState(5, 5)).toBe("over");
+    expect(costState(9, null)).toBe("ok");
+    expect(COST_NEAR_RATIO).toBe(0.8);
+    expect(costState(5 * COST_NEAR_RATIO - 0.001, 5)).toBe("ok");
+    expect(costState(5 * COST_NEAR_RATIO, 5)).toBe("near");
+  });
+
+  it.each([
+    [1.6, "near", "What this chat may cost: near the chat limit", "bg-warn", "text-warn"],
+    [2, "over", "What this chat may cost: over the chat limit", "bg-bad", "text-bad"],
+  ])(
+    "renders the icon at %s of $2.00 as %s: badge, colour and words, not colour alone",
+    async (spent, state, label, badge, colour) => {
+      mockApi(base);
+      const chat = {
+        session: { costs: { message_max_usd: 0.25, session_max_usd: 2, spent_usd: spent } },
+      } as unknown as Chat;
+      render(
+        <Providers client={queryClient()}>
+          <Costs chat={chat} />
+        </Providers>,
+      );
+      const icon = screen.getByRole("button", { name: label });
+      expect(icon).toHaveAttribute("data-cost-state", state);
+      expect(icon).toHaveClass(colour);
+      expect(icon.querySelector(`span.size-1\\.5.${badge}`)).not.toBeNull();
+      const tip = screen.getByRole("tooltip", { hidden: true });
+      expect(icon).toHaveAccessibleDescription(
+        new RegExp(state === "near" ? "has cost \\$1\\.60 of its \\$2\\.00 limit" : "reached its \\$2\\.00 limit"),
+      );
+      expect(tip).not.toBeVisible();
+    },
+  );
+
+  it("closes on Escape when only the pointer opened it, and a tap toggles it", async () => {
+    const user = userEvent.setup();
+    mockApi(base);
+    renderAt("/doctor");
+    const info = await screen.findByRole("button", { name: "What this chat may cost" });
+    await user.hover(info);
+    expect(await screen.findByRole("tooltip")).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("tooltip", { hidden: true })).not.toBeVisible();
+    await user.unhover(info);
+    fireEvent.pointerDown(info, { pointerType: "touch" });
+    fireEvent.click(info);
+    expect(await screen.findByRole("tooltip")).toBeVisible();
+    fireEvent.click(info);
+    expect(screen.getByRole("tooltip", { hidden: true })).not.toBeVisible();
   });
 
   it("groups and words what it lists", () => {

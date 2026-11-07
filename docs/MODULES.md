@@ -326,6 +326,7 @@ Pop up what deserves your attention: in the web app while it is open, else nativ
 | Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up. | `hz system notify test` | — | — | `POST /api/system/notify/test` | yes | expert |
 | Install the native notifier (Heinzel Notifier on macOS) and pop up a test notification now. | `hz system notify install` | — | — | — | yes | expert |
 | End leftover Heinzel Notifier processes and make macOS forget its stray copies. | `hz system notify clean` | — | — | — | yes | expert |
+| Recover a durable notification store whose replay keys a legacy notice list replaced. | `hz system notify recover` | — | — | — | yes | expert |
 | Open the system's notification settings to allow hz's pop-ups (macOS: System Settings). | `hz system notify settings` | — | — | `POST /api/system/notify/settings` | yes | expert |
 
 Settings: [`[system.notify]`](CONFIGURATION.md#systemnotify).

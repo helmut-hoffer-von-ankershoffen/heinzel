@@ -173,6 +173,10 @@ def ui_command(kernel: Kernel, err_console: Console, *, open_existing: bool = Fa
             return
 
         announce = _ui_announcement(err_console, browser=browser)
+        if supervised is not None:
+            from heinzel.heads.web._supervision import redirect_supervised_stderr  # noqa: PLC0415 - service only
+
+            redirect_supervised_stderr(kernel.settings.log_dir)
 
         try:
             if (
