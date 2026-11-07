@@ -13,9 +13,9 @@ export function PaneActions({ children, className }: { children?: ReactNode; cla
   // development and tests fail loudly, a release drops the stranger rather than the whole pane.
   const all = flatten(children);
   // A marker rather than identity, so a hot-reloaded PaneAction still counts; keys are made unique across fragments.
-  const items = all
-    .filter((item) => isValidElement(item) && (item.type as { paneAction?: boolean }).paneAction === true)
-    .map((item, index) => (isValidElement(item) ? cloneElement(item, { key: `${index}:${item.key}` }) : item));
+  const items = all.filter(
+    (item) => isValidElement(item) && (item.type as { paneAction?: boolean }).paneAction === true,
+  );
   if (import.meta.env.DEV && items.length !== all.length)
     throw new Error("PaneActions holds only PaneAction children (design/README.md)");
   // A row whose every action is conditionally hidden draws no stray divider.
@@ -30,13 +30,13 @@ export function PaneActions({ children, className }: { children?: ReactNode; cla
   );
 }
 
-/** The row's actions with fragments unwrapped and empty conditionals dropped. */
-function flatten(children: ReactNode): ReactNode[] {
-  return Children.toArray(children).flatMap((child) =>
-    isValidElement<{ children?: ReactNode }>(child) && child.type === Fragment
-      ? flatten(child.props.children)
-      : [child],
-  );
+/** The row's actions with fragments unwrapped and empty conditionals dropped; keys carry their fragment's key. */
+function flatten(children: ReactNode, prefix = ""): ReactNode[] {
+  return Children.toArray(children).flatMap((child) => {
+    if (!isValidElement<{ children?: ReactNode }>(child)) return [child];
+    if (child.type === Fragment) return flatten(child.props.children, `${prefix}${child.key}/`);
+    return [prefix ? cloneElement(child, { key: `${prefix}${child.key}` }) : child];
+  });
 }
 
 type Target = { onClick?: () => void; to?: string; href?: string };
