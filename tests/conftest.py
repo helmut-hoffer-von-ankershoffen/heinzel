@@ -1,6 +1,7 @@
 """Shared fixtures. The test-suite policy (one level per test, in order, with timeouts) and the isolation of every
 test from the developer's HZ_* variables, config and state (`hz_isolation`) are heinzel.testing's."""
 
+import importlib.util
 import math
 import os
 import re
@@ -376,6 +377,19 @@ class _SessionTiming:
         )
 
 
-# The E2E scheduling hint lives in its own module so a nested run can load it without heinzel (bead 0bb); importing
-# its hooks here registers them exactly as before.
-from tests._e2e_schedule import pytest_collection_modifyitems, pytest_configure_node  # noqa: E402, F401
+def _e2e_schedule():
+    """Load the E2E scheduling hint from the file beside this conftest, wherever a test copies the two (bead 0bb)."""
+    path = Path(__file__).with_name("_e2e_schedule.py")
+    spec = importlib.util.spec_from_file_location("heinzel_tests_e2e_schedule", path)
+    assert spec is not None, path
+    assert spec.loader is not None, path
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# The hint lives in its own file so a nested run can load it without heinzel; binding its hooks here registers them
+# exactly as before.
+_schedule = _e2e_schedule()
+pytest_configure_node = _schedule.pytest_configure_node
+pytest_collection_modifyitems = _schedule.pytest_collection_modifyitems
