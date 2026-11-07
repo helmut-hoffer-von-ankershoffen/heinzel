@@ -297,7 +297,7 @@ def test_a_replaced_app_names_the_receipt_it_does_not_match(mac):
     home, system, executable = mac
     desktop.install_desktop("1.0.0", executable, home=home)
     bundle = system / desktop.BUNDLE_NAME
-    shutil.rmtree(bundle)
+    bundle.rename(bundle.with_name("old.app"))  # keep the old one, so a freed inode number cannot be reused
     bundle.mkdir()
     receipt, _binding = _record(home)
     with pytest.raises(desktop.DesktopInstallationError) as failure:
