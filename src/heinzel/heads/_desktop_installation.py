@@ -11,6 +11,7 @@ import stat
 import struct
 import subprocess
 import sys
+import time
 from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from heinzel import HeinzelError
 from heinzel.heads._desktop_archive import BUNDLE_NAME, extract_bundle
 from heinzel.heads._desktop_release import VERSION, fetch_archive
+from heinzel.heads._desktop_report import SILENT, Reporter
 
 _RECEIPT = "desktop-installation.json"
 _BINDING = "desktop-owned-cli.json"
@@ -41,6 +43,9 @@ _CPU_ARM64 = 0x0100000C
 _MACH_EXECUTE = 2
 _BUNDLE_ID = "org.heinzelmaennchen.desktop"
 _BUNDLE_EXECUTABLE = "Heinzelmaennchen"
+LOCK_WAIT = 120.0
+"""Seconds to wait for another install, update or removal before giving up."""
+_LOCK_NOTE_AFTER = 1.0
 type DesktopInstallStatus = Literal["installed", "updated", "current", "deferred", "absent"]
 
 
@@ -139,14 +144,57 @@ def _open_lock(path: Path) -> Generator[int]:
         os.close(fd)
 
 
+def _lock_exclusive(fd: int, reporter: Reporter) -> None:
+    started = time.monotonic()
+    noted = False
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            waited = time.monotonic() - started
+            if waited >= LOCK_WAIT:
+                msg = (
+                    f"Another Heinzelmännchen install, update or removal has held the desktop lock for "
+                    f"{LOCK_WAIT:.0f} seconds. Wait for it to finish or quit it (look for `hz app` in `ps aux`), "
+                    "then run the command again."
+                )
+                raise DesktopInstallationError(msg) from None
+            if not noted and waited >= _LOCK_NOTE_AFTER:
+                reporter.note("Waiting for another Heinzelmännchen install, update or removal to finish...")
+                noted = True
+            time.sleep(0.1)
+        else:
+            return
+
+
 @contextmanager
-def _locked_config(home: Path) -> Generator[Path]:
+def _locked_config(home: Path, reporter: Reporter = SILENT) -> Generator[Path]:
     config = home / ".config" / "heinzel"
     _owned_directory(config.parent)
     _owned_directory(config)
     with _open_lock(config / "desktop-installation.lock") as fd:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        _lock_exclusive(fd, reporter)
         yield config
+
+
+def bundle_path(home: Path | None = None) -> Path:
+    """Where the managed bundle lives: the per-user folder `~/Applications`, never `/Applications`."""
+    return (home or Path.home()).resolve(strict=True) / "Applications" / BUNDLE_NAME
+
+
+def _confirm_installed(bundle: Path, config: Path, reporter: Reporter) -> None:
+    """Check on disk that the receipt-owned bundle is really where we report it.
+
+    Raises:
+        DesktopInstallationError: If the bundle is missing, not owned or not the expected app.
+    """
+    with reporter.phase("Verifying the installed app"):
+        record = _owned_installation(bundle, config)
+        if record is None:
+            msg = f"The desktop app is not at {bundle} after installation."
+            raise DesktopInstallationError(msg)
+        _verify_bundle(bundle, record.release)
+        reporter.note(f"Verified: {bundle} exists and matches Heinzelmännchen {record.release}.")
 
 
 @contextmanager
@@ -438,17 +486,24 @@ def _recover_before_use(bundle: Path, config: Path) -> bool:
 
 
 def install_desktop(
-    version: str, executable: Path, *, update_only: bool = False, home: Path | None = None
+    version: str,
+    executable: Path,
+    *,
+    update_only: bool = False,
+    home: Path | None = None,
+    reporter: Reporter = SILENT,
 ) -> DesktopInstallStatus:
     """Install or refresh a verified desktop release, or defer if the bundle is in use."""
     _check_platform()
     home = (home or Path.home()).resolve(strict=True)
-    applications = home / "Applications"
-    bundle = applications / BUNDLE_NAME
-    with _locked_config(home) as config:
+    bundle = bundle_path(home)
+    applications = bundle.parent
+    with _locked_config(home, reporter) as config:
         if os.path.lexists(applications):
             _owned_directory(applications)
-        if not _recover_before_use(bundle, config):
+        with reporter.phase("Checking whether the app is running"):
+            usable = _recover_before_use(bundle, config)
+        if not usable:
             return "deferred"
         existing = _owned_installation(bundle, config)
         if update_only:
@@ -457,7 +512,10 @@ def install_desktop(
             if VERSION.fullmatch(version) and _version_parts(existing.release) > _version_parts(version):
                 return "current"
         _owned_directory(applications)
-        return _install_release(version, executable, bundle, config, existing)
+        status = _install_release(version, executable, bundle, config, existing, reporter)
+        if status != "deferred":
+            _confirm_installed(bundle, config, reporter)
+        return status
 
 
 def _version_parts(version: str) -> tuple[int, ...]:
@@ -470,8 +528,8 @@ def _write_private(path: Path, data: bytes) -> None:
         file.write(data)
 
 
-def _install_release(
-    version: str, executable: Path, bundle: Path, config: Path, existing: _Receipt | None
+def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of these
+    version: str, executable: Path, bundle: Path, config: Path, existing: _Receipt | None, reporter: Reporter = SILENT
 ) -> DesktopInstallStatus:
     if (
         not VERSION.fullmatch(version)
@@ -486,12 +544,15 @@ def _install_release(
     if existing and _in_use(bundle):
         return "deferred"
     with _staging(bundle.parent, config) as (staging, files):
-        archive = fetch_archive(version, staging)
+        archive = fetch_archive(version, staging, reporter)
         expanded = staging / "expanded"
         expanded.mkdir(mode=0o700)
-        candidate = extract_bundle(archive, expanded)
-        _verify_bundle(candidate, version)
-        _quarantine(candidate)
+        with reporter.phase("Extracting the app"):
+            candidate = extract_bundle(archive, expanded)
+        with reporter.phase("Checking the app bundle (identifier, version, Apple silicon)"):
+            _verify_bundle(candidate, version)
+        with reporter.phase("Marking the app as downloaded (macOS quarantine)"):
+            _quarantine(candidate)
         candidate.rename(staging / BUNDLE_NAME)
         info = (staging / BUNDLE_NAME).lstat()
         record = _Receipt(
@@ -510,7 +571,7 @@ def _install_release(
         _write_private(files / _BINDING, binding)
         _sync_tree(staging / BUNDLE_NAME)
         _sync_tree(files)
-        with _desktop_use(config) as locked:
+        with _desktop_use(config) as locked, reporter.phase(f"Installing into {bundle.parent}"):
             if not locked or (existing and _in_use(bundle)):
                 return "deferred"
             if _owned_installation(bundle, config) != existing:
@@ -519,7 +580,7 @@ def _install_release(
     return "updated" if existing else "installed"
 
 
-def uninstall_desktop(*, home: Path | None = None) -> bool:
+def uninstall_desktop(*, home: Path | None = None, reporter: Reporter = SILENT) -> bool:
     """Remove an owned, stopped desktop bundle and its binding.
 
     Raises:
@@ -527,9 +588,9 @@ def uninstall_desktop(*, home: Path | None = None) -> bool:
     """
     _check_platform()
     home = (home or Path.home()).resolve(strict=True)
-    applications = home / "Applications"
-    bundle = applications / BUNDLE_NAME
-    with _locked_config(home) as config:
+    bundle = bundle_path(home)
+    applications = bundle.parent
+    with _locked_config(home, reporter) as config:
         if os.path.lexists(applications):
             _owned_directory(applications)
         if not _recover_before_use(bundle, config):
@@ -544,6 +605,6 @@ def uninstall_desktop(*, home: Path | None = None) -> bool:
                 raise DesktopInstallationError(msg)
             if _owned_installation(bundle, config) != existing:
                 raise DesktopInstallationError(_CONFLICT)
-            with _staging(applications, config) as (staging, files):
+            with _staging(applications, config) as (staging, files), reporter.phase(f"Removing {bundle}"):
                 _commit(bundle, config, staging, files, "uninstall")
     return True

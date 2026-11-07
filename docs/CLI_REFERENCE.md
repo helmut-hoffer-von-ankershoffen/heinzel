@@ -199,9 +199,6 @@ $ hz app [OPTIONS] COMMAND [ARGS]...
 
 Install the desktop app for this version of Heinzel.
 
-Raises:
-    typer.Exit: If the app cannot be installed now.
-
 **Usage**:
 
 ```console
@@ -229,9 +226,6 @@ $ hz app refresh [OPTIONS]
 ### `hz app uninstall`
 
 Remove the managed desktop app and keep your Heinzel profile.
-
-Raises:
-    typer.Exit: If the app cannot be removed safely.
 
 **Usage**:
 

@@ -121,6 +121,16 @@ The first `add` previews. Check the source and compatibility, then confirm. Some
 | A private plugin cannot be found | Run `gh auth login` using an account allowed to read its repository. |
 | You want exact command options | Use `hz --help` and the [CLI reference](../CLI_REFERENCE.md). |
 
+### Install or remove the desktop app
+
+`hz app install` installs the managed desktop app into your user Applications folder (`~/Applications`, not the system
+`/Applications`) and shows every step: resolving the release, downloading with size, speed and time remaining, checking
+the checksum and provenance, extracting, marking the download for macOS, installing and verifying the result. It ends with
+`Installed Heinzelmännchen X at <path>` and the next step. When the output is redirected the same steps print as plain lines
+on stderr and stdout keeps only the result. Ctrl-C cancels and leaves no half-installed app. If the release has no desktop app
+yet it says so; run `hz system update` or try again later. A stalled network is reported after 20 to 30 seconds per request
+(retried twice), and a second install waits at most two minutes for the first. `hz app uninstall` removes the app and keeps your profile.
+
 For updates, removal and platform details, see the tested instructions in the
 [repository README](../../README.md#install). The desktop lifecycle has
 [explicit production gates](../DESKTOP_PRODUCTION_GATES.md); the local web command above is the starting path.
