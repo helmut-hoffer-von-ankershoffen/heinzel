@@ -6,6 +6,7 @@ decision-makers: maintainer (the decision), architect (shape)
 amends: 0028
 amends-0028: the tracker capability writes
 related: 0003, 0019, 0021, 0029, 0065, 0068, 0081, 0094
+implemented-by: 572
 ---
 
 # 0136: Task tracking is a capability; the tracker behind it is a connector
