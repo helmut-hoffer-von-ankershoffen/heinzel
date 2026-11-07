@@ -2961,6 +2961,7 @@ $ hz system notify list [OPTIONS]
 
 * `--limit <int>`: How many of the latest notices to show.  [default: 50]
 * `--before <str>`: Only notices older than this id, for the next page.
+* `--resolved / --no-resolved`: Include notices that resolved by themselves and disappeared, for their history.  [default: no-resolved]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

@@ -222,7 +222,15 @@ from heinzel.kernel._local_overview import CachedOverviewLet, DaemonOverview, Lo
 from heinzel.kernel._local_web import LocalWebRuntime, PersistentWeb
 from heinzel.kernel._metadata_verifier import CoreMetadataVerifier
 from heinzel.kernel._module import Module
-from heinzel.kernel._notifications import Delivery, Notice, NoticeHelper, NoticeKind, Notifications
+from heinzel.kernel._notifications import (
+    CapabilityState,
+    Delivery,
+    Notice,
+    NoticeHelper,
+    NoticeKind,
+    Notifications,
+    ResolveWhen,
+)
 from heinzel.kernel._offline_uninstall import OfflineUninstall, UninstallResult
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
 from heinzel.kernel._paths import collapses, operation_path, owns_path, public_parameters
@@ -451,6 +459,7 @@ __all__ = [
     "CallIdentity",
     "Capability",
     "CapabilitySettings",
+    "CapabilityState",
     "CapabilityView",
     "CapturedWriteAcknowledgement",
     "CapturedWriteDraft",
@@ -653,6 +662,7 @@ __all__ = [
     "Requester",
     "Requirement",
     "RequirementLet",
+    "ResolveWhen",
     "ReviewedLinkChannel",
     "RunCommand",
     "RunGitCommand",

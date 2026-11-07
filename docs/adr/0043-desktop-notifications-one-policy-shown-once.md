@@ -209,3 +209,19 @@ macOS registers every path the app was launched from and lists each in System Se
 One Mac had 172, left by tests and worktree builds. A test that would start the real app is refused unless it sets
 `HZ_REAL_NOTIFIER` and forgets its copy. The daemon asks macOS once a day to forget every other copy under the exact
 bundle id (`lsregister -u`, the files stay), and `hz system notify clean` does it at once.
+
+**Amendment 2026-11-07: notices that resolve by themselves.** A notice may carry `resolve_when`, a closed, declarative
+condition the service evaluates, never a head: `installed_version_at_least` (the hz installed on disk, read afresh, not
+the running process's version) and `capability` (`<module>:<operation>`, a field and a value: a read-only operation of
+the module that owns the capability, found among the kernel's lets by name, so the core imports no plugin, ADR 0094).
+Every condition given must hold; an operation that is missing, unavailable, not read-only or failing never resolves.
+Once it holds, the notice is *resolved*: `resolved_at` and `resolved` (why, in words) are recorded and it disappears
+from `list`, Today, the bell's unread count and pop-ups; `list --resolved` still shows it, as history, until it ages
+out. Resolution never marks a notice read: read stays the person's own action. Version conditions are checked on every
+read without writing; capability conditions only at a tick (`post_native` resolves after its hourly look), so a read
+never runs another module's operation. A notice whose condition already holds is not recorded. The release notice
+compares the installed version, says it in its body and carries `installed_version_at_least` the announced version;
+release notices recorded before this (no condition) resolve by their `release:<version>` key, whichever process wrote
+them. `hz system notify recover` reports stale ones on a store that verifies and resolves them with `--apply`. Cause:
+an "hz 0.9.28 is available - you have 0.9.27" notice stayed on Today after 0.9.28 was installed, because it was worded
+and compared with the recording process's in-memory version and nothing ever withdrew it.
