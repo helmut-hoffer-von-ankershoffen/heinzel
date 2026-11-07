@@ -88,6 +88,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "for check in merge-gate coverage-floor": "reports the gates as check runs on the pull request's head",
         "for check in MERGE_GATE COVERAGE_FLOOR": "completes both check runs, failing closed",
     },
+    "focused-job.yml": {
+        '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
+        "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
+    },
     "acceptance-sharded.yml": {
         "uv python install 3.13": "the isolated acceptance study interpreter",
         '"$(uv python find 3.13)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
