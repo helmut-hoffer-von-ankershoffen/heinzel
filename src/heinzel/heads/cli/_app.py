@@ -61,6 +61,7 @@ def _print_location(output: Console, error: Console) -> None:
     from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
         SYSTEM_APPLICATIONS,
         desktop_location,
+        system_applications_usable,
     )
 
     location = desktop_location()
@@ -68,7 +69,16 @@ def _print_location(output: Console, error: Console) -> None:
         error.print("The desktop app was installed but cannot be found. Run hz app doctor.")
         raise typer.Exit(1)
     output.print(f"Heinzel is installed at {location}.", markup=False)
-    if location.parent != SYSTEM_APPLICATIONS:
+    if location.parent == SYSTEM_APPLICATIONS:
+        return
+    if system_applications_usable():
+        output.print(
+            f"It could not be moved to {SYSTEM_APPLICATIONS} this time: Heinzelmännchen was running, another "
+            f"{location.name} is already there, or your home folder is on another volume. Quit the app, move the "
+            "other copy to the Trash, then run hz app install again: it moves the app for you.",
+            markup=False,
+        )
+    else:
         output.print(
             f"It is in your own Applications folder because this user cannot write to {SYSTEM_APPLICATIONS} "
             "without an administrator password; Finder, Launchpad and Spotlight find it there too. To have it in "
