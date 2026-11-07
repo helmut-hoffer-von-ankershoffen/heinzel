@@ -6,7 +6,7 @@ import json
 import re
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from urllib.request import urlopen
 
 import pytest
@@ -15,6 +15,7 @@ from rich.console import Console
 from heinzel.heads import _desktop_installation as installer
 from heinzel.heads import _desktop_release as release
 from heinzel.heads.cli._progress import PhaseReporter
+from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.unit
 
@@ -65,7 +66,7 @@ def server(monkeypatch):
         def log_message(self, *_args):
             pass
 
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    httpd = LoopbackThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{httpd.server_port}"
 
