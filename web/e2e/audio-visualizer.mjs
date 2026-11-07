@@ -1,5 +1,4 @@
 // Real Chromium Web Audio and canvas. Only the picker transport is replaced with a generated MediaStream.
-// The aurora colours its ribbons by frequency band (bass, mid, treble), so a moved tone changes the measured hue.
 // Usage: node e2e/audio-visualizer.mjs SCREENSHOT_DIR
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync } from "node:fs";
@@ -17,7 +16,9 @@ await server.listen();
 const address = server.httpServer.address();
 assert(address && typeof address !== "string");
 let browser;
-const result = { viewports: [], realSignal: false, realSilence: false, cleanup: false, errors: [] };
+// Measured 0.30 -> 0.71..0.74 for 440 Hz -> 12 kHz in Chromium at both widths; 0.2 is half the smallest move.
+const RAIL_MARGIN = 0.2;
+const result = { viewports: [], tones: [], realSignal: false, realSilence: false, cleanup: false, errors: [] };
 try {
   try {
     browser = await chromium.launch();
@@ -47,11 +48,22 @@ try {
     await share.click();
     await page.waitForFunction(() => document.querySelector("output")?.textContent?.startsWith("Visualizing"));
     assert.equal(await page.evaluate(() => window.audioFixture.options.preferCurrentTab), true);
-    const canvas = page.locator("canvas[data-testid=audio-aurora]");
-    // Mean green share of the painted pixels: the ribbons are painted in different theme colours per band.
-    const hue = () =>
-      canvas.evaluate((element) => {
-        const { data } = element.getContext("2d").getImageData(0, 0, element.width, element.height);
+    // What the visualizer measured and drew, read in the page: the shared analysis' spectrum position (0 = 40 Hz,
+    // 1 = 12 kHz, -1 = silent), where the Spectrum rail's painted mass sits (0 = bottom/bass, 1 = top/treble), and
+    // the aurora's painted pixel count and mean green share (logged for diagnosis, not asserted: its animation drifts).
+    const measure = () =>
+      page.evaluate(() => {
+        const rail = document.querySelector('canvas[aria-label="Shared audio spectrum"]');
+        const sky = document.querySelector("canvas[data-testid=audio-aurora]");
+        let mass = 0,
+          height = 0;
+        const pixels = rail.getContext("2d").getImageData(0, 0, rail.width, rail.height).data;
+        for (let i = 3; i < pixels.length; i += 4) {
+          const row = Math.floor((i - 3) / 4 / rail.width);
+          mass += pixels[i];
+          height += pixels[i] * (1 - row / Math.max(1, rail.height - 1));
+        }
+        const { data } = sky.getContext("2d").getImageData(0, 0, sky.width, sky.height);
         let share = 0,
           count = 0;
         for (let i = 0; i < data.length; i += 4)
@@ -59,42 +71,56 @@ try {
             share += data[i + 1] / (data[i] + data[i + 1] + data[i + 2] + 1);
             count += 1;
           }
-        return { count, share: share / Math.max(1, count) };
+        return {
+          centroid: Number(rail.dataset.vizCentroid ?? "-1"),
+          sampleRate: Number(rail.dataset.vizSampleRate ?? "0"),
+          rail: height / Math.max(1, mass),
+          count,
+          share: share / Math.max(1, count),
+        };
       });
-    await page.waitForFunction(() => {
-      const element = document.querySelector("canvas[data-testid=audio-aurora]");
-      const { data } = element.getContext("2d").getImageData(0, 0, element.width, element.height);
+    // Fails with what was measured, so a CI log tells a dead analyser from a drawing or timing problem.
+    const until = async (what, predicate, arg) => {
+      try {
+        await page.waitForFunction(predicate, arg, { timeout: 30_000, polling: 100 });
+      } catch (error) {
+        throw new Error(`${viewport.width}px: ${what}; measured ${JSON.stringify(await measure())}`, { cause: error });
+      }
+    };
+    await until("generated audio never reached the analysis and the aurora", () => {
+      const rail = document.querySelector('canvas[aria-label="Shared audio spectrum"]');
+      const sky = document.querySelector("canvas[data-testid=audio-aurora]");
+      if (!rail || !sky || Number(rail.dataset.vizCentroid ?? "-1") < 0) return false;
+      const { data } = sky.getContext("2d").getImageData(0, 0, sky.width, sky.height);
       return data.some((value, index) => index % 4 === 3 && value > 0);
     });
-    // Let the 440 Hz tone settle, then move it to 12 kHz: a different band must paint a different colour.
+    // Let the 440 Hz tone settle, then move it to 12 kHz: the measured spectrum position must climb by at least a
+    // quarter of the spectrum (as the old strip's centroid had to move a quarter of its width), and the rail's
+    // painted mass must move up with it.
     await page.waitForTimeout(1500);
-    const low = await hue();
+    const low = await measure();
     assert(low.count > 0, "Real generated audio must produce nonempty aurora pixels");
     await page.evaluate(() => {
       window.audioFixture.oscillator.frequency.value = 12000;
     });
-    await page.waitForFunction(
-      ([lowShare]) => {
-        const element = document.querySelector("canvas[data-testid=audio-aurora]");
-        const { data } = element.getContext("2d").getImageData(0, 0, element.width, element.height);
-        let share = 0,
-          count = 0;
-        for (let i = 0; i < data.length; i += 4)
-          if (data[i + 3]) {
-            share += data[i + 1] / (data[i] + data[i + 1] + data[i + 2] + 1);
-            count += 1;
-          }
-        // Directional and above the animation's own drift (about 0.03 on a steady tone): a 12 kHz tone moves the
-        // ribbons into the treble colour, measured at +0.12 to +0.14.
-        return count > 0 && share / count > lowShare + 0.06;
-      },
-      [low.share],
+    await until(
+      `the 12 kHz tone did not move the measured spectrum up from ${JSON.stringify(low)}`,
+      (lowCentroid) =>
+        Number(document.querySelector('canvas[aria-label="Shared audio spectrum"]').dataset.vizCentroid ?? "-1") >
+        lowCentroid + 0.25,
+      low.centroid,
     );
-    const high = await hue();
+    await page.waitForTimeout(500);
+    const high = await measure();
+    result.tones.push({ width: viewport.width, low, high });
     assert(high.count > 0, "The moved tone must still paint the aurora");
     assert(
-      high.share > low.share + 0.06,
-      `Changing a real tone must shift the aurora colour: ${JSON.stringify({ low, high })}`,
+      high.centroid > low.centroid + 0.25,
+      `Changing a real tone must move the measured spectrum: ${JSON.stringify({ low, high })}`,
+    );
+    assert(
+      high.rail > low.rail + RAIL_MARGIN,
+      `Changing a real tone must move the drawn spectrum up the rail: ${JSON.stringify({ low, high })}`,
     );
     result.realSignal = true;
     await page.screenshot({ path: join(shots, `audio-${viewport.width}-signal.png`) });

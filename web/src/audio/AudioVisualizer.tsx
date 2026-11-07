@@ -176,6 +176,15 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       context.setTransform(next.width / width, 0, 0, next.height / height, 0, 0);
       return { width, height };
     };
+    // The measured spectrum position, on the drawing's own element: the browser test asserts the real signal path
+    // with it, and its failure log can tell a dead analyser from a drawing problem.
+    const probe = rail ?? sky;
+    if (probe) probe.dataset.vizSampleRate = String(sampleRate);
+    const publish = () => {
+      if (!probe) return;
+      const centre = analysis.centroid().toFixed(3);
+      if (probe.dataset.vizCentroid !== centre) probe.dataset.vizCentroid = centre;
+    };
     const sample = (now: number, dt: number) => {
       analyser.getByteFrequencyData(freq);
       if (time) analyser.getByteTimeDomainData(time);
@@ -193,6 +202,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         setHasSignal(detected);
       }
       analysis.step(freq, time, now, dt);
+      publish();
       return sound;
     };
     const sleep = () => {
@@ -204,6 +214,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         setHasSignal(false);
       }
       analysis.rest();
+      publish();
       if (rail && railContext) {
         railSize = sizeOf(rail, railContext);
         drawRail(railContext, analysis, theme, railSize.width, railSize.height, true);

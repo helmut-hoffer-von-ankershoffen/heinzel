@@ -15,11 +15,13 @@ import subprocess
 import tomllib
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from importlib.metadata import Distribution
 from typing import Any, Literal, NoReturn, cast
 from urllib.parse import quote, urlsplit
 
+from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
@@ -186,7 +188,7 @@ class Metadata:
     subdirectory: str | None = None
 
 
-def _github_project_at(get: JsonGetter, base: str, revision: str, directory: str | None) -> dict[str, Any]:
+def github_project_at(get: JsonGetter, base: str, revision: str, directory: str | None) -> dict[str, Any]:
     """Read bounded project metadata at one commit, including GitHub-resolved links within that commit.
 
     Raises:
@@ -214,7 +216,7 @@ def _github_root_project(source: PluginSource, get: JsonGetter, base: str, revis
         LookupError: If the explicitly selected directory has no project metadata.
     """
     try:
-        return _github_project_at(get, base, revision, source.subdirectory)
+        return github_project_at(get, base, revision, source.subdirectory)
     except LookupError:
         if source.subdirectory:
             raise
@@ -247,7 +249,7 @@ def _github_project(
             continue
         directory = f"plugins/{folder}"
         try:
-            child = _github_project_at(get, base, revision, directory)
+            child = github_project_at(get, base, revision, directory)
         except LookupError:
             continue
         name = child.get("name")
@@ -520,3 +522,38 @@ def _name_of(email: object) -> str | None:
         return None
     text = str(email).split(",", 1)[0].strip()
     return text.split("<", 1)[0].strip().strip('"') or text
+
+
+def required_by(installed: Iterable[Distribution]) -> dict[str, set[str]]:
+    """Which installed distributions require each one, by canonical name: plugins that depend on plugins.
+
+    Read from each distribution's `Requires-Dist`, without running it; a requirement only for an extra, or whose
+    marker doesn't hold here, doesn't count. An unreadable requirement counts as nothing rather than failing the read.
+    """
+    result: dict[str, set[str]] = {}
+    for distribution in installed:
+        name = canonicalize_name(distribution.metadata["Name"] or "")
+        for line in distribution.requires or ():
+            try:
+                requirement = Requirement(line)
+            except InvalidRequirement:
+                continue
+            try:
+                if requirement.marker is not None and not requirement.marker.evaluate({"extra": ""}):
+                    continue
+            except (UndefinedComparison, UndefinedEnvironmentName, InvalidVersion):
+                continue
+            result.setdefault(canonicalize_name(requirement.name), set()).add(name)
+    return result
+
+
+def dependents(name: str, graph: dict[str, set[str]]) -> set[str]:
+    """Every distribution that requires `name`, directly or through others, from `required_by`."""
+    found: set[str] = set()
+    todo: list[str] = [canonicalize_name(name)]
+    while todo:
+        for requirer in graph.get(todo.pop(), set()) - found:
+            found.add(requirer)
+            todo.append(requirer)
+    found.discard(canonicalize_name(name))
+    return found

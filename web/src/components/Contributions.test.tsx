@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
 import { eventStream, expectAccessible, mockApi, renderAt } from "@/test/render";
+import { axisLabel, type ChartData } from "./ChartBody";
 import { ICONS, liveText, widgetText } from "./Contributions";
 
 const entry = { module: "acme", plugin: "heinzel-acme", order: 500, refresh: 60, problem: null };
@@ -319,6 +320,68 @@ describe("Contributions", () => {
     expect(within(card).getByText("Light traffic")).toBeInTheDocument();
     expect(within(card).getByRole("img", { name: /Your Heinzelmännchen.*sunglasses.*scarf/ })).toBeInTheDocument();
     await expectAccessible(card.parentElement as HTMLElement);
+  });
+});
+
+describe("Chart widget", () => {
+  const chart: ChartData = {
+    kind: "chart",
+    title: "Temperature today",
+    summary: "Warms from 10 to 14 degrees by 16:00; rain likely at noon.",
+    unit: "°C",
+    tone: "neutral",
+    series: [
+      { at: "2026-11-07T12:00", value: 10 },
+      { at: "2026-11-07T14:00", value: 12 },
+      { at: "2026-11-07T16:00", value: 14 },
+    ],
+    bars: [0.9, 0.2, 0],
+    bars_label: "Rain chance",
+    range: { low: 9, high: 15 },
+    now: "2026-11-07T14:00",
+  };
+
+  it("draws an image named by the title and described by the summary, with axes, bars and a now marker", async () => {
+    mockApi({
+      ...answers,
+      "/api/system/ui/widgets": [{ ...entry, id: "acme:temp", slots: { today: true }, refresh: 300, widget: chart }],
+    });
+    renderAt("/");
+    const img = await screen.findByRole("img", { name: "Temperature today" });
+    expect(img).toHaveAccessibleDescription(chart.summary);
+    expect(screen.getAllByRole("row")).toHaveLength(chart.series.length + 1); // a header row and one row per point
+    expect(img.querySelectorAll("polyline")).toHaveLength(1);
+    expect(img.querySelectorAll("rect")).toHaveLength(4);
+    expect(img.querySelector("line[stroke-dasharray]")).toBeInTheDocument();
+    expect(screen.getAllByText("12:00").length).toBeGreaterThan(0); // an axis label and the table row
+    expect(img.querySelectorAll("text")).toHaveLength(0); // labels are HTML, so they follow the text size
+    expect(img.querySelector("rect.opacity-70")).toBeInTheDocument(); // bars keep 3:1 against the card
+    expect(img.querySelectorAll("g.stroke-muted-foreground line")).toHaveLength(2); // a visible range band
+    expect(screen.getByText("9 to 15 °C · Rain chance")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Time" })).toBeInTheDocument();
+    expect((img.closest("li") as HTMLElement).dataset.size).toBe("medium");
+    await expectAccessible((img.closest("li") as HTMLElement).parentElement as HTMLElement);
+  });
+
+  it("draws a two-point series with each label once", async () => {
+    const two: ChartData = { ...chart, series: chart.series.slice(0, 2), bars: [0.9, 0.2], now: "2026-11-07T12:00" };
+    mockApi({
+      ...answers,
+      "/api/system/ui/widgets": [{ ...entry, id: "acme:two", slots: { today: true }, refresh: 300, widget: two }],
+    });
+    renderAt("/");
+    const img = await screen.findByRole("img", { name: "Temperature today" });
+    const labels = (img.parentElement as HTMLElement).querySelectorAll("div[aria-hidden] span");
+    expect([...labels].map((label) => label.textContent)).toEqual(["12:00", "14:00"]);
+  });
+
+  it("reads as its title and summary when asked about", () => {
+    expect(widgetText(chart)).toBe(`Temperature today: ${chart.summary}`);
+  });
+
+  it("labels a plain-label axis as given", () => {
+    expect(axisLabel("Mon")).toBe("Mon");
+    expect(axisLabel("2026-11-07T09:30:00+01:00")).toBe("09:30");
   });
 });
 

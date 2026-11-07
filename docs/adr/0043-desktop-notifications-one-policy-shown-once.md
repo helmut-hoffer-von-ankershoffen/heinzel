@@ -8,7 +8,7 @@ amends-0020: every tick ends by popping up due notices
 amends-0039: the notify operations are web endpoints, not REST ones
 amended-by: 0046, 0078
 related: 0003, 0021, 0024, 0026, 0027, 0028, 0036, 0038
-implemented-by: 67
+implemented-by: 67, 601
 ---
 
 # 0043: Desktop notifications: one policy in the core, shown once, by hz's own macOS app
@@ -209,3 +209,23 @@ macOS registers every path the app was launched from and lists each in System Se
 One Mac had 172, left by tests and worktree builds. A test that would start the real app is refused unless it sets
 `HZ_REAL_NOTIFIER` and forgets its copy. The daemon asks macOS once a day to forget every other copy under the exact
 bundle id (`lsregister -u`, the files stay), and `hz system notify clean` does it at once.
+
+**Amendment: notices that resolve by themselves.** A notice may carry `resolve_when`, a closed, declarative condition
+the service evaluates, never a head. `installed_version_at_least` names the hz installed on disk, read afresh, not the
+running process's version. `capability` names `<module>:<operation>`, a field and a value: a read-only operation of the
+module that owns the capability, found among the kernel's lets by name, so the core imports no plugin (ADR 0094). Every
+condition given must hold; an operation that is missing, unavailable, not read-only or failing never resolves.
+
+Once it holds, the notice is resolved: `resolved_at` and `resolved` (why, in words) are recorded. It disappears from
+`list`, Today, the bell's unread count and pop-ups; `list --resolved` still shows it as history until it ages out.
+Resolution never marks a notice read: read stays the person's own action. A notice whose condition already holds is
+not recorded.
+
+Version conditions are checked on every read without writing. Capability conditions are checked only at a tick
+(`post_native` resolves after its hourly look), so a read never runs another module's operation.
+
+The release notice compares the installed version, names it in its body and carries `installed_version_at_least` the
+announced version. Release notices recorded before conditions existed resolve by their `release:<version>` key,
+whichever process wrote them. `hz system notify recover` reports stale ones on a store that verifies and resolves them
+with `--apply`. The cause: an "hz X is available" notice stayed on Today after X was installed, because the recording
+process worded and compared it with its own in-memory version and nothing withdrew it.
