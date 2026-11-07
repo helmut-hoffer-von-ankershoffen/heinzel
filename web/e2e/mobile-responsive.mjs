@@ -440,6 +440,9 @@ try {
           installed_at: "2026-01-02T12:00:00Z",
           available: updateAvailable,
           supported: true,
+          checked_at: new Date().toISOString(),
+          last_ok_at: new Date().toISOString(),
+          check_failed: false,
           reason: null,
         },
       }),
@@ -632,9 +635,8 @@ try {
     }
     const updatePane = await footerPane(page, "@updates", "Updates");
     await assertContained(page, updatePane, `${spec.name}: update pane`);
-    assert.equal(await updatePane.getByText("Update availability is unavailable.", { exact: true }).count(), 1);
+    await updatePane.getByText(/^Heinzel 0\.7\.30 is up to date · checked /).waitFor();
     await updatePane.getByRole("button", { name: "Manually update…", exact: true }).waitFor();
-    await updatePane.getByText("Installed: hz 0.7.30").waitFor();
     await updatePane.getByText(/^Last installed:/).waitFor();
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
     await dismissFooterPane(page);
