@@ -47,10 +47,11 @@ This page fixes the names, taglines and claims of Heinzelmännchen. `tests/unit/
 - `hz --help` has no art, by design.
 - Art is off with `--json`, `NO_COLOR`, `CI`, a dumb `TERM` or the playful setting turned off.
 
-## Marks come from one drawing
+## A team is the logo, one Heinzel is one voice
 
-- The swarm, `mark.svg`, is the site logo, favicon and theme logo.
-- The bust, `favicon.svg` and the app icons, is for the web app and the notifier.
+- Heinzelmännchen is a team of Heinzels working together for people ([design/README.md](../design/README.md)), so the product mark is plural: the swarm, `mark.svg`, is the site logo, the theme logo, the sidebar header and its rail. Never one Heinzel as the logo.
+- One Heinzel stands for one voice: the chat button and the assistant in a conversation, a testimonial or quote, a named Heinzel on its page. Good: the chat button is a head; a quote shows the Heinzel who speaks. Bad: one bust beside the product name; the swarm as a chat avatar.
+- The bust, `favicon.svg` and the app icons, is the app's icon (the web app and the notifier), not the logo.
 - All of them derive from `web/src/components/heinzel.ts`. Regenerate them with `make icons`.
 
 ## Domains
