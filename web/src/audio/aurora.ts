@@ -1,3 +1,4 @@
+import { cssColor, type Rgb, tokenColor } from "./viz/color";
 /**
  * The maths and drawing of the audio aurora: soft ribbons, a beat bloom and drifting sparks, all driven by the real
  * analyser signal. Everything here is pure or takes a canvas context, so it can be tested without WebAudio.
@@ -10,11 +11,7 @@ const RIBBON_POINTS = 73;
 const MAX_PIXELS = 2_400_000;
 const MAX_RATIO = 1.5;
 
-export interface Rgb {
-  readonly r: number;
-  readonly g: number;
-  readonly b: number;
-}
+export type { Rgb } from "./viz/color";
 
 export interface Palette {
   readonly low: Rgb;
@@ -55,23 +52,9 @@ export function spectrumLevel(value: number) {
   return Math.sqrt(Math.max(0, Math.min(255, value)) / 255);
 }
 
+/** A CSS colour as sRGB (any notation the browser paints), else `fallback`. */
 export function parseColor(value: string, fallback: Rgb): Rgb {
-  const text = value.trim().toLowerCase();
-  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(text);
-  if (hex?.[1]) {
-    const digits = hex[1].length === 3 ? [...hex[1]].map((digit) => digit + digit).join("") : hex[1];
-    return {
-      r: Number.parseInt(digits.slice(0, 2), 16),
-      g: Number.parseInt(digits.slice(2, 4), 16),
-      b: Number.parseInt(digits.slice(4, 6), 16),
-    };
-  }
-  const rgb = /^rgba?\(\s*(\d{1,3})[\s,]+(\d{1,3})[\s,]+(\d{1,3})/.exec(text);
-  if (rgb) {
-    const clamp = (part: string | undefined) => Math.max(0, Math.min(255, Number(part)));
-    return { r: clamp(rgb[1]), g: clamp(rgb[2]), b: clamp(rgb[3]) };
-  }
-  return fallback;
+  return cssColor(value) ?? fallback;
 }
 
 export function rgba(color: Rgb, alpha: number) {
@@ -79,24 +62,15 @@ export function rgba(color: Rgb, alpha: number) {
   return `rgba(${color.r},${color.g},${color.b},${a.toFixed(3)})`;
 }
 
-const FALLBACK: Palette = {
-  low: { r: 166, g: 64, b: 40 },
-  mid: { r: 31, g: 116, b: 68 },
-  high: { r: 138, g: 92, b: 0 },
-  spark: { r: 224, g: 180, b: 95 },
-  dark: false,
-};
-
-/** Reads the theme tokens, so light, dark and plugin themes all colour the aurora. */
+/** Reads the live theme tokens, so light, dark and plugin themes all colour the aurora; no colour is written here. */
 export function readPalette(root: HTMLElement = document.documentElement): Palette {
   const style = getComputedStyle(root);
-  const token = (name: string, fallback: Rgb) => parseColor(style.getPropertyValue(name), fallback);
   const dark = root.classList.contains("dark");
   return {
-    low: token("--color-primary", FALLBACK.low),
-    mid: token("--color-ok", FALLBACK.mid),
-    high: token("--color-warn", FALLBACK.high),
-    spark: dark ? token("--color-warn", FALLBACK.spark) : token("--color-primary", FALLBACK.low),
+    low: tokenColor(style, "--color-primary"),
+    mid: tokenColor(style, "--color-ok", "--color-primary"),
+    high: tokenColor(style, "--color-warn", "--color-primary"),
+    spark: dark ? tokenColor(style, "--color-warn", "--color-primary") : tokenColor(style, "--color-primary"),
     dark,
   };
 }
