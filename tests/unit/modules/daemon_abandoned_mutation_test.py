@@ -104,6 +104,7 @@ def test_reboot_recovers_a_legacy_token_only_marker_at_the_next_tick(service, ho
     assert not marker.exists()
     (receipt,) = _receipts(service)
     assert receipt["evidence"] == "previous-boot"
+    assert receipt["status"] == "archived"
     assert receipt["marker_form"] == "legacy-token"
     assert receipt["current_boot"] == BOOT_AFTER
     archive = Path(receipt["archive"])
@@ -173,6 +174,32 @@ def test_a_held_lifecycle_lock_keeps_the_marker_even_after_reboot(service, host)
         with pytest.raises(HeinzelError, match="requires recovery"):
             service.restart()
     assert marker.exists()
+
+
+def test_an_older_handover_request_from_a_completed_handover_does_not_block(service, host):
+    service._write_state("handover-request.json", {"request_id": "d" * 64})
+    earlier = (service.state_dir / "handover-request.json").stat().st_mtime_ns - 1_000_000_000
+    os.utime(service.state_dir / "handover-request.json", ns=(earlier, earlier))
+    marker = _legacy(service)
+    host.reboot(marker)
+    assert not service.tick().locked
+    assert not marker.exists()
+
+
+def test_a_marker_replaced_before_the_move_stays_and_no_error_escapes(service, host, monkeypatch):
+    from heinzel.modules.system.daemon import _abandoned_mutation
+
+    marker = _legacy(service)
+    host.reboot(marker)
+
+    def changed(*_args, **_kwargs):
+        msg = "The file changed immediately before the recovery move."
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(_abandoned_mutation, "rename_exclusive", changed)
+    assert service.tick().locked
+    assert marker.exists()
+    assert [receipt["status"] for receipt in _receipts(service)] == ["archiving"]
 
 
 def test_an_unverified_installation_keeps_the_marker(service, host):

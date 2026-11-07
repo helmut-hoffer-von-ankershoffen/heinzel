@@ -81,3 +81,13 @@ def test_supervised_stderr_refuses_a_linked_log(tmp_path):
     (log_dir / _supervision.SUPERVISED_LOG).symlink_to(target)
     assert _supervision.redirect_supervised_stderr(log_dir) is None
     assert target.read_text() == ""
+
+
+def test_supervised_stderr_refuses_a_shared_log(tmp_path):
+    log_dir = tmp_path / "log"
+    log_dir.mkdir(mode=0o700)
+    log = log_dir / _supervision.SUPERVISED_LOG
+    log.write_text("")
+    log.chmod(0o644)
+    assert _supervision.redirect_supervised_stderr(log_dir) is None
+    assert log.read_text() == ""

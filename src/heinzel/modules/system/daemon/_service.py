@@ -2039,7 +2039,7 @@ class DaemonService:
                 return recover_abandoned_mutation(
                     self.state_dir.parent, self._quiescence_installation, evidence, self._clock
                 )
-            except OSError:
+            except (OSError, HeinzelError):
                 logger.warning("An abandoned installation mutation could not be archived; it stays pending.")
                 return None
 

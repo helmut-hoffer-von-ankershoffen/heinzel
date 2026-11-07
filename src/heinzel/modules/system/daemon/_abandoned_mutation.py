@@ -239,6 +239,7 @@ def recover_abandoned_mutation(
 
     Raises:
         OSError: If the receipt or the exclusive archive move can't be written durably.
+        HeinzelError: If the marker changed immediately before the move, which then doesn't happen.
     """
     daemon = state / "daemon"
     path = daemon / MUTATION
@@ -270,7 +271,9 @@ def recover_abandoned_mutation(
     }
     from heinzel.modules.system.daemon._runtime import write_private  # noqa: PLC0415 - shared private writer
 
-    write_private(receipt, json.dumps(facts, indent=2, sort_keys=True) + "\n")
+    # The receipt exists before the move, so no archived marker is ever without one; it says whether the move landed.
+    write_private(receipt, json.dumps(facts | {"status": "archiving"}, indent=2, sort_keys=True) + "\n")
     rename_exclusive(path, archive, expected_source=marker)
+    write_private(receipt, json.dumps(facts | {"status": "archived"}, indent=2, sort_keys=True) + "\n")
     logger.warning("Archived an abandoned installation mutation (%s); receipt: %s", found.reason, receipt.name)
     return receipt

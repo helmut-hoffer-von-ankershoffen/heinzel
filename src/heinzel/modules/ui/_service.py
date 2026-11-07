@@ -477,7 +477,8 @@ class WebService:
             if installation_mutation_pending(self.prefix, self.directory.parent):
                 result.problem = (
                     "An installation change requires completion or recovery before this web service can start. "
-                    "`hz system daemon restart` recovers one whose process provably ended; the service then starts."
+                    "`hz system daemon restart` recovers one whose process provably ended, for example after a "
+                    "restart of the computer; the service then starts by itself."
                 )
             return result
         try:
