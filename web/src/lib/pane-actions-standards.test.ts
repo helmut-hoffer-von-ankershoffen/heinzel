@@ -27,8 +27,7 @@ const underlined = (tag: string) => /className=(?:"[^"]*|\{[^}]*)\bunderline\b/.
 
 // Text links still used as actions, to be converted by the rollout in research/design-action-audit.md. This list
 // only shrinks: a fixed file must leave it, and no new file may join it. Inline prose links take `data-prose-link`.
-const PENDING: Record<string, number> = {
-};
+const PENDING: Record<string, number> = {};
 
 it("uses buttons, not underlined text links, for actions", () => {
   const found: Record<string, number> = {};
@@ -99,7 +98,10 @@ it("has no withText: the first action of a row leads with words, the rest are ic
 // Files with a hand-drawn `border-t`: only a card's own outer edge may keep one (an action divider is PaneActions;
 // separators are `<hr>` or `divide-y`). A reason per entry; this list only shrinks.
 const EDGES: Record<string, { count: number; reason: string }> = {
-  "../chat/ContractHistory.tsx": { count: 1, reason: "the top edge of each earlier contract version in the history list" },
+  "../chat/ContractHistory.tsx": {
+    count: 1,
+    reason: "the top edge of each earlier contract version in the history list",
+  },
   "../chat/DurableSession.tsx": { count: 1, reason: "the composer form's top edge under the conversation" },
   "../heinzel/PersonalHeinzels.tsx": { count: 1, reason: "the identity form's top edge under the Heinzel summary" },
   "../layout/Shell.tsx": { count: 1, reason: "the workspace panel's top edge against the page" },
@@ -112,8 +114,7 @@ const EDGES: Record<string, { count: number; reason: string }> = {
 };
 
 // Files with a right-aligned button row (`justify-end`) outside PaneActions; only shrinks (PR b).
-const JUSTIFY_END: Record<string, number> = {
-};
+const JUSTIFY_END: Record<string, number> = {};
 // Icon buttons (`<Button size="icon"`) without both an aria-label and a title; only shrinks.
 const UNNAMED_ICONS: Record<string, number> = {};
 // Raw `<button>`s per file: switches, tabs, menu rows and navigation, plus those PR b converts; only shrinks.
