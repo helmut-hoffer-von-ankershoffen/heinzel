@@ -112,20 +112,46 @@ try {
   await page.getByText("Suggest an interval for this agent.").waitFor();
   await page.getByText("Read complete.").nth(1).waitFor({ timeout: 30000 });
   const panel = page.getByRole("region", { name: "Connected read review" });
+  // The review form is controlled: a value counts only once the app has rendered it back. Fill each field and wait
+  // until a rendered frame still shows it, so the press below submits what the form holds, not a value in flight.
+  const rendered = () =>
+    page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const entered = async (label, value) => {
+    const field = panel.getByLabel(label);
+    await field.fill(value);
+    await rendered();
+    assert.equal(await field.inputValue(), value, `${label} must keep the entered value after a render`);
+  };
   await panel.getByLabel("Read operation").selectOption("calendar.events");
   if (process.argv[5] === "rolling") {
-    await panel.getByRole("checkbox", { name: /Use a rolling window/ }).check();
-    await panel.getByLabel("Lookback seconds").fill("60");
-    await panel.getByLabel("Lookahead seconds").fill("600");
-    await panel.getByLabel("Display timezone (IANA)").fill("Europe/Berlin");
-    await panel.getByLabel("Fixed arguments (JSON)").fill("{}");
+    const rollingChoice = panel.getByRole("checkbox", { name: /Use a rolling window/ });
+    await rollingChoice.check();
+    await rendered();
+    assert.equal(await rollingChoice.isChecked(), true, "the rolling window choice must stay on after a render");
+    await entered("Lookback seconds", "60");
+    await entered("Lookahead seconds", "600");
+    await entered("Display timezone (IANA)", "Europe/Berlin");
+    await entered("Fixed arguments (JSON)", "{}");
   } else {
-    await panel
-      .getByLabel("Fixed arguments (JSON)")
-      .fill(JSON.stringify({ window: { since: "2026-01-01T00:00:00Z", until: "2026-01-02T00:00:00Z" } }));
+    await entered(
+      "Fixed arguments (JSON)",
+      JSON.stringify({ window: { since: "2026-01-01T00:00:00Z", until: "2026-01-02T00:00:00Z" } }),
+    );
   }
   await panel.getByRole("button", { name: "Prepare review" }).click();
-  await panel.getByText("Account: fixture-account").waitFor();
+  // The proposal either appears or the form says it could not be prepared: fail on the alert at once, with the values
+  // the form held, instead of waiting out the locator timeout.
+  const refused = panel.getByRole("alert").filter({ hasText: "The action could not be verified" });
+  await panel.getByText("Account: fixture-account").or(refused).first().waitFor();
+  if (await refused.isVisible()) {
+    const held = await panel.evaluate((node) =>
+      [...node.querySelectorAll("input, textarea, select")].map((field) => [
+        field.closest("label")?.textContent?.trim().slice(0, 40) ?? field.tagName,
+        field.type === "checkbox" ? field.checked : field.value,
+      ]),
+    );
+    assert.fail(`Prepare review was refused; the form held ${JSON.stringify(held)}`);
+  }
   await panel.getByText("Provider-reported candidate read: Candidate metadata may be filtered locally.").waitFor();
   await panel.getByRole("button", { name: "Review access" }).click();
   await panel.getByRole("heading", { name: "Review connected read" }).waitFor();
