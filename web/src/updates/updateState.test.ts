@@ -127,9 +127,7 @@ it("keeps core current and a held plugin from showing green", () => {
   });
   expect(view.tone).toBe("off");
   expect(view.rows[0]?.tone).toBe("ok");
-  expect(view.rows.map((row) => row.text)).toContain(
-    "heinzel-google is pinned to 0.9.1; hz doesn't update it",
-  );
+  expect(view.rows.map((row) => row.text)).toContain("heinzel-google is pinned to 0.9.1; hz doesn't update it");
 });
 
 it("describes folders and links, progress, and a failed update with its reason", () => {
