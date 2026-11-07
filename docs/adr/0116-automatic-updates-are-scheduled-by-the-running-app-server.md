@@ -1,5 +1,5 @@
 ---
-amended-by: 0117
+amended-by: 0117, 0137
 status: proposed
 date: 2026-11-02
 implementation: built
@@ -89,8 +89,9 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
   - hz from a release tag is installed from the commit the tag named when it was announced, never the tag, and the
     receipt names the tag again afterwards, so later updates go on following release tags. Without a recorded
     commit (also for a plugins-only update, the installed commit), the update is made by hand.
-  - **Plugins from git, a folder or a URL are never updated, refreshed or reinstalled automatically**, but they
-    don't hold the rest: hz and the plugins from PyPI update around them. Each goes into uv exactly as installed: one
+  - **Plugins from git, a folder or a URL are never updated, refreshed or reinstalled automatically** (except
+    those pinned to a tagged GitHub commit, ADR 0137), but they don't hold the rest: hz and the plugins from PyPI
+    update around them. Each goes into uv exactly as installed: one
     from git at its installed commit (the receipt follows its branch or tag again afterwards), held at its version,
     never named for refresh or reinstall, so what is installed satisfies it and nothing is built. Afterwards its
     version, the hashes of all its files (`RECORD`) and its source (`direct_url.json`) must be exactly as before, or
