@@ -1,6 +1,7 @@
 """The versionless `uvx heinzel@latest` quick start runs application commands in the managed app."""
 
 import json
+import logging
 import os
 import platform
 import subprocess
@@ -25,6 +26,14 @@ _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
 _JSON_OBJECTS = TypeAdapter(list[dict[str, JsonValue]])
 _STRINGS = TypeAdapter(list[str])
 _JSON_STRING = TypeAdapter(str)
+log = logging.getLogger(__name__)
+
+
+def _event(name: str, **fields: object) -> None:
+    """One structured start event: a stable dotted name and fields, never a formatted sentence or a secret."""
+    log.info(name, extra={"event": name, "operation": "start", **fields})
+
+
 _START_FLAGS = ("--yes", "--no-app", "--ask")
 _APP_WORKSPACE = ["app", "open"]
 
@@ -63,21 +72,28 @@ def _remember_app_decline() -> None:
 def _app_choice(arguments: list[str], flags: set[str], *, interactive: bool) -> bool:
     """Whether to install and open the desktop app: asked first, only on Apple silicon, declines remembered."""
     if arguments or "--no-app" in flags:
+        _event("start.app.decision", answer=False, source="flag" if not arguments else "arguments")
         return False
     if not _supports_app():
+        _event("start.app.decision", answer=False, source="platform")
         if interactive:
             _human_console().print(words.APP_UNSUPPORTED, style="dim", markup=False)
         return False  # Elsewhere the web app opens instead.
     if "--yes" in flags or not interactive:
+        _event("start.app.decision", answer="--yes" in flags, source="flag" if "--yes" in flags else "non_interactive")
         return "--yes" in flags
     from heinzel.heads._desktop_installation import desktop_location  # noqa: PLC0415 - macOS app question only
 
     if "--ask" not in flags and (desktop_location() is not None or _app_declined()):
-        return desktop_location() is not None  # Installed: refresh and open without asking; declined: stay quiet.
+        installed = desktop_location() is not None
+        _event("start.app.decision", answer=installed, source="installed" if installed else "remembered_decline")
+        return installed  # Installed: refresh and open without asking; declined: stay quiet.
     from heinzel.heads.cli._setup import ConsolePrompter  # noqa: PLC0415 - same explicit consent boundary
 
     place = "Heinzelmännchen.app into /Applications, or ~/Applications without an administrator"
-    if ConsolePrompter(_human_console()).confirm(words.APP_QUESTION.format(location=place), default=True):
+    answer = ConsolePrompter(_human_console()).confirm(words.APP_QUESTION.format(location=place), default=True)
+    _event("start.app.decision", answer=answer, source="question")
+    if answer:
         return True
     _remember_app_decline()
     return False
@@ -85,6 +101,8 @@ def _app_choice(arguments: list[str], flags: set[str], *, interactive: bool) -> 
 
 def _install_app(executable: Path, environment: dict[str, str]) -> bool:
     """Run the app installer with its own progress on the terminal, then require that macOS will open the app."""
+    started = time.monotonic()
+    _event("start.app_install.start", step="app_install")
     command = [str(executable.parent / "python"), "-I", "-m", "heinzel", "app"]
     try:
         installed = subprocess.run(  # noqa: S603 - verified persistent interpreter and fixed operation
@@ -98,6 +116,12 @@ def _install_app(executable: Path, environment: dict[str, str]) -> bool:
         )
     except (OSError, subprocess.SubprocessError, HeinzelError):
         opens = False
+    _event(
+        "start.app_install.outcome",
+        step="app_install",
+        outcome="ok" if opens else "failed",
+        duration_ms=round((time.monotonic() - started) * 1000),
+    )
     if not opens:
         sys.stderr.write(words.APP_DOWNLOAD_FAILED + "\n")
     return opens
@@ -286,6 +310,7 @@ def _install_services(executable: Path, choices: list[tuple[str, ...]], environm
     interpreter = str(executable.parent / "python")
     command = [interpreter, "-I", "-m", "heinzel"]
     for service in choices:
+        _event("start.service.start", step=" ".join(service))
         if installed_app() != executable:
             msg = "The managed installation changed before service setup; inspect it before retrying."
             raise HeinzelError(msg)
@@ -297,6 +322,7 @@ def _install_services(executable: Path, choices: list[tuple[str, ...]], environm
             check=False,
             timeout=600,
         )
+        _event("start.service.outcome", step=" ".join(service), outcome="failed" if installed.returncode else "ok")
         if installed.returncode:
             msg = f"Service installation did not complete. Inspect `hz {' '.join(service)} status` before retrying."
             raise HeinzelError(msg)
@@ -644,11 +670,13 @@ def _ensure_app(*, interactive: bool) -> Path:
 
 def _start(arguments: list[str], flags: set[str]) -> None:
     interactive = _interactive_launch(arguments)
+    _event("start.begin", interactive=interactive, flags=sorted(flags), version=__version__)
     unattended = not arguments and "--yes" in flags
     want_app = _app_choice(arguments, flags, interactive=interactive)
     choices = [("system", "daemon"), ("ui",), ("system", "notify")] if unattended else _service_choices(arguments)
     executable = _ensure_app(interactive=interactive)
     if not arguments and not interactive and not unattended:
+        _event("start.outcome", outcome="installed_only", version=__version__, path=str(executable))
         sys.stdout.write(words.NOT_STARTED.format(version=__version__, path=executable) + "\n")
         return
     environment = _app_environment(executable)
@@ -660,6 +688,12 @@ def _start(arguments: list[str], flags: set[str]) -> None:
     if interactive and workspace == ["ui", "open"]:
         _verify_setup(executable, environment)
     if not arguments:
+        _event(
+            "start.outcome",
+            outcome="running",
+            workspace=" ".join(workspace),
+            opened=sys.stdout.isatty() or not unattended,
+        )
         if unattended and not sys.stdout.isatty():
             sys.stderr.write(words.RUNNING_BACKGROUND + "\n")
             return  # An open from a script or ssh would pop up on someone's desk.
@@ -678,9 +712,11 @@ def main() -> None:
     try:
         _start(arguments, flags)
     except KeyboardInterrupt:
+        _event("start.outcome", outcome="interrupted")
         sys.stderr.write(words.INTERRUPTED + "\n")
         sys.exit(130)
     except HeinzelError as error:
+        _event("start.outcome", outcome="failed", error=type(error).__name__)
         sys.stderr.write(f"Heinzel could not start. {error}\n")
         sys.exit(1)
     except (OSError, ValueError, ValidationError, subprocess.SubprocessError):

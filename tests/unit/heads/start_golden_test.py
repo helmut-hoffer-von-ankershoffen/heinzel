@@ -142,3 +142,36 @@ def test_a_declined_app_is_not_asked_again_on_the_next_run(monkeypatch, tmp_path
     again = _play(monkeypatch, tmp_path / "again", capsys, options)
     assert "desktop app too" not in again
     assert (tmp_path / "state/start.json").exists()
+
+
+def _events(caplog):
+    return [
+        (r.event, {k: v for k, v in vars(r).items() if k in {"answer", "source", "outcome", "step"}})
+        for r in caplog.records
+        if hasattr(r, "event")
+    ]
+
+
+EXPECTED_EVENTS = {
+    "happy": [("start.app.decision", "question", True), ("start.app_install.outcome", None, "ok")],
+    "decline": [("start.app.decision", "question", False)],
+    "app_fails": [("start.app_install.outcome", None, "failed")],
+}
+
+
+@pytest.mark.parametrize("name", EXPECTED_EVENTS)
+def test_start_emits_structured_events(monkeypatch, tmp_path, capsys, caplog, name):
+    expected = EXPECTED_EVENTS[name]
+    caplog.set_level("INFO", logger="heinzel.heads.bootstrap")
+    options = dict(CASES[name])
+    options["answers"] = [*options.get("answers", []), True, True, True]
+    _play(monkeypatch, tmp_path, capsys, options)
+    seen = _events(caplog)
+    names = [event for event, _ in seen]
+    assert names[0] == "start.begin"
+    assert names[-1] == "start.outcome"
+    assert names.count("start.service.start") == names.count("start.service.outcome") == 3
+    for event, source, answer in expected:
+        fields = next(f for e, f in seen if e == event)
+        assert fields.get("source", source) == source
+        assert answer in (fields.get("answer"), fields.get("outcome"))
