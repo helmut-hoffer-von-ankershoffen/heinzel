@@ -20,6 +20,10 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 
+/** A footer pane's way to close itself: an action that takes the person elsewhere calls it, so the pane never covers
+ *  what it opened. Outside a pane there is nothing to close. */
+export const PaneLeave = createContext<(() => void) | null>(null);
+
 type Words = "lead" | "all" | "none";
 /** What the row tells each action: whether it shows its words. Outside a row (chrome) every action is an icon. */
 const Slot = createContext<{ index: number; words: Words }>({ index: 1, words: "lead" });
@@ -117,13 +121,31 @@ export function PaneAction({
   primary = false,
   destructive = false,
   ghost = false,
+  leaves = false,
   to,
   href,
   className,
   ...props
 }: Omit<ComponentProps<"button">, "children"> &
-  Target & { icon: LucideIcon; children: string; primary?: boolean; destructive?: boolean; ghost?: boolean }) {
+  Target & {
+    icon: LucideIcon;
+    children: string;
+    primary?: boolean;
+    destructive?: boolean;
+    ghost?: boolean;
+    leaves?: boolean;
+  }) {
   const slot = useContext(Slot);
+  const leave = useContext(PaneLeave);
+  // Going somewhere in the app (`to=`, or `leaves`) closes the pane the action sits in.
+  if (leave && (to || leaves)) {
+    const own = props as { onClick?: (event: unknown) => void };
+    const click = own.onClick;
+    own.onClick = (event) => {
+      click?.(event);
+      leave();
+    };
+  }
   const words = slot.words === "all" || (slot.words === "lead" && slot.index === 0);
   const look = {
     size: "sm" as const,
