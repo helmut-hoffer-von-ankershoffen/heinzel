@@ -157,7 +157,7 @@ const en = {
   "lifecycle.phase.applied": "Applied",
   "lifecycle.confirmFirst": "Confirm Restart and apply first.",
   "lifecycle.unsupported": "This server cannot restart itself. Start hz ui in a terminal, then check again.",
-  "lifecycle.timeout": "The replacement server has not answered. Check again or start hz ui in a terminal.",
+  "lifecycle.timeout": "The replacement server has not answered. Check again or start hz ui serve in a terminal.",
   "lifecycle.wrongVersion":
     "The replacement loaded v{running}; expected v{expected}. Check the installation and try again.",
   "lifecycle.wrongSettings":
@@ -414,10 +414,10 @@ const en = {
   "sound.cantLoad": "{title} couldn't be loaded.",
   "theme.light": "Light",
   "theme.dark": "Dark",
-  "token.missingTitle": "Open the link `hz ui` printed",
+  "token.missingTitle": "Open the link `hz ui serve` printed",
   "token.missing":
-    "This page needs the session token of the `hz ui` that serves it. Open the link it printed, or start it again:",
-  "token.refused": "The server refused this session's token. Open the link the running `hz ui` printed.",
+    "This page needs the session token of the `hz ui serve` that serves it. Open the link it printed, or start it again:",
+  "token.refused": "The server refused this session's token. Open the link the running `hz ui serve` printed.",
   "splash.starting": "Starting…",
   "splash.connecting": "Connecting to hz…",
   "splash.signingIn": "Signing you in…",
@@ -427,15 +427,16 @@ const en = {
   "splash.opening": "Opening…",
   "splash.unreachableTitle": "hz isn't answering",
   "splash.unreachable":
-    "{command} isn't running on this machine, or it stopped. An installed app connects again by itself once it runs.",
-  "splash.unreachableCommand": "Start it in a terminal; it opens the app with a new link:",
+    "{command} isn't running on this machine, or it stopped. An installed hz starts again on its own, and this app connects by itself once it runs.",
+  "splash.unreachableCommand": "If it does not, start it in a terminal:",
   "splash.tokenTitle": "Sign in again",
   "splash.token":
     "{command} no longer accepts this page's sign-in: it started again with a new link, or this browser was unpaired. Open the link it printed.",
   "splash.tokenApp":
     "This app has no address bar. After {command} started again, or this app was unpaired, it needs the new link: paste it below.",
-  "splash.pasteLabel": "Paste the link `hz ui` printed",
-  "splash.pasteProblem": "That isn't a link with a sign-in token for {address}; copy the whole line `hz ui` printed.",
+  "splash.pasteLabel": "Paste the link `hz ui serve` printed",
+  "splash.pasteProblem":
+    "That isn't a link with a sign-in token for {address}; copy the whole line `hz ui serve` printed.",
   "splash.tokenCommand": "For a new link, press Ctrl+C in the terminal running it, then run:",
   "state.loading": "Loading…",
   "state.error": "Couldn't load this:",
@@ -960,9 +961,9 @@ const en = {
   "install.safari": "To install it, choose File > Add to Dock in Safari's menu.",
   "install.ios": "To install hz, tap Share → Add to Home Screen, then open hz from that icon.",
   "install.unsupported": "To install it, open this page in Chrome, Edge or Safari.",
-  "device.paired": "This browser is paired: it opens the app without a new link while `hz ui` runs.",
+  "device.paired": "This browser is paired: it opens the app without a new link while `hz ui serve` runs.",
   "device.forget": "Unpair",
-  "device.forgetHint": "Forget this browser's token; the next link from `hz ui` pairs it again.",
+  "device.forgetHint": "Forget this browser's token; the next link from `hz ui serve` pairs it again.",
   "notFound.title": "Nothing here",
   "notFound.back": "Go home",
   "notFound.guide": "This way, not that way.",

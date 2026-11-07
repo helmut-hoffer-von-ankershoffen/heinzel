@@ -217,7 +217,7 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
                 return true;
               }}
               onUnsupported={persistStaged}
-              deferredMessage={`Saved ${title}. This server cannot restart hz ui. Run \`hz ui\` in a terminal to apply this setting.`}
+              deferredMessage={`Saved ${title}. This server cannot restart hz ui. Run \`hz ui serve\` in a terminal to apply this setting.`}
               onApplied={() => {
                 setStaged(undefined);
                 setEditorVersion((version) => version + 1);
