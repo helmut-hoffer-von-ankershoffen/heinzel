@@ -199,3 +199,34 @@ def test_every_failure_is_two_plain_lines_ending_in_something_to_do(problem):
         assert len(line.replace(str(SAMPLE), "")) <= say.MAX_LINE
         assert not any(word in line.lower() for word in say.BANNED_WORDS), line
     assert any(verb in lines[1] for verb in ("Run hz", "Quit it", "Move it", "Wait for it")), lines[1]
+
+
+def _open_events(caplog) -> list[tuple[str, str, object]]:
+    return [(r.event, r.phase, getattr(r, "outcome", None)) for r in caplog.records if r.name == "heinzel.desktop"]
+
+
+def test_open_logs_check_and_launch(launcher, caplog):
+    caplog.set_level("INFO", logger="heinzel.desktop")
+    output, error, _out, _err = _consoles()
+    _app._open_app(None, output, error)
+    assert _open_events(caplog) == [
+        ("desktop.open.check", "start", None),
+        ("desktop.open.check", "end", "ok"),
+        ("desktop.open.launch", "start", None),
+        ("desktop.open.launch", "end", "ok"),
+    ]
+    assert all(r.path == str(APP) for r in caplog.records)
+
+
+def test_open_logs_why_it_did_not_launch(launcher, caplog):
+    state, _launched, _installs = launcher
+    state["opens"] = False
+    caplog.set_level("INFO", logger="heinzel.desktop")
+    output, error, _out, _err = _consoles()
+    assert _exit_code(lambda: _app._open_app(None, output, error)) == 1
+    assert _open_events(caplog) == [
+        ("desktop.open.check", "start", None),
+        ("desktop.open.check", "end", "would_not_open"),
+    ]
+    check = caplog.records[-1]
+    assert (check.happened, check.action) == tuple(say.would_not_open(APP).lines())

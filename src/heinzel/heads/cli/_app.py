@@ -14,6 +14,7 @@ from rich.console import Console
 
 from heinzel import HeinzelError, Settings, __version__
 from heinzel.heads import _desktop_messages as say
+from heinzel.heads._desktop_log import problem_fields, step
 from heinzel.heads.cli._render import message
 from heinzel.kernel import KERNEL_SECTION, Installation, Kernel
 
@@ -260,28 +261,42 @@ def _open_app(kernel: Kernel, output: Console, error: Console, *, details: bool 
     location = desktop_location()
     if location is None:
         output.print("Not installed yet, installing…")
-        _install_app(kernel, output, error, details=details)
+        with step("open", "install"):
+            _install_app(kernel, output, error, details=details)
         location = desktop_location()
         if location is None:
-            for line in say.Problem(f"{say.APP} was installed but cannot be found.", "Run hz app doctor.").lines():
-                error.print(line, markup=False)
-            raise typer.Exit(1)
-    report = inspect_bundle(location)
+            _say(error, say.Problem(f"{say.APP} was installed but cannot be found.", "Run hz app doctor."))
+    with step("open", "check", path=str(location)) as checked:
+        report = inspect_bundle(location)
+        checked.update({"quarantine": report.quarantine, "outcome": "ok" if report.opens else "would_not_open"})
+        if not report.opens:
+            checked.update(problem_fields(say.would_not_open(location)))
     if not report.opens:
-        for line in say.would_not_open(location).lines():
-            error.print(line, markup=False)
-        raise typer.Exit(1)
+        _say(error, say.would_not_open(location))
     if report.quarantine != "none":
         output.print(say.asks_once(), markup=False)
-    result = subprocess.run(  # noqa: S603 - fixed system executable and the receipt-owned app path
-        ["/usr/bin/open", str(location)], check=False, capture_output=True, text=True, timeout=30
-    )
+    with step("open", "launch", path=str(location)) as launched:
+        result = subprocess.run(  # noqa: S603 - fixed system executable and the receipt-owned app path
+            ["/usr/bin/open", str(location)], check=False, capture_output=True, text=True, timeout=30
+        )
+        if result.returncode:
+            failed = problem_fields(say.open_failed(location))
+            launched.update({"outcome": "failed", "returncode": result.returncode, **failed})
     if result.returncode:
-        for line in say.open_failed(location).lines():
-            error.print(line, markup=False)
-        raise typer.Exit(1)
+        _say(error, say.open_failed(location))
     output.print(f"Opened {location}", markup=False)
     return location
+
+
+def _say(error: Console, problem: say.Problem) -> NoReturn:
+    """Print a failure's two lines and exit 1.
+
+    Raises:
+        typer.Exit: Always, with 1.
+    """
+    for line in problem.lines():
+        error.print(line, markup=False)
+    raise typer.Exit(1)
 
 
 def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Typer:
