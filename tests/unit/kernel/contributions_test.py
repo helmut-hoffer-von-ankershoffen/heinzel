@@ -367,3 +367,21 @@ def test_chart_widget_refuses_what_it_cannot_describe():
 def test_chart_range_refuses_a_high_below_the_low():
     with pytest.raises(ValidationError, match="can't be below low"):
         ChartRange(low=5, high=1)
+
+
+def test_chart_point_refuses_nan():
+    with pytest.raises(ValidationError, match="finite"):
+        ChartPoint(at="a", value=float("nan"))
+
+
+@pytest.mark.parametrize("value", [float("inf"), float("-inf")])
+def test_chart_point_refuses_infinity(value):
+    with pytest.raises(ValidationError, match="finite"):
+        ChartPoint(at="a", value=value)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_chart_bars_refuse_non_finite_values(value):
+    points = _points()
+    with pytest.raises(ValidationError):
+        ChartWidget(title="t", summary="s", series=points, bars=[0, 0, value])

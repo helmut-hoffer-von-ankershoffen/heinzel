@@ -118,7 +118,10 @@ export function ChartBody({ widget }: Readonly<{ widget: ChartData }>) {
         </tbody>
       </table>
       <figcaption className="text-xs tabular-nums text-muted-foreground">
-        {[`${fmt(low)} to ${fmt(high)}${widget.unit ? ` ${widget.unit}` : ""}`, widget.bars_label]
+        {[
+          `${t("contrib.chart.span", { low: fmt(low), high: fmt(high) })}${widget.unit ? ` ${widget.unit}` : ""}`,
+          widget.bars_label,
+        ]
           .filter(Boolean)
           .join(" · ")}
       </figcaption>

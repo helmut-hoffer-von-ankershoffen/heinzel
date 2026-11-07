@@ -505,6 +505,7 @@ const en = {
   "contrib.chart.time": "Time",
   "contrib.chart.value": "Value",
   "contrib.chart.share": "Share",
+  "contrib.chart.span": "{low} to {high}",
   "contrib.graphic.heinzel": "Your Heinzelmännchen",
   "contrib.says": "Module {module} shows: {text}",
   "contrib.place.footer": "In the footer",
