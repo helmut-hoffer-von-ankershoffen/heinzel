@@ -455,6 +455,7 @@ KERNEL = [
     "Person",
     "PlaybookLet",
     "PlaybookSetup",
+    "PluginNews",
     "PluginRelease",
     "PluginReleases",
     "PostedMessage",

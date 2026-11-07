@@ -260,11 +260,12 @@ class UpdateService:
         these or nothing. Only the announced packages are asked again (`--refresh-package`); a dependency the new
         versions need that isn't installed yet resolves only among uploads as old as the minimum ages
         (`--exclude-newer`). hz from a release tag is installed from the commit the tag named when it was announced,
-        and the receipt names the tag again afterwards. Plugins from git, a folder or a URL can't be held this way,
-        so their installation is updated by hand. Nothing installed runs to verify it: its metadata must name exactly
-        these versions. Then `trial` starts the new hz on throwaway folders. Any failure after the copy puts the tool
-        folder back from it (`ToolSnapshot`), so its continuity record matches again and the daemon mutation
-        completes with no handover pending.
+        and the receipt names the tag again afterwards; so is a plugin pinned to a GitHub commit whose release tag was
+        announced, and its receipt names that commit (ADR 0137). Other plugins from git, a folder or a URL can't be
+        held this way, so their installation is updated by hand. Nothing installed runs to verify it: its metadata
+        must name exactly these versions and commits. Then `trial` starts the new hz on throwaway folders. Any
+        failure after the copy puts the tool folder back from it (`ToolSnapshot`), so its continuity record matches
+        again and the daemon mutation completes with no handover pending.
 
         Raises:
             HeinzelError: If the installation can't be updated this way, before anything was installed.
@@ -375,20 +376,34 @@ class UpdateService:
     ) -> tuple[list[str], list[str], list[str], list[str]] | AnnouncedUpdate:
         """Each plugin's name and requirement for uv, those updated by hand, and those held at their git commit.
 
+        An announced plugin pinned to a commit of a GitHub repository goes in at the commit its release tag named
+        when it was announced (ADR 0137); the receipt names that commit afterwards, so it stays pinned.
+
         Raises:
-            HeinzelError: If a plugin from git has no commit to hold it to, or an announced plugin isn't an installed
-                one from PyPI.
+            HeinzelError: If a plugin from git has no commit to hold it to, or an announced plugin is neither an
+                installed one from PyPI nor one pinned to a git commit with a recorded tag commit.
         """
         names: list[str] = [str(canonicalize_name(Requirement(plugin.requirement).name)) for plugin in plugin_pins]
         indexed = {name for name, plugin in zip(names, plugin_pins, strict=True) if plugin.kind == "index"}
-        if missing := sorted(set(announced.plugins) - indexed):
-            msg = f"Announced plugins aren't installed from PyPI: {', '.join(missing)}."
+        tagged = {
+            name
+            for name, plugin in zip(names, plugin_pins, strict=True)
+            if plugin.kind == "commit" and plugin.git is not None and name in announced.plugin_commits
+        }
+        if missing := sorted((set(announced.plugins) - indexed - tagged) | (set(announced.plugin_commits) - tagged)):
+            msg = (
+                "Announced plugins aren't installed from PyPI or pinned to a tagged GitHub commit: "
+                f"{', '.join(missing)}."
+            )
             raise HeinzelError(msg)
         specs: list[str] = []
         held_at_commit: list[str] = []
         for name, plugin in zip(names, plugin_pins, strict=True):
             if plugin.kind == "index":
                 specs.append(plugin.requirement)
+                continue
+            if name in tagged and name in announced.plugins:
+                specs.append(plugin.at(announced.plugin_commits[name]))
                 continue
             if not allows_core(prefix, name, target):
                 return _by_hand(target, f"{name}, a plugin updated by hand, doesn't allow hz {target}. Update it first")
@@ -401,7 +416,7 @@ class UpdateService:
                 raise HeinzelError(msg)
             specs.append(plugin.at(commit))
             held_at_commit.append(name)
-        return names, specs, sorted(set(names) - indexed), held_at_commit
+        return names, specs, sorted(set(names) - indexed - (tagged & set(announced.plugins))), held_at_commit
 
     def _install_announced(
         self,
@@ -450,6 +465,10 @@ class UpdateService:
         if commit is not None and installed != commit:
             msg = f"hz came from commit {(installed or 'none')[:12]}, not {commit[:12]}"
             raise HeinzelError(msg)
+        for name, wanted in announced.plugin_commits.items():  # a tagged plugin: exactly the commit announced
+            if (came := plugin_commit(self._installation.prefix.resolve(strict=True), name)) != wanted:
+                msg = f"{name} came from commit {(came or 'none')[:12]}, not {wanted[:12]}"
+                raise HeinzelError(msg)
         return generation
 
     def _prepare_announced(

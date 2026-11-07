@@ -302,6 +302,7 @@ from heinzel.kernel._protocols import (
 )
 from heinzel.kernel._release import (
     EdgeRelease,
+    PluginNews,
     PluginRelease,
     PluginReleases,
     ReleaseCache,
@@ -618,6 +619,7 @@ __all__ = [
     "Person",
     "PlaybookLet",
     "PlaybookSetup",
+    "PluginNews",
     "PluginRelease",
     "PluginReleases",
     "PostedMessage",

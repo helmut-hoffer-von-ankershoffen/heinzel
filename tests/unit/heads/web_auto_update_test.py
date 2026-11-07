@@ -17,6 +17,7 @@ from heinzel.kernel import (
     CorePin,
     Installation,
     OperationLet,
+    PluginNews,
     PluginRelease,
     PluginReleases,
     ReleaseFacts,
@@ -777,3 +778,101 @@ def test_an_older_files_failure_with_news_still_pending_keeps_its_backoff(make_k
         kernel, restart=lambda: None, development=None, clock=clock, version="1.0.0", settings=made._read_settings
     )
     assert after.plan.retry_at == clock.now + timedelta(hours=6)
+
+
+# Plugins pinned to a tagged GitHub commit, and plugins that need plugins (ADR 0137) -----------------------------------
+
+MAPS, WEATHER = "d" * 40, "b" * 40
+PLUGIN_REPO = "https://github.com/acme-example/heinzel-plugins"
+
+
+class TaggedPlugins(PluginReleases):
+    """Tagged releases as `PyPIPluginReleases.announceable` answers: dependencies first, one line per held one."""
+
+    def __init__(self, *, tags=None, held=(), offline=False):
+        self.tags = {"heinzel-maps": MAPS, "heinzel-weather": WEATHER} if tags is None else tags
+        self.held, self.offline = list(held), offline
+
+    def announceable(self, timeout, old_enough):
+        releases = {
+            "heinzel-maps": PluginRelease("0.3.0", START - timedelta(days=7), commit=MAPS),
+            "heinzel-weather": PluginRelease("0.4.1", START - timedelta(days=7), commit=WEATHER),
+            "heinzel-clock": PluginRelease("1.1.0", START - timedelta(hours=1)),  # too new for the minimum age
+        }
+        moving = {name: release for name, release in releases.items() if old_enough(release)}
+        return PluginNews(moving, self.held, ["heinzel-maps", "heinzel-weather"])
+
+    def tag_commit(self, name, version, timeout):
+        if self.offline:
+            msg = "offline"
+            raise OSError(msg)
+        return self.tags.get(name)
+
+    def release(self, name, version, timeout):
+        return PluginRelease(version, START - timedelta(days=7)) if name == "heinzel" else None
+
+
+def tagged_pin(name):
+    return CorePin("commit", f"{name} @ git+{PLUGIN_REPO}@{'a' * 40}", ref="a" * 40, name=name, git=PLUGIN_REPO)
+
+
+def tagged_updater(make_kernel, tmp_path, plugins):
+    made, clock, calls, kernel = updater(make_kernel, tmp_path)
+    receipt = Receipt(CorePin("release", "heinzel", ref="v0.1.0", git="https://github.com/org/heinzel"), tmp_path)
+    receipt.plugin_pins = lambda: [
+        tagged_pin("heinzel-maps"),
+        tagged_pin("heinzel-weather"),
+        CorePin("ref", "heinzel-crm @ git+https://example.test/crm@main", ref="main", name="heinzel-crm"),
+    ]
+    kernel.bind(Installation, receipt)
+    kernel.bind(PluginReleases, plugins)
+    return made, clock, calls
+
+
+def test_tagged_plugins_are_announced_with_their_commits_dependencies_first_and_are_no_longer_by_hand(
+    make_kernel, tmp_path
+):
+    line = "heinzel-route 2.0.0 waits for heinzel-maps: it needs heinzel-maps>=0.4, and no release of it ..."
+    made, clock, calls = tagged_updater(make_kernel, tmp_path, TaggedPlugins(held=[line]))
+    assert made.status().by_hand == ["heinzel-crm", "heinzel-maps", "heinzel-weather"]  # before any check
+    advance(made, clock, 5 * 60)
+    status = made.status()
+    assert status.by_hand == ["heinzel-crm"]  # only what is still updated by hand
+    assert status.plugins == {"heinzel-maps": "0.3.0", "heinzel-weather": "0.4.1"}  # heinzel-clock is too new
+    assert status.plugins_held == [line]
+    advance(made, clock, 30)
+    assert calls == {"restart": 1, "update": 1}  # hz and the plugins in one update
+    news = made.applied[0]
+    assert list(news["plugins"]) == ["heinzel-maps", "heinzel-weather"]  # the dependency first
+    assert news["plugin_commits"] == {"heinzel-maps": MAPS, "heinzel-weather": WEATHER}
+    assert news["core"] == "9.9.9"  # a held plugin never holds hz
+
+
+@pytest.mark.parametrize("plugins", [TaggedPlugins(tags={"heinzel-maps": MAPS}), TaggedPlugins(offline=True)])
+def test_a_plugin_tag_that_moved_or_cant_be_asked_installs_nothing(make_kernel, tmp_path, plugins):
+    made, clock, calls = tagged_updater(make_kernel, tmp_path, plugins)
+    advance(made, clock, 5 * 60)
+    advance(made, clock, 30)
+    assert calls["update"] == 0
+    message = made.status().message or ""
+    if plugins.offline:
+        assert message == auto.failure_message("1.0.0")
+    else:
+        assert message.startswith("The tag of heinzel-weather 0.4.1 names another commit than when it was announced")
+
+
+def test_the_plan_keeps_plugin_commits_what_it_follows_and_what_waits_across_a_restart():
+    plan = Plan(
+        plugins={"heinzel-maps": "0.3.0"},
+        plugin_commits={"heinzel-maps": MAPS},
+        followed=["heinzel-maps"],
+        held_plugins=["heinzel-weather 0.4.1 waits for heinzel-maps: ..."],
+    )
+    again = Plan.from_json(json.loads(json.dumps(plan.to_json())), fresh=True)
+    assert (again.plugin_commits, again.followed, again.held_plugins) == (
+        plan.plugin_commits,
+        plan.followed,
+        plan.held_plugins,
+    )
+    auto.done(again, "Updated.")
+    assert (again.plugins, again.plugin_commits, again.followed) == ({}, {}, ["heinzel-maps"])
