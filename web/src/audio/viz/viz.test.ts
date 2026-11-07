@@ -89,7 +89,9 @@ describe("spectrum rail", () => {
       a.step(new Uint8Array(1024).fill(40), null, 1033, 0.033);
       const draw = ctx();
       drawRail(draw, a, theme, width, height, false);
-      const boxes = vi.mocked(draw.roundRect).mock.calls.map((call) => call.slice(0, 4).map(Number));
+      const boxes = vi
+        .mocked(draw.roundRect)
+        .mock.calls.map(([x, y, w, h]) => [Number(x), Number(y), Number(w), Number(h)] as const);
       expect(boxes.length).toBeGreaterThanOrEqual(32);
       for (const [x, y, w, h] of boxes) {
         expect(x).toBeGreaterThanOrEqual(-1e-9);
