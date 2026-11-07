@@ -76,6 +76,8 @@ class PyPIPluginReleases(PluginReleases):
         self._fetch = fetch
         self._github = github
         self._requires = requires or self._installed_requires
+        self._followed: list[str] = []
+        """The plugins pinned to a GitHub commit whose repository tags their releases, at the last look."""
 
     def _installed_requires(self, name: str) -> list[str]:
         return plugin_requires(self._installation.prefix.resolve(strict=True), name)
@@ -99,7 +101,8 @@ class PyPIPluginReleases(PluginReleases):
         Raises:
             HeinzelError: If the installed versions can't be read safely (from `Installation`).
         """
-        return self._scan(timeout)[0]
+        found, self._followed = self._scan(timeout)
+        return found
 
     def _scan(self, timeout: float) -> tuple[dict[str, PluginRelease], list[str]]:
         """The newer releases, and the plugins pinned to a GitHub commit whose repository tags their releases."""
@@ -229,12 +232,13 @@ class PyPIPluginReleases(PluginReleases):
         Raises:
             HeinzelError: If the installed versions can't be read safely (from `Installation`).
         """
-        found, followed = self._scan(timeout)
+        found = self.newer_releases(timeout)
+        followed = list(self._followed)
         moving = {name: release for name, release in found.items() if old_enough(release)}
         held: list[str] = []
         needs: dict[str, list[str]] = {}
         for name, release in list(moving.items()):
-            lines = self._new_requires(name, release, timeout)
+            lines = self.release_requires(name, release, timeout)
             if lines is None:
                 held.append(f"{name} {release.version} waits: its tag names a commit that doesn't say that version.")
                 del moving[name]
@@ -254,8 +258,13 @@ class PyPIPluginReleases(PluginReleases):
         )
         return PluginNews({name: moving[name] for name in order}, [*held, *waiting], followed)
 
-    def _new_requires(self, name: str, release: PluginRelease, timeout: float) -> list[str] | None:
-        """What a new release needs, from its metadata; None when a tagged commit says another version."""
+    def release_requires(self, name: str, release: PluginRelease, timeout: float) -> list[str] | None:
+        """What a new release needs, from its metadata (PyPI, or its tag's commit); None when it says another version.
+
+        Raises:
+            OSError: If PyPI or GitHub can't be reached.
+            ValueError: If an answer isn't the JSON they send.
+        """
         if release.commit is None:
             url = f"{PYPI}/pypi/{urllib.parse.quote(name)}/{urllib.parse.quote(release.version)}/json"
             data: object = self._fetch(url, timeout)

@@ -316,3 +316,20 @@ def test_a_pypi_plugin_that_needs_a_tagged_one_moves_with_it():
     receipt = Receipt(pins, {"heinzel-route": "1.0.0", "heinzel-maps": "0.2.0"})
     news = PyPIPluginReleases(receipt, fetch, github=github, requires=lambda name: []).announceable(5.0, old_enough)
     assert list(news.releases) == ["heinzel-maps", "heinzel-route"]
+
+
+def test_what_is_announced_comes_through_the_release_and_requirement_seams_alone():
+    """Announcing reads releases and their requirements only through these two seams, so fakes of them hold."""
+
+    class Faked(PyPIPluginReleases):
+        def newer_releases(self, timeout):
+            return {"heinzel-example": PluginRelease("9.0.0", datetime(2026, 1, 1, tzinfo=UTC))}
+
+        def release_requires(self, name, release, timeout):
+            return []
+
+    def fetch(url, timeout):
+        pytest.fail(f"asked {url}")
+
+    news = Faked(Receipt([], {}), fetch=fetch, requires=lambda name: []).announceable(1.0, lambda release: True)
+    assert {name: release.version for name, release in news.releases.items()} == {"heinzel-example": "9.0.0"}
