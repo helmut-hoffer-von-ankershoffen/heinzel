@@ -27664,7 +27664,7 @@
     },
     "/system/plugin/repair": {
       "post": {
-        "description": "Install every plugin an installed plugin requires that is missing or too old, from the same catalog.\n\nA plugin declares the plugins it can't work without in `[tool.heinzel.plugin] requires`; `add` installs them\nfirst, and this repairs an installation that lacks them (one installed before they were declared). It never signs\nin: `hz system doctor` still names each plugin's sign-in step. Running servers load them after a restart.",
+        "description": "Install every plugin an installed plugin requires that is missing or too old, from the same catalog.\n\nA plugin declares the plugins it can't work without in `[tool.heinzel.plugin] requires-plugins`; `add` installs them\nfirst, and this repairs an installation that lacks them (one installed before they were declared). It never signs\nin: `hz system doctor` still names each plugin's sign-in step. Running servers load them after a restart.",
         "operationId": "system_plugin_repair",
         "parameters": [
           {

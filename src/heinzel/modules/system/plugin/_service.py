@@ -9,11 +9,13 @@ import base64
 import contextlib
 import hashlib
 import json
+import logging
 import re
 import shlex
 import subprocess
 import tempfile
 import threading
+import time
 import tomllib
 import urllib.error
 from collections.abc import Collection, Generator, Mapping, Sequence
@@ -87,6 +89,7 @@ from heinzel.modules.system.plugin._sources import (
     required_by,
 )
 
+log = logging.getLogger(__name__)
 TEMPLATE = "gh:helmut-hoffer-von-ankershoffen/heinzel"
 REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
 MAINTAINERS = "Heinzelmännchen maintainers"
@@ -490,7 +493,9 @@ class PluginService:
         ordered.extend(_offered(metadata.recommends, requirer, seen, installed))
         return ordered
 
-    def _install_needs(self, candidate: PluginCandidate, phases: Phases | None) -> list[PluginNeed]:
+    def _install_needs(
+        self, candidate: PluginCandidate, phases: Phases | None, operation: Literal["add", "repair"] = "add"
+    ) -> list[PluginNeed]:
         """Install or update each plugin `candidate` requires that is missing or too old, in order, one step each.
 
         Each is its own checked add, exactly as shown before confirming; one already there by now (another add
@@ -505,34 +510,69 @@ class PluginService:
             if not need.required or need.candidate is None:
                 results.append(need)
                 continue
-            label = _need_label(need)
-            if failed is not None:
-                results.append(need.model_copy(update={"state": "not-reached", "candidate": None}))
-                if phases is not None:
-                    phases.note(f"requires:{need.distribution}", label, "skipped", f"{failed} failed first")
-                continue
-            have = self._versions_now().get(need.distribution)
-            if have is not None and _satisfies(Requirement(need.requirement), have):
-                results.append(need.model_copy(update={"state": "present", "version": have, "candidate": None}))
-                if phases is not None:
-                    phases.note(f"requires:{need.distribution}", label, "done", f"Already installed: {have}")
-                continue
-            try:
-                with _step(phases, f"requires:{need.distribution}", label), self._mutation() as mutation:
-                    done = self._install_candidate(need.candidate, need.install, mutation, phases=None)
-            except HeinzelError as exc:
+            result = self._install_need(need, phases, failed, operation)
+            results.append(result)
+            if result.state == "failed":
                 failed = need.distribution
-                results.append(need.model_copy(update={"state": "failed", "candidate": None, "detail": str(exc)}))
-                continue
-            version = next((p.version for p in done.plugins if _same(p.distribution, need.distribution)), need.version)
-            state = "installed" if need.state == "install" else "updated"
-            results.append(need.model_copy(update={"state": state, "version": version, "candidate": None}))
         if failed is not None:
             requirer = candidate.distribution or candidate.spec
             reason = next(n.detail for n in results if n.state == "failed")
             msg = f"{failed}, which {requirer} needs, couldn't be installed, so {requirer} wasn't either: {reason}"
             raise HeinzelError(msg)
         return results
+
+    def _install_need(
+        self, need: PluginNeed, phases: Phases | None, failed: str | None, operation: Literal["add", "repair"]
+    ) -> PluginNeed:
+        """Install or update one required plugin as one step, logging its start and outcome (`plugin.requires.*`)."""
+        step, label = f"requires:{need.distribution}", _need_label(need)
+        fields: dict[str, object] = {
+            "operation": operation,
+            "step": step,
+            "plugin": need.distribution,
+            "version": need.version,
+            "dependency_of": need.needed_by,
+        }
+        started = time.monotonic()
+        log.info("plugin.requires.start", extra={"event": "plugin.requires.start", **fields})
+        result = self._install_need_step(need, phases, failed, step, label)
+
+        log.log(
+            logging.WARNING if result.state == "failed" else logging.INFO,
+            "plugin.requires.outcome",
+            extra={
+                "event": "plugin.requires.outcome",
+                **fields,
+                "version": result.version,
+                "outcome": result.state,
+                "duration_ms": round((time.monotonic() - started) * 1000),
+                **({"error": result.detail} if result.state == "failed" else {}),
+            },
+        )
+        return result
+
+    def _install_need_step(
+        self, need: PluginNeed, phases: Phases | None, failed: str | None, step: str, label: str
+    ) -> PluginNeed:
+        if failed is not None:
+            if phases is not None:
+                phases.note(step, label, "skipped", f"{failed} failed first")
+            return need.model_copy(update={"state": "not-reached", "candidate": None})
+        have = self._versions_now().get(need.distribution)
+        if have is not None and _satisfies(Requirement(need.requirement), have):
+            if phases is not None:
+                phases.note(step, label, "done", f"Already installed: {have}")
+            return need.model_copy(update={"state": "present", "version": have, "candidate": None})
+        if need.candidate is None:  # pragma: no cover - only needs with a candidate reach here
+            return need
+        try:
+            with _step(phases, step, label), self._mutation() as mutation:
+                done = self._install_candidate(need.candidate, need.install, mutation, phases=None)
+        except HeinzelError as exc:
+            return need.model_copy(update={"state": "failed", "candidate": None, "detail": str(exc)})
+        version = next((p.version for p in done.plugins if _same(p.distribution, need.distribution)), need.version)
+        state = "installed" if need.state == "install" else "updated"
+        return need.model_copy(update={"state": state, "version": version, "candidate": None})
 
     def _add_confirmed(self, candidate: PluginCandidate, spec: str) -> PluginChange:
         """Install what `candidate` requires, then it, telling one step per required plugin and its own steps.
@@ -563,6 +603,10 @@ class PluginService:
             HeinzelError: If another plugin change is running.
         """
         memory = _NeedsMemory(self._kernel.settings.state_dir / NEEDS_FILE)
+        started = time.monotonic()
+        log.info(
+            "plugin.repair.start", extra={"event": "plugin.repair.start", "operation": "repair", "automatic": automatic}
+        )
         results: list[PluginNeed] = []
         installed_any = False
         for plugin in self.installed():
@@ -593,7 +637,7 @@ class PluginService:
                         self._kernel.resolve(Progress),
                         [(f"requires:{n.distribution}", _need_label(n)) for n in needs if n.required and n.candidate],
                     )
-                    done = self._install_needs(requirer.model_copy(update={"needs": needs}), phases)
+                    done = self._install_needs(requirer.model_copy(update={"needs": needs}), phases, "repair")
             except HeinzelError as exc:
                 results.extend(
                     PluginNeed(
@@ -611,6 +655,20 @@ class PluginService:
             installed_any = installed_any or any(n.state in {"installed", "updated"} for n in done)
             results.extend(n for n in done if n.state != "present")
         repair = PluginRepair(needs=results, restart_required=installed_any, message=_repair_message(results))
+        failed = [n.distribution for n in results if n.state == "failed"]
+        log.log(
+            logging.WARNING if failed else logging.INFO,
+            "plugin.repair.outcome",
+            extra={
+                "event": "plugin.repair.outcome",
+                "operation": "repair",
+                "automatic": automatic,
+                "outcome": "failed" if failed else ("repaired" if installed_any else "nothing-missing"),
+                "installed": [n.distribution for n in results if n.state in {"installed", "updated"}],
+                "failed": failed,
+                "duration_ms": round((time.monotonic() - started) * 1000),
+            },
+        )
         if automatic and results:
             self._notify(repair)
         return repair

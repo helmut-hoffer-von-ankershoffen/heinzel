@@ -187,9 +187,9 @@ class Metadata:
     page: str | None = None
     subdirectory: str | None = None
     requires: tuple[str, ...] = ()
-    """Other plugins it can't work without (`[tool.heinzel.plugin] requires`): installed with it, first."""
+    """Other plugins it can't work without (`[tool.heinzel.plugin] requires-plugins`): installed with it, first."""
     recommends: tuple[str, ...] = ()
-    """Other plugins it works better with (`[tool.heinzel.plugin] recommends`): offered, never forced."""
+    """Other plugins it works better with (`[tool.heinzel.plugin] recommends-plugins`): offered, never forced."""
 
 
 NEEDS = "\x00heinzel-plugin-needs"
@@ -201,6 +201,8 @@ MAX_NEEDS = 16
 def plugin_needs(document: object) -> dict[str, tuple[str, ...]]:
     """The plugins a pyproject's `[tool.heinzel.plugin]` requires and recommends, as checked requirements.
 
+    Read from `requires-plugins` and `recommends-plugins`; the table's `requires` names capability contracts.
+
     Each entry is a plugin distribution with an optional version, such as `heinzel-github>=0.3`: no URL, extras or
     markers, as where it comes from is the catalog's word, never the requirer's. A malformed table declares nothing.
     """
@@ -211,7 +213,7 @@ def plugin_needs(document: object) -> dict[str, tuple[str, ...]]:
     if not isinstance(table, dict):
         return found
     for key in found:
-        entries = cast("dict[str, Any]", table).get(key)
+        entries = cast("dict[str, Any]", table).get(f"{key}-plugins")
         if not isinstance(entries, list) or len(cast("list[object]", entries)) > MAX_NEEDS:
             continue
         checked: list[str] = []

@@ -140,8 +140,19 @@ def test_a_pyproject_declares_required_and_recommended_plugins_without_sources()
         "tool": {
             "heinzel": {
                 "plugin": {
-                    "requires": ["heinzel-github", "Heinzel_Atlassian>=0.2", "heinzel-x @ https://evil.example/x.whl"],
-                    "recommends": ["heinzel-google", "heinzel-zoom[extra]", "requests", "heinzel", "not valid !"],
+                    "requires": ["core:plugin-api@1"],
+                    "requires-plugins": [
+                        "heinzel-github",
+                        "Heinzel_Atlassian>=0.2",
+                        "heinzel-x @ https://evil.example/x.whl",
+                    ],
+                    "recommends-plugins": [
+                        "heinzel-google",
+                        "heinzel-zoom[extra]",
+                        "requests",
+                        "heinzel",
+                        "not valid !",
+                    ],
                 }
             }
         }
@@ -154,7 +165,7 @@ def test_a_pyproject_declares_required_and_recommended_plugins_without_sources()
 
 
 def test_github_metadata_carries_what_the_plugin_needs():
-    pyproject = b'[project]\nname = "heinzel-acme"\n[tool.heinzel.plugin]\nrequires = ["heinzel-github"]\n'
+    pyproject = b'[project]\nname = "heinzel-acme"\n[tool.heinzel.plugin]\nrequires-plugins = ["heinzel-github"]\n'
     answer = {"type": "file", "content": base64.b64encode(pyproject).decode()}
     project = github_project_at(lambda _path: answer, "repos/o/r", "abc", None)
     assert project["name"] == "heinzel-acme"
@@ -316,3 +327,58 @@ def test_the_auto_updater_repairs_when_nothing_else_is_due_and_restarts_to_load(
     _auto_update.AutoUpdater._repair_plugins(updater)
     assert calls == [{"automatic": True}]
     assert restarts == [True]
+
+
+def events(caplog):
+    return [
+        {
+            k: getattr(r, k, None)
+            for k in ("event", "operation", "step", "plugin", "version", "dependency_of", "outcome")
+        }
+        | {"timed": isinstance(getattr(r, "duration_ms", None), int), "error": getattr(r, "error", None)}
+        for r in caplog.records
+        if getattr(r, "event", "").startswith("plugin.requires.")
+    ]
+
+
+def test_each_required_plugin_logs_a_start_and_an_outcome(make_kernel, tmp_path, monkeypatch, caplog):
+    caplog.set_level("INFO", logger="heinzel.modules.system.plugin._service")
+    world = acme_world(make_kernel, tmp_path, monkeypatch, {"heinzel-atlassian": "0.4.0"})
+    world.service._add_confirmed(world.service.candidate("acme"), "acme")
+    common = {"operation": "add", "step": "requires:heinzel-github", "plugin": "heinzel-github"}
+    assert events(caplog) == [
+        {
+            "event": "plugin.requires.start",
+            **common,
+            "version": "0.5.0",
+            "dependency_of": "heinzel-acme",
+            "outcome": None,
+            "timed": False,
+            "error": None,
+        },
+        {
+            "event": "plugin.requires.outcome",
+            **common,
+            "version": "0.5.0",
+            "dependency_of": "heinzel-acme",
+            "outcome": "installed",
+            "timed": True,
+            "error": None,
+        },
+    ]
+
+
+def test_a_failed_required_plugin_logs_its_outcome_and_error(make_kernel, tmp_path, monkeypatch, caplog):
+    caplog.set_level("INFO", logger="heinzel.modules.system.plugin._service")
+    world = acme_world(make_kernel, tmp_path, monkeypatch, {"heinzel-acme": "0.3.0"})
+    world.fail = {"heinzel-github"}
+    world.service.repair(automatic=True)
+    outcomes = [(e["plugin"], e["operation"], e["outcome"], e["error"]) for e in events(caplog) if e["timed"]]
+    assert outcomes == [
+        ("heinzel-github", "repair", "failed", "uv failed"),
+        ("heinzel-atlassian", "repair", "not-reached", None),
+    ]
+    repaired = [r for r in caplog.records if getattr(r, "event", "") == "plugin.repair.outcome"]
+    assert [(r.outcome, r.failed, r.levelname) for r in repaired] == [
+        ("failed", ["heinzel-github", "heinzel-atlassian"], "WARNING")
+    ]

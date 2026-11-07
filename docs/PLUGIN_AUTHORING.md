@@ -93,12 +93,13 @@ when testing a candidate developer toolkit; normal projects use their immutable 
 ### Other plugins your plugin needs
 
 A plugin that can't work without another plugin (a company plugin whose bindings read through `heinzel-github`)
-names it in `[tool.heinzel.plugin]`; one it only works better with goes under `recommends`:
+names it under `requires-plugins` in `[tool.heinzel.plugin]`; one it only works better with goes under
+`recommends-plugins`. The table's `requires` stays the capability contracts:
 
 ```toml
 [tool.heinzel.plugin]
-requires = ["heinzel-github", "heinzel-atlassian>=0.2"]
-recommends = ["heinzel-google"]
+requires-plugins = ["heinzel-github", "heinzel-atlassian>=0.2"]
+recommends-plugins = ["heinzel-google"]
 ```
 
 Entries are plugin names with an optional version range, never a URL: `hz system plugin add` says before it starts

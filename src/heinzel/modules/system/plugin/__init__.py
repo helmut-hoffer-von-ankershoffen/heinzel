@@ -155,7 +155,7 @@ def repair(
 ) -> PluginRepair:
     """Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
 
-    A plugin declares the plugins it can't work without in `[tool.heinzel.plugin] requires`; `add` installs them
+    A plugin declares the plugins it can't work without in `[tool.heinzel.plugin] requires-plugins`; `add` installs them
     first, and this repairs an installation that lacks them (one installed before they were declared). It never signs
     in: `hz system doctor` still names each plugin's sign-in step. Running servers load them after a restart.
     """
