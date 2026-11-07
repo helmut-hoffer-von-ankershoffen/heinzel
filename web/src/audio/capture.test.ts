@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { captureAudio } from "./capture";
+import { captureAudio, captureMicrophone } from "./capture";
 
 function track(kind: "audio" | "video") {
   return { kind, label: `${kind} source`, stop: vi.fn() };
@@ -139,5 +139,31 @@ describe("explicit ephemeral audio capture", () => {
     await expect(captureAudio(new AbortController().signal)).rejects.toThrow("Audio sharing is unavailable");
     expect(choose).not.toHaveBeenCalled();
     expect(construct).not.toHaveBeenCalled();
+  });
+});
+
+describe("captureMicrophone", () => {
+  it("asks with processing off, feeds only an analyser and releases the microphone on stop", async () => {
+    const mic = track("audio");
+    const stream = { getTracks: () => [mic], getAudioTracks: () => [mic] };
+    const getUserMedia = vi.fn().mockResolvedValue(stream);
+    vi.stubGlobal("AudioContext", construct);
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
+    const captured = await captureMicrophone(new AbortController().signal);
+    expect(getUserMedia).toHaveBeenCalledWith({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    expect(captured.label).toBe("Microphone");
+    expect(source.connect).toHaveBeenCalledWith(analyser);
+    expect(source.connect).not.toHaveBeenCalledWith(expect.objectContaining({ destination: expect.anything() }));
+    captured.stop();
+    expect(mic.stop).toHaveBeenCalled();
+    expect(context.close).toHaveBeenCalled();
+  });
+
+  it("is cancelled before asking when already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(captureMicrophone(controller.signal)).rejects.toMatchObject({ name: "AbortError" });
   });
 });
