@@ -148,7 +148,7 @@ desktop-electron-test: ## Install the locked Electron runtime and run its unit s
 	pnpm --dir desktop exec node -p 'require("electron")'
 	pnpm --dir desktop test
 
-desktop-electron-package: ## Build and verify an unsigned Electron artifact for this CI host
+desktop-electron-package: ## Build and verify an ad-hoc sealed, unnotarized Electron artifact for this CI host
 	pnpm --dir desktop install --node-linker=hoisted --frozen-lockfile
 	pnpm --dir desktop build
 	pnpm --dir desktop verify:package
