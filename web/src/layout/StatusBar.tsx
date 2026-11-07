@@ -186,7 +186,7 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
       state={unavailable ? "bad" : "off"}
       paneName="Calendar summary"
       actions={
-        <PaneAction icon={CalendarDays} onClick={onOpen} data-pane-leaves="">
+        <PaneAction icon={CalendarDays} onClick={onOpen} leaves>
           Open calendar
         </PaneAction>
       }

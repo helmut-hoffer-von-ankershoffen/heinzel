@@ -9,7 +9,7 @@ import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { watchViewport } from "@/lib/viewport";
 import { FOOTER_RELOCATED, useFooterVisibility } from "./FooterLayout";
-import { actionStructureProblems, assertActionStructure, PaneActions, PaneTitle } from "./PaneActions";
+import { actionStructureProblems, assertActionStructure, PaneActions, PaneLeave, PaneTitle } from "./PaneActions";
 
 export type State = "ok" | "warn" | "bad" | "off";
 
@@ -260,7 +260,6 @@ export function FooterItem({
         createPortal(
           // The pane shares hover/focus with its trigger across the small gap, and stays above body-portaled media.
           // biome-ignore lint/a11y/noStaticElementInteractions: hover only previews what the trigger opens on click
-          // biome-ignore lint/a11y/useKeyWithClickEvents: the click is a link's or button's own, which the keyboard activates too
           <div
             ref={pane}
             id={id}
@@ -278,23 +277,20 @@ export function FooterItem({
               timer.current = window.setTimeout(() => setHovered(false), CLOSE_DELAY);
             }}
             onFocus={() => setFocused(true)}
-            // An action that goes somewhere (a `to=` link, or one marked `data-pane-leaves`) takes the person there: the pane
-            // has said its piece and must not cover what opened.
-            onClick={(event) => {
-              if ((event.target as Element).closest("a[data-pane-action]:not([target]), [data-pane-leaves]")) close();
-            }}
           >
-            <section
-              aria-label={paneName ?? label}
-              className={cn(
-                "w-72 max-w-full rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl",
-                popoverClassName,
-              )}
-            >
-              {!hideHeading && <PaneTitle>{label}</PaneTitle>}
-              {children}
-              <PaneActions {...actionRow}>{actions}</PaneActions>
-            </section>
+            <PaneLeave.Provider value={close}>
+              <section
+                aria-label={paneName ?? label}
+                className={cn(
+                  "w-72 max-w-full rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl",
+                  popoverClassName,
+                )}
+              >
+                {!hideHeading && <PaneTitle>{label}</PaneTitle>}
+                {children}
+                <PaneActions {...actionRow}>{actions}</PaneActions>
+              </section>
+            </PaneLeave.Provider>
           </div>,
           document.body,
         )}
