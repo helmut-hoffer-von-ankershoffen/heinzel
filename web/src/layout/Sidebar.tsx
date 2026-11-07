@@ -280,8 +280,9 @@ function Rail({ titlebar, onToggle, onSearch, onNotifications }: Omit<Props, "co
         // column, whose header starts after it (--titlebar-main-start). The rail's mark row is not needed then.
         <div
           data-titlebar
-          // It reaches over the rail's right border, which would otherwise cross the row under the traffic lights.
-          className="relative h-(--titlebar-height) w-[calc(100%+1px)] self-start shrink-0 border-b-[0.5px] border-foreground/20 bg-sidebar"
+          // It reaches over the rail's right border and the main column's start up to the top bar, so the row stays one
+          // surface and drags there, while no later drag box covers the expand button (index.css).
+          className="relative z-10 h-(--titlebar-height) w-[calc(100%+1px+var(--titlebar-main-start))] self-start shrink-0 border-b-[0.5px] border-foreground/20 bg-sidebar"
         >
           <button
             type="button"

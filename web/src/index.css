@@ -501,8 +501,11 @@ html[data-desktop-titlebar] [data-titlebar] {
   user-select: none;
   -webkit-app-region: drag;
 }
+/* Collapsed, the expand button overhangs the main column. The top bar moves aside (margin, not padding) so its later,
+   draggable box never covers the button: Electron applies app regions in document order, so a later drag rect would
+   take the button's no-drag rect back. The rail's row reaches over the gap instead. */
 html[data-desktop-titlebar] .workspace-topbar {
-  padding-left: calc(0.75rem + var(--titlebar-main-start, 0px));
+  margin-left: var(--titlebar-main-start, 0px);
 }
 html[data-desktop-titlebar] [data-placement="beside"] > .workspace-tabs {
   align-items: center;

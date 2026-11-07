@@ -48,12 +48,23 @@ const measure = (page) =>
         region: getComputedStyle(element).getPropertyValue("-webkit-app-region"),
         ...box(element),
       }));
+      const drags = [...document.querySelectorAll(header)].filter(
+        (element) => getComputedStyle(element).getPropertyValue("-webkit-app-region") === "drag",
+      );
       const controls = [...document.querySelectorAll(header)]
         .flatMap((element) => [...element.querySelectorAll("a, button, [role=tab], input")])
         .filter((element) => element.getClientRects().length > 0)
         .map((element) => ({
           label: element.getAttribute("aria-label") ?? element.textContent?.trim().slice(0, 30),
           region: getComputedStyle(element).getPropertyValue("-webkit-app-region"),
+          // Electron applies app regions in document order: a later drag box over a control takes its click back.
+          coveredByLaterDrag: drags.some((drag) => {
+            if (drag.contains(element) || !(element.compareDocumentPosition(drag) & Node.DOCUMENT_POSITION_FOLLOWING))
+              return false;
+            const a = element.getBoundingClientRect();
+            const b = drag.getBoundingClientRect();
+            return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+          }),
           ...box(element),
         }));
       const badge = document.querySelector(row)?.querySelector("button .rounded-full");
@@ -113,6 +124,7 @@ try {
   assert.ok(bar.controls.length >= 6, "The row holds the sidebar icons and the header's controls");
   for (const control of bar.controls) {
     assert.equal(control.region, "no-drag", `${control.label} is clickable, not a drag handle`);
+    assert.equal(control.coveredByLaterDrag, false, `${control.label} is under no later drag box`);
     assert.ok(control.x >= 80, `${control.label} stays clear of the traffic lights`);
     assert.ok(control.bottom <= 44, `${control.label} fits the row`);
   }
@@ -158,7 +170,16 @@ try {
   const expand = await page.getByRole("button", { name: "Expand navigation" }).boundingBox();
   assert.ok(expand && expand.x >= 80 && expand.y + expand.height <= 44);
   const rail = await measure(page);
+  assert.equal(
+    await page.evaluate(
+      ([x, y]) => document.elementFromPoint(x, y)?.closest("button")?.getAttribute("aria-label"),
+      [expand.x + expand.width / 2, expand.y + expand.height / 2],
+    ),
+    "Expand navigation",
+    "The expand button is on top where it overhangs the main column",
+  );
   for (const control of rail.controls) {
+    assert.equal(control.coveredByLaterDrag, false, `${control.label} is under no later drag box when collapsed`);
     assert.ok(control.x >= 80, `${control.label} stays clear of the traffic lights when collapsed`);
     if (control.label !== "Expand navigation")
       assert.ok(control.x >= expand.x + expand.width, `${control.label} starts after the expand button`);
