@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, mkdir, readdir, readlink, realpath, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readlink, realpath, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { verifyRuntime } from "./runtime-inventory.mjs";
@@ -79,6 +80,11 @@ if (await verifyRuntime(path.join(contents, "Resources", "app.asar"), desktop) !
   throw new Error("The packaged app version does not match the release.");
 }
 
+const verifySeal = (bundle) => execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", "--verbose=2", bundle], {
+  stdio: "inherit",
+});
+verifySeal(root);
+
 await mkdir(output);
 const name = `heinzel-desktop-${version}-${platform}-${arch}.tar.gz`;
 const archive = path.resolve(output, name);
@@ -86,6 +92,14 @@ execFileSync("/usr/bin/tar", [
   "--format=pax", "--no-mac-metadata", "--no-xattrs", "--no-acls", "--no-fflags",
   "-czf", archive, "-C", path.dirname(root), bundleName,
 ]);
+// The seal must survive the archive: extract it the way a user's machine will and verify again.
+const unpacked = await mkdtemp(path.join(os.tmpdir(), "heinzel-desktop-seal-"));
+try {
+  execFileSync("/usr/bin/tar", ["-xzf", archive, "-C", unpacked]);
+  verifySeal(path.join(unpacked, bundleName));
+} finally {
+  await rm(unpacked, { recursive: true, force: true });
+}
 const hash = createHash("sha256");
 for await (const chunk of createReadStream(archive)) hash.update(chunk);
 const manifest = {

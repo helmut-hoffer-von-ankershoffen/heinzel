@@ -52,7 +52,7 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0040](0040-layers-and-playbooks-are-plugins.md) Layers and playbooks are plugins: a plugin may be a layer with a parent and a site, and layers stack general to specific | proposed · 24 Oct<br>partial | [#61](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/61) |
 | [0041](0041-expert-mode-newcomers-see-the-everyday-commands.md) Expert mode: newcomers see the everyday commands, `hz system expert on` shows all | proposed · 24 Oct<br>built | [#65](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/65) |
 | [0042](0042-google-workspace-through-the-gws-cli.md) Read Google Workspace through the Google Workspace CLI (`gws`) | accepted · 24 Oct<br>built | [#47](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/47) |
-| [0043](0043-desktop-notifications-one-policy-shown-once.md) Desktop notifications: one policy in the core, shown once, by hz's own macOS app | proposed · 24 Oct<br>built | [#67](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/67) |
+| [0043](0043-desktop-notifications-one-policy-shown-once.md) Desktop notifications: one policy in the core, shown once, by hz's own macOS app | proposed · 24 Oct<br>built | [#67](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/67), [#601](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/601) |
 | [0044](0044-themes-are-data-a-plugin-ships.md) Themes are data a plugin ships: `module.theme(...)` offers them, `hz system theme use` picks one | proposed · 24 Oct<br>built | [#70](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/70) |
 | [0045](0045-a-chat-that-acts-through-hz-with-confirmation-in-code.md) A chat that knows where you are and acts through hz, with every change confirmed in code | proposed · 24 Oct<br>built | [#71](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/71) |
 | [0046](0046-an-installable-web-app-with-paired-devices.md) An installable web app on a fixed port, with paired devices and notifications from its service worker | proposed · 24 Oct<br>built | [#72](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/72) |
@@ -132,6 +132,7 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0134](0134-promote-signed-core-release-artifacts-to-pypi.md) Promote signed core release artifacts to PyPI | proposed · 5 Nov<br>partial |  |
 | [0135](0135-distribute-a-managed-macos-desktop-app.md) Distribute a managed macOS desktop app | proposed · 6 Nov<br>planned |  |
 | [0136](0136-connectors-run-their-vendors-sign-in-in-the-app.md) Connectors run their vendor's sign-in in the app | accepted · 7 Nov<br>partial |  |
+| [0137](0137-tagged-git-plugins-update-automatically-with-what-they-need.md) Tagged git plugins update automatically, with what they need | proposed · 7 Nov<br>built |  |
 
 </div>
 <!-- adr-index:end -->

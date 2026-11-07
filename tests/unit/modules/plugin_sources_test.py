@@ -107,7 +107,7 @@ def test_github_resolved_metadata_is_read_at_the_same_pinned_commit():
     requests = []
     # Contents resolves an in-repository symlink to this file response at the requested commit.
     resolved = {"type": "file", "content": base64.encodebytes(b'[project]\nname="heinzel-harbor"').decode()}
-    project = _sources._github_project_at(
+    project = _sources.github_project_at(
         lambda path: requests.append(path) or resolved, "repos/example/collection", "a" * 40, "plugins/harbor"
     )
     assert project["name"] == "heinzel-harbor"
@@ -118,7 +118,7 @@ def test_github_resolved_metadata_is_read_at_the_same_pinned_commit():
 def test_metadata_requires_a_bounded_github_file_response(kind):
     response = {"type": kind, "content": base64.b64encode(b"[project]").decode()}
     with pytest.raises(ValueError, match="bounded file response"):
-        _sources._github_project_at(lambda _path: response, "repos/example/collection", "a" * 40, None)
+        _sources.github_project_at(lambda _path: response, "repos/example/collection", "a" * 40, None)
 
 
 @pytest.mark.parametrize(
