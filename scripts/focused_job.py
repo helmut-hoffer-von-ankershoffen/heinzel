@@ -160,7 +160,7 @@ def pytest_runtest_logreport(report: object) -> None:
 
 
 def _round_of(report: object) -> int:
-    match = re.search(r"\[round(\d+)\]$", getattr(report, "nodeid", ""))
+    match = re.search(r"[\[-]round(\d+)[\]-]", getattr(report, "nodeid", ""))
     return int(match[1]) - 1 if match else 0
 
 

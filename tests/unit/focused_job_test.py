@@ -134,3 +134,33 @@ def test_the_round_plugin_repeats_in_one_process_and_tallies(tmp_path):
     )
     assert "FAILED flaky_test.py::test_second_run_fails[round2]" in result.stdout, result.stdout + result.stderr
     assert json.loads((tmp_path / "out" / "tally.json").read_text()) == {"rounds": 3, "green": 2, "asked": 3}
+
+
+def test_parametrized_tests_book_failures_to_their_round(tmp_path):
+    (tmp_path / "param_test.py").write_text(
+        "import pytest\n"
+        "RUNS = []\n"
+        "@pytest.mark.parametrize('case', ['a'])\n"
+        "def test_case(case):\n"
+        "    RUNS.append(case)\n"
+        "    assert len(RUNS) != 2\n",
+        encoding="utf-8",
+    )
+    env = {
+        **os.environ,
+        "FOCUSED_REPEAT": "2",
+        "FOCUSED_OUT": str(tmp_path / "out"),
+        "PYTHONPATH": os.pathsep.join(filter(None, [str(REPO / "scripts"), os.environ.get("PYTHONPATH")])),
+    }
+    command = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "focused_job", "-p", "no:xdist"]
+    result = subprocess.run(
+        [*command, "param_test.py", "-o", "addopts=", "-rA"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert "round2" in result.stdout, result.stdout + result.stderr
+    assert json.loads((tmp_path / "out" / "tally.json").read_text()) == {"rounds": 2, "green": 1, "asked": 2}
