@@ -280,7 +280,8 @@ function Rail({ titlebar, onToggle, onSearch, onNotifications }: Omit<Props, "co
         // column, whose header starts after it (--titlebar-main-start). The rail's mark row is not needed then.
         <div
           data-titlebar
-          className="relative h-(--titlebar-height) w-full shrink-0 border-b-[0.5px] border-foreground/20"
+          // It reaches over the rail's right border, which would otherwise cross the row under the traffic lights.
+          className="relative h-(--titlebar-height) w-[calc(100%+1px)] self-start shrink-0 border-b-[0.5px] border-foreground/20 bg-sidebar"
         >
           <button
             type="button"

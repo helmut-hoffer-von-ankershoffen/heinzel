@@ -126,13 +126,30 @@ try {
   });
   result.desktop = { segments: bar.segments.length, controls: bar.controls.length, order };
 
+  // A dialog over the row takes its box back from the drag region, so its top edge stays clickable.
+  await page.getByRole("button", { name: "Search" }).click();
+  const dialog = page.getByRole("dialog").first();
+  await dialog.waitFor();
+  assert.equal(
+    await dialog.evaluate((element) => getComputedStyle(element).getPropertyValue("-webkit-app-region")),
+    "no-drag",
+  );
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+
   // Full screen: the lights are gone and the toggle moves to the start; the row keeps its height.
   await page.evaluate(() => window.__titlebarFullscreen?.(true));
+  await page.waitForFunction(
+    () => getComputedStyle(document.documentElement).getPropertyValue("--titlebar-inset-left").trim() === "0px",
+  );
   const full = await measure(page);
   assert.equal(full.inset, "0px");
   assert.ok(full.controls[0].x < 80, "The toggle moves to the start in full screen");
   assert.ok(full.segments.every((segment) => segment.height === 44));
   await page.evaluate(() => window.__titlebarFullscreen?.(false));
+  await page.waitForFunction(
+    () => getComputedStyle(document.documentElement).getPropertyValue("--titlebar-inset-left").trim() === "80px",
+  );
 
   // Collapsed: the expand button sits after the lights and the main header starts after it.
   await page.getByRole("button", { name: "Collapse navigation" }).click();
