@@ -96,6 +96,8 @@ describe("AudioVisualizer", () => {
       const settled = frames.length;
       act(() => frames.at(-1)?.(time + 40));
       expect(frames.length).toBe(settled);
+      // The status follows the sleeping loop: it never keeps claiming a signal over a cleared canvas.
+      expect(screen.getByText("Listening to this tab. Waiting for sound.")).toBeInTheDocument();
     } finally {
       raf.mockRestore();
       getContext.mockRestore();

@@ -76,6 +76,30 @@ describe("spectrum rail", () => {
     expect(32 * pill + 33 * gap).toBeCloseTo(900, 3);
   });
 
+  it("keeps every pill and peak cap inside the rail, even when it is narrow or short", () => {
+    const sizes: [number, number][] = [
+      [1, 1],
+      [28, 24],
+      [36, 320],
+      [36, 900],
+    ];
+    for (const [width, height] of sizes) {
+      const a = analysis();
+      a.step(new Uint8Array(1024).fill(255), null, 1000, 0.033);
+      a.step(new Uint8Array(1024).fill(40), null, 1033, 0.033);
+      const draw = ctx();
+      drawRail(draw, a, theme, width, height, false);
+      const boxes = vi.mocked(draw.roundRect).mock.calls.map((call) => call.slice(0, 4).map(Number));
+      expect(boxes.length).toBeGreaterThanOrEqual(32);
+      for (const [x, y, w, h] of boxes) {
+        expect(x).toBeGreaterThanOrEqual(-1e-9);
+        expect(y).toBeGreaterThanOrEqual(-1e-9);
+        expect(x + w).toBeLessThanOrEqual(width + 1e-9);
+        expect(y + h).toBeLessThanOrEqual(height + 1e-9);
+      }
+    }
+  });
+
   it("is a dim still ladder when quiet, and widens pills with their band when loud", () => {
     const a = analysis();
     const quiet = ctx();

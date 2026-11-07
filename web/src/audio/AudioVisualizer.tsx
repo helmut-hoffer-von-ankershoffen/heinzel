@@ -196,6 +196,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     };
     const sleep = () => {
       // After two quiet seconds the aurora clears and the rail rests as a dim, still ladder; the loop stops.
+      // The loop can settle before sample()'s detection window ends, so report the silence here: otherwise the
+      // status would keep saying "Visualizing" while nothing is drawn.
+      if (audible) {
+        audible = false;
+        setHasSignal(false);
+      }
       analysis.rest();
       if (rail && railContext) {
         railSize = sizeOf(rail, railContext);
@@ -407,14 +413,16 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   );
 }
 
-/** The one compact question, once music plays in a frame: browsers require the person's own yes. */
+/** The one compact question, once music plays in a frame: browsers require the person's own yes. On a phone or a short
+ * landscape screen a floating card would cover the player it asks about, so there the question stays in the Audio
+ * pane (its trigger reads "Share", with Share audio and Use microphone). */
 function SourcePrompt({ remembered, onTab, onMic }: { remembered: Remembered; onTab: () => void; onMic: () => void }) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
   return createPortal(
     <aside
       aria-label="Let Heinzel see the music"
-      className="fixed right-12 bottom-14 z-(--layer-popover) w-64 rounded-xl border border-border bg-popover p-3 text-xs text-foreground shadow-lg"
+      className="fixed right-12 bottom-14 z-(--layer-popover) w-64 max-sm:hidden [@media(max-height:40rem)]:hidden rounded-xl border border-border bg-popover p-3 text-xs text-foreground shadow-lg"
     >
       <p className="mb-2 font-medium">Let Heinzel see the music?</p>
       <div className="flex gap-2">

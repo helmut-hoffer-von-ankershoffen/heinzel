@@ -4,10 +4,12 @@ import { rgba } from "../aurora";
 import { type Analysis, clamp, VIZ_BANDS } from "./analysis";
 import { mixRgb, type VizTheme } from "./theme";
 
+/** Fits the ladder inside the rail at any size: gaps shrink on a short rail, pills narrow on a thin one. */
 export function railLayout(width: number, height: number) {
-  const gap = 3;
-  const pill = Math.max(1, (height - gap * (VIZ_BANDS + 1)) / VIZ_BANDS);
-  return { gap, pill, minThick: 4, maxThick: Math.max(4, width - 2) };
+  const gap = Math.min(3, height / (VIZ_BANDS * 2 + 1));
+  const pill = (height - gap * (VIZ_BANDS + 1)) / VIZ_BANDS;
+  const minThick = Math.min(4, width);
+  return { gap, pill, minThick, maxThick: Math.max(minThick, width - 2) };
 }
 
 function pillPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
@@ -47,10 +49,11 @@ export function drawRail(
     ctx.shadowBlur = 0;
     if (!quiet && peak > value + 0.04) {
       const cap = minThick + peak * (maxThick - minThick);
+      const edge = Math.min(2, cap / 2);
       ctx.globalAlpha = 0.55;
-      pillPath(ctx, (width - cap) / 2, top, 2, pill);
+      pillPath(ctx, (width - cap) / 2, top, edge, pill);
       ctx.fill();
-      pillPath(ctx, (width + cap) / 2 - 2, top, 2, pill);
+      pillPath(ctx, (width + cap) / 2 - edge, top, edge, pill);
       ctx.fill();
     }
   }
