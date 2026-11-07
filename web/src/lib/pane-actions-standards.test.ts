@@ -103,18 +103,48 @@ it("has no withText: the first action of a row leads with words, the rest are ic
   expect(found).toEqual([]);
 });
 
-// Files that still draw a divider by hand (`border-t`) in a container instead of PaneActions; only shrinks (PR b).
-const BORDER_T: Record<string, number> = {
-  "../chat/ContractHistory.tsx": 1,
-  "../chat/DurableSession.tsx": 1,
-  "../heinzel/PersonalHeinzels.tsx": 1,
-  "../layout/DaemonSettings.tsx": 1,
-  "../layout/Shell.tsx": 1,
-  "../layout/ThemePreviews.tsx": 1,
-  "../onboarding/OnboardingWizard.tsx": 1,
-  "../pages/Doctor.tsx": 1,
-  "../pages/Organisation.tsx": 1,
+// Files with a hand-drawn `border-t`: only a card's own outer edge may keep one (an action divider is PaneActions;
+// separators are `<hr>` or `divide-y`). A reason per entry; this list only shrinks.
+const EDGES: Record<string, { count: number; reason: string }> = {
+  "../chat/ContractHistory.tsx": {
+    count: 1,
+    reason: "PENDING #606: its builder turns this into PaneActions, hr or divide-y, or states the card edge here",
+  },
+  "../chat/DurableSession.tsx": {
+    count: 1,
+    reason: "PENDING #606: its builder turns this into PaneActions, hr or divide-y, or states the card edge here",
+  },
+  "../heinzel/PersonalHeinzels.tsx": {
+    count: 1,
+    reason: "PENDING #606: its builder turns this into PaneActions, hr or divide-y, or states the card edge here",
+  },
+  "../layout/DaemonSettings.tsx": {
+    count: 1,
+    reason: "PENDING #606: its builder turns this into PaneActions, hr or divide-y, or states the card edge here",
+  },
+  "../layout/Shell.tsx": {
+    count: 1,
+    reason: "PENDING #606: its builder turns this into PaneActions, hr or divide-y, or states the card edge here",
+  },
+  "../layout/ThemePreviews.tsx": {
+    count: 1,
+    reason: "PENDING #606: its builder turns this into PaneActions, hr or divide-y, or states the card edge here",
+  },
+  "../onboarding/OnboardingWizard.tsx": {
+    count: 1,
+    reason: "PENDING #606: its builder turns this into PaneActions, hr or divide-y, or states the card edge here",
+  },
+  "../pages/Doctor.tsx": {
+    count: 1,
+    reason: "PENDING #606: its builder turns this into PaneActions, hr or divide-y, or states the card edge here",
+  },
+  "../pages/Organisation.tsx": {
+    count: 1,
+    reason: "PENDING #606: its builder turns this into PaneActions, hr or divide-y, or states the card edge here",
+  },
+  "../sound/PlayerCard.tsx": { count: 1, reason: "the docked player card's top edge above the account row" },
 };
+
 // Files with a right-aligned button row (`justify-end`) outside PaneActions; only shrinks (PR b).
 const JUSTIFY_END: Record<string, number> = {
   "../components/CommandDialog.tsx": 1,
@@ -172,8 +202,22 @@ it("keeps every action on the shared components: no new hand-drawn divider, end 
     );
     add("raw", file, openingTags(source, "button").length);
   }
-  expect(counts.border).toEqual(BORDER_T);
+  expect(counts.border).toEqual(Object.fromEntries(Object.entries(EDGES).map(([file, edge]) => [file, edge.count])));
   expect(counts.end).toEqual(JUSTIFY_END);
   expect(counts.unnamed).toEqual(UNNAMED_ICONS);
   expect(counts.raw).toEqual(RAW);
+});
+
+// Files that mark a link `data-prose-link` (a reference, not an action); only listed files may, and it only shrinks.
+const PROSE_LINKS: Record<string, string> = {
+  "../notifications/TodayNotifications.tsx": "a notice's title in the Today tease is a reference to the notice",
+  "../pages/Heinzelmaennchen.tsx": "a Heinzel's name in the table is a reference to its contract",
+};
+
+it("lets only listed files mark a link as a prose reference", () => {
+  const found = sources
+    .filter(([file, source]) => !file.endsWith("/PaneActions.tsx") && source.includes("data-prose-link"))
+    .map(([file]) => file)
+    .sort();
+  expect(found).toEqual(Object.keys(PROSE_LINKS).sort());
 });

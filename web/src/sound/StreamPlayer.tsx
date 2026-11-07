@@ -1,4 +1,4 @@
-import { Play, RotateCw, UserRound } from "lucide-react";
+import { RotateCw, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
 import { PaneAction } from "@/components/PaneActions";
@@ -6,7 +6,6 @@ import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { PlayerCard } from "./PlayerCard";
 import { page } from "./queries";
-import { stop } from "./store";
 import {
   ACCOUNT_SANDBOX,
   accountStream,
@@ -156,9 +155,6 @@ function Player({
               )}
               <PaneAction key="retry" icon={RotateCw} onClick={retry}>
                 {t("sound.retryPlayer")}
-              </PaneAction>
-              <PaneAction key="youtube" icon={Play} href={stream.watch_url} onClick={stop}>
-                {t("sound.playOnYouTube")}
               </PaneAction>
             </>
           )}

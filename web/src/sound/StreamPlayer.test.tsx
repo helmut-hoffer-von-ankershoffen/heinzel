@@ -152,17 +152,14 @@ describe("stream recovery", () => {
     expect(new URL(player().src).origin).toBe("https://www.youtube.com");
   });
 
-  it.each(["Play on YouTube", "Open on YouTube"])(
-    "%s opens the actual video and stops the embedded player",
-    async (name) => {
-      toggle();
-      mount();
-      fireEvent.click(screen.getByText("YouTube asking you to sign in?"));
-      const link = await screen.findByRole("link", { name });
-      expect(link).toHaveAttribute("href", stream.watch_url);
-      expect(link).toHaveAttribute("target", "_blank");
-      fireEvent.click(link);
-      expect(soundState()).toMatchObject({ playing: false, started: false });
-    },
-  );
+  it.each(["Open on YouTube"])("%s opens the actual video and stops the embedded player", async (name) => {
+    toggle();
+    mount();
+    fireEvent.click(screen.getByText("YouTube asking you to sign in?"));
+    const link = await screen.findByRole("link", { name });
+    expect(link).toHaveAttribute("href", stream.watch_url);
+    expect(link).toHaveAttribute("target", "_blank");
+    fireEvent.click(link);
+    expect(soundState()).toMatchObject({ playing: false, started: false });
+  });
 });

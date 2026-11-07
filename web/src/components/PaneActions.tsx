@@ -147,7 +147,7 @@ export function PaneAction({
   if (to)
     return (
       <Button {...look} asChild>
-        <Link to={to} onClick={props.onClick as ComponentProps<typeof Link>["onClick"]}>
+        <Link to={to} {...(props as Omit<ComponentProps<"a">, "href">)}>
           {body}
         </Link>
       </Button>
