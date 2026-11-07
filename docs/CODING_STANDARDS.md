@@ -164,3 +164,11 @@ Run `HZ_SCREENSHOTS=/tmp/hz-mobile-proof uv run pytest tests/e2e/web_ui_test.py 
 phone flows is its own test case with its own server and a screenshot subdirectory); also run the mobile test with
 `PLAYWRIGHT_BROWSER=webkit` after installing WebKit with `uv run --script scripts/web_build.py exec playwright-core install webkit`.
 These are browser-engine emulations; physical iPhone Safari remains a separate verification when available.
+
+## Actions in panes
+
+Pane anatomy and action placement follow [design/README.md](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/design/README.md#actions-in-panes), the single
+source: a title row with at most one icon-only action at the right, the body, then one bottom action row under a
+divider. Use `PaneActions`, `PaneAction` and `PaneIconAction` from `web/src/components/PaneActions.tsx` (or
+`FooterItem`'s `action` and `actions`); never a text link as an action, a full line for one action or a hand-drawn
+`border-t` row. `web/src/lib/pane-actions-standards.test.ts` enforces this.

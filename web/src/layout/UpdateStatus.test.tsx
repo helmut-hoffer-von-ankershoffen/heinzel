@@ -297,7 +297,10 @@ it.each([plan, { ...plan, phase: "off", enabled: false }, { status: 503, body: {
     await userEvent.setup().click(await screen.findByRole("button", { name: "Updates, off" }));
     expect(screen.getByText("Update availability is unavailable.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Manually update…" })).toBeInTheDocument();
+    const manual = screen.getByRole("button", { name: "Manually update…" });
+    // Switches stay in the body; the action sits in the bottom row under the divider (design/README.md).
+    expect(manual.closest("[data-pane-actions]")).toHaveClass("border-t");
+    for (const toggle of screen.queryAllByRole("switch")) expect(toggle.closest("[data-pane-actions]")).toBeNull();
     expect(startUpdate).not.toHaveBeenCalled();
   },
 );

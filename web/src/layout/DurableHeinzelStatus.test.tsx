@@ -22,7 +22,13 @@ describe("The durable Heinzel footer control", () => {
     expect(within(panel).getByText("Paused").nextElementSibling).toHaveTextContent("1");
     expect(within(panel).getByText("Needs attention").nextElementSibling).toHaveTextContent("1");
     expect(within(panel).getByText("Proposed").nextElementSibling).toHaveTextContent("1");
-    expect(within(panel).getByRole("link", { name: "Open chat" })).toHaveAttribute("href", "/");
+    const chat = within(panel).getByRole("link", { name: "Open chat" });
+    expect(chat).toHaveAttribute("href", "/");
+    // One simple action: an icon in the title row, not a full line of text (design/README.md).
+    expect(chat).toHaveAttribute("title", "Open chat");
+    expect(chat).not.toHaveTextContent("Open chat");
+    expect(chat.parentElement).toHaveTextContent("Heinzelmännchen");
+    expect(panel.querySelector("[data-pane-actions]")).toBeNull();
   });
 
   it("shows zero for an authoritative empty persisted list", async () => {
@@ -31,6 +37,10 @@ describe("The durable Heinzel footer control", () => {
     expect(await screen.findByRole("button", { name: "0 Heinzelmännchen, off" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "0 Heinzelmännchen, off" }));
     expect(await screen.findByText("No persisted Heinzels yet.")).toBeInTheDocument();
+    // The empty state's action is the pane's primary button in the bottom row under the divider.
+    const create = screen.getByRole("button", { name: "Create a personal Heinzel" });
+    expect(create.closest("[data-pane-actions]")).toHaveClass("border-t");
+    expect(create).not.toHaveClass("underline");
   });
 
   it("creates a durable personal Heinzel and opens its inspectable session", async () => {

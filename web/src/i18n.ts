@@ -101,6 +101,7 @@ const en = {
   "durable.proposalOutcomeUnknown":
     "The proposal outcome is unknown. It was not repeated; inspect the saved schedule before taking another action.",
   "durable.create": "Create a personal Heinzel",
+  "durable.openChat": "Open chat",
   "durable.createFailed": "The personal Heinzel could not be created. Retry the same request.",
   "daemon.controls": "Daemon status and controls",
   "daemon.version": "Last service tick version",

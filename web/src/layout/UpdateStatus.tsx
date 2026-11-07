@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { Download, LoaderCircle } from "lucide-react";
+import { Download, LoaderCircle, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FooterItem } from "@/components/FooterItem";
-import { Button } from "@/components/ui/button";
+import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
 import { useAutoUpdateStatus } from "@/updates/autoUpdateApi";
@@ -105,6 +105,20 @@ export function UpdateStatus() {
       icon={busy ? LoaderCircle : Download}
       className={available && !problem ? "animate-pulse text-bad" : undefined}
       disabled={busy}
+      actions={
+        <>
+          {recovery === "verify" && (
+            <PaneAction icon={ShieldCheck} disabled={busy} onClick={() => void run(true)}>
+              {t("updates.verify")}
+            </PaneAction>
+          )}
+          {canUpdate && (
+            <PaneAction icon={Download} onClick={() => void run(false)}>
+              {available ? t("updates.action") : t("updates.manualAction")}
+            </PaneAction>
+          )}
+        </>
+      }
     >
       <div className="space-y-2 px-1.5 pb-1.5">
         {summary && <p role="status">{summary}</p>}
@@ -122,17 +136,6 @@ export function UpdateStatus() {
           </p>
         )}
         <AutoUpdateToggle />
-        {recovery === "verify" && (
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(true)}>
-            {t("updates.verify")}
-          </Button>
-        )}
-        {/* The primary action stays at the bottom when late automatic-update facts grow this above-anchored pane. */}
-        {canUpdate && (
-          <Button size="sm" variant="outline" onClick={() => void run(false)}>
-            {available ? t("updates.action") : t("updates.manualAction")}
-          </Button>
-        )}
       </div>
     </FooterItem>
   );

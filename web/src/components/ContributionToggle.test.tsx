@@ -293,6 +293,12 @@ describe("authenticated URL copy", () => {
     const link = screen.getByRole("link", { name: "Open" });
     expect(link).toHaveAttribute("href", `${ORIGIN}/#token=session-for-tests`);
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    // The URL is body text; Copy and Open close the pane in one bottom row under the divider, after it.
+    const row = link.closest("[data-pane-actions]");
+    expect(row).toHaveClass("border-t");
+    expect(screen.getByRole("button", { name: "Copy URL" }).closest("[data-pane-actions]")).toBe(row);
+    const url = screen.getByText(`${ORIGIN}/#token=session-for-tests`);
+    expect(url.compareDocumentPosition(row as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(fetch).not.toHaveBeenCalled();
   });
 

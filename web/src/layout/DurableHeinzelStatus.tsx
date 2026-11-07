@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { Bot, RefreshCw } from "lucide-react";
+import { Bot, MessageSquare, Plus, RefreshCw } from "lucide-react";
 import { useRef, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { api, unwrap } from "@/api/client";
 import { FooterItem, type State } from "@/components/FooterItem";
+import { PaneAction, PaneIconAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 
 const useDurableHeinzels = () =>
@@ -61,23 +62,24 @@ export function DurableHeinzelStatus() {
           {count ?? (query.isError ? "?" : "…")}
         </span>
       }
+      action={<PaneIconAction icon={MessageSquare} label={t("durable.openChat")} to="/" />}
+      actions={
+        query.isError ? (
+          <PaneAction icon={RefreshCw} disabled={query.isFetching} onClick={() => void query.refetch()}>
+            {t("error.retry")}
+          </PaneAction>
+        ) : !query.isPending && !sessions?.length ? (
+          <PaneAction icon={Plus} primary disabled={creating} onClick={() => void create()}>
+            {creating ? t("durable.scheduleWorking") : t("durable.create")}
+          </PaneAction>
+        ) : null
+      }
     >
       <div className="space-y-2 px-1.5 pb-1.5">
         {query.isPending ? (
           <p role="status">{t("state.loading")}</p>
         ) : query.isError ? (
-          <>
-            <p role="status">{t("health.failed")}</p>
-            <button
-              type="button"
-              disabled={query.isFetching}
-              onClick={() => void query.refetch()}
-              className="inline-flex min-h-6 items-center gap-1 rounded px-1 hover:bg-accent disabled:opacity-50"
-            >
-              <RefreshCw aria-hidden className="size-3" />
-              {t("error.retry")}
-            </button>
-          </>
+          <p role="status">{t("health.failed")}</p>
         ) : sessions?.length ? (
           <>
             <p>{count} persisted personal Heinzels</p>
@@ -99,20 +101,9 @@ export function DurableHeinzelStatus() {
         ) : (
           <>
             <p>No persisted Heinzels yet.</p>
-            <button
-              type="button"
-              disabled={creating}
-              onClick={() => void create()}
-              className="inline-flex min-h-7 items-center rounded px-2 text-sm underline hover:bg-accent disabled:opacity-50"
-            >
-              {creating ? t("durable.scheduleWorking") : t("durable.create")}
-            </button>
             {createFailed && <p role="alert">{t("durable.createFailed")}</p>}
           </>
         )}
-        <Link to="/" className="block border-t border-border pt-2 underline">
-          {t("status.open")} chat
-        </Link>
       </div>
     </FooterItem>
   );

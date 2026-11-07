@@ -3,7 +3,7 @@ import { Check, Copy, ExternalLink, Share2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { problem, type SchemaOperationCall } from "@/api/client";
 import { token } from "@/api/token";
-import { Button } from "@/components/ui/button";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -249,35 +249,28 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
                 ? t("copy.done")
                 : null}
       </p>
-      {url && (
-        <div className="space-y-2">
-          <p className="break-all font-mono text-xs">{displayUrl}</p>
-          <div className="flex flex-wrap gap-2">
-            {typeof navigator.share === "function" && (
-              <Button type="button" size="sm" variant="outline" onClick={() => void share()}>
-                <Share2 aria-hidden />
-                {t("contrib.toggle.shareUrl")}
-              </Button>
-            )}
-            {(typeof navigator.share !== "function" || shareFailed) && (
-              <Button type="button" size="sm" variant="outline" onClick={() => void copy()}>
-                {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-                {t("contrib.toggle.copyUrl")}
-              </Button>
-            )}
-            <Button size="sm" variant="outline" asChild>
-              <a href={displayUrl ?? url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink aria-hidden />
-                {t("status.open")}
-              </a>
-            </Button>
-          </div>
-        </div>
-      )}
+      {url && <p className="break-all font-mono text-xs">{displayUrl}</p>}
       {error && (
         <p role="alert" className="text-xs text-bad">
           {error}
         </p>
+      )}
+      {url && (
+        <PaneActions className="px-0">
+          {typeof navigator.share === "function" && (
+            <PaneAction icon={Share2} onClick={() => void share()}>
+              {t("contrib.toggle.shareUrl")}
+            </PaneAction>
+          )}
+          {(typeof navigator.share !== "function" || shareFailed) && (
+            <PaneAction icon={copied ? Check : Copy} onClick={() => void copy()}>
+              {t("contrib.toggle.copyUrl")}
+            </PaneAction>
+          )}
+          <PaneAction icon={ExternalLink} href={displayUrl ?? url}>
+            {t("status.open")}
+          </PaneAction>
+        </PaneActions>
       )}
     </div>
   );

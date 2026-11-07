@@ -9,6 +9,7 @@ import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { watchViewport } from "@/lib/viewport";
 import { FOOTER_RELOCATED, useFooterVisibility } from "./FooterLayout";
+import { PaneActions, PaneTitle } from "./PaneActions";
 
 export type State = "ok" | "warn" | "bad" | "off";
 
@@ -46,6 +47,8 @@ export function FooterItem({
   paneName,
   hideHeading = false,
   steady = false,
+  action,
+  actions,
 }: {
   /** What it says, as its accessible name and the pane's heading. */
   label: string;
@@ -73,6 +76,10 @@ export function FooterItem({
   hideHeading?: boolean;
   /** `text` changes while shown (a clock): fixed-width digits and a width that never shrinks, so neighbours stay put. */
   steady?: boolean;
+  /** The pane's one simple action, as a `PaneIconAction` at the right of the title row (design/README.md). */
+  action?: ReactNode;
+  /** Two or more actions, or a primary or destructive one: `PaneAction`s in the bottom row under a divider. */
+  actions?: ReactNode;
 }) {
   // Longest text seen, in characters: monospace `ch` units make the slot's width exact and never smaller.
   const widest = useRef(0);
@@ -265,12 +272,9 @@ export function FooterItem({
                 popoverClassName,
               )}
             >
-              {!hideHeading && (
-                <p className="px-1.5 py-1 font-medium">
-                  <span className="min-w-0">{label}</span>
-                </p>
-              )}
+              {!hideHeading && <PaneTitle action={action}>{label}</PaneTitle>}
               {children}
+              <PaneActions>{actions}</PaneActions>
             </section>
           </div>,
           document.body,
