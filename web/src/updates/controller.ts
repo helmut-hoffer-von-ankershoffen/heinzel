@@ -16,8 +16,15 @@ export type UpdateStatus = {
   installed_at: string | null;
   available: boolean;
   supported: boolean;
+  /** When the release source was last asked, answered or not. Older servers do not send the three check facts. */
+  checked_at?: string | null;
+  /** When the release source last answered. */
+  last_ok_at?: string | null;
+  check_failed?: boolean;
   reason: string | null;
 };
+/** Where a manual update is: one installer call for core and plugins together, then restart, then the checks. */
+export type UpdateStage = "install" | "restart" | "verify";
 export type Frontend = { version: string; identity: string; entrypoints: string[]; files: Record<string, string> };
 type Receipt = {
   stage: "uncertain" | "installed" | "reloading";
@@ -161,7 +168,7 @@ async function bounded<T>(run: (signal: AbortSignal) => Promise<T>, owner: Abort
 /** Only the explicit update gesture calls this; any uncertain attempt remains recorded and is never replayed. */
 export async function startUpdate(
   signal: AbortSignal,
-  onPhase: (phase: string) => void,
+  onPhase: (phase: string, stage?: UpdateStage) => void,
   transport = updateTransport,
 ): Promise<string> {
   if (pendingUpdate()) throw new Error("An update needs verification; installation will not be repeated.");
@@ -169,7 +176,7 @@ export async function startUpdate(
   if (!before.restartable) throw new Error("This server cannot restart; update it where it was installed.");
   preserveUpdateWork();
   save({ stage: "uncertain" });
-  onPhase("Updating core and plugins…");
+  onPhase("Updating core and plugins…", "install");
   const result = await bounded((signal) => transport.install(signal), signal, 900_000);
   if (!result || typeof result.after !== "string" || !result.after.trim() || !Array.isArray(result.plugins))
     throw new Error("The updater returned no verifiable result; inspect the installation.");
@@ -179,7 +186,7 @@ export async function startUpdate(
   }
   save({ stage: "installed", result });
   preserveUpdateWork();
-  onPhase("Restarting and verifying hz…");
+  onPhase("Restarting and verifying hz…", "restart");
   const running = await restartAndApply(
     { confirmed: true, version: result.after },
     { signal, transport: transport.lifecycle },
@@ -193,11 +200,11 @@ async function reloadVerifiedUpdate(
   running: Lifecycle,
   signal: AbortSignal,
   transport: UpdateTransport,
-  onPhase: (phase: string) => void = () => {},
+  onPhase: (phase: string, stage?: UpdateStage) => void = () => {},
 ): Promise<string> {
   const frontend = await bounded((signal) => transport.frontend(signal), signal, 4_000);
   if (frontend.version !== running.version) throw new Error("The frontend belongs to a different backend version.");
-  onPhase("Checking frontend assets…");
+  onPhase("Checking frontend assets…", "verify");
   await bounded((signal) => transport.assets(frontend, signal, false), signal, 30_000);
   await bounded(() => transport.clean(), signal, 15_000);
   preserveUpdateWork();

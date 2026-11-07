@@ -197,26 +197,28 @@ describe("Daemon Settings", () => {
     expect(calls.every((request) => request.method === "GET")).toBe(true);
   });
 
-  it("shows unknown recorded version and zero jobs honestly, and confirms a needed restart", async () => {
+  it("shows unknown recorded version and zero jobs honestly, and restarts at once when needed", async () => {
     const { user, calls } = show({ loaded: false, version: null, installed_version: null, jobs: 0 });
     expect(await screen.findAllByText("Unknown")).toHaveLength(2);
     expect(screen.getByText("0")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("not loaded");
     await user.click(screen.getByRole("button", { name: "Restart" }));
-    expect(calls.every((request) => request.method === "GET")).toBe(true);
-    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Restart" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(await screen.findByText("2.0.0")).toBeInTheDocument();
+    expect(screen.getByText("The daemon restarted.")).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });
 
-  it("explains a daemon version mismatch and offers the confirmed restart", async () => {
+  it("explains a daemon version mismatch and restarts without a confirmation", async () => {
     const { user } = show({ version: "1.0.0", installed_version: "2.0.0", version_mismatch: true });
     expect(
-      await screen.findByText("Restart the daemon and wait for a tick from the installed hz version."),
+      await screen.findByText(
+        "The background service is still running an older version. Restart it to use the installed one.",
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Restart" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Restart" }));
-    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(await screen.findByText("The daemon restarted.")).toBeInTheDocument();
   });
 
   it("keeps state and reports a refused pause instead of claiming success or retrying", async () => {
