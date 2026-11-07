@@ -1,9 +1,14 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AudioVisualizer, spectrumLevel } from "./AudioVisualizer";
-import { captureAudio } from "./capture";
+import { captureAudio, captureMicrophone } from "./capture";
+import { publishOwnAudio } from "./own";
+import { reloadSettings, setMaster, setStyle } from "./viz/settings";
 
-vi.mock("./capture", () => ({ captureAudio: vi.fn() }));
+vi.mock("./capture", () => ({
+  captureAudio: vi.fn(),
+  captureMicrophone: vi.fn(() => new Promise(() => undefined)),
+}));
 
 const stop = vi.fn();
 const captured = {
@@ -16,7 +21,12 @@ const captured = {
   stop,
 } as unknown as Awaited<ReturnType<typeof captureAudio>>;
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  localStorage.clear();
+  reloadSettings();
+  act(() => publishOwnAudio({ mode: "none" }));
+});
 
 describe("AudioVisualizer", () => {
   it("paints a full-window, click-through aurora from the real analyser and sleeps when the sound stops", async () => {
@@ -39,6 +49,8 @@ describe("AudioVisualizer", () => {
       closePath: vi.fn(),
       fill: vi.fn(),
       arc: vi.fn(),
+      roundRect: vi.fn(),
+      rect: vi.fn(),
       stroke: vi.fn(),
       createLinearGradient: vi.fn(() => gradient),
       createRadialGradient: vi.fn(() => gradient),
@@ -92,6 +104,38 @@ describe("AudioVisualizer", () => {
     }
   });
 
+  it("analyses Heinzel's own sound with no prompt, and honours the master and style switches", () => {
+    const analyser = {
+      frequencyBinCount: 16,
+      getByteFrequencyData: vi.fn(),
+      disconnect: vi.fn(),
+    } as unknown as AnalyserNode;
+    act(() => publishOwnAudio({ mode: "analysed", analyser, label: "Rain" }));
+    render(<AudioVisualizer />);
+    expect(screen.getByRole("img", { name: "Shared audio spectrum" })).toBeInTheDocument();
+    expect(captureAudio).not.toHaveBeenCalled();
+    expect(captureMicrophone).not.toHaveBeenCalled();
+    act(() => setStyle("spectrum", false));
+    expect(screen.queryByRole("img", { name: "Shared audio spectrum" })).not.toBeInTheDocument();
+    act(() => setStyle("spectrum", true));
+    expect(screen.getByRole("img", { name: "Shared audio spectrum" })).toBeInTheDocument();
+    act(() => setMaster(false));
+    expect(screen.queryByRole("region", { name: "Audio visualizer" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Shared audio spectrum" })).not.toBeInTheDocument();
+  });
+
+  it("asks once, inline, to see music playing in a frame, and remembers the answer", () => {
+    render(<AudioVisualizer />);
+    expect(screen.queryByRole("complementary", { name: "Let Heinzel see the music" })).not.toBeInTheDocument();
+    act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+    const prompt = screen.getByRole("complementary", { name: "Let Heinzel see the music" });
+    expect(within(prompt).getByText("Let Heinzel see the music?")).toBeVisible();
+    expect(captureAudio).not.toHaveBeenCalled();
+    fireEvent.click(within(prompt).getByRole("button", { name: "Use microphone" }));
+    expect(captureMicrophone).toHaveBeenCalledOnce();
+    expect(captureAudio).not.toHaveBeenCalled();
+  });
+
   it("makes quiet frequency bins visible without letting levels exceed the scale", () => {
     expect(spectrumLevel(16)).toBeCloseTo(0.25, 2);
     expect(spectrumLevel(255)).toBe(1);
@@ -121,7 +165,7 @@ describe("AudioVisualizer", () => {
       render(<AudioVisualizer />);
       fireEvent.click(screen.getByRole("button", { name: /Audio visualizer,/ }));
       expect(screen.getByRole("button", { name: "Share workspace audio" })).toBeVisible();
-      expect(screen.getByText(/Play audio in this workspace/)).toBeVisible();
+      expect(screen.getByText(/needs no permission/)).toBeVisible();
       expect(screen.queryByText(/Share tab audio/)).not.toBeInTheDocument();
       expect(captureAudio).not.toHaveBeenCalled();
     } finally {

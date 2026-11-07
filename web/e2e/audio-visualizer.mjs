@@ -47,7 +47,7 @@ try {
     await share.click();
     await page.waitForFunction(() => document.querySelector("output")?.textContent?.startsWith("Visualizing"));
     assert.equal(await page.evaluate(() => window.audioFixture.options.preferCurrentTab), true);
-    const canvas = page.locator("canvas");
+    const canvas = page.locator("canvas[data-testid=audio-aurora]");
     // Mean green share of the painted pixels: the ribbons are painted in different theme colours per band.
     const hue = () =>
       canvas.evaluate((element) => {
@@ -62,7 +62,7 @@ try {
         return { count, share: share / Math.max(1, count) };
       });
     await page.waitForFunction(() => {
-      const element = document.querySelector("canvas");
+      const element = document.querySelector("canvas[data-testid=audio-aurora]");
       const { data } = element.getContext("2d").getImageData(0, 0, element.width, element.height);
       return data.some((value, index) => index % 4 === 3 && value > 0);
     });
@@ -75,7 +75,7 @@ try {
     });
     await page.waitForFunction(
       ([lowShare]) => {
-        const element = document.querySelector("canvas");
+        const element = document.querySelector("canvas[data-testid=audio-aurora]");
         const { data } = element.getContext("2d").getImageData(0, 0, element.width, element.height);
         let share = 0,
           count = 0;
@@ -97,7 +97,7 @@ try {
     await page.waitForFunction(() => document.querySelector("output")?.textContent?.includes("Waiting for sound"));
     // Analyser smoothing decays naturally; the UI does not invent idle bars.
     await page.waitForFunction(() => {
-      const element = document.querySelector("canvas");
+      const element = document.querySelector("canvas[data-testid=audio-aurora]");
       return element
         .getContext("2d")
         .getImageData(0, 0, element.width, element.height)

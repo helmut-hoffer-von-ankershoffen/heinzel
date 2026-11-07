@@ -16,6 +16,7 @@ import {
   spawnMote,
   stepMotes,
   stepState,
+  subtractFloor,
 } from "./aurora";
 
 const fallback = { r: 1, g: 2, b: 3 };
@@ -90,6 +91,15 @@ describe("aurora maths", () => {
     expect(first?.y).toBeLessThan(y);
     expect(moteAlpha({ ...(first as NonNullable<typeof first>), age: 0 })).toBeLessThan(0.3);
     expect(stepMotes(state, 10)).toBe(0);
+  });
+
+  it("takes a steady noise floor out of microphone levels and keeps what rises above it", () => {
+    const floor = new Float32Array(4);
+    let quiet: Float32Array = new Float32Array(4).fill(0.3);
+    for (let index = 0; index < 1000; index += 1) quiet = subtractFloor(new Float32Array(4).fill(0.3), floor, 0.033);
+    expect(Math.max(...quiet)).toBeLessThan(0.05);
+    const loud = subtractFloor(new Float32Array(4).fill(0.8), floor, 0.033);
+    expect(Math.min(...loud)).toBeGreaterThan(0.4);
   });
 
   it("reuses its buffers: one analysis step allocates no new arrays", () => {

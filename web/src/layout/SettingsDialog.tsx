@@ -5,6 +5,7 @@ import { FolderOpen, Monitor, Moon, Sun, X } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
 import type { SchemaConfigReport, SchemaSettingInfo } from "@/api/client";
 import { useConfig, useExpert, useInfo, useNavigation, usePlugins, useRevealConfig, useSetExpert } from "@/api/queries";
+import { VisualizationSettings } from "@/audio/VisualizationSettings";
 import { ContributionControls, ContributionToggles } from "@/components/Contributions";
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -263,6 +264,9 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 <ThemePreviews />
                 <div className="mt-6">
                   <SoundSettings />
+                </div>
+                <div className="mt-6">
+                  <VisualizationSettings />
                 </div>
                 <div className="mt-6">
                   <ExpertRow />

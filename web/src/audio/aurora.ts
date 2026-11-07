@@ -39,6 +39,7 @@ export interface Mote {
 export interface AuroraState {
   levels: Float32Array;
   raw: Float32Array;
+  floor: Float32Array;
   tops: Float32Array[];
   peaks: Float32Array;
   loud: number;
@@ -180,6 +181,7 @@ export function createState(seed = 1): AuroraState {
   return {
     levels: new Float32Array(BANDS),
     raw: new Float32Array(BANDS),
+    floor: new Float32Array(BANDS),
     tops: [0, 1, 2].map(() => new Float32Array(RIBBON_POINTS)),
     peaks: new Float32Array(BANDS),
     loud: 0,
@@ -236,8 +238,25 @@ export function moteAlpha(mote: Mote) {
   return Math.max(0, fade) * (0.7 + 0.3 * Math.sin(mote.age * 9 + mote.phase));
 }
 
+/**
+ * Subtract a slowly tracked noise floor (room and microphone hiss) from band levels, so a quiet room stays dark and
+ * only sound above it moves the aurora. The floor drops fast to a quieter reading and rises very slowly.
+ */
+export function subtractFloor(levels: Float32Array, floor: Float32Array, dt: number) {
+  for (let band = 0; band < levels.length; band += 1) {
+    const level = levels[band] ?? 0;
+    const current = floor[band] ?? 0;
+    const next = level < current ? ease(current, level, dt, 6, 6) : ease(current, level, dt, 0.08, 0.08);
+    floor[band] = next;
+    levels[band] = Math.max(0, (level - next * 1.15) / Math.max(0.2, 1 - next));
+  }
+  return levels;
+}
+
 export interface StepOptions {
   readonly reduced: boolean;
+  /** Microphone input: take out the room's noise floor. */
+  readonly floor?: boolean;
   readonly width: number;
   readonly height: number;
 }
@@ -252,6 +271,7 @@ export function stepState(
   options: StepOptions,
 ) {
   const raw = bandLevels(data, edges, state.raw);
+  if (options.floor) subtractFloor(raw, state.floor, dt);
   for (let band = 0; band < BANDS; band += 1) {
     const level = ease(
       state.levels[band] ?? 0,
