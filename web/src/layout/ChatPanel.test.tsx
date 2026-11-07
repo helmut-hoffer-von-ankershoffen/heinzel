@@ -244,7 +244,7 @@ describe("ChatPanel", () => {
     mockApi(base);
     renderAt("/doctor");
     const info = await screen.findByRole("button", { name: "What this chat may cost" });
-    expect(info).toHaveAccessibleDescription(/at most \$0\.25 per message/);
+    await waitFor(() => expect(info).toHaveAccessibleDescription(/at most \$0\.25 per message/));
     expect(screen.getByRole("tooltip", { hidden: true })).not.toBeVisible();
   });
 

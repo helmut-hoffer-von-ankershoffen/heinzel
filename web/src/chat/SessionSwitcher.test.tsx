@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { answered, at, base, empty, frame, mockWithHeldStream } from "@/test/chat";
@@ -101,18 +101,17 @@ describe("The chat's session switcher", () => {
     mockApi(base);
     renderAt("/doctor");
     const info = await screen.findByRole("button", { name: "What this chat may cost" });
-    expect(screen.queryByText(/^Up to \$0\.25 per message/)).not.toBeVisible();
     const tip = screen.getByRole("tooltip", { hidden: true });
     expect(tip).not.toBeVisible();
-    expect(info).toHaveAccessibleDescription(/Up to \$0\.25 per message · this chat \$0\.00/);
+    await waitFor(() => expect(info).toHaveAccessibleDescription(/Up to \$0\.25 per message · this chat \$0\.00/));
     expect(info).toHaveAccessibleDescription(/Runs your agent runner and may cost money/);
     await user.hover(info);
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Up to $0.25 per message · this chat $0.00");
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Up to $0.25 per message · this chat $0.00");
     await user.unhover(info);
     expect(tip).not.toBeVisible();
-    info.focus(); // keyboard focus and a tap both land here
+    act(() => info.focus()); // keyboard focus and a tap both land here
 
-    expect(screen.getByRole("tooltip")).toBeVisible();
+    expect(await screen.findByRole("tooltip")).toBeVisible();
     await user.keyboard("{Escape}");
     expect(tip).not.toBeVisible();
     expect(info).toHaveAttribute("data-cost-state", "ok");
