@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AudioVisualizer, spectrumLevel } from "./AudioVisualizer";
 import { captureAudio, captureMicrophone } from "./capture";
 import { publishOwnAudio } from "./own";
-import { reloadSettings, setMaster, setShown } from "./viz/settings";
+import { reloadSettings, setMaster, setStyle } from "./viz/settings";
+import { setVizStage } from "./viz/stage";
 
 vi.mock("./capture", () => ({
   captureAudio: vi.fn(),
@@ -141,13 +142,16 @@ describe("AudioVisualizer", () => {
     expect(captureMicrophone).not.toHaveBeenCalled();
     expect(screen.getByTestId("audio-aurora")).toBeInTheDocument();
     // Show is one choice: Aurora alone drops the rail and keeps the aurora layer, Spectrum alone the reverse.
-    act(() => setShown("aurora"));
+    act(() => setStyle("spectrum", false));
     expect(screen.queryByRole("img", { name: "Shared audio spectrum" })).not.toBeInTheDocument();
     expect(screen.getByTestId("audio-aurora")).toBeInTheDocument();
-    act(() => setShown("spectrum"));
+    act(() => {
+      setStyle("spectrum", true);
+      setStyle("aurora", false);
+    });
     expect(screen.getByRole("img", { name: "Shared audio spectrum" })).toBeInTheDocument();
     expect(screen.queryByTestId("audio-aurora")).not.toBeInTheDocument();
-    act(() => setShown("both"));
+    act(() => setStyle("aurora", true));
     // The master switch hides every style but keeps its trigger, reading Off, so it can be turned on again here.
     act(() => setMaster(false));
     expect(screen.queryByRole("img", { name: "Shared audio spectrum" })).not.toBeInTheDocument();
@@ -229,20 +233,47 @@ describe("AudioVisualizer", () => {
     expect(signal?.aborted).toBe(true);
   });
 
-  it("fills the chosen segment of each choice, and only that one", () => {
+  it("shows each style as its own toggle, the on ones filled, and the source as one choice", () => {
     render(<AudioVisualizer />);
     open();
-    const show = within(screen.getByRole("radiogroup", { name: "Show" }));
-    expect(show.getByRole("radio", { name: "Both" })).toHaveAttribute("aria-checked", "true");
-    expect(show.getByRole("radio", { name: "Both" })).toHaveClass("bg-primary", "text-primary-foreground");
-    for (const name of ["Spectrum", "Aurora"]) {
-      expect(show.getByRole("radio", { name })).toHaveAttribute("aria-checked", "false");
-      expect(show.getByRole("radio", { name })).not.toHaveClass("bg-primary");
+    const show = within(screen.getByRole("group", { name: "Show" }));
+    for (const name of ["Spectrum", "Aurora", "Halo", "Swarm"]) {
+      expect(show.getByRole("button", { name })).toHaveAttribute("aria-pressed", "true");
+      expect(show.getByRole("button", { name })).toHaveClass("bg-primary", "text-primary-foreground");
     }
-    fireEvent.click(show.getByRole("radio", { name: "Aurora" }));
-    expect(show.getByRole("radio", { name: "Aurora" })).toHaveAttribute("aria-checked", "true");
-    expect(show.getByRole("radio", { name: "Both" })).toHaveAttribute("aria-checked", "false");
-    expect(document.querySelectorAll("[aria-pressed]")).toHaveLength(0);
+    fireEvent.click(show.getByRole("button", { name: "Halo" }));
+    expect(show.getByRole("button", { name: "Halo" })).toHaveAttribute("aria-pressed", "false");
+    expect(show.getByRole("button", { name: "Halo" })).not.toHaveClass("bg-primary");
+    expect(show.getByRole("button", { name: "Swarm" })).toHaveAttribute("aria-pressed", "true");
+    // The source is exclusive: radios, never pressed buttons.
+    expect(source("Off")).toHaveAttribute("aria-checked", "true");
+    expect(within(screen.getByRole("radiogroup", { name: "Listen to" })).queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("stands the Halo and the Swarm in the sidebar stage, only while the Heinzels play along", () => {
+    const analyser = {
+      frequencyBinCount: 16,
+      getByteFrequencyData: vi.fn(),
+      disconnect: vi.fn(),
+    } as unknown as AnalyserNode;
+    const element = document.createElement("div");
+    document.body.append(element);
+    try {
+      act(() => publishOwnAudio({ mode: "analysed", analyser, label: "Rain" }));
+      act(() => setVizStage({ element, playful: true }));
+      render(<AudioVisualizer />);
+      expect(element.querySelector("[data-testid=audio-halo]")).not.toBeNull();
+      expect(element.querySelector("[data-testid=audio-swarm]")).not.toBeNull();
+      expect(element.querySelectorAll("[data-swarm-figure]")).toHaveLength(3);
+      act(() => setStyle("halo", false));
+      expect(element.querySelector("[data-testid=audio-halo]")).toBeNull();
+      expect(element.querySelector("[data-testid=audio-swarm]")).not.toBeNull();
+      act(() => setVizStage({ element, playful: false }));
+      expect(element.querySelector("[data-testid=audio-swarm]")).toBeNull();
+    } finally {
+      act(() => setVizStage(null));
+      element.remove();
+    }
   });
 
   it("switches from the microphone to shared audio in one step, stopping the microphone only once sharing runs", async () => {

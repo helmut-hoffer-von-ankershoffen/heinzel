@@ -1,11 +1,14 @@
-import { AudioLines, BarChart3, Layers, Mic, MicOff, MonitorSpeaker, Sparkles } from "lucide-react";
+import { AudioLines, BarChart3, CircleDot, Mic, MicOff, MonitorSpeaker, Sparkles, Users } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FooterItem, type State } from "@/components/FooterItem";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
+import type { HeinzelLook } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
 import { type Segment, SegmentedControl } from "@/components/ui/segmented";
 import { t } from "@/i18n";
 import { Switch } from "@/layout/SettingControls";
+import { cn } from "@/lib/utils";
 import {
   BANDS,
   bandEdges,
@@ -21,8 +24,11 @@ import { type CapturedAudio, captureAudio, captureMicrophone } from "./capture";
 import { useOwnAudio } from "./own";
 import { Analysis, bandRanges } from "./viz/analysis";
 import { watchTheme } from "./viz/color";
+import { drawHalo } from "./viz/halo";
 import { drawRail } from "./viz/rail";
-import { setMaster, setShown, shownOf, styleOn, useVizSettings, type VizShown } from "./viz/settings";
+import { setMaster, setStyle, styleOn, useVizSettings, type VizStyle } from "./viz/settings";
+import { useVizStage } from "./viz/stage";
+import { createSwarm, drawSwarm, stepSwarm, swarmSettled } from "./viz/swarm";
 import { readVizTheme } from "./viz/theme";
 
 export { spectrumLevel } from "./aurora";
@@ -48,6 +54,14 @@ function remember(source: Source) {
     // the choice just isn't remembered
   }
 }
+
+/** The Heinzel who listens inside the Halo, and the three who play along in the Swarm (bass, mids, treble). */
+const LISTENER: HeinzelLook = { age: "young", hat: "teal", shirt: "rose", build: "slim" };
+const CREW: HeinzelLook[] = [
+  { age: "grown", hat: "red", shirt: "green" },
+  { age: "young", hat: "rust", shirt: "blue" },
+  { age: "old", hat: "purple", shirt: "slate", build: "slim" },
+];
 
 const UNSHARED = "Shared audio is not offered by this browser.";
 const tabSharing = () => Boolean(navigator.mediaDevices?.getDisplayMedia);
@@ -78,7 +92,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const generation = useRef(0);
   const auroraCanvas = useRef<HTMLCanvasElement>(null);
   const railCanvas = useRef<HTMLCanvasElement>(null);
+  const haloCanvas = useRef<HTMLCanvasElement>(null);
+  const haloBust = useRef<HTMLDivElement>(null);
+  const swarmCanvas = useRef<HTMLCanvasElement>(null);
+  const swarmFigures = useRef<(HTMLDivElement | null)[]>([]);
   const masterId = useId();
+  const showId = useId();
   const stop = useCallback(() => {
     generation.current += 1;
     request.current?.abort();
@@ -179,16 +198,28 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const ownAnalyser = own.mode === "analysed" ? own.analyser : null;
   const analyser = session?.analyser ?? ownAnalyser;
   const microphone = session?.label === "Microphone";
+  const stage = useVizStage();
+  const stageElement = stage?.playful ? stage.element : null;
   const railOn = styleOn(settings, "spectrum");
   const auroraOn = styleOn(settings, "aurora");
+  // The Heinzel styles stand in the sidebar's gap above the player, only while the Heinzels play along.
+  const haloOn = styleOn(settings, "halo") && stageElement !== null;
+  const swarmOn = styleOn(settings, "swarm") && stageElement !== null;
   const drawing = Boolean(analyser) && (railOn || auroraOn);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new sidebar stage remounts the Heinzel canvases
   useEffect(() => {
-    if (!analyser || (!railOn && !auroraOn)) return;
+    if (!analyser || (!railOn && !auroraOn && !haloOn && !swarmOn)) return;
     const rail = railOn ? railCanvas.current : null;
     const sky = auroraOn ? auroraCanvas.current : null;
+    const ring = haloOn ? haloCanvas.current : null;
+    const crowd = swarmOn ? swarmCanvas.current : null;
     const railContext = rail?.getContext("2d") ?? null;
     const skyContext = sky?.getContext("2d") ?? null;
-    if (!railContext && !skyContext) return;
+    const ringContext = ring?.getContext("2d") ?? null;
+    const crowdContext = crowd?.getContext("2d") ?? null;
+    if (!railContext && !skyContext && !ringContext && !crowdContext) return;
+    const swarm = createSwarm(Date.now() | 0);
+    const figures = () => swarmFigures.current.filter((figure): figure is HTMLDivElement => figure !== null);
     const freq = new Uint8Array(analyser.frequencyBinCount);
     const time = typeof analyser.getByteTimeDomainData === "function" ? new Uint8Array(analyser.fftSize || 2048) : null;
     const sampleRate = analyser.context?.sampleRate ?? 48000;
@@ -206,6 +237,34 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     let railSize = { width: 0, height: 0 };
     let skySize = { width: 0, height: 0 };
     let resting = false;
+    let ringSize = { width: 0, height: 0 };
+    let crowdSize = { width: 0, height: 0 };
+    const fitted = (
+      element: HTMLCanvasElement,
+      context: CanvasRenderingContext2D,
+      size: { width: number; height: number },
+    ) =>
+      size.width !== Math.max(1, element.clientWidth) || size.height !== Math.max(1, element.clientHeight)
+        ? sizeOf(element, context)
+        : size;
+    const drawHeinzels = (dt: number, reduced: boolean) => {
+      if (ring && ringContext) {
+        ringSize = fitted(ring, ringContext, ringSize);
+        const scale = drawHalo(ringContext, analysis, theme, ringSize.width, ringSize.height, reduced);
+        if (haloBust.current) haloBust.current.style.transform = scale === 1 ? "" : `scale(${scale.toFixed(3)})`;
+      }
+      if (crowd && crowdContext) {
+        crowdSize = fitted(crowd, crowdContext, crowdSize);
+        const moves = stepSwarm(swarm, analysis, dt, reduced);
+        const standing = figures();
+        standing.forEach((figure, index) => {
+          const move = moves[index] ?? "none";
+          figure.style.transform = move === "none" ? "" : move;
+        });
+        const centres = standing.map((figure) => figure.offsetLeft + figure.offsetWidth / 2);
+        drawSwarm(crowdContext, swarm, analysis, theme, crowdSize.width, crowdSize.height, centres, dt, reduced);
+      }
+    };
     const sizeOf = (element: HTMLCanvasElement, context: CanvasRenderingContext2D) => {
       const width = Math.max(1, element.clientWidth);
       const height = Math.max(1, element.clientHeight);
@@ -256,6 +315,8 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       }
       resting = true;
       analysis.rest();
+      swarm.sparks = [];
+      drawHeinzels(0, true);
       publish();
       if (rail && railContext) {
         railSize = sizeOf(rail, railContext);
@@ -305,7 +366,8 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         });
         drawAurora(skyContext, aurora, palette, skySize.width, skySize.height);
       }
-      const settled = !sky || isSettled(aurora);
+      drawHeinzels(dt, slow);
+      const settled = (!sky || isSettled(aurora)) && (!crowd || swarmSettled(swarm));
       if (settled && analysis.quiet && now - lastSound > 1500) sleep();
       else frame = requestAnimationFrame(paint);
     };
@@ -323,6 +385,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       palette = readPalette();
       theme = readVizTheme();
       if (resting && rail && railContext) drawRail(railContext, analysis, theme, railSize.width, railSize.height, true);
+      if (resting) drawHeinzels(0, true);
     });
     document.addEventListener("visibilitychange", visibility);
     visibility();
@@ -332,7 +395,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, [analyser, microphone, railOn, auroraOn]);
+  }, [analyser, microphone, railOn, auroraOn, haloOn, swarmOn, stageElement]);
   if (!enabled) return null;
   const workspaceAudio =
     (window as Window & { heinzelDesktop?: { workspaceAudio?: boolean } }).heinzelDesktop?.workspaceAudio === true;
@@ -373,11 +436,11 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     triggerLabel = "Audio sharing problem";
     controlWord = "Retry";
   }
-  const shown: VizShown | null = shownOf(settings);
-  const showSegments: Segment<VizShown>[] = [
-    { value: "spectrum", label: "Spectrum", icon: BarChart3 },
-    { value: "aurora", label: "Aurora", icon: Sparkles },
-    { value: "both", label: "Both", icon: Layers },
+  const styleToggles: { style: VizStyle; label: string; icon: typeof BarChart3 }[] = [
+    { style: "spectrum", label: "Spectrum", icon: BarChart3 },
+    { style: "aurora", label: "Aurora", icon: Sparkles },
+    { style: "halo", label: "Halo", icon: CircleDot },
+    { style: "swarm", label: "Swarm", icon: Users },
   ];
   const sourceSegments: Segment<Source>[] = [
     { value: "off", label: "Off", icon: MicOff },
@@ -406,7 +469,38 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         <div className="space-y-3 px-1.5 pb-1">
           {settings.master && (
             <>
-              <SegmentedControl legend="Show" segments={showSegments} value={shown} onSelect={setShown} selectOnArrow />
+              {/* Four independent layers, any of them on: one toggle each, the on ones filled; the switch below is all off. */}
+              <div className="space-y-1">
+                <p id={showId} className="text-xs text-muted-foreground">
+                  Show
+                </p>
+                <fieldset
+                  aria-labelledby={showId}
+                  className="m-0 grid min-w-0 grid-cols-4 gap-0.5 rounded-lg border border-border bg-muted p-0.5"
+                >
+                  {styleToggles.map(({ style, label, icon: Icon }) => {
+                    const on = settings.styles[style];
+                    return (
+                      <button
+                        key={style}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => setStyle(style, !on)}
+                        className={cn(
+                          "flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-md px-1 text-xs",
+                          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                          on
+                            ? "bg-primary font-medium text-primary-foreground"
+                            : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                        )}
+                      >
+                        <Icon aria-hidden className="size-4" />
+                        <span className="max-w-full truncate">{label}</span>
+                      </button>
+                    );
+                  })}
+                </fieldset>
+              </div>
               <SegmentedControl
                 legend="Listen to"
                 segments={sourceSegments}
@@ -459,6 +553,43 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             className="pointer-events-none fixed inset-0 -z-10 size-full"
           />,
           document.body,
+        )}
+      {analyser &&
+        stageElement &&
+        (haloOn || swarmOn) &&
+        createPortal(
+          <div aria-hidden className="flex h-20 items-end gap-1 px-2 pb-1">
+            {haloOn && (
+              <div className="relative size-20 shrink-0">
+                <canvas ref={haloCanvas} data-testid="audio-halo" className="absolute inset-0 size-full" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div ref={haloBust} className="size-9 overflow-hidden rounded-full will-change-transform">
+                    <HeinzelAvatar view="bust" {...LISTENER} className="size-full" />
+                  </div>
+                </div>
+              </div>
+            )}
+            {swarmOn && (
+              <div className="relative h-20 min-w-0 flex-1">
+                <canvas ref={swarmCanvas} data-testid="audio-swarm" className="absolute inset-0 size-full" />
+                <div className="absolute inset-x-0 bottom-0 flex justify-around">
+                  {CREW.map((look, index) => (
+                    <div
+                      key={look.hat}
+                      ref={(element) => {
+                        swarmFigures.current[index] = element;
+                      }}
+                      data-swarm-figure
+                      className="h-14 w-8 origin-bottom will-change-transform"
+                    >
+                      <HeinzelAvatar view="full" {...look} className="size-full" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>,
+          stageElement,
         )}
       {settings.master && framed && !session && !requesting && remembered !== "off" && (
         <SourcePrompt remembered={remembered} onTab={() => choose("tab")} onMic={() => choose("mic")} />

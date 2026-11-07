@@ -127,6 +127,30 @@ try {
     // return once it clears. A painted <body> (index.html gives <html> its own background) hid the aurora completely.
     const away = { x: 40, y: Math.round(viewport.height / 3), width: Math.round(viewport.width / 4), height: 200 };
     const lit = await page.screenshot({ clip: away });
+    // The Heinzel styles, from the same signal: the Halo's rays are drawn, and the Swarm's figures move.
+    const heinzels = () =>
+      page.evaluate(() => {
+        const halo = document.querySelector("canvas[data-testid=audio-halo]");
+        let ink = 0;
+        if (halo)
+          for (const [index, value] of halo.getContext("2d").getImageData(0, 0, halo.width, halo.height).data.entries())
+            if (index % 4 === 3) ink += value;
+        const moving = [...document.querySelectorAll("[data-swarm-figure]")].filter((figure) => figure.style.transform);
+        return {
+          halo: Boolean(halo),
+          ink,
+          figures: document.querySelectorAll("[data-swarm-figure]").length,
+          moving: moving.length,
+        };
+      });
+    const playing = await heinzels();
+    assert(
+      playing.halo && playing.figures === 3,
+      `${viewport.width}px: Halo and Swarm must stand: ${JSON.stringify(playing)}`,
+    );
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll("[data-swarm-figure]")].some((figure) => figure.style.transform),
+    );
     await page.screenshot({ path: join(shots, `audio-${viewport.width}-signal.png`) });
     await page.evaluate(() => {
       window.audioFixture.gain.gain.value = 0;
@@ -140,6 +164,11 @@ try {
         .getImageData(0, 0, element.width, element.height)
         .data.every((value) => value === 0);
     });
+    const resting = await heinzels();
+    assert(
+      resting.moving === 0 && playing.ink > resting.ink * 1.5,
+      `${viewport.width}px: the Halo must grow with the sound and the Swarm stand still in silence: ${JSON.stringify({ playing, resting })}`,
+    );
     assert(
       !lit.equals(await page.screenshot({ clip: away })),
       `${viewport.width}px: the aurora painted but nothing on the page changed: it is hidden under another layer`,

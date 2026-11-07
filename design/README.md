@@ -46,10 +46,14 @@ follows from it:
   fails an `aria-pressed` set. A choice the app cannot offer stays in the group, dimmed and `aria-disabled`, with its
   reason in the tooltip and the status line. Choosing while another option is live switches in one step: the new one
   is asked for first, the old one stopped only once the new one runs. Segmented controls and switches are content, so
-  a pane made of them has no action row. Example: the Audio pane is Show (Spectrum | Aurora | Both) and Listen to
-  (Off | Microphone | Shared audio) segmented controls, a live status line, one privacy line and the master switch.
-- **Audio visualizations follow the theme (2026-11-07).** The Spectrum rail and the Aurora take every hue from the live
+  a pane made of them has no action row. Options that are not exclusive are a row of independent toggles on the same
+  track, each `aria-pressed`, the on ones filled. Example: the Audio pane is Show (Spectrum, Aurora, Halo, Swarm:
+  four independent toggles), Listen to (Off | Microphone | Shared audio, a segmented control), a live status line,
+  one privacy line and the master switch, the one way to turn every style off.
+- **Audio visualizations follow the theme (2026-11-07).** The Spectrum rail, the Aurora, the Halo and the Heinzel swarm take every hue from the live
   theme tokens (`color-primary`, `color-ok`, `color-warn`) in any CSS colour notation, re-read the moment the mode,
   theme or its daypart variant changes; no colour is written in `web/src/audio` (`choices-standards.test.ts`). The
   Aurora is a full-window layer under the content, so the page colour is painted on `<html>` and `<body>` stays
-  transparent; a painted `<body>` hides it.
+  transparent; a painted `<body>` hides it. The Halo (a ring of rays around one Heinzel) and the Swarm (three
+  Heinzels jumping, swaying and nodding to bass, mids and treble) stand in the sidebar's gap above the player and,
+  like every Gnome, only while "playful" is on.

@@ -24,7 +24,8 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, matchPath, NavLink, useLocation } from "react-router";
-import { useContracts, useExpert, useNavigation, useProfile, useSetExpert } from "@/api/queries";
+import { useContracts, useExpert, useNavigation, usePlayful, useProfile, useSetExpert } from "@/api/queries";
+import { setVizStage } from "@/audio/viz/stage";
 import { ICONS, StatusItems, useEffectRunner } from "@/components/Contributions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
@@ -183,10 +184,22 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
       </div>
       {/* The docked sound player sits here, in the flow between the clock line and the account row: the full width of
           the column, never over its neighbours. Empty (and invisible) when the player isn't docked. */}
+      <VizStageSlot />
       <div ref={registerSlot} data-sound-dock className="-mx-2 shrink-0" />
       <Footer />
     </div>
   );
+}
+
+/** The gap above the player where the audio Halo and Heinzel swarm stand; empty, and zero height, while they are off. */
+function VizStageSlot() {
+  const playful = usePlayful();
+  const [element, setElement] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setVizStage(element ? { element, playful } : null);
+    return () => setVizStage(null);
+  }, [element, playful]);
+  return <div ref={setElement} data-viz-stage className="-mx-2 shrink-0" />;
 }
 
 const FOLDED = "hz.nav.folded";

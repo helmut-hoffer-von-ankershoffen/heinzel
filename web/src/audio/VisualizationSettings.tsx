@@ -1,4 +1,4 @@
-import { BarChart3, Sparkles } from "lucide-react";
+import { BarChart3, CircleDot, Sparkles, Users } from "lucide-react";
 import { setMaster, setStyle, useVizSettings, type VizStyle } from "./viz/settings";
 
 const ROWS = [
@@ -9,6 +9,18 @@ const ROWS = [
     Icon: BarChart3,
   },
   { style: "aurora", label: "Aurora", help: "Soft ribbons of light under the whole window.", Icon: Sparkles },
+  {
+    style: "halo",
+    label: "Halo",
+    help: "A ring of rays around one Heinzel above the player, growing with each band.",
+    Icon: CircleDot,
+  },
+  {
+    style: "swarm",
+    label: "Heinzel swarm",
+    help: "Three Heinzels above the player jump, sway and nod with the music.",
+    Icon: Users,
+  },
 ] as const satisfies readonly { style: VizStyle; label: string; help: string; Icon: typeof BarChart3 }[];
 
 /** Settings > Appearance: the master switch and one switch per style, all on by default and applied at once. */

@@ -1,6 +1,7 @@
 // Test transport only: the production capture graph receives real generated audio, never microphone/system audio.
 import { createRoot } from "react-dom/client";
 import { AudioVisualizer } from "../src/audio/AudioVisualizer";
+import { setVizStage } from "../src/audio/viz/stage";
 import "../src/index.css";
 
 const fixture = {
@@ -51,6 +52,12 @@ createRoot(root).render(
     <div className="min-w-0 flex-1 p-4">
       <h1>Generated test audio</h1>
       <p>No microphone, display or system audio is captured.</p>
+      {/* The sidebar's stage above the player, where the Halo and the Swarm stand (playful on, as by default). */}
+      <div
+        className="mt-4 w-64"
+        ref={(element) => setVizStage(element ? { element, playful: true } : null)}
+        data-viz-stage
+      />
     </div>
     <section aria-label="Audio visualizer" className="min-h-0 w-11 shrink-0 self-stretch border-l border-border">
       <AudioVisualizer />
