@@ -305,6 +305,20 @@ def propose_captured_write(
     return service.propose_captured_write(durable_session, request_id)
 
 
+@module.operation(private=True, read_only=False, heads={"web"}, audience="everyday")
+def propose_release_draft_share(
+    service: ChatService,
+    durable_session: Annotated[
+        str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$", description="Owner-scoped personal conversation.")
+    ],
+    request_id: Annotated[
+        str, Field(pattern=r"^[0-9a-f]{64}$", description="The exact prepared release draft review identity.")
+    ],
+) -> ChatSession:
+    """Stage the edited draft link for separate human confirmation."""
+    return service.propose_release_draft_share(durable_session, request_id)
+
+
 @module.operation(read_only=False, heads=HEADS, audience="everyday")
 def propose_channel_item(
     service: ChatService,

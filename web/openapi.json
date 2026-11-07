@@ -19530,6 +19530,29 @@
         "title": "heinzel_prepare_connected_read_set_review_Input",
         "type": "object"
       },
+      "heinzel_prepare_release_draft_share_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "draft_key": {
+            "description": "The stable host-derived release draft key.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Draft Key",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The owning durable personal chat identity.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "draft_key"
+        ],
+        "title": "heinzel_prepare_release_draft_share_Input",
+        "type": "object"
+      },
       "heinzel_prepare_suggested_source_Input": {
         "additionalProperties": false,
         "properties": {
@@ -20468,6 +20491,29 @@
           "prompt"
         ],
         "title": "heinzel_start_helper_Input",
+        "type": "object"
+      },
+      "system_runner_chat_propose_release_draft_share_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "durable_session": {
+            "description": "Owner-scoped personal conversation.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Durable Session",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The exact prepared release draft review identity.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "durable_session",
+          "request_id"
+        ],
+        "title": "system_runner_chat_propose_release_draft_share_Input",
         "type": "object"
       },
       "system_state_push_Input": {
@@ -23170,6 +23216,49 @@
         ]
       }
     },
+    "/heinzel/prepare-release-draft-share": {
+      "post": {
+        "description": "Capture the current edited draft and return the identity for a separate chat confirmation.",
+        "operationId": "heinzel_prepare_release_draft_share",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_prepare_release_draft_share_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Prepare Release Draft Share",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Capture the current edited draft and return the identity for a separate chat confirmation.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/prepare-suggested-source": {
       "post": {
         "description": "Prepare the current exact suggestion for separate human approval without executing the read.",
@@ -23801,6 +23890,56 @@
           }
         },
         "summary": "Queue the exact owner-confirmed notice; recorded means queued, never shown.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/release-draft-activity": {
+      "get": {
+        "description": "Read bounded release draft activity in the owner's personal chat.",
+        "operationId": "heinzel_release_draft_activity",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": {
+                      "$ref": "#/components/schemas/JsonValue"
+                    },
+                    "type": "object"
+                  },
+                  "title": "Response Heinzel Release Draft Activity",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read bounded release draft activity in the owner's personal chat.",
         "tags": [
           "heinzel"
         ]
@@ -28021,6 +28160,48 @@
           }
         },
         "summary": "Stage the exact current model policy for human review; no grant or model call is made.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-release-draft-share": {
+      "post": {
+        "description": "Stage the edited draft link for separate human confirmation.",
+        "operationId": "system_runner_chat_propose_release_draft_share",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_runner_chat_propose_release_draft_share_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage the edited draft link for separate human confirmation.",
         "tags": [
           "system"
         ]

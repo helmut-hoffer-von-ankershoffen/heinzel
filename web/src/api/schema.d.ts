@@ -1097,6 +1097,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/prepare-release-draft-share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Capture the current edited draft and return the identity for a separate chat confirmation.
+         * @description Capture the current edited draft and return the identity for a separate chat confirmation.
+         */
+        post: operations["heinzel_prepare_release_draft_share"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/prepare-suggested-source": {
         parameters: {
             query?: never;
@@ -1391,6 +1411,26 @@ export interface paths {
          * @description Queue the exact owner-confirmed notice; recorded means queued, never shown.
          */
         post: operations["heinzel_queue_agent_notification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/release-draft-activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read bounded release draft activity in the owner's personal chat.
+         * @description Read bounded release draft activity in the owner's personal chat.
+         */
+        get: operations["heinzel_release_draft_activity"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3394,6 +3434,26 @@ export interface paths {
          * @description Stage the exact current model policy for human review; no grant or model call is made.
          */
         post: operations["system_runner_chat_propose_model_policy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/propose-release-draft-share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage the edited draft link for separate human confirmation.
+         * @description Stage the edited draft link for separate human confirmation.
+         */
+        post: operations["system_runner_chat_propose_release_draft_share"];
         delete?: never;
         options?: never;
         head?: never;
@@ -15208,6 +15268,19 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_prepare_release_draft_share_Input */
+        heinzel_prepare_release_draft_share_Input: {
+            /**
+             * Draft Key
+             * @description The stable host-derived release draft key.
+             */
+            draft_key: string;
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
+             */
+            session_id: string;
+        };
         /** heinzel_prepare_suggested_source_Input */
         heinzel_prepare_suggested_source_Input: {
             /**
@@ -15710,6 +15783,19 @@ export interface components {
              */
             request_id: string;
         };
+        /** system_runner_chat_propose_release_draft_share_Input */
+        system_runner_chat_propose_release_draft_share_Input: {
+            /**
+             * Durable Session
+             * @description Owner-scoped personal conversation.
+             */
+            durable_session: string;
+            /**
+             * Request Id
+             * @description The exact prepared release draft review identity.
+             */
+            request_id: string;
+        };
         /** system_state_push_Input */
         system_state_push_Input: Record<string, never>;
         /** system_state_reset_Input */
@@ -16042,6 +16128,7 @@ export type SchemaHeinzelIndexedConversationSearchInput = components['schemas'][
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelPauseAgentScheduleInput = components['schemas']['heinzel_pause_agent_schedule_Input'];
 export type SchemaHeinzelPrepareConnectedReadSetReviewInput = components['schemas']['heinzel_prepare_connected_read_set_review_Input'];
+export type SchemaHeinzelPrepareReleaseDraftShareInput = components['schemas']['heinzel_prepare_release_draft_share_Input'];
 export type SchemaHeinzelPrepareSuggestedSourceInput = components['schemas']['heinzel_prepare_suggested_source_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
 export type SchemaHeinzelProposeAgentScheduleInput = components['schemas']['heinzel_propose_agent_schedule_Input'];
@@ -16067,6 +16154,7 @@ export type SchemaHeinzelSearchAgentConversationsInput = components['schemas']['
 export type SchemaHeinzelSearchConversationInput = components['schemas']['heinzel_search_conversation_Input'];
 export type SchemaHeinzelShareDraftLinkInput = components['schemas']['heinzel_share_draft_link_Input'];
 export type SchemaHeinzelStartHelperInput = components['schemas']['heinzel_start_helper_Input'];
+export type SchemaSystemRunnerChatProposeReleaseDraftShareInput = components['schemas']['system_runner_chat_propose_release_draft_share_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
 export type $defs = Record<string, never>;
@@ -17799,6 +17887,39 @@ export interface operations {
             };
         };
     };
+    heinzel_prepare_release_draft_share: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_prepare_release_draft_share_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_prepare_suggested_source: {
         parameters: {
             query?: never;
@@ -18281,6 +18402,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": "recorded" | "uncertain";
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_release_draft_activity: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    }[];
                 };
             };
             /** @description Validation Error */
@@ -21070,6 +21224,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_propose_release_draft_share: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_runner_chat_propose_release_draft_share_Input"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

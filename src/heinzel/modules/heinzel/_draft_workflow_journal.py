@@ -2,6 +2,7 @@
 
 import hashlib
 from collections.abc import Mapping
+from itertools import islice
 
 from pydantic import JsonValue
 
@@ -47,6 +48,26 @@ class DraftJournal:
     def events(self, session: str) -> list[SessionEvent]:
         """Read only the current authenticated owner's verified session spine."""
         return self.crud.repository.control_read(session).events
+
+    def activity(self, session: str) -> list[dict[str, JsonValue]]:
+        """Project the latest release activity without opening any private event bodies."""
+        kinds = {
+            "draft.release-observed",
+            "draft.append-attempted",
+            "draft.append-acknowledged",
+            "draft.append-uncertain",
+            "draft.review-notice-attempted",
+            "draft.review-notice-acknowledged",
+            "draft.review-notice-uncertain",
+            "draft.share-attempted",
+            "draft.share-acknowledged",
+            "draft.share-uncertain",
+            "draft.confirmation-notice-attempted",
+            "draft.confirmation-notice-acknowledged",
+            "draft.confirmation-notice-uncertain",
+        }
+        recent = list(islice((event for event in reversed(self.events(session)) if event.kind in kinds), 64))
+        return [{"kind": event.kind, "draft_key": event.key, "at": event.ts.isoformat()} for event in reversed(recent)]
 
     def record(self, session: str, kind: str, key: str, value: JsonValue, text: str) -> SessionEvent:
         """Fsync a private transition and an explicit host message without inventing an assistant reply.

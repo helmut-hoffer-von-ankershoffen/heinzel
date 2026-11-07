@@ -107,11 +107,27 @@ def _confirm(kernel: Kernel, prompter: Prompter, operation: str, session: str, r
         return kernel.invoke(operation_let, **args)
 
 
+def _register_chat_review(module: Module) -> None:
+    """Expose the owner-private activity and prepare the exact review for chat staging."""
+
+    @module.operation(private=True, heads={"web"}, audience="everyday")
+    def release_draft_activity(host: DraftWorkflowPublication, session_id: Identity) -> list[dict[str, JsonValue]]:
+        """Read bounded release draft activity in the owner's personal chat."""
+        host.owner(human=True, read=True)
+        return host.journal.activity(session_id)
+
+    @module.operation(private=True, read_only=False, heads={"web"}, audience="everyday")
+    def prepare_release_draft_share(service: DraftWorkflowShare, session_id: Identity, draft_key: DraftKey) -> str:
+        """Capture the current edited draft and return the identity for a separate chat confirmation."""
+        return arguments_hash(share_payload(service.propose(session_id, draft_key)))
+
+
 def register_draft_workflow_operations(module: Module) -> None:
     """Declare the complete CLI journey and the same exact trusted web/chat approval operations."""
     module.service(LocalDraftNotice)
     module.service(DraftWorkflowPublication)
     module.service(DraftWorkflowShare)
+    _register_chat_review(module)
 
     @module.operation(private=True, read_only=False, heads={"cli"}, audience="everyday")
     def start_release_workflow(  # noqa: PLR0913, PLR0917 - exact inputs and injected authority services
