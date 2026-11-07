@@ -8,7 +8,7 @@ import { t } from "@/i18n";
 import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { watchViewport } from "@/lib/viewport";
-import { FOOTER_RELOCATED, useFooterVisibility } from "./FooterLayout";
+import { FOOTER_RELOCATED, useFooterVisibility, useOpenFooterOverflow } from "./FooterLayout";
 
 export type State = "ok" | "warn" | "bad" | "off";
 
@@ -91,9 +91,25 @@ export function FooterItem({
   const returningFocus = useRef(false);
   const visible = useFooterVisibility();
   const id = useId();
+  const openOverflow = useOpenFooterOverflow();
+  const pendingPin = useRef(false);
+  // A request while the item is hidden in More opens that list first; the pane is pinned once it is shown there.
+  const handled = useRef(0);
   useEffect(() => {
-    if (openRequest > 0) setPinned(true);
-  }, [openRequest]);
+    if (openRequest <= handled.current) return;
+    handled.current = openRequest;
+    if (visible) setPinned(true);
+    else {
+      pendingPin.current = true;
+      openOverflow?.(true);
+    }
+  }, [openRequest, visible, openOverflow]);
+  useEffect(() => {
+    if (visible && pendingPin.current) {
+      pendingPin.current = false;
+      setPinned(true);
+    }
+  }, [visible]);
   const open = visible && (hovered || focused || pinned);
   useEffect(() => {
     if (!visible) {

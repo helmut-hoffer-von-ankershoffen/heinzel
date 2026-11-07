@@ -182,12 +182,24 @@ describe("Shell", () => {
 });
 
 describe("Desktop menu actions", () => {
-  it("opens Settings, its daemon section and the changelog from the app menu", async () => {
+  it("opens Settings from the app menu", async () => {
     mockApi({ ...answers, "/api/system/config/show": config });
     renderAt("/doctor");
     await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
     act(() => requestMenuAction("settings"));
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("opens the daemon settings and the Doctor from the app menu", async () => {
+    mockApi({ ...answers, "/api/system/config/show": config });
+    renderAt("/graph");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    act(() => requestMenuAction("daemon"));
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    expect(within(dialog).getByRole("heading", { name: /daemon/i })).toBeInTheDocument();
+    await userEvent.setup().keyboard("{Escape}");
+    act(() => requestMenuAction("doctor"));
+    expect(await screen.findByRole("heading", { name: /doctor/i })).toBeInTheDocument();
   });
 
   it("opens the changelog panel from the Help menu", async () => {
