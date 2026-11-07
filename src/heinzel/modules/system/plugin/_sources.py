@@ -188,7 +188,7 @@ class Metadata:
     subdirectory: str | None = None
 
 
-def _github_project_at(get: JsonGetter, base: str, revision: str, directory: str | None) -> dict[str, Any]:
+def github_project_at(get: JsonGetter, base: str, revision: str, directory: str | None) -> dict[str, Any]:
     """Read bounded project metadata at one commit, including GitHub-resolved links within that commit.
 
     Raises:
@@ -216,7 +216,7 @@ def _github_root_project(source: PluginSource, get: JsonGetter, base: str, revis
         LookupError: If the explicitly selected directory has no project metadata.
     """
     try:
-        return _github_project_at(get, base, revision, source.subdirectory)
+        return github_project_at(get, base, revision, source.subdirectory)
     except LookupError:
         if source.subdirectory:
             raise
@@ -249,7 +249,7 @@ def _github_project(
             continue
         directory = f"plugins/{folder}"
         try:
-            child = _github_project_at(get, base, revision, directory)
+            child = github_project_at(get, base, revision, directory)
         except LookupError:
             continue
         name = child.get("name")

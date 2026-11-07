@@ -28,7 +28,7 @@ from packaging.version import InvalidVersion, Version
 from heinzel import __version__
 from heinzel.kernel import CorePin, Installation, Kernel, PluginNews, PluginRelease, PluginReleases
 from heinzel.modules.system._announced import plugin_requires
-from heinzel.modules.system.plugin._sources import JsonGetter, PluginSource, _github_project_at, github_getter
+from heinzel.modules.system.plugin._sources import JsonGetter, PluginSource, github_getter, github_project_at
 
 PYPI = "https://pypi.org"
 MAX_BYTES = 4 * 1024 * 1024
@@ -267,7 +267,7 @@ class PyPIPluginReleases(PluginReleases):
             if repository is None or canonicalize_name(Requirement(pin.requirement).name) != name:
                 continue
             base = _base(repository)
-            project = _github_project_at(self._get(), base, release.commit, pin.subdirectory)
+            project = github_project_at(self._get(), base, release.commit, pin.subdirectory)
             if str(project.get("version") or "") != release.version:
                 return None
             dependencies: object = project.get("dependencies") or []

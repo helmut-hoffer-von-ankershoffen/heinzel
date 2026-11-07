@@ -928,7 +928,8 @@ class AutoUpdater:
 
     def _update(self, news: dict[str, Any]) -> object:
         plugins = [f"{name}=={version}" for name, version in news["plugins"].items()]
-        commits = [f"{name}@{commit}" for name, commit in (news.get("plugin_commits") or {}).items()]
+        tagged: dict[str, str] = news.get("plugin_commits") or {}
+        commits = [f"{name}@{commit}" for name, commit in tagged.items()]
         for record, operation in self._kernel.lets(OperationLet):
             if record.qualname == UPDATE_MODULE and operation.name == UPDATE_OPERATION:
                 with self._kernel.resolve(CurrentUser).local("daemon"):
