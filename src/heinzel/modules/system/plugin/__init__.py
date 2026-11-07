@@ -19,6 +19,7 @@ from heinzel.modules.system.plugin._models import (
     PluginPending,
     PluginSearch,
     PluginSettings,
+    PluginUnpin,
 )
 from heinzel.modules.system.plugin._service import TEMPLATE, PluginService
 
@@ -28,6 +29,13 @@ def render_change(change: PluginChange) -> RenderableType:
     from heinzel.modules.system.plugin._render import render_change  # noqa: PLC0415 - CLI presentation is loaded only when rendered
 
     return render_change(change)
+
+
+def render_unpin(result: PluginUnpin) -> RenderableType:
+    """Show which installed version stays and the exact confirmation command for a preview."""
+    from heinzel.modules.system.plugin._render import render_unpin  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_unpin(result)
 
 
 def render_list(plugins: list[PluginInfo]) -> RenderableType:
@@ -132,6 +140,23 @@ def add(
     if prompter.confirm(f"Install {name} now?", default=False):
         return service.add(spec, confirm=True, operation_id=change.operation_id)
     return change.model_copy(update={"previewed": True})
+
+
+@module.operation(read_only=False, heads={"cli"}, render=render_unpin)
+def unpin(
+    service: PluginService,
+    distribution: Distribution,
+    confirm: Annotated[
+        str | None,
+        Field(description="Confirm the exact installation generation and version shown by the unpin preview."),
+    ] = None,
+) -> PluginUnpin:
+    """Remove an exact index version pin while keeping the installed plugin.
+
+    Without `confirm`, show the installed version and the exact confirmation command. The confirmed change removes
+    only its version requirement, so future ordinary updates may move it. Git, local and constrained sources refuse.
+    """
+    return service.unpin(distribution, confirm=confirm)
 
 
 @module.operation(heads=CHANGES)

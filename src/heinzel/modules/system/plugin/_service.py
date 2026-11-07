@@ -38,6 +38,7 @@ from heinzel.kernel import (
     ConfigEditor,
     DaemonInstallationLifecycle,
     DaemonMutationScope,
+    IndexPluginPin,
     Installation,
     LayerLet,
     ModuleRecord,
@@ -63,6 +64,7 @@ from heinzel.modules.system.plugin._models import (
     PluginPendingChange,
     PluginSearch,
     PluginSettings,
+    PluginUnpin,
     Source,
 )
 from heinzel.modules.system.plugin._receipts import PluginReceipts
@@ -466,6 +468,64 @@ class PluginService:
             )
             self._remember_package_change(generation)
             return change
+
+    def unpin(self, distribution: str, *, confirm: str | None = None) -> PluginUnpin:
+        """Preview or confirm removal of exactly one installed plugin's index version pin.
+
+        Raises:
+            HeinzelError: If the selected package, pin, confirmation or maintenance authority cannot be verified.
+            OSError: If the existing receipt transaction cannot be persisted safely.
+        """
+        pin = self._index_plugin_pin(distribution)
+        digest = hashlib.sha256(
+            f"plugin-unpin/v1\0{pin.distribution}\0{pin.version}\0{pin.generation}".encode()
+        ).hexdigest()
+        if confirm is None:
+            return PluginUnpin(
+                distribution=pin.distribution,
+                version=pin.version,
+                done=False,
+                confirmation=digest,
+                message=(
+                    f"Remove the version pin for {pin.distribution} {pin.version}? The installed package stays "
+                    "in place. Future ordinary updates may install a compatible newer index version."
+                ),
+                next=[f"hz system plugin unpin {shlex.quote(pin.distribution)} --confirm {digest}"],
+            )
+        if confirm != digest:
+            msg = "The confirmed plugin pin or installation changed; preview the unpin again."
+            raise HeinzelError(msg)
+        with self._mutation() as mutation, self._receipts.installing(), self._exclusive():
+            if mutation is None or mutation.initial != pin.generation:
+                msg = "The confirmed installation generation changed; preview the unpin again."
+                raise HeinzelError(msg)
+            if not mutation.scope.checkpoint_matched:
+                msg = "The startup checkpoint did not match at admission; preview the unpin again."
+                raise HeinzelError(msg)
+            mutation.generation = self._installation.unpin_index_plugin(pin)
+            self._verify_candidate_generation(mutation)
+            self._record("unpin", pin.distribution, requirement=pin.distribution, version=pin.version)
+        return PluginUnpin(
+            distribution=pin.distribution,
+            version=pin.version,
+            done=True,
+            confirmation=None,
+            message=(
+                f"Removed the version pin for {pin.distribution}. Its installed version {pin.version} stays "
+                "in place and future ordinary updates may upgrade it."
+            ),
+            next=[],
+        )
+
+    def _index_plugin_pin(self, distribution: str) -> IndexPluginPin:
+        pin = self._installation.index_plugin_pin(distribution)
+        matches = [
+            item for item in self._host_list() if item.distribution == pin.distribution and item.version == pin.version
+        ]
+        if len(matches) != 1 or self._installation.startup_fingerprint() != pin.generation:
+            msg = "The installed plugin identity could not be verified; no requirement was changed."
+            raise HeinzelError(msg)
+        return pin
 
     def operation(self, operation_id: str) -> PluginOperation:
         """Read the durable status of a preview receipt without repeating its mutation."""
@@ -1029,7 +1089,7 @@ class PluginService:
 
     def _record(  # noqa: PLR0913 - one field each, by keyword
         self,
-        action: Action,
+        action: Action | Literal["unpin"],
         distribution: str | None,
         *,
         requirement: str | None = None,
