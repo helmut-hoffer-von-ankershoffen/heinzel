@@ -126,11 +126,14 @@ function MessageItem({ message, first }: { message: SchemaChatMessage; first: bo
 
 const INFO_LABEL = { ok: "chat.costInfo", near: "chat.costInfo.near", over: "chat.costInfo.over" } as const;
 
+/** The share of a chat's cost cap from which its icon warns that the limit is near. */
+export const COST_NEAR_RATIO = 0.8;
+
 /** How close this chat is to its cost cap: drives the icon's colour and badge so overspending is never hidden. */
 export function costState(spent: number, cap: number | null): "ok" | "near" | "over" {
   if (cap == null || cap <= 0) return "ok";
   if (spent >= cap) return "over";
-  return spent >= cap * 0.8 ? "near" : "ok";
+  return spent >= cap * COST_NEAR_RATIO ? "near" : "ok";
 }
 
 /**
@@ -143,6 +146,15 @@ export function Costs({ chat, className }: { chat: Chat; className?: string }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
+  // Touch fires focus and mouse events around its tap: the tap toggles the tooltip, and nothing else opens it then.
+  const touch = useRef(false);
+  // Escape closes the tooltip however it opened, also when only the pointer is over the icon.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
   const value = (section: string, key: string) => {
     const found = config.data?.settings.find((s) => s.section === section && s.key === key)?.value;
     return typeof found === "number" ? found : null;
@@ -163,15 +175,17 @@ export function Costs({ chat, className }: { chat: Chat; className?: string }) {
         type="button"
         aria-label={t(INFO_LABEL[state])}
         aria-describedby={panelId}
-        onFocus={() => setOpen(true)}
-        onMouseEnter={() => setOpen(true)}
+        onPointerDown={(event) => {
+          touch.current = event.pointerType === "touch";
+        }}
+        onKeyDown={() => {
+          touch.current = false;
+        }}
+        onFocus={() => !touch.current && setOpen(true)}
+        onMouseEnter={() => !touch.current && setOpen(true)}
         onMouseLeave={() => setOpen(false)}
         onBlur={() => setOpen(false)}
-        onKeyDown={(event) => {
-          if (event.key !== "Escape" || !open) return;
-          event.stopPropagation();
-          setOpen(false);
-        }}
+        onClick={() => touch.current && setOpen((shown) => !shown)}
         data-cost-state={state}
         className={cn(
           "relative inline-flex size-6 items-center justify-center rounded-full hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring [&_svg]:size-3.5",
