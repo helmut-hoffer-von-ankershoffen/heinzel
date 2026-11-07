@@ -8,6 +8,9 @@ from pydantic import TypeAdapter, ValidationError
 from heinzel import (
     ActionLet,
     CardWidget,
+    ChartPoint,
+    ChartRange,
+    ChartWidget,
     DetailLine,
     ListEntry,
     ListWidget,
@@ -25,7 +28,7 @@ from heinzel import (
     WidgetAction,
     WidgetLet,
 )
-from heinzel.kernel import Badge, link_problem
+from heinzel.kernel import Badge, Widget, link_problem
 
 pytestmark = pytest.mark.unit
 
@@ -317,3 +320,39 @@ def test_detail_designations_use_bounded_text_and_optional_state_icons():
     assert DetailLine(text="Berlin").badge is None
     with pytest.raises(ValidationError, match="at most 80"):
         DetailLine(text="Berlin", badge="x" * 81)
+
+
+def _points(n: int = 3) -> list[ChartPoint]:
+    return [ChartPoint(at=f"2026-11-07T{12 + i}:00", value=10.0 + i) for i in range(n)]
+
+
+def test_chart_widget_takes_a_line_bars_range_and_now():
+    chart = ChartWidget(
+        title="Temperature today",
+        summary="Warms from 10 to 12 degrees.",
+        unit="°C",
+        series=_points(),
+        bars=[0, 0.5, 1],
+        bars_label="Rain chance",
+        range=ChartRange(low=9, high=13),
+        now="2026-11-07T13:00",
+    )
+    assert chart.kind == "chart"
+    assert TypeAdapter(Widget).validate_python(chart.model_dump(mode="json")) == chart
+
+
+def test_chart_widget_refuses_what_cannot_be_drawn_or_described():
+    with pytest.raises(ValidationError, match="summary"):
+        ChartWidget.model_validate({"title": "t", "series": [p.model_dump() for p in _points()]})
+    with pytest.raises(ValidationError, match="at least 2"):
+        ChartWidget(title="t", summary="s", series=_points(1))
+    with pytest.raises(ValidationError, match="one value per point"):
+        ChartWidget(title="t", summary="s", series=_points(), bars=[0.1])
+    with pytest.raises(ValidationError, match="less than or equal to 1"):
+        ChartWidget(title="t", summary="s", series=_points(), bars=[0, 0, 2])
+    with pytest.raises(ValidationError, match="must be the `at` of one"):
+        ChartWidget(title="t", summary="s", series=_points(), now="later")
+    with pytest.raises(ValidationError, match="can't be below low"):
+        ChartRange(low=5, high=1)
+    with pytest.raises(ValidationError, match="finite"):
+        ChartPoint(at="a", value=float("nan"))

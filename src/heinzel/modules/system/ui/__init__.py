@@ -16,6 +16,7 @@ from rich.text import Text
 
 from heinzel import (
     CardWidget,
+    ChartWidget,
     Check,
     GraphicWidget,
     ListWidget,
@@ -115,6 +116,8 @@ def render_widgets(entries: list[WidgetEntry]) -> RenderableType:
             return f"{widget.label}: {widget.value}" + (f" ({widget.delta})" if widget.delta else "")
         if isinstance(widget, ProgressWidget):
             return f"{widget.label}: {widget.done}/{widget.total}"
+        if isinstance(widget, ChartWidget):
+            return f"chart: {widget.title}"
         if isinstance(widget, CardWidget | ListWidget):
             return f"{widget.kind}: {widget.title}"
         return "(nothing now)"
