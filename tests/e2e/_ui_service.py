@@ -232,7 +232,8 @@ class RunningService:
 
     def __init__(self, service, manager, command, environment):
         self.service, self.manager = service, manager
-        self.command, self.environment = command, environment
+        # A native crash (SIGSEGV, bead 7zk) must leave Python's own trace of where it happened.
+        self.command, self.environment = command, {**environment, "PYTHONFAULTHANDLER": "1"}
         self.processes = []
         self.last_launch = None
         self.original_control = service._control
@@ -289,7 +290,8 @@ class RunningService:
                 pytest.fail(
                     "The owned web server exited before readiness; "
                     f"owned process exit={returncode}, signal={-returncode if returncode < 0 else None}, "
-                    f"publication failure={self.publication_failure(output + errors)}."
+                    f"publication failure={self.publication_failure(output + errors)}"
+                    + (f", crash trace={self.crash_trace(errors)}." if returncode < 0 else ".")
                 )
             changed.wait(0.02)
         pytest.fail(
@@ -299,6 +301,33 @@ class RunningService:
             f"control failure={self.control_failure}, failed status calls={self.control_failure_count}, "
             f"publication evidence={self.publication_evidence(initial=previous is None and len(self.processes) == 1)}."
         )
+
+    @staticmethod
+    def crash_trace(errors):
+        """Return faulthandler's fatal error kind and its frames as public locations only (bead 7zk).
+
+        The rest of stderr can hold request data or a token, and paths can name private folders: only a fixed error
+        kind and, per frame, the path inside site-packages or the standard library (public code) with its line.
+        """
+        lines = errors[-64 * 1024 :].decode("utf-8", "replace").splitlines()
+        kinds = ("Segmentation fault", "Bus error", "Aborted", "Floating-point exception", "Illegal instruction")
+        start = next((i for i, line in enumerate(lines) if line.startswith("Fatal Python error: ")), None)
+        if start is None:
+            return "none (no faulthandler output)"
+        kind = lines[start].removeprefix("Fatal Python error: ").strip()
+        frames = []
+        for line in lines[start + 1 :]:
+            match = re.match(r'  File "([^"\n]{1,512})", line ([1-9]\d{0,6}) in ', line)
+            if match is None:
+                continue
+            path = match[1].replace("\\", "/")
+            public = re.search(r"/site-packages/([\w./-]{1,200}\.py)$", path) or re.search(
+                r"/lib/python3\.\d+/([\w./-]{1,200}\.py)$", path
+            )
+            frames.append((public[1] if public else "other", int(match[2])))
+            if len(frames) == 32:
+                break
+        return {"error": kind if kind in kinds else "other", "frames": frames}
 
     @staticmethod
     def publication_failure(output):

@@ -335,3 +335,36 @@ def test_readiness_still_fails_at_the_twelve_second_deadline(monkeypatch, tmp_pa
     assert reads == [float(second) for second in range(10, 22)]
     assert waits == [0.02] * 12
     assert clock.value - fixture.ready_started == 12.0
+
+
+def test_crash_trace_reports_the_fatal_error_and_only_public_frame_locations():
+    errors = (
+        b"private-error-body-must-not-be-logged #token=secret\n"
+        b"Fatal Python error: Segmentation fault\n\n"
+        b"Current thread 0x00007f3d (most recent call first):\n"
+        b'  File "/home/runner/.venv/lib/python3.14/site-packages/uvicorn/server.py", line 70 in serve\n'
+        b'  File "/private/example/private-file.py", line 7 in private_function_name\n'
+        b'  File "/usr/lib/python3.14/asyncio/runners.py", line 118 in run\n'
+        b"Extension modules: private_extension (total: 1)\n"
+    )
+    trace = RunningService.crash_trace(errors)
+    assert trace == {
+        "error": "Segmentation fault",
+        "frames": [("uvicorn/server.py", 70), ("other", 7), ("asyncio/runners.py", 118)],
+    }
+    assert "private" not in str(trace)
+    assert RunningService.crash_trace(b"Fatal Python error: private text\n")["error"] == "other"
+    assert RunningService.crash_trace(b"no crash here") == "none (no faulthandler output)"
+
+
+def test_a_signal_exit_adds_the_crash_trace_and_still_hides_child_output():
+    errors = b'#token=secret\nFatal Python error: Segmentation fault\n  File "/x/site-packages/a/b.py", line 2 in f\n'
+    child = SimpleNamespace(poll=lambda: -11, communicate=lambda timeout: (b"", errors))
+    fixture = running(child)
+    fixture.service.status = lambda: SimpleNamespace(ready=False)
+    with pytest.raises(pytest.fail.Exception) as failure:
+        fixture.ready()
+    message = str(failure.value)
+    assert "signal=11" in message
+    assert "crash trace={'error': 'Segmentation fault', 'frames': [('a/b.py', 2)]}" in message
+    assert "#token=" not in message
