@@ -426,7 +426,7 @@ describe("PluginsSection", () => {
     const user = userEvent.setup();
     show({ reload, restartInterval: 1 });
     await user.click(screen.getByRole("tab", { name: "Discover" }));
-    await user.click((await screen.findAllByRole("button", { name: "Install" }))[0]);
+    await user.click((await screen.findAllByRole("button", { name: "Install" }))[0] as HTMLElement);
     await user.click(
       within(await screen.findByRole("group", { name: /Install this plugin/ })).getByRole("button", {
         name: "Restart and apply",
