@@ -1,6 +1,49 @@
 {
   "components": {
     "schemas": {
+      "Access": {
+        "description": "A connector's sign-in as its own provider sees it: account, grants, and what can be done (ADR 0136).",
+        "properties": {
+          "flow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignInFlow"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its sign-in running now or ended last; none."
+          },
+          "message": {
+            "default": "",
+            "description": "What the request did, such as signing out; empty if nothing.",
+            "title": "Message",
+            "type": "string"
+          },
+          "name": {
+            "description": "Qualified name of the module, as `hz system connector list` names it.",
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SignInStatus",
+            "description": "Who is signed in, which grants hold, and whether the tool can run."
+          },
+          "title": {
+            "description": "Its name for people, e.g. `Google`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "status"
+        ],
+        "title": "Access",
+        "type": "object"
+      },
       "AccessList": {
         "description": "Every installed AI access option, the one in use, and what each use of AI runs.",
         "properties": {
@@ -4171,6 +4214,12 @@
             "title": "Name",
             "type": "string"
           },
+          "sign_in": {
+            "default": false,
+            "description": "Whether hz runs its sign-in itself (`hz system connector connect`), no terminal.",
+            "title": "Sign In",
+            "type": "boolean"
+          },
           "state": {
             "description": "Connected, not signed in, not bound, needs attention, or unknown until tested.",
             "enum": [
@@ -6396,6 +6445,102 @@
           "fingerprint"
         ],
         "title": "FoundSkill",
+        "type": "object"
+      },
+      "Grant": {
+        "description": "Something a connector's sign-in can be allowed to do, in plain words, with the vendor scopes it takes.\n\nA connector asks for its `default` grants on a first sign-in and for any other only when the person allows it,\nusually when a feature that needs it is first used: the minimum, and nothing silently (ADR 0136).",
+        "properties": {
+          "capability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The capability it serves, e.g. `calendar`; none.",
+            "title": "Capability"
+          },
+          "default": {
+            "default": false,
+            "description": "Whether a first sign-in asks for it.",
+            "title": "Default",
+            "type": "boolean"
+          },
+          "explanation": {
+            "description": "What it permits, in a sentence a person decides on.",
+            "title": "Explanation",
+            "type": "string"
+          },
+          "id": {
+            "description": "Its name, lowercase words joined by dashes, e.g. `calendar-write`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "modes": {
+            "description": "The capability's modes it allows: read, write.",
+            "items": {
+              "enum": [
+                "read",
+                "write"
+              ],
+              "type": "string"
+            },
+            "title": "Modes",
+            "type": "array"
+          },
+          "scopes": {
+            "description": "The vendor's names for it, shown, never secret.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "title": {
+            "description": "A short label for people, e.g. `Change your calendar`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "explanation"
+        ],
+        "title": "Grant",
+        "type": "object"
+      },
+      "GrantStatus": {
+        "description": "One declared grant and whether the vendor confirms it.",
+        "properties": {
+          "grant": {
+            "$ref": "#/components/schemas/Grant",
+            "description": "The grant, as the connector declares it."
+          },
+          "needed": {
+            "description": "Whether what the person uses now needs it, e.g. a bound capability's reads.",
+            "title": "Needed",
+            "type": "boolean"
+          },
+          "state": {
+            "description": "Granted, missing, or unknown when nothing says.",
+            "enum": [
+              "granted",
+              "missing",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "grant",
+          "state",
+          "needed"
+        ],
+        "title": "GrantStatus",
         "type": "object"
       },
       "Graph": {
@@ -14254,6 +14399,189 @@
         "title": "SetupDoc",
         "type": "object"
       },
+      "SignInFlow": {
+        "description": "A sign-in hz runs for the person through the vendor's tool; the consent click on the vendor's page is theirs.",
+        "properties": {
+          "account": {
+            "default": "",
+            "description": "Who is signed in, once it succeeded and the tool says.",
+            "title": "Account",
+            "type": "string"
+          },
+          "connector": {
+            "description": "Qualified name of the connector signing in.",
+            "title": "Connector",
+            "type": "string"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it ended; none while it runs.",
+            "title": "Ended At"
+          },
+          "grants": {
+            "description": "Every grant asked for: what the sign-in holds once it succeeds.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Grants",
+            "type": "array"
+          },
+          "id": {
+            "description": "What `hz system connector flow`, `cancel` and `open` take.",
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "description": "What happened, in plain words; what to do if it failed.",
+            "title": "Message",
+            "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignInProgress"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The vendor's consent page, once its tool gave it; where it must be opened."
+          },
+          "started_at": {
+            "description": "When it started.",
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "state": {
+            "description": "starting, waiting (for consent), succeeded, failed, cancelled, timed-out.",
+            "enum": [
+              "starting",
+              "waiting",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "timed-out"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "connector",
+          "state",
+          "grants",
+          "started_at"
+        ],
+        "title": "SignInFlow",
+        "type": "object"
+      },
+      "SignInProgress": {
+        "description": "What a running sign-in can tell the person: the vendor's consent page, and a device code if it has one.",
+        "properties": {
+          "code": {
+            "default": "",
+            "description": "A code to type on that page, for a device sign-in; empty if none.",
+            "title": "Code",
+            "type": "string"
+          },
+          "finish_on": {
+            "description": "`host` when the page must be opened on the machine hz runs on.",
+            "enum": [
+              "host",
+              "anywhere"
+            ],
+            "title": "Finish On",
+            "type": "string"
+          },
+          "url": {
+            "description": "The vendor's consent page, an https address.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "finish_on"
+        ],
+        "title": "SignInProgress",
+        "type": "object"
+      },
+      "SignInStatus": {
+        "description": "Who a connector's tool is signed in as and what it was granted, from the evidence its provider has.",
+        "properties": {
+          "account": {
+            "default": "",
+            "description": "Who, as the tool names them; never a secret. Empty if unsaid.",
+            "title": "Account",
+            "type": "string"
+          },
+          "grants": {
+            "description": "Every declared grant and its state.",
+            "items": {
+              "$ref": "#/components/schemas/GrantStatus"
+            },
+            "title": "Grants",
+            "type": "array"
+          },
+          "install": {
+            "default": "",
+            "description": "How to install the tool through its supported path, if missing.",
+            "title": "Install",
+            "type": "string"
+          },
+          "live": {
+            "default": false,
+            "description": "Whether the vendor was asked; else it is local evidence only.",
+            "title": "Live",
+            "type": "boolean"
+          },
+          "problem": {
+            "default": "",
+            "description": "What needs a new sign-in, such as an expired or revoked one; empty if nothing.",
+            "title": "Problem",
+            "type": "string"
+          },
+          "signed_in": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether there is a sign-in; none when only the vendor could say.",
+            "title": "Signed In"
+          },
+          "tool": {
+            "default": "ready",
+            "description": "Whether the vendor's tool can run a sign-in.",
+            "enum": [
+              "ready",
+              "missing",
+              "unsupported"
+            ],
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signed_in"
+        ],
+        "title": "SignInStatus",
+        "type": "object"
+      },
       "Skill": {
         "description": "An Agent Skill (agentskills.io) that ships with Heinzelmännchen.",
         "properties": {
@@ -20493,6 +20821,87 @@
         "title": "heinzel_start_helper_Input",
         "type": "object"
       },
+      "system_connector_cancel_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "flow": {
+            "description": "The sign-in, by the id `connect` returned.",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow"
+        ],
+        "title": "system_connector_cancel_Input",
+        "type": "object"
+      },
+      "system_connector_connect_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "allow": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A grant to add, such as `calendar-write`, as `access` lists them; repeat for each.",
+            "title": "Allow"
+          },
+          "name": {
+            "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "wait": {
+            "default": true,
+            "description": "Wait here until it ends, opening the consent page in this machine's browser.",
+            "title": "Wait",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "system_connector_connect_Input",
+        "type": "object"
+      },
+      "system_connector_disconnect_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "system_connector_disconnect_Input",
+        "type": "object"
+      },
+      "system_connector_open_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "flow": {
+            "description": "The sign-in, by the id `connect` returned.",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow"
+        ],
+        "title": "system_connector_open_Input",
+        "type": "object"
+      },
       "system_runner_chat_propose_release_draft_share_Input": {
         "additionalProperties": false,
         "properties": {
@@ -25934,6 +26343,234 @@
         ]
       }
     },
+    "/system/connector/access": {
+      "get": {
+        "description": "Show who a connector is signed in as, which of its grants hold, and its latest sign-in here.",
+        "operationId": "system_connector_access",
+        "parameters": [
+          {
+            "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Ask the vendor too: confirms the account and which grants hold.",
+            "in": "query",
+            "name": "live",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Ask the vendor too: confirms the account and which grants hold.",
+              "title": "Live",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Access"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show who a connector is signed in as, which of its grants hold, and its latest sign-in here.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/cancel": {
+      "post": {
+        "description": "Stop a sign-in that is waiting for consent; nothing changes in your account.",
+        "operationId": "system_connector_cancel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_connector_cancel_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInFlow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop a sign-in that is waiting for consent; nothing changes in your account.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/connect": {
+      "post": {
+        "description": "Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow.",
+        "operationId": "system_connector_connect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_connector_connect_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInFlow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/disconnect": {
+      "post": {
+        "description": "Sign a connector's tool out through its own command; reading and writing through it stop.",
+        "operationId": "system_connector_disconnect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_connector_disconnect_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Access"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign a connector's tool out through its own command; reading and writing through it stop.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/flow": {
+      "get": {
+        "description": "Show where a sign-in started here is: waiting for your consent, or how it ended.",
+        "operationId": "system_connector_flow",
+        "parameters": [
+          {
+            "description": "The sign-in, by the id `connect` returned.",
+            "in": "query",
+            "name": "flow",
+            "required": true,
+            "schema": {
+              "description": "The sign-in, by the id `connect` returned.",
+              "title": "Flow",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInFlow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show where a sign-in started here is: waiting for your consent, or how it ended.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/connector/list": {
       "get": {
         "description": "List connectors with their sign-in, what they serve and their tools; offline.",
@@ -25951,6 +26588,48 @@
           }
         },
         "summary": "List connectors with their sign-in, what they serve and their tools; offline.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/open": {
+      "post": {
+        "description": "Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to.",
+        "operationId": "system_connector_open",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_connector_open_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInFlow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to.",
         "tags": [
           "system"
         ]

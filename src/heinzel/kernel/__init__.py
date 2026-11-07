@@ -312,6 +312,19 @@ from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
 from heinzel.kernel._session_store import SessionStore, SessionWriter
 from heinzel.kernel._settings import Settings
+from heinzel.kernel._sign_in import (
+    FLOW_ENDED,
+    FinishOn,
+    FlowState,
+    Grant,
+    GrantState,
+    GrantStatus,
+    SignInLet,
+    SignInOutcome,
+    SignInProgress,
+    SignInProvider,
+    SignInStatus,
+)
 from heinzel.kernel._signals import SIGNALS, Signal
 from heinzel.kernel._skills import (
     MAX_LOAD as MAX_SKILL_LOAD,
@@ -402,6 +415,7 @@ __all__ = [
     "EDGE_WHEEL_PREFIX",
     "ENTRY_POINT_GROUP",
     "FILENAME",
+    "FLOW_ENDED",
     "FONT_ROUTE",
     "GIT_HARDENING",
     "HEINZEL_ID",
@@ -537,8 +551,13 @@ __all__ = [
     "EventChange",
     "EventDraft",
     "Exposed",
+    "FinishOn",
+    "FlowState",
     "FreeBusy",
     "GitRunner",
+    "Grant",
+    "GrantState",
+    "GrantStatus",
     "GraphicWidget",
     "HealthLet",
     "HeinzelError",
@@ -676,6 +695,11 @@ __all__ = [
     "SettingsLet",
     "SetupLet",
     "SetupPhase",
+    "SignInLet",
+    "SignInOutcome",
+    "SignInProgress",
+    "SignInProvider",
+    "SignInStatus",
     "Signal",
     "SignalLet",
     "Skill",

@@ -131,6 +131,7 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0133](0133-owned-host-integrations-join-maintenance.md) Owned host integrations join one maintenance inventory | proposed · 4 Nov<br>partial |  |
 | [0134](0134-promote-signed-core-release-artifacts-to-pypi.md) Promote signed core release artifacts to PyPI | proposed · 5 Nov<br>partial |  |
 | [0135](0135-distribute-a-managed-macos-desktop-app.md) Distribute a managed macOS desktop app | proposed · 6 Nov<br>planned |  |
+| [0136](0136-connectors-run-their-vendors-sign-in-in-the-app.md) Connectors run their vendor's sign-in in the app | accepted · 7 Nov<br>partial |  |
 
 </div>
 <!-- adr-index:end -->
