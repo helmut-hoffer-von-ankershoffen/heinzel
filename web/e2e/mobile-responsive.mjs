@@ -447,6 +447,30 @@ try {
         },
       }),
     );
+    // The automatic-update plan is pinned too: this test server runs from a source checkout, which holds updates.
+    await page.route("**/api/auto-update", (route) =>
+      route.request().method() === "GET"
+        ? route.fulfill({
+            json: {
+              enabled: true,
+              reason: null,
+              phase: "idle",
+              version: "0.7.30",
+              core: null,
+              plugins: {},
+              seconds_left: null,
+              apply_at: null,
+              next_window_at: null,
+              postponements: 0,
+              message: null,
+              holds: [],
+              checked_at: new Date().toISOString(),
+              core_checked: true,
+              plugins_checked: true,
+            },
+          })
+        : route.continue(),
+    );
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
