@@ -52,8 +52,11 @@ and stores its own credentials; hz only needs to start it, show the page and rea
   reaching hz over Tailscale is offered **Continue on this Mac** (`open`, which opens the page there) instead of a
   page that could not complete. The consent page opens from the person's click, so popup blockers don't stop it.
 - **Secrets**: only https consent pages, codes and plain words cross the contract, each cleaned to one line. The
-  service writes no log. The operations are on the CLI and the private web head only: never MCP, where an agent
-  could start a sign-in, nor the open REST head (ADR 0047, ADR 0068).
+  service writes no log. The operations are on the CLI and the private web head only: not MCP, nor the open REST
+  head (ADR 0047, ADR 0068), so no agent is handed a tool that starts a sign-in. That is not a hard boundary: an
+  agent with a shell can run the CLI, as it can run a vendor's own sign-in command today. What holds either way is
+  that a grant takes effect only on the vendor's consent page, from the person's click. Only the CLI waits for the
+  sign-in and opens that page itself; on the web head `connect` returns at once and the page opens through `open`.
 
 ### Consequences
 

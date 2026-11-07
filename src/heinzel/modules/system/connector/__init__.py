@@ -65,7 +65,13 @@ Allow = Annotated[
     Field(description="A grant to add, such as `calendar-write`, as `access` lists them; repeat for each."),
 ]
 Wait = Annotated[
-    bool, Field(description="Wait here until it ends, opening the consent page in this machine's browser.")
+    bool,
+    Field(
+        description=(
+            "Wait here until it ends, opening the consent page in this machine's browser; only where a person is "
+            "told (the terminal). Elsewhere it returns at once: poll `flow`, open the page with `open`."
+        )
+    ),
 ]
 Flow = Annotated[str, Field(description="The sign-in, by the id `connect` returned.")]
 
@@ -85,7 +91,8 @@ def connect(
     wait: Wait = True,
 ) -> SignInFlow:
     """Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow."""
-    return sign_ins.connect(name, frozenset(allow or ()), wait=wait, prompter=prompter)
+    # Nobody is told on the web head: never hold a worker for the consent, nor open the page without a click.
+    return sign_ins.connect(name, frozenset(allow or ()), wait=wait and prompter.interactive, prompter=prompter)
 
 
 @module.operation(name="flow", heads=SIGN_IN_HEADS, private=True)

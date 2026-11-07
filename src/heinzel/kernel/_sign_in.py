@@ -32,7 +32,8 @@ SIGN_IN_TEXT = 300
 """Characters kept of a sign-in's plain words: a sentence, never a paragraph or a tool's whole output."""
 URL_TEXT = 4096
 """Characters a consent page's address may have: OAuth addresses carry their scopes, so they are long."""
-_HTTPS = re.compile(r"^https://[^\s/?#]+(?:[/?#]\S*)?$", re.ASCII)
+_HTTPS = re.compile(r"^https://[^\s/?#@\\]+(?:[/?#]\S*)?$", re.ASCII)
+"""One https address whose authority is a host only: no userinfo (`https://vendor@elsewhere/`) and no backslash."""
 
 
 def _plain(value: str) -> str:
@@ -162,6 +163,7 @@ class SignInProvider(Protocol):
         """Run the vendor's sign-in asking for exactly `grants`, reporting its consent page; end soon after `stop`.
 
         `grants` is the complete set to hold afterwards: a vendor that replaces its scopes gets every one to keep.
+        Returning soon after `stop` is part of the contract: a sign-in asked again or cancelled waits for it.
         """
         ...
 

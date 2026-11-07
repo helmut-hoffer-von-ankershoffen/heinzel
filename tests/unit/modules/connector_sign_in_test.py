@@ -7,8 +7,8 @@ from typing import ClassVar
 import pytest
 
 from heinzel import Document, Grant, GrantStatus, HeinzelError, Module, SignInOutcome, SignInProgress, SignInStatus
-from heinzel.kernel import CapabilityView, ScriptedPrompter
-from heinzel.modules.system.connector import ConnectorService, SignIns
+from heinzel.kernel import CapabilityView, Prompter, ScriptedPrompter
+from heinzel.modules.system.connector import ConnectorService, SignInFlow, SignIns, connect
 from heinzel.modules.system.connector._sign_in import wanted
 
 pytestmark = pytest.mark.unit
@@ -135,6 +135,16 @@ def test_the_web_starts_a_sign_in_polls_its_page_and_sees_it_succeed(sign_ins):
     assert sign_ins.access("notes", "Notes").flow == ended
 
 
+def test_on_the_web_head_connect_neither_waits_nor_opens_the_page_without_a_click(sign_ins):
+    started = connect(sign_ins, Prompter(), "notes")  # the web head's prompter: nobody is told
+    assert started.state in {"starting", "waiting"}
+    wait_for(sign_ins, started.id, "waiting")
+    assert OPENED == []
+    sign_ins.open(started.id)
+    assert OPENED == [PAGE]
+    sign_ins.cancel(started.id)
+
+
 def test_with_nothing_held_needed_or_allowed_a_first_sign_in_asks_for_the_defaults(sign_ins, monkeypatch):
     def nothing(self, *, live: bool) -> SignInStatus:
         return SignInStatus(signed_in=False, grants=[status(READ, "missing"), status(WRITE, "missing")], live=live)
@@ -189,6 +199,25 @@ def test_a_failing_provider_fails_the_sign_in_without_its_exception_text(sign_in
     Fake.raises = raised
     ended = sign_ins.connect("notes", frozenset(), wait=True, prompter=ScriptedPrompter())
     assert (ended.state, ended.message) == ("failed", message)
+
+
+@pytest.mark.parametrize("raised", [SystemExit(1), KeyboardInterrupt()])
+def test_a_provider_escaping_with_a_base_exception_still_ends_the_sign_in(sign_ins, raised):
+    from heinzel.modules.system.connector import _sign_in
+
+    Fake.raises = raised
+    running = _sign_in._Running(SignInFlow(id="f", connector="notes", state="starting", grants=[], started_at=NOW))
+    with pytest.raises(type(raised)):
+        sign_ins._run(running, Fake(), frozenset(), lambda _: None)
+    assert running.done.is_set()
+    assert (running.flow.state, running.flow.message) == ("failed", "The sign-in stopped unexpectedly.")
+
+
+def test_asking_again_waits_for_the_first_tool_to_stop(sign_ins):
+    first = sign_ins.connect("notes", frozenset(), wait=False, prompter=ScriptedPrompter())
+    wait_for(sign_ins, first.id, "waiting")
+    sign_ins.connect("notes", frozenset(), wait=False, prompter=ScriptedPrompter())
+    assert sign_ins.flow(first.id).state == "cancelled"  # ended before the second provider started
 
 
 def test_a_missing_tool_refuses_to_start_and_names_its_supported_install(sign_ins):

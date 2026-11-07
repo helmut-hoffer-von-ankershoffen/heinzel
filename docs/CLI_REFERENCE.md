@@ -2468,7 +2468,7 @@ $ hz system connector connect [OPTIONS] {name}
 **Options**:
 
 * `--allow <str>`: A grant to add, such as `calendar-write`, as `access` lists them; repeat for each.
-* `--wait / --no-wait`: Wait here until it ends, opening the consent page in this machine&#x27;s browser.  [default: wait]
+* `--wait / --no-wait`: Wait here until it ends, opening the consent page in this machine&#x27;s browser; only where a person is told (the terminal). Elsewhere it returns at once: poll `flow`, open the page with `open`.  [default: wait]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

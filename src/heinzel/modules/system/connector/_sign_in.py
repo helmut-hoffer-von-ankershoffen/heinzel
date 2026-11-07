@@ -102,7 +102,9 @@ class SignIns:
         except HeinzelError as exc:
             status = SignInStatus(signed_in=None, problem=str(exc), live=live)
         except Exception as exc:  # noqa: BLE001 - isolate plugins; their messages may carry what a page shouldn't show
-            status = SignInStatus(signed_in=None, problem=f"the sign-in status failed ({type(exc).__name__})")
+            status = SignInStatus(
+                signed_in=None, problem=f"the sign-in status failed ({type(exc).__name__})", live=live
+            )
         known = {s.grant.id for s in status.grants}
         missing = [GrantStatus(grant=g, state="unknown", needed=False) for g in let.grants if g.id not in known]
         declared = {g.id for g in let.grants}
@@ -154,12 +156,14 @@ class SignIns:
             )
         )
         with self._lock:
-            for other in self._flows.values():
-                if other.flow.connector == name and other.flow.state not in FLOW_ENDED:
-                    other.cancelled = True
-                    other.stop.set()
+            others = [r for r in self._flows.values() if r.flow.connector == name and r.flow.state not in FLOW_ENDED]
+            for other in others:
+                other.cancelled = True
+                other.stop.set()
             self._flows[running.flow.id] = running
             self._forget()
+        for other in others:  # its tool may hold the vendor's loopback callback port the new one needs
+            other.done.wait(_STOP_GRACE)
         progress = self._reporter(running, prompter if wait else None)
         thread = threading.Thread(target=self._run, args=(running, provider, grants, progress), daemon=True)
         timer = threading.Timer(self.timeout, self._expire, args=(running,))
@@ -207,23 +211,32 @@ class SignIns:
         grants: frozenset[str],
         progress: Callable[[SignInProgress], None],
     ) -> None:
+        # Ends the flow whatever escapes the provider, `SystemExit` included, so no caller waits on it forever.
+        outcome = SignInOutcome(state="failed", message="The sign-in stopped unexpectedly.")
         try:
             outcome = provider.sign_in(grants, progress, running.stop)
         except HeinzelError as exc:
             outcome = SignInOutcome(state="failed", message=str(exc))
         except Exception as exc:  # noqa: BLE001 - isolate plugins; their messages may carry what a page shouldn't show
             outcome = SignInOutcome(state="failed", message=f"The sign-in failed ({type(exc).__name__}).")
+        finally:
+            self._end(running, outcome)
+
+    def _end(self, running: _Running, outcome: SignInOutcome) -> None:
+        """Record how the sign-in ended, then release whoever waits for it, even if recording fails."""
         state = outcome.state
         message = outcome.message
         if running.timed_out and state != "succeeded":
             state, message = "timed-out", f"No consent arrived within {self.timeout / 60:g} minutes; try again."
         elif running.cancelled and state != "succeeded":
             state, message = "cancelled", "The sign-in was cancelled; nothing changed."
-        with self._lock:
-            running.flow = running.flow.model_copy(
-                update={"state": state, "message": message, "account": outcome.account, "ended_at": self.clock()}
-            )
-        running.done.set()
+        try:
+            with self._lock:
+                running.flow = running.flow.model_copy(
+                    update={"state": state, "message": message, "account": outcome.account, "ended_at": self.clock()}
+                )
+        finally:
+            running.done.set()
 
     def _expire(self, running: _Running) -> None:
         if not running.done.is_set():

@@ -63,6 +63,9 @@ def test_a_grant_explains_itself_in_one_clean_line_and_orders_its_modes():
         "javascript:alert(1)",
         "https://a.example/x y",
         "https://a" + "x" * 5000,
+        "https://accounts.google.com@evil.example/consent",
+        "https://user:pass@accounts.example/consent",
+        "https://accounts.example\\@evil.example/consent",
     ],
 )
 def test_a_consent_page_is_one_https_address(url):

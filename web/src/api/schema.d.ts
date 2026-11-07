@@ -16143,7 +16143,7 @@ export interface components {
             name: string;
             /**
              * Wait
-             * @description Wait here until it ends, opening the consent page in this machine's browser.
+             * @description Wait here until it ends, opening the consent page in this machine's browser; only where a person is told (the terminal). Elsewhere it returns at once: poll `flow`, open the page with `open`.
              * @default true
              */
             wait: boolean;
