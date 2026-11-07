@@ -91,7 +91,7 @@ def _trust_note(*, keep_quarantine: bool) -> str:
     )
 
 
-def _doctor(output: Console, error: Console, *, fix: bool) -> None:
+def _doctor(output: Console, error: Console, *, fix: bool, as_json: bool = False) -> None:
     """Print the installed app's macOS state, repairing it first when asked.
 
     Raises:
@@ -102,13 +102,19 @@ def _doctor(output: Console, error: Console, *, fix: bool) -> None:
     try:
         report, repairs = doctor_desktop(fix=fix)
     except (HeinzelError, OSError, SubprocessError) as exc:
+        if as_json:
+            output.print_json(data={"installed": None, "error": str(exc)})
         error.print(message("Desktop check failed.", str(exc)))
         raise typer.Exit(1) from exc
+    if as_json:
+        state = {"installed": False} if report is None else {"installed": True, **report.as_dict()}
+        output.print_json(data={**state, "repairs": repairs})
     if report is None:
         error.print("The Heinzel desktop app is not installed. Run hz app install.")
         raise typer.Exit(1)
-    for line in [*repairs, *report.lines()]:
-        output.print(line, markup=False)
+    if not as_json:
+        for line in [*repairs, *report.lines()]:
+            output.print(line, markup=False)
     if not report.opens:
         error.print("Run hz app doctor --fix to repair it.")
         raise typer.Exit(1)
@@ -157,13 +163,14 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
             bool,
             typer.Option("--fix", help="Reseal a broken app ad hoc and remove the quarantine mark Heinzel added."),
         ] = False,
+        as_json: Annotated[bool, typer.Option("--json", help="Print the state as JSON on stdout.")] = False,
     ) -> None:
         """Check whether macOS will open the installed desktop app, without launching it.
 
         Raises:
             typer.Exit: If the app is missing or macOS would refuse to open it.
         """
-        _doctor(output, error, fix=fix)
+        _doctor(output, error, fix=fix, as_json=as_json)
 
     @app.command("uninstall")
     def uninstall() -> None:
