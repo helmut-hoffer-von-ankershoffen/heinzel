@@ -137,11 +137,27 @@ function Player({
 
   if (!src) return null;
   return (
-    <PlayerCard
-      title={soundscape.title}
-      watchUrl={stream.watch_url}
-      host="YouTube"
-      help={
+    <PlayerCard title={soundscape.title} watchUrl={stream.watch_url} host="YouTube">
+      <div className="group/video relative">
+        {blocked ? (
+          <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
+            <p>{t("sound.reloadNeeded")}</p>
+            <button type="button" onClick={page.reload} className={button}>
+              {t("sound.reload")}
+            </button>
+          </div>
+        ) : (
+          <iframe
+            ref={frame}
+            title={t("sound.player", { title: soundscape.title })}
+            src={src}
+            onLoad={() => listen(frame.current, origin)}
+            className="aspect-video min-h-[200px] w-full border-0"
+            referrerPolicy={FRAME_ATTRIBUTES.referrerPolicy}
+            sandbox={account ? ACCOUNT_SANDBOX : FRAME_ATTRIBUTES.sandbox}
+            allow={FRAME_ATTRIBUTES.allow}
+          />
+        )}
         <PlayerHelp
           attention={help}
           actions={
@@ -171,27 +187,7 @@ function Player({
         >
           <p>{t(account ? "sound.accountHelp" : "sound.privateHelp")}</p>
         </PlayerHelp>
-      }
-    >
-      {blocked ? (
-        <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
-          <p>{t("sound.reloadNeeded")}</p>
-          <button type="button" onClick={page.reload} className={button}>
-            {t("sound.reload")}
-          </button>
-        </div>
-      ) : (
-        <iframe
-          ref={frame}
-          title={t("sound.player", { title: soundscape.title })}
-          src={src}
-          onLoad={() => listen(frame.current, origin)}
-          className="aspect-video min-h-[200px] w-full border-0"
-          referrerPolicy={FRAME_ATTRIBUTES.referrerPolicy}
-          sandbox={account ? ACCOUNT_SANDBOX : FRAME_ATTRIBUTES.sandbox}
-          allow={FRAME_ATTRIBUTES.allow}
-        />
-      )}
+      </div>
     </PlayerCard>
   );
 }

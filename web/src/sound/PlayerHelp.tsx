@@ -1,10 +1,11 @@
-// The player card's small info button. Playback mostly works, so the "YouTube asking you to sign in?" help lives in a
+// The player card's small help button, overlaid at the bottom right of the video (above YouTube's own control bar). Playback mostly works, so the "YouTube asking you to sign in?" help lives in a
 // pane that hover, focus or a tap opens (a click pins it, Escape or a press outside closes it) instead of taking a line
-// of the card. A dot on the icon says playback needs attention, so a real problem is still noticeable.
+// of the card. The parent video area is the `group/video` that reveals it. A dot on the icon says playback needs attention, so a real problem is still noticeable.
 import { CircleHelp } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { AnchoredPopover } from "@/components/AnchoredPopover";
 import { t } from "@/i18n";
+import { cn } from "@/lib/utils";
 
 const CLOSE_DELAY = 200;
 
@@ -49,7 +50,7 @@ export function PlayerHelp({ attention, children, actions }: Props) {
     // biome-ignore lint/a11y/noStaticElementInteractions: hover and focus only preview what the button opens on click
     <span
       ref={wrapper}
-      className="inline-flex shrink-0"
+      className="absolute right-2 bottom-12 z-10 inline-flex"
       onMouseEnter={enter}
       onMouseLeave={leave}
       onFocus={() => {
@@ -86,7 +87,14 @@ export function PlayerHelp({ attention, children, actions }: Props) {
         aria-controls={open ? id : undefined}
         aria-label={attention ? `${label} ${t("sound.needsAttention")}` : label}
         title={label}
-        className="relative flex size-7 shrink-0 items-center justify-center rounded-lg text-icon hover:bg-accent"
+        className={cn(
+          "relative flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-popover/90 text-icon shadow-sm backdrop-blur-sm transition-opacity hover:bg-accent focus-visible:opacity-100",
+          // Hidden until the video is hovered or holds focus; a touch screen has no hover, so it stays faintly visible.
+          // A problem, or an open pane, keeps it fully visible.
+          attention || open
+            ? "opacity-100"
+            : "opacity-0 group-focus-within/video:opacity-100 group-hover/video:opacity-100 pointer-coarse:opacity-70",
+        )}
       >
         <CircleHelp aria-hidden className="size-3.5" />
         {attention && (

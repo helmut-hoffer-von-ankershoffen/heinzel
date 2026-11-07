@@ -169,11 +169,17 @@ describe("stream recovery", () => {
 });
 
 describe("playback help pane", () => {
-  it("takes no line of the card: the help is only an icon button in the header until it is opened", () => {
+  it("takes no line of the card: the help is only an icon button on the video until it is opened", () => {
     mount();
     expect(info()).toHaveAttribute("aria-expanded", "false");
     expect(info()).toHaveAttribute("title", "Playback or sign-in trouble?");
-    expect(info().closest("header")).not.toBeNull();
+    // It sits over the video area (the hover/focus group), not in the header, and is revealed by hover or focus.
+    const video = player().parentElement as HTMLElement;
+    expect(video).toHaveClass("group/video");
+    expect(video.contains(info())).toBe(true);
+    expect(info().closest("header")).toBeNull();
+    expect(info()).toHaveClass("opacity-0", "group-hover/video:opacity-100", "group-focus-within/video:opacity-100");
+    expect(info()).toHaveClass("focus-visible:opacity-100", "pointer-coarse:opacity-70");
     expect(screen.queryByText("YouTube asking you to sign in?")).toBeNull();
     expect(screen.queryByRole("button", { name: "Retry player" })).toBeNull();
   });
@@ -202,6 +208,8 @@ describe("playback help pane", () => {
     message("onError", 150);
     expect(attention()).not.toBeNull();
     expect(info()).toHaveAccessibleName("Playback or sign-in trouble? (needs attention)");
+    expect(info()).toHaveClass("opacity-100");
+    expect(info()).not.toHaveClass("opacity-0");
     expect(info()).toHaveAttribute("aria-expanded", "false");
   });
 
