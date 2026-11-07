@@ -284,12 +284,14 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
             )}
             {(matching.length > 0 ||
               !["appearance", "ai", "notifications", "daemon", "web-server"].includes(current)) && (
-              <Sections
-                settings={matching}
-                heading={current === "daemon" ? t("daemon.configuration") : page.title}
-                header={["appearance", "ai", "notifications", "daemon"].includes(current) ? undefined : header}
-                summary={page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined}
-              />
+              <div className={current === "daemon" ? "mt-8" : undefined}>
+                <Sections
+                  settings={matching}
+                  heading={current === "daemon" ? t("daemon.configuration") : page.title}
+                  header={["appearance", "ai", "notifications", "daemon"].includes(current) ? undefined : header}
+                  summary={page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined}
+                />
+              </div>
             )}
             <ViewSlot slot="settings" section={page.module ?? current} />
             {(page.module || TOGGLES[current]) && (
