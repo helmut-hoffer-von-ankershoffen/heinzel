@@ -436,3 +436,64 @@ def test_job_pagination_never_infers_a_complete_inventory_from_partial_or_repeat
 
     with pytest.raises(candidate.CandidateError, match=r".+"):
         candidate.job_inventory(get, RUN)
+
+
+def _lane(*names_and_conclusions):
+    return [
+        {
+            "id": 900 + index,
+            "name": name,
+            "run_id": RUN,
+            "run_attempt": 1,
+            "head_sha": HEAD,
+            "status": "completed",
+            "conclusion": conclusion,
+            "runner_id": 900 + index,
+            "steps": [{"conclusion": conclusion}],
+        }
+        for index, (name, conclusion) in enumerate(names_and_conclusions)
+    ]
+
+
+@pytest.mark.parametrize(
+    "lane",
+    [
+        [
+            ("Quarantine registry", "success"),
+            ("Quarantine plan", "success"),
+            ("Quarantine (${{ matrix.os }})", "skipped"),
+        ],
+        [
+            ("Quarantine registry", "success"),
+            ("Quarantine plan", "success"),
+            ("Quarantine (ubuntu-24.04)", "success"),
+            ("Quarantine (macos-latest)", "failure"),
+        ],
+    ],
+)
+def test_the_quarantine_lane_never_refuses_a_candidate_but_its_registry_check_must_pass(lane):
+    value = evidence()
+    value["jobs"] += _lane(*lane)
+    assert validate(value)["job_count"] == 64
+
+
+@pytest.mark.parametrize("defect", ["registry-failed", "missing-os", "rerun", "idle-ran", "duplicate"])
+def test_an_incomplete_or_rerun_quarantine_lane_is_refused(defect):
+    lane = [
+        ("Quarantine registry", "failure" if defect == "registry-failed" else "success"),
+        ("Quarantine plan", "success"),
+        ("Quarantine (ubuntu-24.04)", "success"),
+        ("Quarantine (macos-latest)", "success"),
+    ]
+    if defect == "missing-os":
+        lane.pop()
+    if defect == "idle-ran":
+        lane[2:] = [("Quarantine (${{ matrix.os }})", "success")]
+    if defect == "duplicate":
+        lane.append(lane[-1])
+    value = evidence()
+    value["jobs"] += _lane(*lane)
+    if defect == "rerun":
+        value["jobs"][-1]["run_attempt"] = 2
+    with pytest.raises(candidate.CandidateError, match="quarantine lane"):
+        validate(value)

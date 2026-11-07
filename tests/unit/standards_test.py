@@ -110,6 +110,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/build.py": "prepares the core web hook and controller build group; plugin builds have no core assets",
     "scripts/release_candidate.py": "verifies full Core release-candidate CI source and exact job inventory",
     "scripts/main_batch.py": "validates only the core repository merge queue; plugin CI has no batch admissions",
+    "scripts/quarantine.py": "reads core's tests/quarantine.toml for its non-blocking lane; plugin CI has no registry",
     "scripts/merge_gate.py": "judges a public repo's SonarCloud project; a new plugin has none until it is set up",
     "scripts/merge_gate.py.lock": "the lock of scripts/merge_gate.py, which plugins don't get by default",
     ".github/workflows/merge-gate.yml": "runs scripts/merge_gate.py, which plugins don't get by default",

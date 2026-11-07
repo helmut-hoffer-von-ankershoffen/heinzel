@@ -214,6 +214,51 @@ def expected_jobs(event: str) -> dict[str, str]:
     return dict.fromkeys(success, "success") | dict.fromkeys(skipped, "skipped")
 
 
+QUARANTINE_REGISTRY = "Quarantine registry"
+QUARANTINE_PLAN = "Quarantine plan"
+QUARANTINE_RUNS = frozenset({"Quarantine (ubuntu-24.04)", "Quarantine (macos-latest)"})
+QUARANTINE_IDLE = "Quarantine (${{ matrix.os }})"
+
+
+def quarantine_lane(jobs: list[dict[str, Any]], run_id: object, head: str) -> list[dict[str, Any]]:
+    """Check the quarantine lane's jobs and return the others for the exact inventory.
+
+    The lane (tests/quarantine.toml, scripts/quarantine.py) is absent from a workflow that predates it. Otherwise the
+    required registry check passed, and the non-blocking plan and lane jobs ran on this run's first attempt: both OS
+    jobs, whatever their tests did, or the one skipped placeholder when nothing is quarantined. A lane failure never
+    refuses a candidate; a missing, extra or rerun lane job does.
+
+    Raises:
+        CandidateError: The lane's jobs are incomplete, duplicated, rerun or the registry check did not pass.
+    """
+    names = {QUARANTINE_REGISTRY, QUARANTINE_PLAN, QUARANTINE_IDLE, *QUARANTINE_RUNS}
+    lane = [job for job in jobs if job.get("name") in names]
+    if not lane:
+        return jobs
+    found = sorted(str(job.get("name")) for job in lane)
+    require(
+        found
+        in (
+            sorted({QUARANTINE_REGISTRY, QUARANTINE_PLAN, *QUARANTINE_RUNS}),
+            sorted({QUARANTINE_REGISTRY, QUARANTINE_PLAN, QUARANTINE_IDLE}),
+        ),
+        "missing, extra or duplicated quarantine lane jobs",
+    )
+    for job in lane:
+        allowed = {"success"} if job["name"] == QUARANTINE_REGISTRY else {"success", "failure", "skipped"}
+        if job["name"] == QUARANTINE_IDLE:
+            allowed = {"skipped"}
+        require(
+            job.get("run_id") == run_id
+            and job.get("run_attempt") == 1
+            and job.get("head_sha") == head
+            and job.get("status") == "completed"
+            and job.get("conclusion") in allowed,
+            "quarantine lane job failed its registry check, changed or reran",
+        )
+    return [job for job in jobs if job.get("name") not in names]
+
+
 def job_inventory(get: Callable[[str], Any], run_id: int) -> list[dict[str, Any]]:
     """Exhaust the immutable first-attempt job pages and refuse inconsistent totals or duplicate IDs.
 
@@ -319,6 +364,7 @@ def validate(evidence: dict[str, Any], expected: ExpectedCandidate, approved_sou
             proof.get("pr") is None and proof.get("source_commit") == expected_head,
             "dispatch source differs from the exact release head",
         )
+    jobs = quarantine_lane(jobs, run["id"], expected_head)
     inventory = expected_jobs(event)
     require(
         len(jobs) == len(inventory) and {job.get("name") for job in jobs} == set(inventory),

@@ -100,6 +100,23 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
   `make test` skip it, and `make test-perf` runs it in CI.
 - No sleeping, no ordering dependencies, no shared mutable fixtures. Tests run on macOS and Linux, Python 3.12–3.15.
 
+### Quarantine
+
+A flaky test gets its root cause fixed; it is never loosened, skipped, given a higher limit or rerun until green.
+In the core repository (plugins have no quarantine), while the fix is being built, an entry in `tests/quarantine.toml` takes the test out of the required jobs, so one
+known flake cannot block every merge and release:
+
+- An entry names one test (`tests/<level>/<file>_test.py::<name>`, or a parametrized case), a bead that tracks the
+  fix, `added`, `until` (at most 7 days after `added`) and a one-line `reason`. At most 8 entries.
+- Every ordinary pytest run leaves such a test out and names it in its summary; `HZ_QUARANTINE=only` runs only the
+  quarantined tests, `HZ_QUARANTINE=include` runs everything. A test named by node id on the command line always runs.
+- CI's `Quarantine (<os>)` jobs run them where the full suite runs (main, daily, dispatch, release candidates), retry
+  a failure up to 3 times and report each result in the job summary and the `quarantine-report-<os>` artifact. They
+  never block and are not part of `CI OK`.
+- Past `until` the test is back in the required jobs and the required `Quarantine registry` job (`make
+  quarantine-check`) fails until the test is fixed or the entry removed. A malformed registry fails every test run.
+- Removing the entry is part of the fix. Adding, extending or editing an entry needs an independent review.
+
 ## Commits, branches and releases
 
 - [Conventional Commits](https://www.conventionalcommits.org): `type(scope): summary` in the imperative; the whole

@@ -18,7 +18,10 @@ Constraints per workflow:
 
 - `ci.yml`: `CI OK` gates merging. PR portable tests run on Linux with Python oldest and newest plus real
   `macOS smoke`. Native/platform and unknown changes retain macOS setup, end-to-end and Electron checks, with failures
-  blocking. The full matrix runs on main, daily and dispatch; every scheduled macOS job blocks `CI OK`. A failing cheap check cancels the rest of
+  blocking. The full matrix runs on main, daily and dispatch; every scheduled macOS job blocks `CI OK`, except the
+  quarantine lane: `Quarantine (<os>)` runs only the tests in `tests/quarantine.toml` (at most 8, each at most 7 days,
+  with a bead), retries and reports them, and is not in `CI OK`; the required `Quarantine registry` job fails on an
+  entry past its `until`. Never add another job outside `CI OK`. A failing cheap check cancels the rest of
   a same-repository pull request's run as soon as it completes; fork PRs finish normally with read-only tokens. Every main
   commit keeps its own CI run, and a release PR's (head `release/*`) run is never cancelled. Explicit queue proofs may
   delegate intermediate commits to one uncancellable final full run with the aggregate base. Unknown proof runs full CI; admissions never claim CI OK or full-suite greens.
