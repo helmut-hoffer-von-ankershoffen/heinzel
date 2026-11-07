@@ -92,6 +92,19 @@ describe("aurora maths", () => {
     expect(stepMotes(state, 10)).toBe(0);
   });
 
+  it("reuses its buffers: one analysis step allocates no new arrays", () => {
+    const state = createState(1);
+    const { raw, tops, levels } = state;
+    stepState(state, new Uint8Array(64).fill(100), bandEdges(64), 0.033, 100, {
+      reduced: false,
+      width: 800,
+      height: 600,
+    });
+    expect(state.raw).toBe(raw);
+    expect(state.tops).toBe(tops);
+    expect(state.levels).toBe(levels);
+  });
+
   it("pulses and sparkles on a beat, stays calm when reduced, and settles in silence", () => {
     const edges = bandEdges(64);
     const bass = new Uint8Array(64);

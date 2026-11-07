@@ -38,6 +38,7 @@ describe("AudioVisualizer", () => {
       lineTo: vi.fn(),
       closePath: vi.fn(),
       fill: vi.fn(),
+      arc: vi.fn(),
       stroke: vi.fn(),
       createLinearGradient: vi.fn(() => gradient),
       createRadialGradient: vi.fn(() => gradient),
@@ -59,23 +60,29 @@ describe("AudioVisualizer", () => {
       fireEvent.click(screen.getByRole("button", { name: "Share audio" }));
       const aurora = await screen.findByTestId("audio-aurora");
       expect(aurora).toHaveAttribute("aria-hidden", "true");
-      expect(aurora).toHaveClass("pointer-events-none", "fixed", "inset-0");
+      expect(aurora).toHaveClass("pointer-events-none", "fixed", "inset-0", "-z-10");
+      // Under the app surfaces, so text and cards stay crisp: never a positive layer above the content.
+      expect(aurora.className).not.toMatch(/(^|\s)z-(\[|\d)/);
       await waitFor(() => expect(frames.length).toBeGreaterThan(0));
-      for (let index = 0; index < 20; index += 1) act(() => frames.at(-1)?.(1000 + index * 16));
+      for (let index = 0; index < 20; index += 1) act(() => frames.at(-1)?.(1000 + index * 40));
       expect(draw.fill).toHaveBeenCalled();
       expect(draw.stroke).toHaveBeenCalled();
       expect(draw.createRadialGradient).toHaveBeenCalled();
+      // The 30 fps cap: a frame 10 ms after the last draws nothing.
+      const drawn = draw.clearRect.mock.calls.length;
+      act(() => frames.at(-1)?.(1000 + 19 * 40 + 10));
+      expect(draw.clearRect.mock.calls.length).toBe(drawn);
       // Silence: the loop settles and stops scheduling frames instead of redrawing an empty canvas.
       loud = false;
       let time = 2000;
       for (let index = 0; index < 400 && frames.length > 0; index += 1) {
         const before = frames.length;
-        time += 32;
+        time += 40;
         act(() => frames.at(-1)?.(time));
         if (frames.length === before) break;
       }
       const settled = frames.length;
-      act(() => frames.at(-1)?.(time + 32));
+      act(() => frames.at(-1)?.(time + 40));
       expect(frames.length).toBe(settled);
     } finally {
       raf.mockRestore();

@@ -4,7 +4,17 @@ import { createPortal } from "react-dom";
 import { FooterItem, type State } from "@/components/FooterItem";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { BANDS, bandEdges, canvasSize, createState, drawAurora, isSettled, readPalette, stepState } from "./aurora";
+import {
+  BANDS,
+  bandEdges,
+  canvasSize,
+  createState,
+  drawAurora,
+  FRAME_MS,
+  isSettled,
+  readPalette,
+  stepState,
+} from "./aurora";
 import { type CapturedAudio, captureAudio } from "./capture";
 
 export { spectrumLevel } from "./aurora";
@@ -142,7 +152,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       frame = 0;
       if (document.visibilityState === "hidden") return;
       const slow = reduced.matches;
-      if (slow && now - last < 250) {
+      if (now - last < (slow ? 250 : FRAME_MS - 1)) {
         frame = requestAnimationFrame(paint);
         return;
       }
@@ -253,7 +263,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             ref={canvas}
             aria-hidden
             data-testid="audio-aurora"
-            className="pointer-events-none fixed inset-0 z-[5] size-full"
+            className="pointer-events-none fixed inset-0 -z-10 size-full"
           />,
           document.body,
         )}

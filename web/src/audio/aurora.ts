@@ -5,6 +5,8 @@
 
 export const BANDS = 48;
 const MAX_MOTES = 72;
+export const FRAME_MS = 1000 / 30;
+const RIBBON_POINTS = 73;
 const MAX_PIXELS = 2_400_000;
 const MAX_RATIO = 1.5;
 
@@ -36,6 +38,8 @@ export interface Mote {
 
 export interface AuroraState {
   levels: Float32Array;
+  raw: Float32Array;
+  tops: Float32Array[];
   peaks: Float32Array;
   loud: number;
   pulse: number;
@@ -175,6 +179,8 @@ export function canvasSize(width: number, height: number, devicePixelRatio: numb
 export function createState(seed = 1): AuroraState {
   return {
     levels: new Float32Array(BANDS),
+    raw: new Float32Array(BANDS),
+    tops: [0, 1, 2].map(() => new Float32Array(RIBBON_POINTS)),
     peaks: new Float32Array(BANDS),
     loud: 0,
     pulse: 0,
@@ -245,7 +251,7 @@ export function stepState(
   now: number,
   options: StepOptions,
 ) {
-  const raw = bandLevels(data, edges, new Float32Array(BANDS));
+  const raw = bandLevels(data, edges, state.raw);
   for (let band = 0; band < BANDS; band += 1) {
     const level = ease(
       state.levels[band] ?? 0,
@@ -292,45 +298,46 @@ function drawRibbon(
   from: number,
   to: number,
 ) {
-  const steps = Math.max(16, Math.min(72, Math.round(width / 18)));
+  const steps = Math.max(16, Math.min(RIBBON_POINTS - 1, Math.round(width / 18)));
   const baseline = height * (0.3 + ribbon * 0.2);
   const band = energy(state.levels, from, to);
   const swing = height * (0.05 + 0.2 * band);
   const curtain = height * (0.1 + 0.34 * band);
   const gain = Math.min(1, state.loud * 3.2) * (palette.dark ? 0.85 : 1.15);
   if (gain < 0.02) return;
-  const top: number[] = [];
+  const top = state.tops[ribbon] ?? new Float32Array(RIBBON_POINTS);
   const span = to - from;
+  let lowest = Infinity;
   for (let step = 0; step <= steps; step += 1) {
     const x = step / steps;
     const local = sampleLevels(state.levels, (from + x * span) / (BANDS - 1));
-    top.push(baseline + ribbonOffset(x, state.phase, ribbon, local) * swing - local * height * 0.06);
+    const y = baseline + ribbonOffset(x, state.phase, ribbon, local) * swing - local * height * 0.06;
+    top[step] = y;
+    if (y < lowest) lowest = y;
   }
-  const lowest = Math.min(...top);
   const fill = ctx.createLinearGradient(0, lowest, 0, lowest + swing + curtain);
   fill.addColorStop(0, rgba(color, 0.3 * gain));
   fill.addColorStop(0.45, rgba(color, 0.1 * gain));
   fill.addColorStop(1, rgba(color, 0));
   ctx.beginPath();
-  top.forEach((y, step) => {
+  for (let step = 0; step <= steps; step += 1) {
     const x = (step / steps) * width;
-    if (step === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
+    if (step === 0) ctx.moveTo(x, top[step] ?? baseline);
+    else ctx.lineTo(x, top[step] ?? baseline);
+  }
   for (let step = steps; step >= 0; step -= 1) {
-    const x = (step / steps) * width;
     const local = sampleLevels(state.levels, (from + (step / steps) * span) / (BANDS - 1));
-    ctx.lineTo(x, (top[step] ?? baseline) + curtain * (0.4 + local));
+    ctx.lineTo((step / steps) * width, (top[step] ?? baseline) + curtain * (0.4 + local));
   }
   ctx.closePath();
   ctx.fillStyle = fill;
   ctx.fill();
   ctx.beginPath();
-  top.forEach((y, step) => {
+  for (let step = 0; step <= steps; step += 1) {
     const x = (step / steps) * width;
-    if (step === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
+    if (step === 0) ctx.moveTo(x, top[step] ?? baseline);
+    else ctx.lineTo(x, top[step] ?? baseline);
+  }
   ctx.lineJoin = "round";
   ctx.strokeStyle = rgba(color, 0.07 * gain);
   ctx.lineWidth = 9;
@@ -357,12 +364,15 @@ function drawMote(ctx: CanvasRenderingContext2D, mote: Mote, palette: Palette) {
   const alpha = moteAlpha(mote);
   if (alpha <= 0.01) return;
   const color = mote.warm ? palette.spark : palette.high;
-  const halo = mote.size * 5;
-  const glow = ctx.createRadialGradient(mote.x, mote.y, 0, mote.x, mote.y, halo);
-  glow.addColorStop(0, rgba(color, 0.55 * alpha));
-  glow.addColorStop(1, rgba(color, 0));
-  ctx.fillStyle = glow;
-  ctx.fillRect(mote.x - halo, mote.y - halo, halo * 2, halo * 2);
+  // Two soft discs stand in for a radial glow: no gradient object per spark.
+  ctx.fillStyle = rgba(color, 0.12 * alpha);
+  ctx.beginPath();
+  ctx.arc(mote.x, mote.y, mote.size * 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = rgba(color, 0.25 * alpha);
+  ctx.beginPath();
+  ctx.arc(mote.x, mote.y, mote.size * 2.4, 0, Math.PI * 2);
+  ctx.fill();
   // A four-point star: the Heinzels' little lantern sparks.
   const arm = mote.size * 2.6;
   ctx.strokeStyle = rgba(color, 0.8 * alpha);
