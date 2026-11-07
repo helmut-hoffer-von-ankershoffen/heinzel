@@ -38,6 +38,9 @@ Constraints per workflow:
 - `release.yml`: manual dispatch for one optional plugin; never builds or tests core.
 - `source-review.yml`: dispatch on the protected ref `trusted/source-review` only (`make review PR=<n>`); paid, tool-free
   review of one PR's source; fails closed unless live head, base and protected ref equal the dispatch; core only.
+- `focused-job.yml`: core only; manual dispatch of one e2e lane or test ids, pytest ids or vitest files on one hosted
+  runner (`ref`, `os`, `kind`, `selector`, validated by `scripts/focused_job.py`, never through a shell); `contents: read`,
+  no repository secrets (the read-only job token only, as in ci.yml's e2e), never writes the cache, 20 min; a diagnostic that gates nothing.
 - `fuzz.yml`: core only. `claude-review.yml`: opt-in (`vars.CLAUDE_REVIEW`).
 - `docs.yml`: deploys to GitHub Pages when the repository is public or `vars.DOCS_PAGES` is `true`, else keeps an
   artifact (ADR 0082).

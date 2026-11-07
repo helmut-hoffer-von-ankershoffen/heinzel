@@ -88,6 +88,14 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "for check in merge-gate coverage-floor": "reports the gates as check runs on the pull request's head",
         "for check in MERGE_GATE COVERAGE_FLOOR": "completes both check runs, failing closed",
     },
+    "focused-job.yml": {
+        '[[ "$FOCUSED_REF" =~': "refuses a dispatched ref that is not a plain branch name or commit before checkout",
+        "uv run --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
+        "sudo sed -i 's|http://azure\\.archive\\.ubuntu\\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "
+        "/etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources": (
+            "selects the same signed primary Ubuntu archive as ci.yml before browser dependency installation"
+        ),
+    },
     "acceptance-sharded.yml": {
         "uv python install 3.13": "the isolated acceptance study interpreter",
         '"$(uv python find 3.13)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
