@@ -3,9 +3,10 @@
 // only when a fresh check confirmed Heinzel and every plugin; anything unknown stays neutral, never green.
 
 import type { State } from "@/components/FooterItem";
+import type { ProgressSegment } from "@/components/Progress";
 import { t } from "@/i18n";
 import type { AutoUpdateStatus, PluginHold } from "./autoUpdateApi";
-import type { UpdateStatus } from "./controller";
+import type { UpdateStage, UpdateStatus } from "./controller";
 
 /** A check older than this (four of the server's thirty-minute rounds) no longer confirms anything. */
 export const FRESH_MS = 2 * 60 * 60 * 1000;
@@ -45,7 +46,21 @@ export type View = {
   canRetry: boolean;
   /** True only when a fresh check confirmed Heinzel and all its plugins. */
   allCurrent: boolean;
+  /** The parts an update would change: Heinzel itself first, then each plugin. */
+  parts: Part[];
 };
+
+export type Part = { id: string; label: string };
+
+/**
+ * One segment per part while it is being updated. The installer is a single call for core and plugins, so the head
+ * reports no finer step: the parts run together, then count as installed once restart and checks begin. A failed
+ * install marks every part it was changing; nothing here is a measured percentage.
+ */
+export function partSegments(parts: Part[], stage: UpdateStage | null, failed: boolean): ProgressSegment[] {
+  const state = stage === "restart" || stage === "verify" ? "done" : failed ? "failed" : "running";
+  return parts.map((part) => ({ ...part, state }));
+}
 
 const parse = (value: string | null | undefined): Date | null => {
   const date = value ? new Date(value) : null;
@@ -154,5 +169,9 @@ export function describe(input: Inputs): View {
   // Heinzel is confirmed current but something else is not: the Heinzel line keeps its own, honest colour.
   const tone: State = input.problem ? "bad" : count > 0 ? "warn" : allCurrent ? "ok" : "off";
   const unknownSomewhere = coreUnknown || pluginsUnknown || input.planFailed;
-  return { tone, available: count > 0, rows, count, canRetry: unknownSomewhere && !applying, allCurrent };
+  const parts: Part[] = [
+    ...(coreNews ? [{ id: "core", label: t("updates.part.core") }] : []),
+    ...plugins.map(([name]) => ({ id: `plugin:${name}`, label: name })),
+  ];
+  return { tone, available: count > 0, rows, count, canRetry: unknownSomewhere && !applying, allCurrent, parts };
 }

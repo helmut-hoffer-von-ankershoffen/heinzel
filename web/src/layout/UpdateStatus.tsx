@@ -2,12 +2,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, LoaderCircle, RefreshCw, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FooterItem } from "@/components/FooterItem";
+import { Progress } from "@/components/Progress";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
 import { checkNow, KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
-import { canVerifyUpdate, finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
-import { describe } from "@/updates/updateState";
+import {
+  canVerifyUpdate,
+  finishUpdate,
+  pendingUpdate,
+  readUpdateStatus,
+  startUpdate,
+  type UpdateStage,
+} from "@/updates/controller";
+import { describe, type Part, partSegments } from "@/updates/updateState";
 
 function updateRecoveryState(): "none" | "inspect" | "verify" {
   const receipt = pendingUpdate();
@@ -29,6 +37,9 @@ export function UpdateStatus() {
   const mounted = useRef(true);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<string | null>(null);
+  // The parts this run changes and how far it got, kept after the plan stops listing them as news.
+  const [running, setRunning] = useState<{ parts: Part[]; stage: UpdateStage | null } | null>(null);
+  const partsNow = useRef<Part[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<"none" | "inspect" | "verify">("none");
   const [message, setMessage] = useState<string | null>(null);
@@ -38,13 +49,17 @@ export function UpdateStatus() {
     active.current = controller;
     setBusy(true);
     setProblem(null);
+    setRunning(resume ? null : { parts: partsNow.current, stage: null });
     try {
       const answer = resume
         ? await finishUpdate(controller.signal)
-        : await startUpdate(controller.signal, (phase) => {
-            if (mounted.current) setPhase(phase);
+        : await startUpdate(controller.signal, (phase, stage) => {
+            if (!mounted.current) return;
+            setPhase(phase);
+            if (stage) setRunning((now) => (now ? { ...now, stage } : now));
           });
       if (mounted.current) {
+        setRunning(null);
         setMessage(answer);
         setRecovery(updateRecoveryState());
       }
@@ -95,6 +110,13 @@ export function UpdateStatus() {
     message,
     problem,
   });
+  partsNow.current = view.parts;
+  // A run of this window, or the server applying on its own: the same bar, drawn from the same parts.
+  const segments = running
+    ? partSegments(running.parts, running.stage, problem !== null)
+    : phase === null && plan?.phase === "applying"
+      ? partSegments(view.parts, null, false)
+      : [];
   const installed = status?.installed_at ? new Date(status.installed_at) : null;
   const installedDate =
     installed && !Number.isNaN(installed.getTime())
@@ -128,6 +150,7 @@ export function UpdateStatus() {
             </div>
           </div>
         ))}
+        <Progress label={t("updates.progress")} segments={segments} />
         {status && (
           <p className="text-xs text-muted-foreground">
             {installedDate ? t("updates.installedDate", { date: installedDate }) : t("updates.installedDateUnknown")}
