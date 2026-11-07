@@ -148,6 +148,40 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Scrollbars app-wide: thin, a transparent track, and a thumb that shows only while the pointer or focus is inside the
+   scroll container (and while it scrolls under the pointer). Scrolling itself, keyboard and touch are untouched; nothing
+   is hidden with overflow. `:where` keeps the specificity at zero so a component can still set its own. */
+:where(*) {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+:where(*:hover, *:focus-within) {
+  scrollbar-color: color-mix(in srgb, var(--color-muted-foreground) 45%, transparent) transparent;
+}
+/* WebKit without the standard properties (they win in Chromium and current Safari, so this is only the fallback). */
+@supports not (scrollbar-width: thin) {
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+    background: transparent;
+  }
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    background-clip: content-box;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    transition: background-color 0.2s ease;
+  }
+  *:hover::-webkit-scrollbar-thumb,
+  *:focus-within::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--color-muted-foreground) 45%, transparent);
+  }
+}
+
 :focus-visible:not([data-focus-ring="parent"]) {
   outline: 2px solid var(--color-ring);
   outline-offset: 2px;
@@ -422,9 +456,6 @@ body {
   --workspace-composer-padding: 0.5rem;
   --workspace-input-height: 2.25rem;
   --workspace-chat-header-height: 2rem;
-  --workspace-cost-margin: 0px;
-  --workspace-cost-font: 10px;
-  --workspace-cost-leading: 14px;
 }
 @media (max-height: 400px) {
   .workspace-panel {
@@ -432,9 +463,6 @@ body {
     --workspace-composer-padding: 0.5rem;
     --workspace-input-height: 2.25rem;
     --workspace-chat-header-height: 2rem;
-    --workspace-cost-margin: 0px;
-    --workspace-cost-font: 10px;
-    --workspace-cost-leading: 14px;
   }
   .workspace-panel[data-placement="below"]:not([data-active="page"]) {
     top: 0;
@@ -456,9 +484,4 @@ body {
 }
 .chat-panel-composer textarea {
   height: var(--workspace-input-height, auto);
-}
-.chat-panel-costs {
-  margin-top: var(--workspace-cost-margin, 0.375rem);
-  font-size: var(--workspace-cost-font, 0.75rem);
-  line-height: var(--workspace-cost-leading, 1rem);
 }

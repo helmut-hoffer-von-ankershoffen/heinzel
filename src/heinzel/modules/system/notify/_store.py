@@ -13,13 +13,14 @@ import os
 import secrets
 import stat
 from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from heinzel import Notice
+from heinzel.modules.system.notify._models import Archived, Recovered
 
 logger = logging.getLogger(__name__)
 MAX_NOTICES = 200
@@ -34,6 +35,15 @@ PRIVATE_DIR = 0o700
 PRIVATE_FILE = 0o600
 _NOTICES = TypeAdapter(list[Notice])
 INTEGRITY_UNAVAILABLE = "Durable notification history cannot be verified; preserve the store and its replay evidence."
+INTEGRITY_LEGACY = (
+    "Durable notification history cannot be verified: a legacy notice list replaced its replay keys; "
+    "preserve the store and its replay evidence."
+)
+"""The one damaged shape `hz system notify recover` may archive and restart."""
+
+
+class LegacyListError(ValueError):
+    """A legacy notice list sits where the durable marker requires key-bearing state."""
 
 
 def _empty_notices() -> list[Notice]:
@@ -63,13 +73,15 @@ def _decode_state(text: str | bytes, *, strict: bool, expiring: bool = False) ->
     """Validate serialized state; durable records must explicitly retain both fields.
 
     Raises:
+        LegacyListError: If a legacy list sits beside the plain durable marker.
         ValueError: If the state or durable evidence cannot be verified.
     """
     value = json.loads(text)
     if isinstance(value, list):
         if strict:
             msg = "legacy notification list lost replay keys"
-            raise ValueError(msg)
+            # Only the plain durable marker has a supported recovery; deadline-scoped receipts need a backup.
+            raise (ValueError if expiring else LegacyListError)(msg)
         return _State(notices=_NOTICES.validate_python(value))
     state = _State.model_validate(value)
     if strict and not {"notices", "durable_keys"} <= state.model_fields_set:
@@ -216,8 +228,8 @@ class Store:
                 _decode_state(data, strict=durable or expiring, expiring=expiring)
             finally:
                 os.close(directory)
-        except (OSError, ValueError, RecursionError):
-            return INTEGRITY_UNAVAILABLE
+        except (OSError, ValueError, RecursionError) as exc:
+            return INTEGRITY_LEGACY if isinstance(exc, LegacyListError) else INTEGRITY_UNAVAILABLE
         return None
 
     def read(self) -> list[Notice]:
@@ -380,6 +392,10 @@ class Store:
             return None
         return problem if isinstance(problem, str) else None
 
+    def locked(self) -> AbstractContextManager[None]:
+        """The writer lock every change holds; recovery holds it too."""
+        return self._locked()
+
     @contextmanager
     def _locked(self) -> Generator[None]:
         _private_dir(self.directory)
@@ -412,3 +428,252 @@ def _write_private(path: Path, text: str) -> None:
         os.fsync(directory)
     finally:
         os.close(directory)
+
+
+# Recovery -----------------------------------------------------------------------------------------------------------
+"""Explicit recovery of one known damaged notification store shape, with an archive and an audit receipt.
+
+The shape: the durable marker (`durable-notices`, the single line `1`) beside `notices.json` with a legacy list.
+A writer from before durable notices replaced the key-bearing state with a plain list, so the replay keys it held are
+gone and no file here can restore them. Every write then fails closed (ADR 0041's durable receipts) until a person
+decides. Recovery never reconstructs the lost keys: it archives every original file with its SHA-256, mode and
+modification time, writes a receipt, and starts a new durable state whose keys come only from the retained notices'
+own `key` fields, so no retained notice can be recorded twice. Old notices stay in the history and never pop up again.
+
+Anything else (an expiring marker, a key-bearing state, a missing list, a link, a foreign owner, a loose mode, an
+unknown or half-written file) is refused untouched: that store may hold replay evidence a backup must restore.
+"""
+
+RECEIPT_VERSION = 1
+MAX_FILE_BYTES = MAX_HEALTH_BYTES
+"""Recovery reads whole files into memory, up to what doctor verifies."""
+MARKER = b"1\n"
+KNOWN = frozenset(
+    {
+        "durable-notices",
+        "notices.json",
+        "notices.lock",
+        "looked.json",
+        "native.json",
+        "viewer.json",
+        "strays-forgotten-at",
+    }
+)
+"""Every file a notification store of the legacy shape may hold; anything else is refused."""
+STRICT = frozenset({"durable-notices", "notices.json"})
+"""Files that must be private (0600) to be trusted as replay evidence."""
+
+
+def _refused(detail: str) -> Recovered:
+    return Recovered(state="refused", detail=detail)
+
+
+def _read_files(store: Store) -> dict[str, tuple[bytes, os.stat_result]] | str:
+    """Every file in the store, read through verified no-follow descriptors, or why the store is refused."""
+    directory = _health_directory(store.directory)
+    if directory is None:
+        return "There is no notification store."
+    try:
+        names = set(os.listdir(directory))  # noqa: PTH208 - list the verified descriptor, not a re-resolved path
+        if unknown := sorted(names - KNOWN):
+            return f"The notification store holds files recovery does not know ({', '.join(unknown)}); nothing changed."
+        files: dict[str, tuple[bytes, os.stat_result]] = {}
+        for name in sorted(names):
+            descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            with os.fdopen(descriptor, "rb") as source:
+                info = os.fstat(source.fileno())
+                loose = info.st_mode & (0o077 if name in STRICT else 0o022)
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or loose:
+                    return f"{name} is not a private regular file of this user; nothing changed."
+                if info.st_size > MAX_FILE_BYTES:
+                    return f"{name} is larger than this recovery reads; nothing changed."
+                files[name] = (source.read(MAX_FILE_BYTES + 1), info)
+    except OSError:
+        return "The notification store cannot be read safely; nothing changed."
+    finally:
+        os.close(directory)
+    return files
+
+
+def _parse(data: bytes) -> list[Notice] | Recovered:
+    """The legacy notices in `notices.json`, or what it holds instead."""
+    try:
+        value = json.loads(data)
+    except (ValueError, RecursionError):
+        return _refused("The notification state is not valid JSON; restore a trusted backup.")
+    if not isinstance(value, list):
+        try:
+            _decode_state(data, strict=True)
+        except (ValueError, RecursionError):
+            return _refused("The key-bearing notification state is damaged; restore a trusted backup.")
+        return Recovered(
+            state="healthy", detail="The durable notification state verifies; there is nothing to recover."
+        )
+    try:
+        return _NOTICES.validate_python(value)
+    except ValidationError:
+        return _refused("The legacy notice list does not validate; nothing changed.")
+
+
+def _legacy(files: dict[str, tuple[bytes, os.stat_result]]) -> list[Notice] | Recovered:
+    """The legacy notices, or what the store is instead."""
+    if "durable-notices" not in files:
+        return Recovered(state="healthy", detail="The store has no durable marker; there is nothing to recover.")
+    if files["durable-notices"][0] != MARKER:
+        problem = "The durable marker has unknown contents; nothing changed."
+    elif "notices.json" not in files:
+        problem = "The durable marker has no notification state; restore a trusted backup."
+    else:
+        return _parse(files["notices.json"][0])
+    return _refused(problem)
+
+
+def _archive(
+    root: Path, stamp: str, files: dict[str, tuple[bytes, os.stat_result]]
+) -> tuple[Path, list[Archived]] | str:
+    """Copy every original, mode and time preserved, into a new private directory under `root`."""
+    target = root / f"{stamp}-{secrets.token_hex(4)}"
+    try:
+        _private_dir(root)
+        _fsync_dir(root.parent)
+        target.mkdir(mode=PRIVATE_DIR)
+        _fsync_dir(root)  # the archive's entry survives a crash right after the state is replaced
+        archived: list[Archived] = []
+        for name, (data, info) in files.items():
+            mode = stat.S_IMODE(info.st_mode)
+            descriptor = os.open(target / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(data)
+                output.flush()
+                os.fchmod(output.fileno(), mode)
+                os.fsync(output.fileno())
+            os.utime(target / name, ns=(info.st_atime_ns, info.st_mtime_ns))
+            archived.append(
+                Archived(
+                    name=name,
+                    sha256=hashlib.sha256(data).hexdigest(),
+                    size=len(data),
+                    mode=f"{mode:04o}",
+                    modified=datetime.fromtimestamp(info.st_mtime, UTC),
+                )
+            )
+        for name, entry in zip(files, archived, strict=True):
+            if hashlib.sha256((target / name).read_bytes()).hexdigest() != entry.sha256:
+                return "The archive does not match the originals; the store was not changed."
+        _fsync_dir(target)
+    except OSError:
+        return "The originals cannot be archived; the store was not changed."
+    return target, archived
+
+
+def _fsync_dir(path: Path) -> None:
+    directory = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def _exists(store: Store) -> bool:
+    directory = _health_directory(store.directory)
+    if directory is None:
+        return False
+    os.close(directory)
+    return True
+
+
+def _inspect(store: Store) -> tuple[dict[str, tuple[bytes, os.stat_result]], list[Notice]] | Recovered:
+    files = _read_files(store)
+    if isinstance(files, str):
+        return _refused(files)
+    legacy = _legacy(files)
+    return legacy if isinstance(legacy, Recovered) else (files, legacy)
+
+
+def _keys(legacy: list[Notice]) -> set[str]:
+    return {hashlib.sha256(notice.key.encode()).hexdigest() for notice in legacy if notice.key}
+
+
+def recover(store: Store, now: datetime, *, apply: bool) -> Recovered:
+    """Inspect the store and, with `apply`, archive the legacy shape and restart its durable state.
+
+    Without `apply` nothing is written, not even the lock. With it, the notification writer lock is held throughout,
+    so no head or tick writes in between. Crash-safe: the originals and a receipt naming the new state's digest are on
+    disk before one atomic replacement of `notices.json`; a crash before it leaves the store as it was (a rerun
+    archives again), a crash after it leaves a state that verifies.
+
+    Raises:
+        OSError: If the new state was written but does not verify (never expected; the archive holds the originals).
+    """
+    try:
+        if not _exists(store):
+            return Recovered(state="healthy", detail="There is no notification store; there is nothing to recover.")
+    except OSError:
+        return _refused("The notification store's path is linked or not private to this user; nothing changed.")
+    if not apply:
+        found = _inspect(store)
+        if isinstance(found, Recovered):
+            return found
+        _, legacy = found
+        return Recovered(
+            state="recoverable",
+            detail="A legacy notice list replaced the durable replay keys. Run again with --apply to archive the "
+            "store and start a new replay-key set; the lost keys cannot be restored from this store.",
+            notices=len(legacy),
+            keys=len(_keys(legacy)),
+        )
+    return _apply(store, now)
+
+
+def _apply(store: Store, now: datetime) -> Recovered:
+    """Archive, write the receipt, then replace the state once, all under the writer lock.
+
+    Raises:
+        OSError: If the new state was written but does not verify.
+    """
+    with store.locked():
+        found = _inspect(store)
+        if isinstance(found, Recovered):
+            return found
+        files, legacy = found
+        keys = _keys(legacy)
+        instant = now.astimezone(UTC)
+        archive = _archive(store.directory.parent / "notify-recovery", f"{instant:%Y%m%dT%H%M%S%fZ}", files)
+        if isinstance(archive, str):
+            return _refused(archive)
+        target, archived = archive
+        kept = [
+            notice
+            if notice.delivered_by is not None
+            else notice.model_copy(update={"popup": False, "held": "recovered"})
+            for notice in legacy
+        ]
+        state = _State(notices=kept, durable_keys=keys)
+        payload = state.model_dump_json(indent=1, exclude={"expiring_keys", "expiring_watermark"}) + "\n"
+        receipt = {
+            "version": RECEIPT_VERSION,
+            "recovered_at": instant.isoformat(),
+            "shape": "durable marker beside a legacy notice list without replay keys",
+            "originals": [entry.model_dump(mode="json") for entry in archived],
+            "replay_keys_before": None,
+            "replay_keys_after": {"count": len(keys), "source": "the kept notices' own key fields"},
+            "notices_kept": len(kept),
+            "new_state_sha256": hashlib.sha256(payload.encode()).hexdigest(),
+        }
+        try:
+            _write_private(target / "receipt.json", json.dumps(receipt, indent=1) + "\n")
+            _write_private(store.path, payload)
+        except OSError:
+            return _refused(f"The new state could not be written; the originals are archived in {target}.")
+        try:
+            _decode_state(store.path.read_bytes(), strict=True)
+        except ValueError as exc:
+            msg = f"The recovered notification state does not verify; the originals are archived in {target}"
+            raise OSError(msg) from exc
+    return Recovered(
+        state="recovered",
+        detail="Archived the originals and started a new replay-key set; notices can be recorded again.",
+        notices=len(kept),
+        keys=len(keys),
+        receipt=str(target),
+    )
