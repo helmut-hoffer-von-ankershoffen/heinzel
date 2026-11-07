@@ -24,3 +24,6 @@ export async function assertBundleIcon(bundle) {
   }
   return icon;
 }
+
+/** Extra Info.plist keys: Finder shows the umlaut name while the file name stays ASCII. */
+export const EXTEND_INFO = { CFBundleDisplayName: "Heinzelmännchen" };

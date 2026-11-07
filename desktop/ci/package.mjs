@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { packager } from "@electron/packager";
 import { checkNode } from "./node-version.mjs";
-import { assertBundleIcon } from "./bundle-icon.mjs";
+import { assertBundleIcon, EXTEND_INFO } from "./bundle-icon.mjs";
 import { captureRuntime } from "./runtime-inventory.mjs";
 
 const nodeCheck = checkNode();
@@ -42,6 +42,7 @@ try {
     prune: true,
     // @electron/packager appends ".icns" and writes it as the bundle icon; without it Electron's atom shows.
     icon: path.join(root, "assets", "heinzel"),
+    extendInfo: EXTEND_INFO,
     appBundleId: "org.heinzelmaennchen.desktop",
   });
   for (const appPath of appPaths) {

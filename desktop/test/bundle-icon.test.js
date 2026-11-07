@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { assertBundleIcon, iconFileName } from "../ci/bundle-icon.mjs";
+import { assertBundleIcon, EXTEND_INFO, iconFileName } from "../ci/bundle-icon.mjs";
 
 const plist = (icon) => `<?xml version="1.0"?><plist><dict><key>CFBundleIconFile</key><string>${icon}</string></dict></plist>`;
 
@@ -29,4 +29,8 @@ test("accepts a bundle whose Resources hold the named icon", async (t) => {
 
 test("rejects a bundle whose Resources lack the named icon", async (t) => {
   await assert.rejects(assertBundleIcon(await bundle(t, "heinzel.icns", false)), /missing from Contents\/Resources/);
+});
+
+test("shows Heinzelmännchen as the display name", () => {
+  assert.equal(EXTEND_INFO.CFBundleDisplayName, "Heinzelmännchen");
 });
