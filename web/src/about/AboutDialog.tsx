@@ -202,7 +202,6 @@ export function AboutDialog() {
             onClick={close}
             aria-label={t("op.close")}
             title={t("op.close")}
-            // biome-ignore lint/a11y/noAutofocus: the dialog takes focus so Escape works at once
             autoFocus
           >
             <X aria-hidden />
