@@ -89,11 +89,14 @@ def test_a_checkpoint_key_is_idempotent_and_conflicting_data_is_refused(tmp_path
     assert len(sessions.read("one").events) == 2
 
 
-def test_atomic_checkpoint_replacement_is_bounded_private_and_durable(tmp_path):
+def test_atomic_checkpoint_replacement_is_bounded_private_and_durable(tmp_path, recorded_flushes):
+    # A hundred real flushes ran past the 5 s budget on a loaded runner; each replacement must still flush.
     sessions = store(tmp_path)
     with sessions.writer("one") as writer:
         for value in range(100):
+            flushed = len(recorded_flushes)
             writer.replace_checkpoint("outbox", {"version": 1, "watermark": value})
+            assert len(recorded_flushes) > flushed, f"replacement {value} was not flushed"
         assert writer.checkpoint("outbox") == {"version": 1, "watermark": 99}
     path = sessions.root / "one/checkpoint-outbox.json"
     assert path.stat().st_mode & 0o777 == 0o600
