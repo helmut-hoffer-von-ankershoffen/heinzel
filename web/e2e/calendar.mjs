@@ -73,10 +73,15 @@ for (const [name, engine] of [
       await page.goto(url);
       await page.locator("#splash").waitFor({ state: "hidden" });
       const footer = page.locator("footer");
-      const button = footer.getByRole("button", { name: "Calendar, off", exact: true });
+      const button = footer.getByRole("button", {
+        name: /^Calendar: In Standup with an exceptionally long .*min left.*, off$/,
+      });
       await button.waitFor({ state: "visible" });
-      await button.locator("path[stroke-dasharray]").first().waitFor({ state: "visible" });
-      assert.equal(await button.locator("path[stroke-dasharray]").count(), 2, "both calendar arcs are present");
+      const glyph = button.locator('svg[data-glyph="meeting"]');
+      await glyph.waitFor({ state: "visible" });
+      const box = await glyph.boundingBox();
+      assert.ok(box && Math.abs(box.width - 24) < 0.5 && Math.abs(box.height - 24) < 0.5, "the glyph keeps 24px");
+      assert.match(await glyph.locator("[data-label]").textContent(), /^\d+$/, "minutes left sit inside the ring");
       assert.doesNotMatch(await button.textContent(), /Standup|Review/, "meeting names stay inside the pane");
       await page.screenshot({ path: join(shots, `${name}-${size}-footer.png`) });
       await button.click({ timeout: 10000 });
@@ -85,8 +90,8 @@ for (const [name, engine] of [
       assert.match(await summary.textContent(), /In Standup with an exceptionally long meeting title/);
       assert.match(await summary.textContent(), /Next: Review with a very long title/);
       const times = summary.locator("time");
-      assert.equal(await times.count(), 2);
-      const expected = [current.end, next.start].map((value) =>
+      assert.equal(await times.count(), 4);
+      const expected = [current.start, current.end, next.start, next.end].map((value) =>
         new Intl.DateTimeFormat("en-GB", {
           timeZone: "UTC",
           hour: "2-digit",
