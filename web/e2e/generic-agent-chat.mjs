@@ -106,6 +106,8 @@ try {
             trusted: event.isTrusted,
             primary: event.isPrimary && event.button === 0,
             summary: event.target === node && node.tagName === "SUMMARY",
+            target:
+              event.target instanceof Element ? `${event.target.tagName} ${event.target.textContent.slice(0, 60)}` : "",
             clipping: rect.bottom - contentBottom(),
             origin,
             destination: origin - 120,
@@ -130,14 +132,26 @@ try {
         { capture: true, passive: true, once: true },
       );
     }, clipping);
+    // WebKit applies programmatic overflow scrolls and the translate in a later rendering update, and the hover
+    // above can still settle: measure only after two frames, then check the summary is what the pointer hits.
+    const frames = () =>
+      page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await frames();
     const point = await replyActivity.boundingBox();
     assert.ok(point);
-    await page.mouse.move(point.x + point.width / 2, point.y + point.height / 2);
+    const at = { x: point.x + point.width / 2, y: point.y + point.height / 2 };
+    await page.mouse.move(at.x, at.y);
+    await frames();
+    const hit = await replyActivity.evaluate((node, { x, y }) => {
+      const found = document.elementFromPoint(x, y);
+      return found === node ? "" : `${found?.tagName} ${found?.textContent?.slice(0, 60)}`;
+    }, at);
+    assert.equal(hit, "", "the press point must hit the native summary before the press");
     await page.mouse.down();
     const press = await page.evaluate(() => window.__hzFractionalPress);
     assert.equal(press?.trusted, true, "fractional pressure must originate from a trusted physical press");
     assert.equal(press.primary, true, "fractional pressure must use the primary pointer and button");
-    assert.equal(press.summary, true, "fractional pressure must press the current native summary");
+    assert.equal(press.summary, true, `fractional pressure must press the current native summary, not ${press.target}`);
     assert.equal(press.clipping, clipping, "the pressed control must meet the exact requested workspace clipping");
     if (partialScroll) assert.ok(press.innerClearance >= point.height, "the summary must clear the inner chat edges");
     assert.ok(press.origin > 120, "the controlled press must have real workspace scroll distance");
