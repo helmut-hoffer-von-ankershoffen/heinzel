@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AudioVisualizer, spectrumGeometry, spectrumLevel } from "./AudioVisualizer";
+import { AudioVisualizer, spectrumLevel } from "./AudioVisualizer";
 import { captureAudio } from "./capture";
 
 vi.mock("./capture", () => ({ captureAudio: vi.fn() }));
@@ -19,44 +19,33 @@ const captured = {
 afterEach(() => vi.clearAllMocks());
 
 describe("AudioVisualizer", () => {
-  it("scales the visible spectrum to one third of its available height", () => {
-    for (const height of [600, 900, 1440]) {
-      expect(spectrumGeometry(28, height).maxBarHeight).toBe(height / 3);
-    }
-  });
-
-  it("keeps the spectrum within the visible strip, even when it is narrow or short", () => {
-    const sizes: [number, number][] = [
-      [1, 1],
-      [28, 24],
-      [28, 320],
-    ];
-    for (const [width, height] of sizes) {
-      const geometry = spectrumGeometry(width, height);
-      expect(geometry.columns * geometry.columnWidth + geometry.gap * (geometry.columns - 1)).toBeLessThanOrEqual(
-        width + 1,
-      );
-      expect(geometry.maxBarHeight).toBeLessThanOrEqual(Math.max(1, height / 3));
-    }
-  });
-
-  it("draws full-scale audio bins up to one third of the actual canvas height", async () => {
+  it("paints a full-window, click-through aurora from the real analyser and sleeps when the sound stops", async () => {
+    let loud = true;
     vi.mocked(captureAudio).mockResolvedValue({
       ...captured,
       analyser: {
-        frequencyBinCount: 32,
-        getByteFrequencyData: (data: Uint8Array) => data.fill(255),
+        frequencyBinCount: 64,
+        getByteFrequencyData: (data: Uint8Array) => data.fill(loud ? 220 : 0),
       },
     } as unknown as Awaited<ReturnType<typeof captureAudio>>);
-    const draw = { clearRect: vi.fn(), setTransform: vi.fn(), fillRect: vi.fn(), globalAlpha: 1 };
+    const gradient = { addColorStop: vi.fn() };
+    const draw = {
+      clearRect: vi.fn(),
+      setTransform: vi.fn(),
+      fillRect: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      closePath: vi.fn(),
+      fill: vi.fn(),
+      stroke: vi.fn(),
+      createLinearGradient: vi.fn(() => gradient),
+      createRadialGradient: vi.fn(() => gradient),
+    };
     const getContext = vi
       .spyOn(HTMLCanvasElement.prototype, "getContext")
       .mockReturnValue(draw as unknown as CanvasRenderingContext2D);
-    const oldWidth = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "clientWidth");
-    const oldHeight = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "clientHeight");
     const oldVisibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
-    Object.defineProperty(HTMLCanvasElement.prototype, "clientWidth", { configurable: true, value: 28 });
-    Object.defineProperty(HTMLCanvasElement.prototype, "clientHeight", { configurable: true, value: 900 });
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
     const frames: FrameRequestCallback[] = [];
     const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
@@ -65,23 +54,32 @@ describe("AudioVisualizer", () => {
     });
     try {
       render(<AudioVisualizer />);
+      expect(screen.queryByTestId("audio-aurora")).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /Audio visualizer,/ }));
       fireEvent.click(screen.getByRole("button", { name: "Share audio" }));
-      await waitFor(() => expect(screen.getByRole("button", { name: "Stop sharing audio" })).toBeInTheDocument());
-      // The session button updates before its passive effect schedules the first animation frame.
+      const aurora = await screen.findByTestId("audio-aurora");
+      expect(aurora).toHaveAttribute("aria-hidden", "true");
+      expect(aurora).toHaveClass("pointer-events-none", "fixed", "inset-0");
       await waitFor(() => expect(frames.length).toBeGreaterThan(0));
-      act(() => frames.at(-1)?.(1000));
-      const heights = draw.fillRect.mock.calls.map((call) => Number(call[3]));
-      expect(heights.length).toBeGreaterThan(0);
-      expect(Math.max(...heights)).toBe(300);
-      expect(heights.every((height) => height <= 300)).toBe(true);
+      for (let index = 0; index < 20; index += 1) act(() => frames.at(-1)?.(1000 + index * 16));
+      expect(draw.fill).toHaveBeenCalled();
+      expect(draw.stroke).toHaveBeenCalled();
+      expect(draw.createRadialGradient).toHaveBeenCalled();
+      // Silence: the loop settles and stops scheduling frames instead of redrawing an empty canvas.
+      loud = false;
+      let time = 2000;
+      for (let index = 0; index < 400 && frames.length > 0; index += 1) {
+        const before = frames.length;
+        time += 32;
+        act(() => frames.at(-1)?.(time));
+        if (frames.length === before) break;
+      }
+      const settled = frames.length;
+      act(() => frames.at(-1)?.(time + 32));
+      expect(frames.length).toBe(settled);
     } finally {
       raf.mockRestore();
       getContext.mockRestore();
-      if (oldWidth) Object.defineProperty(HTMLCanvasElement.prototype, "clientWidth", oldWidth);
-      else delete (HTMLCanvasElement.prototype as { clientWidth?: number }).clientWidth;
-      if (oldHeight) Object.defineProperty(HTMLCanvasElement.prototype, "clientHeight", oldHeight);
-      else delete (HTMLCanvasElement.prototype as { clientHeight?: number }).clientHeight;
       if (oldVisibility) Object.defineProperty(document, "visibilityState", oldVisibility);
       else delete (document as { visibilityState?: DocumentVisibilityState }).visibilityState;
     }

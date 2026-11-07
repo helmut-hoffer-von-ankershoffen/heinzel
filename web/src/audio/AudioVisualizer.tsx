@@ -1,20 +1,13 @@
 import { AudioLines } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FooterItem, type State } from "@/components/FooterItem";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { BANDS, bandEdges, canvasSize, createState, drawAurora, isSettled, readPalette, stepState } from "./aurora";
 import { type CapturedAudio, captureAudio } from "./capture";
 
-export function spectrumGeometry(width: number, height: number) {
-  const columns = Math.max(1, Math.min(16, Math.floor(width / 3)));
-  const gap = width >= columns * 2 ? 1 : 0;
-  const columnWidth = Math.max(1, (width - gap * (columns - 1)) / columns);
-  return { columns, gap, columnWidth, maxBarHeight: Math.max(1, height / 3) };
-}
-
-export function spectrumLevel(value: number) {
-  return Math.sqrt(Math.max(0, Math.min(255, value)) / 255);
-}
+export { spectrumLevel } from "./aurora";
 
 function captureProblem(error: unknown) {
   if (error instanceof DOMException && error.name === "AbortError") return "Audio sharing was cancelled.";
@@ -23,7 +16,11 @@ function captureProblem(error: unknown) {
   return error instanceof Error ? error.message : "Audio sharing is unavailable.";
 }
 
-/** A real spectrum at the right edge. Showing the control never starts capture; the person clicks to share. */
+/**
+ * A real-spectrum aurora across the whole window, driven by the shared audio, with a slim control rail. Showing the
+ * control never starts capture; the person clicks to share. Nothing is drawn, and no frame is scheduled, when the audio
+ * is not shared or is silent.
+ */
 export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean }) {
   const [session, setSession] = useState<CapturedAudio | null>(null);
   const [requesting, setRequesting] = useState(false);
@@ -87,61 +84,91 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   useEffect(() => {
     const element = canvas.current;
     const drawing = element?.getContext("2d");
-    if (!element || !drawing) return;
-    if (!session) {
-      drawing.clearRect(0, 0, element.width, element.height);
-      return;
-    }
+    if (!element || !drawing || !session) return;
     const data = new Uint8Array(session.analyser.frequencyBinCount);
+    const edges = bandEdges(data.length, BANDS);
+    const state = createState(Date.now() | 0);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let palette = readPalette();
     let frame = 0;
-    let last = -Infinity;
+    let timer = 0;
+    let last = 0;
     let lastSound = -Infinity;
     let audible = false;
-    const paint = (now: number) => {
-      if (document.visibilityState === "hidden") return;
-      frame = requestAnimationFrame(paint);
-      if (now - last < (reduced.matches ? 250 : 1000 / 30)) return;
-      last = now;
-      const width = Math.max(1, element.clientWidth);
-      const height = Math.max(1, element.clientHeight);
-      const ratio = Math.min(2, window.devicePixelRatio || 1);
-      if (element.width !== Math.round(width * ratio) || element.height !== Math.round(height * ratio)) {
-        element.width = Math.round(width * ratio);
-        element.height = Math.round(height * ratio);
+    let size = { width: 0, height: 0 };
+    let paletteAge = 0;
+    const resize = () => {
+      const width = Math.max(1, window.innerWidth);
+      const height = Math.max(1, window.innerHeight);
+      const next = canvasSize(width, height, window.devicePixelRatio);
+      if (element.width !== next.width || element.height !== next.height) {
+        element.width = next.width;
+        element.height = next.height;
       }
-      drawing.setTransform(ratio, 0, 0, ratio, 0, 0);
-      drawing.clearRect(0, 0, width, height);
-      drawing.fillStyle = getComputedStyle(element).color;
+      drawing.setTransform(next.width / width, 0, 0, next.height / height, 0, 0);
+      size = { width, height };
+    };
+    const sample = (now: number) => {
       session.analyser.getByteFrequencyData(data);
-      if (data.some((value) => value > 0)) lastSound = now;
+      let sound = false;
+      for (const value of data) {
+        if (value > 0) {
+          sound = true;
+          break;
+        }
+      }
+      if (sound) lastSound = now;
       const detected = now - lastSound < 2000;
       if (detected !== audible) {
         audible = detected;
         setHasSignal(detected);
       }
-      const { columns, gap, columnWidth, maxBarHeight } = spectrumGeometry(width, height);
-      for (let column = 0; column < columns; column += 1) {
-        const from = Math.floor((column * data.length) / columns);
-        const to = Math.max(from + 1, Math.floor(((column + 1) * data.length) / columns));
-        let peak = 0;
-        for (let index = from; index < to; index += 1) peak = Math.max(peak, data[index] ?? 0);
-        const level = spectrumLevel(peak);
-        const bar = level * maxBarHeight;
-        if (bar <= 0) continue;
-        drawing.globalAlpha = 0.2 + level * 0.8;
-        drawing.fillRect(column * (columnWidth + gap), height - bar, columnWidth, bar);
+      return sound;
+    };
+    const sleep = () => {
+      drawing.setTransform(1, 0, 0, 1, 0, 0);
+      drawing.clearRect(0, 0, element.width, element.height);
+      const poll = () => {
+        timer = 0;
+        if (document.visibilityState === "hidden") return;
+        if (sample(performance.now())) {
+          last = 0;
+          frame = requestAnimationFrame(paint);
+        } else timer = window.setTimeout(poll, 300);
+      };
+      timer = window.setTimeout(poll, 300);
+    };
+    const paint = (now: number) => {
+      frame = 0;
+      if (document.visibilityState === "hidden") return;
+      const slow = reduced.matches;
+      if (slow && now - last < 250) {
+        frame = requestAnimationFrame(paint);
+        return;
       }
-      drawing.globalAlpha = 1;
+      const dt = last ? Math.min(0.1, (now - last) / 1000) : 1 / 60;
+      last = now;
+      if (size.width !== window.innerWidth || size.height !== window.innerHeight || size.width === 0) resize();
+      if (paletteAge++ % 120 === 0) palette = readPalette();
+      sample(now);
+      stepState(state, data, edges, dt, now, { reduced: slow, width: size.width, height: size.height });
+      drawAurora(drawing, state, palette, size.width, size.height);
+      if (isSettled(state) && now - lastSound > 1500) sleep();
+      else frame = requestAnimationFrame(paint);
     };
     const visibility = () => {
       cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+      frame = 0;
+      timer = 0;
+      last = 0;
       if (document.visibilityState !== "hidden") frame = requestAnimationFrame(paint);
     };
     document.addEventListener("visibilitychange", visibility);
     visibility();
     return () => {
       cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", visibility);
     };
   }, [session]);
@@ -214,7 +241,17 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           )}
         </div>
       </FooterItem>
-      <canvas ref={canvas} role="img" aria-label="Shared audio spectrum" className="min-h-0 w-full flex-1 px-1" />
+      <div className="min-h-0 flex-1" aria-hidden />
+      {session &&
+        createPortal(
+          <canvas
+            ref={canvas}
+            aria-hidden
+            data-testid="audio-aurora"
+            className="pointer-events-none fixed inset-0 z-[5] size-full"
+          />,
+          document.body,
+        )}
     </div>
   );
 }
