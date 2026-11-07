@@ -47,6 +47,15 @@ class PullRequest(BaseModel):
     labels: list[str] = Field(default_factory=list, description="Labels on the pull request.")
 
 
+class Attachment(BaseModel):
+    """A file attached to an issue, as the tracker keeps it: its name and type, never its bytes."""
+
+    name: str = Field(description="File name people see, e.g. `screen.png`.")
+    media_type: str = Field(description="Media type, e.g. `image/png`.")
+    size: int = Field(ge=0, description="Size in bytes.")
+    ref: str = Field(description="Where the tracker keeps it, in the adapter's notation: a URL, an id or a path.")
+
+
 class Issue(BaseModel):
     """An issue in a tracker or on a code host."""
 
@@ -57,6 +66,18 @@ class Issue(BaseModel):
     updated_at: datetime = Field(description="When it last changed.")
     assignee: str | None = Field(default=None, description="Who it is assigned to; none if unassigned.")
     labels: list[str] = Field(default_factory=list, description="Labels, tags or components.")
+    created_at: datetime | None = Field(default=None, description="When it was created; none if the tracker hides it.")
+    closed_at: datetime | None = Field(default=None, description="When it was closed; none while it is open.")
+    reporter: str | None = Field(
+        default=None, description="Who asked for it, as the tracker names them; none if unknown."
+    )
+    released_in: str | None = Field(
+        default=None, description="The first release that contains the change that closed it, e.g. `1.4.0`; none yet."
+    )
+    released_at: datetime | None = Field(default=None, description="When that release was published; none yet.")
+    attachments: list[Attachment] = Field(
+        default_factory=list[Attachment], description="Files attached to it, in the order they were added."
+    )
 
 
 class Document(BaseModel):
@@ -89,10 +110,44 @@ class CodeHost(Protocol):
 
 
 class Tracker(Protocol):
-    """An issue tracker (capability `tracker`)."""
+    """An issue tracker (capability `tracker`, ADR 0136).
+
+    Writes change a shared board: only publish operations (`read_only=False`) that declared `tracker:write` get a
+    handle on which they work (ADR 0028). Every write names its `actor`, the person, Heinzelmännchen or client it is
+    done for, and the adapter records it with the change. A `key` is an `Issue.key`. An adapter raises a `HeinzelError`
+    for an issue it doesn't know, and for a claim another actor holds: a claim is atomic and never overwritten.
+    """
 
     def issues_updated(self, project: str, window: Window) -> list[Issue]:
         """Issues of `project` updated within `window`, oldest first. Mode: read."""
+        ...
+
+    def create(self, project: str, title: str, body: str, reporter: str, labels: list[str]) -> Issue:
+        """Open a new issue in `project`, asked for by `reporter`, who is also its actor. Mode: write."""
+        ...
+
+    def claim(self, key: str, actor: str) -> Issue:
+        """Assign `key` to `actor` and mark it worked on, atomically; refuse if another actor holds it. Mode: write."""
+        ...
+
+    def transition(self, key: str, state: str, actor: str, note: str | None = None) -> Issue:
+        """Move `key` to `state`, in the tracker's own words, adding `note` if given. Mode: write."""
+        ...
+
+    def note(self, key: str, text: str, actor: str) -> Issue:
+        """Add the comment `text` to `key`. Mode: write."""
+        ...
+
+    def attach(self, key: str, name: str, data: bytes, media_type: str, actor: str) -> Attachment:
+        """Attach the file `data`, called `name`, to `key`. Mode: write.
+
+        An adapter whose tracker keeps no files stores them where the tracker's issues can point to them, privately,
+        and returns that reference; it never publishes them.
+        """
+        ...
+
+    def close(self, key: str, actor: str, reason: str) -> Issue:
+        """Close `key`, saying why in `reason`. Mode: write."""
         ...
 
 

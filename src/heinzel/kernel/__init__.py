@@ -260,6 +260,7 @@ from heinzel.kernel._progress import Emit, Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
 from heinzel.kernel._protocols import (
     RESPONSES,
+    Attachment,
     Calendar,
     Chat,
     CodeHost,
@@ -441,6 +442,7 @@ __all__ = [
     "AiAccess",
     "ApprovalChannel",
     "AssetType",
+    "Attachment",
     "Authentication",
     "Avatar",
     "Badge",
