@@ -1,4 +1,4 @@
-// Keep actions in panes on the shared primitives (design/README.md, "Pane actions"): no text links used as
+// Keep actions in panes on the shared primitives (design/README.md, "Actions"): no text links used as
 // actions, and no hand-made action rows or buttons inside footer panes, which draw them with PaneActions.
 import { expect, it } from "vitest";
 
@@ -102,27 +102,94 @@ it("gives every footer pane one structure: content, a divider, then one row of a
   expect(freeform).toEqual(FREEFORM);
 });
 
-// Pane actions are icon-only; these keep their words beside the icon, each with a `withText` reason (an icon alone
-// would be ambiguous, or the action is consequential). This list only changes with a reason in the source.
-const WITH_TEXT: Record<string, number> = {
-  "../audio/AudioVisualizer.tsx": 2,
-  "../components/Contributions.tsx": 3,
-  "../layout/PluginsPending.tsx": 1,
-  "../layout/UpdateStatus.tsx": 2,
+it("has no withText: the first action of a row leads with words, the rest are icons", () => {
+  const found = sources.filter(([, source]) => /\swithText=/.test(source)).map(([file]) => file);
+  expect(found).toEqual([]);
+});
+
+// Files that still draw a divider by hand (`border-t`) in a container instead of PaneActions; only shrinks (PR b).
+const BORDER_T: Record<string, number> = {
+  "../chat/ContractHistory.tsx": 1,
+  "../chat/DurableSession.tsx": 1,
+  "../chat/ModelPicker.tsx": 2,
+  "../heinzel/PersonalHeinzels.tsx": 1,
+  "../layout/ChatPanel.tsx": 1,
+  "../layout/DaemonSettings.tsx": 1,
+  "../layout/NotificationCenter.tsx": 1,
+  "../layout/Shell.tsx": 1,
+  "../layout/ThemePreviews.tsx": 1,
+  "../onboarding/OnboardingWizard.tsx": 1,
+  "../pages/Doctor.tsx": 1,
+  "../pages/Heinzelmaennchen.tsx": 1,
+  "../pages/Organisation.tsx": 1,
+  "../sound/PlayerCard.tsx": 1,
+  "../sound/SoundControls.tsx": 1,
+  "../updates/AutoUpdateToggle.tsx": 1,
+};
+// Files with a right-aligned button row (`justify-end`) outside PaneActions; only shrinks (PR b).
+const JUSTIFY_END: Record<string, number> = {
+  "../components/CommandDialog.tsx": 1,
+  "../components/OperationDialog.tsx": 4,
+  "../layout/PluginsSection.tsx": 1,
+  "../sound/SoundControls.tsx": 1,
+};
+// Icon buttons (`<Button size="icon"`) without both an aria-label and a title; only shrinks.
+const UNNAMED_ICONS: Record<string, number> = {};
+// Raw `<button>`s per file: switches, tabs, menu rows and navigation, plus those PR b converts; only shrinks.
+const RAW: Record<string, number> = {
+  "../chat/Conversation.tsx": 1,
+  "../chat/MessageInfo.tsx": 1,
+  "../chat/ModelPicker.tsx": 4,
+  "../chat/SessionSwitcher.tsx": 4,
+  "../components/ContributionToggle.tsx": 1,
+  "../components/Contributions.tsx": 4,
+  "../components/FooterItem.tsx": 1,
+  "../components/FooterLayout.tsx": 1,
+  "../components/Prose.tsx": 2,
+  "../layout/AiAccessSetting.tsx": 1,
+  "../layout/CalendarPanel.tsx": 6,
+  "../layout/ConnectorsSection.tsx": 2,
+  "../layout/InfoDialog.tsx": 3,
+  "../layout/NotificationCenter.tsx": 3,
+  "../layout/PluginsSection.tsx": 5,
+  "../layout/SchemaValue.tsx": 4,
+  "../layout/SettingControls.tsx": 5,
+  "../layout/SettingsDialog.tsx": 3,
+  "../layout/Sidebar.tsx": 7,
+  "../layout/TerminalPanel.tsx": 8,
+  "../layout/ThemePreviews.tsx": 2,
+  "../layout/TimeZonePicker.tsx": 1,
+  "../layout/TopBar.tsx": 2,
+  "../layout/WorkspacePanels.tsx": 1,
+  "../onboarding/OnboardingWizard.tsx": 2,
+  "../sound/PlayerCard.tsx": 4,
+  "../sound/SoundControls.tsx": 4,
+  "../sound/StreamPlayer.tsx": 3,
 };
 
-it("keeps pane actions icon-only unless a listed action says why it shows its words", () => {
-  const found: Record<string, number> = {};
+it("keeps every action on the shared components: no new hand-drawn divider, end row, unnamed icon or raw button", () => {
+  const counts = { border: {} as Record<string, number>, end: {}, unnamed: {}, raw: {} } as Record<
+    "border" | "end" | "unnamed" | "raw",
+    Record<string, number>
+  >;
+  const add = (kind: keyof typeof counts, file: string, count: number) => {
+    if (count) counts[kind][file] = count;
+  };
   for (const [file, source] of sources) {
-    for (const tag of openingTags(source, "PaneAction")) {
-      const reason = /\swithText=(?:"([^"]*)"|\{([^}]*)\})/.exec(tag);
-      if (!reason) continue;
-      found[file] = (found[file] ?? 0) + 1;
-      // An inline reason, or a named constant (`withText={CAPTURE}`, `withText={icon ? undefined : NO_ICON}`).
-      const constant = /\b[A-Z][A-Z_]{2,}\b/.exec(reason[2] ?? "")?.[0];
-      const text = reason[1] ?? new RegExp(`const ${constant} = "([^"]*)"`).exec(source)?.[1] ?? "";
-      expect(text.length, `${file}: withText needs a written reason`).toBeGreaterThanOrEqual(20);
-    }
+    if (file.endsWith("/PaneActions.tsx") || file.includes("/ui/")) continue;
+    add("border", file, (source.match(/className=(?:"[^"]*|\{[^}]*)\bborder-t\b(?!-)/g) ?? []).length);
+    add("end", file, (source.match(/className=(?:"[^"]*|\{[^}]*)\bjustify-end\b/g) ?? []).length);
+    add(
+      "unnamed",
+      file,
+      openingTags(source, "Button").filter(
+        (tag) => /size="icon/.test(tag) && !(/\saria-label=/.test(tag) && /\stitle=/.test(tag)),
+      ).length,
+    );
+    add("raw", file, openingTags(source, "button").length);
   }
-  expect(found).toEqual(WITH_TEXT);
+  expect(counts.border).toEqual(BORDER_T);
+  expect(counts.end).toEqual(JUSTIFY_END);
+  expect(counts.unnamed).toEqual(UNNAMED_ICONS);
+  expect(counts.raw).toEqual(RAW);
 });

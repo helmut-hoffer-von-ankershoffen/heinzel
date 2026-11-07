@@ -202,7 +202,14 @@ export function NodePanel({ node, graph, onClose }: { node: WorkflowNode; graph:
             {node.label}
           </h2>
         </div>
-        <Button variant="ghost" size="icon" className="size-7" onClick={onClose} aria-label={t("workflow.panel.close")}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          onClick={onClose}
+          aria-label={t("workflow.panel.close")}
+          title={t("workflow.panel.close")}
+        >
           <X aria-hidden />
         </Button>
       </header>

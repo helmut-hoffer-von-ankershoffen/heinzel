@@ -9,7 +9,7 @@ import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { watchViewport } from "@/lib/viewport";
 import { FOOTER_RELOCATED, useFooterVisibility } from "./FooterLayout";
-import { PaneActions, PaneTitle } from "./PaneActions";
+import { actionStructureProblems, assertActionStructure, PaneActions, PaneTitle } from "./PaneActions";
 
 export type State = "ok" | "warn" | "bad" | "off";
 
@@ -48,6 +48,7 @@ export function FooterItem({
   hideHeading = false,
   steady = false,
   actions,
+  actionRow,
   freeform,
 }: {
   /** What it says, as its accessible name and the pane's heading. */
@@ -78,6 +79,8 @@ export function FooterItem({
   steady?: boolean;
   /** Every action of the pane: `PaneAction`s in the one bottom row under a divider, after all content. */
   actions?: ReactNode;
+  /** The row's layout: a pane leads with words (default); an inline confirmation answers like a dialog. */
+  actionRow?: { align?: "start" | "end"; words?: "lead" | "all" };
   /**
    * Why this pane may not follow the pane structure (content, divider, one row of action buttons). Only the
    * version pane, whose release notes are prose with their own links; allowlisted in pane-actions-standards.test.ts.
@@ -147,7 +150,7 @@ export function FooterItem({
     const mutations = new MutationObserver((records) => {
       // Ignore placement's own writes; content changes still need synchronous measurement.
       if (records.some((record) => record.target !== element || record.attributeName !== "style")) {
-        if (structured.current) assertPaneStructure(element);
+        if (structured.current) assertActionStructure(element);
         place();
       }
     });
@@ -166,7 +169,7 @@ export function FooterItem({
     };
   }, [open, align]);
   useLayoutEffect(() => {
-    if (open && structured.current && pane.current) assertPaneStructure(pane.current);
+    if (open && structured.current && pane.current) assertActionStructure(pane.current);
     if (open) position.current?.();
   });
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -284,7 +287,7 @@ export function FooterItem({
             >
               {!hideHeading && <PaneTitle>{label}</PaneTitle>}
               {children}
-              <PaneActions>{actions}</PaneActions>
+              <PaneActions {...actionRow}>{actions}</PaneActions>
             </section>
           </div>,
           document.body,
@@ -293,44 +296,5 @@ export function FooterItem({
   );
 }
 
-/** Buttons and links a pane may show only in its bottom action row; switches and form fields are content. */
-const ACTION = 'button:not([role="switch"]), a[href], [role="button"], [role="link"], [role="menuitem"]';
-
-/**
- * What breaks the pane structure (design/README.md, "Pane actions"): content first, then one divider and one
- * row of action buttons, nothing after it, and no button or link anywhere else in the pane.
- */
-export function paneStructureProblems(pane: Element): string[] {
-  const rows = pane.querySelectorAll("[data-pane-actions]");
-  const problems: string[] = [];
-  if (rows.length > 1) problems.push(`${rows.length} action rows; a pane has one`);
-  const row = rows[0];
-  for (const element of pane.querySelectorAll(ACTION))
-    if (!row?.contains(element))
-      problems.push(`"${element.getAttribute("aria-label") ?? element.textContent?.trim()}" is outside the action row`);
-  const all = pane.querySelectorAll("*");
-  const last = all[all.length - 1];
-  if (row && last && !row.contains(last)) problems.push("content follows the action row");
-  if (row) {
-    const actions = [...row.querySelectorAll(ACTION)];
-    const name = (element: Element) => element.getAttribute("aria-label") ?? element.textContent?.trim();
-    for (const action of actions) {
-      // Only PaneAction draws an action: icon-only by default, words beside the icon only with a stated reason.
-      if (!action.hasAttribute("data-pane-action")) problems.push(`"${name(action)}" is not a PaneAction`);
-      else if (!action.querySelector("svg")) problems.push(`"${name(action)}" has no icon`);
-      else if (action.getAttribute("data-pane-action") === "icon" && !action.getAttribute("aria-label"))
-        problems.push(`"${name(action)}" is icon-only without an accessible name`);
-    }
-    // One row, never wrapped: every action starts at the same height (measurable wherever layout runs).
-    const tops = new Set(actions.map((action) => Math.round(action.getBoundingClientRect().top)));
-    if (tops.size > 1) problems.push(`the actions wrap onto ${tops.size} lines; use icon-only actions`);
-  }
-  return problems;
-}
-
-/** Throws, in development and tests only, when the open pane breaks the structure. */
-function assertPaneStructure(pane: Element) {
-  if (!import.meta.env.DEV) return;
-  const problems = paneStructureProblems(pane);
-  if (problems.length) throw new Error(`Footer pane structure (design/README.md): ${problems.join("; ")}`);
-}
+/** The action structure check, by its footer-pane name for the tests that already use it. */
+export const paneStructureProblems = actionStructureProblems;

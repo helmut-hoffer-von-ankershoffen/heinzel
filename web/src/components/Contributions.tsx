@@ -276,12 +276,24 @@ function effectIcon(effect: Effect): LucideIcon {
   return effect.kind === "open" || effect.kind === "navigate" ? ArrowRight : Play;
 }
 
-/** A footer status item: only its icon, in the colour and shape of its declared tone; text, detail and buttons in a pane. */
-/** Why a plugin action without its own icon keeps its words: the generic effect icon alone would be ambiguous. */
-const NO_ICON = "The plugin declared no icon, so its words tell this action from the others.";
-/** An item's own action has only a generic open or run icon; its words say what it does. */
-const OWN_ACTION = "An item's own action has only a generic open or run icon, so its words say what it does.";
+/**
+ * Whether an action destroys something (uninstall, remove, delete): drawn red and last, behind the operation's own
+ * confirming dialog (design/README.md, "Actions"). The contribution contract has no flag for it yet.
+ */
+function destroys(effect: Effect): boolean {
+  const operation = "operation" in effect ? String(effect.operation ?? "") : "";
+  return /^(uninstall|remove|delete)\b/.test(operation);
+}
 
+/** A contribution's actions in the order of every row: as declared, destructive last. */
+function ordered<T extends { effect: Effect }>(actions: readonly T[]): T[] {
+  return [
+    ...actions.filter((action) => !destroys(action.effect)),
+    ...actions.filter((action) => destroys(action.effect)),
+  ];
+}
+
+/** A footer status item: only its icon, in the colour and shape of its declared tone; text, detail and buttons in a pane. */
 function FooterStatus({
   entry,
   updatedAt,
@@ -302,15 +314,15 @@ function FooterStatus({
   const actions = (
     <>
       {effect && (
-        <PaneAction icon={effectIcon(effect)} withText={OWN_ACTION} onClick={() => run(effect)}>
+        <PaneAction icon={effectIcon(effect)} onClick={() => run(effect)}>
           {effectLabel(effect)}
         </PaneAction>
       )}
-      {(item.actions ?? []).map((action) => (
+      {ordered(item.actions ?? []).map((action) => (
         <PaneAction
           key={action.label}
           icon={action.icon ? ICONS[action.icon] : effectIcon(action.effect)}
-          withText={action.icon ? undefined : NO_ICON}
+          destructive={destroys(action.effect)}
           onClick={() => run(action.effect)}
         >
           {action.label}
@@ -585,11 +597,11 @@ function SidebarStatusItem({
             ))}
           </ul>
           <PaneActions>
-            {actions.map((action) => (
+            {ordered(actions).map((action) => (
               <PaneAction
                 key={action.label}
                 icon={action.icon ? ICONS[action.icon] : effectIcon(action.effect)}
-                withText={action.icon ? undefined : NO_ICON}
+                destructive={destroys(action.effect)}
                 onClick={() => run(action.effect)}
               >
                 {action.label}

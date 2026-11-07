@@ -28,9 +28,8 @@ describe("The durable Heinzel footer control", () => {
     const row = within(panel).getByRole("group", { name: "Actions" });
     const chat = within(row).getByRole("link", { name: "Open chat" });
     expect(chat).toHaveAttribute("href", "/");
-    // Icon-only: the words are its accessible name and tooltip (design/README.md, "Pane actions").
-    expect(chat).toHaveAttribute("title", "Open chat");
-    expect(chat).not.toHaveTextContent("Open chat");
+    // The only action leads with its words (design/README.md, "Actions").
+    expect(chat).toHaveTextContent("Open chat");
     expect(chat.querySelector("svg")).not.toBeNull();
   });
 
@@ -43,14 +42,13 @@ describe("The durable Heinzel footer control", () => {
     // The empty state's action is the pane's primary button in the bottom row under the divider.
     const panel = screen.getByRole("region", { name: "Heinzelmännchen" });
     await expectPane(panel);
-    // Nothing between the content and the divider: one row of two icon-only buttons, Create first.
+    // One row: Create leads with its words, Open chat is an icon named by its words.
     const row = within(panel).getByRole("group", { name: "Actions" });
-    const actions = [...row.querySelectorAll("a, button")];
-    expect(actions.map((action) => action.getAttribute("aria-label"))).toEqual([
-      "Create a personal Heinzel",
-      "Open chat",
-    ]);
-    for (const action of actions) expect(action).toHaveTextContent(/^$/);
+    const [create, chat] = [...row.querySelectorAll("a, button")];
+    expect(create).toHaveTextContent("Create a personal Heinzel");
+    expect(chat).toHaveAttribute("aria-label", "Open chat");
+    expect(chat).toHaveAttribute("title", "Open chat");
+    expect(chat).toHaveTextContent(/^$/);
     expect(within(row).getByRole("button", { name: "Create a personal Heinzel" })).not.toHaveClass("underline");
   });
 

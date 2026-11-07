@@ -260,14 +260,39 @@ async function footerPane(page, id, label, ready) {
   return pane.locator("..");
 }
 
-/** A pane's actions sit in one row that never wraps, at this phone width too (design/README.md, "Pane actions"). */
+/**
+ * A pane's actions (design/README.md, "Actions"): one row that never wraps, the first with its words (or the row's
+ * declared `data-words="none"` fallback), the rest named icons, and every target at least 44px on this touch screen.
+ */
 async function assertOneActionRow(pane, name) {
-  const tops = await pane.evaluate((element) =>
-    [...element.querySelectorAll("[data-pane-actions] [data-pane-action]")].map((action) =>
-      Math.round(action.getBoundingClientRect().top),
-    ),
-  );
-  assert.ok(new Set(tops).size <= 1, `${name}: its actions wrap onto ${new Set(tops).size} lines`);
+  const facts = await pane.evaluate((element) => {
+    const row = element.querySelector("[data-pane-actions]");
+    const actions = row ? [...row.querySelectorAll("[data-pane-action]")] : [];
+    return {
+      words: row?.getAttribute("data-words") ?? null,
+      actions: actions.map((action) => {
+        const box = action.getBoundingClientRect();
+        return {
+          top: Math.round(box.top),
+          width: box.width,
+          height: box.height,
+          kind: action.getAttribute("data-pane-action"),
+          text: action.textContent.trim(),
+          label: action.getAttribute("aria-label"),
+        };
+      }),
+    };
+  });
+  if (!facts.actions.length) return;
+  assert.equal(new Set(facts.actions.map((action) => action.top)).size, 1, `${name}: its actions wrap`);
+  const [lead, ...rest] = facts.actions;
+  if (facts.words === "lead") assert.ok(lead.kind === "text" && lead.text, `${name}: the lead shows its words`);
+  else if (facts.words === "none") assert.ok(lead.kind === "icon" && lead.label, `${name}: the lead's fallback icon`);
+  if (facts.words !== "all")
+    for (const action of rest)
+      assert.ok(action.kind === "icon" && action.label, `${name}: ${action.text} is a named icon`);
+  for (const action of facts.actions)
+    assert.ok(action.height >= 44 && action.width >= 44, `${name}: ${action.label ?? action.text} is under 44px`);
 }
 
 try {

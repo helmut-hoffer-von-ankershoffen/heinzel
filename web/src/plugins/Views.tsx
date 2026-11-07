@@ -7,6 +7,7 @@ import { useLocation } from "react-router";
 import { api, unwrap } from "@/api/client";
 import { token } from "@/api/token";
 import { type Effect, useEffectRunner } from "@/components/Contributions";
+import { PaneAction, PaneActions, PaneTitle } from "@/components/PaneActions";
 import { SettingsShortcut } from "@/components/SettingsShortcut";
 import { Button } from "@/components/ui/button";
 import { NotFound } from "@/pages/Profile";
@@ -37,7 +38,18 @@ export type ViewProps = {
   compact: boolean;
   run: (action: string) => void;
 };
-export const viewSDK = { abi: 1, React, ReactDOM, router, Button, SettingsShortcut };
+// Plugins draw actions with the same components as the app (design/README.md, "Actions").
+export const viewSDK = {
+  abi: 1,
+  React,
+  ReactDOM,
+  router,
+  Button,
+  SettingsShortcut,
+  PaneActions,
+  PaneAction,
+  PaneTitle,
+};
 Reflect.set(globalThis, Symbol.for("heinzel.plugin-sdk.1"), viewSDK);
 export type ViewSDK = typeof viewSDK;
 export type ViewFactory = (sdk: ViewSDK) => React.ComponentType<ViewProps>;

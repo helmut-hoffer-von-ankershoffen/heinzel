@@ -78,25 +78,22 @@ export function PluginsPending({
     </>
   );
   // Every button sits in the one bottom row under the divider, as in every footer pane.
+  const row = confirming && ready ? ({ align: "end", words: "all" } as const) : undefined;
   const actions = (
     <>
       {ready && !activation.changing && !confirming && (
-        <PaneAction icon={RotateCw} onClick={() => setConfirming(true)}>
+        <PaneAction icon={RotateCw} primary onClick={() => setConfirming(true)}>
           {t("lifecycle.action")}
         </PaneAction>
       )}
+      {/* The inline confirmation answers like a dialog: right-aligned, words on both, Cancel first. */}
       {confirming && ready && (
         <>
-          <PaneAction
-            icon={RotateCw}
-            primary
-            withText="The confirmed restart is consequential: the server restarts and the page reconnects."
-            onClick={start}
-          >
-            {action}
-          </PaneAction>
           <PaneAction icon={X} onClick={() => setConfirming(false)}>
             {t("lifecycle.cancel")}
+          </PaneAction>
+          <PaneAction icon={RotateCw} primary onClick={start}>
+            {action}
           </PaneAction>
         </>
       )}
@@ -117,7 +114,9 @@ export function PluginsPending({
       <section className="mb-4 space-y-2 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm">
         <h3 className="font-medium">{t("pluginsPending.restartRequired")}</h3>
         {details}
-        <PaneActions className="px-0">{actions}</PaneActions>
+        <PaneActions className="px-0" {...row}>
+          {actions}
+        </PaneActions>
       </section>
     );
   }
@@ -128,6 +127,7 @@ export function PluginsPending({
       icon={RotateCw}
       className="animate-pulse text-warn"
       actions={actions}
+      actionRow={row}
     >
       <div className="space-y-2 px-1.5 pb-1.5">{details}</div>
     </FooterItem>

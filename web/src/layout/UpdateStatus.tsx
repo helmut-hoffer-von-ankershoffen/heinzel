@@ -9,9 +9,6 @@ import { checkNow, KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
 import { canVerifyUpdate, finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
 import { describe } from "@/updates/updateState";
 
-/** Why the install actions keep their words: they replace the running Heinzel and restart it. */
-const INSTALLS = "Installing an update is consequential: it replaces the running Heinzel and restarts it.";
-
 function updateRecoveryState(): "none" | "inspect" | "verify" {
   const receipt = pendingUpdate();
   return receipt ? (canVerifyUpdate(receipt) ? "verify" : "inspect") : "none";
@@ -119,24 +116,25 @@ export function UpdateStatus() {
       className={view.available && !problem ? "animate-pulse text-bad" : view.allCurrent ? "text-ok" : undefined}
       disabled={busy}
       actions={
+        // The lead is what the pane is for: finish a pending update, else install one; checking again is an icon.
         <>
           {recovery === "verify" && (
-            <PaneAction icon={RotateCcw} withText={INSTALLS} disabled={busy} onClick={() => void run(true)}>
+            <PaneAction icon={RotateCcw} primary disabled={busy} onClick={() => void run(true)}>
               {t("updates.verify")}
             </PaneAction>
           )}
-          {view.canRetry && !busy && (
-            <PaneAction icon={RefreshCw} disabled={retry.isPending} onClick={() => retry.mutate()}>
-              {t("updates.retry")}
-            </PaneAction>
-          )}
           {canUpdate && (
-            <PaneAction icon={Download} withText={INSTALLS} onClick={() => void run(false)}>
+            <PaneAction icon={Download} primary={view.count > 0} onClick={() => void run(false)}>
               {view.count > 1
                 ? t("updates.allAction")
                 : view.count === 1
                   ? t("updates.action")
                   : t("updates.manualAction")}
+            </PaneAction>
+          )}
+          {view.canRetry && !busy && (
+            <PaneAction icon={RefreshCw} disabled={retry.isPending} onClick={() => retry.mutate()}>
+              {t("updates.retry")}
             </PaneAction>
           )}
         </>

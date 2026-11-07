@@ -1,11 +1,11 @@
 import { render, screen } from "@testing-library/react";
-import { Copy, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
+import { Copy, ExternalLink, RefreshCw, Trash2, X } from "lucide-react";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it } from "vitest";
-import { PaneAction, PaneActions } from "./PaneActions";
+import { describe, expect, it, vi } from "vitest";
+import { actionStructureProblems, PaneAction, PaneActions, PaneTitle } from "./PaneActions";
 
 describe("PaneActions", () => {
-  it("draws the divider and one unwrapped row of icon-only actions named by their words", () => {
+  it("leads with the first action's words and draws the rest as named icons, destructive red", () => {
     const { container } = render(
       <MemoryRouter>
         <PaneActions>
@@ -15,7 +15,7 @@ describe("PaneActions", () => {
           <PaneAction icon={Copy} onClick={() => {}}>
             Copy address
           </PaneAction>
-          <PaneAction icon={Trash2} destructive withText="Removing is consequential." onClick={() => {}}>
+          <PaneAction icon={Trash2} destructive onClick={() => {}}>
             Remove
           </PaneAction>
         </PaneActions>
@@ -24,20 +24,79 @@ describe("PaneActions", () => {
     const row = screen.getByRole("group", { name: "Actions" });
     expect(row).toBe(container.querySelector("[data-pane-actions]"));
     expect(row).toHaveClass("border-t", "flex", "flex-nowrap");
+    expect(row).toHaveAttribute("data-words", "lead");
     const doctor = screen.getByRole("link", { name: "Open Doctor" });
     expect(doctor).toHaveAttribute("href", "/doctor");
-    expect(doctor).toHaveAttribute("title", "Open Doctor");
-    expect(doctor).not.toHaveTextContent("Open Doctor");
+    expect(doctor).toHaveTextContent("Open Doctor");
+    expect(doctor).not.toHaveAttribute("title");
     const copy = screen.getByRole("button", { name: "Copy address" });
     expect(copy).toHaveAttribute("title", "Copy address");
-    expect(copy).toHaveAttribute("data-pane-action", "icon");
     expect(copy).not.toHaveTextContent("Copy address");
-    // Words beside the icon only with a reason: here a consequential action.
     const remove = screen.getByRole("button", { name: "Remove" });
     expect(remove).toHaveClass("text-bad");
-    expect(remove).toHaveTextContent("Remove");
-    expect(remove).toHaveAttribute("data-pane-action", "text");
-    expect(remove.querySelector("svg")).not.toBeNull();
+    expect(remove).toHaveAttribute("title", "Remove");
+    expect(actionStructureProblems(container)).toEqual([]);
+  });
+
+  it("drops the lead to its icon when its words would overflow, without a second row", () => {
+    const widths = vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(400);
+    const client = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(250);
+    try {
+      render(
+        <PaneActions>
+          <PaneAction icon={RefreshCw} onClick={() => {}}>
+            Restart daemon
+          </PaneAction>
+          <PaneAction icon={Copy} onClick={() => {}}>
+            Logs
+          </PaneAction>
+        </PaneActions>,
+      );
+      const row = screen.getByRole("group", { name: "Actions" });
+      expect(row).toHaveAttribute("data-words", "none");
+      const lead = screen.getByRole("button", { name: "Restart daemon" });
+      expect(lead).toHaveAttribute("title", "Restart daemon");
+      expect(lead).not.toHaveTextContent("Restart daemon");
+      expect(actionStructureProblems(row.parentElement as HTMLElement)).toEqual([]);
+    } finally {
+      widths.mockRestore();
+      client.mockRestore();
+    }
+  });
+
+  it("answers like a dialog with words on every action, right-aligned, committing last", () => {
+    render(
+      <PaneActions align="end" words="all">
+        <PaneAction icon={X} onClick={() => {}}>
+          Cancel
+        </PaneAction>
+        <PaneAction icon={Trash2} primary destructive onClick={() => {}}>
+          Uninstall
+        </PaneAction>
+      </PaneActions>,
+    );
+    const row = screen.getByRole("group", { name: "Actions" });
+    expect(row).toHaveClass("justify-end");
+    expect(row).toHaveAttribute("data-words", "all");
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveTextContent("Cancel");
+    expect(screen.getByRole("button", { name: "Uninstall" })).toHaveClass("bg-bad");
+  });
+
+  it("puts chrome as ghost icons at the right of the title row", () => {
+    render(
+      <PaneTitle
+        chrome={
+          <PaneAction icon={X} ghost onClick={() => {}}>
+            Dismiss
+          </PaneAction>
+        }
+      >
+        Today
+      </PaneTitle>,
+    );
+    const dismiss = screen.getByRole("button", { name: "Dismiss" });
+    expect(dismiss).toHaveAttribute("title", "Dismiss");
+    expect(dismiss.closest("[data-pane-chrome]")).not.toBeNull();
   });
 
   it("draws nothing, not a stray divider, when every action is hidden", () => {

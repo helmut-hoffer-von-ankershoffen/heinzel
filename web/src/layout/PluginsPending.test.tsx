@@ -28,12 +28,14 @@ it("tells which plugins changed outside the app and offers Restart and apply, wi
   await user.click(within(pane).getByRole("button", { name: "Restart and apply" }));
   expect(within(pane).getByRole("alertdialog", { name: "Restart and apply Plugins" })).toHaveTextContent("Restart");
   const row = within(pane).getByRole("group", { name: "Actions" });
-  // The consequential confirmation keeps its words; Cancel is icon-only with its name as tooltip.
-  expect(within(row).getByRole("button", { name: "Restart and apply Plugins" })).toHaveTextContent(
-    "Restart and apply Plugins",
-  );
-  expect(within(row).getByRole("button", { name: "Cancel" })).toHaveAttribute("title", "Cancel");
-  expect(within(row).getAllByRole("button")).toHaveLength(2);
+  // The inline confirmation answers like a dialog: right-aligned, words on both, Cancel first.
+  expect(row).toHaveAttribute("data-words", "all");
+  expect(row).toHaveClass("justify-end");
+  expect(
+    within(row)
+      .getAllByRole("button")
+      .map((button) => button.textContent),
+  ).toEqual(["Cancel", "Restart and apply Plugins"]);
   await expectPane(pane);
 });
 

@@ -1,4 +1,4 @@
-// The footer pane structure every pane test asserts (design/README.md, "Pane actions"): content, then one divider
+// The footer pane structure every pane test asserts (design/README.md, "Actions"): content, then one divider
 // and one bottom row of action buttons, and no button or link anywhere else in the pane.
 import { within } from "@testing-library/react";
 import { expect } from "vitest";

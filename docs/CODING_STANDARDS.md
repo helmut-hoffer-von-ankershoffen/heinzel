@@ -168,9 +168,11 @@ phone flows is its own test case with its own server and a screenshot subdirecto
 `PLAYWRIGHT_BROWSER=webkit` after installing WebKit with `uv run --script scripts/web_build.py exec playwright-core install webkit`.
 These are browser-engine emulations; physical iPhone Safari remains a separate verification when available.
 
-## Pane actions
+## Actions
 
-Pane anatomy and actions follow [design/README.md](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/design/README.md#pane-actions),
-the single source: content, then one divider, then one unwrapped row of icon-only `PaneAction`s (words only with a
-`withText` reason). Use `FooterItem actions={…}` or `PaneActions`; never a text link as an action or a hand-drawn
-row. `FooterItem`'s development check and `web/src/lib/pane-actions-standards.test.ts` enforce this.
+Actions follow [design/README.md](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/design/README.md#actions),
+the single source: chrome as at most three ghost icons in the title row; content actions in one bottom row under a
+divider, the first with icon and words, the rest named icons, destructive last and red; dialogs right-aligned with
+words. Use `PaneActions`, `PaneAction` and `PaneTitle` (also in the plugin SDK) or `FooterItem actions={…}`; never a
+text link as an action or a hand-drawn row. `assertActionStructure` and `web/src/lib/pane-actions-standards.test.ts`
+enforce this.
