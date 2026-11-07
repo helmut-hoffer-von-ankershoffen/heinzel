@@ -42,9 +42,9 @@ def _plugin_test_suites(text: str) -> str:
 def _without_quarantine(text: str) -> str:
     """The quarantine lane reads the core's tests/quarantine.toml; plugins have no registry."""
     text = text.replace(" test-quarantine quarantine-check quarantine-plan", "")
-    return re.sub(
-        r"\n# The quarantine lane \(scripts/quarantine\.py\).*?(?=\ntest-browser-deps:)", "", text, flags=re.DOTALL
-    )
+    start = text.find("\n# The quarantine lane (scripts/quarantine.py)")
+    end = text.find("\ntest-browser-deps:", start)
+    return text[:start] + text[end:] if 0 <= start < end else text
 
 
 def makefile() -> str:

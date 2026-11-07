@@ -245,7 +245,8 @@ def quarantine_lane(jobs: list[dict[str, Any]], run_id: object, head: str) -> li
         "missing, extra or duplicated quarantine lane jobs",
     )
     for job in lane:
-        allowed = {"success"} if job["name"] == QUARANTINE_REGISTRY else {"success", "failure", "skipped"}
+        # A lane job that hit its time limit ends cancelled; it still never blocks the candidate.
+        allowed = {"success"} if job["name"] == QUARANTINE_REGISTRY else {"success", "failure", "skipped", "cancelled"}
         if job["name"] == QUARANTINE_IDLE:
             allowed = {"skipped"}
         require(

@@ -19,7 +19,8 @@ Commands (standard library only):
   list     one line per entry with its age and days left
   plan     `selected=true|false` and `browsers=true|false` for GitHub's step output (any entry in date, any e2e one)
   run      run only the quarantined tests (HZ_QUARANTINE=only) with up to `--attempts` tries per failing test, write
-           `--report` (JSON) and `--summary` (Markdown); exit 0 whatever the tests do, 2 on an invalid registry
+           reports/quarantine.json and the Markdown summary ($GITHUB_STEP_SUMMARY, else reports/quarantine.md);
+           exit 0 whatever the tests do, 2 on an invalid registry
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "tests" / "quarantine.toml"
+REPORTS = ROOT / "reports"
 MAX_ENTRIES = 8
 MAX_DAYS = 7
 MAX_ATTEMPTS = 3
@@ -75,8 +77,8 @@ class Entry:
         return self.test.split("::", 1)[0]
 
     def matches(self, nodeid: str) -> bool:
-        """The node itself, one of its parametrized cases, or (for a class) one of its methods."""
-        return nodeid == self.test or nodeid.startswith((self.test + "[", self.test + "::"))
+        """The node itself or one of its parametrized cases; never a whole class (a method is `file::Class::name`)."""
+        return nodeid == self.test or nodeid.startswith(self.test + "[")
 
     def active(self, today: dt.date) -> bool:
         """Added and not past `until`: only then does it take the test out of the required jobs."""
@@ -240,12 +242,8 @@ def _status(attempts: list[str]) -> str:
     return "skipped" if attempts[-1] == "skipped" else "fail"
 
 
-def run(
-    entries: Sequence[Entry], on: dt.date, attempts: int = MAX_ATTEMPTS, runner: Runner = _pytest
-) -> dict[str, object]:
-    """Run the entries in date; each failing node is retried by node id, up to `attempts` tries in all."""
-    attempts = max(1, min(attempts, MAX_ATTEMPTS))
-    active = [entry for entry in entries if entry.active(on)]
+def _attempts(active: Sequence[Entry], attempts: int, runner: Runner) -> dict[str, list[str]]:
+    """Node id -> its outcome per try: the first try collects the entries' files, later tries the failed nodes."""
     history: dict[str, list[str]] = {}
     targets = sorted({entry.path for entry in active})
     with tempfile.TemporaryDirectory(prefix="quarantine-") as scratch:
@@ -262,26 +260,34 @@ def run(
             for nodeid, outcome in outcomes.items():
                 history.setdefault(nodeid, []).append(outcome)
             targets = sorted(nodeid for nodeid, outcome in outcomes.items() if outcome == "failed")
-    rows = []
-    for entry in entries:
-        nodes = {nodeid: tries for nodeid, tries in history.items() if entry.matches(nodeid)}
-        if not entry.active(on):
-            status = "overdue" if on > entry.until else "not-started"
-        elif not nodes:
-            status = "not-collected"
-        else:
-            statuses = {_status(tries) for tries in nodes.values()}
-            status = next(s for s in ("fail", "flaky", "skipped", "pass") if s in statuses or s == "pass")
-        rows.append(
-            {
-                "test": entry.test,
-                "bead": entry.bead,
-                "added": entry.added.isoformat(),
-                "until": entry.until.isoformat(),
-                "status": status,
-                "nodes": nodes,
-            }
-        )
+    return history
+
+
+def _row(entry: Entry, history: dict[str, list[str]], on: dt.date) -> dict[str, object]:
+    nodes = {nodeid: tries for nodeid, tries in history.items() if entry.matches(nodeid)}
+    if not entry.active(on):
+        status = "overdue" if on > entry.until else "not-started"
+    elif not nodes:
+        status = "not-collected"
+    else:
+        statuses = {_status(tries) for tries in nodes.values()}
+        status = next((s for s in ("fail", "flaky", "skipped") if s in statuses), "pass")
+    return {
+        "test": entry.test,
+        "bead": entry.bead,
+        "added": entry.added.isoformat(),
+        "until": entry.until.isoformat(),
+        "status": status,
+        "nodes": nodes,
+    }
+
+
+def run(
+    entries: Sequence[Entry], on: dt.date, attempts: int = MAX_ATTEMPTS, runner: Runner = _pytest
+) -> dict[str, object]:
+    """Run the entries in date; each failing node is retried by node id, up to `attempts` tries in all."""
+    attempts = max(1, min(attempts, MAX_ATTEMPTS))
+    history = _attempts([entry for entry in entries if entry.active(on)], attempts, runner)
     return {
         "schema": 1,
         "date": on.isoformat(),
@@ -290,7 +296,7 @@ def run(
         "ref": os.environ.get("GITHUB_REF", ""),
         "event": os.environ.get("GITHUB_EVENT_NAME", ""),
         "attempts": attempts,
-        "entries": rows,
+        "entries": [_row(entry, history, on) for entry in entries],
     }
 
 
@@ -317,22 +323,24 @@ def summary(report: dict[str, object]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def main(argv: Sequence[str] | None = None, on: dt.date | None = None) -> int:
-    """Parse the command line and run one command; `on` replaces today's date in tests."""
+def main(
+    argv: Sequence[str] | None = None, on: dt.date | None = None, registry: Path = REGISTRY, out: Path = REPORTS
+) -> int:
+    """Parse the command line and run one command; tests replace today's date, the registry and the output folder.
+
+    The registry and the output folder are fixed paths in this checkout: no command-line argument names a file.
+    """
     parser = argparse.ArgumentParser(prog="quarantine.py", description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("check")
     commands.add_parser("list")
     commands.add_parser("plan")
-    runs = commands.add_parser("run")
-    runs.add_argument("--attempts", type=int, default=MAX_ATTEMPTS)
-    runs.add_argument("--report", type=Path)
-    runs.add_argument("--summary", type=Path)
-    parser.add_argument("--registry", type=Path, default=REGISTRY)
+    commands.add_parser("run").add_argument("--attempts", type=int, default=MAX_ATTEMPTS)
     arguments = parser.parse_args(argv)
+    arguments.out = out
     on = on or today()
     try:
-        entries = load(arguments.registry)
+        entries = load(registry)
     except RegistryError as error:
         print(f"quarantine: invalid registry\n{error}", file=sys.stderr)
         return 2 if arguments.command == "run" else 1
@@ -361,16 +369,16 @@ def _plan(entries: Sequence[Entry], on: dt.date, _: argparse.Namespace) -> int:
 
 
 def _run(entries: Sequence[Entry], on: dt.date, arguments: argparse.Namespace) -> int:
+    """Write reports/quarantine.json and append the summary to GitHub's step summary (reports/quarantine.md locally)."""
     report = run(entries, on, arguments.attempts)
     text = summary(report)
     print(text)
-    if arguments.report:
-        arguments.report.parent.mkdir(parents=True, exist_ok=True)
-        arguments.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    if arguments.summary:
-        arguments.summary.parent.mkdir(parents=True, exist_ok=True)
-        with arguments.summary.open("a", encoding="utf-8") as handle:
-            handle.write(text)
+    out: Path = arguments.out
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "quarantine.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    with Path(step_summary or out / "quarantine.md").open("a", encoding="utf-8") as handle:
+        handle.write(text)
     return 0
 
 

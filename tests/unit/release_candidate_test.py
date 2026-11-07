@@ -469,6 +469,12 @@ def _lane(*names_and_conclusions):
             ("Quarantine (ubuntu-24.04)", "success"),
             ("Quarantine (macos-latest)", "failure"),
         ],
+        [
+            ("Quarantine registry", "success"),
+            ("Quarantine plan", "success"),
+            ("Quarantine (ubuntu-24.04)", "cancelled"),
+            ("Quarantine (macos-latest)", "success"),
+        ],
     ],
 )
 def test_the_quarantine_lane_never_refuses_a_candidate_but_its_registry_check_must_pass(lane):

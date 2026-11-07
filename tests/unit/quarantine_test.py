@@ -3,6 +3,7 @@
 import datetime as dt
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -64,24 +65,30 @@ def test_a_complete_entry_is_read():
     ],
 )
 def test_an_entry_without_a_bead_and_a_near_deadline_is_refused(fields, says):
-    with pytest.raises(quarantine.RegistryError, match=says.replace("[", r"\[").replace("]", r"\]")):
-        quarantine.parse(entry_text(**fields))
+    text = entry_text(**fields)
+    with pytest.raises(quarantine.RegistryError, match=re.escape(says)):
+        quarantine.parse(text)
 
 
 def test_at_most_eight_entries():
     rows = [entry_text(test=f'"tests/unit/x_test.py::test_{n}"') for n in range(quarantine.MAX_ENTRIES + 1)]
+    nine, eight = "".join(rows), "".join(rows[:-1])
     with pytest.raises(quarantine.RegistryError, match="9 entries, at most 8"):
-        quarantine.parse("".join(rows))
-    assert len(quarantine.parse("".join(rows[:-1]))) == quarantine.MAX_ENTRIES
+        quarantine.parse(nine)
+    assert len(quarantine.parse(eight)) == quarantine.MAX_ENTRIES
 
 
-def test_overlapping_entries_and_stray_keys_are_refused():
-    with pytest.raises(quarantine.RegistryError, match="overlaps"):
-        quarantine.parse(entry_text() + entry_text(test=f'"{TEST}[phone]"'))
-    with pytest.raises(quarantine.RegistryError, match="top-level"):
-        quarantine.parse("max_entries = 99\n" + entry_text())
-    with pytest.raises(quarantine.RegistryError, match="not valid TOML"):
-        quarantine.parse("[[quarantine]\n")
+@pytest.mark.parametrize(
+    ("text", "says"),
+    [
+        (entry_text() + entry_text(test=f'"{TEST}[phone]"'), "overlaps"),
+        ("max_entries = 99\n" + entry_text(), "top-level"),
+        ("[[quarantine]\n", "not valid TOML"),
+    ],
+)
+def test_overlapping_entries_and_stray_keys_are_refused(text, says):
+    with pytest.raises(quarantine.RegistryError, match=says):
+        quarantine.parse(text)
 
 
 def test_an_entry_past_until_quarantines_nothing_and_fails_the_check():
@@ -98,26 +105,28 @@ def test_an_entry_matches_its_parametrized_cases_but_not_a_similar_name():
     (entry,) = quarantine.parse(entry_text())
     assert entry.matches(f"{TEST}[phone]")
     assert not entry.matches(f"{TEST}_two")
+    (cls,) = quarantine.parse(entry_text(test='"tests/unit/x_test.py::TestGroup"'))
+    assert not cls.matches("tests/unit/x_test.py::TestGroup::test_one")  # one entry never empties a whole class
 
 
 def test_the_check_command_fails_on_an_overdue_entry_and_an_invalid_registry(tmp_path, capsys):
     registry = tmp_path / "quarantine.toml"
     registry.write_text(entry_text())
-    assert quarantine.main(["--registry", str(registry), "check"], on=DAY) == 0
+    assert quarantine.main(["check"], on=DAY, registry=registry) == 0
     assert "1/8 entries, all in date" in capsys.readouterr().out
-    assert quarantine.main(["--registry", str(registry), "check"], on=dt.date(2026, 11, 11)) == 1
+    assert quarantine.main(["check"], on=dt.date(2026, 11, 11), registry=registry) == 1
     registry.write_text(entry_text(bead=""))
-    assert quarantine.main(["--registry", str(registry), "check"], on=DAY) == 1
-    assert quarantine.main(["--registry", str(registry), "run"], on=DAY) == 2
-    assert quarantine.main(["--registry", str(tmp_path / "absent.toml"), "check"], on=DAY) == 0
+    assert quarantine.main(["check"], on=DAY, registry=registry) == 1
+    assert quarantine.main(["run"], on=DAY, registry=registry) == 2
+    assert quarantine.main(["check"], on=DAY, registry=tmp_path / "absent.toml") == 0
 
 
 def test_the_plan_selects_the_lane_and_browsers_only_for_entries_in_date(tmp_path, capsys):
     registry = tmp_path / "quarantine.toml"
     registry.write_text(entry_text(test='"tests/e2e/web_ui_test.py::test_phone"'))
-    assert quarantine.main(["--registry", str(registry), "plan"], on=DAY) == 0
+    assert quarantine.main(["plan"], on=DAY, registry=registry) == 0
     assert capsys.readouterr().out.split() == ["selected=true", "browsers=true"]
-    quarantine.main(["--registry", str(registry), "plan"], on=dt.date(2026, 11, 11))
+    quarantine.main(["plan"], on=dt.date(2026, 11, 11), registry=registry)
     assert capsys.readouterr().out.split() == ["selected=false", "browsers=false"]
 
 
@@ -201,13 +210,21 @@ def test_a_broken_session_counts_as_a_failure_of_every_named_node():
 def test_the_main_run_writes_report_and_summary(tmp_path, monkeypatch, capsys):
     registry = tmp_path / "quarantine.toml"
     registry.write_text("")
-    out = tmp_path / "out" / "quarantine.json"
-    summary = tmp_path / "out" / "summary.md"
-    args = ["--registry", str(registry), "run", "--report", str(out), "--summary", str(summary)]
-    assert quarantine.main(args, on=DAY) == 0
-    assert json.loads(out.read_text())["entries"] == []
-    assert "No entries." in summary.read_text()
+    out = tmp_path / "out"
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    assert quarantine.main(["run"], on=DAY, registry=registry, out=out) == 0
+    assert json.loads((out / "quarantine.json").read_text())["entries"] == []
+    assert "No entries." in (out / "quarantine.md").read_text()
+    step = tmp_path / "step-summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step))
+    assert quarantine.main(["run"], on=DAY, registry=registry, out=out) == 0
+    assert "No entries." in step.read_text()
     capsys.readouterr()
+
+
+def test_no_command_line_argument_names_a_file():
+    with pytest.raises(SystemExit):
+        quarantine.main(["--registry", "/etc/passwd", "check"], on=DAY)
 
 
 class _Item:
@@ -312,3 +329,6 @@ def test_the_repository_registry_is_valid_and_its_lane_is_wired_into_ci():
     runs = [step.get("run") for step in jobs["quarantine-registry"]["steps"]]
     assert "make quarantine-check" in runs
     assert any(step.get("run") == "make test-quarantine" for step in jobs["quarantine"]["steps"])
+    recipe = (ROOT / "Makefile").read_text(encoding="utf-8").split("\nquarantine-check:", 1)[1].split("\n\n", 1)[0]
+    assert "@$(QUARANTINE) check" in recipe  # the required expiry check cannot become a no-op recipe
+    assert "QUARANTINE := uv run --quiet --script scripts/quarantine.py\n" in (ROOT / "Makefile").read_text()
