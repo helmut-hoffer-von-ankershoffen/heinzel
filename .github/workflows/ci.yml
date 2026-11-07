@@ -99,6 +99,11 @@ jobs:
       site_only: ${{ steps.paths.outputs.site_only }}
       macos_full: ${{ steps.paths.outputs.macos_full }}
       full_release: ${{ steps.release.outputs.full_release }}
+      affected_full: ${{ steps.affected.outputs.affected_full }}
+      affected_jobs: ${{ steps.affected.outputs.affected_jobs }}
+      affected_pytest: ${{ steps.affected.outputs.affected_pytest }}
+      affected_vitest: ${{ steps.affected.outputs.affected_vitest }}
+      affected_e2e: ${{ steps.affected.outputs.affected_e2e }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -186,6 +191,30 @@ jobs:
             echo "electron=true" >> "$GITHUB_OUTPUT"
           else
             echo "electron=false" >> "$GITHUB_OUTPUT"
+          fi
+      # Shadow mode: the selector only reports. No job reads these outputs in an `if:`, so the path rules above stay the
+      # one thing that skips a job; the selection is compared with what actually broke before any job may rely on it.
+      - id: affected
+        name: Shadow mode, advisory - report which tests and jobs the changed paths would select
+        env:
+          BASE: ${{ needs.admission.outputs.base || github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          python3 -I scripts/affected.py --repo . --base "$BASE" --json > "$RUNNER_TEMP/affected.json" \
+            || echo "::notice title=Affected-tests selector::unavailable (advisory only); every job still follows the path rules"
+          if jq -e '.jobs' "$RUNNER_TEMP/affected.json" > /dev/null 2>&1; then
+            {
+              echo "affected_full=$(jq -c '.full' "$RUNNER_TEMP/affected.json")"
+              echo "affected_jobs=$(jq -c '.jobs' "$RUNNER_TEMP/affected.json")"
+              echo "affected_pytest=$(jq -c '.pytest' "$RUNNER_TEMP/affected.json")"
+              echo "affected_vitest=$(jq -c '.vitest' "$RUNNER_TEMP/affected.json")"
+              echo "affected_e2e=$(jq -c '.e2e_lanes' "$RUNNER_TEMP/affected.json")"
+            } >> "$GITHUB_OUTPUT"
+            {
+              echo "### Affected-tests selector (shadow mode: advisory, no job is skipped by it)"
+              echo '```text'
+              jq -r '"full: \(.full)\njobs: \(.jobs | join(" "))\ne2e lanes: \(.e2e_lanes | join(" "))\npytest: \(.pytest | length) path(s)\nvitest: \(.vitest | length) file(s)\nreasons:", (.reasons[] | "  - " + .)' "$RUNNER_TEMP/affected.json"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
   dependency-review:

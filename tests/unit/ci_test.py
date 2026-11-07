@@ -60,6 +60,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
         "python3 -I scripts/release_candidate.py": "selects or records release source",
+        "python3 -I scripts/affected.py": "advisory shadow report of the tests and jobs the changed paths would select",
         "uv run --frozen --no-sync --no-build python scripts/ci_node.py": (
             "exports the already installed locked runtime through GitHub's step-local GITHUB_PATH setup contract"
         ),
@@ -229,6 +230,32 @@ def test_workflows_run_checks_through_make(workflow):
     assert not_through_make(workflow) == [], "run these through a make target, or add them to NOT_MAKE with a reason"
 
 
+def test_affected_selector_runs_in_shadow_mode_and_skips_no_job():
+    """The selector only reports from the `changes` job; today's path rules alone may skip a job."""
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    changes = workflow["jobs"]["changes"]
+    step = next(step for step in changes["steps"] if step.get("id") == "affected")
+    assert "python3 -I scripts/affected.py --repo ." in step["run"]
+    assert '"$BASE"' in step["run"]
+    assert "${{" not in step["run"], "expressions reach the shell through env only"
+    assert "BASE" in step["env"]
+    # Advisory: a failing selector prints a notice and leaves the job green.
+    assert "|| echo" in step["run"]
+    assert "continue-on-error" not in step
+    assert "continue-on-error" not in changes
+    for name in ("full", "jobs", "pytest", "vitest", "e2e"):
+        assert changes["outputs"][f"affected_{name}"] == f"${{{{ steps.affected.outputs.affected_{name} }}}}"
+        assert f"affected_{name}=" in step["run"]
+    assert "GITHUB_STEP_SUMMARY" in step["run"]
+    # Shadow mode: nothing reads the selection to decide anything.
+    for job_name, job in workflow["jobs"].items():
+        conditions = [str(job.get("if", ""))] + [str(s.get("if", "")) for s in job.get("steps", [])]
+        assert not any("affected" in condition for condition in conditions), job_name
+        assert "affected_" not in json.dumps(job.get("strategy", {})), job_name
+        if job_name != "changes":
+            assert "affected_" not in json.dumps(job), job_name
+
+
 def test_every_main_commit_gets_its_own_ci_run_while_pull_requests_cancel_superseded_runs():
     concurrency = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["concurrency"]
 
@@ -288,7 +315,7 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
     git("add", ".")
     git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "--quiet", "-m", "feat: change")
     output = tmp_path / "outputs"
-    script = jobs["changes"]["steps"][-1]["run"]
+    script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
     subprocess.run(
         ["bash", "-euo", "pipefail", "-c", script],
         cwd=tmp_path,
