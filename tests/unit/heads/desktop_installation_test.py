@@ -335,6 +335,8 @@ def test_native_quarantine_and_process_detection(tmp_path):
     assert quarantine.startswith(b"0081;")
     sleep = Path(shutil.copyfile("/bin/sleep", bundle / "sleep"))
     sleep.chmod(0o700)
+    # macOS 27 kills a copied system binary that keeps Apple's signature (exit 137): sign the copy ad hoc.
+    subprocess.run(["/usr/bin/codesign", "-s", "-", "--force", str(sleep)], check=True, capture_output=True, timeout=30)
     with subprocess.Popen([str(sleep), "20"]) as process:
         try:
             assert desktop._in_use(bundle)
