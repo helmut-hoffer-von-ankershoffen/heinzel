@@ -1,0 +1,2 @@
+Installed hz 0.0.0 at <tmp>/tool/bin/hz. Nothing started.
+Next: hz start (asks), or hz start --yes.

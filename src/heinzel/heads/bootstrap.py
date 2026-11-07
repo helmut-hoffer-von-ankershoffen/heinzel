@@ -88,7 +88,7 @@ def _install_app(executable: Path, environment: dict[str, str]) -> bool:
     command = [str(executable.parent / "python"), "-I", "-m", "heinzel", "app"]
     try:
         installed = subprocess.run(  # noqa: S603 - verified persistent interpreter and fixed operation
-            [*command, "install"], env=environment, check=False, timeout=900, stdout=sys.stderr
+            [*command, "install", "--yes"], env=environment, check=False, timeout=900, stdout=sys.stderr
         )
         checked = subprocess.run(  # noqa: S603 - same interpreter, read-only check
             [*command, "doctor", "--json"], env=environment, capture_output=True, text=True, check=False, timeout=120

@@ -11,15 +11,14 @@ from heinzel.heads import _start_messages as words
 from heinzel.heads import bootstrap
 
 pytestmark = pytest.mark.unit
-BANNED = ("receipt", "bundle", "metadata", "seal", "lock")
 
 
 @pytest.mark.parametrize("message", words.FAILURES)
 def test_every_start_failure_is_two_short_lines_that_end_with_a_command(message):
     lines = message.splitlines()
     assert len(lines) <= 2
-    assert all(len(line) <= 110 for line in lines)
-    assert not any(word in message.lower() for word in BANNED)
+    assert all(len(line) <= words.MAX_LINE for line in lines)
+    assert not any(word in message.lower() for word in words.BANNED_WORDS)
     if len(lines) == 2:
         assert " hz " in f" {lines[1]}"
 
