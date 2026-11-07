@@ -243,7 +243,9 @@ describe("ChatPanel", () => {
   it("names the per-message and per-chat caps before anything is sent", async () => {
     mockApi(base);
     renderAt("/doctor");
-    expect(await screen.findByText(/at most \$0\.25 per message/)).toBeInTheDocument();
+    const info = await screen.findByRole("button", { name: "What this chat may cost" });
+    expect(info).toHaveAccessibleDescription(/at most \$0\.25 per message/);
+    expect(screen.getByRole("tooltip", { hidden: true })).not.toBeVisible();
   });
 
   it("opens a session about the current screen, streams the answer, and shows its cost", async () => {

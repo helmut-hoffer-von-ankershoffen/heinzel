@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { answered, at, base, empty, frame, mockWithHeldStream } from "@/test/chat";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { costState } from "./Conversation";
 import { ago, switcherGroups } from "./SessionSwitcher";
 
 afterEach(() => {
@@ -95,11 +96,34 @@ describe("The chat's session switcher", () => {
     expect(screen.getByRole("button", { name: "New chat: switch chats" })).toBeInTheDocument();
   });
 
-  it("says what a message may cost in one line, the rest in its info", async () => {
+  it("keeps the cost out of the page: an info icon beside the model picker shows it on hover, focus and tap", async () => {
+    const user = userEvent.setup();
     mockApi(base);
     renderAt("/doctor");
-    expect(await screen.findByText(/^Up to \$0\.25 per message · this chat \$0\.00$/)).toBeInTheDocument();
-    expect(screen.getByTitle(/Runs your agent runner and may cost money/)).toBeInTheDocument();
+    const info = await screen.findByRole("button", { name: "What this chat may cost" });
+    expect(screen.queryByText(/^Up to \$0\.25 per message/)).not.toBeVisible();
+    const tip = screen.getByRole("tooltip", { hidden: true });
+    expect(tip).not.toBeVisible();
+    expect(info).toHaveAccessibleDescription(/Up to \$0\.25 per message · this chat \$0\.00/);
+    expect(info).toHaveAccessibleDescription(/Runs your agent runner and may cost money/);
+    await user.hover(info);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Up to $0.25 per message · this chat $0.00");
+    await user.unhover(info);
+    expect(tip).not.toBeVisible();
+    info.focus(); // keyboard focus and a tap both land here
+
+    expect(screen.getByRole("tooltip")).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(tip).not.toBeVisible();
+    expect(info).toHaveAttribute("data-cost-state", "ok");
+  });
+
+  it("warns on the icon, not only in the tooltip, near and over the chat's cap", () => {
+    expect(costState(0, 5)).toBe("ok");
+    expect(costState(3.9, 5)).toBe("ok");
+    expect(costState(4, 5)).toBe("near");
+    expect(costState(5, 5)).toBe("over");
+    expect(costState(9, null)).toBe("ok");
   });
 
   it("groups and words what it lists", () => {

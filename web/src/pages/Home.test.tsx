@@ -20,7 +20,9 @@ describe("Home", () => {
     expect(await screen.findByRole("heading", { name: "Today" })).toBeInTheDocument();
     expect(screen.getByLabelText("Your message")).toHaveFocus();
     expect(screen.queryByRole("complementary", { name: "Ask" })).not.toBeInTheDocument();
-    expect(await screen.findByText(/at most \$0\.25 per message/)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "What this chat may cost" })).toHaveAccessibleDescription(
+      /at most \$0\.25 per message/,
+    );
     await screen.findByRole("heading", { name: "Doctor: 2 checks need attention" });
     await expectAccessible(container);
   });
