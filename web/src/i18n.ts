@@ -267,6 +267,7 @@ const en = {
   "command.copied": "Copied",
   "app.skip": "Skip to content",
   "nav.label": "Main",
+  "nav.brand": "Heinzelmännchen home",
   "nav.home": "Today",
   "nav.heinzelmaennchen": "Heinzelmännchen",
   "nav.settings": "Settings",

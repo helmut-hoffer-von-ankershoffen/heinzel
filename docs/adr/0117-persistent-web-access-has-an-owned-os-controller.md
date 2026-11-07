@@ -93,7 +93,15 @@ installation, paired devices and update handoff while making process availabilit
    also refuse while a mutation gate is pending. These are sampled pre-import/restart checks, not atomic
    coordination with a concurrent writer. Repeated OS attempts remain throttled. Refusal does not establish
    automatic recovery: the existing mutation authority or supported repair must settle the interrupted change.
-   No new continuity checkpoint or untrialed runtime is silently endorsed.
+   No new continuity checkpoint or untrialed runtime is silently endorsed. That authority is the daemon lifecycle:
+   a daemon tick, `hz system update`, `hz system daemon restart` or `install` archives a `mutation-pending.json`
+   only while holding the lifecycle and tick locks, when its exact recorded form proves the owner ended (an earlier
+   boot by recorded boot identity or, for the legacy token-only form, a modification time before the current boot;
+   or an exited recorded process in this boot), no other gate or newer handover request from that attempt remains,
+   and the installed tool matches its existing startup checkpoint. The marker moves with its exact bytes to an
+   archive beside a receipt of that evidence; nothing else is changed. The throttled launcher then starts on a
+   later attempt. A supervised server's stderr goes to an owner-only `web.err.log` in `hz.log_dir`, moved aside past
+   1 MiB at start; the session URL is never announced in supervised mode, and the OS job still discards both streams.
 8. **Removal.** Uninstall first unloads/stops the exact owned job and verifies the stop, then removes matching
    integration and launcher files. Foreign, edited or unknown loaded identities are left untouched and produce an
    error. If all integration entries are absent by lstat, uninstall returns without querying or touching any
