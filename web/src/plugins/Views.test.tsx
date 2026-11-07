@@ -70,6 +70,7 @@ describe("a view's form", () => {
     expect(call.body).toEqual({ text: "It's broken" });
     expect(call.command).toBe(`hz issues submit --text 'It'"'"'s broken'`);
     expect(() => formCall(report, { other: "x" })).toThrow("This form takes no other");
+    expect(() => formCall(report, { text: Number.NaN })).toThrow("text must be");
     expect(() => formCall({ ...report, call: { ...report.call, body: null } }, { text: "x" })).toThrow();
     expect(() => formCall({ kind: "navigate", path: "/" }, { text: "x" })).toThrow();
     expect(() => formCall(undefined, {})).toThrow();

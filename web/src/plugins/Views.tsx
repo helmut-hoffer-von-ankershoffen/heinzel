@@ -7,9 +7,9 @@ import { useLocation } from "react-router";
 import { api, unwrap } from "@/api/client";
 import { token } from "@/api/token";
 import { type Effect, useEffectRunner } from "@/components/Contributions";
-import { confirmOperation } from "@/lib/operationRun";
 import { SettingsShortcut } from "@/components/SettingsShortcut";
 import { Button } from "@/components/ui/button";
+import { confirmOperation } from "@/lib/operationRun";
 import { NotFound } from "@/pages/Profile";
 
 export type ViewEntry = {
@@ -52,7 +52,8 @@ export function formCall(effect: Effect | undefined, values: Record<string, Form
   const typed = Object.entries(values);
   for (const [name, value] of typed) {
     if (!inputs.has(name)) throw new Error(`This form takes no ${name}`);
-    if (!["string", "number", "boolean"].includes(typeof value)) throw new Error(`${name} must be text`);
+    const plain = typeof value === "string" || typeof value === "boolean" || Number.isFinite(value);
+    if (!plain) throw new Error(`${name} must be text, a number or yes/no`);
   }
   const words = typed.map(([name, value]) => `--${name.replaceAll("_", "-")} ${quoted(value)}`);
   return {
