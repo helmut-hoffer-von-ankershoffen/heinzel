@@ -1,4 +1,5 @@
 import { isIP } from "node:net";
+import { LOCAL_NAME } from "./mini-browser-network.js";
 import { isOwnedUiNavigation } from "./ui-navigation.js";
 
 /** Admit HTTPS destinations, never credentials, local service routes or external protocol handlers. */
@@ -10,7 +11,7 @@ export function browserUrl(value, productOrigin) {
   // Literal addresses and local DNS suffixes are deliberately outside this first browser surface.
   if (url.protocol !== "https:" || (url.port && url.port !== "443") || url.username || url.password || url.origin === productOrigin ||
       isIP(host) || !host.includes(".") || host.endsWith(".") ||
-      /(?:^|\.)(?:localhost|local|internal|test|invalid)$/u.test(host))
+      LOCAL_NAME.test(host))
     throw new Error("Enter a public HTTPS address without credentials.");
   return url.href;
 }

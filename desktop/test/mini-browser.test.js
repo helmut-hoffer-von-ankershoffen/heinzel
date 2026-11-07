@@ -60,6 +60,26 @@ test("all permissions, downloads, popup dispatch and local redirects/subresource
     session.before({ url }, (result) => assert.equal(result.cancel, true));
   session.before({ url: "https://example.com/image.png" }, (result) => assert.equal(result.cancel, false));
 });
+test("every redirect hop and request to a non-public target is refused, a public hop passes", async () => {
+  const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
+  const session = f.sessions[0], contents = f.views[0].webContents;
+  const hops = ["http://example.com/", "https://127.0.0.1/", "https://10.0.0.5/", "https://192.168.1.2/",
+    "https://172.20.0.1/", "https://169.254.169.254/", "https://100.101.102.103/", "https://mini.tail1234.ts.net/",
+    "https://mini.local/", "https://localhost/", "file:///etc/hosts", "data:text/html,a", "javascript:alert(1)",
+    "blob:https://example.com/id", "http://127.0.0.1:8737/"];
+  for (const url of hops) {
+    for (const event of ["will-redirect", "will-navigate", "will-frame-navigate"]) {
+      let prevented = false;
+      contents.emit(event, { url, preventDefault: () => { prevented = true; } });
+      assert.equal(prevented, true, `${event}: ${url}`);
+    }
+    session.before({ url }, (result) => assert.equal(result.cancel, true, url));
+  }
+  let prevented = false;
+  contents.emit("will-redirect", { url: "https://www.example.com/next", preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, false);
+  await assert.rejects(f.invoke({ action: "navigate", url: "https://mini.tail1234.ts.net/" }));
+});
 test("surface layout is bounded, hidden on request, destroyed on product navigation and session not reused", async () => {
   const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
   await assert.rejects(f.invoke({ action: "layout", bounds: { x: -1, y: 0, width: 100, height: 100 } }));

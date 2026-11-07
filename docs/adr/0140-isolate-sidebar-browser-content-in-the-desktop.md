@@ -6,7 +6,7 @@ decision-makers: maintainer
 related: 0039, 0045, 0115
 ---
 
-# 0138: Isolate sidebar browsing from the workspace
+# 0140: Isolate sidebar browsing from the workspace
 
 ## Context and Problem Statement
 
@@ -26,12 +26,14 @@ Use an Electron WebContentsView with a fresh nonpersistent session, sandbox, con
 Node integration. The authenticated product main frame controls this surface through narrowly validated commands.
 Do not grant guest permissions, downloads, popups or external protocol dispatch. Keep ordinary certificate checks.
 
-HTTPS navigation and subrequests reject credentials, literal IP addresses, local names and the product origin.
+HTTPS navigation, every redirect hop and subrequests reject credentials, literal IP addresses, local names
+(`localhost`, `*.local`, `*.internal`, tailnet `*.ts.net`), non-HTTPS schemes and the product origin.
 Only the default TLS port is supported. Before creating the guest view, configure its fresh session with a fixed,
 authenticated local CONNECT broker and explicitly subtract Chromium's implicit loopback bypass. Close pooled
 connections before the first navigation.
 
-The broker resolves both address families, rejects any nonpublic answer,
+The broker resolves both address families, rejects any nonpublic answer (loopback, private, link-local, CGNAT and
+tailnet 100.64/10, ULA, documentation and transition ranges),
 and connects a selected numeric address without a second DNS lookup. It does not decrypt TLS or receive product
 credentials. It rejects ordinary HTTP, arbitrary ports and unauthenticated clients, bounds connection/header/time
 resources, and closes all sockets when the guest closes. Proxy failure has no configured direct fallback.

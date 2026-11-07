@@ -12,6 +12,20 @@ test("public HTTPS URL preserves site-specific path and rejects local or credent
     assert.throws(() => browserUrl(url, origin));
   assert.throws(() => browserUrl("https://workspace.example.com/", "https://workspace.example.com"));
 });
+test("each non-public target class is refused, by literal address and by local or tailnet name", () => {
+  const classes = {
+    scheme: ["file:///Users", "data:text/html,a", "javascript:alert(1)", "blob:https://example.com/id", "http://example.com", "ftp://example.com"],
+    loopback: ["https://127.0.0.1", "https://127.1.2.3", "https://[::1]", "https://localhost", "https://app.localhost"],
+    private: ["https://10.0.0.1", "https://172.16.0.1", "https://172.31.255.1", "https://192.168.1.10", "https://[fc00::1]"],
+    linkLocal: ["https://169.254.169.254", "https://[fe80::1]"],
+    tailnet: ["https://100.64.0.1", "https://100.127.255.254", "https://mini.tail1234.ts.net", "https://ts.net"],
+    localName: ["https://mini.local", "https://printer.home.arpa", "https://svc.internal"],
+    port: ["https://example.com:8737", "https://example.com:8443"],
+  };
+  for (const [name, urls] of Object.entries(classes))
+    for (const url of urls) assert.throws(() => browserUrl(url, origin), undefined, `${name}: ${url}`);
+  assert.equal(browserUrl("https://news.ts.network/", origin), "https://news.ts.network/");
+});
 test("geometry requires an exact finite integer rectangle contained in the owner", () => {
   const rectangle = { x: 600, y: 100, width: 300, height: 500 };
   assert.deepEqual(browserBounds(rectangle, [1000, 700]), rectangle);

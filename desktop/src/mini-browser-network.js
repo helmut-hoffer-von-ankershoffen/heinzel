@@ -4,6 +4,9 @@ import { createServer } from "node:http";
 import { BlockList, connect, isIP } from "node:net";
 import { networkInterfaces } from "node:os";
 
+/** Names that resolve to this machine, the local network or the tailnet are never browser destinations. */
+export const LOCAL_NAME = /(?:^|\.)(?:localhost|local|internal|test|invalid|ts\.net|home\.arpa)$/u;
+
 const denied = new BlockList();
 for (const [address, prefix] of [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10],
   ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.0.0.0", 24],
@@ -31,7 +34,7 @@ export function connectHost(authority) {
       !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?:443$/i.test(authority))
     throw new Error("Unsupported browser destination.");
   const host = authority.slice(0, -4).toLowerCase();
-  if (/(?:^|\.)(?:localhost|local|internal|test|invalid)$/.test(host)) throw new Error("Unsupported browser destination.");
+  if (LOCAL_NAME.test(host)) throw new Error("Unsupported browser destination.");
   return host;
 }
 

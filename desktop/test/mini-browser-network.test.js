@@ -7,6 +7,21 @@ test("broker excludes special, local, mapped and transition addresses", () => {
   for (const address of ["127.0.0.1", "10.1.2.3", "169.254.169.254", "100.64.0.1", "192.168.1.1", "224.0.0.1", "0.0.0.0", "198.18.0.1", "::1", "::ffff:8.8.8.8", "64:ff9b::808:808", "2002:808:808::1", "2001:db8::1", "fc00::1", "fe80::1%en0", "nonsense"]) assert.equal(publicAddress(address), false, address);
   for (const address of ["8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"]) assert.equal(publicAddress(address), true, address);
 });
+test("DNS answers in every non-public class refuse, so a public name cannot point at this host or the tailnet", () => {
+  const classes = {
+    loopback: ["127.0.0.1", "127.255.0.1", "::1"],
+    private: ["10.0.0.1", "172.16.0.1", "172.31.255.255", "192.168.0.1", "fc00::1", "fd12:3456::1"],
+    linkLocal: ["169.254.0.1", "fe80::1"],
+    tailnet: ["100.64.0.1", "100.100.100.100", "100.127.255.255", "fd7a:115c:a1e0::1"],
+    unspecified: ["0.0.0.0", "::"],
+  };
+  for (const [name, addresses] of Object.entries(classes))
+    for (const address of addresses) {
+      assert.equal(publicAddress(address), false, `${name}: ${address}`);
+      assert.throws(() => selectPublicAddress(["93.184.215.14", address]), undefined, `${name}: ${address}`);
+    }
+  for (const authority of ["mini.tail1234.ts.net:443", "printer.home.arpa:443"]) assert.throws(() => connectHost(authority));
+});
 test("CONNECT accepts only canonical DNS authorities on TLS port", () => {
   assert.equal(connectHost("EXAMPLE.com:443"), "example.com");
   for (const authority of ["example.com:80", "example.com:8443", "127.0.0.1:443", "[::1]:443", "localhost:443", "host.local:443", "user@example.com:443", "example.com.:443", "example.com:443/path", "example.com:443\r\n", "example.com"]) assert.throws(() => connectHost(authority));
