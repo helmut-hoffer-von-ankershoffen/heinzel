@@ -4,11 +4,14 @@ It runs at the end of a tick, before notices pop up, rather than as a job of its
 hourly receipt for it would say nothing a notice doesn't.
 """
 
+import logging
+
 from heinzel import HeinzelError, Kernel, NoticeKind, Notifications, OperationLet, ResolveWhen, Status
 from heinzel.kernel import ReleaseCache
 from heinzel.modules.system.notify._channels import DaemonState
-from heinzel.modules.system.notify._resolve import RELEASE_KEY, installed_version
+from heinzel.modules.system.notify._resolve import DOCTOR_KEY, RELEASE_KEY, installed_version
 
+logger = logging.getLogger(__name__)
 SHOWN_PROBLEMS = 3
 
 
@@ -53,14 +56,17 @@ def daemon_state(kernel: Kernel) -> DaemonState | None:
     )
 
 
-def _doctor(kernel: Kernel, notifications: Notifications) -> int:
-    """Run doctor through the kernel (modules don't import each other) and report what isn't up."""
+def _report(kernel: Kernel) -> tuple[Status, list[str]] | None:
+    """Doctor's status and the checks that aren't up (`<module>: <check>`); None if it can't run.
+
+    It runs through the kernel: modules don't import each other.
+    """
     found = next(
         (let for owner, let in kernel.lets(OperationLet) if (owner.qualname, let.name) == ("system.doctor", "doctor")),
         None,
     )
     if found is None or not kernel.available(found.func):
-        return 0
+        return None
     report = kernel.invoke(found)
     problems = sorted(
         f"{qualname}: {check.name}"
@@ -68,9 +74,32 @@ def _doctor(kernel: Kernel, notifications: Notifications) -> int:
         for check in checks
         if check.status is not Status.UP and qualname != "system.notify"
     )
-    if report.status is Status.UP or not problems:
+    return report.status, problems
+
+
+def doctor_problems(kernel: Kernel) -> set[str] | None:
+    """The checks that aren't up now, for a doctor notice's `checks_up`; None if doctor can't tell."""
+    try:
+        found = _report(kernel)
+    except Exception:
+        logger.warning("doctor failed while checking notices' conditions", exc_info=True)
+        return None
+    return None if found is None else set(found[1])
+
+
+def _doctor(kernel: Kernel, notifications: Notifications) -> int:
+    """Run doctor and report what isn't up, resolving by itself once those checks are up again."""
+    found = _report(kernel)
+    if found is None:
         return 0
-    down = report.status is Status.DOWN
+    status, problems = found
+    if status is Status.UP or not problems:
+        return 0
+    down = status is Status.DOWN
+    try:
+        when: ResolveWhen | None = ResolveWhen(checks_up=problems)
+    except ValueError:  # a check name a condition can't carry: the notice stays until it ages out
+        when = None
     more = "…" if len(problems) > SHOWN_PROBLEMS else ""
     notice = notifications.emit(
         NoticeKind.DOCTOR,
@@ -78,7 +107,8 @@ def _doctor(kernel: Kernel, notifications: Notifications) -> int:
         f"{len(problems)} check(s) need you: {', '.join(problems[:SHOWN_PROBLEMS])}{more}",
         route="/doctor",
         command="hz system doctor",
-        key=f"doctor:{report.status.value}:{'|'.join(problems)}",
+        key=f"{DOCTOR_KEY}{status.value}:{'|'.join(problems)}",
         urgent=down,
+        resolve_when=when,
     )
     return int(notice is not None)

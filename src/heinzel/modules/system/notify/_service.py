@@ -59,7 +59,7 @@ from heinzel.modules.system.notify._models import (
 )
 from heinzel.modules.system.notify._native import ALLOW, DENIED_DETAIL, DENIED_FIX, HEINZEL, ICON_CACHE, Native, native
 from heinzel.modules.system.notify._store import INTEGRITY_LEGACY, Store, recover
-from heinzel.modules.system.notify._watch import daemon_state, watch
+from heinzel.modules.system.notify._watch import daemon_state, doctor_problems, watch
 
 logger = logging.getLogger(__name__)
 MODULE_SECTION = "system.notify"
@@ -130,6 +130,8 @@ class NotifyService(Notifications):
         """The hz installed on this machine, read from disk each time; tests replace it."""
         self.capability: _resolve.CapabilityProbe | None = None
         """Asks a capability's state for a notice's condition; set by `for_user`, None asks nothing."""
+        self.problems: _resolve.ProblemsProbe | None = None
+        """The health checks that aren't up, for a notice's `checks_up`; set by `for_user`, None asks nothing."""
         self._refresh_hours: Callable[[], policy.Hours] = lambda: self.hours
 
     @classmethod
@@ -154,6 +156,7 @@ class NotifyService(Notifications):
         service._refresh_settings = refresh_settings
         service.daemon = lambda: daemon_state(kernel)
         service.capability = _resolve.kernel_probe(kernel)
+        service.problems = lambda: doctor_problems(kernel)
         return service
 
     @property
@@ -349,7 +352,7 @@ class NotifyService(Notifications):
             if notice.resolved_at is None
             and not (
                 (when := _resolve.condition(notice)) is not None
-                and when.capability is None
+                and _resolve.at_read(when)
                 and _resolve.holds(when, installed, None) is not None
             )
         ]
@@ -358,10 +361,11 @@ class NotifyService(Notifications):
         """The ids of shown notices whose condition holds now, each with why."""
         installed = self.installed()
         probe = _resolve.cached(self.capability) if self.capability is not None else None
+        problems = _resolve.once(self.problems) if self.problems is not None else None
         found: dict[str, str] = {}
         for notice in notices:
             when = _resolve.condition(notice) if notice.resolved_at is None else None
-            if when is not None and (why := _resolve.holds(when, installed, probe)) is not None:
+            if when is not None and (why := _resolve.holds(when, installed, probe, problems)) is not None:
                 found[notice.id] = why
         return found
 

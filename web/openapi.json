@@ -13162,6 +13162,25 @@
             ],
             "description": "Holds once a capability reports a state."
           },
+          "checks_up": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 200,
+                  "pattern": "^[^\\s:|]+: [^\\s|][^|\\n]*$",
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Holds once every named health check (`<module>: <check>`) is up again in `hz system doctor`.",
+            "title": "Checks Up"
+          },
           "installed_version_at_least": {
             "anyOf": [
               {

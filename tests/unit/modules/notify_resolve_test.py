@@ -223,3 +223,53 @@ def test_the_watcher_compares_the_installed_version_not_the_running_process(serv
     (notice,) = service.listing(50).notices
     assert notice.body.startswith("You have 0.9.27;")
     assert notice.resolve_when == ResolveWhen(installed_version_at_least="0.9.28")
+
+
+def doctor(service: NotifyService, problems: list[str], *, condition: bool = True) -> Notice | None:
+    return service.emit(
+        NoticeKind.DOCTOR,
+        "Heinzelmännchen is degraded",
+        f"{len(problems)} check(s) need you: {', '.join(problems)}",
+        route="/doctor",
+        command="hz system doctor",
+        key=f"doctor:degraded:{'|'.join(problems)}",
+        resolve_when=ResolveWhen(checks_up=problems) if condition else None,
+    )
+
+
+@pytest.mark.parametrize("condition", [True, False], ids=["with condition", "recorded before conditions"])
+def test_a_doctor_notice_disappears_once_its_checks_are_up_again(service, condition):
+    failing: set[str] | None = {"system.credential: weather/api-key", "org: calendar"}
+    asked: list[int] = []
+
+    def problems() -> set[str] | None:
+        asked.append(1)
+        return failing
+
+    service.problems = problems
+    assert doctor(service, ["system.credential: weather/api-key"], condition=condition) is not None
+    assert shown(service) == ["Heinzelmännchen is degraded"]
+    assert asked == []  # a read never runs doctor
+    assert service.resolve() == 0
+    failing = None  # doctor can't tell: nothing resolves
+    assert service.resolve() == 0
+    failing = {"org: calendar"}  # another check is still degraded; the named one is up
+    asked.clear()
+    assert service.resolve() == 1
+    assert asked == [1]
+    assert shown(service) == []
+    (kept,) = service.listing(50, resolved=True).notices
+    assert kept.resolved == "system.credential: weather/api-key is up again"
+    assert kept.delivered_by is None  # never marked read
+
+
+def test_the_doctor_watcher_attaches_its_checks_as_the_condition(service, make_kernel, monkeypatch):
+    from heinzel import Status as Health
+
+    monkeypatch.setattr(
+        "heinzel.modules.system.notify._watch._report",
+        lambda kernel: (Health.DEGRADED, ["system.credential: weather/api-key"]),
+    )
+    assert watch(make_kernel(), service, {NoticeKind.DOCTOR}) == 1
+    (notice,) = service.listing(50).notices
+    assert notice.resolve_when == ResolveWhen(checks_up=["system.credential: weather/api-key"])

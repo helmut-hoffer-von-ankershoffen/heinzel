@@ -19,8 +19,13 @@ logger = logging.getLogger(__name__)
 RELEASE_KEY = "release:"
 """The key prefix of a release notice; the rest is the announced version."""
 
+DOCTOR_KEY = "doctor:"
+"""The key prefix of a doctor notice: `doctor:<status>:<check>|<check>…`."""
+
 CapabilityProbe = Callable[[CapabilityState], bool | None]
 """Whether a capability is in the state named; None when it can't tell, which never resolves a notice."""
+ProblemsProbe = Callable[[], set[str] | None]
+"""The health checks that aren't up now (`<module>: <check>`); None when doctor can't tell, which resolves nothing."""
 
 
 def installed_version() -> str:
@@ -39,19 +44,32 @@ def _at_least(installed: str, wanted: str) -> bool:
 
 
 def condition(notice: Notice) -> ResolveWhen | None:
-    """The notice's condition: its own, or the one a legacy release notice's key implies; None for none."""
+    """The notice's condition: its own, or the one a legacy release or doctor notice's key implies; None for none.
+
+    So notices recorded before conditions existed resolve too, without a sweep.
+    """
     if notice.resolve_when is not None:
         return notice.resolve_when
-    if notice.kind is NoticeKind.RELEASE and notice.key.startswith(RELEASE_KEY):
-        try:
+    try:
+        if notice.kind is NoticeKind.RELEASE and notice.key.startswith(RELEASE_KEY):
             return ResolveWhen(installed_version_at_least=notice.key.removeprefix(RELEASE_KEY))
-        except ValueError:
-            return None
+        if notice.kind is NoticeKind.DOCTOR and notice.key.startswith(DOCTOR_KEY):
+            _, _, checks = notice.key.removeprefix(DOCTOR_KEY).partition(":")
+            return ResolveWhen(checks_up=checks.split("|")) if checks else None
+    except ValueError:
+        return None
     return None
 
 
-def holds(when: ResolveWhen, installed: str, probe: CapabilityProbe | None) -> str | None:
-    """Why `when` holds now, in words; None while it doesn't, or when a capability can't be asked (`probe` None)."""
+def at_read(when: ResolveWhen) -> bool:
+    """Whether a read may evaluate `when`: only version conditions, which run nothing."""
+    return when.capability is None and when.checks_up is None
+
+
+def holds(
+    when: ResolveWhen, installed: str, probe: CapabilityProbe | None, problems: ProblemsProbe | None = None
+) -> str | None:
+    """Why `when` holds now, in words; None while it doesn't, or when what it names can't be asked (a probe None)."""
     reasons: list[str] = []
     if (wanted := when.installed_version_at_least) is not None:
         if not _at_least(installed, wanted):
@@ -61,7 +79,24 @@ def holds(when: ResolveWhen, installed: str, probe: CapabilityProbe | None) -> s
         if probe is None or probe(capability) is not True:
             return None
         reasons.append(f"{capability.operation} reports {capability.field} = {capability.equals!r}")
+    if (checks := when.checks_up) is not None:
+        failing = problems() if problems is not None else None
+        if failing is None or failing & set(checks):
+            return None
+        reasons.append(f"{', '.join(checks)} {'is' if len(checks) == 1 else 'are'} up again")
     return "; ".join(reasons) or None
+
+
+def once(problems: ProblemsProbe) -> ProblemsProbe:
+    """`problems`, asking doctor at most once per pass."""
+    answer: list[set[str] | None] = []
+
+    def ask() -> set[str] | None:
+        if not answer:
+            answer.append(problems())
+        return answer[0]
+
+    return ask
 
 
 def cached(probe: CapabilityProbe) -> CapabilityProbe:
