@@ -18,6 +18,54 @@ sys.path.insert(0, str(REPO / "scripts"))
 import related_tests as scoped_related  # noqa: E402 - needs the scripts path above
 
 
+@pytest.fixture(autouse=True)
+def _outside_any_gate(monkeypatch):
+    """A host's hz-gate must not take over the commands these tests run (through_gate has its own tests)."""
+    monkeypatch.setenv("HZ_GATE_HELD", "test")
+
+
+def gate_exec(monkeypatch, tmp_path, *, held=None):
+    """Put a fake hz-gate on PATH and record the exec through_gate would do instead of doing it."""
+    (tmp_path / "hz-gate").write_text("#!/bin/sh\n")
+    (tmp_path / "hz-gate").chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    if held is None:
+        monkeypatch.delenv("HZ_GATE_HELD")
+    else:
+        monkeypatch.setenv("HZ_GATE_HELD", held)
+    monkeypatch.delenv("HZ_GATE_MAX_WAIT", raising=False)
+    calls = []
+    monkeypatch.setattr(scoped.os, "execve", lambda path, argv, env: calls.append((path, argv, env)))
+    return calls
+
+
+def test_the_checks_queue_in_hz_gate_with_a_wait_limit_and_mark_themselves_held(monkeypatch, tmp_path):
+    calls = gate_exec(monkeypatch, tmp_path)
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "preflight", "--base", "origin/main"])
+    scoped.through_gate(["src/heinzel/x.py", "README.md"])
+    [(path, argv, env)] = calls
+    assert path == str(tmp_path / "hz-gate")
+    assert argv[1:] == [sys.executable, str(REPO / "scripts/scoped_checks.py"), "preflight", "--base", "origin/main"]
+    assert env["HZ_GATE_HELD"] == "routed"  # what runs inside never routes itself again
+    assert env["HZ_GATE_MAX_WAIT"] == scoped.GATE_MAX_WAIT
+    assert "HZ_GATE_LIGHT" not in env
+
+
+def test_documents_alone_take_the_gates_light_lane(monkeypatch, tmp_path):
+    calls = gate_exec(monkeypatch, tmp_path)
+    scoped.through_gate(["README.md", "docs/guide.md"])
+    assert calls[0][2]["HZ_GATE_LIGHT"] == "1"
+
+
+def test_inside_a_gate_or_without_one_the_checks_run_directly(monkeypatch, tmp_path):
+    calls = gate_exec(monkeypatch, tmp_path, held="4242")
+    scoped.through_gate(["src/heinzel/x.py"])
+    monkeypatch.delenv("HZ_GATE_HELD")
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    scoped.through_gate(["src/heinzel/x.py"])
+    assert calls == []
+
+
 def names(steps: list[str]) -> list[str]:
     return [step.lstrip("&").split("=", 1)[0] for step in steps]
 

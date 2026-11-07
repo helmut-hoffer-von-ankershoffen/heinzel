@@ -66,6 +66,7 @@ def environment(root: Path) -> dict[str, str]:
         "GIT_TERMINAL_PROMPT": "0",
         **{f"GIT_{who}_{key}": value for who in ("AUTHOR", "COMMITTER") for key, value in IDENTITY.items()},
         "LOG": str(root / "log"),
+        "HZ_GATE_HELD": "test",  # a host's hz-gate on the inherited PATH must not queue these stubbed runs
     }
 
 

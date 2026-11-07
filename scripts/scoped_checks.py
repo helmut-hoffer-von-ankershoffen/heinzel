@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -277,6 +278,28 @@ def run_early_guards(changed: list[str]) -> None:
         subprocess.run(command, check=True, timeout=180)  # noqa: S603 - fixed owning pytest commands
 
 
+GATE_MAX_WAIT = "3600"  # an hour in the queue, then the push stops with hz-gate's explanation instead of hanging
+
+
+def through_gate(changed: list[str]) -> None:
+    """Re-run this command under `hz-gate` when it is on PATH and no ancestor already holds it.
+
+    Several agent worktrees on one machine each ran the whole preflight here at once and drove its load past 100.
+    `hz-gate` (the maintainers' local queue) admits one heavy run at a time, below a load bar, with capped test workers;
+    a branch of documents alone takes its light lane. It waits before any check starts, so no step's time limit counts
+    the wait. Without `hz-gate` (contributors, CI) and inside it (`HZ_GATE_HELD`, which it sets) this does nothing.
+    """
+    gate = shutil.which("hz-gate")
+    if gate is None or os.environ.get("HZ_GATE_HELD"):
+        return
+    # HZ_GATE_HELD also stops this from routing itself again under a gate that does not set it.
+    env = {"HZ_GATE_MAX_WAIT": GATE_MAX_WAIT, **os.environ, "HZ_GATE_HELD": "routed"}
+    if changed and all(is_document(path) for path in changed):
+        env["HZ_GATE_LIGHT"] = "1"
+    sys.stdout.flush()
+    os.execve(gate, [gate, sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]], env)  # noqa: S606 - hz-gate from PATH
+
+
 def main() -> None:
     """Preserve core checks and common policies while selecting independent owning plugin work."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -291,6 +314,7 @@ def main() -> None:
     except (ValueError, subprocess.CalledProcessError):
         parser.error("Use a valid commit revision for --base")
     changed = changed_paths("preflight" if early else args.mode, base)
+    through_gate(sorted({*changed, *changed_paths("fast", base)}))
     if early:
         changed = sorted({*changed, *changed_paths("fast", base)})
         run_early_guards(changed)

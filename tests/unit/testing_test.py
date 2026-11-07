@@ -164,6 +164,25 @@ def test_isolation_forces_the_environment_backend_and_drops_credential_variables
     assert "HZ_CREDENTIAL_EXAMPLE_API_TOKEN" not in os.environ
 
 
+def test_no_test_reaches_the_developers_google_cli_sign_in(monkeypatch, tmp_path):
+    from heinzel.testing import isolate_google_cli
+
+    monkeypatch.setenv("GOOGLE_WORKSPACE_CLI_CONFIG_DIR", "/Users/ada/.config/gws")
+    monkeypatch.setenv("GOOGLE_WORKSPACE_CLI_TOKEN", "from-the-developer")
+    isolate_google_cli(monkeypatch, tmp_path)
+    directory = Path(os.environ["GOOGLE_WORKSPACE_CLI_CONFIG_DIR"])
+    assert directory.parent == tmp_path
+    assert directory.is_dir()
+    assert not list(directory.iterdir())
+    assert "GOOGLE_WORKSPACE_CLI_TOKEN" not in os.environ
+
+
+def test_every_test_has_an_empty_google_cli_configuration():
+    directory = Path(os.environ["GOOGLE_WORKSPACE_CLI_CONFIG_DIR"])
+    assert directory.is_dir()
+    assert not list(directory.iterdir())
+
+
 def test_the_terminal_is_pinned_to_ci_width_and_no_colour():
     """CI runs at 80 columns with FORCE_COLOR set; a developer's terminal has neither, so tests pin both."""
     from heinzel.testing import pin_terminal
