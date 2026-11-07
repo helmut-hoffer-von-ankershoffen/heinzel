@@ -31,6 +31,17 @@ try {
     timeout: 15000,
     message: "The device was never paired",
   });
+  // Open the installed window only once the worker is active with the offline page kept. A navigation that starts
+  // while the worker is still installing is not intercepted, and clients.claim() at activation can miss a document
+  // still being created: that page stays uncontrolled for its lifetime, which no wait below could change.
+  await until(
+    () =>
+      page.evaluate(async () => {
+        const registration = await navigator.serviceWorker.getRegistration("/");
+        return registration?.active?.state === "activated" && Boolean(await caches.match("/offline.html"));
+      }),
+    { timeout: 20000, message: "The service worker never activated with the offline page cached" },
+  );
   await page.goto(origin); // the pairing link is gone from the address, as in an installed window
   await ready.waitFor({ timeout: 20000 });
   // The worker controls the page and has kept the offline page.
