@@ -595,9 +595,8 @@ class UpdateService:
             except HeinzelError as exc:
                 steps.fail(str(exc).splitlines()[0])
                 raise
-            if isinstance(result, UpdateResult):
-                steps.installed(result)
-            if not getattr(result, "updated", False):  # nothing changed, so every head already runs what is installed
+            steps.installed(result)
+            if not result.updated:  # nothing changed, so every head already runs what is installed
                 steps.skip("heads", "Nothing changed, so nothing restarts.")
                 return result
             steps.start("heads")
