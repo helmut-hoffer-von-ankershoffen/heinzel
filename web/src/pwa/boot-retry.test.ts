@@ -119,3 +119,15 @@ describe("boot-retry", () => {
     expect(page).toContain('src="/boot-retry.js"');
   });
 });
+
+describe("the app's watch mode", () => {
+  it("adds no script to index.html: its scripts are the frontend identity a verified update checks", () => {
+    // `hz` describes the installed build by the HTML's script and stylesheet paths, all of them hashed /assets/ files
+    // (heads/web/_updates.py); a public classic script there leaves the update with no verifiable frontend.
+    const html = readFileSync(resolve("index.html"), "utf8");
+    const sources = [...html.matchAll(/<script\b([^>]*)\bsrc="([^"]+)"/g)];
+    expect(sources.map(([, , src]) => src)).toEqual(["/src/main.tsx"]);
+    expect(sources.every(([, attributes]) => attributes?.includes('type="module"'))).toBe(true);
+    expect(readFileSync(resolve("src/main.tsx"), "utf8")).toContain('hzBootRetry?.start("watch")');
+  });
+});

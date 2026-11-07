@@ -1,7 +1,8 @@
 // Keeps a page that cannot reach hz from staying on a dead splash (ADR 0046). A classic script of this origin, so the
 // CSP admits it and it runs even when the app's own bundle failed to load. Two modes, set by `data-mode`:
 //   offline: /offline.html, the service worker's answer while hz is down; it reloads the page once hz answers.
-//   watch:   the app's index.html; if the app has not mounted after WATCH_MS it behaves like the offline page.
+//   watch:   started by the app's bundle (main.tsx); if the app has not mounted after WATCH_MS it behaves like the
+//            offline page. index.html carries no <script> for it: its scripts are the verified frontend identity.
 // The probe is the unauthenticated manifest, fetched past the service worker (`hz-probe`), so a cached copy never
 // counts as hz being back. Retries back off exponentially to a bound and never stop: a window left open for hours
 // still finds hz when it returns.
