@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from heinzel import HeinzelError
 from heinzel.heads import _desktop_messages as say
 from heinzel.heads._desktop_archive import BUNDLE_NAME, extract_bundle
+from heinzel.heads._desktop_log import step
 from heinzel.heads._desktop_release import VERSION, fetch_archive
 from heinzel.heads._desktop_seal import (
     SealReport,
@@ -693,29 +694,74 @@ def install_desktop(  # noqa: PLR0913 - keyword-only options of one CLI command
 
     With `forget`, a record whose app is gone is set aside first (without it, LeftoverInstallError says so). With
     `replace`, an app this installer did not install is moved to the Trash first. Both are appended to `notes`.
+    Every step logs a start and an outcome event (`desktop.install.*`).
     """
     _check_platform()
     home = (home or Path.home()).resolve(strict=True)
     notes = [] if notes is None else notes
-    with _locked_config(home) as config:
-        if os.path.lexists(home / "Applications"):
-            _owned_directory(home / "Applications")
-        if not _recover_before_use(home, config):
-            return "deferred"
-        if replace and not update_only:
-            notes += _trash_unowned(home, config)
-        if not update_only:
-            notes += _clear_orphaned_record(home, config, forget=forget or replace)
+    options = {"version": version, "update_only": update_only, "replace": replace, "forget": forget}
+    with step("install", "run", **options) as result, _locked_config(home) as config:
+        state = _install_steps(
+            version,
+            executable,
+            home,
+            config,
+            notes,
+            update_only=update_only,
+            replace=replace,
+            forget=forget,
+            keep_quarantine=keep_quarantine,
+        )
+        result["outcome"] = state
+        return state
+
+
+def _install_steps(  # noqa: PLR0913 - the options of install_desktop, passed through
+    version: str,
+    executable: Path,
+    home: Path,
+    config: Path,
+    notes: list[str],
+    *,
+    update_only: bool,
+    replace: bool,
+    forget: bool,
+    keep_quarantine: bool,
+) -> DesktopInstallStatus:
+    if os.path.lexists(home / "Applications"):
+        _owned_directory(home / "Applications")
+    with step("install", "recover") as result:
+        ready = _recover_before_use(home, config)
+        result["outcome"] = "ok" if ready else "deferred"
+    if not ready:
+        return "deferred"
+    if replace and not update_only:
+        with step("install", "replace") as result:
+            moved = _trash_unowned(home, config)
+            result["moved"] = len(moved)
+        notes += moved
+    if not update_only:
+        with step("install", "forget", forget=forget or replace) as result:
+            forgotten = _clear_orphaned_record(home, config, forget=forget or replace)
+            result["set_aside"] = len(forgotten)
+        notes += forgotten
+    with step("install", "locate") as result:
         bundle, existing = _locate(home, config)
-        if update_only:
-            if existing is None:
-                return "absent"
-            if VERSION.fullmatch(version) and _version_parts(existing.release) > _version_parts(version):
-                return "current"
-        elif existing is not None:
+        result.update({"path": str(bundle), "installed": existing is not None})
+    if update_only:
+        if existing is None:
+            return "absent"
+        if VERSION.fullmatch(version) and _version_parts(existing.release) > _version_parts(version):
+            return "current"
+    elif existing is not None:
+        with step("install", "migrate", path=str(bundle)) as result:
             bundle = _migrate(bundle, config)
-        _applications_directory(bundle.parent, home)
-        return _install_release(version, executable, bundle, config, existing, keep_quarantine=keep_quarantine)
+            result["path"] = str(bundle)
+    _applications_directory(bundle.parent, home)
+    with step("install", "release", path=str(bundle), version=version) as result:
+        state = _install_release(version, executable, bundle, config, existing, keep_quarantine=keep_quarantine)
+        result["outcome"] = state
+    return state
 
 
 def _version_parts(version: str) -> tuple[int, ...]:
@@ -791,26 +837,34 @@ def uninstall_desktop(*, home: Path | None = None, notes: list[str] | None = Non
     _check_platform()
     home = (home or Path.home()).resolve(strict=True)
     notes = [] if notes is None else notes
-    with _locked_config(home) as config:
-        if os.path.lexists(home / "Applications"):
-            _owned_directory(home / "Applications")
-        if not _recover_before_use(home, config):
-            msg = "Quit Heinzelmännchen before uninstalling the desktop app."
-            raise DesktopInstallationError(msg)
-        notes += _clear_orphaned_record(home, config, forget=True)
-        bundle, existing = _locate(home, config)
-        if existing is None:
-            return None
-        applications = bundle.parent
-        _applications_directory(applications, home)
-        with _desktop_use(config) as locked:
-            if not locked or _in_use(bundle):
-                msg = "Quit Heinzelmännchen before uninstalling the desktop app."
-                raise DesktopInstallationError(msg)
-            if _owned_installation(bundle, config) != existing:
-                raise DesktopInstallationError(_CONFLICT)
-            with _staging(applications, config) as (staging, files):
-                _commit(bundle, config, staging, files, "uninstall")
+    with step("uninstall", "run") as result, _locked_config(home) as config:
+        removed = _uninstall_steps(home, config, notes)
+        result.update({"outcome": "removed" if removed else "absent", "path": str(removed) if removed else None})
+        return removed
+
+
+def _uninstall_steps(home: Path, config: Path, notes: list[str]) -> Path | None:
+    if os.path.lexists(home / "Applications"):
+        _owned_directory(home / "Applications")
+    running = "Quit Heinzelmännchen before uninstalling the desktop app."
+    if not _recover_before_use(home, config):
+        raise DesktopInstallationError(running, say.app_running(home / "Applications", command="uninstall"))
+    with step("uninstall", "forget") as result:
+        forgotten = _clear_orphaned_record(home, config, forget=True)
+        result["set_aside"] = len(forgotten)
+    notes += forgotten
+    bundle, existing = _locate(home, config)
+    if existing is None:
+        return None
+    applications = bundle.parent
+    _applications_directory(applications, home)
+    with step("uninstall", "remove", path=str(bundle)), _desktop_use(config) as locked:
+        if not locked or _in_use(bundle):
+            raise DesktopInstallationError(running, say.app_running(applications, command="uninstall"))
+        if _owned_installation(bundle, config) != existing:
+            raise DesktopInstallationError(_CONFLICT)
+        with _staging(applications, config) as (staging, files):
+            _commit(bundle, config, staging, files, "uninstall")
     return bundle
 
 

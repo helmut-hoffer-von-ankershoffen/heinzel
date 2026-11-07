@@ -185,9 +185,9 @@ def expected_jobs(event: str) -> dict[str, str]:
         "Release candidate source",
         "CI OK",
         *[f"make setup ({runner})" for runner in ("ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest")],
-        *[f"Test (ubuntu-24.04, Python 3.{minor})" for minor in range(12, 16)],
         *[
-            f"Test (macos-latest, Python 3.{minor}, {level})"
+            f"Test ({runner}, Python 3.{minor}, {level})"
+            for runner in ("ubuntu-24.04", "macos-latest")
             for minor in range(12, 16)
             for level in ("unit", "integration")
         ],

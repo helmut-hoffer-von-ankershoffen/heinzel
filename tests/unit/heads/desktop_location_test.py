@@ -297,7 +297,7 @@ def test_a_replaced_app_names_the_receipt_it_does_not_match(mac):
     home, system, executable = mac
     desktop.install_desktop("1.0.0", executable, home=home)
     bundle = system / desktop.BUNDLE_NAME
-    shutil.rmtree(bundle)
+    bundle.rename(bundle.with_name("old.app"))  # keep the old one, so a freed inode number cannot be reused
     bundle.mkdir()
     receipt, _binding = _record(home)
     with pytest.raises(desktop.DesktopInstallationError) as failure:
@@ -321,3 +321,55 @@ def test_a_pending_journal_keeps_the_record_for_recovery(mac):
     (receipt.parent / desktop._JOURNAL).write_text("{}")
     assert desktop._clear_orphaned_record(home, receipt.parent, forget=True) == []
     assert receipt.exists()
+
+
+def _events(caplog) -> list[tuple[str, str, object]]:
+    return [
+        (record.event, record.phase, getattr(record, "outcome", None))
+        for record in caplog.records
+        if record.name == "heinzel.desktop"
+    ]
+
+
+def test_install_and_uninstall_log_a_start_and_an_outcome_per_step(mac, caplog):
+    home, system, executable = mac
+    caplog.set_level("INFO", logger="heinzel.desktop")
+    desktop.install_desktop("1.0.0", executable, home=home)
+    assert _events(caplog) == [
+        ("desktop.install.run", "start", None),
+        ("desktop.install.recover", "start", None),
+        ("desktop.install.recover", "end", "ok"),
+        ("desktop.install.forget", "start", None),
+        ("desktop.install.forget", "end", "ok"),
+        ("desktop.install.locate", "start", None),
+        ("desktop.install.locate", "end", "ok"),
+        ("desktop.install.release", "start", None),
+        ("desktop.install.release", "end", "installed"),
+        ("desktop.install.run", "end", "installed"),
+    ]
+    release = next(r for r in caplog.records if r.event == "desktop.install.release" and r.phase == "end")
+    assert release.path == str(system / desktop.BUNDLE_NAME)
+    assert release.version == "1.0.0"
+    assert isinstance(release.duration_ms, int)
+    assert release.getMessage() == "desktop.install.release"
+
+    caplog.clear()
+    desktop.uninstall_desktop(home=home)
+    assert ("desktop.uninstall.remove", "end", "ok") in _events(caplog)
+    assert ("desktop.uninstall.run", "end", "removed") in _events(caplog)
+
+
+def test_a_failed_step_logs_the_same_two_lines_the_person_reads(mac, caplog):
+    home, _system, executable = _orphan(mac)
+    caplog.set_level("INFO", logger="heinzel.desktop")
+    with pytest.raises(desktop.LeftoverInstallError) as failure:
+        desktop.install_desktop("1.0.0", executable, home=home)
+    assert _events(caplog)[-2:] == [
+        ("desktop.install.forget", "end", "failed"),
+        ("desktop.install.run", "end", "failed"),
+    ]
+    failed = [r for r in caplog.records if r.phase == "end"][-1]
+    assert failure.value.problem is not None
+    assert (failed.happened, failed.action) == (failure.value.problem.happened, failure.value.problem.action)
+    assert failed.error == "LeftoverInstallError"
+    assert failed.levelname == "WARNING"

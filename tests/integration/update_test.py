@@ -143,6 +143,9 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", f"{env / 'bin'}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setattr(sys, "prefix", str(env))
     monkeypatch.setattr(sys, "executable", str(fake_python))
+    # The probe adds -B when this interpreter writes no bytecode (installation_test covers both); a shell with
+    # PYTHONDONTWRITEBYTECODE=1 must not change the arguments the fake interpreter checks.
+    monkeypatch.setattr(sys, "dont_write_bytecode", False)
     return env
 
 
