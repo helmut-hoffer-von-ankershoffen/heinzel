@@ -1,4 +1,5 @@
 // Real Chromium Web Audio and canvas. Only the picker transport is replaced with a generated MediaStream.
+// The aurora colours its ribbons by frequency band (bass, mid, treble), so a moved tone changes the measured hue.
 // Usage: node e2e/audio-visualizer.mjs SCREENSHOT_DIR
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync } from "node:fs";
@@ -47,43 +48,47 @@ try {
     await page.waitForFunction(() => document.querySelector("output")?.textContent?.startsWith("Visualizing"));
     assert.equal(await page.evaluate(() => window.audioFixture.options.preferCurrentTab), true);
     const canvas = page.locator("canvas");
-    const pixels = () =>
+    // Mean green share of the painted pixels: the ribbons are painted in different theme colours per band.
+    const hue = () =>
       canvas.evaluate((element) => {
         const { data } = element.getContext("2d").getImageData(0, 0, element.width, element.height);
-        const points = [];
-        for (let i = 3; i < data.length; i += 4) if (data[i]) points.push(((i - 3) / 4) % element.width);
-        return { count: points.length, x: points.reduce((a, b) => a + b, 0) / Math.max(1, points.length) };
+        let share = 0,
+          count = 0;
+        for (let i = 0; i < data.length; i += 4)
+          if (data[i + 3]) {
+            share += data[i + 1] / (data[i] + data[i + 1] + data[i + 2] + 1);
+            count += 1;
+          }
+        return { count, share: share / Math.max(1, count) };
       });
     await page.waitForFunction(() => {
       const element = document.querySelector("canvas");
       const { data } = element.getContext("2d").getImageData(0, 0, element.width, element.height);
-      let sum = 0,
-        count = 0;
-      for (let i = 3; i < data.length; i += 4)
-        if (data[i]) {
-          sum += ((i - 3) / 4) % element.width;
-          count += 1;
-        }
-      return count > 0 && sum / count < element.width / 5;
+      return data.some((value, index) => index % 4 === 3 && value > 0);
     });
-    const low = await pixels();
-    assert(low.count > 0, "Real generated audio must produce nonempty spectrum pixels");
+    // Let the 440 Hz tone settle, then move it to 12 kHz: a different band must paint a different colour.
+    await page.waitForTimeout(800);
+    const low = await hue();
+    assert(low.count > 0, "Real generated audio must produce nonempty aurora pixels");
     await page.evaluate(() => {
       window.audioFixture.oscillator.frequency.value = 12000;
     });
-    await page.waitForFunction((lowX) => {
-      const element = document.querySelector("canvas");
-      const { data } = element.getContext("2d").getImageData(0, 0, element.width, element.height);
-      let sum = 0,
-        count = 0;
-      for (let i = 3; i < data.length; i += 4)
-        if (data[i]) {
-          sum += ((i - 3) / 4) % element.width;
-          count += 1;
-        }
-      return count > 0 && sum / count > lowX + element.width / 4;
-    }, low.x);
-    assert((await pixels()).x > low.x, "Changing a real tone must move the measured spectrum");
+    await page.waitForFunction(
+      ([lowShare]) => {
+        const element = document.querySelector("canvas");
+        const { data } = element.getContext("2d").getImageData(0, 0, element.width, element.height);
+        let share = 0,
+          count = 0;
+        for (let i = 0; i < data.length; i += 4)
+          if (data[i + 3]) {
+            share += data[i + 1] / (data[i] + data[i + 1] + data[i + 2] + 1);
+            count += 1;
+          }
+        return count > 0 && Math.abs(share / count - lowShare) > 0.02;
+      },
+      [low.share],
+    );
+    assert((await hue()).count > 0, "Changing a real tone must change what the aurora paints");
     result.realSignal = true;
     await page.screenshot({ path: join(shots, `audio-${viewport.width}-signal.png`) });
     await page.evaluate(() => {
