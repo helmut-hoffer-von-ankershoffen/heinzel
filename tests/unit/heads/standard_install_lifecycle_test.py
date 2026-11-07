@@ -19,9 +19,11 @@ from heinzel.modules.system.daemon._service import DaemonService
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.parametrize("retained_version", [None, "0.9", "1.1"])
+@pytest.mark.parametrize(
+    ("retained_version", "newly_pinned"), [(None, False), ("0.9", False), ("1.1", False), ("0.9", True)]
+)
 def test_standard_managed_scope_binds_target_before_resolve_and_checkpoints_under_guard(
-    tmp_path, monkeypatch, retained_version
+    tmp_path, monkeypatch, retained_version, newly_pinned
 ):
     target = tool.ToolTarget(tmp_path / "tools", tmp_path / "bin")
     target.store.mkdir()
@@ -33,7 +35,7 @@ def test_standard_managed_scope_binds_target_before_resolve_and_checkpoints_unde
     artifact = install.Artifact(name="heinzel", version="1.0", filename=wheel.name, sha256="a" * 64, url="fixture")
     profile = install.AppProfile(format=2, core_version="1.0", sdk=1, artifacts=[artifact])
     events = []
-    concurrent_newer = retained_version == "1.1"
+    deferred = retained_version == "1.1" or newly_pinned
 
     class Lifecycle:
         @contextmanager
@@ -41,7 +43,7 @@ def test_standard_managed_scope_binds_target_before_resolve_and_checkpoints_unde
             assert binary == target.binary
             events.append("enter")
             yield
-            assert (settings.data_dir / "standard-app.json").exists() is (not concurrent_newer)
+            assert (settings.data_dir / "standard-app.json").exists() is (not deferred)
             events.append("commit")
 
     class Kernel:
@@ -75,6 +77,11 @@ def test_standard_managed_scope_binds_target_before_resolve_and_checkpoints_unde
         assert events == ["bind", "resolve", "enter", "run"]
         events.append("record")
 
+    def conflicts(_profile, _installation, _requirements):
+        assert events[-1] == "enter"
+        return ["heinzel-clock"] if newly_pinned else []
+
+    monkeypatch.setattr(install, "retained_plugin_conflicts", conflicts)
     monkeypatch.setattr(install, "uv_executable", lambda: "uv")
     monkeypatch.setattr(install, "resolve_target", lambda _uv: target)
     monkeypatch.setattr(install, "boot", lambda _settings: Kernel())
@@ -89,7 +96,7 @@ def test_standard_managed_scope_binds_target_before_resolve_and_checkpoints_unde
         )
         == 0
     )
-    assert events == ["bind", "resolve", "enter", *([] if concurrent_newer else ["run", "record"]), "commit"]
+    assert events == ["bind", "resolve", "enter", *([] if deferred else ["run", "record"]), "commit"]
 
 
 @pytest.mark.parametrize("quiescent", [True, False])

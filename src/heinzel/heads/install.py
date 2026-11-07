@@ -366,6 +366,35 @@ def existing_requirements(prefix: Path | None = None) -> list[str]:
     return requirements[1:] if requirements else []
 
 
+def retained_plugin_conflicts(profile: AppProfile, installation: Installation, requirements: list[str]) -> list[str]:
+    """Identify selected plugins whose explicit requirement or newer installed version would be replaced."""
+    versions = {
+        artifact.name: Version(artifact.version) for artifact in profile.artifacts if artifact.name != "heinzel"
+    }
+    pinned = {
+        name
+        for requirement in map(Requirement, requirements)
+        if (name := canonicalize_name(requirement.name)) in versions
+        and (requirement.url or requirement.specifier or requirement.extras or requirement.marker)
+    }
+    if not versions:
+        return []
+    newer = {
+        name
+        for name, installed in installation.installed_versions(list(versions)).items()
+        if Version(installed) > versions[name]
+    }
+    return sorted(pinned | newer)
+
+
+def report_retained_plugins(version: str, names: list[str]) -> None:
+    """Explain why a floating upgrade leaves a retained plugin selection in place."""
+    sys.stderr.write(
+        f"Heinzel {version} is available. The update was deferred to keep newer or explicitly selected plugins "
+        f"({', '.join(names)}). Opening the verified installed app.\n"
+    )
+
+
 def _managed_install(  # noqa: PLR0913 - the downgrade guard is explicit for retained-app upgrades
     profile: AppProfile,
     selected: list[Artifact],
@@ -401,12 +430,16 @@ def _managed_install(  # noqa: PLR0913 - the downgrade guard is explicit for ret
                 raise HeinzelError(msg)
             if Version(installation.installed_core_version()) >= Version(profile.core_version):
                 return 0
+        requirements = existing_requirements(target.prefix)
+        if only_if_newer and (conflicts := retained_plugin_conflicts(profile, installation, requirements)):
+            report_retained_plugins(profile.core_version, conflicts)
+            return 0
         by_name = {artifact.filename: artifact for artifact in selected}
         wheels = {by_name[path.name].name: path for path in paths}
         selected_names = {item.name for item in profile.artifacts}
         preserved = [
             requirement
-            for requirement in existing_requirements(target.prefix)
+            for requirement in requirements
             if canonicalize_name(Requirement(requirement).name) not in selected_names | exclusions
         ]
         expected = {item.name: (item.version, item.sha256) for item in selected}

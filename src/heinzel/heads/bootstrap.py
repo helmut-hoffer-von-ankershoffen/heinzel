@@ -143,7 +143,21 @@ def _newer_profile(executable: Path) -> install.AppProfile | None:
     except install.ReleaseUnavailableError:
         sys.stderr.write(f"Could not check for a newer Heinzel. Opening verified installed version {current}.\n")
         return None
-    return profile if Version(profile.core_version) > current else None
+    if Version(profile.core_version) <= current:
+        return None
+    requirements = install.existing_requirements(installation.prefix)
+    if conflicts := install.retained_plugin_conflicts(profile, installation, requirements):
+        install.report_retained_plugins(profile.core_version, conflicts)
+        return None
+    environment = _app_environment(executable) | {"HZ_UPDATE_CHECK": "false", "HZ_PLUGINS_ENABLED": "false"}
+    daemon = _managed_json(executable, environment, ["system", "daemon", "status"])
+    if all(daemon.get(key) is True for key in ("installed", "owned", "loaded")):
+        sys.stderr.write(
+            f"Heinzel {profile.core_version} is available. Opening verified installed version {current} "
+            "because its scheduled daemon is loaded. Run `hz system daemon status` for details.\n"
+        )
+        return None
+    return profile
 
 
 def _human_console() -> "Console":
@@ -501,6 +515,16 @@ def _launch_app(executable: Path, workspace: list[str], environment: dict[str, s
     )
 
 
+def _app_environment(executable: Path) -> dict[str, str]:
+    """Keep the verified interpreter first and keep installer inputs out of runtime commands."""
+    # The installer has consumed the app selector; it is not a runtime or service setting.
+    environment = {
+        key: value for key, value in os.environ.items() if key not in {"PYTHONPATH", "PYTHONHOME", "HZ_APP_PROFILE"}
+    }
+    environment["PATH"] = f"{executable.parent}{os.pathsep}{os.environ.get('PATH', '')}"
+    return environment
+
+
 def _ensure_app(*, interactive: bool) -> Path:
     """Install or refresh the standard app before its workspace or profile is opened."""
     executable = installed_app()
@@ -534,11 +558,7 @@ def main() -> None:
         interactive = _interactive_launch(arguments)
         choices = _service_choices(arguments)
         executable = _ensure_app(interactive=interactive)
-        # The installer has consumed the app selector; it is not a runtime or service setting.
-        environment = {
-            key: value for key, value in os.environ.items() if key not in {"PYTHONPATH", "PYTHONHOME", "HZ_APP_PROFILE"}
-        }
-        environment["PATH"] = f"{executable.parent}{os.pathsep}{os.environ.get('PATH', '')}"
+        environment = _app_environment(executable)
         workspace = arguments or _workspace_command(executable, environment, choices)
         if not arguments:
             _prepare_profile(executable, environment, workspace, interactive=interactive)

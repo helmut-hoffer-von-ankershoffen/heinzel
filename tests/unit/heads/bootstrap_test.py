@@ -69,6 +69,10 @@ def test_first_use_installs_defaults_and_later_use_opens_without_installing(monk
         ("offline", None),
         ("invalid", 1),
         ("failed-update", 7),
+        ("daemon-loaded", None),
+        ("daemon-unknown", 7),
+        ("plugin-pinned", None),
+        ("plugin-newer", None),
     ],
 )
 def test_interactive_retained_app_checks_freshness_before_opening(monkeypatch, tmp_path, capsys, release, exit_code):
@@ -89,7 +93,11 @@ def test_interactive_retained_app_checks_freshness_before_opening(monkeypatch, t
         if release == "invalid":
             msg = "Invalid published release authority"
             raise HeinzelError(msg)
-        version = "0.9.24" if release == "failed-update" else release
+        version = (
+            "0.9.24"
+            if release in {"failed-update", "daemon-loaded", "daemon-unknown", "plugin-pinned", "plugin-newer"}
+            else release
+        )
         return install.AppProfile(
             format=2,
             sdk=1,
@@ -101,7 +109,14 @@ def test_interactive_retained_app_checks_freshness_before_opening(monkeypatch, t
                     filename=f"heinzel-{version}-py3-none-any.whl",
                     sha256="a" * 64,
                     url="https://example.invalid/heinzel.whl",
-                )
+                ),
+                install.Artifact(
+                    name="heinzel-clock",
+                    version="1.0",
+                    filename="heinzel_clock-1.0-py3-none-any.whl",
+                    sha256="b" * 64,
+                    url="https://example.invalid/heinzel-clock.whl",
+                ),
             ],
         )
 
@@ -109,21 +124,38 @@ def test_interactive_retained_app_checks_freshness_before_opening(monkeypatch, t
         assert args == []
         assert newer_profile.core_version == "0.9.24"
         events.append("update")
-        return 7 if release == "failed-update" else 0
+        return 7 if release in {"failed-update", "daemon-unknown"} else 0
 
+    def daemon_status(app, environment, arguments):
+        assert app == executable
+        assert environment["HZ_PLUGINS_ENABLED"] == environment["HZ_UPDATE_CHECK"] == "false"
+        assert arguments == ["system", "daemon", "status"]
+        return {"installed": True, "loaded": True, "owned": release == "daemon-loaded"}
+
+    monkeypatch.setattr(
+        install, "existing_requirements", lambda _prefix: ["heinzel-clock==2.0"] if release == "plugin-pinned" else []
+    )
+    monkeypatch.setattr(
+        bootstrap.Installation,
+        "installed_versions",
+        lambda _self, _names: {"heinzel-clock": "2.0"} if release == "plugin-newer" else {},
+    )
+    monkeypatch.setattr(bootstrap, "_managed_json", daemon_status)
     monkeypatch.setattr(install, "latest_profile", latest)
     monkeypatch.setattr(install, "main", update)
     monkeypatch.setattr(bootstrap.os, "execve", lambda *_args: events.append("launch"))
     if exit_code is None:
         bootstrap.main()
-        assert events == (["update", "launch"] if release in {"0.9.24", "failed-update"} else ["launch"])
+        assert events == (["update", "launch"] if release == "0.9.24" else ["launch"])
     else:
         with pytest.raises(SystemExit) as result:
             bootstrap.main()
         assert result.value.code == exit_code
-        assert events == (["update"] if release in {"0.9.24", "failed-update"} else [])
+        assert events == (["update"] if release in {"failed-update", "daemon-unknown"} else [])
     output = capsys.readouterr()
-    assert ("Opening verified installed version 0.9.17" in output.err) == (release == "offline")
+    assert ("Opening verified installed version 0.9.17" in output.err) == (release in {"offline", "daemon-loaded"})
+    assert ("scheduled daemon is loaded" in output.err) == (release == "daemon-loaded")
+    assert ("plugins (heinzel-clock)" in output.err) == (release in {"plugin-pinned", "plugin-newer"})
 
 
 def test_retained_app_with_an_explicit_profile_selector_never_checks_floating_release(monkeypatch, tmp_path):
