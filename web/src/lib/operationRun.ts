@@ -39,10 +39,32 @@ const subscribe = (listener: () => void) => {
 export const useOperationRun = (): OperationRun => useSyncExternalStore(subscribe, () => current);
 
 /** Ask the person to confirm `call`; nothing runs yet. Ignored while another write is being asked about or running. */
-export function requestOperation(call: SchemaOperationCall): void {
-  if (current.stage !== "idle" && current.stage !== "done" && current.stage !== "failed") return;
+export function requestOperation(call: SchemaOperationCall): boolean {
+  if (current.stage !== "idle" && current.stage !== "done" && current.stage !== "failed") return false;
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   set({ stage: "confirm", call });
+  return true;
+}
+
+/** Ask the person to confirm `call` and settle with its result; fails when they cancel or it ends failed. */
+export function confirmOperation(call: SchemaOperationCall): Promise<unknown> {
+  if (!requestOperation(call)) return Promise.reject(new Error("Another change is being confirmed or running"));
+  return new Promise((resolve, reject) => {
+    let error = "Cancelled";
+    const listener = () => {
+      if (current.stage === "done" && current.call === call) {
+        listeners.delete(listener);
+        resolve(current.result);
+        return;
+      }
+      if (current.stage === "failed" && current.call === call) error = current.error;
+      else if (current.stage === "idle" || current.call !== call) {
+        listeners.delete(listener);
+        reject(new Error(error));
+      }
+    };
+    listeners.add(listener);
+  });
 }
 
 /** Close the confirmation, or the outcome; a running operation can't be closed, it can't be stopped safely. */

@@ -13274,6 +13274,17 @@
             ],
             "description": "Filled in by `system.ui`; whatever a plugin sets here is replaced."
           },
+          "inputs": {
+            "default": [],
+            "description": "Parameters the person fills in, in a view's form, e.g. `text`; only for a private mutation, and still confirmed before it runs.",
+            "items": {
+              "pattern": "^[a-z_][a-z0-9_]*$",
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Inputs",
+            "type": "array"
+          },
           "kind": {
             "const": "operation",
             "default": "operation",

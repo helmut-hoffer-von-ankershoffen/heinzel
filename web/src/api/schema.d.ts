@@ -11633,6 +11633,12 @@ export interface components {
             /** @description Filled in by `system.ui`; whatever a plugin sets here is replaced. */
             call?: components["schemas"]["OperationCall"] | null;
             /**
+             * Inputs
+             * @description Parameters the person fills in, in a view's form, e.g. `text`; only for a private mutation, and still confirmed before it runs.
+             * @default []
+             */
+            inputs: string[];
+            /**
              * @description Run an operation of the module. (enum property replaced by openapi-typescript)
              * @enum {string}
              */
