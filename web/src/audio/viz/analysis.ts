@@ -96,6 +96,18 @@ export class Analysis {
     this.beatEvent = false;
   }
 
+  /** Where the sound sits on the spectrum: the level-weighted mean band, 0 (40 Hz) to 1 (12 kHz); -1 when silent. */
+  centroid() {
+    let weight = 0;
+    let sum = 0;
+    for (let band = 0; band < VIZ_BANDS; band += 1) {
+      const value = this.smooth[band] ?? 0;
+      weight += value;
+      sum += value * band;
+    }
+    return weight > 0.01 ? sum / weight / (VIZ_BANDS - 1) : -1;
+  }
+
   private mean(from: number, to: number) {
     let sum = 0;
     for (let band = from; band < to; band += 1) sum += this.smooth[band] ?? 0;
