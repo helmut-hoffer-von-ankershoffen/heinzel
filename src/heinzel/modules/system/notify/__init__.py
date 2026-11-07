@@ -95,9 +95,12 @@ def list_(
         str | None,
         Field(description="Only notices older than this id, for the next page.", pattern=r"^[A-Za-z0-9-]+$"),
     ] = None,
+    resolved: Annotated[
+        bool, Field(description="Include notices that resolved by themselves and disappeared, for their history.")
+    ] = False,
 ) -> NoticeList:
     """Show the latest notices, whether each popped up and who showed it, and how they reach you."""
-    return service.listing(limit, before=before)
+    return service.listing(limit, before=before, resolved=resolved)
 
 
 @module.operation(read_only=False, heads=HEADS)

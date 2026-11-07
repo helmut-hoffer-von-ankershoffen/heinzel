@@ -4,9 +4,10 @@ It runs at the end of a tick, before notices pop up, rather than as a job of its
 hourly receipt for it would say nothing a notice doesn't.
 """
 
-from heinzel import HeinzelError, Kernel, NoticeKind, Notifications, OperationLet, Status, __version__
+from heinzel import HeinzelError, Kernel, NoticeKind, Notifications, OperationLet, ResolveWhen, Status
 from heinzel.kernel import ReleaseCache
 from heinzel.modules.system.notify._channels import DaemonState
+from heinzel.modules.system.notify._resolve import RELEASE_KEY, installed_version
 
 SHOWN_PROBLEMS = 3
 
@@ -16,15 +17,18 @@ def watch(kernel: Kernel, notifications: Notifications, wants: "set[NoticeKind]"
     reported = 0
     if NoticeKind.DOCTOR in wants:
         reported += _doctor(kernel, notifications)
-    latest = ReleaseCache(kernel.settings.cache_dir).newer_than(__version__, kernel.settings.update_channel)
+    # The version on disk, not this process's: a process started before an update must not announce what is installed.
+    installed = installed_version()
+    latest = ReleaseCache(kernel.settings.cache_dir).newer_than(installed, kernel.settings.update_channel)
     if NoticeKind.RELEASE in wants and latest is not None:
         notice = notifications.emit(
             NoticeKind.RELEASE,
             f"hz {latest} is available",
-            f"You have {__version__}; `hz system changelog --newer` says what it brings.",
+            f"You have {installed}; `hz system changelog --newer` says what it brings.",
             route="/doctor",
             command="hz system update",
-            key=f"release:{latest}",
+            key=f"{RELEASE_KEY}{latest}",
+            resolve_when=ResolveWhen(installed_version_at_least=latest),
         )
         reported += notice is not None
     return reported

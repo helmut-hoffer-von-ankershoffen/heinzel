@@ -216,4 +216,8 @@ class Recovered(BaseModel):
     detail: str = Field(description="What was found or done, without notice content.")
     notices: int = Field(default=0, description="Legacy notices kept in the history, none of which pops up again.")
     keys: int = Field(default=0, description="Replay keys taken from the kept notices' own keys; none are invented.")
+    resolved: int = Field(
+        default=0,
+        description="Notices whose condition holds, such as a stale release notice: resolved with --apply, else found.",
+    )
     receipt: str | None = Field(default=None, description="The recovery's archive directory, with its receipt.")

@@ -4965,6 +4965,30 @@ export interface components {
             uses: components["schemas"]["CapabilityUse"][];
         };
         /**
+         * CapabilityState
+         * @description A capability's reported state, read through a read-only operation of the module that owns it (ADR 0094).
+         *
+         *     The core never imports a plugin: it finds the operation among the kernel's lets by name and compares one top-level
+         *     field of its result. An operation that is missing, unavailable, not read-only or failing never resolves a notice.
+         */
+        CapabilityState: {
+            /**
+             * Equals
+             * @description The value that field must have for the condition to hold.
+             */
+            equals: string | boolean | number;
+            /**
+             * Field
+             * @description A top-level field of its result, e.g. `loaded`.
+             */
+            field: string;
+            /**
+             * Operation
+             * @description `<module>:<operation>`, read-only, e.g. `system.daemon:status`.
+             */
+            operation: string;
+        };
+        /**
          * CapabilityUse
          * @description One row of the matrix: who needs which capability in which modes, through which adapter and hosts.
          */
@@ -9334,6 +9358,18 @@ export interface components {
              * @description Whether it is shown as a desktop notification at all; false: in the list only.
              */
             popup: boolean;
+            /** @description When it resolves by itself and disappears; none: it stays until it ages out. */
+            resolve_when?: components["schemas"]["ResolveWhen"] | null;
+            /**
+             * Resolved
+             * @description Why it disappeared, in words; none while it is shown.
+             */
+            resolved?: string | null;
+            /**
+             * Resolved At
+             * @description When its condition held and it disappeared; none while it is shown.
+             */
+            resolved_at?: string | null;
             /**
              * Route
              * @description Where the web app shows it, a path such as `/doctor`.
@@ -11269,6 +11305,21 @@ export interface components {
              * @description As required, e.g. `tracker:read`.
              */
             requirement: string;
+        };
+        /**
+         * ResolveWhen
+         * @description When a notice stops deserving attention; every condition given must hold.
+         *
+         *     The service evaluates it, never a head, so a stale browser or process can't keep a notice alive.
+         */
+        ResolveWhen: {
+            /** @description Holds once a capability reports a state. */
+            capability?: components["schemas"]["CapabilityState"] | null;
+            /**
+             * Installed Version At Least
+             * @description Holds once the hz installed on this machine (on disk, not the running process) is at least this.
+             */
+            installed_version_at_least?: string | null;
         };
         /**
          * Restart
@@ -15832,6 +15883,7 @@ export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
+export type SchemaCapabilityState = components['schemas']['CapabilityState'];
 export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
 export type SchemaCapturedWriteActivityItem = components['schemas']['CapturedWriteActivityItem'];
 export type SchemaCapturedWriteActivityPage = components['schemas']['CapturedWriteActivityPage'];
@@ -16012,6 +16064,7 @@ export type SchemaReleaseFeedIdentity = components['schemas']['ReleaseFeedIdenti
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRendererBlock = components['schemas']['RendererBlock'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
+export type SchemaResolveWhen = components['schemas']['ResolveWhen'];
 export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRestarted = components['schemas']['Restarted'];
 export type SchemaRollingConnectedGrantProposal = components['schemas']['RollingConnectedGrantProposal'];
@@ -20260,6 +20313,8 @@ export interface operations {
                 limit?: number;
                 /** @description Only notices older than this id, for the next page. */
                 before?: string | null;
+                /** @description Include notices that resolved by themselves and disappeared, for their history. */
+                resolved?: boolean;
             };
             header?: never;
             path?: never;
