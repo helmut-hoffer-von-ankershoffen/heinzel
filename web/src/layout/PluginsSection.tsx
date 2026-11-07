@@ -17,7 +17,6 @@ import {
   Sparkles,
   Trash2,
   Users,
-  X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { SchemaPluginCandidate, SchemaPluginChange, SchemaPluginInfo } from "@/api/client";
@@ -504,67 +503,63 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
                 </Button>
               </div>
             ) : (
-              <>
-                <RestartAndApply
-                  target={t("plugins.title")}
-                  changes={[
-                    `${actionText(pending.action)}: ${pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name}`,
-                  ]}
-                  preserve={confirm}
-                  acquire={acquirePluginChange}
-                  initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
-                  onApplied={() => {
-                    if (pending.action === "add") {
-                      try {
-                        window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
-                        window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
-                        setReceiptId(null);
-                        setRestartObservation(null);
-                        setRestartBlocked(false);
-                      } catch {
-                        // Keeping the receipt is safe; the next visit will read the completed result.
+              <RestartAndApply
+                target={t("plugins.title")}
+                changes={[
+                  `${actionText(pending.action)}: ${pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name}`,
+                ]}
+                preserve={confirm}
+                acquire={acquirePluginChange}
+                initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
+                cancel={
+                  pending.action !== "add" || operation.data?.status === "previewed"
+                    ? {
+                        label: t("plugins.cancel"),
+                        disabled: change.isPending || activation.changing,
+                        onClick: () => {
+                          if (pending.action === "add") {
+                            setReceiptId(null);
+                            setRestartObservation(null);
+                          }
+                          setPending(null);
+                        },
                       }
+                    : undefined
+                }
+                onApplied={() => {
+                  if (pending.action === "add") {
+                    try {
+                      window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
+                      window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
+                      setReceiptId(null);
+                      setRestartObservation(null);
+                      setRestartBlocked(false);
+                    } catch {
+                      // Keeping the receipt is safe; the next visit will read the completed result.
                     }
-                    if (pending.action !== "add") completePluginRestart();
-                    setPending(null);
-                    if (pending.action === "add") setTab("yours");
-                    setAdding(false);
-                    setSpec("");
-                    if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
-                  }}
-                  options={{
-                    ...(pending.action === "add" || pending.action === "remove"
-                      ? { preserveTimeout: 20 * 60_000 }
-                      : {}),
-                    ...(restartInterval ? { interval: restartInterval } : {}),
-                    ...(pending.action === "add"
-                      ? {
-                          onObservation: (observation: RestartObservation) => {
-                            saveAddRestart(pending.operationId, observation, false);
-                            setRestartObservation(observation);
-                          },
-                          onAcknowledged: (observation: RestartObservation) =>
-                            saveAddRestart(pending.operationId, observation, true),
-                        }
-                      : { onObservation: retainPluginRestart, onAcknowledged: acknowledgePluginRestart }),
-                  }}
-                />
-                {(pending.action !== "add" || operation.data?.status === "previewed") && (
-                  <PaneAction
-                    icon={X}
-                    onClick={() => {
-                      if (pending.action === "add") {
-                        setReceiptId(null);
-                        setRestartObservation(null);
+                  }
+                  if (pending.action !== "add") completePluginRestart();
+                  setPending(null);
+                  if (pending.action === "add") setTab("yours");
+                  setAdding(false);
+                  setSpec("");
+                  if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
+                }}
+                options={{
+                  ...(pending.action === "add" || pending.action === "remove" ? { preserveTimeout: 20 * 60_000 } : {}),
+                  ...(restartInterval ? { interval: restartInterval } : {}),
+                  ...(pending.action === "add"
+                    ? {
+                        onObservation: (observation: RestartObservation) => {
+                          saveAddRestart(pending.operationId, observation, false);
+                          setRestartObservation(observation);
+                        },
+                        onAcknowledged: (observation: RestartObservation) =>
+                          saveAddRestart(pending.operationId, observation, true),
                       }
-                      setPending(null);
-                    }}
-                    disabled={change.isPending || activation.changing}
-                  >
-                    {t("plugins.cancel")}
-                  </PaneAction>
-                )}
-              </>
+                    : { onObservation: retainPluginRestart, onAcknowledged: acknowledgePluginRestart }),
+                }}
+              />
             )}
           </div>
         </fieldset>
