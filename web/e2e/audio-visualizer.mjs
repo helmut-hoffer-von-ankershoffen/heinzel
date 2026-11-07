@@ -218,9 +218,9 @@ try {
       return window.audioFixture.requests;
     });
     await pane.getByRole("radio", { name: "Shared audio", exact: true }).click();
-    await page.waitForFunction(() =>
-      document.querySelector("output")?.textContent?.includes("Shared audio is not offered by this browser"),
-    );
+    // Not offered any more: the choice leaves the group and one line says why.
+    await pane.getByText("Shared audio is not offered by this browser.", { exact: true }).waitFor();
+    assert.equal(await pane.getByRole("radio", { name: "Shared audio", exact: true }).count(), 0);
     assert.equal(await page.evaluate(() => window.audioFixture.requests), beforeUnsupported);
     const bounds = await pane.boundingBox();
     assert(

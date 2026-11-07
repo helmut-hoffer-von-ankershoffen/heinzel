@@ -10,9 +10,9 @@ export type Phase = { id: string; label: string; state: PhaseState; detail?: str
 export type OperationRun =
   | { stage: "idle" }
   | { stage: "confirm"; call: SchemaOperationCall }
-  | { stage: "running"; call: SchemaOperationCall; phases: Phase[]; task: string | null }
-  | { stage: "done"; call: SchemaOperationCall; phases: Phase[]; result: unknown }
-  | { stage: "failed"; call: SchemaOperationCall; phases: Phase[]; error: string };
+  | { stage: "running"; call: SchemaOperationCall; phases: Phase[]; task: string | null; tracked?: true }
+  | { stage: "done"; call: SchemaOperationCall; phases: Phase[]; result: unknown; tracked?: true }
+  | { stage: "failed"; call: SchemaOperationCall; phases: Phase[]; error: string; tracked?: true };
 
 /** What a head reports for one step; anything else in a `phase` event is ignored. */
 export function parsePhase(data: Record<string, unknown>): Phase | null {
@@ -20,6 +20,13 @@ export function parsePhase(data: Record<string, unknown>): Phase | null {
   const { id, label, state, detail } = data;
   if (typeof id !== "string" || typeof label !== "string" || !states.includes(state as PhaseState)) return null;
   return { id, label, state: state as PhaseState, ...(typeof detail === "string" && detail ? { detail } : {}) };
+}
+
+/** `phases` with `phase` told: a later report of a known step replaces it in place, a new one goes last. */
+export function mergePhase(phases: Phase[], phase: Phase): Phase[] {
+  return phases.some((entry) => entry.id === phase.id)
+    ? phases.map((entry) => (entry.id === phase.id ? { ...entry, ...phase } : entry))
+    : [...phases, phase];
 }
 
 let current: OperationRun = { stage: "idle" };
@@ -70,10 +77,7 @@ export async function startOperation(onSettled: () => void): Promise<void> {
         if (event === "phase") {
           const phase = parsePhase(data);
           if (!phase) return;
-          const known = phases.some((entry) => entry.id === phase.id);
-          phases = known
-            ? phases.map((entry) => (entry.id === phase.id ? { ...entry, ...phase } : entry))
-            : [...phases, phase];
+          phases = mergePhase(phases, phase);
           set({ stage: "running", call, phases, task: null });
         } else if (event === "task" && typeof data.text === "string") {
           set({ stage: "running", call, phases, task: data.text });
@@ -88,6 +92,34 @@ export async function startOperation(onSettled: () => void): Promise<void> {
     set({ stage: "failed", call, phases, error: message });
   } finally {
     onSettled();
+  }
+}
+
+/**
+ * Show a write that another part of the app drives in the same dialog, with the steps it reports (`report` takes the
+ * whole list each time): the update installs, restarts and reloads, so it can't be one streamed call. The person
+ * already confirmed it where they asked; it is shown, never started or retried, here. Resolves or rejects as `run`.
+ */
+export async function trackOperation<T>(
+  call: SchemaOperationCall,
+  run: (report: (phases: Phase[]) => void) => Promise<T>,
+): Promise<T> {
+  if (current.stage === "confirm" || current.stage === "running") throw new Error("Another write is running.");
+  opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  let phases: Phase[] = [];
+  set({ stage: "running", call, phases, task: null, tracked: true });
+  try {
+    const result = await run((next) => {
+      phases = next;
+      if (current.stage === "running" && current.call === call)
+        set({ stage: "running", call, phases, task: null, tracked: true });
+    });
+    set({ stage: "done", call, phases: settle(phases), result, tracked: true });
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    set({ stage: "failed", call, phases, error: message, tracked: true });
+    throw error;
   }
 }
 

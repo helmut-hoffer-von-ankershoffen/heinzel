@@ -12,6 +12,8 @@ const result = {};
 let watch;
 try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
+  // The first-run wizard opens once the profile answers; wait for that answer instead of a fixed pause.
+  const profileAnswered = page.waitForResponse((r) => r.url().includes("/api/org/show") && r.ok(), { timeout: 30000 });
   await page.goto(url);
   const installedProfile = await page.evaluate(async () => {
     const response = await fetch("/api/org/show", {
@@ -75,7 +77,8 @@ try {
     });
   // A fresh state folder opens the first-run wizard over the app: close it, as a person would.
   const wizard = page.getByRole("dialog", { name: "Set up hz" });
-  await page.waitForTimeout(1500);
+  await profileAnswered;
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   if (await wizard.isVisible()) {
     await wizard.getByRole("button", { name: "Close setup" }).click();
     await wizard.waitFor({ state: "hidden", timeout: 15000 });
@@ -124,8 +127,16 @@ try {
   result.text = await popup.textContent();
   result.first = await seconds();
   result.buttons = await popup.getByRole("button").allTextContents();
-  await page.waitForTimeout(2500);
-  result.ticking = await seconds();
+  // Ticking: within the same 2.5 s as before the countdown must show less; stop as soon as it does.
+  result.ticking = (
+    await until(
+      async () => {
+        const left = await seconds();
+        return left < result.first && { left };
+      },
+      { timeout: 2500, interval: 250, message: "The countdown didn't tick down" },
+    ).catch(async () => ({ left: await seconds() }))
+  ).left;
 
   // The plan is the server's: a reload shows what is left, not a fresh 30.
   await page.reload();

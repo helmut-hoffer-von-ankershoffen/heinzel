@@ -124,7 +124,13 @@ it("reports an installer failure and never retries installation without another 
   renderAt("/");
   await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
   await user.click(screen.getByRole("button", { name: "Update now" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Installer failed before changing hz.");
+  // The popover and the operation dialog that showed its steps both say why.
+  await waitFor(() =>
+    expect(screen.getAllByRole("alert").map((alert) => alert.textContent)).toEqual([
+      expect.stringContaining("Installer failed before changing hz."),
+      expect.stringContaining("Installer failed before changing hz."),
+    ]),
+  );
   expect(startUpdate).toHaveBeenCalledTimes(1);
 });
 

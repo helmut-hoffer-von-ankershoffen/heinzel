@@ -935,6 +935,16 @@ def test_calendar_panel_on_phone_and_desktop_in_both_browsers(environment, tmp_p
 
 
 @pytest.mark.timeout(600)
+def test_desktop_title_bar_row_in_mounted_chromium_and_unchanged_browser(environment, tmp_path):
+    """The macOS desktop bridge makes one draggable 44 px row with clickable controls; a browser keeps 48 px."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "titlebar.mjs")
+    assert result["browser"] == {"topbar": 48}
+    assert result["desktop"]["order"][1:] == ["Collapse navigation", "Today", "Notifications", "Search"]
+    assert result["collapsed"]["expandX"] >= 80
+
+
+@pytest.mark.timeout(600)
 def test_settings_search_font_floor_precedes_focus_for_phone_input_modes(environment, tmp_path):
     """The real search field retains its minimum and enlarged theme size before any autofocus."""
     env, _recorded = environment

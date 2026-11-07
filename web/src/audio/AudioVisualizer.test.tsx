@@ -47,6 +47,7 @@ afterEach(() => {
   else delete (navigator as { mediaDevices?: MediaDevices }).mediaDevices;
   vi.clearAllMocks();
   localStorage.clear();
+  sessionStorage.clear();
   reloadSettings();
   act(() => publishOwnAudio({ mode: "none" }));
 });
@@ -346,15 +347,65 @@ describe("AudioVisualizer", () => {
     }
   });
 
-  it("keeps shared audio in the choice when the browser cannot share, with the reason", () => {
-    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: vi.fn() } });
+  it("offers shared audio where the browser can share a tab (desktop Chromium)", () => {
     render(<AudioVisualizer />);
     open();
-    const shared = source("Shared audio");
-    expect(shared).toHaveAttribute("aria-disabled", "true");
-    expect(shared).toHaveAttribute("title", "Shared audio is not offered by this browser.");
-    fireEvent.click(shared);
+    expect(source("Shared audio")).toBeVisible();
+    expect(screen.getByText(/sharing a tab shows your browser's sharing bar/)).toBeVisible();
+  });
+
+  it("does not offer shared audio on an iPhone, where no browser can share a tab", () => {
+    // Safari, Chrome and Firefox on iOS are all WebKit without getDisplayMedia.
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: vi.fn() } });
+    render(<AudioVisualizer />);
+    act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+    const prompt = screen.getByRole("complementary", { name: "Let Heinzel see the music" });
+    expect(within(prompt).queryByRole("button", { name: "Share this tab" })).not.toBeInTheDocument();
+    expect(within(prompt).getByRole("button", { name: "Use microphone" })).toBeVisible();
+    open();
+    const group = within(screen.getByRole("radiogroup", { name: "Listen to" }));
+    expect(group.getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["Off", "Microphone"]);
+    expect(screen.queryByText(/sharing a tab/)).not.toBeInTheDocument();
+    expect(screen.getByText("Nothing is recorded or uploaded. The microphone hears the room.")).toBeVisible();
     expect(captureAudio).not.toHaveBeenCalled();
-    expect(screen.getByRole("status")).toHaveTextContent("Shared audio is not offered by this browser.");
+  });
+
+  it("stops offering shared audio for the session when the browser refuses it as unsupported, and listens instead", async () => {
+    vi.mocked(captureAudio).mockRejectedValueOnce(new DOMException("Not supported", "NotSupportedError"));
+    vi.mocked(captureMicrophone).mockResolvedValueOnce(listening);
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(source("Shared audio"));
+    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    expect(captureMicrophone).toHaveBeenCalledOnce();
+    expect(
+      screen.getByText("Shared audio is not offered by this browser, so Heinzel listens with the microphone."),
+    ).toBeVisible();
+    expect(
+      within(screen.getByRole("radiogroup", { name: "Listen to" })).queryByRole("radio", { name: "Shared audio" }),
+    ).not.toBeInTheDocument();
+    expect(sessionStorage.getItem("hz.audio.unshared")).toBe("1");
+    // Quietly: no red problem and no "Retry" on the trigger for an option that cannot work here.
+    expect(screen.getByRole("status")).not.toHaveClass("text-bad");
+    expect(screen.queryByRole("button", { name: /problem|Retry/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("Retry")).not.toBeInTheDocument();
+    // A cancelled or refused prompt is not "unsupported": that keeps the choice (covered above).
+  });
+
+  it("treats Safari's missing audio capture the same: hidden, the microphone instead, no error", async () => {
+    // What iPhone Safari answered the owner: the capture itself reports that audio sharing is unavailable.
+    vi.mocked(captureAudio).mockRejectedValueOnce(
+      new DOMException(
+        "Audio sharing is unavailable. Your browser or operating system may not support audio capture.",
+        "NotSupportedError",
+      ),
+    );
+    vi.mocked(captureMicrophone).mockResolvedValueOnce(listening);
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(source("Shared audio"));
+    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    expect(screen.queryByText(/Audio sharing is unavailable/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Retry")).not.toBeInTheDocument();
   });
 });

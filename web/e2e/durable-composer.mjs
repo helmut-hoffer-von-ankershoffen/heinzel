@@ -73,20 +73,27 @@ await page.route("**/api/heinzel/answer-chat", async (route) => {
     },
   });
 });
-await page.route("**/api/system/update", async (route) => {
+// The app streams the update (`POST /api/stream/system/update`) to show its steps; either route counts as an install.
+const isUpdate = (url) => ["/api/system/update", "/api/stream/system/update"].includes(url.pathname);
+await page.route(isUpdate, async (route) => {
   updateRequests.install++;
   updated = true;
+  const result = {
+    before: "0.7.30",
+    after: updateVersion,
+    latest: updateVersion,
+    updated: true,
+    message: "Isolated browser fixture update.",
+    next: [],
+    pinned_to: null,
+    plugins: [],
+  };
+  const event = (kind, data) => `event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`;
   return route.fulfill({
-    json: {
-      before: "0.7.30",
-      after: updateVersion,
-      latest: updateVersion,
-      updated: true,
-      message: "Isolated browser fixture update.",
-      next: [],
-      pinned_to: null,
-      plugins: [],
-    },
+    contentType: "text/event-stream",
+    body:
+      event("phase", { id: "install", label: "Installing the update", state: "done" }) +
+      event("result", { data: result }),
   });
 });
 await page.route("**/api/lifecycle", (route) => {
