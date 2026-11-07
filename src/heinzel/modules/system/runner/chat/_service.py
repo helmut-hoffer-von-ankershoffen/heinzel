@@ -34,7 +34,7 @@ from heinzel import (
     redact_emails,
 )
 from heinzel.kernel import CapabilityView, CheckInChatContextSource, UsageEntry, record_usage
-from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
+from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
 from heinzel.modules.system.runner.chat._models import ChatAction, ChatContext, ChatMessage, ChatSession, ChatSettings
 from heinzel.modules.system.runner.chat._policy import guarded_settings, refusal
 from heinzel.modules.system.runner.chat._store import MAX_MESSAGES, ChatStore, dumps, now
@@ -472,6 +472,55 @@ class ChatService:
                 )
             )
             return self._store.load(personal_chat.id)
+
+    def propose_release_draft_share(self, durable_session: str, request_id: str) -> ChatSession:
+        """Stage an owner-private edited release draft for the normal human confirmation.
+
+        Raises:
+            HeinzelError: If the owner, exact review or associated personal chat cannot be verified.
+        """
+        if not self._kernel.provides(ApprovalIssuer):
+            msg = "Release draft share review is unavailable"
+            raise HeinzelError(msg)
+        issuer = self._kernel.resolve(ApprovalIssuer)
+        operation = "share-draft-link"
+        base: dict[str, JsonValue] = {"session_id": durable_session, "request_id": request_id}
+        with self._store.proposal_request_lock():
+            prior = self._store.find_proposal("heinzel", operation, durable_session, request_id)
+            if prior is not None:
+                prior_chat, found = prior
+                if (
+                    prior_chat.personal_session_id != durable_session
+                    or set(found.arguments) != {"session_id", "request_id", "review"}
+                    or not isinstance(found.arguments.get("review"), dict)
+                    or arguments_hash(found.arguments["review"]) != request_id
+                ):
+                    msg = "This draft review no longer matches its original action"
+                    raise HeinzelError(msg)
+                return prior_chat
+            preview = issuer.review("heinzel", operation, base)
+            chat = self._store.find_personal_chat(durable_session)
+            if chat is None:
+                chat = self._store.create(
+                    ChatContext(
+                        kind="text",
+                        ref=durable_session,
+                        owner_id=self._store.personal_owner(),
+                        detail="Review sharing an edited release draft.",
+                    ),
+                    personal_session_id=durable_session,
+                )
+            self._store.propose(
+                ProposedCall(
+                    session=chat.id,
+                    module="heinzel",
+                    operation=operation,
+                    tool="heinzel_share_draft_link",
+                    arguments={**base, "review": preview},
+                    command="Review the edited release draft and confirm sharing its document link.",
+                )
+            )
+            return self._store.load(chat.id)
 
     def propose_channel_item(self, durable_session: str, request_id: str) -> ChatSession:
         """Stage the exact owner-private channel posting for a human decision, without granting it.
@@ -1065,6 +1114,8 @@ class ChatService:
                 if found.operation == "execute-captured-write"
                 else "The exact contract acceptance is recorded. It was not run again."
                 if found.operation == "accept-agent-contract"
+                else "The reviewed document link acknowledgement is recorded."
+                if found.operation == "share-draft-link"
                 else "The exact model policy approval is recorded. It was not run again."
             )
         else:
@@ -1114,6 +1165,8 @@ class ChatService:
                         if found.operation == "execute-captured-write"
                         else "The exact contract acceptance is recorded. It was not run again."
                         if found.operation == "accept-agent-contract"
+                        else "The reviewed document link acknowledgement is recorded."
+                        if found.operation == "share-draft-link"
                         else "The exact model policy approval is recorded. It was not run again."
                     )
                 else:

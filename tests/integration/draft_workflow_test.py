@@ -381,6 +381,86 @@ def test_share_refuses_exact_edited_revision_destination_account_or_grant_drift(
     assert state["shares"] == []
 
 
+def _refuse_foreign_draft_review(host, tmp_path, service, action_ref, calls):
+    from dataclasses import replace
+
+    identity = host.current_user.context()
+    foreign = replace(identity, principal=CurrentUser(tmp_path / "other-owner").owner())
+    with host.current_user.using(foreign):
+        for operation, args in calls:
+            with pytest.raises(HeinzelError):
+                host.kernel.invoke(operation, **args)
+        with pytest.raises(HeinzelError):
+            service.confirm(*action_ref)
+
+
+@pytest.mark.parametrize("decision", ["confirm", "decline", "stale", "unknown"])
+def test_release_draft_activity_and_chat_confirmation(workflow, decision, tmp_path):
+    from heinzel import OperationLet
+    from heinzel.modules.system.runner.chat._service import ChatService
+
+    host, session, request, state = workflow
+    publish(workflow)
+    add_release(state)
+    run_tick(host, session, request)
+    key = next(iter(state["drafts"]))
+    kernel = host.kernel
+    operations = {let.name: let for _record, let in kernel.lets(OperationLet)}
+    activity = operations["release-draft-activity"]
+    prepare = operations["prepare-release-draft-share"]
+    stage = operations["propose-release-draft-share"]
+    service = kernel.resolve(ChatService)
+
+    events = kernel.invoke(activity, session_id=session)
+    assert {"draft.release-observed", "draft.append-acknowledged", "draft.review-notice-acknowledged"} <= {
+        event["kind"] for event in events
+    }
+    assert all(set(event) == {"kind", "draft_key", "at"} and event["draft_key"] == key for event in events)
+    review_id = kernel.invoke(prepare, session_id=session, draft_key=key)
+    other = host.crud.new_chat("other", "Other").session_id
+    assert kernel.invoke(activity, session_id=other) == []
+    with pytest.raises(HeinzelError):
+        kernel.invoke(stage, durable_session=other, request_id=review_id)
+    chat = kernel.invoke(stage, durable_session=session, request_id=review_id)
+    action = chat.actions[0]
+    assert chat.personal_session_id == session
+    assert action.operation == "share-draft-link"
+    assert action.arguments["review"]["snapshot"]["text"] == state["drafts"][key]
+    assert "approval_proof" not in action.arguments
+    assert kernel.invoke(stage, durable_session=session, request_id=review_id).actions == chat.actions
+    assert not state["shares"]
+
+    _refuse_foreign_draft_review(
+        host,
+        tmp_path,
+        service,
+        (chat.id, action.id),
+        (
+            (activity, {"session_id": session}),
+            (prepare, {"session_id": session, "draft_key": key}),
+            (stage, {"durable_session": session, "request_id": review_id}),
+        ),
+    )
+
+    if decision == "decline":
+        assert service.decline(chat.id, action.id).actions[0].status == "declined"
+        assert not state["shares"]
+    elif decision == "stale":
+        state["drafts"][key] += " Edited after review."
+        state["revision"] += 1
+        with pytest.raises(HeinzelError, match="edited draft"):
+            service.confirm(chat.id, action.id)
+        assert not state["shares"]
+    else:
+        state["share_lost_ack"] = decision == "unknown"
+        result = service.confirm(chat.id, action.id)
+        assert result.actions[0].status == ("uncertain" if decision == "unknown" else "done")
+        assert len(state["shares"]) == 1
+        with pytest.raises(HeinzelError):
+            service.confirm(chat.id, action.id)
+        assert len(state["shares"]) == 1
+
+
 def test_owner_declines_initial_publication_and_no_daemon_job_or_external_effect_is_created(workflow, monkeypatch):
     from typer.testing import CliRunner
 

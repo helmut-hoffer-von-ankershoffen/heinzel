@@ -81,6 +81,15 @@ try {
     await replyActivity.hover();
     await replyActivity.evaluate((node, clipping) => {
       const scroller = node.closest(".workspace-scroll");
+      const partial = clipping === 5;
+      const inner = partial ? node.closest(".overflow-y-auto") : null;
+      if (partial && (!inner || inner === scroller)) throw new Error("Missing inner chat scrollport");
+      if (inner) {
+        // Hover can park the summary at the inner edge. Reserve clipping for the workspace edge.
+        const rect = node.getBoundingClientRect();
+        const innerCenter = inner.getBoundingClientRect().top + inner.clientTop + inner.clientHeight / 2;
+        inner.scrollTo({ top: inner.scrollTop + (rect.top + rect.height / 2 - innerCenter), behavior: "instant" });
+      }
       const contentBottom = () => scroller.getBoundingClientRect().top + scroller.clientTop + scroller.clientHeight;
       const desiredBottom = contentBottom() + clipping;
       scroller.scrollTo({
@@ -92,15 +101,20 @@ try {
         "pointerdown",
         (event) => {
           const origin = scroller.scrollTop;
+          const rect = node.getBoundingClientRect();
           const press = {
             trusted: event.isTrusted,
             primary: event.isPrimary && event.button === 0,
             summary: event.target === node && node.tagName === "SUMMARY",
-            clipping: node.getBoundingClientRect().bottom - contentBottom(),
+            clipping: rect.bottom - contentBottom(),
             origin,
             destination: origin - 120,
             documentObserved: false,
           };
+          if (inner) {
+            const innerTop = inner.getBoundingClientRect().top + inner.clientTop;
+            press.innerClearance = Math.min(rect.top - innerTop, innerTop + inner.clientHeight - rect.bottom);
+          }
           window.__hzFractionalPress = press;
           // Window capture precedes the product's document capture handler. Observe
           // propagation without intercepting it; both listeners remove themselves.
@@ -125,6 +139,7 @@ try {
     assert.equal(press.primary, true, "fractional pressure must use the primary pointer and button");
     assert.equal(press.summary, true, "fractional pressure must press the current native summary");
     assert.equal(press.clipping, clipping, "the pressed control must meet the exact requested workspace clipping");
+    if (partialScroll) assert.ok(press.innerClearance >= point.height, "the summary must clear the inner chat edges");
     assert.ok(press.origin > 120, "the controlled press must have real workspace scroll distance");
     assert.equal(press.origin - press.destination, 120);
     assert.equal(press.documentObserved, true, "the queued native request must precede document capture");
