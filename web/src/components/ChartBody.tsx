@@ -42,6 +42,8 @@ export function ChartBody({ widget }: Readonly<{ widget: ChartData }>) {
   const nowIndex = now === undefined || now === null ? -1 : series.findIndex((point) => point.at === now);
   const ticks = [...new Set([0, Math.floor((series.length - 1) / 2), series.length - 1])];
   const fmt = (value: number) => `${round(value)}`;
+  const unit = widget.unit ? ` ${widget.unit}` : "";
+  const extent = `${t("contrib.chart.span", { low: fmt(low), high: fmt(high) })}${unit}`;
   return (
     <figure className="flex flex-col gap-1">
       <h3 className="text-xs text-muted-foreground">{widget.title}</h3>
@@ -118,12 +120,7 @@ export function ChartBody({ widget }: Readonly<{ widget: ChartData }>) {
         </tbody>
       </table>
       <figcaption className="text-xs tabular-nums text-muted-foreground">
-        {[
-          `${t("contrib.chart.span", { low: fmt(low), high: fmt(high) })}${widget.unit ? ` ${widget.unit}` : ""}`,
-          widget.bars_label,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
+        {[extent, widget.bars_label].filter(Boolean).join(" · ")}
       </figcaption>
     </figure>
   );
