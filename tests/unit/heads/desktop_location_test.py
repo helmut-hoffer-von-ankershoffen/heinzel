@@ -188,3 +188,32 @@ def test_an_unowned_app_in_system_applications_gets_a_clear_message(mac):
     (system / desktop.BUNDLE_NAME).mkdir()
     with pytest.raises(desktop.DesktopInstallationError, match="not installed by hz app install"):
         desktop.install_desktop("1.0.0", executable, home=home)
+
+
+_REASONS = {"moved": "could not be moved", "admin": "administrator password"}
+
+
+@pytest.mark.parametrize(
+    ("folder", "usable", "reason"),
+    [("system", True, None), ("home", True, "moved"), ("home", False, "admin")],
+)
+def test_the_install_message_gives_the_true_reason_the_app_is_not_in_applications(
+    monkeypatch, tmp_path, folder, usable, reason
+):
+    import io
+
+    from rich.console import Console
+
+    from heinzel.heads.cli import _app
+
+    system = tmp_path / "system-applications"
+    where = system if folder == "system" else tmp_path / "home" / "Applications"
+    monkeypatch.setattr(desktop, "SYSTEM_APPLICATIONS", system)
+    monkeypatch.setattr(desktop, "desktop_location", lambda: where / desktop.BUNDLE_NAME)
+    monkeypatch.setattr(desktop, "system_applications_usable", lambda: usable)
+    out = io.StringIO()
+    _app._print_location(Console(file=out, width=400), Console(file=io.StringIO(), width=400))
+    text = out.getvalue()
+    assert f"installed at {where / desktop.BUNDLE_NAME}" in text
+    for key, words in _REASONS.items():
+        assert (words in text) is (key == reason)
