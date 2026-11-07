@@ -7,9 +7,10 @@
 Rule: nothing merges unless SonarCloud's quality gate passes and overall reliability, security and maintainability are
 rated A, for both the pull request's analysis and the project; and nothing merges at a coverage where the badge is red.
 
-Runs from .github/workflows/merge-gate.yml on `pull_request_target`, so a pull request can't change the gate that judges
-it: this file comes from the base branch and no pull request code is run. What it reads from the pull request's CI is
-a number, parsed strictly. Standard library only. Waits with a deadline, then fails closed: no answer is never a pass.
+Runs from .github/workflows/merge-gate.yml on `workflow_run` once a pull request's CI has finished, so a pull request
+can't change the gate that judges it: this file comes from the default branch and no pull request code is run. What it
+reads from the pull request's CI is a number, parsed strictly. Standard library only. Waits with a deadline, then fails
+closed: no answer is never a pass.
 
 Environment: GITHUB_REPOSITORY, GITHUB_TOKEN, PR_NUMBER and PR_HEAD_SHA (absent: the project only), COVERAGE_CHECK (the
 name of the CI job that measures coverage), CI_WORKFLOW (default .github/workflows/ci.yml).
