@@ -211,9 +211,9 @@ def test_hz_app_doctor_json_reports_the_same_facts(mac, owned, monkeypatch, seal
 
 @pytest.mark.parametrize(("keep", "words"), [(False, "double-click"), (True, "Open Anyway")])
 def test_the_install_note_is_honest_about_trust(keep, words):
-    from heinzel.heads.cli import _app
+    from heinzel.heads import _desktop_copy
 
-    note = _app._trust_note(keep_quarantine=keep)
+    note = _desktop_copy.trust(keep_quarantine=keep)
     assert "not notarized" in note
     assert "sha256" in note
     assert words in note

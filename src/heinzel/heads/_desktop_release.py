@@ -16,6 +16,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from heinzel import HeinzelError
+from heinzel.heads import _desktop_copy as copy
 from heinzel.heads._desktop_archive import MAX_ARCHIVE_BYTES
 from heinzel.heads._desktop_report import SILENT, Advance, Reporter
 
@@ -328,9 +329,9 @@ def fetch_archive(version: str, directory: Path, reporter: Reporter = SILENT) ->
     names = {path.name for path in paths}
     tag = f"v{version}"
     try:
-        with reporter.phase(f"Resolving release {tag}"):
+        with reporter.phase(copy.RESOLVE.format(tag=tag)):
             assets = _release_assets(tag, names, reporter)
-        with reporter.phase("Downloading release manifest and provenance"):
+        with reporter.phase(copy.FETCH_MANIFEST):
             _download(version, manifest_path, 16 * 1024, reporter)
             _download(version, proof, 2 * 1024 * 1024, reporter)
             _download(version, core_path, 32 * 1024, reporter)
@@ -344,22 +345,22 @@ def fetch_archive(version: str, directory: Path, reporter: Reporter = SILENT) ->
             ):
                 msg = "The desktop release manifest names a different artifact."
                 raise HeinzelError(msg)
-        with reporter.phase("Verifying manifest provenance (GitHub attestation)"):
+        with reporter.phase(copy.VERIFY_MANIFEST):
             _verify(gh, core_path, proof, core)
             _verify(gh, manifest_path, proof, core)
-        with reporter.phase("Checking the release came from the protected build"):
+        with reporter.phase(copy.CHECK_PRODUCER):
             _check_producer(core, tag, reporter)
         with reporter.phase(
-            f"Downloading the desktop app ({manifest.archive.size / 1e6:.0f} MB)", manifest.archive.size
+            copy.DOWNLOAD.format(megabytes=manifest.archive.size / 1e6), manifest.archive.size
         ) as advance:
             _download(version, archive, manifest.archive.size, reporter, advance)
-        with reporter.phase("Verifying checksum"):
+        with reporter.phase(copy.VERIFY_CHECKSUM):
             if archive.stat().st_size != manifest.archive.size or _digest(archive) != manifest.archive.sha256:
                 msg = "The downloaded desktop bundle differs from its release manifest."
                 raise HeinzelError(msg)
-        with reporter.phase("Verifying app provenance (GitHub attestation)"):
+        with reporter.phase(copy.VERIFY_APP):
             _verify(gh, archive, proof, core)
-        with reporter.phase("Confirming the release assets did not change"):
+        with reporter.phase(copy.CONFIRM_ASSETS):
             if any(_digest(path) != assets[path.name][1] for path in paths) or assets != _release_assets(
                 tag, names, reporter
             ):

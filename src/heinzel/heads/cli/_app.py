@@ -10,6 +10,7 @@ import typer
 from rich.console import Console
 
 from heinzel import HeinzelError, Settings, __version__
+from heinzel.heads import _desktop_copy as copy
 from heinzel.heads.cli._progress import PhaseReporter
 from heinzel.heads.cli._render import message
 from heinzel.kernel import KERNEL_SECTION, Installation, Kernel
@@ -70,40 +71,13 @@ def _print_location(output: Console, error: Console) -> Path:
 
     location = desktop_location()
     if location is None:
-        error.print("The desktop app was installed but cannot be found. Run hz app doctor.")
+        error.print(copy.LOST)
         raise typer.Exit(1)
-    output.print(f"Heinzel is installed at {location}.", markup=False)
-    if location.parent == SYSTEM_APPLICATIONS:
-        return
-    if system_applications_usable():
-        output.print(
-            f"It could not be moved to {SYSTEM_APPLICATIONS} this time: Heinzelmännchen was running, another "
-            f"{location.name} is already there, or your home folder is on another volume. Quit the app, move the "
-            "other copy to the Trash, then run hz app install again: it moves the app for you.",
-            markup=False,
-        )
-    else:
-        output.print(
-            f"It is in your own Applications folder because this user cannot write to {SYSTEM_APPLICATIONS} "
-            "without an administrator password; Finder, Launchpad and Spotlight find it there too. To have it in "
-            f"{SYSTEM_APPLICATIONS}, make this account an administrator and run hz app install again: it moves "
-            "the app for you.",
-            markup=False,
-        )
+    output.print(copy.installed_at(location), markup=False)
+    if location.parent != SYSTEM_APPLICATIONS:
+        reason = copy.not_moved if system_applications_usable() else copy.not_admin
+        output.print(reason(location, SYSTEM_APPLICATIONS), markup=False)
     return location
-
-
-def _trust_note(*, keep_quarantine: bool) -> str:
-    """Say honestly what was checked and how macOS will treat the first open."""
-    opening = (
-        "; it is marked as downloaded, so open it once via System Settings, Privacy & Security, Open Anyway."
-        if keep_quarantine
-        else ", so it opens with a double-click."
-    )
-    return (
-        "It is an unsigned app from this project, not notarized by Apple. Heinzel verified the download's "
-        f"sha256, its build provenance and its code seal{opening}"
-    )
 
 
 def _doctor(output: Console, error: Console, *, fix: bool, as_json: bool = False) -> None:
@@ -119,19 +93,19 @@ def _doctor(output: Console, error: Console, *, fix: bool, as_json: bool = False
     except (HeinzelError, OSError, SubprocessError) as exc:
         if as_json:
             output.print_json(data={"installed": None, "error": str(exc)})
-        error.print(message("Desktop check failed.", str(exc)))
+        error.print(message(copy.CHECK_FAILED, str(exc)))
         raise typer.Exit(1) from exc
     if as_json:
         state = {"installed": False} if report is None else {"installed": True, **report.as_dict()}
         output.print_json(data={**state, "repairs": repairs})
     if report is None:
-        error.print("The Heinzel desktop app is not installed. Run hz app install.")
+        error.print(copy.NOT_INSTALLED_FOR_DOCTOR)
         raise typer.Exit(1)
     if not as_json:
         for line in [*repairs, *report.lines()]:
             output.print(line, markup=False)
     if not report.opens:
-        error.print("Run hz app doctor --fix to repair it.")
+        error.print(copy.DOCTOR_FIX)
         raise typer.Exit(1)
 
 
@@ -139,27 +113,24 @@ def _install(kernel: Kernel, output: Console, error: Console, *, keep_quarantine
     from heinzel.heads._desktop_installation import install_desktop  # noqa: PLC0415 - native install only
 
     try:
-        error.print(f"Installing Heinzelmännchen {__version__} ...")
+        error.print(copy.installing(__version__))
         state = install_desktop(
             __version__, desktop_executable(kernel), reporter=PhaseReporter(error), keep_quarantine=keep_quarantine
         )
     except KeyboardInterrupt as exc:
-        error.print("Cancelled. Nothing was installed; run hz app install to try again.")
+        error.print(copy.CANCELLED_INSTALL)
         raise typer.Exit(130) from exc
     except (HeinzelError, OSError, SubprocessError) as exc:
-        error.print(message("Desktop installation failed.", str(exc)))
+        error.print(message(copy.INSTALL_FAILED, str(exc)))
         raise typer.Exit(1) from exc
     if state == "deferred":
-        error.print("Quit the Heinzel desktop app, then run hz app install again.")
+        error.print(copy.DEFERRED)
         raise typer.Exit(1)
     # Where the app really is, checked on disk: /Applications, or the user's own folder and why.
     location = _print_location(output, error)
     if state != "current":
-        output.print(_trust_note(keep_quarantine=keep_quarantine))
-    output.print(
-        f"Next: open Heinzelmännchen from {location.parent} in Finder, or press Cmd+Space and type Heinzelmännchen.",
-        markup=False,
-    )
+        output.print(copy.trust(keep_quarantine=keep_quarantine))
+    output.print(copy.next_step(location), markup=False)
 
 
 def _uninstall(output: Console, error: Console) -> None:
@@ -168,15 +139,13 @@ def _uninstall(output: Console, error: Console) -> None:
     try:
         removed = uninstall_desktop(reporter=PhaseReporter(error))
     except KeyboardInterrupt as exc:
-        error.print("Cancelled. The app was left as it was.")
+        error.print(copy.CANCELLED_UNINSTALL)
         raise typer.Exit(130) from exc
     except (HeinzelError, OSError, SubprocessError) as exc:
-        error.print(message("Desktop uninstall failed.", str(exc)))
+        error.print(message(copy.UNINSTALL_FAILED, str(exc)))
         raise typer.Exit(1) from exc
     output.print(
-        f"Removed the Heinzelmännchen desktop app from {removed}; your profile is kept."
-        if removed
-        else "The Heinzelmännchen desktop app is not installed.",
+        copy.removed(removed) if removed else copy.NOT_INSTALLED,
         markup=False,
     )
 
@@ -232,6 +201,6 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         try:
             _refresh_after_exit(kernel)
         except (HeinzelError, OSError, SubprocessError) as exc:
-            error.print(message("Desktop update failed.", str(exc)))
+            error.print(message(copy.UPDATE_FAILED, str(exc)))
 
     return app

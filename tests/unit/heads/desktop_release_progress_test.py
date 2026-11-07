@@ -247,7 +247,7 @@ def test_install_names_the_folder_the_installer_reports_not_a_fixed_one(monkeypa
     assert "Installing Heinzelmännchen" in err.getvalue()
     assert f"Heinzel is installed at {system}." in out.getvalue()
     assert "Next: open Heinzelmännchen from /Applications in Finder" in out.getvalue()
-    assert "own Applications folder" not in out.getvalue()
+    assert "cannot write to" not in out.getvalue()
     assert "Go > Home" not in out.getvalue()
 
 
@@ -257,9 +257,10 @@ def test_install_in_the_users_folder_says_why_and_names_that_folder(monkeypatch,
 
     own = tmp_path / "Applications" / "Heinzelmaennchen.app"
     monkeypatch.setattr(installation, "desktop_location", lambda home=None: own)
+    monkeypatch.setattr(installation, "system_applications_usable", lambda: False)
     monkeypatch.setattr(installation, "install_desktop", lambda *_args, **_options: "installed")
     monkeypatch.setattr(_app, "desktop_executable", lambda _kernel: tmp_path / "hz")
     out = io.StringIO()
     _app._install(None, Console(file=out, width=400), Console(file=io.StringIO(), width=200))
-    assert "own Applications folder because this user cannot write to /Applications" in out.getvalue()
+    assert f"It is in {own.parent} because this user cannot write to /Applications" in out.getvalue()
     assert f"Next: open Heinzelmännchen from {own.parent} in Finder" in out.getvalue()

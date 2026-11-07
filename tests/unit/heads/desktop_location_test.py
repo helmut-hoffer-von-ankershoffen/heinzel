@@ -217,3 +217,32 @@ def test_the_install_message_gives_the_true_reason_the_app_is_not_in_application
     assert f"installed at {where / desktop.BUNDLE_NAME}" in text
     for key, words in _REASONS.items():
         assert (words in text) is (key == reason)
+
+
+def test_install_reports_every_phase_as_one_plain_line_when_not_a_terminal(mac):
+    """Redirected or without a TTY: one line per step, then its done line, no escape codes, never silent."""
+    import io
+
+    from rich.console import Console
+
+    from heinzel.heads.cli._progress import PhaseReporter
+
+    home, system, executable = mac
+    stream = io.StringIO()
+    reporter = PhaseReporter(Console(file=stream, force_terminal=False, width=200))
+    assert desktop.install_desktop("1.0.0", executable, home=home, reporter=reporter) == "installed"
+    text = stream.getvalue()
+    assert "\x1b" not in text
+    started = [line.removesuffix("...") for line in text.splitlines() if line.endswith("...")]
+    assert started == [
+        "Checking whether the app is running",
+        "Extracting the app",
+        "Checking the app bundle (identifier, version, Apple silicon)",
+        "Checking the app's code seal",
+        "Writing the install receipt",
+        f"Installing into {system}",
+        "Verifying the installed app",
+    ]
+    for step in started:
+        assert f"{step}: done (" in text
+    assert f"Verified: {system / desktop.BUNDLE_NAME} exists" in text

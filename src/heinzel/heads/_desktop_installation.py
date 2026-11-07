@@ -23,6 +23,7 @@ from xml.parsers.expat import ExpatError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from heinzel import HeinzelError
+from heinzel.heads import _desktop_copy as copy
 from heinzel.heads._desktop_archive import BUNDLE_NAME, extract_bundle
 from heinzel.heads._desktop_release import VERSION, fetch_archive
 from heinzel.heads._desktop_report import SILENT, Reporter
@@ -228,7 +229,7 @@ def _lock_exclusive(fd: int, reporter: Reporter) -> None:
                 )
                 raise DesktopInstallationError(msg) from None
             if not noted and waited >= _LOCK_NOTE_AFTER:
-                reporter.note("Waiting for another Heinzelmännchen install, update or removal to finish...")
+                reporter.note(copy.WAIT_FOR_LOCK)
                 noted = True
             time.sleep(0.1)
         else:
@@ -251,13 +252,13 @@ def _confirm_installed(bundle: Path, config: Path, reporter: Reporter) -> None:
     Raises:
         DesktopInstallationError: If the bundle is missing, not owned or not the expected app.
     """
-    with reporter.phase("Verifying the installed app"):
+    with reporter.phase(copy.VERIFY_INSTALLED):
         record = _owned_installation(bundle, config)
         if record is None:
             msg = f"The desktop app is not at {bundle} after installation."
             raise DesktopInstallationError(msg)
         _verify_bundle(bundle, record.release)
-        reporter.note(f"Verified: {bundle} exists and matches Heinzelmännchen {record.release}.")
+        reporter.note(copy.verified(bundle, record.release))
 
 
 @contextmanager
@@ -614,7 +615,7 @@ def install_desktop(  # noqa: PLR0913 - keyword-only options: update mode, home,
     with _locked_config(home, reporter) as config:
         if os.path.lexists(home / "Applications"):
             _owned_directory(home / "Applications")
-        with reporter.phase("Checking whether the app is running"):
+        with reporter.phase(copy.CHECK_RUNNING):
             usable = _recover_before_use(home, config)
         if not usable:
             return "deferred"
@@ -671,31 +672,32 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
         archive = fetch_archive(version, staging, reporter)
         expanded = staging / "expanded"
         expanded.mkdir(mode=0o700)
-        with reporter.phase("Extracting the app"):
+        with reporter.phase(copy.EXTRACT):
             candidate = extract_bundle(archive, expanded)
-        with reporter.phase("Checking the app bundle (identifier, version, Apple silicon)"):
+        with reporter.phase(copy.CHECK_BUNDLE):
             _verify_bundle(candidate, version)
-        with reporter.phase("Checking the app's code seal"):
+        with reporter.phase(copy.CHECK_SEAL):
             _prepare_for_gatekeeper(candidate, keep_quarantine=keep_quarantine)
         candidate.rename(staging / BUNDLE_NAME)
-        info = (staging / BUNDLE_NAME).lstat()
-        record = _Receipt(
-            release=version,
-            device=info.st_dev,
-            inode=info.st_ino,
-            birth_time=getattr(info, "st_birthtime_ns", None),
-            executable=str(executable),
-        )
-        metadata = record.model_dump_json().encode()
-        binding = record.binding()
-        if max(len(metadata), len(binding)) > _MAX_METADATA_BYTES:
-            msg = "The desktop installation metadata exceeds the allowed size."
-            raise DesktopInstallationError(msg)
-        _write_private(files / _RECEIPT, metadata)
-        _write_private(files / _BINDING, binding)
-        _sync_tree(staging / BUNDLE_NAME)
-        _sync_tree(files)
-        with _desktop_use(config) as locked, reporter.phase(f"Installing into {bundle.parent}"):
+        with reporter.phase(copy.WRITE_RECEIPT):
+            info = (staging / BUNDLE_NAME).lstat()
+            record = _Receipt(
+                release=version,
+                device=info.st_dev,
+                inode=info.st_ino,
+                birth_time=getattr(info, "st_birthtime_ns", None),
+                executable=str(executable),
+            )
+            metadata = record.model_dump_json().encode()
+            binding = record.binding()
+            if max(len(metadata), len(binding)) > _MAX_METADATA_BYTES:
+                msg = "The desktop installation metadata exceeds the allowed size."
+                raise DesktopInstallationError(msg)
+            _write_private(files / _RECEIPT, metadata)
+            _write_private(files / _BINDING, binding)
+            _sync_tree(staging / BUNDLE_NAME)
+            _sync_tree(files)
+        with _desktop_use(config) as locked, reporter.phase(copy.install_into(bundle.parent)):
             if not locked or (existing and _in_use(bundle)):
                 return "deferred"
             if _owned_installation(bundle, config) != existing:
@@ -732,7 +734,7 @@ def uninstall_desktop(*, home: Path | None = None, reporter: Reporter = SILENT) 
                 raise DesktopInstallationError(msg)
             if _owned_installation(bundle, config) != existing:
                 raise DesktopInstallationError(_CONFLICT)
-            with _staging(applications, config) as (staging, files), reporter.phase(f"Removing {bundle}"):
+            with _staging(applications, config) as (staging, files), reporter.phase(copy.remove(bundle)):
                 _commit(bundle, config, staging, files, "uninstall")
     return bundle
 
