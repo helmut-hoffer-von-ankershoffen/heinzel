@@ -24,6 +24,13 @@ follows from it:
 
 ## Decisions
 
+- **Integrated title bar (2026-11-07).** The macOS desktop app draws no native title bar: the window's top 44 px is
+  one row in the sidebar colour with a hairline below, made of the sidebar's first line (traffic lights in the first
+  80 px, then the navigation toggle, Home, Bell and Search), the main column's top bar and the side panel's tabs (or
+  the chat header when there are no tabs). The row drags the window; every control in it does not. The theme's
+  lockup moves to the line below it and carries the name the window chrome no longer shows. Collapsed, the expand
+  button stays after the lights and the main header starts after it; full screen gives the lights' inset back. A
+  browser or PWA has no bridge, so its layout is unchanged; Windows and Linux keep the native frame for now.
 - **Sidebar header (2026-11-07).** The header is the product lockup, not another navigation row: the swarm mark (the
   drawing `mark.svg` is made from, drawn inline) at 28 px, and the name as live text one pixel above the UI size
   (16 px by default), semibold, tracking -0.01em, centred on the mark with an 8 px gap; it fits whole in the 256 px
