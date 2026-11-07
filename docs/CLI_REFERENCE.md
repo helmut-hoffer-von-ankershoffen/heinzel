@@ -212,6 +212,7 @@ $ hz app doctor [OPTIONS]
 **Options**:
 
 * `--fix`: Reseal a broken app ad hoc and remove the quarantine mark Heinzel added.
+* `--json`: Print the state as JSON on stdout.
 * `--help`: Show this message and exit.
 
 ### `hz app install`

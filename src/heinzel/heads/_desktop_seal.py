@@ -128,6 +128,16 @@ class SealReport:
         """Whether a double-click opens the app without the 'damaged' refusal."""
         return self.problem is None
 
+    def as_dict(self) -> dict[str, object]:
+        """The same facts for scripts and agents."""
+        return {
+            "app": str(self.bundle),
+            "opens": self.opens,
+            "signature_problem": self.problem,
+            "quarantine": self.quarantine,
+            "gatekeeper": self.gatekeeper,
+        }
+
     def lines(self) -> list[str]:
         """Describe the state for a person, one fact per line."""
         signature = (

@@ -181,6 +181,33 @@ def test_hz_app_doctor_prints_the_state_and_fails_when_macos_would_refuse(mac, o
     assert ("doctor --fix" in err.getvalue()) is not sealed
 
 
+@pytest.mark.parametrize(("sealed", "code"), [(True, 0), (False, 1)])
+def test_hz_app_doctor_json_reports_the_same_facts(mac, owned, monkeypatch, sealed, code):
+    import io
+    import json
+
+    import typer
+    from rich.console import Console
+
+    from heinzel.heads.cli import _app
+
+    mac.sealed = sealed
+    monkeypatch.setenv("HOME", str(owned))  # the command reads Path.home(); never the real profile
+    out, err = io.StringIO(), io.StringIO()
+    try:
+        _app._doctor(Console(file=out, width=200), Console(file=err, width=200), fix=False, as_json=True)
+        status = 0
+    except typer.Exit as exit_:
+        status = exit_.exit_code
+    assert status == code
+    state = json.loads(out.getvalue())
+    assert state["installed"] is True
+    assert state["opens"] is sealed
+    assert (state["signature_problem"] is None) is sealed
+    assert state["quarantine"] in {"none", "ours", "other"}
+    assert state["repairs"] == []
+
+
 @pytest.mark.parametrize(("keep", "words"), [(False, "double-click"), (True, "Open Anyway")])
 def test_the_install_note_is_honest_about_trust(keep, words):
     from heinzel.heads.cli import _app
