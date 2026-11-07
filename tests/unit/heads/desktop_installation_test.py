@@ -52,8 +52,8 @@ def local_installation(monkeypatch, tmp_path):
     executable.parent.mkdir()
     executable.touch(mode=0o700)
 
-    def quarantine(bundle):
-        (bundle / "quarantined").touch()
+    def prepare(bundle, *, keep_quarantine):
+        (bundle / ("quarantined" if keep_quarantine else "sealed")).touch()
 
     def rename(source, target, *, swap=False):
         if not swap:
@@ -71,7 +71,7 @@ def local_installation(monkeypatch, tmp_path):
         monkeypatch.setattr(desktop, "_rename", rename)
     monkeypatch.setattr(desktop, "fetch_archive", fetch)
     monkeypatch.setattr(desktop, "extract_bundle", extract)
-    monkeypatch.setattr(desktop, "_quarantine", quarantine)
+    monkeypatch.setattr(desktop, "_prepare_for_gatekeeper", prepare)
     monkeypatch.setattr(desktop, "_in_use", lambda _: False)
 
     return executable, tmp_path / "Applications" / desktop.BUNDLE_NAME, tmp_path / ".config" / "heinzel"
@@ -82,12 +82,14 @@ def test_install_update_and_remove_preserve_profile(local_installation, tmp_path
     assert desktop.install_desktop("1.0.0", executable, update_only=True, home=tmp_path) == "absent"
     assert not bundle.parent.exists()
     assert desktop.install_desktop("1.0.0", executable, home=tmp_path) == "installed"
-    assert (bundle / "quarantined").is_file()
+    assert (bundle / "sealed").is_file()
+    assert not (bundle / "quarantined").exists()
     assert desktop.install_desktop("1.0.0", executable, home=tmp_path) == "current"
     assert json.loads((config / desktop._BINDING).read_text()) == {"version": 1, "executable": str(executable)}
     assert desktop.install_desktop("1.0.1", executable, update_only=True, home=tmp_path) == "updated"
     assert desktop.install_desktop("1.0.0", executable, update_only=True, home=tmp_path) == "current"
     assert (bundle / "release").read_text() == "1.0.1"
+    assert (bundle / "sealed").is_file()
     (config / "profile.json").write_text("{}")
     assert desktop.uninstall_desktop(home=tmp_path)
     assert not bundle.exists()
@@ -214,7 +216,7 @@ test_file, operation, boundary, executable, home = sys.argv[1:]
 helpers = runpy.run_path(test_file)
 desktop.fetch_archive = helpers["fetch"]
 desktop.extract_bundle = helpers["extract"]
-desktop._quarantine = lambda _: None
+desktop._prepare_for_gatekeeper = lambda _bundle, **_options: None
 desktop._in_use = lambda _: False
 rename = desktop._rename
 write_journal = desktop._write_journal
@@ -328,7 +330,7 @@ def test_lockf_launch_lease_defers_update_and_uninstall(local_installation, tmp_
 def test_native_quarantine_and_process_detection(tmp_path):
     bundle = tmp_path / desktop.BUNDLE_NAME
     bundle.mkdir()
-    desktop._quarantine(bundle)
+    desktop.mark_quarantined(bundle)
     quarantine = subprocess.check_output(["/usr/bin/xattr", "-p", "com.apple.quarantine", str(bundle)], timeout=5)
     assert quarantine.startswith(b"0081;")
     # A link, never a copy: macOS kills a copied platform binary (launch constraints) and shows a "damaged app"
