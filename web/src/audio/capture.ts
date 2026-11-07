@@ -73,3 +73,47 @@ export async function captureAudio(signal: AbortSignal): Promise<CapturedAudio> 
     throw error;
   }
 }
+
+/**
+ * Listen with the microphone (already granted to the app, or asked once by the browser). It hears speakers and the
+ * room, at lower fidelity than Heinzel's own sound. Processing is off so music is not flattened; nothing is recorded,
+ * stored or uploaded, and the audio is never connected to the speakers.
+ */
+export async function captureMicrophone(signal: AbortSignal): Promise<CapturedAudio> {
+  if (signal.aborted) throw new DOMException("Capture cancelled", "AbortError");
+  if (!navigator.mediaDevices?.getUserMedia || !globalThis.AudioContext)
+    throw new Error("The microphone is unavailable in this browser.");
+  const context = new AudioContext();
+  let stream: MediaStream | undefined;
+  let source: MediaStreamAudioSourceNode | undefined;
+  let closed = false;
+  const stop = () => {
+    signal.removeEventListener("abort", stop);
+    for (const track of stream?.getTracks() ?? []) track.stop();
+    stream = undefined;
+    source?.disconnect();
+    source = undefined;
+    if (!closed) {
+      closed = true;
+      void context.close().catch(() => undefined);
+    }
+  };
+  signal.addEventListener("abort", stop, { once: true });
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    if (signal.aborted || closed) throw new DOMException("Capture cancelled", "AbortError");
+    await context.resume();
+    if (signal.aborted || closed) throw new DOMException("Capture cancelled", "AbortError");
+    source = context.createMediaStreamSource(stream);
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.75;
+    source.connect(analyser);
+    return { analyser, stream, label: "Microphone", stop };
+  } catch (error) {
+    stop();
+    throw error;
+  }
+}

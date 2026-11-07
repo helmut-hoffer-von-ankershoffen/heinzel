@@ -24,6 +24,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from heinzel import HeinzelError
 from heinzel.heads._desktop_archive import BUNDLE_NAME, extract_bundle
 from heinzel.heads._desktop_release import VERSION, fetch_archive
+from heinzel.heads._desktop_seal import (
+    SealReport,
+    clear_our_quarantine,
+    ensure_sealed,
+    inspect_bundle,
+    mark_quarantined,
+)
 
 _RECEIPT = "desktop-installation.json"
 _BINDING = "desktop-owned-cli.json"
@@ -245,12 +252,15 @@ def _verify_bundle(bundle: Path, version: str) -> None:
         raise DesktopInstallationError(problem) from exc
 
 
-def _quarantine(bundle: Path) -> None:
-    subprocess.run(  # noqa: S603 - fixed system executable and validated staging path
-        ["/usr/bin/xattr", "-w", "com.apple.quarantine", "0081;00000000;Heinzel;", str(bundle)],
-        check=True,
-        timeout=10,
-    )
+def _prepare_for_gatekeeper(bundle: Path, *, keep_quarantine: bool) -> None:
+    """Seal the checksum- and provenance-verified staging bundle; quarantine it only when asked.
+
+    The release was downloaded and verified by Heinzel itself, so macOS has not quarantined it. Adding our
+    own mark to a bundle with a broken seal is what made macOS call it damaged (owner report, 0.9.26).
+    """
+    ensure_sealed(bundle)
+    if keep_quarantine:
+        mark_quarantined(bundle)
 
 
 def _rename(source: Path, target: Path, *, swap: bool = False) -> None:
@@ -438,7 +448,12 @@ def _recover_before_use(bundle: Path, config: Path) -> bool:
 
 
 def install_desktop(
-    version: str, executable: Path, *, update_only: bool = False, home: Path | None = None
+    version: str,
+    executable: Path,
+    *,
+    update_only: bool = False,
+    home: Path | None = None,
+    keep_quarantine: bool = False,
 ) -> DesktopInstallStatus:
     """Install or refresh a verified desktop release, or defer if the bundle is in use."""
     _check_platform()
@@ -457,7 +472,7 @@ def install_desktop(
             if VERSION.fullmatch(version) and _version_parts(existing.release) > _version_parts(version):
                 return "current"
         _owned_directory(applications)
-        return _install_release(version, executable, bundle, config, existing)
+        return _install_release(version, executable, bundle, config, existing, keep_quarantine=keep_quarantine)
 
 
 def _version_parts(version: str) -> tuple[int, ...]:
@@ -470,8 +485,8 @@ def _write_private(path: Path, data: bytes) -> None:
         file.write(data)
 
 
-def _install_release(
-    version: str, executable: Path, bundle: Path, config: Path, existing: _Receipt | None
+def _install_release(  # noqa: PLR0913 - the transaction needs each of these
+    version: str, executable: Path, bundle: Path, config: Path, existing: _Receipt | None, *, keep_quarantine: bool
 ) -> DesktopInstallStatus:
     if (
         not VERSION.fullmatch(version)
@@ -491,7 +506,7 @@ def _install_release(
         expanded.mkdir(mode=0o700)
         candidate = extract_bundle(archive, expanded)
         _verify_bundle(candidate, version)
-        _quarantine(candidate)
+        _prepare_for_gatekeeper(candidate, keep_quarantine=keep_quarantine)
         candidate.rename(staging / BUNDLE_NAME)
         info = (staging / BUNDLE_NAME).lstat()
         record = _Receipt(
@@ -547,3 +562,40 @@ def uninstall_desktop(*, home: Path | None = None) -> bool:
             with _staging(applications, config) as (staging, files):
                 _commit(bundle, config, staging, files, "uninstall")
     return True
+
+
+def doctor_desktop(*, fix: bool = False, home: Path | None = None) -> tuple[SealReport | None, list[str]]:
+    """Inspect the receipt-owned bundle; with `fix`, reseal it ad hoc and remove our own quarantine mark.
+
+    Only a bundle this installer owns (matching receipt) is repaired, and only while it is not running.
+    The ad-hoc seal records the installed bytes and adds no trust; the download was checked against its
+    published sha256 and build provenance when it was installed. Nothing is launched.
+
+    Returns:
+        The state after any repair (None when no owned app is installed) and the repairs made.
+
+    Raises:
+        DesktopInstallationError: If the app is running or its ownership metadata does not match.
+    """
+    _check_platform()
+    home = (home or Path.home()).resolve(strict=True)
+    bundle = home / "Applications" / BUNDLE_NAME
+    with _locked_config(home) as config:
+        if not _recover_before_use(bundle, config):
+            msg = "Quit Heinzelmännchen before checking the desktop app."
+            raise DesktopInstallationError(msg)
+        if _owned_installation(bundle, config) is None:
+            return None, []
+        repairs: list[str] = []
+        if fix:
+            with _desktop_use(config) as locked:
+                if not locked or _in_use(bundle):
+                    msg = "Quit Heinzelmännchen before repairing the desktop app."
+                    raise DesktopInstallationError(msg)
+                if ensure_sealed(bundle):
+                    repairs.append("Sealed the installed app with a local ad-hoc signature.")
+                if clear_our_quarantine(bundle):
+                    repairs.append("Removed the quarantine mark Heinzel had added.")
+                if repairs:
+                    _sync_tree(bundle)
+        return inspect_bundle(bundle), repairs

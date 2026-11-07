@@ -621,7 +621,9 @@ try {
       });
     }
 
-    await page.getByRole("button", { name: "Close settings" }).click();
+    // A phone closes the dialog with a touch. A mouse click would leave Playwright's pointer hovering the top-right
+    // corner, where the Audio rail's trigger sits once the dialog is gone, and open its hover preview over the footer.
+    await page.getByRole("button", { name: "Close settings" }).tap();
 
     // Every footer pane must fit, including the wide release notes and controls moved into More.
     for (const [id, label] of [["@version", /^v/]]) {
