@@ -16,7 +16,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from heinzel import HeinzelError
-from heinzel.heads import _desktop_copy as copy
+from heinzel.heads import _desktop_messages as copy
 from heinzel.heads._desktop_archive import MAX_ARCHIVE_BYTES
 from heinzel.heads._desktop_report import SILENT, Advance, Reporter
 

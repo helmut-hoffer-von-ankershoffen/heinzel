@@ -10,7 +10,7 @@ import typer
 from rich.console import Console
 
 from heinzel import HeinzelError, Settings, __version__
-from heinzel.heads import _desktop_copy as copy
+from heinzel.heads import _desktop_messages as copy
 from heinzel.heads.cli._progress import StepReporter
 from heinzel.heads.cli._render import message
 from heinzel.kernel import KERNEL_SECTION, Installation, Kernel

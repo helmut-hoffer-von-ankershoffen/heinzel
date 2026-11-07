@@ -15,8 +15,8 @@ import pytest
 from rich.console import Console
 from typer.testing import CliRunner
 
-from heinzel.heads import _desktop_copy as copy
 from heinzel.heads import _desktop_installation as desktop
+from heinzel.heads import _desktop_messages as copy
 from heinzel.heads._desktop_report import SILENT, Reporter
 from heinzel.heads.cli import _app
 

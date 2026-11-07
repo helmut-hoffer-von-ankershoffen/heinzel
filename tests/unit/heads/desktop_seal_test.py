@@ -211,7 +211,7 @@ def test_hz_app_doctor_json_reports_the_same_facts(mac, owned, monkeypatch, seal
 
 @pytest.mark.parametrize(("keep", "words"), [(False, "double-click"), (True, "Open Anyway")])
 def test_the_sealed_row_is_honest_about_trust(keep, words):
-    from heinzel.heads import _desktop_copy as copy
+    from heinzel.heads import _desktop_messages as copy
 
     row = copy.install_rows(keep_quarantine=keep)(copy.CHECK_SEAL)
     assert row is not None

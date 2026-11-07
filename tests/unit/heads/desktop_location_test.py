@@ -199,7 +199,7 @@ def test_an_unowned_app_in_system_applications_gets_a_clear_message(mac):
     ],
 )
 def test_the_first_install_line_names_the_folder_and_the_true_reason(tmp_path, folder, admin, reason):
-    from heinzel.heads import _desktop_copy as copy
+    from heinzel.heads import _desktop_messages as copy
 
     system = tmp_path / "system-applications"
     where = system if folder == "system" else tmp_path / "home" / "Applications"
@@ -214,7 +214,7 @@ def test_install_reports_one_row_per_step_group_when_not_a_terminal(mac):
 
     from rich.console import Console
 
-    from heinzel.heads import _desktop_copy as copy
+    from heinzel.heads import _desktop_messages as copy
     from heinzel.heads.cli._progress import StepReporter
 
     home, system, executable = mac

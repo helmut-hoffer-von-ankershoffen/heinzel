@@ -12,8 +12,8 @@ from urllib.request import urlopen
 import pytest
 from rich.console import Console
 
-from heinzel.heads import _desktop_copy as copy
 from heinzel.heads import _desktop_installation as installer
+from heinzel.heads import _desktop_messages as copy
 from heinzel.heads import _desktop_release as release
 from heinzel.heads.cli._progress import StepReporter
 from tests.fixtures.local_http import LoopbackThreadingHTTPServer

@@ -23,7 +23,7 @@ from xml.parsers.expat import ExpatError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from heinzel import HeinzelError
-from heinzel.heads import _desktop_copy as copy
+from heinzel.heads import _desktop_messages as copy
 from heinzel.heads._desktop_archive import BUNDLE_NAME, extract_bundle
 from heinzel.heads._desktop_release import VERSION, fetch_archive
 from heinzel.heads._desktop_report import SILENT, Reporter
