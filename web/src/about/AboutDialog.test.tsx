@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AboutDialog, detailsText, pluginsOf } from "./AboutDialog";
+import { AboutDialog, detailsText } from "./AboutDialog";
 import { requestMenuAction } from "./menu";
 
 const info = {
@@ -19,7 +19,8 @@ const info = {
   ],
 };
 
-vi.mock("@/api/queries", () => ({ useInfo: () => ({ data: info, isError: false }) }));
+let current: unknown = info;
+vi.mock("@/api/queries", () => ({ useInfo: () => ({ data: current, isError: false }) }));
 
 const show = () =>
   render(
@@ -28,11 +29,37 @@ const show = () =>
     </QueryClientProvider>,
   );
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  current = info;
+});
 
 describe("About dialog", () => {
-  it("lists the installed plugins the API reports", () => {
-    expect(pluginsOf(info as never).map((p) => p.name)).toEqual(["heinzel-a", "heinzel-b"]);
+  it("says so when no plugin is installed", () => {
+    current = { ...info, plugins: [] };
+    show();
+    act(() => requestMenuAction("about"));
+    expect(screen.getByText("No plugins installed.")).toBeInTheDocument();
+  });
+
+  it("shows one row per plugin, many or long-named, in cells that break instead of overflowing", () => {
+    const long = `heinzel-${"x".repeat(200)}`;
+    current = {
+      ...info,
+      plugins: [
+        { name: long, version: "1.0.0", source: "path", repository: null },
+        ...Array.from({ length: 40 }, (_, i) => ({
+          name: `heinzel-p${i}`,
+          version: "0.1.0",
+          source: "PyPI",
+          repository: null,
+        })),
+      ],
+    };
+    show();
+    act(() => requestMenuAction("about"));
+    expect(screen.getAllByRole("row")).toHaveLength(42);
+    expect(screen.getByRole("cell", { name: long })).toHaveClass("break-all");
   });
 
   it("gives the hz --version lines plus daemon, and the desktop app when there is one", () => {

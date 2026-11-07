@@ -867,6 +867,7 @@ const en = {
   "about.repository": "Source repository",
   "about.open": "About Heinzelmännchen",
   "updates.check": "Check for updates",
+  "updates.checkFailed": "The check for updates did not finish.",
   "status.open": "Open",
   "status.runIt": "Run",
   "state.ok": "OK",

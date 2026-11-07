@@ -2,6 +2,7 @@
 
 import importlib.metadata
 import json
+import logging
 import platform
 import re
 import sys
@@ -328,6 +329,9 @@ def _source_of(distribution: str) -> Literal["PyPI", "git", "path"]:
     return "path" if "dir_info" in direct or str(direct.get("url", "")).startswith("file:") else "PyPI"
 
 
+logger = logging.getLogger(__name__)
+
+
 class SystemService:
     """Reports on the Heinzelmännchen installation."""
 
@@ -372,6 +376,8 @@ class SystemService:
     def info(self) -> SystemInfo:
         """Versions, interpreter, settings, modules and the sections modules contribute."""
         modules = self.modules()
+        plugins = self._plugins()
+        logger.info("event=system.info.read outcome=ok modules=%d plugins=%d", len(modules), len(plugins))
         return SystemInfo(
             version=__version__,
             repository=next((r.origin.url for r in self._kernel.modules if r.origin.builtin), None),
@@ -381,7 +387,7 @@ class SystemService:
             installation="uv tool" if (Path(sys.prefix) / "uv-receipt.toml").is_file() else "environment",
             settings=self._kernel.settings.model_dump(mode="json"),
             modules=modules,
-            plugins=self._plugins(),
+            plugins=plugins,
             plugin_errors=dict(self._kernel.errors),
             sections={
                 record.qualname: section

@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { requestMenuAction } from "@/about/menu";
 import { config, doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
@@ -177,5 +178,23 @@ describe("Shell", () => {
       "href",
       "https://heinzel.team/guides/first-steps/",
     );
+  });
+});
+
+describe("Desktop menu actions", () => {
+  it("opens Settings, its daemon section and the changelog from the app menu", async () => {
+    mockApi({ ...answers, "/api/system/config/show": config });
+    renderAt("/doctor");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    act(() => requestMenuAction("settings"));
+    expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("opens the changelog panel from the Help menu", async () => {
+    mockApi({ ...answers, "/api/system/config/show": config, "/api/system/changelog": "# Changes\n" });
+    renderAt("/doctor");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    act(() => requestMenuAction("changelog"));
+    expect(await screen.findByRole("dialog", { name: "View changelog" })).toBeInTheDocument();
   });
 });

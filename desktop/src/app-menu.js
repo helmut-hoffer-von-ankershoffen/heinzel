@@ -83,3 +83,19 @@ export function menuScript(action) {
   if (!ACTIONS.includes(action)) throw new Error("Unknown menu action.");
   return `window.dispatchEvent(new CustomEvent(${JSON.stringify(MENU_EVENT)}, { detail: ${JSON.stringify(action)} }))`;
 }
+
+/** One structured log line per menu action: stable event name, fields, no data from the page. */
+export function menuLogLine(action, outcome) {
+  return JSON.stringify({ event: "desktop.menu.action", action, outcome });
+}
+
+/** The structured line for a Help link: the host only, never the whole URL. */
+export function helpLogLine(url, allowed) {
+  let host = "invalid";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    // an unparsable link is logged as blocked with an invalid host
+  }
+  return JSON.stringify({ event: "desktop.help.open", target_host: host, outcome: allowed ? "opened" : "blocked" });
+}

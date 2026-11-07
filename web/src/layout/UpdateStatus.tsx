@@ -1,12 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, LoaderCircle, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { onMenuAction } from "@/about/menu";
+import { api, unwrap } from "@/api/client";
 import { FooterItem } from "@/components/FooterItem";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
-import { useAutoUpdateStatus } from "@/updates/autoUpdateApi";
+import { KEY as AUTO_UPDATE_KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
 import { canVerifyUpdate, finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
 
 function updateRecoveryState(): "none" | "inspect" | "verify" {
@@ -31,15 +32,34 @@ export function UpdateStatus() {
   const [recovery, setRecovery] = useState<"none" | "inspect" | "verify">("none");
   const [message, setMessage] = useState<string | null>(null);
   const [openRequest, setOpenRequest] = useState(0);
-  const { refetch } = query;
-  // "Check for Updates…" in the desktop app menu opens this pane and asks again.
+  const queries = useQueryClient();
+  // One GET /system/release asks GitHub for the latest release (and updates the cache); the two status
+  // queries only read that cache, so they are refreshed after it.
+  const check = useMutation({
+    mutationFn: async () => {
+      console.info(JSON.stringify({ event: "web.update.check", outcome: "start" }));
+      return unwrap(api.GET("/system/release"));
+    },
+    onSuccess: async (result) => {
+      console.info(
+        JSON.stringify({ event: "web.update.check", outcome: "done", update_available: result.update_available }),
+      );
+      await Promise.all([
+        queries.invalidateQueries({ queryKey: ["web", "update-status"] }),
+        queries.invalidateQueries({ queryKey: AUTO_UPDATE_KEY }),
+      ]);
+    },
+    onError: () => console.info(JSON.stringify({ event: "web.update.check", outcome: "failed" })),
+  });
+  const { mutate: runCheck } = check;
+  // "Check for Updates…" in the desktop app menu opens this pane and does the same check.
   useEffect(
     () =>
       onMenuAction(["updates"], () => {
         setOpenRequest((count) => count + 1);
-        void refetch();
+        runCheck();
       }),
-    [refetch],
+    [runCheck],
   );
   const run = useCallback(async (resume: boolean) => {
     if (active.current) return;
@@ -135,17 +155,27 @@ export function UpdateStatus() {
           </p>
         )}
         <AutoUpdateToggle />
-        {recovery === "verify" && (
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(true)}>
-            {t("updates.verify")}
-          </Button>
+        {check.data?.warnings.map((warning) => (
+          <p key={warning} role="alert" className="text-xs text-bad">
+            {warning}
+          </p>
+        ))}
+        {check.isError && (
+          <p role="alert" className="text-bad">
+            {t("updates.checkFailed")}
+          </p>
         )}
         {/* One action row under a divider, at the bottom when late facts grow this above-anchored pane. */}
-        <div className="flex items-center gap-2 border-t border-border pt-2">
-          <Button size="sm" variant="outline" disabled={busy || query.isFetching} onClick={() => void refetch()}>
-            <RefreshCw aria-hidden className={query.isFetching ? "animate-spin" : undefined} />
+        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-2">
+          <Button size="sm" variant="outline" disabled={busy || check.isPending} onClick={() => runCheck()}>
+            <RefreshCw aria-hidden className={check.isPending ? "animate-spin" : undefined} />
             {t("updates.check")}
           </Button>
+          {recovery === "verify" && (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(true)}>
+              {t("updates.verify")}
+            </Button>
+          )}
           {canUpdate && (
             <Button size="sm" variant="outline" onClick={() => void run(false)}>
               {available ? t("updates.action") : t("updates.manualAction")}

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, webContents } from "electron";
-import { appMenuTemplate, isAllowedHelpUrl, menuScript } from "./app-menu.js";
+import { appMenuTemplate, isAllowedHelpUrl, helpLogLine, menuLogLine, menuScript } from "./app-menu.js";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createAboutHandler, createLifecycleHandler } from "./lifecycle-ipc.js";
@@ -157,12 +157,18 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
   void app.whenReady().then(() => {
     if (stopping) return;
     // The page owns what About, Settings and Updates show; the menu only asks it to open them.
-    Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate({
+    if (process.platform === "darwin") Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate({
       name: app.name,
-      open: (url) => { if (isAllowedHelpUrl(url)) void shell.openExternal(url); },
+      open: (url) => {
+        const allowed = isAllowedHelpUrl(url);
+        console.info(helpLogLine(url, allowed));
+        if (allowed) void shell.openExternal(url);
+      },
       send: (action) => {
         const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-        if (window && windows.has(window) && !window.isDestroyed()) void window.webContents.executeJavaScript(menuScript(action));
+        const ready = Boolean(window && windows.has(window) && !window.isDestroyed());
+        console.info(menuLogLine(action, ready ? "sent" : "no_window"));
+        if (ready) void window.webContents.executeJavaScript(menuScript(action));
       },
     })));
     return (managedMac ? acquireDesktopGate() : Promise.resolve(null)).then((gate) => {

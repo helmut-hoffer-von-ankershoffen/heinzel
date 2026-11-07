@@ -373,3 +373,13 @@ def test_info_names_the_installation_kind_and_modules_their_source(make_kernel, 
     (tmp_path / "uv-receipt.toml").write_text("")
     assert SystemService(make_kernel()).info().installation == "uv tool"
     assert [plugin.name for plugin in info.plugins] == ["heinzel-test"]  # the fixture kernel's one plugin
+
+
+def test_info_logs_one_structured_event_with_counts_and_no_paths(make_kernel, caplog):
+    with caplog.at_level("INFO", logger="heinzel.modules.system._service"):
+        SystemService(make_kernel()).info()
+    lines = [record.getMessage() for record in caplog.records if "event=system.info.read" in record.getMessage()]
+    assert len(lines) == 1
+    assert "outcome=ok" in lines[0]
+    assert "plugins=" in lines[0]
+    assert "/" not in lines[0]

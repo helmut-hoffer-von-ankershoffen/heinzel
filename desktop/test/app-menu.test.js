@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { appMenuTemplate, HELP_URLS, isAllowedHelpUrl, menuScript } from "../src/app-menu.js";
+import { appMenuTemplate, helpLogLine, menuLogLine, HELP_URLS, isAllowedHelpUrl, menuScript } from "../src/app-menu.js";
 
 test("the app menu offers About, Settings, Check for Updates and the standard entries", () => {
   const sent = [];
@@ -33,4 +33,16 @@ test("the Help menu opens only real pages on the allowed hosts, and web actions 
   for (const url of opened) assert.ok(isAllowedHelpUrl(url), url);
   for (const bad of ["http://heinzel.team/", "https://evil.example/", "https://github.com/other/x", "https://heinzel.team.evil.example/", "javascript:1"])
     assert.equal(isAllowedHelpUrl(bad), false, bad);
+});
+
+test("a menu action logs one structured line", () => {
+  assert.deepEqual(JSON.parse(menuLogLine("about", "sent")), { event: "desktop.menu.action", action: "about", outcome: "sent" });
+});
+
+test("a Help link logs its host and whether it opened, never the path", () => {
+  const opened = JSON.parse(helpLogLine("https://heinzel.team/privacy/", true));
+  assert.deepEqual(opened, { event: "desktop.help.open", target_host: "heinzel.team", outcome: "opened" });
+  const blocked = JSON.parse(helpLogLine("https://evil.example/x?token=1", false));
+  assert.deepEqual(blocked, { event: "desktop.help.open", target_host: "evil.example", outcome: "blocked" });
+  assert.equal(JSON.parse(helpLogLine("not a url", false)).target_host, "invalid");
 });
