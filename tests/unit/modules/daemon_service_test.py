@@ -2846,3 +2846,95 @@ def test_real_install_never_resolves_any_manager_command_through_path(make, bin_
     service.install(FIVE_MINUTES)
     assert service.owned_manager_state(bin_dir).registered
     assert all(command[0] == "/bin/launchctl" for command in manager.commands)
+
+
+def test_tick_self_heals_a_record_another_boots_request_left_behind(make, jobs, bin_dir, monkeypatch):
+    """The Air dead end: an update's request from before a reboot, an old install marker, restart refused."""
+    service = make(jobs, runner=Runner(bin_dir))
+    service.install(FIVE_MINUTES)
+    service._boot_identity = lambda: "boot-one"
+    service._continuity_fingerprint = lambda: "a" * 64
+    fence = {"ticks": 100, "hz": 100, "ns_dev": 1, "ns_ino": 2}
+    service._birth_fence = lambda: fence
+    stale = service.request_handover(service.capture_handover())
+    assert stale.request_id is not None
+    service._boot_identity = lambda: "boot-two"  # rebooted before any tick completed the request
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    service._process_birth = lambda: {**fence, "ticks": 101}
+    service._birth_fence = lambda: {**fence, "ticks": 150}
+    assert service.status().version_mismatch
+    service.tick()
+    request = service._read_state("handover-request.json")
+    assert request["request_id"] != stale.request_id
+    assert request["boot"] == "boot-two"
+    assert request["birth_ticks"] == 150
+    assert service.status().version_mismatch  # re-armed, not yet observed: nothing is claimed
+    service._process_birth = lambda: {**fence, "ticks": 151}  # the next scheduled tick is a new process
+    service.tick()
+    assert service._read_state("install.json")["version"] == __version__
+    assert service._read_state("install.json")["handover_id"] == request["request_id"]
+    assert not service.status().version_mismatch
+    service.install(FIVE_MINUTES)  # the reinstall that was refused before is accepted again
+    assert not service.status().version_mismatch
+
+
+def test_tick_self_heals_an_old_marker_without_any_request(make, jobs, bin_dir, monkeypatch):
+    """hz replaced by hand, without a lifecycle: the marker names the old version and nothing asks for a handover."""
+    service = make(jobs, runner=Runner(bin_dir))
+    service.install(FIVE_MINUTES)
+    marker = service._read_state("install.json")
+    service._write_state("install.json", {**marker, "version": "0.0.1"})
+    service._boot_identity = lambda: "boot-one"
+    service._continuity_fingerprint = lambda: "a" * 64
+    fence = {"ticks": 100, "hz": 100, "ns_dev": 1, "ns_ino": 2}
+    service._birth_fence = lambda: fence
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    service._process_birth = lambda: {**fence, "ticks": 90}
+    assert service.status().version_mismatch
+    service.tick()
+    assert (service.state_dir / "handover-request.json").exists()
+    service._process_birth = lambda: {**fence, "ticks": 101}
+    service.tick()
+    assert service._read_state("install.json")["version"] == __version__
+    assert not service.status().version_mismatch
+
+
+def test_tick_rearms_once_per_version_and_boot_and_never_without_the_manager(make, jobs, bin_dir, monkeypatch):
+    service = make(jobs, runner=Runner(bin_dir))
+    service.install(FIVE_MINUTES)
+    marker = service._read_state("install.json")
+    service._write_state("install.json", {**marker, "version": "0.0.1"})
+    service._boot_identity = lambda: "boot-one"
+    service._continuity_fingerprint = lambda: "a" * 64
+    fence = {"ticks": 100, "hz": 100, "ns_dev": 1, "ns_ino": 2}
+    service._birth_fence = lambda: fence
+    service._process_birth = lambda: {**fence, "ticks": 90}
+    monkeypatch.setattr(service, "_service_manager_pid", lambda: os.getpid() + 1)
+    service.tick()  # a manual tick is not the service: it never writes a request
+    assert not (service.state_dir / "handover-request.json").exists()
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    service.tick()
+    first = service._read_state("handover-request.json")
+    assert first
+    service._write_state("handover-request.json", {**first, "boot": "boot-zero"})  # unfinishable again
+    service.tick()
+    assert service._read_state("handover-request.json")["request_id"] == first["request_id"]  # once
+    service._boot_identity = lambda: "boot-two"
+    service.tick()
+    assert service._read_state("handover-request.json")["request_id"] != first["request_id"]  # a new boot tries again
+
+
+def test_tick_waits_for_a_completable_request_instead_of_rearming(make, jobs, bin_dir, monkeypatch):
+    """A tick already running during the update can't complete it; the next one will, so nothing is re-armed."""
+    service = make(jobs, runner=Runner(bin_dir))
+    service.install(FIVE_MINUTES)
+    service._boot_identity = lambda: "boot-one"
+    service._continuity_fingerprint = lambda: "a" * 64
+    fence = {"ticks": 100, "hz": 100, "ns_dev": 1, "ns_ino": 2}
+    service._birth_fence = lambda: fence
+    result = service.request_handover(service.capture_handover())
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    service._process_birth = lambda: {**fence, "ticks": 99}
+    service.tick()
+    assert service._read_state("handover-request.json")["request_id"] == result.request_id
+    assert not (service.state_dir / "handover-rearm.json").exists()

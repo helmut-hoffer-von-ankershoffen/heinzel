@@ -2258,7 +2258,7 @@ class DaemonService:
                         heartbeat["interval_minutes"] = interval
                     if manager_bound:
                         heartbeat["version"] = __version__
-                        self._finish_handover_locked(handover, now)
+                        self._settle_handover_locked(handover, now)
                     self._write_state("heartbeat.json", heartbeat)
                     self._post_notices(log)
                     log.write(logging.INFO, f"tick done: {len(runs)} run(s)")
@@ -2293,6 +2293,65 @@ class DaemonService:
         if not isinstance(fingerprint, str) or not re.fullmatch(r"[a-f0-9]{64}", fingerprint):
             return None
         return request_id, fingerprint, birth
+
+    def _settle_handover_locked(self, observed: tuple[str, str, dict[str, int]] | None, now: datetime) -> None:
+        """In a manager-bound tick: complete the bound handover, or re-arm one no later tick could complete."""
+        if observed is None:
+            self._rearm_handover_locked()
+        else:
+            self._finish_handover_locked(observed, now)
+
+    def _rearm_handover_locked(self) -> None:
+        """Self-heal a registration record that no later tick could correct, once per version and boot.
+
+        Runs in a manager-bound tick under the lifecycle lock, after it could not complete a handover. When the install
+        marker doesn't record the version this tick runs (or its handover can't be verified), and no later tick could
+        complete the current request (none, another boot's, a changed unit or no ordering fence), it writes a fresh
+        request. Nothing is restarted: the next scheduled tick is a new process born after it and commits the marker
+        through the ordinary observation, with every check that path has. `handover-rearm.json` keeps it to one try.
+        """
+        try:
+            boot = self._current_boot_identity()
+            marker = self._read_state("install.json")
+            if (
+                not boot
+                or not marker
+                or self.paused
+                or self._continuity_fingerprint is None
+                or self._handover_pending()
+                or (marker.get("version") == __version__ and self._handover_marker_valid(marker))
+                or self._request_completable(self._read_state("handover-request.json"), boot)
+                or self._read_state("handover-rearm.json") == {"version": __version__, "boot": boot}
+            ):
+                return
+            fence = self._current_birth_fence()
+            signature = self._handover_signature()
+            if fence is None:
+                return
+            self._write_state("handover-rearm.json", {"version": __version__, "boot": boot})
+            data: dict[str, str | int] = {
+                "request_id": secrets.token_hex(32),
+                "boot": boot,
+                "unit_signature": signature,
+            }
+            data.update({f"birth_{key}": value for key, value in fence.items()})
+            self._write_state("handover-request.json", data)
+            logger.info(
+                "The daemon's registration record names another version; the next tick records %s.", __version__
+            )
+        except Exception:  # noqa: BLE001 - self-healing never fails a tick; the mismatch stays visible in status
+            logger.warning("The daemon's registration record could not be re-armed; status shows the mismatch.")
+
+    def _request_completable(self, request: dict[str, str | int], boot: str) -> bool:
+        """Whether a later manager-bound tick of this boot could still complete `request`."""
+        request_id = request.get("request_id")
+        return (
+            isinstance(request_id, str)
+            and re.fullmatch(r"[a-f0-9]{64}", request_id) is not None
+            and request.get("boot") == boot
+            and self._request_birth_fence(request) is not None
+            and self._request_unit_matches(request)
+        )
 
     def _finish_handover_observation(self, observed: tuple[str, str, dict[str, int]] | None, now: datetime) -> None:
         """Commit a fresh observation under the lifecycle writer lock."""
