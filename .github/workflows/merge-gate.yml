@@ -1,56 +1,101 @@
 name: Merge gate
 
-# pull_request_target on purpose: the workflow and scripts/merge_gate.py come from the base branch, so a pull request
-# can't change what judges it. Its code is never checked out or run, no secret is used, the token only reads.
+# workflow_run on purpose, for two reasons. It starts once a pull request's CI has finished, so the gates judge results
+# that are there instead of holding a runner for up to an hour while they wait for them: the account runs at most 20
+# jobs at once, and two idle gates per pull request took a tenth of that. And like pull_request_target, the workflow and
+# scripts/merge_gate.py come from the default branch, so a pull request can't change what judges it. Its code is never
+# checked out or run, no secret is used, the token reads and writes only the two check runs on the pull request's head.
+# Those check runs keep the names and the GitHub Actions app the ruleset requires (merge-gate, coverage-floor); until
+# they are reported a new head shows them as expected, so a pull request can't merge before its gates have judged it.
 on:
-  pull_request_target: # zizmor: ignore[dangerous-triggers]
-    types: [opened, synchronize, reopened, ready_for_review]
-  workflow_dispatch:
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [CI]
+    types: [completed]
 
 permissions: {}
 
 concurrency:
-  group: merge-gate-${{ github.event.pull_request.number || github.ref }}
+  group: merge-gate-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: true
 
 jobs:
-  merge-gate:
-    name: merge-gate
+  gates:
+    name: Merge gates
+    # Pull request CI, or CI dispatched on a token-made release PR. A cancelled run was superseded or stopped early:
+    # the newer run reports, and a stopped one fails CI OK anyway.
+    if: >-
+      contains(fromJSON('["pull_request", "workflow_dispatch"]'), github.event.workflow_run.event)
+      && github.event.workflow_run.conclusion != 'cancelled'
     runs-on: ubuntu-latest
-    timeout-minutes: 330 # the waits (30 min) plus up to 4 h of runner queue, which the waits don't count
+    timeout-minutes: 60 # CI is done, so the results are there; the waits only cover a slow Sonar
     permissions:
       contents: read
-      checks: read # sees whether CI is still waiting for a runner
+      actions: read # the Coverage job's artifact
+      checks: write # the two check runs on the pull request's head
+      pull-requests: read # finds the pull request of a fork's head
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      PR_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-      - name: Quality gate passes, all ratings A, pull request and project
+      - id: pull
+        name: Find the pull request whose CI finished
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          FROM_EVENT: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::not a commit: $PR_HEAD_SHA"; exit 1; }
+          # A fork's run lists no pull request; its head commit still names it.
+          number="$FROM_EVENT"
+          if [ -z "$number" ]; then
+            number="$(gh api "repos/$GITHUB_REPOSITORY/commits/$PR_HEAD_SHA/pulls" \
+              --jq "[.[] | select(.state == \"open\" and .head.sha == \"$PR_HEAD_SHA\") | .number][0] // empty")"
+          fi
+          # No open pull request at this head: nothing to judge. Its gates stay expected, which blocks merging.
+          if [ -z "$number" ]; then echo "::notice::no open pull request has head $PR_HEAD_SHA"; exit 0; fi
+          [[ "$number" =~ ^[0-9]+$ ]] || { echo "::error::not a pull request number: $number"; exit 1; }
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+      - id: start
+        if: steps.pull.outputs.number != ''
+        name: Show both gates as running on the pull request's head
+        env:
+          DETAILS: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for check in merge-gate coverage-floor; do
+            id="$(gh api --method POST "repos/$GITHUB_REPOSITORY/check-runs" -f name="$check" -f head_sha="$PR_HEAD_SHA" \
+              -f status=in_progress -f details_url="$DETAILS" --jq .id)"
+            echo "${check//-/_}=$id" >> "$GITHUB_OUTPUT"
+          done
+      - id: sonar
+        name: Quality gate passes, all ratings A, pull request and project
+        if: steps.start.outcome == 'success'
+        env:
+          PR_NUMBER: ${{ steps.pull.outputs.number }}
         run: uv run --no-build --frozen --script scripts/merge_gate.py sonar
-
-  coverage-floor:
-    name: coverage-floor
-    if: github.event_name == 'pull_request_target'
-    runs-on: ubuntu-latest
-    timeout-minutes: 330 # the wait (45 min) plus up to 4 h of runner queue, which the wait doesn't count
-    permissions:
-      contents: read
-      actions: read
-      checks: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-      - name: Coverage at this head is not where the badge turns red
+      - id: coverage
+        name: Coverage at this head is not where the badge turns red
+        if: ${{ !cancelled() && steps.start.outcome == 'success' }}
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ steps.pull.outputs.number }}
           COVERAGE_CHECK: Coverage
         run: uv run --no-build --frozen --script scripts/merge_gate.py coverage
+      - name: Report both verdicts; a gate that didn't pass, or didn't run, fails closed
+        if: always() && steps.start.outputs.merge_gate != '' && steps.start.outputs.coverage_floor != ''
+        env:
+          MERGE_GATE: ${{ steps.start.outputs.merge_gate }}
+          MERGE_GATE_OUTCOME: ${{ steps.sonar.outcome }}
+          COVERAGE_FLOOR: ${{ steps.start.outputs.coverage_floor }}
+          COVERAGE_FLOOR_OUTCOME: ${{ steps.coverage.outcome }}
+        run: |
+          for check in MERGE_GATE COVERAGE_FLOOR; do
+            id="${!check}"
+            outcome_var="${check}_OUTCOME"
+            outcome="${!outcome_var}"
+            [ "$outcome" = success ] && conclusion=success || conclusion=failure
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/check-runs/$id" -f status=completed \
+              -f conclusion="$conclusion" -f "output[title]=$conclusion" \
+              -f "output[summary]=The gate step ended with ${outcome:-no result}; its log is in the linked run." >/dev/null
+          done
