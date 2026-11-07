@@ -98,8 +98,8 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     let size = { width: 0, height: 0 };
     let paletteAge = 0;
     const resize = () => {
-      const width = Math.max(1, window.innerWidth);
-      const height = Math.max(1, window.innerHeight);
+      const width = Math.max(1, element.clientWidth);
+      const height = Math.max(1, element.clientHeight);
       const next = canvasSize(width, height, window.devicePixelRatio);
       if (element.width !== next.width || element.height !== next.height) {
         element.width = next.width;
@@ -148,7 +148,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       }
       const dt = last ? Math.min(0.1, (now - last) / 1000) : 1 / 60;
       last = now;
-      if (size.width !== window.innerWidth || size.height !== window.innerHeight || size.width === 0) resize();
+      if (
+        size.width !== Math.max(1, element.clientWidth) ||
+        size.height !== Math.max(1, element.clientHeight) ||
+        size.width === 0
+      )
+        resize();
       if (paletteAge++ % 120 === 0) palette = readPalette();
       sample(now);
       stepState(state, data, edges, dt, now, { reduced: slow, width: size.width, height: size.height });
