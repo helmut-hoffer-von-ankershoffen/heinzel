@@ -660,7 +660,17 @@ try {
     await assertContained(page, notifications, `${spec.name}: notifications`);
     await page.getByRole("button", { name: "Close notifications" }).click();
     await page.getByRole("button", { name: "Search", exact: true }).click();
-    await assertContained(page, page.getByRole("dialog"), `${spec.name}: search`);
+    const search = page.getByRole("dialog", { name: /^Search navigation/ });
+    await assertContained(page, search, `${spec.name}: search`);
+    const searchInput = search.getByRole("combobox");
+    await searchInput.fill("unmatched-search-probe");
+    await search.getByText("Nothing matches.").waitFor();
+    const clearSearch = search.getByRole("button", { name: "Clear search" });
+    await assertTouchTarget(clearSearch, "clear search button", spec.name);
+    await clearSearch.tap();
+    assert.equal(await searchInput.inputValue(), "", `${spec.name}: search cleared`);
+    assert.ok(await searchInput.evaluate((element) => element === document.activeElement));
+    await clearSearch.waitFor({ state: "hidden" });
     await page.keyboard.press("Escape");
 
     // The home chat opens automatically. Check the composer is inside the screen and can be focused by touch.

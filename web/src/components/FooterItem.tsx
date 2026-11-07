@@ -45,6 +45,7 @@ export function FooterItem({
   popoverClassName,
   paneName,
   hideHeading = false,
+  steady = false,
 }: {
   /** What it says, as its accessible name and the pane's heading. */
   label: string;
@@ -70,7 +71,12 @@ export function FooterItem({
   paneName?: string;
   /** No visible heading, when the trigger already shows the same words. */
   hideHeading?: boolean;
+  /** `text` changes while shown (a clock): fixed-width digits and a width that never shrinks, so neighbours stay put. */
+  steady?: boolean;
 }) {
+  // Longest text seen, in characters: monospace `ch` units make the slot's width exact and never smaller.
+  const widest = useRef(0);
+  if (steady && text) widest.current = Math.max(widest.current, [...text].length);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -208,6 +214,7 @@ export function FooterItem({
         className={cn(
           "relative flex h-6 min-w-6 items-center justify-center gap-1 rounded px-1 hover:bg-accent/60 disabled:cursor-wait disabled:opacity-60",
           Icon ? COLOUR[state] : "text-ui-sm hover:text-foreground",
+          steady && "font-mono tabular-nums",
           className,
         )}
       >
@@ -219,7 +226,12 @@ export function FooterItem({
             </span>
           </>
         ) : content === undefined ? (
-          <span>{text}</span>
+          <span
+            className={steady ? "inline-block text-center" : undefined}
+            style={steady ? { minWidth: `${widest.current}ch` } : undefined}
+          >
+            {text}
+          </span>
         ) : (
           content
         )}

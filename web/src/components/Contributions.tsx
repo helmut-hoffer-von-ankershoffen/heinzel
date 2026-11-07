@@ -308,6 +308,7 @@ function FooterStatus({
           : undefined
       }
       text={item.presentation === "value" && item.live ? liveText(item.live, now) : label}
+      steady={Boolean(item.live)}
       content={
         item.meters?.length ? (
           <span aria-hidden className="flex h-4 items-end gap-px">
