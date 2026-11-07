@@ -19,7 +19,8 @@ test("each non-public target class is refused, by literal address and by local o
     private: ["https://10.0.0.1", "https://172.16.0.1", "https://172.31.255.1", "https://192.168.1.10", "https://[fc00::1]"],
     linkLocal: ["https://169.254.169.254", "https://[fe80::1]"],
     tailnet: ["https://100.64.0.1", "https://100.127.255.254", "https://mini.tail1234.ts.net", "https://ts.net"],
-    localName: ["https://mini.local", "https://printer.home.arpa", "https://svc.internal"],
+    localName: ["https://mini.local", "https://printer.home.arpa", "https://svc.internal", "https://nas.lan",
+      "https://wiki.corp", "https://portal.intranet"],
     port: ["https://example.com:8737", "https://example.com:8443"],
   };
   for (const [name, urls] of Object.entries(classes))

@@ -5,7 +5,7 @@ import { BlockList, connect, isIP } from "node:net";
 import { networkInterfaces } from "node:os";
 
 /** Names that resolve to this machine, the local network or the tailnet are never browser destinations. */
-export const LOCAL_NAME = /(?:^|\.)(?:localhost|local|internal|test|invalid|ts\.net|home\.arpa)$/u;
+export const LOCAL_NAME = /(?:^|\.)(?:localhost|local|internal|test|invalid|lan|corp|intranet|ts\.net|home\.arpa)$/u;
 
 const denied = new BlockList();
 for (const [address, prefix] of [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10],

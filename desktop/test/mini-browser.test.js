@@ -15,6 +15,9 @@ function fixture(enabled = true, configure = async () => {}) {
       const session = Object.assign(new EventEmitter(), { partition, config, clearStorageData: async () => calls.push(["clear"]),
         setPermissionCheckHandler: (handler) => { session.check = handler; },
         setPermissionRequestHandler: (handler) => { session.request = handler; },
+        setDevicePermissionHandler: (handler) => { session.device = handler; },
+        setBluetoothPairingHandler: (handler) => { session.pairing = handler; },
+        setDisplayMediaRequestHandler: (handler) => { session.display = handler; },
         webRequest: { onBeforeRequest: (handler) => { session.before = handler; } } });
       sessions.push(session); return session;
     }, createView: (preferences) => {
@@ -60,6 +63,25 @@ test("all permissions, downloads, popup dispatch and local redirects/subresource
     session.before({ url }, (result) => assert.equal(result.cancel, true));
   session.before({ url: "https://example.com/image.png" }, (result) => assert.equal(result.cancel, false));
 });
+test("device choosers, device permissions, Bluetooth pairing and screen sharing are refused", async () => {
+  const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
+  const session = f.sessions[0], contents = f.views[0].webContents;
+  assert.equal(session.device({ deviceType: "usb" }), false);
+  session.pairing({}, (answer) => assert.deepEqual(answer, { confirmed: false }));
+  session.display({}, (answer) => assert.deepEqual(answer, {}));
+  for (const chooser of ["select-hid-device", "select-serial-port", "select-usb-device"]) {
+    let prevented = false, picked = "unset";
+    session.emit(chooser, { preventDefault: () => { prevented = true; } }, { deviceList: [{ deviceId: "1" }] },
+      (id) => { picked = id; });
+    assert.equal(prevented, true, chooser);
+    assert.equal(picked, chooser === "select-serial-port" ? "" : undefined, chooser);
+  }
+  let prevented = false, picked = "unset";
+  contents.emit("select-bluetooth-device", { preventDefault: () => { prevented = true; } }, [{ deviceId: "1" }],
+    (id) => { picked = id; });
+  assert.equal(prevented, true);
+  assert.equal(picked, "");
+});
 test("every redirect hop and request to a non-public target is refused, a public hop passes", async () => {
   const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
   const session = f.sessions[0], contents = f.views[0].webContents;
@@ -102,7 +124,10 @@ test("surface layout is bounded, hidden on request, destroyed on product navigat
   assert.equal(f.owner.listenerCount("closed"), 0);
   assert.ok(f.calls.some(([name]) => name === "clear"));
   await f.invoke({ action: "navigate", url: "https://example.com" });
-  assert.notEqual(f.sessions[0].partition, f.sessions[1].partition);
+  // Reopening reuses the wiped partition of this window instead of leaking a new in-memory session.
+  assert.equal(f.sessions.length, 1);
+  assert.ok(f.calls.findIndex(([name]) => name === "clear") < f.calls.findLastIndex(([name]) => name === "load"));
+  assert.equal(f.sessions[0].listenerCount("will-download"), 1);
   f.controller.closeAll();
   assert.ok(f.views.every((view) => view.webContents.isDestroyed()));
 });

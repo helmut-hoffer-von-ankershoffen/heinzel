@@ -20,7 +20,7 @@ test("DNS answers in every non-public class refuse, so a public name cannot poin
       assert.equal(publicAddress(address), false, `${name}: ${address}`);
       assert.throws(() => selectPublicAddress(["93.184.215.14", address]), undefined, `${name}: ${address}`);
     }
-  for (const authority of ["mini.tail1234.ts.net:443", "printer.home.arpa:443"]) assert.throws(() => connectHost(authority));
+  for (const authority of ["mini.tail1234.ts.net:443", "printer.home.arpa:443", "nas.lan:443", "wiki.corp:443", "portal.intranet:443"]) assert.throws(() => connectHost(authority));
 });
 test("CONNECT accepts only canonical DNS authorities on TLS port", () => {
   assert.equal(connectHost("EXAMPLE.com:443"), "example.com");

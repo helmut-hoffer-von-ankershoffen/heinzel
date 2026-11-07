@@ -7,7 +7,38 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   const guests = new Map();
   const opening = new Map();
   const generations = new WeakMap();
+  // One in-memory partition per product window, wiped on every close, so reopening never grows memory (Electron
+  // cannot free a partition). The next guest waits for the wipe, so no state crosses from one browsing session.
+  const partitions = new WeakMap();
+  const wipes = new WeakMap();
   let stopped = false;
+  // Electron cancels a HID/USB chooser with no device and a serial chooser with an empty port id.
+  const refuseDevice = (cancel) => (event, ...args) => {
+    event.preventDefault();
+    const callback = args.at(-1);
+    if (typeof callback === "function") cancel === undefined ? callback() : callback(cancel);
+  };
+  const partitionFor = (window) => {
+    const existing = partitions.get(window);
+    if (existing) return existing;
+    const partition = createSession(`hz-browser-${randomUUID()}`, { cache: false });
+    partition.setPermissionCheckHandler(() => false);
+    partition.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+    // Device choosers would otherwise pick the first device; screen sharing gets no source.
+    partition.setDevicePermissionHandler(() => false);
+    partition.setBluetoothPairingHandler?.((_details, callback) => callback({ confirmed: false }));
+    partition.setDisplayMediaRequestHandler((_request, callback) => callback({}));
+    partition.on("select-hid-device", refuseDevice());
+    partition.on("select-usb-device", refuseDevice());
+    partition.on("select-serial-port", refuseDevice(""));
+    partition.on("will-download", (event) => event.preventDefault());
+    partition.webRequest.onBeforeRequest((details, callback) => {
+      try { browserUrl(details.url, connection()?.origin); callback({ cancel: false }); }
+      catch { callback({ cancel: true }); }
+    });
+    partitions.set(window, partition);
+    return partition;
+  };
   const close = (window) => {
     generations.set(window, (generations.get(window) ?? 0) + 1);
     const guest = guests.get(window);
@@ -17,24 +48,19 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     guest.network.close();
     if (!window.isDestroyed()) window.contentView.removeChildView(guest.view);
     if (!guest.view.webContents.isDestroyed()) guest.view.webContents.close({ waitForBeforeUnload: false });
-    // A non-persistent partition is never shared with another guest or the product.
-    void guest.session.clearStorageData().catch(() => {});
+    // A non-persistent partition is never shared with the product; closing wipes it before any reuse.
+    wipes.set(window, Promise.allSettled([guest.session.clearStorageData(), guest.session.clearCache?.(),
+      guest.session.clearAuthCache?.()]));
   };
   const isNewDocument = (event) => event.isMainFrame && !event.isSameDocument;
   const open = async (window) => {
-    const partition = createSession(`hz-browser-${randomUUID()}`, { cache: false });
+    await wipes.get(window);
+    const partition = partitionFor(window);
     const network = await createNetwork();
     let view;
     try {
       await network.configure(partition);
       if (stopped || window.isDestroyed()) { network.close(); throw new Error("Browser surface is closed."); }
-      partition.setPermissionCheckHandler(() => false);
-      partition.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-      partition.on("will-download", (event) => event.preventDefault());
-      partition.webRequest.onBeforeRequest((details, callback) => {
-        try { browserUrl(details.url, connection()?.origin); callback({ cancel: false }); }
-        catch { callback({ cancel: true }); }
-      });
       view = createView({ webPreferences: {
         session: partition, sandbox: true, contextIsolation: true, nodeIntegration: false,
         nodeIntegrationInSubFrames: false, webviewTag: false, navigateOnDragDrop: false,
@@ -48,6 +74,10 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         args.at(-1)();
       };
       contents.on("select-client-certificate", refuseCredentials);
+      contents.on("select-bluetooth-device", (event, _devices, callback) => {
+        event.preventDefault();
+        callback("");
+      });
       contents.on("login", (event, _details, info, callback) => {
         event.preventDefault();
         network.authenticate(info, callback);

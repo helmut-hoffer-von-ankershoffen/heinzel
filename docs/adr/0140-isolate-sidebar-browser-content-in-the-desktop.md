@@ -26,8 +26,11 @@ Use an Electron WebContentsView with a fresh nonpersistent session, sandbox, con
 Node integration. The authenticated product main frame controls this surface through narrowly validated commands.
 Do not grant guest permissions, downloads, popups or external protocol dispatch. Keep ordinary certificate checks.
 
+Refuse Bluetooth, HID, serial and USB choosers, device permissions and screen sharing. Each product window
+reuses one in-memory partition and wipes it on every close, so reopening never grows memory.
+
 HTTPS navigation, every redirect hop and subrequests reject credentials, literal IP addresses, local names
-(`localhost`, `*.local`, `*.internal`, tailnet `*.ts.net`), non-HTTPS schemes and the product origin.
+(`localhost`, `*.local`, `*.lan`, `*.home.arpa`, `*.internal`, `*.corp`, `*.intranet`, tailnet `*.ts.net`), non-HTTPS schemes and the product origin.
 Only the default TLS port is supported. Before creating the guest view, configure its fresh session with a fixed,
 authenticated local CONNECT broker and explicitly subtract Chromium's implicit loopback bypass. Close pooled
 connections before the first navigation.
