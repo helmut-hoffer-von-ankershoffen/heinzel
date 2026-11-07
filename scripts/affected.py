@@ -114,9 +114,33 @@ DOCS_READERS = SITE_TESTS_DEFAULT
 
 # Shared web files: when one of these changes, more than half of the Vitest files import it; run them all (it is
 # one job of a minute or two) rather than list 80 files.
-WEB_IMPORT = re.compile(
-    r"(?:import|export)\s[^;]*?from\s+[\"']([^\"']+)[\"']|import\s*\(\s*[\"']([^\"']+)[\"']\s*\)|import\s+[\"']([^\"']+)[\"']"
+# Module specifiers in a web source file: `... from "x"` (import and re-export), `import("x")` and `import "x"`. Three
+# simple patterns rather than one alternation: each is linear, and a stray match only widens the selection.
+WEB_IMPORTS = (
+    re.compile(r"\bfrom\s*[\"']([^\"'\n]+)[\"']"),
+    re.compile(r"\bimport\s*\(\s*[\"']([^\"'\n]+)[\"']"),
+    re.compile(r"\bimport\s*[\"']([^\"'\n]+)[\"']"),
 )
+# An E2E script name, matched only where a name starts, so a long run of name characters is not rescanned.
+MJS_NAME = re.compile(r"(?<![a-z0-9-])[a-z0-9-]+\.mjs")
+E2E_DIR = "tests/e2e"
+REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@^~{}-]*")
+SHA = re.compile(r"[0-9a-f]{40}")
+
+
+class UnusableRepoError(Exception):
+    """The directory is not a core checkout the map can be read from."""
+
+
+def make_variable(text: str, name: str) -> str | None:
+    """The value of `NAME := value` in a Makefile, or None. Line-based, no regular expression."""
+    for line in text.splitlines():
+        key, sep, value = line.partition(":=")
+        if sep and key.strip() == name and not line[:1].isspace():
+            return value.strip()
+    return None
+
+
 WEB_SHARED = re.compile(r"^web/src/(?:i18n\.ts|index\.css|api/|lib/|components/ui/|splash/|lifecycle/)")
 
 
@@ -127,12 +151,12 @@ class Repo:
         """Read the checkout at ROOT.
 
         Raises:
-            SystemExit: when ROOT is not a core checkout.
+            UnusableRepoError: when ROOT is not a core checkout.
         """
         self.root = root
         if not (root / "Makefile").is_file() or not (root / "src/heinzel").is_dir():
             msg = f"affected: {root} is not a core checkout (no Makefile or src/heinzel); pass --repo"
-            raise SystemExit(msg)
+            raise UnusableRepoError(msg)
 
     # -- Python ---------------------------------------------------------------------------------------------------
     @functools.cached_property
@@ -163,21 +187,19 @@ class Repo:
     def lanes(self) -> dict[str, list[str]]:
         """E2E lane -> its pytest files, from the Makefile's E2E_* variables (web-1 = web_ui_test, web-2 = the rest)."""
         text = (self.root / "Makefile").read_text(encoding="utf-8")
-        supervised = re.search(r"^E2E_SUPERVISED\s*:=\s*(.*)$", text, re.MULTILINE)
-        supervised_files = supervised[1].split() if supervised else []
-        all_e2e = sorted(str(p.relative_to(self.root)) for p in (self.root / "tests/e2e").glob("*_test.py"))
-        candidates = re.search(r"^E2E_WEB_CANDIDATES\s*:=\s*(.*)$", text, re.MULTILINE)
-        if candidates and "$(" not in candidates[1]:
-            web_candidates = candidates[1].split()
+        supervised = make_variable(text, "E2E_SUPERVISED")
+        supervised_files = supervised.split() if supervised else []
+        all_e2e = sorted(str(p.relative_to(self.root)) for p in (self.root / E2E_DIR).glob("*_test.py"))
+        candidates = make_variable(text, "E2E_WEB_CANDIDATES")
+        if candidates and "$(" not in candidates:
+            web_candidates = candidates.split()
         else:
             # Browser tests are the ones whose module drives a web/e2e script.
             web_candidates = [
-                f
-                for f in all_e2e
-                if re.search(r"[a-z0-9-]+\.mjs", (self.root / f).read_text(encoding="utf-8", errors="replace"))
+                f for f in all_e2e if MJS_NAME.search((self.root / f).read_text(encoding="utf-8", errors="replace"))
             ]
         web = [f for f in web_candidates if f not in supervised_files]
-        web_1 = [f for f in web if f == "tests/e2e/web_ui_test.py"]
+        web_1 = [f for f in web if f == f"{E2E_DIR}/web_ui_test.py"]
         web_2 = [f for f in web if f not in web_1]
         cli = [f for f in all_e2e if f not in web and f not in supervised_files]
         return {"cli": cli, "supervised": supervised_files, "web-1": web_1, "web-2": web_2}
@@ -186,9 +208,9 @@ class Repo:
     def script_owners(self) -> dict[str, list[str]]:
         """web/e2e/<name>.mjs -> the tests/e2e files that run it."""
         owners: dict[str, list[str]] = {}
-        for f in (self.root / "tests/e2e").glob("*.py"):
+        for f in (self.root / E2E_DIR).glob("*.py"):
             text = f.read_text(encoding="utf-8", errors="replace")
-            for name in set(re.findall(r"([a-z0-9-]+\.mjs)", text)):
+            for name in set(MJS_NAME.findall(text)):
                 owners.setdefault(f"web/e2e/{name}", []).append(str(f.relative_to(self.root)))
         return owners
 
@@ -208,10 +230,11 @@ class Repo:
         reverse: dict[str, set[str]] = {}
         for f in files:
             text = (self.root / f).read_text(encoding="utf-8", errors="replace")
-            for m in WEB_IMPORT.finditer(text):
-                target = self.resolve_web_import(f, m.group(1) or m.group(2) or m.group(3) or "")
-                if target:
-                    reverse.setdefault(target, set()).add(f)
+            for pattern in WEB_IMPORTS:
+                for spec in pattern.findall(text):
+                    target = self.resolve_web_import(f, spec)
+                    if target:
+                        reverse.setdefault(target, set()).add(f)
         return files, reverse
 
     def resolve_web_import(self, src: str, spec: str) -> str | None:
@@ -309,7 +332,7 @@ def _select_python_source(repo: Repo, sel: Selection, py_src: list[str]) -> None
 
 def _select_python_tests(repo: Repo, sel: Selection, py_tests: list[str], py_support: list[str]) -> None:
     for test in py_tests:
-        if not test.startswith("tests/e2e/"):
+        if not test.startswith(f"{E2E_DIR}/"):
             sel.pytest.add(test)
         elif lane := repo.lane_of(test):
             sel.lanes.add(lane)
@@ -318,7 +341,7 @@ def _select_python_tests(repo: Repo, sel: Selection, py_tests: list[str], py_sup
             sel.reasons.append(f"{test}: not in a known E2E lane, all lanes")
     for helper in py_support:
         directory = str(Path(helper).parent)
-        if directory.startswith("tests/e2e"):
+        if directory.startswith(E2E_DIR):
             sel.lanes.update(ALL_LANES)
         else:
             sel.pytest.add(directory + "/")
@@ -436,10 +459,22 @@ def classify(repo: Repo, changed: list[str]) -> dict[str, Any]:
 def changed_from_git(repo: Path, base: str) -> list[str]:
     """Files changed against BASE (three-dot diff) plus the working tree's own changes.
 
+    BASE is resolved to a commit id first, so whatever was passed reaches `git diff` only as 40 hex digits, never as
+    an option.
+
     Raises:
-        SystemExit: when git cannot diff against BASE.
+        SystemExit: when BASE is not a revision of the checkout, or git cannot diff against it.
     """
-    diff = ["git", "-C", str(repo), "diff", "--name-only", f"{base}...HEAD"]
+    if not REVISION.fullmatch(base):
+        msg = f"affected: not a git revision: {base!r}"
+        raise SystemExit(msg)
+    verify = ["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", "--end-of-options", f"{base}^{{commit}}"]
+    resolved = subprocess.run(verify, capture_output=True, text=True, check=False, timeout=60)  # noqa: S603 - fixed executable
+    commit = resolved.stdout.strip()
+    if resolved.returncode != 0 or not SHA.fullmatch(commit):
+        msg = f"affected: {base!r} is not a commit of {repo}"
+        raise SystemExit(msg)
+    diff = ["git", "-C", str(repo), "diff", "--name-only", f"{commit}...HEAD"]
     out = subprocess.run(diff, capture_output=True, text=True, check=False, timeout=120)  # noqa: S603 - fixed executable
     if out.returncode != 0:
         msg = f"affected: git diff failed: {out.stderr.strip()}"
@@ -481,7 +516,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         repo = Repo(args.repo.resolve())
-    except SystemExit as error:
+    except UnusableRepoError as error:
         print(error, file=sys.stderr)
         return 2
     files = list(args.files)

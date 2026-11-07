@@ -146,7 +146,7 @@ def test_selection_matches_the_expectation(repo, files, want):
 
 
 def test_every_e2e_file_has_a_lane(repo):
-    files = sorted(str(p.relative_to(ROOT)) for p in (ROOT / "tests/e2e").glob("*_test.py"))
+    files = sorted(str(p.relative_to(ROOT)) for p in (ROOT / affected.E2E_DIR).glob("*_test.py"))
     assert [f for f in files if repo.lane_of(f) is None] == []
 
 
@@ -163,7 +163,7 @@ def test_a_mixed_change_with_one_unknown_path_selects_everything(repo):
 
 
 def test_a_directory_that_is_not_a_checkout_is_refused(tmp_path):
-    with pytest.raises(SystemExit, match="not a core checkout"):
+    with pytest.raises(affected.UnusableRepoError, match="not a core checkout"):
         affected.Repo(tmp_path)
 
 
@@ -190,3 +190,30 @@ def test_the_cli_exits_two_for_an_unusable_repo(tmp_path):
     )
     assert out.returncode == 2
     assert "not a core checkout" in out.stderr
+
+
+@pytest.mark.parametrize("base", ["--output=/tmp/x", "-p", "main;rm", "a b", ""])
+def test_a_base_that_is_not_a_revision_never_reaches_git(base):
+    with pytest.raises(SystemExit, match="not a git revision"):
+        affected.changed_from_git(ROOT, base)
+
+
+def test_a_base_that_names_no_commit_is_refused():
+    with pytest.raises(SystemExit, match="is not a commit"):
+        affected.changed_from_git(ROOT, "no-such-branch-for-affected-test")
+
+
+def test_a_base_is_diffed_as_its_commit_id():
+    assert isinstance(affected.changed_from_git(ROOT, "HEAD"), list)
+
+
+def test_makefile_variables_are_read_by_line():
+    text = "E2E_SUPERVISED := a b\n\tE2E_SUPERVISED := recipe\nOTHER = x\n"
+    assert affected.make_variable(text, "E2E_SUPERVISED") == "a b"
+    assert affected.make_variable(text, "OTHER") is None
+
+
+def test_web_imports_are_found_in_each_form():
+    text = 'import a from "./a"\nexport { b } from \'./b\'\nconst c = await import("./c")\nimport "./d.css"\n'
+    found = sorted(spec for pattern in affected.WEB_IMPORTS for spec in pattern.findall(text))
+    assert found == ["./a", "./b", "./c", "./d.css"]
