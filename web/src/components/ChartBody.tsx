@@ -23,9 +23,10 @@ export function axisLabel(at: string): string {
   return match ? (match[1] as string) : at;
 }
 
+const ANCHOR = ["start", "middle", "end"] as const;
 const round = (n: number) => Math.round(n * 10) / 10;
 
-export function ChartBody({ widget }: { widget: ChartData }) {
+export function ChartBody({ widget }: Readonly<{ widget: ChartData }>) {
   const id = useId();
   const { series, bars, range, now } = widget;
   const values = series.map((point) => point.value);
@@ -65,8 +66,7 @@ export function ChartBody({ widget }: { widget: ChartData }) {
         <line x1={PAD.left} x2={W - PAD.right} y1={H - PAD.bottom} y2={H - PAD.bottom} className="stroke-border" />
         {bars?.map((bar, i) => (
           <rect
-            // biome-ignore lint/suspicious/noArrayIndexKey: the series is positional and never reordered
-            key={i}
+            key={series[i]?.at ?? i}
             x={round(x(i) - barWidth / 2)}
             y={round(H - PAD.bottom - bar * innerH * 0.5)}
             width={round(barWidth)}
@@ -94,7 +94,7 @@ export function ChartBody({ widget }: { widget: ChartData }) {
             {fmt(low)}
           </text>
           {ticks.map((i, n) => (
-            <text key={i} x={x(i)} y={H - 4} textAnchor={n === 0 ? "start" : n === 2 ? "end" : "middle"}>
+            <text key={i} x={x(i)} y={H - 4} textAnchor={ANCHOR[n]}>
               {axisLabel((series[i] as { at: string }).at)}
             </text>
           ))}
