@@ -120,6 +120,7 @@ def test_the_installer_seals_before_commit_and_quarantines_only_on_request(mac, 
 def owned(monkeypatch, tmp_path):
     """An owned installation whose bundle is never created on disk, so nothing can be launched or registered."""
     monkeypatch.setattr(desktop, "_check_platform", lambda: None)
+    monkeypatch.setattr(desktop, "SYSTEM_APPLICATIONS", tmp_path / "no-system-Applications")
     monkeypatch.setattr(desktop, "_owned_installation", lambda *_: object())
     monkeypatch.setattr(desktop, "_in_use", lambda _: False)
     monkeypatch.setattr(desktop, "_sync_tree", lambda _: None)

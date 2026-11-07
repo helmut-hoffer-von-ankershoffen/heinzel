@@ -40,7 +40,14 @@ fragment-bearing redirect, against isolated temporary servers. Cross-origin dest
 ## Installing on a Mac: `hz app install`
 
 `hz app install` downloads the macOS arm64 app from the official release, checks its sha256 against the release
-manifest and its build provenance, and installs `Heinzelmaennchen.app` into `~/Applications`. The app is not signed
+manifest and its build provenance, and installs `Heinzelmaennchen.app` into `/Applications`, where Finder,
+Launchpad and Spotlight expect apps. It uses `/Applications` when this user can write there without a password
+(administrator accounts can); it never runs `sudo` or asks for one. Otherwise it installs into `~/Applications`
+and says why: drag the app into Applications in Finder, or run `hz app install` again as an administrator.
+`hz app install` moves an earlier `~/Applications` install into `/Applications` in one rename while the app is
+closed, so there is only ever one copy. Automatic updates keep the app where it is, `hz app uninstall` removes it
+from whichever folder holds it, and both commands print the real path. Heinzel Notifier stays in `~/Applications`:
+it is a per-user helper that Heinzel launches itself, not an app people open. The app is not signed
 with an Apple Developer ID and not notarized by Apple. Every macOS build carries an ad-hoc code seal
 (`codesign --sign -`, no identity), because Apple silicon refuses to run arm64 code without a valid signature.
 
@@ -58,7 +65,7 @@ What macOS does with it (macOS 15 to 27 on Apple silicon):
 launching anything (an unnotarized app is always "rejected" there; that is expected). `hz app doctor --fix`, with the
 app closed, reseals a broken installed bundle ad hoc and removes only the quarantine mark Heinzel
 itself added. Installs and automatic updates check the seal of the verified download before it reaches
-`~/Applications`, and reseal it locally if a release lacks one.
+the Applications folder, and reseal it locally if a release lacks one.
 
 ## Local unsigned packaging
 

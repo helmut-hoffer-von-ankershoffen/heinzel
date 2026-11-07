@@ -69,6 +69,8 @@ def local_installation(monkeypatch, tmp_path):
         holding.rename(target)
 
     monkeypatch.setattr(desktop, "_check_platform", lambda: None)
+    # Never the real /Applications: these cases cover the per-user fallback; desktop_location_test the system one.
+    monkeypatch.setattr(desktop, "SYSTEM_APPLICATIONS", tmp_path / "no-system-Applications")
     if sys.platform != "darwin":
         monkeypatch.setattr(desktop, "_rename", rename)
     monkeypatch.setattr(desktop, "fetch_archive", fetch)
@@ -219,6 +221,7 @@ helpers = runpy.run_path(test_file)
 desktop.fetch_archive = helpers["fetch"]
 desktop.extract_bundle = helpers["extract"]
 desktop._prepare_for_gatekeeper = lambda _bundle, **_options: None
+desktop.SYSTEM_APPLICATIONS = Path(home) / "no-system-Applications"
 desktop._in_use = lambda _: False
 rename = desktop._rename
 write_journal = desktop._write_journal
