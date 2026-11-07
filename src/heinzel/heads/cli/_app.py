@@ -71,8 +71,9 @@ def _print_location(output: Console, error: Console) -> None:
     if location.parent != SYSTEM_APPLICATIONS:
         output.print(
             f"It is in your own Applications folder because this user cannot write to {SYSTEM_APPLICATIONS} "
-            "without an administrator password. To move it, drag it into Applications in Finder, or run "
-            "hz app install again as an administrator user.",
+            "without an administrator password; Finder, Launchpad and Spotlight find it there too. To have it in "
+            f"{SYSTEM_APPLICATIONS}, make this account an administrator and run hz app install again: it moves "
+            "the app for you.",
             markup=False,
         )
 

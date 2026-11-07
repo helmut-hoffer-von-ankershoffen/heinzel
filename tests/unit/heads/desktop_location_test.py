@@ -152,7 +152,7 @@ def test_a_foreign_app_in_system_applications_is_never_replaced(mac):
     foreign = system / desktop.BUNDLE_NAME
     foreign.mkdir()
     (foreign / "theirs").touch()
-    with pytest.raises(desktop.DesktopInstallationError, match="ownership receipt"):
+    with pytest.raises(desktop.DesktopInstallationError, match="not installed by hz app install"):
         desktop.install_desktop("1.0.0", executable, home=home)
     assert (foreign / "theirs").exists()
 
@@ -181,3 +181,10 @@ def test_a_journal_for_an_unknown_folder_fails_closed(mac):
     )
     with pytest.raises(desktop.DesktopInstallationError, match="ownership receipt"):
         desktop._journal_bundle(home / "Applications" / desktop.BUNDLE_NAME, journal)
+
+
+def test_an_unowned_app_in_system_applications_gets_a_clear_message(mac):
+    home, system, executable = mac
+    (system / desktop.BUNDLE_NAME).mkdir()
+    with pytest.raises(desktop.DesktopInstallationError, match="not installed by hz app install"):
+        desktop.install_desktop("1.0.0", executable, home=home)

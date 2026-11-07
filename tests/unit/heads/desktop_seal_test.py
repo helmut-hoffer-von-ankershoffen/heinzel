@@ -161,7 +161,7 @@ def test_doctor_without_an_owned_app_reports_nothing(mac, owned, monkeypatch):
 
 
 @pytest.mark.parametrize(("sealed", "code"), [(True, 0), (False, 1)])
-def test_hz_app_doctor_prints_the_state_and_fails_when_macos_would_refuse(mac, owned, sealed, code):
+def test_hz_app_doctor_prints_the_state_and_fails_when_macos_would_refuse(mac, owned, monkeypatch, sealed, code):
     import io
 
     import typer
@@ -170,6 +170,7 @@ def test_hz_app_doctor_prints_the_state_and_fails_when_macos_would_refuse(mac, o
     from heinzel.heads.cli import _app
 
     mac.sealed = sealed
+    monkeypatch.setenv("HOME", str(owned))  # the command reads Path.home(); never the real profile
     out, err = io.StringIO(), io.StringIO()
     try:
         _app._doctor(Console(file=out, width=200), Console(file=err, width=200), fix=False)

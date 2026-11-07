@@ -173,6 +173,12 @@ def _locate(home: Path, config: Path) -> tuple[Path, _Receipt | None]:
             if record is not None:
                 return bundle, record
     target = candidates[0] if system_applications_usable() else candidates[1]
+    if target == candidates[0] and os.path.lexists(target) and _read_metadata(config / _RECEIPT) is None:
+        msg = (
+            f"{target} is already there and was not installed by hz app install. Move it to the Trash, then run "
+            "hz app install again."
+        )
+        raise DesktopInstallationError(msg)
     return target, _owned_installation(target, config)
 
 

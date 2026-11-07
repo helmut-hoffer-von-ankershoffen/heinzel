@@ -43,7 +43,7 @@ fragment-bearing redirect, against isolated temporary servers. Cross-origin dest
 manifest and its build provenance, and installs `Heinzelmaennchen.app` into `/Applications`, where Finder,
 Launchpad and Spotlight expect apps. It uses `/Applications` when this user can write there without a password
 (administrator accounts can); it never runs `sudo` or asks for one. Otherwise it installs into `~/Applications`
-and says why: drag the app into Applications in Finder, or run `hz app install` again as an administrator.
+and says why; once the account is an administrator, `hz app install` moves it.
 `hz app install` moves an earlier `~/Applications` install into `/Applications` in one rename while the app is
 closed, so there is only ever one copy. Automatic updates keep the app where it is, `hz app uninstall` removes it
 from whichever folder holds it, and both commands print the real path. Heinzel Notifier stays in `~/Applications`:
