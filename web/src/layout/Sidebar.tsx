@@ -85,9 +85,17 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
   );
   return (
     <div className="flex h-full flex-col px-2">
-      {/* The same height and hairline as the main column's top bar, so both lines run across the window. */}
+      {/* The same height and hairline as the main column's top bar, so both lines run across the window. The brand
+          is the way home, named by its wordmark; its mark starts where the navigation's icons do. */}
       <div className={cn(HAIRLINE_BELOW, "h-12")}>
-        <ThemeLogo />
+        <Link
+          to="/"
+          aria-label={t("nav.brand")}
+          className="ml-0.5 flex min-w-0 items-center rounded-lg px-1 py-1 transition-colors hover:bg-accent/70"
+        >
+          <ThemeLogo />
+        </Link>
+        {/* The top bar's icon button, with a 44 px touch target around its 36 px. */}
         <Button
           variant="ghost"
           size="icon"
@@ -95,7 +103,7 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
           aria-expanded
           aria-label={t("nav.collapse")}
           title={t("nav.collapse")}
-          className="ml-auto text-icon"
+          className="relative ml-auto shrink-0 text-icon before:absolute before:-inset-1 before:content-['']"
         >
           <PanelLeftClose aria-hidden />
         </Button>
