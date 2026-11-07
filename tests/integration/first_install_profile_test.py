@@ -59,23 +59,23 @@ def test_first_profile_asks_name_team_and_only_the_actual_missing_required_field
     ]
 
 
-def test_existing_profile_values_are_respected_without_questions_or_writes(managed_profile):
+def test_existing_profile_names_can_be_confirmed_without_writes(managed_profile):
     _kernel, directory, calls = managed_profile
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "config.toml").write_text(
         '[org]\nname="Mira"\nhandle="mira"\nrole="engineer"\ntimezone="Europe/Berlin"\n[team]\nname="Payments"\n'
     )
     before = (directory / "config.toml").read_bytes()
-    bootstrap._complete_profile(Path("/fixture/persistent/bin/hz"), {}, ScriptedPrompter([]))
+    bootstrap._complete_profile(Path("/fixture/persistent/bin/hz"), {}, ScriptedPrompter(["", ""]))
     assert (directory / "config.toml").read_bytes() == before
     assert not any(call[:3] == ["system", "config", "set"] for call in calls)
 
 
-def test_a_partial_profile_asks_only_missing_fields_and_never_invents_optional_credentials(managed_profile):
+def test_a_partial_profile_confirms_saved_name_and_asks_for_required_fields(managed_profile):
     _kernel, directory, calls = managed_profile
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "config.toml").write_text('[org]\nname="Mira"\nhandle="mira"\ntimezone="Europe/Berlin"\n')
-    bootstrap._complete_profile(Path("/fixture/persistent/bin/hz"), {}, ScriptedPrompter(["Payments", "engineer"]))
+    bootstrap._complete_profile(Path("/fixture/persistent/bin/hz"), {}, ScriptedPrompter(["", "Payments", "engineer"]))
     assert [call[3] for call in calls if call[:3] == ["system", "config", "set"]] == ["team.name", "org.role"]
     assert "credential" not in json.dumps(calls)
 

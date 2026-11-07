@@ -9,6 +9,7 @@ import pytest
 from heinzel import HeinzelError
 from heinzel.heads import bootstrap, install
 from heinzel.heads._tool_install import ToolTarget
+from heinzel.kernel._prompter import Prompter
 
 pytestmark = pytest.mark.unit
 WORKSPACE_COMMAND = bootstrap._workspace_command
@@ -31,6 +32,8 @@ def test_first_use_installs_defaults_and_later_use_opens_without_installing(monk
     sequence = [] if already_installed else [None]
     installed, launched = [], []
     monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
+    monkeypatch.setattr(bootstrap, "_interactive_launch", lambda _args: False)
+    monkeypatch.setattr(install, "latest_profile", lambda: pytest.fail("Noninteractive reuse must stay offline"))
     monkeypatch.setattr(bootstrap, "installed_app", lambda: sequence.pop(0) if sequence else executable)
     selector = "https://example.com/standard.json"
     monkeypatch.setenv("HZ_APP_PROFILE", selector)
@@ -56,6 +59,112 @@ def test_first_use_installs_defaults_and_later_use_opens_without_installing(monk
     assert environment["PATH"].split(bootstrap.os.pathsep)[0] == str(executable.parent)
     assert environment.get("HZ_APP_PROFILE") is None
     assert environment["HZ_CONFIG_HOME"] == str(tmp_path / "profile")
+
+
+@pytest.mark.parametrize(
+    ("release", "exit_code"),
+    [
+        ("0.9.24", None),
+        ("0.9.17", None),
+        ("0.9.16", None),
+        ("offline", None),
+        ("invalid", 1),
+        ("failed-update", 7),
+        ("daemon-loaded", None),
+        ("daemon-unknown", 7),
+        ("plugin-pinned", None),
+        ("plugin-newer", None),
+    ],
+)
+def test_interactive_retained_app_checks_freshness_before_opening(monkeypatch, tmp_path, capsys, release, exit_code):
+    executable = tmp_path / "tools/heinzel/bin/hz"
+    events = []
+    monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
+    monkeypatch.setattr(bootstrap, "_interactive_launch", lambda _args: True)
+    monkeypatch.setattr(bootstrap, "_service_choices", lambda _args: [])
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: executable)
+    monkeypatch.delenv("HZ_APP_PROFILE", raising=False)
+    monkeypatch.setattr(install, "uv_executable", lambda: "/trusted/uv")
+    monkeypatch.setattr(bootstrap.Installation, "installed_core_version", lambda _self: "0.9.17")
+
+    def latest():
+        if release == "offline":
+            msg = "Connection unavailable"
+            raise install.ReleaseUnavailableError(msg)
+        if release == "invalid":
+            msg = "Invalid published release authority"
+            raise HeinzelError(msg)
+        version = (
+            "0.9.24"
+            if release in {"failed-update", "daemon-loaded", "daemon-unknown", "plugin-pinned", "plugin-newer"}
+            else release
+        )
+        return install.AppProfile(
+            format=2,
+            sdk=1,
+            core_version=version,
+            artifacts=[
+                install.Artifact(
+                    name="heinzel",
+                    version=version,
+                    filename=f"heinzel-{version}-py3-none-any.whl",
+                    sha256="a" * 64,
+                    url="https://example.invalid/heinzel.whl",
+                ),
+                install.Artifact(
+                    name="heinzel-clock",
+                    version="1.0",
+                    filename="heinzel_clock-1.0-py3-none-any.whl",
+                    sha256="b" * 64,
+                    url="https://example.invalid/heinzel-clock.whl",
+                ),
+            ],
+        )
+
+    def update(args, *, newer_profile):
+        assert args == []
+        assert newer_profile.core_version == "0.9.24"
+        events.append("update")
+        return 7 if release in {"failed-update", "daemon-unknown"} else 0
+
+    def daemon_status(app, environment, arguments):
+        assert app == executable
+        assert environment["HZ_PLUGINS_ENABLED"] == environment["HZ_UPDATE_CHECK"] == "false"
+        assert arguments == ["system", "daemon", "status"]
+        return {"installed": True, "loaded": True, "owned": release == "daemon-loaded"}
+
+    monkeypatch.setattr(
+        install, "existing_requirements", lambda _prefix: ["heinzel-clock==2.0"] if release == "plugin-pinned" else []
+    )
+    monkeypatch.setattr(
+        bootstrap.Installation,
+        "installed_versions",
+        lambda _self, _names: {"heinzel-clock": "2.0"} if release == "plugin-newer" else {},
+    )
+    monkeypatch.setattr(bootstrap, "_managed_json", daemon_status)
+    monkeypatch.setattr(install, "latest_profile", latest)
+    monkeypatch.setattr(install, "main", update)
+    monkeypatch.setattr(bootstrap.os, "execve", lambda *_args: events.append("launch"))
+    if exit_code is None:
+        bootstrap.main()
+        assert events == (["update", "launch"] if release == "0.9.24" else ["launch"])
+    else:
+        with pytest.raises(SystemExit) as result:
+            bootstrap.main()
+        assert result.value.code == exit_code
+        assert events == (["update"] if release in {"failed-update", "daemon-unknown"} else [])
+    output = capsys.readouterr()
+    assert ("Opening verified installed version 0.9.17" in output.err) == (release in {"offline", "daemon-loaded"})
+    assert ("scheduled daemon is loaded" in output.err) == (release == "daemon-loaded")
+    assert ("plugins (heinzel-clock)" in output.err) == (release in {"plugin-pinned", "plugin-newer"})
+
+
+def test_retained_app_with_an_explicit_profile_selector_never_checks_floating_release(monkeypatch, tmp_path):
+    executable = tmp_path / "tools/heinzel/bin/hz"
+    monkeypatch.setenv("HZ_APP_PROFILE", "/explicit/standard.json")
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: executable)
+    monkeypatch.setattr(install, "latest_profile", lambda: pytest.fail("Explicit selector must stay independent"))
+    assert bootstrap._ensure_app(interactive=True) == executable
 
 
 def test_explicit_arguments_keep_existing_cli_behavior(monkeypatch):
@@ -319,6 +428,7 @@ def test_interactive_choices_are_separate_and_run_only_in_verified_persistent_py
     calls = []
     monkeypatch.setattr(ConsolePrompter, "confirm", confirm)
     monkeypatch.setattr(bootstrap, "installed_app", verified)
+    monkeypatch.setattr(bootstrap, "_newer_profile", lambda _app: None)
     monkeypatch.setattr(install, "main", lambda *_args: pytest.fail("Verified installed app must be reused"))
     monkeypatch.setattr(bootstrap.subprocess, "run", run)
     monkeypatch.setattr(bootstrap.os, "execve", lambda *_args: events.append("open"))
@@ -480,6 +590,30 @@ def test_managed_json_boundary_refuses_non_objects_and_malformed_output(monkeypa
     )
     with pytest.raises(HeinzelError, match="invalid JSON"):
         bootstrap._managed_json(executable, {}, ["org", "show"])
+
+
+def test_interactive_setup_confirms_saved_names_and_writes_only_edits(monkeypatch, tmp_path):
+    class Answers(Prompter):
+        def read(self, prompt, *, secret=False):
+            prompts.append(prompt)
+            return next(answers)
+
+    prompts = []
+    answers = iter(["", "New team"])
+    writes = []
+    rows = [
+        {"section": section, "key": "name", "source": "user", "value": value, "json_schema": {"type": "string"}}
+        for section, value in [("org", "Saved name"), ("team", "Saved team")]
+    ]
+    monkeypatch.setattr(
+        bootstrap, "_managed_json", lambda _exe, _env, args: {"missing": []} if args[0] == "org" else {"settings": rows}
+    )
+    monkeypatch.setattr(bootstrap, "_write_setting", lambda _exe, _env, key, value: writes.append((key, value)))
+
+    assert bootstrap._profile_questions(tmp_path, {}) == []
+    COMPLETE_PROFILE(tmp_path, {}, Answers())
+    assert prompts == ["Your name [Saved name]: ", "Team name [Saved team]: "]
+    assert writes == [("team.name", "New team")]
 
 
 @pytest.mark.parametrize("missing", [None, "org.handle", [1], [False], ["org.handle", {}]])
