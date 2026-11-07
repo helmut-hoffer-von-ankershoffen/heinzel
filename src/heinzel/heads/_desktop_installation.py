@@ -1,4 +1,4 @@
-"""Manage the per-user macOS desktop bundle and its Finder CLI binding."""
+"""Manage the macOS desktop bundle in /Applications (or ~/Applications) and its Finder CLI binding."""
 
 import ctypes
 import fcntl
@@ -24,6 +24,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from heinzel import HeinzelError
 from heinzel.heads._desktop_archive import BUNDLE_NAME, extract_bundle
 from heinzel.heads._desktop_release import VERSION, fetch_archive
+from heinzel.heads._desktop_seal import (
+    SealReport,
+    clear_our_quarantine,
+    ensure_sealed,
+    inspect_bundle,
+    mark_quarantined,
+)
 
 _RECEIPT = "desktop-installation.json"
 _BINDING = "desktop-owned-cli.json"
@@ -41,6 +48,8 @@ _CPU_ARM64 = 0x0100000C
 _MACH_EXECUTE = 2
 _BUNDLE_ID = "org.heinzelmaennchen.desktop"
 _BUNDLE_EXECUTABLE = "Heinzelmaennchen"
+SYSTEM_APPLICATIONS = Path("/Applications")
+"""Where Finder, Launchpad and Spotlight expect apps; used whenever this user may write there without a password."""
 type DesktopInstallStatus = Literal["installed", "updated", "current", "deferred", "absent"]
 
 
@@ -86,6 +95,8 @@ class _Journal(BaseModel):
     bundle: _MoveIdentity
     binding: _MoveIdentity
     receipt: _MoveIdentity
+    applications: str | None = None
+    """The folder the bundle moves in; absent in journals written before /Applications was supported."""
 
 
 @dataclass(frozen=True)
@@ -116,6 +127,63 @@ def _check_platform() -> None:
     if sys.platform != "darwin" or platform.machine() != "arm64":
         msg = "Managed desktop installation requires an Apple silicon Mac."
         raise DesktopInstallationError(msg)
+
+
+def system_applications_usable(path: Path | None = None) -> bool:
+    """Whether this user can install into the system Applications folder without sudo or a password prompt.
+
+    True for the usual root:admin 0775 folder when the user is in its group (admin users), or a folder the user
+    owns. A world-writable or foreign-owned folder is never used.
+    """
+    path = path or SYSTEM_APPLICATIONS
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    uid = os.getuid()
+    return (
+        stat.S_ISDIR(info.st_mode)
+        and not info.st_mode & 0o002
+        and (info.st_uid == uid or (info.st_uid == 0 and info.st_gid in os.getgroups()))
+        and os.access(path, os.W_OK | os.X_OK)
+    )
+
+
+def _applications_directory(applications: Path, home: Path) -> None:
+    if applications == home / "Applications":
+        _owned_directory(applications)
+    elif applications != SYSTEM_APPLICATIONS or not system_applications_usable(applications):
+        msg = f"The desktop installer cannot safely use {applications}."
+        raise DesktopInstallationError(msg)
+
+
+def _locate(home: Path, config: Path) -> tuple[Path, _Receipt | None]:
+    """Find the owned bundle in /Applications or ~/Applications, else where a new one would go.
+
+    Raises:
+        DesktopInstallationError: If the receipt matches neither location or the target is not ours.
+    """
+    candidates = (SYSTEM_APPLICATIONS / BUNDLE_NAME, home / "Applications" / BUNDLE_NAME)
+    for bundle in candidates:
+        if os.path.lexists(bundle):
+            try:
+                record = _owned_installation(bundle, config)
+            except DesktopInstallationError:
+                continue
+            if record is not None:
+                return bundle, record
+    target = candidates[0] if system_applications_usable() else candidates[1]
+    if target == candidates[0] and os.path.lexists(target) and _read_metadata(config / _RECEIPT) is None:
+        msg = (
+            f"{target} is already there and was not installed by hz app install. Move it to the Trash, then run "
+            "hz app install again."
+        )
+        raise DesktopInstallationError(msg)
+    return target, _owned_installation(target, config)
+
+
+def _any_in_use(home: Path) -> bool:
+    return any(_in_use(folder / BUNDLE_NAME) for folder in (SYSTEM_APPLICATIONS, home / "Applications"))
 
 
 def _owned_directory(path: Path) -> None:
@@ -245,12 +313,15 @@ def _verify_bundle(bundle: Path, version: str) -> None:
         raise DesktopInstallationError(problem) from exc
 
 
-def _quarantine(bundle: Path) -> None:
-    subprocess.run(  # noqa: S603 - fixed system executable and validated staging path
-        ["/usr/bin/xattr", "-w", "com.apple.quarantine", "0081;00000000;Heinzel;", str(bundle)],
-        check=True,
-        timeout=10,
-    )
+def _prepare_for_gatekeeper(bundle: Path, *, keep_quarantine: bool) -> None:
+    """Seal the checksum- and provenance-verified staging bundle; quarantine it only when asked.
+
+    The release was downloaded and verified by Heinzel itself, so macOS has not quarantined it. Adding our
+    own mark to a bundle with a broken seal is what made macOS call it damaged (owner report, 0.9.26).
+    """
+    ensure_sealed(bundle)
+    if keep_quarantine:
+        mark_quarantined(bundle)
 
 
 def _rename(source: Path, target: Path, *, swap: bool = False) -> None:
@@ -329,6 +400,20 @@ def _moves(bundle: Path, config: Path, journal: _Journal) -> tuple[_Move, ...]:
     return (binding_move, app_move, receipt_move)
 
 
+def _journal_bundle(bundle: Path, journal: _Journal) -> Path:
+    """The bundle path a journal's transaction moves: the folder it recorded, ~/Applications for older ones.
+
+    Raises:
+        DesktopInstallationError: If the journal names a folder the installer never uses.
+    """
+    if journal.applications is None:
+        return bundle
+    applications = Path(journal.applications)
+    if applications not in {bundle.parent, SYSTEM_APPLICATIONS}:
+        raise DesktopInstallationError(_CONFLICT)
+    return applications / BUNDLE_NAME
+
+
 def _recover_transaction(bundle: Path, config: Path) -> None:
     data = _read_metadata(config / _JOURNAL)
     if data is None:
@@ -337,6 +422,7 @@ def _recover_transaction(bundle: Path, config: Path) -> None:
         journal = _Journal.model_validate_json(data)
     except ValidationError as exc:
         raise DesktopInstallationError(_CONFLICT) from exc
+    bundle = _journal_bundle(bundle, journal)
 
     directories = (
         (bundle.parent / journal.staging, journal.staging_identity),
@@ -395,6 +481,7 @@ def _commit(bundle: Path, config: Path, staging: Path, files: Path, operation: L
         bundle=_move_identity(bundle, staging / BUNDLE_NAME),
         binding=_move_identity(config / _BINDING, files / _BINDING),
         receipt=_move_identity(config / _RECEIPT, files / _RECEIPT),
+        applications=str(bundle.parent),
     )
     _sync_directory(staging)
     _sync_directory(files)
@@ -427,37 +514,74 @@ def _staging(applications: Path, config: Path) -> Generator[tuple[Path, Path]]:
                 shutil.rmtree(files)
 
 
-def _recover_before_use(bundle: Path, config: Path) -> bool:
+def _recover_before_use(home: Path, config: Path) -> bool:
     if not os.path.lexists(config / _JOURNAL):
         return True
     with _desktop_use(config) as locked:
-        if not locked or _in_use(bundle):
+        if not locked or _any_in_use(home):
             return False
-        _recover_transaction(bundle, config)
+        _recover_transaction(home / "Applications" / BUNDLE_NAME, config)
     return True
 
 
+def _migrate(bundle: Path, config: Path) -> Path:
+    """Move an owned ~/Applications bundle into /Applications in one rename; keep it where it is otherwise.
+
+    The rename keeps the bundle's identity, so the receipt stays valid and there is never a second copy.
+    A different volume (EXDEV) or a refusal leaves the app where it was.
+    """
+    target = SYSTEM_APPLICATIONS / BUNDLE_NAME
+    if bundle == target or not system_applications_usable():
+        return bundle
+    with _desktop_use(config) as locked:
+        if not locked or _in_use(bundle):
+            return bundle
+        try:
+            _rename(bundle, target)
+        except OSError:
+            return bundle
+        _sync_directory(bundle.parent)
+        _sync_directory(target.parent)
+    return target
+
+
+def desktop_location(home: Path | None = None) -> Path | None:
+    """Where the owned desktop app is installed now, or None when it is not installed."""
+    home = (home or Path.home()).resolve(strict=True)
+    config = home / ".config" / "heinzel"
+    try:
+        bundle, record = _locate(home, config)
+    except DesktopInstallationError:
+        return None
+    return bundle if record is not None and bundle.is_dir() else None
+
+
 def install_desktop(
-    version: str, executable: Path, *, update_only: bool = False, home: Path | None = None
+    version: str,
+    executable: Path,
+    *,
+    update_only: bool = False,
+    home: Path | None = None,
+    keep_quarantine: bool = False,
 ) -> DesktopInstallStatus:
     """Install or refresh a verified desktop release, or defer if the bundle is in use."""
     _check_platform()
     home = (home or Path.home()).resolve(strict=True)
-    applications = home / "Applications"
-    bundle = applications / BUNDLE_NAME
     with _locked_config(home) as config:
-        if os.path.lexists(applications):
-            _owned_directory(applications)
-        if not _recover_before_use(bundle, config):
+        if os.path.lexists(home / "Applications"):
+            _owned_directory(home / "Applications")
+        if not _recover_before_use(home, config):
             return "deferred"
-        existing = _owned_installation(bundle, config)
+        bundle, existing = _locate(home, config)
         if update_only:
             if existing is None:
                 return "absent"
             if VERSION.fullmatch(version) and _version_parts(existing.release) > _version_parts(version):
                 return "current"
-        _owned_directory(applications)
-        return _install_release(version, executable, bundle, config, existing)
+        elif existing is not None:
+            bundle = _migrate(bundle, config)
+        _applications_directory(bundle.parent, home)
+        return _install_release(version, executable, bundle, config, existing, keep_quarantine=keep_quarantine)
 
 
 def _version_parts(version: str) -> tuple[int, ...]:
@@ -470,8 +594,8 @@ def _write_private(path: Path, data: bytes) -> None:
         file.write(data)
 
 
-def _install_release(
-    version: str, executable: Path, bundle: Path, config: Path, existing: _Receipt | None
+def _install_release(  # noqa: PLR0913 - the transaction needs each of these
+    version: str, executable: Path, bundle: Path, config: Path, existing: _Receipt | None, *, keep_quarantine: bool
 ) -> DesktopInstallStatus:
     if (
         not VERSION.fullmatch(version)
@@ -491,7 +615,7 @@ def _install_release(
         expanded.mkdir(mode=0o700)
         candidate = extract_bundle(archive, expanded)
         _verify_bundle(candidate, version)
-        _quarantine(candidate)
+        _prepare_for_gatekeeper(candidate, keep_quarantine=keep_quarantine)
         candidate.rename(staging / BUNDLE_NAME)
         info = (staging / BUNDLE_NAME).lstat()
         record = _Receipt(
@@ -519,25 +643,28 @@ def _install_release(
     return "updated" if existing else "installed"
 
 
-def uninstall_desktop(*, home: Path | None = None) -> bool:
-    """Remove an owned, stopped desktop bundle and its binding.
+def uninstall_desktop(*, home: Path | None = None) -> Path | None:
+    """Remove an owned, stopped desktop bundle and its binding from whichever Applications folder holds it.
+
+    Returns:
+        Where the removed app was, or None when no owned app was installed.
 
     Raises:
         DesktopInstallationError: If the running bundle must be quit before removal.
     """
     _check_platform()
     home = (home or Path.home()).resolve(strict=True)
-    applications = home / "Applications"
-    bundle = applications / BUNDLE_NAME
     with _locked_config(home) as config:
-        if os.path.lexists(applications):
-            _owned_directory(applications)
-        if not _recover_before_use(bundle, config):
+        if os.path.lexists(home / "Applications"):
+            _owned_directory(home / "Applications")
+        if not _recover_before_use(home, config):
             msg = "Quit Heinzelmännchen before uninstalling the desktop app."
             raise DesktopInstallationError(msg)
-        existing = _owned_installation(bundle, config)
+        bundle, existing = _locate(home, config)
         if existing is None:
-            return False
+            return None
+        applications = bundle.parent
+        _applications_directory(applications, home)
         with _desktop_use(config) as locked:
             if not locked or _in_use(bundle):
                 msg = "Quit Heinzelmännchen before uninstalling the desktop app."
@@ -546,4 +673,41 @@ def uninstall_desktop(*, home: Path | None = None) -> bool:
                 raise DesktopInstallationError(_CONFLICT)
             with _staging(applications, config) as (staging, files):
                 _commit(bundle, config, staging, files, "uninstall")
-    return True
+    return bundle
+
+
+def doctor_desktop(*, fix: bool = False, home: Path | None = None) -> tuple[SealReport | None, list[str]]:
+    """Inspect the receipt-owned bundle; with `fix`, reseal it ad hoc and remove our own quarantine mark.
+
+    Only a bundle this installer owns (matching receipt) is repaired, and only while it is not running.
+    The ad-hoc seal records the installed bytes and adds no trust; the download was checked against its
+    published sha256 and build provenance when it was installed. Nothing is launched.
+
+    Returns:
+        The state after any repair (None when no owned app is installed) and the repairs made.
+
+    Raises:
+        DesktopInstallationError: If the app is running or its ownership metadata does not match.
+    """
+    _check_platform()
+    home = (home or Path.home()).resolve(strict=True)
+    with _locked_config(home) as config:
+        if not _recover_before_use(home, config):
+            msg = "Quit Heinzelmännchen before checking the desktop app."
+            raise DesktopInstallationError(msg)
+        bundle, record = _locate(home, config)
+        if record is None:
+            return None, []
+        repairs: list[str] = []
+        if fix:
+            with _desktop_use(config) as locked:
+                if not locked or _in_use(bundle):
+                    msg = "Quit Heinzelmännchen before repairing the desktop app."
+                    raise DesktopInstallationError(msg)
+                if ensure_sealed(bundle):
+                    repairs.append("Sealed the installed app with a local ad-hoc signature.")
+                if clear_our_quarantine(bundle):
+                    repairs.append("Removed the quarantine mark Heinzel had added.")
+                if repairs:
+                    _sync_tree(bundle)
+        return inspect_bundle(bundle), repairs

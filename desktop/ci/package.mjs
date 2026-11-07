@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
@@ -40,7 +41,19 @@ try {
     prune: true,
     appBundleId: "org.heinzelmaennchen.desktop",
   });
-  for (const appPath of appPaths) process.stdout.write(`Packaged ${appPath}\n`);
+  for (const appPath of appPaths) {
+    if (platform === "darwin") {
+      // Packager renames the helpers and rewrites Info.plist, which leaves only the linker's per-binary
+      // signatures and no bundle seal. Apple silicon then calls the quarantined app "damaged". Seal the
+      // final bundle ad hoc (no identity, no trust claim) so macOS sees an intact, merely unnotarized app.
+      const bundle = path.join(appPath, "Heinzelmaennchen.app");
+      execFileSync("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", bundle], { stdio: "inherit" });
+      execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", "--verbose=2", bundle], {
+        stdio: "inherit",
+      });
+    }
+    process.stdout.write(`Packaged ${appPath}\n`);
+  }
 } finally {
   await rm(staging, { recursive: true, force: true });
 }

@@ -191,13 +191,36 @@ $ hz app [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `doctor`: Check whether macOS will open the...
 * `install`: Install the desktop app for this version...
 * `refresh`: Refresh the managed app after an orderly...
 * `uninstall`: Remove the managed desktop app and keep...
 
+### `hz app doctor`
+
+Check whether macOS will open the installed desktop app, without launching it.
+
+Raises:
+    typer.Exit: If the app is missing or macOS would refuse to open it.
+
+**Usage**:
+
+```console
+$ hz app doctor [OPTIONS]
+```
+
+**Options**:
+
+* `--fix`: Reseal a broken app ad hoc and remove the quarantine mark Heinzel added.
+* `--json`: Print the state as JSON on stdout.
+* `--help`: Show this message and exit.
+
 ### `hz app install`
 
 Install the desktop app for this version of Heinzel.
+
+The app is unsigned and not notarized by Apple. Heinzel checks the download&#x27;s sha256 and build
+provenance, makes sure its ad-hoc code seal is valid, and by default does not quarantine it.
 
 Raises:
     typer.Exit: If the app cannot be installed now.
@@ -210,6 +233,7 @@ $ hz app install [OPTIONS]
 
 **Options**:
 
+* `--keep-quarantine`: Mark the app as downloaded so macOS asks once before the first open (Open Anyway in System Settings, Privacy &amp; Security).
 * `--help`: Show this message and exit.
 
 ### `hz app refresh`

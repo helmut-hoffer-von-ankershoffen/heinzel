@@ -4,6 +4,7 @@ import platform
 import time
 from pathlib import Path
 from subprocess import SubprocessError
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -51,13 +52,93 @@ def _refresh_after_exit(kernel: Kernel) -> None:
         time.sleep(0.25)
 
 
+def _print_location(output: Console, error: Console) -> None:
+    """Print where the app really is, checked on disk, and why it is not in /Applications when it is not.
+
+    Raises:
+        typer.Exit: If the installed app cannot be found where the receipt says.
+    """
+    from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
+        SYSTEM_APPLICATIONS,
+        desktop_location,
+    )
+
+    location = desktop_location()
+    if location is None:
+        error.print("The desktop app was installed but cannot be found. Run hz app doctor.")
+        raise typer.Exit(1)
+    output.print(f"Heinzel is installed at {location}.", markup=False)
+    if location.parent != SYSTEM_APPLICATIONS:
+        output.print(
+            f"It is in your own Applications folder because this user cannot write to {SYSTEM_APPLICATIONS} "
+            "without an administrator password; Finder, Launchpad and Spotlight find it there too. To have it in "
+            f"{SYSTEM_APPLICATIONS}, make this account an administrator and run hz app install again: it moves "
+            "the app for you.",
+            markup=False,
+        )
+
+
+def _trust_note(*, keep_quarantine: bool) -> str:
+    """Say honestly what was checked and how macOS will treat the first open."""
+    opening = (
+        "; it is marked as downloaded, so open it once via System Settings, Privacy & Security, Open Anyway."
+        if keep_quarantine
+        else ", so it opens with a double-click."
+    )
+    return (
+        "It is an unsigned app from this project, not notarized by Apple. Heinzel verified the download's "
+        f"sha256, its build provenance and its code seal{opening}"
+    )
+
+
+def _doctor(output: Console, error: Console, *, fix: bool, as_json: bool = False) -> None:
+    """Print the installed app's macOS state, repairing it first when asked.
+
+    Raises:
+        typer.Exit: If the app is missing or macOS would refuse to open it.
+    """
+    from heinzel.heads._desktop_installation import doctor_desktop  # noqa: PLC0415 - native check only
+
+    try:
+        report, repairs = doctor_desktop(fix=fix)
+    except (HeinzelError, OSError, SubprocessError) as exc:
+        if as_json:
+            output.print_json(data={"installed": None, "error": str(exc)})
+        error.print(message("Desktop check failed.", str(exc)))
+        raise typer.Exit(1) from exc
+    if as_json:
+        state = {"installed": False} if report is None else {"installed": True, **report.as_dict()}
+        output.print_json(data={**state, "repairs": repairs})
+    if report is None:
+        error.print("The Heinzel desktop app is not installed. Run hz app install.")
+        raise typer.Exit(1)
+    if not as_json:
+        for line in [*repairs, *report.lines()]:
+            output.print(line, markup=False)
+    if not report.opens:
+        error.print("Run hz app doctor --fix to repair it.")
+        raise typer.Exit(1)
+
+
 def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Typer:
     """Build the app command group without loading installer code during CLI discovery."""
     app = typer.Typer(help="Manage the native Heinzel desktop app.", no_args_is_help=True)
 
     @app.command("install")
-    def install() -> None:
+    def install(
+        keep_quarantine: Annotated[
+            bool,
+            typer.Option(
+                "--keep-quarantine",
+                help="Mark the app as downloaded so macOS asks once before the first open (Open Anyway in "
+                "System Settings, Privacy & Security).",
+            ),
+        ] = False,
+    ) -> None:
         """Install the desktop app for this version of Heinzel.
+
+        The app is unsigned and not notarized by Apple. Heinzel checks the download's sha256 and build
+        provenance, makes sure its ad-hoc code seal is valid, and by default does not quarantine it.
 
         Raises:
             typer.Exit: If the app cannot be installed now.
@@ -65,14 +146,31 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         from heinzel.heads._desktop_installation import install_desktop  # noqa: PLC0415 - native install only
 
         try:
-            state = install_desktop(__version__, desktop_executable(kernel))
+            state = install_desktop(__version__, desktop_executable(kernel), keep_quarantine=keep_quarantine)
         except (HeinzelError, OSError, SubprocessError) as exc:
             error.print(message("Desktop installation failed.", str(exc)))
             raise typer.Exit(1) from exc
         if state == "deferred":
             error.print("Quit the Heinzel desktop app, then run hz app install again.")
             raise typer.Exit(1)
-        output.print("Heinzel is in your Applications folder.")
+        _print_location(output, error)
+        if state != "current":
+            output.print(_trust_note(keep_quarantine=keep_quarantine))
+
+    @app.command("doctor")
+    def doctor(
+        fix: Annotated[
+            bool,
+            typer.Option("--fix", help="Reseal a broken app ad hoc and remove the quarantine mark Heinzel added."),
+        ] = False,
+        as_json: Annotated[bool, typer.Option("--json", help="Print the state as JSON on stdout.")] = False,
+    ) -> None:
+        """Check whether macOS will open the installed desktop app, without launching it.
+
+        Raises:
+            typer.Exit: If the app is missing or macOS would refuse to open it.
+        """
+        _doctor(output, error, fix=fix, as_json=as_json)
 
     @app.command("uninstall")
     def uninstall() -> None:
@@ -88,7 +186,10 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         except (HeinzelError, OSError, SubprocessError) as exc:
             error.print(message("Desktop uninstall failed.", str(exc)))
             raise typer.Exit(1) from exc
-        output.print("Heinzel desktop app removed." if removed else "The Heinzel desktop app is not installed.")
+        output.print(
+            f"Heinzel desktop app removed from {removed}." if removed else "The Heinzel desktop app is not installed.",
+            markup=False,
+        )
 
     @app.command("refresh", hidden=True)
     def refresh() -> None:
