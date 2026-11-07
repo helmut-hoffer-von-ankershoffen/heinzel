@@ -5,6 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import { Children, type ComponentProps, cloneElement, Fragment, isValidElement, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
+import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /** The bottom action row: a divider, then the buttons side by side, wrapping when the pane is narrow. */
@@ -21,12 +22,17 @@ export function PaneActions({ children, className }: { children?: ReactNode; cla
   // A row whose every action is conditionally hidden draws no stray divider.
   if (!items.length) return null;
   return (
-    <div
+    // A fieldset is a named group: assistive technology announces the row as the pane's actions.
+    <fieldset
       data-pane-actions=""
-      className={cn("mt-2 flex flex-wrap items-center gap-1.5 border-t border-border px-1.5 pt-2 pb-1", className)}
+      aria-label={t("pane.actions")}
+      className={cn(
+        "mt-2 flex min-w-0 flex-wrap items-center gap-1.5 border-t border-border px-1.5 pt-2 pb-1",
+        className,
+      )}
     >
       {items}
-    </div>
+    </fieldset>
   );
 }
 

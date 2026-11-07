@@ -47,8 +47,8 @@ export function FooterItem({
   paneName,
   hideHeading = false,
   steady = false,
-  action,
   actions,
+  freeform,
 }: {
   /** What it says, as its accessible name and the pane's heading. */
   label: string;
@@ -76,10 +76,13 @@ export function FooterItem({
   hideHeading?: boolean;
   /** `text` changes while shown (a clock): fixed-width digits and a width that never shrinks, so neighbours stay put. */
   steady?: boolean;
-  /** The pane's one simple action, as a `PaneIconAction` at the right of the title row (design/README.md). */
-  action?: ReactNode;
-  /** Two or more actions, or a primary or destructive one: `PaneAction`s in the bottom row under a divider. */
+  /** Every action of the pane: `PaneAction`s in the one bottom row under a divider, after all content. */
   actions?: ReactNode;
+  /**
+   * Why this pane may not follow the pane structure (content, divider, one row of action buttons). Only the
+   * version pane, whose release notes are prose with their own links; allowlisted in pane-actions-standards.test.ts.
+   */
+  freeform?: string;
 }) {
   // Longest text seen, in characters: monospace `ch` units make the slot's width exact and never smaller.
   const widest = useRef(0);
@@ -96,6 +99,9 @@ export function FooterItem({
   const visible = useFooterVisibility();
   const id = useId();
   const open = visible && (hovered || focused || pinned);
+  // In development and tests, an open pane that breaks the structure fails loudly, on each render and late change.
+  const structured = useRef(!freeform);
+  structured.current = !freeform;
   useEffect(() => {
     if (!visible) {
       setHovered(false);
@@ -140,7 +146,10 @@ export function FooterItem({
     observer?.observe(element);
     const mutations = new MutationObserver((records) => {
       // Ignore placement's own writes; content changes still need synchronous measurement.
-      if (records.some((record) => record.target !== element || record.attributeName !== "style")) place();
+      if (records.some((record) => record.target !== element || record.attributeName !== "style")) {
+        if (structured.current) assertPaneStructure(element);
+        place();
+      }
     });
     mutations.observe(element, { subtree: true, childList: true, characterData: true, attributes: true });
     const unwatchViewport = watchViewport(place);
@@ -157,6 +166,7 @@ export function FooterItem({
     };
   }, [open, align]);
   useLayoutEffect(() => {
+    if (open && structured.current && pane.current) assertPaneStructure(pane.current);
     if (open) position.current?.();
   });
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -272,7 +282,7 @@ export function FooterItem({
                 popoverClassName,
               )}
             >
-              {!hideHeading && <PaneTitle action={action}>{label}</PaneTitle>}
+              {!hideHeading && <PaneTitle>{label}</PaneTitle>}
               {children}
               <PaneActions>{actions}</PaneActions>
             </section>
@@ -281,4 +291,32 @@ export function FooterItem({
         )}
     </span>
   );
+}
+
+/** Buttons and links a pane may show only in its bottom action row; switches and form fields are content. */
+const ACTION = 'button:not([role="switch"]), a[href], [role="button"], [role="link"], [role="menuitem"]';
+
+/**
+ * What breaks the pane structure (design/README.md, "Actions in panes"): content first, then one divider and one
+ * row of action buttons, nothing after it, and no button or link anywhere else in the pane.
+ */
+export function paneStructureProblems(pane: Element): string[] {
+  const rows = pane.querySelectorAll("[data-pane-actions]");
+  const problems: string[] = [];
+  if (rows.length > 1) problems.push(`${rows.length} action rows; a pane has one`);
+  const row = rows[0];
+  for (const element of pane.querySelectorAll(ACTION))
+    if (!row?.contains(element))
+      problems.push(`"${element.getAttribute("aria-label") ?? element.textContent?.trim()}" is outside the action row`);
+  const all = pane.querySelectorAll("*");
+  const last = all[all.length - 1];
+  if (row && last && !row.contains(last)) problems.push("content follows the action row");
+  return problems;
+}
+
+/** Throws, in development and tests only, when the open pane breaks the structure. */
+function assertPaneStructure(pane: Element) {
+  if (!import.meta.env.DEV) return;
+  const problems = paneStructureProblems(pane);
+  if (problems.length) throw new Error(`Footer pane structure (design/README.md): ${problems.join("; ")}`);
 }

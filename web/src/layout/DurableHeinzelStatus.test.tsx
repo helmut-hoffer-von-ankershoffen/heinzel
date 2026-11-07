@@ -1,6 +1,7 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { shell } from "@/test/fixtures";
+import { expectPane } from "@/test/pane";
 import { mockApi, renderAt } from "@/test/render";
 
 const sessions = [
@@ -22,13 +23,13 @@ describe("The durable Heinzel footer control", () => {
     expect(within(panel).getByText("Paused").nextElementSibling).toHaveTextContent("1");
     expect(within(panel).getByText("Needs attention").nextElementSibling).toHaveTextContent("1");
     expect(within(panel).getByText("Proposed").nextElementSibling).toHaveTextContent("1");
-    const chat = within(panel).getByRole("link", { name: "Open chat" });
+    // Content first, then the divider and the one bottom row of buttons with icon and text (design/README.md).
+    await expectPane(panel);
+    const row = within(panel).getByRole("group", { name: "Actions" });
+    const chat = within(row).getByRole("link", { name: "Open chat" });
     expect(chat).toHaveAttribute("href", "/");
-    // One simple action: an icon in the title row, not a full line of text (design/README.md).
-    expect(chat).toHaveAttribute("title", "Open chat");
-    expect(chat).not.toHaveTextContent("Open chat");
-    expect(chat.parentElement).toHaveTextContent("Heinzelmännchen");
-    expect(panel.querySelector("[data-pane-actions]")).toBeNull();
+    expect(chat).toHaveTextContent("Open chat");
+    expect(chat.querySelector("svg")).not.toBeNull();
   });
 
   it("shows zero for an authoritative empty persisted list", async () => {
@@ -38,9 +39,15 @@ describe("The durable Heinzel footer control", () => {
     fireEvent.click(screen.getByRole("button", { name: "0 Heinzelmännchen, off" }));
     expect(await screen.findByText("No persisted Heinzels yet.")).toBeInTheDocument();
     // The empty state's action is the pane's primary button in the bottom row under the divider.
-    const create = screen.getByRole("button", { name: "Create a personal Heinzel" });
-    expect(create.closest("[data-pane-actions]")).toHaveClass("border-t");
-    expect(create).not.toHaveClass("underline");
+    const panel = screen.getByRole("region", { name: "Heinzelmännchen" });
+    await expectPane(panel);
+    // Nothing between the content and the divider: both actions are buttons in the bottom row, Create first.
+    const row = within(panel).getByRole("group", { name: "Actions" });
+    expect([...row.querySelectorAll("a, button")].map((action) => action.textContent)).toEqual([
+      "Create a personal Heinzel",
+      "Open chat",
+    ]);
+    expect(within(row).getByRole("button", { name: "Create a personal Heinzel" })).not.toHaveClass("underline");
   });
 
   it("creates a durable personal Heinzel and opens its inspectable session", async () => {

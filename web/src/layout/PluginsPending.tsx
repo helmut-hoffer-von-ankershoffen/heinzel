@@ -1,9 +1,9 @@
 import { useIsMutating, useQueryClient } from "@tanstack/react-query";
-import { RotateCw } from "lucide-react";
+import { CircleStop, RefreshCw, RotateCw, X } from "lucide-react";
 import { useState } from "react";
 import { pluginChangeKey, usePluginsPending } from "@/api/queries";
 import { FooterItem } from "@/components/FooterItem";
-import { Button } from "@/components/ui/button";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import {
   activatePlugins,
@@ -46,6 +46,7 @@ export function PluginsPending({
     t(`pluginsPending.${change.change}`, { name: change.distribution, version: change.version ?? "" }),
   );
   const themes = changes.flatMap((change) => change.themes ?? []);
+  const ready = !activation.blocked && !busy && !activation.observation && !activation.pending;
   const details = (
     <>
       <p>{t("pluginsPending.intro")}</p>
@@ -62,23 +63,10 @@ export function PluginsPending({
       {busy && !activation.pending && !activation.observation && (
         <p className="text-muted-foreground">{t("pluginsPending.finishChange")}</p>
       )}
-      {!activation.blocked && !busy && !activation.observation && !activation.pending && !activation.changing && (
-        <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
-          {t("lifecycle.action")}
-        </Button>
-      )}
-      {confirming && !activation.blocked && !busy && !activation.pending && !activation.observation && (
-        <div role="alertdialog" aria-label={action} className="space-y-3 rounded-xl border border-border p-3">
+      {confirming && ready && (
+        <div role="alertdialog" aria-label={action} className="space-y-1">
           <p>{t("lifecycle.question", { target })}</p>
           <p className="text-muted-foreground">{t("lifecycle.pageStays")}</p>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={start}>
-              {action}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
-              {t("lifecycle.cancel")}
-            </Button>
-          </div>
         </div>
       )}
       {activation.phase && !activation.error && <p role="status">{t(`lifecycle.phase.${activation.phase}`)}</p>}
@@ -87,15 +75,35 @@ export function PluginsPending({
           {activation.error}
         </p>
       )}
+    </>
+  );
+  // Every button sits in the one bottom row under the divider, as in every footer pane.
+  const actions = (
+    <>
+      {ready && !activation.changing && !confirming && (
+        <PaneAction icon={RotateCw} onClick={() => setConfirming(true)}>
+          {t("lifecycle.action")}
+        </PaneAction>
+      )}
+      {confirming && ready && (
+        <>
+          <PaneAction icon={RotateCw} primary onClick={start}>
+            {action}
+          </PaneAction>
+          <PaneAction icon={X} onClick={() => setConfirming(false)}>
+            {t("lifecycle.cancel")}
+          </PaneAction>
+        </>
+      )}
       {activation.error && activation.observation && !activation.pending && !activation.changing && (
-        <Button size="sm" variant="outline" onClick={start}>
+        <PaneAction icon={RefreshCw} onClick={start}>
           {t("lifecycle.checkAgain")}
-        </Button>
+        </PaneAction>
       )}
       {activation.pending && (activation.phase === "reconnecting" || activation.phase === "verifying") && (
-        <Button size="sm" variant="ghost" onClick={stopPluginActivation}>
+        <PaneAction icon={CircleStop} onClick={stopPluginActivation}>
           {t("lifecycle.stopChecking")}
-        </Button>
+        </PaneAction>
       )}
     </>
   );
@@ -104,11 +112,18 @@ export function PluginsPending({
       <section className="mb-4 space-y-2 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm">
         <h3 className="font-medium">{t("pluginsPending.restartRequired")}</h3>
         {details}
+        <PaneActions className="px-0">{actions}</PaneActions>
       </section>
     );
   }
   return (
-    <FooterItem label={t("pluginsPending.title")} state="warn" icon={RotateCw} className="animate-pulse text-warn">
+    <FooterItem
+      label={t("pluginsPending.title")}
+      state="warn"
+      icon={RotateCw}
+      className="animate-pulse text-warn"
+      actions={actions}
+    >
       <div className="space-y-2 px-1.5 pb-1.5">{details}</div>
     </FooterItem>
   );

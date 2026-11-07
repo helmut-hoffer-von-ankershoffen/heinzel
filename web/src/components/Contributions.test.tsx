@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { shell } from "@/test/fixtures";
+import { expectPane } from "@/test/pane";
 import { eventStream, expectAccessible, mockApi, renderAt } from "@/test/render";
 import { ICONS, liveText, widgetText } from "./Contributions";
 
@@ -199,6 +200,7 @@ describe("Contributions", () => {
     expect(within(pane).queryByText(/^Berlin \d\d:\d\d:\d\d$/)).not.toBeInTheDocument();
     expect(within(pane).getByText("New York")).toBeInTheDocument();
     expect(within(pane).getByRole("button", { name: "Open" })).toBeInTheDocument();
+    await expectPane(pane);
   });
 
   it("asks before a write and runs exactly the call the server built", async () => {

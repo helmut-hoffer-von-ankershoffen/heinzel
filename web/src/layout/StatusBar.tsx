@@ -10,7 +10,7 @@ import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions
 import { FooterItem } from "@/components/FooterItem";
 import { FooterLayout, FooterMore, FooterPart } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
-import { PaneIconAction } from "@/components/PaneActions";
+import { PaneAction } from "@/components/PaneActions";
 import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
 import { zoneTime } from "@/lib/zoneTime";
@@ -185,7 +185,11 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
       content={showProgress ? <MeetingIcon elapsed={elapsed} approach={approach} /> : undefined}
       state={unavailable ? "bad" : "off"}
       paneName="Calendar summary"
-      action={<PaneIconAction icon={CalendarDays} label="Open calendar" onClick={onOpen} />}
+      actions={
+        <PaneAction icon={CalendarDays} onClick={onOpen}>
+          Open calendar
+        </PaneAction>
+      }
     >
       <div className="space-y-2 px-1.5 py-1">
         {agenda.isPending ? (
@@ -250,6 +254,7 @@ export function StatusBar({ onOpenCalendar = () => {} }: { onOpenCalendar?: () =
               state="off"
               text={`v${info.data.version}`}
               align="left"
+              freeform="The about card links to its release on GitHub and the release notes are prose with their own links."
               popoverClassName="w-[min(28rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
             >
               <ReleaseNotes version={info.data.version} />

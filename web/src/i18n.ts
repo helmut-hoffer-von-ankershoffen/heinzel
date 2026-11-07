@@ -200,6 +200,7 @@ const en = {
   "pluginsPending.disabled": "{name} was disabled",
   "pluginsPending.theme": "It brings the theme {theme}: after the restart, choose it in Settings → Appearance.",
   "updates.title": "Updates",
+  "pane.actions": "Actions",
   "updates.availableLabel": "Updates available",
 
   "settings.previewOnly":

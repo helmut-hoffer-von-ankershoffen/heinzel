@@ -78,3 +78,29 @@ it("scans multi-line tags and skips arrow functions inside props", () => {
   expect(tags).toHaveLength(1);
   expect(tags.every(underlined)).toBe(true);
 });
+
+// Footer panes that may break the structure, with the reason in their `freeform` prop. Only the version pane.
+const FREEFORM: Record<string, number> = {
+  "../layout/StatusBar.tsx": 1,
+};
+
+it("gives every footer pane one structure: content, a divider, then one row of action buttons", () => {
+  const titleActions: string[] = [];
+  const freeform: Record<string, number> = {};
+  for (const [file, source] of sources) {
+    if (file.endsWith("/FooterItem.tsx")) continue;
+    for (const tag of openingTags(source, "FooterItem")) {
+      // No action in the title row or anywhere else: every action is a PaneAction in `actions`.
+      if (/\saction=/.test(tag)) titleActions.push(file);
+      if (/\sfreeform=/.test(tag)) {
+        expect(tag, `${file}: a freeform pane says why`).toMatch(/\sfreeform="[^"]{20,}"/);
+        freeform[file] = (freeform[file] ?? 0) + 1;
+      }
+    }
+    // A pane's own bottom row comes from FooterItem or the shared ContributionToggle, never a second hand-made row.
+    if (source.includes("<FooterItem") && /<PaneTitle\s[^>]*action=/.test(source))
+      titleActions.push(`${file}: PaneTitle action`);
+  }
+  expect(titleActions).toEqual([]);
+  expect(freeform).toEqual(FREEFORM);
+});

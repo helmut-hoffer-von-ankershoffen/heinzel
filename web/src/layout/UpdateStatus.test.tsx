@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { shell } from "@/test/fixtures";
+import { expectPane } from "@/test/pane";
 import { mockApi, renderAt } from "@/test/render";
 import { KEY } from "@/updates/autoUpdateApi";
 import { startUpdate } from "@/updates/controller";
@@ -35,6 +36,7 @@ it("opens the update details without installing until the button is chosen", asy
   expect(startUpdate).not.toHaveBeenCalled();
   expect(await screen.findByText(/^Last installed:/)).toBeInTheDocument();
   expect(screen.getByText("Heinzel 0.2.0 is available")).toBeInTheDocument();
+  await expectPane(screen.getByRole("region", { name: "Updates available" }));
   await user.click(screen.getByRole("button", { name: "Update now" }));
   expect(startUpdate).toHaveBeenCalledTimes(1);
 });

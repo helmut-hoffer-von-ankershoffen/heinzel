@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { doctor } from "@/test/fixtures";
+import { expectPane } from "@/test/pane";
 import { expectAccessible, mockApi } from "@/test/render";
 import { HealthStatus } from "./HealthStatus";
 
@@ -33,6 +34,7 @@ describe("footer system health", () => {
     // Both actions are buttons of one style in the one bottom row under the divider.
     const row = doctor.closest("[data-pane-actions]");
     expect(row).toHaveClass("border-t");
+    await expectPane(screen.getByRole("region"));
     const refresh = screen.getByRole("button", { name: "Refresh health checks" });
     expect(refresh.closest("[data-pane-actions]")).toBe(row);
     expect(doctor).not.toHaveClass("underline");

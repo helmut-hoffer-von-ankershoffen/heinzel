@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { api, unwrap } from "@/api/client";
 import { FooterItem, type State } from "@/components/FooterItem";
-import { PaneAction, PaneIconAction } from "@/components/PaneActions";
+import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 
 const useDurableHeinzels = () =>
@@ -62,17 +62,21 @@ export function DurableHeinzelStatus() {
           {count ?? (query.isError ? "?" : "…")}
         </span>
       }
-      action={<PaneIconAction icon={MessageSquare} label={t("durable.openChat")} to="/" />}
       actions={
-        query.isError ? (
-          <PaneAction icon={RefreshCw} disabled={query.isFetching} onClick={() => void query.refetch()}>
-            {t("error.retry")}
+        <>
+          {query.isError ? (
+            <PaneAction icon={RefreshCw} disabled={query.isFetching} onClick={() => void query.refetch()}>
+              {t("error.retry")}
+            </PaneAction>
+          ) : !query.isPending && !sessions?.length ? (
+            <PaneAction icon={Plus} primary disabled={creating} onClick={() => void create()}>
+              {creating ? t("durable.scheduleWorking") : t("durable.create")}
+            </PaneAction>
+          ) : null}
+          <PaneAction icon={MessageSquare} to="/">
+            {t("durable.openChat")}
           </PaneAction>
-        ) : !query.isPending && !sessions?.length ? (
-          <PaneAction icon={Plus} primary disabled={creating} onClick={() => void create()}>
-            {creating ? t("durable.scheduleWorking") : t("durable.create")}
-          </PaneAction>
-        ) : null
+        </>
       }
     >
       <div className="space-y-2 px-1.5 pb-1.5">
