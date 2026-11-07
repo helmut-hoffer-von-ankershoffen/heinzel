@@ -52,6 +52,42 @@ def _refresh_after_exit(kernel: Kernel) -> None:
         time.sleep(0.25)
 
 
+def _print_location(output: Console, error: Console) -> None:
+    """Print where the app really is, checked on disk, and why it is not in /Applications when it is not.
+
+    Raises:
+        typer.Exit: If the installed app cannot be found where the receipt says.
+    """
+    from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
+        SYSTEM_APPLICATIONS,
+        desktop_location,
+        system_applications_usable,
+    )
+
+    location = desktop_location()
+    if location is None:
+        error.print("The desktop app was installed but cannot be found. Run hz app doctor.")
+        raise typer.Exit(1)
+    output.print(f"Heinzel is installed at {location}.", markup=False)
+    if location.parent == SYSTEM_APPLICATIONS:
+        return
+    if system_applications_usable():
+        output.print(
+            f"It could not be moved to {SYSTEM_APPLICATIONS} this time: Heinzelmännchen was running, another "
+            f"{location.name} is already there, or your home folder is on another volume. Quit the app, move the "
+            "other copy to the Trash, then run hz app install again: it moves the app for you.",
+            markup=False,
+        )
+    else:
+        output.print(
+            f"It is in your own Applications folder because this user cannot write to {SYSTEM_APPLICATIONS} "
+            "without an administrator password; Finder, Launchpad and Spotlight find it there too. To have it in "
+            f"{SYSTEM_APPLICATIONS}, make this account an administrator and run hz app install again: it moves "
+            "the app for you.",
+            markup=False,
+        )
+
+
 def _trust_note(*, keep_quarantine: bool) -> str:
     """Say honestly what was checked and how macOS will treat the first open."""
     opening = (
@@ -127,7 +163,7 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         if state == "deferred":
             error.print("Quit the Heinzel desktop app, then run hz app install again.")
             raise typer.Exit(1)
-        output.print("Heinzel is in your Applications folder.")
+        _print_location(output, error)
         if state != "current":
             output.print(_trust_note(keep_quarantine=keep_quarantine))
 
@@ -160,7 +196,10 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         except (HeinzelError, OSError, SubprocessError) as exc:
             error.print(message("Desktop uninstall failed.", str(exc)))
             raise typer.Exit(1) from exc
-        output.print("Heinzel desktop app removed." if removed else "The Heinzel desktop app is not installed.")
+        output.print(
+            f"Heinzel desktop app removed from {removed}." if removed else "The Heinzel desktop app is not installed.",
+            markup=False,
+        )
 
     @app.command("refresh", hidden=True)
     def refresh() -> None:
