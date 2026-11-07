@@ -155,6 +155,16 @@ class ReleaseCache:
         error = self._read().get("error")
         return error if isinstance(error, str) else None
 
+    @property
+    def ok_at(self) -> datetime | None:
+        """When the package source last answered; None if it never did (or only an older cache file exists)."""
+        data = self._read()
+        value = data.get("ok_at") or (data.get("checked_at") if "error" not in data else None)
+        try:
+            return datetime.fromisoformat(value) if isinstance(value, str) else None
+        except ValueError:
+            return None
+
     def is_fresh(self, max_age: timedelta, now: datetime | None = None) -> bool:
         """Whether the package source was asked, successfully or not, less than `max_age` ago.
 
@@ -179,7 +189,8 @@ class ReleaseCache:
 
     def remember(self, latest: str, checked_at: datetime | None = None) -> None:
         """Cache the latest release; an unwritable cache directory only costs the hint."""
-        self._write({"latest": latest, "checked_at": (checked_at or datetime.now(UTC)).isoformat()})
+        stamp = (checked_at or datetime.now(UTC)).isoformat()
+        self._write({"latest": latest, "checked_at": stamp, "ok_at": stamp})
 
     def stamp(self, error: str | None = None, checked_at: datetime | None = None) -> None:
         """Record that the package source was asked, keeping the latest release last seen.
@@ -192,6 +203,8 @@ class ReleaseCache:
             data["latest"] = latest
         if error is not None:
             data["error"] = error
+        if (ok_at := self.ok_at) is not None:
+            data["ok_at"] = ok_at.isoformat()  # a failed or cut-short attempt keeps the last answer's time
         self._write(data)
 
     def refresh(self, source: ReleaseSource, timeout: float) -> None:

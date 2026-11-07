@@ -44,6 +44,15 @@ class UpdateStatus(BaseModel):
     )
     available: bool = Field(description="Whether the cached release is newer than this server.")
     supported: bool = Field(description="Whether a persistent uv tool, source policy and frontend can be updated here.")
+    checked_at: datetime | None = Field(
+        default=None, description="When the release source was last asked, whether or not it answered."
+    )
+    last_ok_at: datetime | None = Field(
+        default=None, description="When the release source last answered; None if it never did on this machine."
+    )
+    check_failed: bool = Field(
+        default=False, description="Whether the last time the release source was asked it did not answer."
+    )
     reason: str | None = Field(description="Why a manual update is required; contains no private installation source.")
 
 
@@ -174,6 +183,9 @@ def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartabl
             installed_at=installed_at,
             available=enabled and cache.newer_than(__version__, kernel.settings.update_channel) is not None,
             supported=reason is None,
+            checked_at=cache.checked_at if enabled else None,
+            last_ok_at=cache.ok_at if enabled else None,
+            check_failed=enabled and cache.error is not None,
             reason=reason,
         )
 
