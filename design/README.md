@@ -38,18 +38,18 @@ follows from it:
 - **Heinzels screen icon (2026-11-07).** The navigation item for the Heinzels screen is the team glyph (one face
   with two caps behind it, `HeinzelTeam`), in the line style of its neighbours; the single face (`HeinzelFace`)
   stays for one Heinzel: a graph node, a plugin's contribution.
-- **Choices (2026-11-07).** A choice among two to four exclusive options is a segmented control
-  (`components/ui/segmented.tsx`): a `radiogroup` of `radio` segments on a `color-muted` track; the chosen segment is
-  filled `color-primary` with `color-primary-foreground`, never the `color-accent` hover fill alone, and the fill is the
-  one accent in that container. A longer exclusive set (filter chips) is still radios. `aria-pressed` is for one
-  independent on/off toggle (the top bar's panel buttons), never for a member of a set; `choices-standards.test.ts`
-  fails an `aria-pressed` set. A choice the app cannot offer stays in the group, dimmed and `aria-disabled`, with its
+- **Choices (2026-11-07).** Exclusive sets of two to four are a segmented control (`components/ui/segmented.tsx`): a
+  `radiogroup` of `radio` segments on one `color-muted` track, one `color-primary` fill with
+  `color-primary-foreground`, never the `color-accent` hover fill alone. A longer exclusive set (filter chips) is
+  still radios. Independent sets are checkboxes: compact, a chip group (a native checkbox in a label, 2-up grid, gap,
+  hairline when off, `color-primary` fill plus check mark when on); with room for a help sentence, a `role="switch"`
+  row (Settings). `aria-pressed` is for a lone toolbar toggle (a top-bar panel button), never a member of a labelled
+  set, never in a loop or a `fieldset`; `choices-standards.test.ts` fails it. A choice the app cannot offer at all is
+  not shown (Shared audio on an iPhone); one it offers but cannot take now stays, dimmed and `aria-disabled`, with its
   reason in the tooltip and the status line. Choosing while another option is live switches in one step: the new one
-  is asked for first, the old one stopped only once the new one runs. Segmented controls and switches are content, so
-  a pane made of them has no action row. Options that are not exclusive are a row of independent toggles on the same
-  track, each `aria-pressed`, the on ones filled. Example: the Audio pane is Show (Spectrum, Aurora, Halo, Swarm:
-  four independent toggles), Listen to (Off | Microphone | Shared audio, a segmented control), a live status line,
-  one privacy line and the master switch, the one way to turn every style off.
+  is asked for first, the old one stopped only once the new one runs. Segmented controls, chips and switches are
+  content, so a pane made of them has no action row. Example: the Audio pane is Show (Spectrum, Aurora, Halo, Swarm
+  chips), Listen to (Off | Microphone | Shared audio segments), status line, privacy line, master switch.
 - **Audio visualizations follow the theme (2026-11-07).** The Spectrum rail, the Aurora, the Halo and the Heinzel swarm take every hue from the live
   theme tokens (`color-primary`, `color-ok`, `color-warn`) in any CSS colour notation, re-read the moment the mode,
   theme or its daypart variant changes; no colour is written in `web/src/audio` (`choices-standards.test.ts`). The

@@ -1,4 +1,4 @@
-import { AudioLines, BarChart3, CircleDot, Mic, MicOff, MonitorSpeaker, Sparkles, Users } from "lucide-react";
+import { AudioLines, BarChart3, Check, CircleDot, Mic, MicOff, MonitorSpeaker, Sparkles, Users } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FooterItem, type State } from "@/components/FooterItem";
@@ -26,7 +26,7 @@ import { Analysis, bandRanges } from "./viz/analysis";
 import { watchTheme } from "./viz/color";
 import { drawHalo } from "./viz/halo";
 import { drawRail } from "./viz/rail";
-import { setMaster, setStyle, styleOn, useVizSettings, type VizStyle } from "./viz/settings";
+import { STYLES, setMaster, setStyle, styleOn, useVizSettings, type VizStyle } from "./viz/settings";
 import { useVizStage } from "./viz/stage";
 import { createSwarm, drawSwarm, stepSwarm, swarmSettled } from "./viz/swarm";
 import { readVizTheme } from "./viz/theme";
@@ -97,7 +97,6 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const swarmCanvas = useRef<HTMLCanvasElement>(null);
   const swarmFigures = useRef<(HTMLDivElement | null)[]>([]);
   const masterId = useId();
-  const showId = useId();
   const stop = useCallback(() => {
     generation.current += 1;
     request.current?.abort();
@@ -405,8 +404,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   let state: State = "off";
   let triggerLabel = "Audio visualizer";
   let controlWord = "Audio";
+  const nothingShown = !STYLES.some((style) => settings.styles[style]);
   if (!settings.master) {
     status = "Audio visualisation is off.";
+    controlWord = "Off";
+  } else if (nothingShown) {
+    status = "Nothing shown: every style is off.";
     controlWord = "Off";
   } else if (requesting) {
     status = "Waiting for the browser to allow audio.";
@@ -469,38 +472,38 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         <div className="space-y-3 px-1.5 pb-1">
           {settings.master && (
             <>
-              {/* Four independent layers, any of them on: one toggle each, the on ones filled; the switch below is all off. */}
-              <div className="space-y-1">
-                <p id={showId} className="text-xs text-muted-foreground">
-                  Show
-                </p>
-                <fieldset
-                  aria-labelledby={showId}
-                  className="m-0 grid min-w-0 grid-cols-4 gap-0.5 rounded-lg border border-border bg-muted p-0.5"
-                >
+              {/* Independent styles, any of them on (design/README.md, Choices): native checkboxes as chips, 2-up, no
+                  shared track, so they read as pick-any beside the pick-one source below. */}
+              <fieldset className="m-0 min-w-0 border-0 p-0">
+                <legend className="mb-1 text-xs text-muted-foreground">Show</legend>
+                <div className="grid grid-cols-2 gap-2">
                   {styleToggles.map(({ style, label, icon: Icon }) => {
                     const on = settings.styles[style];
                     return (
-                      <button
+                      <label
                         key={style}
-                        type="button"
-                        aria-pressed={on}
-                        onClick={() => setStyle(style, !on)}
                         className={cn(
-                          "flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-md px-1 text-xs",
-                          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                          "flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-xs",
+                          "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring",
                           on
-                            ? "bg-primary font-medium text-primary-foreground"
-                            : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                            ? "border-transparent bg-primary font-medium text-primary-foreground"
+                            : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
                         )}
                       >
-                        <Icon aria-hidden className="size-4" />
-                        <span className="max-w-full truncate">{label}</span>
-                      </button>
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={on}
+                          onChange={(event) => setStyle(style, event.target.checked)}
+                        />
+                        <Icon aria-hidden className="size-4 shrink-0" />
+                        <span className="min-w-0 flex-1 truncate">{label}</span>
+                        <Check aria-hidden className={cn("size-3.5 shrink-0", !on && "invisible")} />
+                      </label>
                     );
                   })}
-                </fieldset>
-              </div>
+                </div>
+              </fieldset>
               <SegmentedControl
                 legend="Listen to"
                 segments={sourceSegments}
@@ -514,10 +517,9 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             <span aria-hidden className={mark}>
               ●
             </span>
-            <output
-              aria-live="polite"
-              className={state === "bad" ? "break-words text-bad" : "break-words text-foreground"}
-            >
+            {/* The mark carries the state colour; the words stay foreground, which keeps 4.5:1 on the dark popover
+                where color-bad text does not (4.3:1). */}
+            <output aria-live="polite" className="break-words text-foreground">
               {status}
             </output>
           </p>

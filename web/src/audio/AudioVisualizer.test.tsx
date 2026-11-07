@@ -233,21 +233,28 @@ describe("AudioVisualizer", () => {
     expect(signal?.aborted).toBe(true);
   });
 
-  it("shows each style as its own toggle, the on ones filled, and the source as one choice", () => {
+  it("shows each style as its own checkbox chip, the on ones filled and checked, and the source as one choice", () => {
     render(<AudioVisualizer />);
     open();
     const show = within(screen.getByRole("group", { name: "Show" }));
     for (const name of ["Spectrum", "Aurora", "Halo", "Swarm"]) {
-      expect(show.getByRole("button", { name })).toHaveAttribute("aria-pressed", "true");
-      expect(show.getByRole("button", { name })).toHaveClass("bg-primary", "text-primary-foreground");
+      expect(show.getByRole("checkbox", { name })).toBeChecked();
+      expect(show.getByRole("checkbox", { name }).closest("label")).toHaveClass(
+        "bg-primary",
+        "text-primary-foreground",
+      );
     }
-    fireEvent.click(show.getByRole("button", { name: "Halo" }));
-    expect(show.getByRole("button", { name: "Halo" })).toHaveAttribute("aria-pressed", "false");
-    expect(show.getByRole("button", { name: "Halo" })).not.toHaveClass("bg-primary");
-    expect(show.getByRole("button", { name: "Swarm" })).toHaveAttribute("aria-pressed", "true");
-    // The source is exclusive: radios, never pressed buttons.
+    fireEvent.click(show.getByRole("checkbox", { name: "Halo" }));
+    expect(show.getByRole("checkbox", { name: "Halo" })).not.toBeChecked();
+    expect(show.getByRole("checkbox", { name: "Halo" }).closest("label")).not.toHaveClass("bg-primary");
+    expect(show.getByRole("checkbox", { name: "Swarm" })).toBeChecked();
+    expect(document.querySelectorAll("[aria-pressed]")).toHaveLength(0);
+    // Every style off is allowed; the status line says so.
+    for (const name of ["Spectrum", "Aurora", "Swarm"]) fireEvent.click(show.getByRole("checkbox", { name }));
+    expect(screen.getByRole("status")).toHaveTextContent("Nothing shown: every style is off.");
+    // The source is exclusive: radios.
     expect(source("Off")).toHaveAttribute("aria-checked", "true");
-    expect(within(screen.getByRole("radiogroup", { name: "Listen to" })).queryAllByRole("button")).toHaveLength(0);
+    expect(within(screen.getByRole("radiogroup", { name: "Listen to" })).queryAllByRole("checkbox")).toHaveLength(0);
   });
 
   it("stands the Halo and the Swarm in the sidebar stage, only while the Heinzels play along", () => {

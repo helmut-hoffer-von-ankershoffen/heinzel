@@ -17,7 +17,7 @@ const ROWS = [
   },
   {
     style: "swarm",
-    label: "Heinzel swarm",
+    label: "Swarm",
     help: "Three Heinzels above the player jump, sway and nod with the music.",
     Icon: Users,
   },

@@ -143,6 +143,17 @@ try {
           moving: moving.length,
         };
       });
+    // Show is pick-any: unchecking the Halo chip takes the Halo away, checking it brings it back.
+    const haloChip = pane.getByRole("checkbox", { name: "Halo", exact: true });
+    // The chip is the label a person presses; its native checkbox is visually hidden.
+    const haloLabel = pane.locator("label").filter({ hasText: /^Halo$/ });
+    await haloLabel.click();
+    assert.equal(await haloChip.isChecked(), false);
+    await page.locator("canvas[data-testid=audio-halo]").waitFor({ state: "detached" });
+    await haloLabel.click();
+    assert.equal(await haloChip.isChecked(), true);
+    await page.locator("canvas[data-testid=audio-halo]").waitFor();
+    await page.waitForTimeout(400);
     const playing = await heinzels();
     assert(
       playing.halo && playing.figures === 3,
@@ -230,6 +241,20 @@ try {
       })),
     );
     assert.deepEqual(violations, [], `${viewport.width}px axe: ${JSON.stringify(violations)}`);
+    // And in dark mode: the chip and segment fills keep their contrast.
+    await page.evaluate(() => document.documentElement.classList.add("dark"));
+    const dark = await page.evaluate(async () =>
+      (
+        await window.axe.run(document, {
+          runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"] },
+        })
+      ).violations.map((item) => ({
+        id: item.id,
+        nodes: item.nodes.map((node) => ({ target: node.target, summary: node.failureSummary })),
+      })),
+    );
+    await page.evaluate(() => document.documentElement.classList.remove("dark"));
+    assert.deepEqual(dark, [], `${viewport.width}px axe, dark: ${JSON.stringify(dark)}`);
     await page.keyboard.press("Escape");
     await pane.waitFor({ state: "hidden" });
     assert(await trigger.evaluate((element) => element === document.activeElement));
