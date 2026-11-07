@@ -67,7 +67,7 @@ try {
       return data.some((value, index) => index % 4 === 3 && value > 0);
     });
     // Let the 440 Hz tone settle, then move it to 12 kHz: a different band must paint a different colour.
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(1500);
     const low = await hue();
     assert(low.count > 0, "Real generated audio must produce nonempty aurora pixels");
     await page.evaluate(() => {
@@ -84,11 +84,18 @@ try {
             share += data[i + 1] / (data[i] + data[i + 1] + data[i + 2] + 1);
             count += 1;
           }
-        return count > 0 && Math.abs(share / count - lowShare) > 0.02;
+        // Directional and above the animation's own drift (about 0.03 on a steady tone): a 12 kHz tone moves the
+        // ribbons into the treble colour, measured at +0.12 to +0.14.
+        return count > 0 && share / count > lowShare + 0.06;
       },
       [low.share],
     );
-    assert((await hue()).count > 0, "Changing a real tone must change what the aurora paints");
+    const high = await hue();
+    assert(high.count > 0, "The moved tone must still paint the aurora");
+    assert(
+      high.share > low.share + 0.06,
+      `Changing a real tone must shift the aurora colour: ${JSON.stringify({ low, high })}`,
+    );
     result.realSignal = true;
     await page.screenshot({ path: join(shots, `audio-${viewport.width}-signal.png`) });
     await page.evaluate(() => {
