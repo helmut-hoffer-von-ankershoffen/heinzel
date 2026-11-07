@@ -555,3 +555,56 @@ def test_the_receipt_follows_a_git_plugins_branch_again_and_nothing_else_changes
     )
     pinned = original.replace("rev=main", f"rev={CRM_COMMIT}").encode()
     assert _requirements_from(pinned, original.encode(), ["heinzel-crm"]).decode() == original
+
+
+# A failed change's continuity marker (the Mini, 0.9.27 to 0.9.28) -----------------------------------------------------
+
+
+class CheckingLifecycle(Lifecycle):
+    """Like `system.daemon`: the checkpoint is asked when the mutation begins."""
+
+    def mutation(self, checkpoint, rollback_identity):
+        self.checkpoint_matched = checkpoint()
+        return super().mutation(checkpoint, rollback_identity)
+
+
+def test_a_put_back_removes_the_marker_its_failed_change_left(tmp_path, monkeypatch):
+    update, tool, lifecycle, _ = service(tmp_path, monkeypatch, moves={"urllib3": "2.8.0"})
+    lifecycle.checkpoint_matched = False  # no record is written on the way back: only the repair removes it
+    marker = tool.prefix / ".heinzel-startup-pending"
+    install = tool.run
+
+    def failing_half_way(*args, **kwargs):
+        install(*args, **kwargs)
+        marker.touch(mode=0o600)  # as a continuity write that failed after taking its marker leaves it
+
+    monkeypatch.setattr(tool, "run", failing_half_way)
+    result = update.apply_announced(news(), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+    assert (result.updated, result.restored) == (False, True)
+    assert not marker.exists()
+    assert tool.startup_state_matches()  # web restarts and later updates are no longer held
+
+
+def test_the_next_update_repairs_a_stale_marker_and_records_its_new_generation(tmp_path, monkeypatch):
+    update, tool, _, _ = service(tmp_path, monkeypatch)
+    lifecycle = CheckingLifecycle()
+    update._lifecycle = lifecycle
+    marker = tool.prefix / ".heinzel-startup-pending"
+    marker.touch(mode=0o600)  # left by an earlier automatic update that was put back
+    result = update.apply_announced(news(), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+    assert result.updated
+    assert lifecycle.checkpoint_matched  # the tool matched its record, so the chain of verified generations holds
+    assert not marker.exists()
+    assert tool.startup_state_matches()  # the new generation is recorded, not the old one
+
+
+def test_a_marker_over_an_uncertain_installation_stays(tmp_path, monkeypatch):
+    update, tool, _, _ = service(tmp_path, monkeypatch)
+    lifecycle = CheckingLifecycle()
+    update._lifecycle = lifecycle
+    (tool.prefix / "bin/hz").write_text("changed outside any update")
+    marker = tool.prefix / ".heinzel-startup-pending"
+    marker.touch(mode=0o600)
+    update.apply_announced(news(), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+    assert not lifecycle.checkpoint_matched
+    assert marker.exists()

@@ -15,6 +15,7 @@ asked again, so `@main` moves to the newest commit. A plugin that blocks the ins
 version it has if that still resolves, and otherwise taken out of the installation with the command that brings it back.
 """
 
+import importlib.metadata
 import json
 import platform
 import re
@@ -22,7 +23,7 @@ import shlex
 import tempfile
 import time
 from collections.abc import Callable, Generator, Mapping, Sequence
-from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -58,7 +59,7 @@ from heinzel.modules.system._announced import (
 )
 from heinzel.modules.system._models import AnnouncedUpdate, PluginUpdate, UpdateResult
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
-from heinzel.modules.system.plugin._sources import git_credentials
+from heinzel.modules.system.plugin._sources import dependents, git_credentials, required_by
 
 DEFAULT_BRANCH = "main"
 """The repository's default branch: a pin to it is kept in place, the way an install without a ref is."""
@@ -155,7 +156,7 @@ class UpdateService:
     def _mutation(self) -> AbstractContextManager[DaemonMutationScope | None]:
         if self._lifecycle is not None:
             return self._lifecycle.mutation(
-                self._installation.startup_state_matches, self._installation.rollback_identity
+                self._installation.repaired_startup_state_matches, self._installation.rollback_identity
             )
         if self._require_lifecycle:
             msg = "The daemon lifecycle boundary is unavailable; the installation was not changed."
@@ -531,6 +532,10 @@ class UpdateService:
         if generation != before:
             msg = "The installation isn't as it was after putting it back; explicit recovery is required."
             raise HeinzelError(msg)
+        # A change that failed half way left the marker; the folder matches its record again. If it can't go, it stays
+        # and says so: the next update or `hz ui restart` tries again.
+        with suppress(OSError, HeinzelError):
+            self._installation.clear_stale_startup_pending()
         if scope is not None and plan is not None:
             # The folder is as it was, byte for byte, but not inode for inode: the mutation completes with the
             # original generation, its record stays valid, and the daemon is handed over to the same code.
@@ -1200,6 +1205,7 @@ class UpdateService:
         modes: dict[str, Mode] = dict.fromkeys(names, "new")
         reasons: dict[str, str] = {}
         output = ""
+        graph = self._requirers()
         for _ in range(2 * len(plugins) + 2):
             specs = [
                 self._spec(p, modes[n], core, before.get(n))
@@ -1231,7 +1237,13 @@ class UpdateService:
                     return None, reasons, output
                 modes[name] = "keep" if modes[name] == "new" else "drop"
                 reasons[name] = _reason(output)
+            _drop_dependents(modes, reasons, graph)
         return None, reasons, output
+
+    def _requirers(self) -> dict[str, set[str]]:
+        """Which installed distributions require each one, read from the tool folder's metadata; never run."""
+        paths = [str(path) for path in self._installation.prefix.glob("lib/python*/site-packages")]
+        return required_by(importlib.metadata.distributions(path=paths)) if paths else {}
 
     @staticmethod
     def _spec(plugin: CorePin, mode: Mode, _core: str, installed: Installed | None) -> str:
@@ -1265,7 +1277,10 @@ class UpdateService:
                     handle = plugin.requirement
                     add = f"hz system plugin add {shlex.quote(handle)} --confirm"
                     reason = (
-                        f"{reasons[name]} It does not allow the new hz, so it was taken out of the installation "
+                        f"{reasons[name]} It was taken out of the installation with it (disabled), and hz was updated "
+                        f"without them. Once the plugin it needs is back: {add}"
+                        if reasons[name].startswith(NEEDS)
+                        else f"{reasons[name]} It does not allow the new hz, so it was taken out of the installation "
                         f"(disabled), and hz was updated without it. Once a release allows the new hz: {add}"
                     )
                     updates.append(
@@ -1519,6 +1534,22 @@ def _with_heads(message: str, heads: list[HeadRefresh]) -> str:
     if any(head.status not in SETTLED for head in shown):
         lines.append("Not everything runs the new version yet; the lines above say what finishes it.")
     return "\n".join([message, *lines])
+
+
+NEEDS = "It needs "
+"""How the reason of a plugin taken out with the plugin it needs begins (`_drop_dependents`)."""
+
+
+def _drop_dependents(modes: dict[str, Mode], reasons: dict[str, str], graph: dict[str, set[str]]) -> None:
+    """Take out with each dropped plugin every plugin that needs it: uv would put it back as their dependency.
+
+    Leaving a dependent in would install the dropped plugin again, and the update would then refuse its own result.
+    """
+    for name in [name for name, mode in modes.items() if mode == "drop"]:
+        for dependent in sorted(dependents(name, graph) & modes.keys()):
+            if modes[dependent] != "drop":
+                modes[dependent] = "drop"
+                reasons[dependent] = f"{NEEDS}{name}, which was taken out: {reasons[name]}"
 
 
 def _with_summary(message: str, updates: list[PluginUpdate]) -> str:

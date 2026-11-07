@@ -103,3 +103,64 @@ def test_nothing_installed_is_nothing_to_refresh(tmp_path):
     web, restarts, _ = service(tmp_path, [WebStatus(installed=False, loaded=False, ready=False)])
     assert web.refresh("0.9.26").status == "not-installed"
     assert restarts == []
+
+
+def _restartable(tmp_path, repair=None):
+    prefix = tmp_path / "tool"
+    prefix.mkdir()
+    web = WebService(
+        tmp_path / "state",
+        tmp_path / "home",
+        tmp_path / "bin/hz",
+        platform="darwin",
+        profile={},
+        prefix=prefix,
+        repair=repair,
+    )
+    controls: list[str] = []
+    web._transition_needed = lambda: False  # type: ignore[method-assign]
+    web._record = lambda: {"port": 8737}  # type: ignore[method-assign]
+    web._manager = lambda _record: (True, 4242)  # type: ignore[method-assign]
+
+    def control(_record, _pid, verb):
+        controls.append(verb)
+        return {"instance": "a" * 32}
+
+    web._control = control  # type: ignore[method-assign]
+    return web, prefix / ".heinzel-startup-pending", controls
+
+
+def test_restart_repairs_a_marker_a_put_back_left_and_restarts(tmp_path):
+    """The Mini, 0.9.28: CLI and daemon ran the new version, web kept the old one, `hz ui restart` refused."""
+    removed: list[int] = []
+
+    def repair() -> bool:
+        removed.append(1)
+        marker.unlink()
+        return True
+
+    web, marker, controls = _restartable(tmp_path, repair)
+    marker.touch()
+    assert web.restart().requested
+    assert (removed, controls) == ([1], ["restart"])
+
+
+def test_restart_names_the_way_out_when_the_marker_must_stay(tmp_path):
+    web, marker, controls = _restartable(tmp_path, lambda: False)
+    marker.touch()
+    with pytest.raises(HeinzelError, match="hz system update"):
+        web.restart()
+    assert controls == []
+    assert marker.exists()
+
+
+def test_restart_never_repairs_past_another_unfinished_change(tmp_path):
+    repairs: list[int] = []
+    web, marker, controls = _restartable(tmp_path, lambda: bool(repairs.append(1)))
+    marker.touch()
+    gate = tmp_path / "state/daemon/mutation-pending.json"
+    gate.parent.mkdir(parents=True)
+    gate.write_text("{}")
+    with pytest.raises(HeinzelError, match="requires completion or recovery"):
+        web.restart()
+    assert (repairs, controls) == ([], [])

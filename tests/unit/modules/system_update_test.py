@@ -1842,3 +1842,76 @@ def test_a_daemon_that_was_not_running_is_nothing_to_restart(tmp_path):
     result = service.update(current="0.2.0")
     assert [(head.head, head.status) for head in result.heads] == [("daemon", "not-installed")]
     assert "Not everything" not in result.message
+
+
+ADDON = "heinzel-acme-addon @ git+https://github.com/example-org/heinzel-acme-addon@v1.0.0"
+
+
+def test_a_plugin_that_needs_a_plugin_taken_out_is_taken_out_with_it(tmp_path):
+    """uv would install the dropped plugin again as the other's dependency, and the update would refuse its result."""
+    uv = FakeUv("0.2.0")
+    uv.failures = [BLOCKED, BLOCKED]
+    uv.plugins = {"heinzel-acme": "1.0.0", "heinzel-acme-addon": "1.0.0"}
+    uv.available = {"heinzel-acme": "1.0.0", "heinzel-acme-addon": "1.0.0"}
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    lines = [
+        f'{{ name = "heinzel", git = "{REPO}?rev=v0.2.0" }}',
+        f'{{ name = "heinzel-acme", git = "{REPO}-acme?rev=v1.0.0" }}',
+        f'{{ name = "heinzel-acme-addon", git = "{REPO}-acme-addon?rev=v1.0.0" }}',
+    ]
+    receipt = target.prefix / "uv-receipt.toml"
+    entrypoints = receipt.read_text(encoding="utf-8").split("entrypoints = ", 1)[1]
+    receipt.write_text(
+        "[tool]\nrequirements = [\n" + ",\n".join(lines) + "\n]\nentrypoints = " + entrypoints, encoding="utf-8"
+    )
+    site = target.prefix / "lib/python3.14/site-packages"
+    for name, requires in [("heinzel-acme", "heinzel<0.3"), ("heinzel-acme-addon", "heinzel-acme>=1")]:
+        info = site / f"{name}-1.0.0.dist-info"
+        info.mkdir(parents=True)
+        (info / "METADATA").write_text(
+            f"Metadata-Version: 2.1\nName: {name}\nVersion: 1.0.0\nRequires-Dist: {requires}\n"
+            "Requires-Dist: pytest; extra == 'test'\n"
+        )
+    result = UpdateService(target, FakeReleases("0.4.0")).update(current="0.2.0")
+    assert uv.commands[-1] == install_command(f"heinzel @ git+{REPO}@v0.4.0")  # neither goes back in
+    acme, addon = result.plugins
+    assert (acme.distribution, acme.status, acme.disabled) == ("heinzel-acme", "failed", True)
+    assert (addon.distribution, addon.status, addon.disabled) == ("heinzel-acme-addon", "failed", True)
+    assert "It needs heinzel-acme, which was taken out" in str(addon.reason)
+    assert "does not allow the new hz, so" not in str(addon.reason)  # that is the plugin it needs
+    assert "Once the plugin it needs is back" in str(addon.reason)
+    assert addon.next == [f"hz system plugin add {shlex.quote(ADDON)} --confirm"]
+
+
+def test_the_plugin_dependency_graph_follows_requirements_through_plugins_and_ignores_extras():
+    from types import SimpleNamespace
+
+    from heinzel.modules.system.plugin._sources import dependents, required_by
+
+    def dist(name, *requires):
+        return SimpleNamespace(metadata={"Name": name}, requires=list(requires))
+
+    graph = required_by(
+        [
+            dist("Heinzel_Clock", "heinzel>=1"),
+            dist("heinzel-alarm", "heinzel-clock>=1"),
+            dist("heinzel-snooze", "heinzel-alarm", "heinzel-extra; extra == 'docs'", "not a requirement !"),
+            dist("heinzel-other", "heinzel-here; python_version >= '3'"),
+        ]
+    )  # type: ignore[list-item]
+    assert dependents("heinzel-clock", graph) == {"heinzel-alarm", "heinzel-snooze"}
+    assert dependents("heinzel-alarm", graph) == {"heinzel-snooze"}
+    assert dependents("heinzel-extra", graph) == set()
+    assert dependents("heinzel-other", graph) == set()
+    assert dependents("heinzel-here", graph) == {"heinzel-other"}  # a marker that holds here counts
+
+
+def test_dropping_a_plugin_drops_everything_that_needs_it_through_others_too():
+    from heinzel.modules.system._update import _drop_dependents
+
+    modes = {"heinzel-clock": "drop", "heinzel-alarm": "keep", "heinzel-snooze": "new", "heinzel-other": "new"}
+    reasons = {"heinzel-clock": "blocked."}
+    graph = {"heinzel-clock": {"heinzel-alarm"}, "heinzel-alarm": {"heinzel-snooze"}, "heinzel": {"heinzel-other"}}
+    _drop_dependents(modes, reasons, graph)  # type: ignore[arg-type]
+    assert modes == {"heinzel-clock": "drop", "heinzel-alarm": "drop", "heinzel-snooze": "drop", "heinzel-other": "new"}
+    assert reasons["heinzel-snooze"] == "It needs heinzel-clock, which was taken out: blocked."
