@@ -135,6 +135,16 @@ def test_the_web_starts_a_sign_in_polls_its_page_and_sees_it_succeed(sign_ins):
     assert sign_ins.access("notes", "Notes").flow == ended
 
 
+def test_with_nothing_held_needed_or_allowed_a_first_sign_in_asks_for_the_defaults(sign_ins, monkeypatch):
+    def nothing(self, *, live: bool) -> SignInStatus:
+        return SignInStatus(signed_in=False, grants=[status(READ, "missing"), status(WRITE, "missing")], live=live)
+
+    monkeypatch.setattr(Fake, "status", nothing)
+    Fake.release.set()
+    ended = sign_ins.connect("notes", frozenset(), wait=True, prompter=ScriptedPrompter())
+    assert (ended.state, ended.grants) == ("succeeded", ["notes-read"])
+
+
 def test_the_cli_waits_is_told_the_page_once_and_it_opens_here(sign_ins):
     prompter = ScriptedPrompter()
     threading.Timer(0.05, Fake.release.set).start()
@@ -218,3 +228,27 @@ def test_the_report_offers_the_in_app_sign_in_first(make_kernel, sign_ins):
     kernel = sign_ins._kernel
     [connector] = ConnectorService(kernel, kernel.resolve(CapabilityView), sign_ins).report().connectors
     assert (connector.sign_in, connector.connect) == (True, ["hz system connector connect notes"])
+
+
+class _Interrupted(threading.Event):
+    """A done event whose first wait is interrupted, as Ctrl-C does in a terminal."""
+
+    interrupted = False
+
+    def wait(self, timeout: float | None = None) -> bool:
+        if not _Interrupted.interrupted:
+            _Interrupted.interrupted = True
+            raise KeyboardInterrupt
+        return super().wait(timeout)
+
+
+def test_ctrl_c_while_waiting_stops_the_vendors_tool(sign_ins, monkeypatch):
+    from heinzel.modules.system.connector import _sign_in
+
+    _Interrupted.interrupted = False
+    running = _sign_in._Running
+    monkeypatch.setattr(_sign_in, "_Running", lambda flow: running(flow, done=_Interrupted()))
+    with pytest.raises(KeyboardInterrupt):
+        sign_ins.connect("notes", frozenset(), wait=True, prompter=ScriptedPrompter())
+    [flow] = [r.flow for r in sign_ins._flows.values()]
+    assert flow.state == "cancelled"

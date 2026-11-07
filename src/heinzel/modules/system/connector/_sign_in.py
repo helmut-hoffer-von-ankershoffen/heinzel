@@ -129,6 +129,7 @@ class SignIns:
 
         Raises:
             HeinzelError: If there is no such sign-in, a grant in `allow` is unknown, or its tool can't run.
+            KeyboardInterrupt: If the person stops a waiting sign-in; its tool is stopped first.
         """
         let = self._let(name)
         declared = {g.id for g in let.grants}
@@ -140,7 +141,8 @@ class SignIns:
             fix = f" Install it: {status.install}" if status.install else ""
             msg = f"{name}'s sign-in can't run: {status.problem or 'its tool is ' + status.tool}.{fix}"
             raise HeinzelError(msg)
-        grants = wanted(status.grants, allow)
+        # Nothing holds, is needed or allowed (nothing bound yet): a first sign-in asks for the defaults.
+        grants = wanted(status.grants, allow) or frozenset(g.id for g in let.grants if g.default)
         provider = self._provider(let)
         running = _Running(
             SignInFlow(
@@ -165,8 +167,15 @@ class SignIns:
         thread.start()
         timer.start()
         if wait:
-            running.done.wait()
-            timer.cancel()
+            try:
+                running.done.wait()
+            except KeyboardInterrupt:  # Ctrl-C in the terminal: stop the vendor's tool rather than orphan it
+                running.cancelled = True
+                running.stop.set()
+                running.done.wait(_STOP_GRACE)
+                raise
+            finally:
+                timer.cancel()
         return self.flow(running.flow.id)
 
     def _reporter(self, running: _Running, prompter: Prompter | None) -> Callable[[SignInProgress], None]:
