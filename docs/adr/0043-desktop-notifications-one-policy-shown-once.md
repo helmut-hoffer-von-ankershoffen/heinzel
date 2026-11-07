@@ -8,7 +8,7 @@ amends-0020: every tick ends by popping up due notices
 amends-0039: the notify operations are web endpoints, not REST ones
 amended-by: 0046, 0078
 related: 0003, 0021, 0024, 0026, 0027, 0028, 0036, 0038
-implemented-by: 67
+implemented-by: 67, 601
 ---
 
 # 0043: Desktop notifications: one policy in the core, shown once, by hz's own macOS app
