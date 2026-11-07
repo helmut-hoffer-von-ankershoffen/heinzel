@@ -114,3 +114,24 @@ it("keeps a pinned footer pane above a neighbouring hover preview", async () => 
   );
   expect(screen.getByRole("region", { name: "Daemon" }).parentElement).toHaveClass("z-[var(--layer-popover,40)]");
 });
+
+it("keeps a steady footer value at a fixed digit width that never shrinks", () => {
+  const { rerender } = render(<FooterItem label="Clock" state="ok" text="08:32:41" steady />);
+  const text = () => screen.getByText(/\d/);
+  const button = () => screen.getByRole("button");
+  expect(button().className).toContain("tabular-nums");
+  expect(button().className).toContain("font-mono");
+  expect(text().style.minWidth).toBe("8ch");
+  rerender(<FooterItem label="Clock" state="ok" text="08:32:42" steady />);
+  expect(text().style.minWidth).toBe("8ch");
+  rerender(<FooterItem label="Clock" state="ok" text="Mon 08:32:42" steady />);
+  expect(text().style.minWidth).toBe("12ch");
+  rerender(<FooterItem label="Clock" state="ok" text="08:32:43" steady />);
+  expect(text().style.minWidth).toBe("12ch");
+});
+
+it("leaves an ordinary footer text item unconstrained", () => {
+  render(<FooterItem label="Plain" state="ok" text="Inspect" />);
+  expect(screen.getByRole("button").className).not.toContain("tabular-nums");
+  expect(screen.getByText("Inspect").style.minWidth).toBe("");
+});
