@@ -294,6 +294,24 @@ function FooterStatus({
   }
   const label = [item.text, item.live ? liveText(item.live, now) : ""].filter(Boolean).join(" ");
   const effect = item.effect;
+  const actions = (
+    <>
+      {effect && (
+        <PaneAction icon={effectIcon(effect)} onClick={() => run(effect)}>
+          {effectLabel(effect)}
+        </PaneAction>
+      )}
+      {(item.actions ?? []).map((action) => (
+        <PaneAction
+          key={action.label}
+          icon={action.icon ? ICONS[action.icon] : undefined}
+          onClick={() => run(action.effect)}
+        >
+          {action.label}
+        </PaneAction>
+      ))}
+    </>
+  );
   const accessible = [
     label,
     ...(item.meters ?? []).map((meter) => `${meter.label}: ${meter.value == null ? "unavailable" : `${meter.value}%`}`),
@@ -355,33 +373,19 @@ function FooterStatus({
           </li>
         ))}
       </ul>
-      {/* The switch and its URL sit at the end of the body, so its Share and Open buttons close the pane. */}
-      {item.toggle && (
+      {/* The switch and its URL sit at the end of the body; its Share and Open join the pane's own actions in one row. */}
+      {item.toggle ? (
         <div className="px-1.5">
-          <StatusControl entry={current} />
+          <StatusControl entry={current} actions={actions} />
         </div>
+      ) : (
+        <PaneActions>{actions}</PaneActions>
       )}
-      <PaneActions>
-        {effect && (
-          <PaneAction icon={effectIcon(effect)} onClick={() => run(effect)}>
-            {effectLabel(effect)}
-          </PaneAction>
-        )}
-        {(item.actions ?? []).map((action) => (
-          <PaneAction
-            key={action.label}
-            icon={action.icon ? ICONS[action.icon] : undefined}
-            onClick={() => run(action.effect)}
-          >
-            {action.label}
-          </PaneAction>
-        ))}
-      </PaneActions>
     </FooterItem>
   );
 }
 
-function StatusControl({ entry }: { entry: SchemaStatusEntry }) {
+function StatusControl({ entry, actions }: { entry: SchemaStatusEntry; actions?: ReactNode }) {
   const client = useQueryClient();
   const current = useEntry("status", entry, 0);
   const control = current.item?.toggle;
@@ -389,6 +393,7 @@ function StatusControl({ entry }: { entry: SchemaStatusEntry }) {
   return (
     <ContributionToggle
       control={control}
+      actions={actions}
       refresh={async (signal) => {
         const entries = await unwrap(api.GET("/system/ui/status", { params: { query: { item: entry.id } }, signal }));
         const fresh = entries.find((candidate) => candidate.id === entry.id);

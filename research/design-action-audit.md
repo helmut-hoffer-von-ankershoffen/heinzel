@@ -72,3 +72,13 @@ reviewed change:
   history. Opening the bare origin and signing in there may be the safer default.
 - Screenshots and screen sharing are the main leak paths. Masking by default closes them without making the pane
   harder to use.
+
+## Space economy (to be measured)
+
+The principle "Content in focus, no screen space wasted" ([design/README.md](../design/README.md)) adds a column to
+this audit: the share of the viewport that is content rather than chrome, per screen, at 1440x900 and 390x844. It is
+not measured yet. The next audit pull request measures it from the mobile sweep's screenshots (content box area over
+viewport area) and adds the column to the tables above, worst first.
+
+Related work in flight elsewhere, not duplicated here: compact Today actions, the sidebar gap (#563), the composer
+cost line, overlay scrollbars (#566) and the brand header.

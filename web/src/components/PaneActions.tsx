@@ -2,7 +2,7 @@
 // title row, or one bottom action row under a divider. Panes use these instead of hand-rolled rows or text links, so
 // placement, divider, size and accessible names stay the same everywhere.
 import type { LucideIcon } from "lucide-react";
-import { Children, type ComponentProps, Fragment, isValidElement, type ReactNode } from "react";
+import { Children, type ComponentProps, cloneElement, Fragment, isValidElement, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -12,7 +12,10 @@ export function PaneActions({ children, className }: { children?: ReactNode; cla
   // Only PaneAction may sit in the row, so a text link or a differently sized button cannot creep in beside them:
   // development and tests fail loudly, a release drops the stranger rather than the whole pane.
   const all = flatten(children);
-  const items = all.filter((item) => isValidElement(item) && item.type === PaneAction);
+  // A marker rather than identity, so a hot-reloaded PaneAction still counts; keys are made unique across fragments.
+  const items = all
+    .filter((item) => isValidElement(item) && (item.type as { paneAction?: boolean }).paneAction === true)
+    .map((item, index) => (isValidElement(item) ? cloneElement(item, { key: `${index}:${item.key}` }) : item));
   if (import.meta.env.DEV && items.length !== all.length)
     throw new Error("PaneActions holds only PaneAction children (design/README.md)");
   // A row whose every action is conditionally hidden draws no stray divider.
@@ -97,6 +100,8 @@ export function PaneAction({
     </Button>
   );
 }
+
+PaneAction.paneAction = true;
 
 /** The one icon-only action in a pane's title row. `label` is its accessible name and tooltip: verb and object. */
 export function PaneIconAction({

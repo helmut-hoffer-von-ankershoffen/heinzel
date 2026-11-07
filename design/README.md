@@ -5,6 +5,27 @@ in [`tokens.json`](tokens.json); a drift test keeps the app and the Pages site o
 [docs/BRANDING.md](../docs/BRANDING.md). Layout on phones is in
 [Mobile UI](../docs/CODING_STANDARDS.md#mobile-ui).
 
+## Content in focus, no screen space wasted
+
+The content the person came for gets the space; everything else earns its place. This is a first-class principle,
+checked in review like the brand rules:
+
+1. **Never repeat a title.** When a header selector already names the page, the page has no second heading saying
+   the same; keep one.
+2. **One action is one icon button** in the header zone; several are one bottom row under a divider
+   ([Actions in panes](#actions-in-panes)).
+3. **No empty bands or decorative gaps.** Spacing comes from one compact scale (Tailwind steps 1, 1.5, 2, 3, 4);
+   a gap larger than that needs a reason.
+4. **Chrome earns its space.** Sidebars, footers, side panes and toasts are collapsible and hidden when empty. Rarely
+   needed facts live in hover, focus or tap panes, never in persistent text.
+5. **Content takes all remaining space** on desktop, tablet and phone: no fixed widths that leave the rest empty, no
+   chrome that stays when it has nothing to say.
+6. **Scrollbars overlay and hide** when not scrolling.
+7. **Toasts and banners are dismissible and never stack**; a newer one replaces the older one of the same kind.
+
+The audit in [research/design-action-audit.md](../research/design-action-audit.md) measures, per screen, how much of
+the viewport is content at 1440x900 and 390x844.
+
 ## Actions in panes
 
 A pane is any bounded surface with a title: a footer pane, a sidebar pane, a popover, a settings section, a panel
