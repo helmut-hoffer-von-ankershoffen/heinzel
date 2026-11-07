@@ -445,8 +445,8 @@ unknown or half-written file) is refused untouched: that store may hold replay e
 """
 
 RECEIPT_VERSION = 1
-MAX_FILE_BYTES = 1024 * 1024
-"""Recovery reads whole files into memory; a larger notification store is not this legacy shape."""
+MAX_FILE_BYTES = MAX_HEALTH_BYTES
+"""Recovery reads whole files into memory, up to what doctor verifies."""
 MARKER = b"1\n"
 KNOWN = frozenset(
     {
@@ -535,7 +535,9 @@ def _archive(
     target = root / f"{stamp}-{secrets.token_hex(4)}"
     try:
         _private_dir(root)
+        _fsync_dir(root.parent)
         target.mkdir(mode=PRIVATE_DIR)
+        _fsync_dir(root)  # the archive's entry survives a crash right after the state is replaced
         archived: list[Archived] = []
         for name, (data, info) in files.items():
             mode = stat.S_IMODE(info.st_mode)
