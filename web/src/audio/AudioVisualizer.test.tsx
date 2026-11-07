@@ -126,6 +126,22 @@ describe("AudioVisualizer", () => {
     expect(screen.queryByRole("img", { name: "Shared audio spectrum" })).not.toBeInTheDocument();
   });
 
+  it("switches each style from the pane's pressed toggles", () => {
+    render(<AudioVisualizer />);
+    fireEvent.click(screen.getByRole("button", { name: /Audio visualizer,/ }));
+    const controls = screen.getByRole("region", { name: "Audio visualizer controls" });
+    const spectrum = within(controls).getByRole("button", { name: "Spectrum" });
+    const aurora = within(controls).getByRole("button", { name: "Aurora" });
+    expect(spectrum).toHaveAttribute("aria-pressed", "true");
+    expect(aurora).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(spectrum);
+    expect(spectrum).toHaveAttribute("aria-pressed", "false");
+    expect(aurora).toHaveAttribute("aria-pressed", "true");
+    expect(JSON.parse(localStorage.getItem("hz.audio.viz") ?? "{}").styles?.spectrum ?? false).toBe(false);
+    fireEvent.click(spectrum);
+    expect(spectrum).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("asks once, inline, to see music playing in a frame, and remembers the answer", () => {
     render(<AudioVisualizer />);
     expect(screen.queryByRole("complementary", { name: "Let Heinzel see the music" })).not.toBeInTheDocument();

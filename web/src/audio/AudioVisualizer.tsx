@@ -310,8 +310,6 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     controlWord = "Retry";
   }
   const pick = "min-h-11 flex-1";
-  const toggle =
-    "flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-2 text-xs aria-pressed:bg-accent aria-pressed:font-medium";
   return (
     <div className="flex h-full min-h-0 flex-col items-center text-muted-foreground">
       <FooterItem
@@ -334,24 +332,24 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           </output>
           <fieldset className="flex gap-2 border-0 p-0">
             <legend className="mb-1 text-xs">Show</legend>
-            <button
-              type="button"
-              className={toggle}
+            <Button
+              className={pick}
+              variant={settings.styles.spectrum ? "default" : "outline"}
               aria-pressed={settings.styles.spectrum}
               onClick={() => setStyle("spectrum", !settings.styles.spectrum)}
             >
               <BarChart3 aria-hidden className="size-4" />
               Spectrum
-            </button>
-            <button
-              type="button"
-              className={toggle}
+            </Button>
+            <Button
+              className={pick}
+              variant={settings.styles.aurora ? "default" : "outline"}
               aria-pressed={settings.styles.aurora}
               onClick={() => setStyle("aurora", !settings.styles.aurora)}
             >
               <Sparkles aria-hidden className="size-4" />
               Aurora
-            </button>
+            </Button>
           </fieldset>
           <fieldset className="flex gap-2 border-0 p-0">
             <legend className="mb-1 text-xs">Source for sound in a frame, such as YouTube</legend>
