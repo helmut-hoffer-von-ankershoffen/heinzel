@@ -142,6 +142,11 @@ class StepReporter:
         """Print one line that starts with the check mark."""
         self._print(Text.assemble(self.mark(), " ", text))
 
+    def row(self, text: str) -> None:
+        """Print one finished row that no step reported, such as a record set aside; `text` starts with its label."""
+        self._end_partial()
+        self._print(Text.assemble("  ", self.mark(), " ", text))
+
     def note(self, text: str) -> None:
         """Print one line outside any row, such as a retry or a wait."""
         self._end_partial()

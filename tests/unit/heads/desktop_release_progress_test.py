@@ -296,7 +296,7 @@ def test_install_names_the_folder_the_installer_reports_not_a_fixed_one(monkeypa
     monkeypatch.setattr(installation, "install_desktop", lambda *_args, **_options: "installed")
     monkeypatch.setattr(_app, "desktop_executable", lambda _kernel: tmp_path / "hz")
     out, err = io.StringIO(), io.StringIO()
-    _app._install(None, Console(file=out, width=200), Console(file=err, width=200))
+    _app._install_app(None, Console(file=out, width=200), Console(file=err, width=200))
     assert f"Done. Open it from Launchpad, or run: open {system}" in out.getvalue()
     assert "It stayed in" not in err.getvalue()
 
@@ -312,6 +312,6 @@ def test_install_that_could_not_move_the_app_says_where_it_stayed_and_why(monkey
     monkeypatch.setattr(installation, "install_desktop", lambda *_args, **_options: "installed")
     monkeypatch.setattr(_app, "desktop_executable", lambda _kernel: tmp_path / "hz")
     out, err = io.StringIO(), io.StringIO()
-    _app._install(None, Console(file=out, width=400), Console(file=err, width=400))
+    _app._install_app(None, Console(file=out, width=400), Console(file=err, width=400))
     assert f"It stayed in {own.parent} (your Applications folder)" in err.getvalue()
     assert f"Done. Open it from Launchpad, or run: open {own}" in out.getvalue()

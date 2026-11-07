@@ -62,7 +62,7 @@ export function ChartBody({ widget }: Readonly<{ widget: ChartData }>) {
             y={round(y(range.high))}
             width={innerW}
             height={round(Math.max(1, y(range.low) - y(range.high)))}
-            className="fill-current opacity-10"
+            className="fill-current stroke-none opacity-10"
           />
         )}
         {range && (
@@ -79,7 +79,7 @@ export function ChartBody({ widget }: Readonly<{ widget: ChartData }>) {
             y={round(H - PAD.bottom - bar * innerH * 0.5)}
             width={round(barWidth)}
             height={round(bar * innerH * 0.5)}
-            className="fill-muted-foreground opacity-70"
+            className="fill-muted-foreground stroke-none opacity-70"
           />
         ))}
         <polyline points={points} fill="none" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />

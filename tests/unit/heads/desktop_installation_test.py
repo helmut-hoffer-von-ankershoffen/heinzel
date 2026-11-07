@@ -374,7 +374,7 @@ def _cli(monkeypatch, local_installation, tmp_path):
 
 def test_install_and_uninstall_name_the_real_path_and_it_exists(monkeypatch, tmp_path, local_installation):
     bundle, _config, output, error, out, err = _cli(monkeypatch, local_installation, tmp_path)
-    _app._install(None, output, error)
+    _app._install_app(None, output, error)
     assert bundle.is_dir()
     assert (
         f"Installing Heinzelmännchen {_app.__version__} into {bundle.parent} (your Applications folder"
@@ -384,7 +384,7 @@ def test_install_and_uninstall_name_the_real_path_and_it_exists(monkeypatch, tmp
     assert "ok Recorded   hz owns this copy" in err.getvalue()
     assert f"Done. Open it from Launchpad, or run: open {bundle}" in out.getvalue()
 
-    _app._install(None, output, error)
+    _app._install_app(None, output, error)
     assert f"is already installed at {bundle}. Nothing to do." in out.getvalue()
 
     _app._uninstall(output, error)
@@ -401,7 +401,7 @@ def test_interrupt_leaves_no_half_installed_bundle(monkeypatch, tmp_path, local_
 
     monkeypatch.setattr(desktop, "fetch_archive", interrupted)
     with pytest.raises(typer.Exit) as stop:
-        _app._install(None, output, error)
+        _app._install_app(None, output, error)
     assert stop.value.exit_code == 130
     assert "Cancelled. Nothing was installed" in err.getvalue()
     assert not bundle.exists()
@@ -418,7 +418,7 @@ def test_failed_verification_leaves_no_bundle_or_staging(monkeypatch, tmp_path, 
 
     monkeypatch.setattr(desktop, "fetch_archive", refused)
     with pytest.raises(typer.Exit) as stop:
-        _app._install(None, output, error)
+        _app._install_app(None, output, error)
     assert stop.value.exit_code == 1
     assert "could not be verified" in err.getvalue()
     assert not bundle.exists()

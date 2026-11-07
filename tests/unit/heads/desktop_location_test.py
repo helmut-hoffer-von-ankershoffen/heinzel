@@ -5,6 +5,7 @@ Every case uses a fake home and a fake system Applications folder; bundles are i
 
 import os
 import plistlib
+import shutil
 import struct
 import sys
 from pathlib import Path
@@ -236,3 +237,158 @@ def test_install_reports_one_row_per_step_group_when_not_a_terminal(mac):
         ["ok", "Recorded"],
     ]
     assert f"ok Installed  {system / desktop.BUNDLE_NAME}" in text
+
+
+def _record(home: Path) -> tuple[Path, Path]:
+    config = home / ".config" / "heinzel"
+    return config / desktop._RECEIPT, config / desktop._BINDING
+
+
+def _orphan(mac) -> tuple[Path, Path, Path]:
+    """Install, then remove the app by hand as Finder's Move to Trash does, leaving our record behind."""
+    home, system, executable = mac
+    assert desktop.install_desktop("1.0.0", executable, home=home) == "installed"
+    shutil.rmtree(system / desktop.BUNDLE_NAME)
+    return home, system, executable
+
+
+def test_install_after_the_app_was_moved_to_the_trash_by_hand_asks_then_sets_the_old_record_aside(mac):
+    home, system, executable = _orphan(mac)
+    receipt, binding = _record(home)
+    old = (receipt.read_bytes(), binding.read_bytes())
+    with pytest.raises(desktop.LeftoverInstallError) as failure:
+        desktop.install_desktop("1.0.0", executable, home=home)
+    assert failure.value.problem is not None
+    assert "the app is gone from" in failure.value.problem.happened
+    assert str(receipt) in str(failure.value)
+    assert receipt.read_bytes() == old[0]
+    notes: list[str] = []
+    assert desktop.install_desktop("1.0.0", executable, home=home, forget=True, notes=notes) == "installed"
+    assert _bundles(home, system) == [system / desktop.BUNDLE_NAME]
+    backups = sorted(receipt.parent.glob("*.orphaned-*"))
+    assert [path.name.split(".orphaned-")[0] for path in backups] == [receipt.name, binding.name]
+    assert {path.read_bytes() for path in backups} == set(old)
+    assert notes == [f"Set aside  old install record ({backups[0]})"]
+    assert desktop.desktop_location(home) == system / desktop.BUNDLE_NAME
+
+
+def test_uninstall_after_the_app_was_moved_to_the_trash_by_hand_finishes(mac):
+    home, _system, _executable = _orphan(mac)
+    receipt, binding = _record(home)
+    notes: list[str] = []
+    assert desktop.uninstall_desktop(home=home, notes=notes) is None
+    assert not receipt.exists()
+    assert not binding.exists()
+    assert len(list(receipt.parent.glob("*.orphaned-*"))) == 2
+    assert len(notes) == 1
+    assert desktop.uninstall_desktop(home=home) is None
+
+
+def test_a_hand_copied_app_is_named_in_the_error_and_replace_moves_it_to_the_trash(mac):
+    home, system, executable = mac
+    copied = system / desktop.BUNDLE_NAME
+    (copied / "Contents").mkdir(parents=True)
+    (copied / "Contents" / "mine").write_text("keep me")
+    (home / ".Trash").mkdir()
+    receipt, _binding = _record(home)
+    receipt.parent.mkdir(parents=True)
+    receipt.parent.parent.chmod(0o700)
+    receipt.parent.chmod(0o700)
+    receipt.write_text("{}")
+    receipt.chmod(0o600)
+    with pytest.raises(desktop.DesktopInstallationError) as failure:
+        desktop.install_desktop("1.0.0", executable, home=home)
+    assert str(copied) in str(failure.value)
+    assert failure.value.problem is not None
+    assert "--replace" in failure.value.problem.action
+    assert str(copied.parent) in failure.value.problem.happened
+    assert (copied / "Contents" / "mine").read_text() == "keep me"
+
+    notes: list[str] = []
+    assert desktop.install_desktop("1.0.0", executable, home=home, replace=True, notes=notes) == "installed"
+    (trashed,) = (home / ".Trash").iterdir()
+    assert (trashed / "Contents" / "mine").read_text() == "keep me"
+    assert (copied / "release").read_text() == "1.0.0"
+    assert any("to the Trash" in note for note in notes)
+
+
+def test_a_replaced_app_names_the_receipt_it_does_not_match(mac):
+    home, system, executable = mac
+    desktop.install_desktop("1.0.0", executable, home=home)
+    bundle = system / desktop.BUNDLE_NAME
+    bundle.rename(bundle.with_name("old.app"))  # keep the old one, so a freed inode number cannot be reused
+    bundle.mkdir()
+    receipt, _binding = _record(home)
+    with pytest.raises(desktop.DesktopInstallationError) as failure:
+        desktop.install_desktop("1.0.0", executable, home=home)
+    assert f"{bundle} is not the copy recorded in {receipt}" in str(failure.value)
+
+
+def test_replace_never_moves_the_app_this_installer_owns(mac):
+    home, system, executable = mac
+    (home / ".Trash").mkdir()
+    desktop.install_desktop("1.0.0", executable, home=home)
+    inode = (system / desktop.BUNDLE_NAME).stat().st_ino
+    assert desktop.install_desktop("1.0.0", executable, home=home, replace=True) == "current"
+    assert (system / desktop.BUNDLE_NAME).stat().st_ino == inode
+    assert not list((home / ".Trash").iterdir())
+
+
+def test_a_pending_journal_keeps_the_record_for_recovery(mac):
+    home, _system, _executable = _orphan(mac)
+    receipt, _binding = _record(home)
+    (receipt.parent / desktop._JOURNAL).write_text("{}")
+    assert desktop._clear_orphaned_record(home, receipt.parent, forget=True) == []
+    assert receipt.exists()
+
+
+def _events(caplog) -> list[tuple[str, str, object]]:
+    return [
+        (record.event, record.phase, getattr(record, "outcome", None))
+        for record in caplog.records
+        if record.name == "heinzel.desktop"
+    ]
+
+
+def test_install_and_uninstall_log_a_start_and_an_outcome_per_step(mac, caplog):
+    home, system, executable = mac
+    caplog.set_level("INFO", logger="heinzel.desktop")
+    desktop.install_desktop("1.0.0", executable, home=home)
+    assert _events(caplog) == [
+        ("desktop.install.run", "start", None),
+        ("desktop.install.recover", "start", None),
+        ("desktop.install.recover", "end", "ok"),
+        ("desktop.install.forget", "start", None),
+        ("desktop.install.forget", "end", "ok"),
+        ("desktop.install.locate", "start", None),
+        ("desktop.install.locate", "end", "ok"),
+        ("desktop.install.release", "start", None),
+        ("desktop.install.release", "end", "installed"),
+        ("desktop.install.run", "end", "installed"),
+    ]
+    release = next(r for r in caplog.records if r.event == "desktop.install.release" and r.phase == "end")
+    assert release.path == str(system / desktop.BUNDLE_NAME)
+    assert release.version == "1.0.0"
+    assert isinstance(release.duration_ms, int)
+    assert release.getMessage() == "desktop.install.release"
+
+    caplog.clear()
+    desktop.uninstall_desktop(home=home)
+    assert ("desktop.uninstall.remove", "end", "ok") in _events(caplog)
+    assert ("desktop.uninstall.run", "end", "removed") in _events(caplog)
+
+
+def test_a_failed_step_logs_the_same_two_lines_the_person_reads(mac, caplog):
+    home, _system, executable = _orphan(mac)
+    caplog.set_level("INFO", logger="heinzel.desktop")
+    with pytest.raises(desktop.LeftoverInstallError) as failure:
+        desktop.install_desktop("1.0.0", executable, home=home)
+    assert _events(caplog)[-2:] == [
+        ("desktop.install.forget", "end", "failed"),
+        ("desktop.install.run", "end", "failed"),
+    ]
+    failed = [r for r in caplog.records if r.phase == "end"][-1]
+    assert failure.value.problem is not None
+    assert (failed.happened, failed.action) == (failure.value.problem.happened, failure.value.problem.action)
+    assert failed.error == "LeftoverInstallError"
+    assert failed.levelname == "WARNING"

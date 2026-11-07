@@ -440,9 +440,36 @@ try {
           installed_at: "2026-01-02T12:00:00Z",
           available: updateAvailable,
           supported: true,
+          checked_at: new Date().toISOString(),
+          last_ok_at: new Date().toISOString(),
+          check_failed: false,
           reason: null,
         },
       }),
+    );
+    // The automatic-update plan is pinned too: this test server runs from a source checkout, which holds updates.
+    await page.route("**/api/auto-update", (route) =>
+      route.request().method() === "GET"
+        ? route.fulfill({
+            json: {
+              enabled: true,
+              reason: null,
+              phase: "idle",
+              version: "0.7.30",
+              core: null,
+              plugins: {},
+              seconds_left: null,
+              apply_at: null,
+              next_window_at: null,
+              postponements: 0,
+              message: null,
+              holds: [],
+              checked_at: new Date().toISOString(),
+              core_checked: true,
+              plugins_checked: true,
+            },
+          })
+        : route.continue(),
     );
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
@@ -634,9 +661,8 @@ try {
     }
     const updatePane = await footerPane(page, "@updates", "Updates");
     await assertContained(page, updatePane, `${spec.name}: update pane`);
-    assert.equal(await updatePane.getByText("Update availability is unavailable.", { exact: true }).count(), 1);
+    await updatePane.getByText(/^Heinzel 0\.7\.30 is up to date · checked /).waitFor();
     await updatePane.getByRole("button", { name: "Manually update…", exact: true }).waitFor();
-    await updatePane.getByText("Installed: hz 0.7.30").waitFor();
     await updatePane.getByText(/^Last installed:/).waitFor();
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
     await dismissFooterPane(page);
