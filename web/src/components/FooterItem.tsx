@@ -277,6 +277,11 @@ export function FooterItem({
               timer.current = window.setTimeout(() => setHovered(false), CLOSE_DELAY);
             }}
             onFocus={() => setFocused(true)}
+            // An action that goes somewhere (a `to=` link, or one marked `data-pane-leaves`) takes the person there: the pane
+            // has said its piece and must not cover what opened.
+            onClick={(event) => {
+              if ((event.target as Element).closest("a[data-pane-action]:not([target]), [data-pane-leaves]")) close();
+            }}
           >
             <section
               aria-label={paneName ?? label}
