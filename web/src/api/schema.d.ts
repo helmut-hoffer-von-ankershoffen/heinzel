@@ -4965,6 +4965,30 @@ export interface components {
             uses: components["schemas"]["CapabilityUse"][];
         };
         /**
+         * CapabilityState
+         * @description A capability's reported state, read through a read-only operation of the module that owns it (ADR 0094).
+         *
+         *     The core never imports a plugin: it finds the operation among the kernel's lets by name and compares one top-level
+         *     field of its result. An operation that is missing, unavailable, not read-only or failing never resolves a notice.
+         */
+        CapabilityState: {
+            /**
+             * Equals
+             * @description The value that field must have for the condition to hold.
+             */
+            equals: string | boolean | number;
+            /**
+             * Field
+             * @description A top-level field of its result, e.g. `loaded`.
+             */
+            field: string;
+            /**
+             * Operation
+             * @description `<module>:<operation>`, read-only, e.g. `system.daemon:status`.
+             */
+            operation: string;
+        };
+        /**
          * CapabilityUse
          * @description One row of the matrix: who needs which capability in which modes, through which adapter and hosts.
          */
@@ -5437,6 +5461,98 @@ export interface components {
              * @description The exact selected posting authority scope.
              */
             scope: string;
+        };
+        /**
+         * ChartPoint
+         * @description One point of a chart: where on the axis, and its value.
+         */
+        ChartPoint: {
+            /**
+             * At
+             * @description Where on the axis: an ISO 8601 timestamp such as `2026-11-07T14:00` or a plain label.
+             */
+            at: string;
+            /**
+             * Value
+             * @description The value at that point, in the chart's unit.
+             */
+            value: number;
+        };
+        /**
+         * ChartRange
+         * @description A band across the chart, e.g. the day's lowest and highest value.
+         */
+        ChartRange: {
+            /**
+             * High
+             * @description Top of the band, at least `low`.
+             */
+            high: number;
+            /**
+             * Low
+             * @description Bottom of the band, in the chart's unit.
+             */
+            low: number;
+        };
+        /**
+         * ChartWidget
+         * @description A line over time, with optional bars, a range band and a now marker; `summary` is its text alternative.
+         */
+        ChartWidget: {
+            /**
+             * Bars
+             * @description A second series drawn as bars from 0 to 1, one per point, e.g. chance of rain.
+             */
+            bars?: number[] | null;
+            /**
+             * Bars Label
+             * @description What the bars are, e.g. `Rain chance`.
+             */
+            bars_label?: string | null;
+            /**
+             * @description Chart. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "chart";
+            /**
+             * Now
+             * @description The `at` of the point to mark as now.
+             */
+            now?: string | null;
+            /** @description A band across the chart, e.g. the day's low and high. */
+            range?: components["schemas"]["ChartRange"] | null;
+            /**
+             * Series
+             * @description The line, left to right.
+             */
+            series: components["schemas"]["ChartPoint"][];
+            /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
+            /**
+             * Summary
+             * @description The chart in words for people who can't see it, e.g. `Warms to 18° by 15:00`.
+             */
+            summary: string;
+            /**
+             * Title
+             * @description What the chart shows, e.g. `Temperature today`; also its accessible name.
+             */
+            title: string;
+            /**
+             * Tone
+             * @description How the line reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Unit
+             * @description The unit of `series` values, e.g. `°C`.
+             */
+            unit?: string | null;
         };
         /**
          * ChatAction
@@ -7832,6 +7948,35 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * HeadRefresh
+         * @description What one installed head runs after an update; only `verified` is evidence of the target version.
+         */
+        HeadRefresh: {
+            /**
+             * Detail
+             * @description What happened, and the command that checks or finishes it.
+             * @default
+             */
+            detail: string;
+            /**
+             * Head
+             * @description The installed head: daemon, web, notifier or desktop.
+             * @enum {string}
+             */
+            head: "daemon" | "web" | "notifier" | "desktop";
+            /**
+             * Status
+             * @description verified: its live process reported the target version; pending: requested, not yet observed; failed: it reported another version or could not restart; not-installed: nothing to refresh; self: the process that ran the update hosts this head and restarts itself afterwards.
+             * @enum {string}
+             */
+            status: "verified" | "pending" | "failed" | "not-installed" | "self";
+            /**
+             * Version
+             * @description The version its live process reported, when observed.
+             */
+            version?: string | null;
+        };
+        /**
          * HealthReport
          * @description All health checks, and the overall status: DOWN beats DEGRADED beats UP.
          */
@@ -9334,6 +9479,18 @@ export interface components {
              * @description Whether it is shown as a desktop notification at all; false: in the list only.
              */
             popup: boolean;
+            /** @description When it resolves by itself and disappears; none: it stays until it ages out. */
+            resolve_when?: components["schemas"]["ResolveWhen"] | null;
+            /**
+             * Resolved
+             * @description Why it disappeared, in words; none while it is shown.
+             */
+            resolved?: string | null;
+            /**
+             * Resolved At
+             * @description When its condition held and it disappeared; none while it is shown.
+             */
+            resolved_at?: string | null;
             /**
              * Route
              * @description Where the web app shows it, a path such as `/doctor`.
@@ -11269,6 +11426,21 @@ export interface components {
              * @description As required, e.g. `tracker:read`.
              */
             requirement: string;
+        };
+        /**
+         * ResolveWhen
+         * @description When a notice stops deserving attention; every condition given must hold.
+         *
+         *     The service evaluates it, never a head, so a stale browser or process can't keep a notice alive.
+         */
+        ResolveWhen: {
+            /** @description Holds once a capability reports a state. */
+            capability?: components["schemas"]["CapabilityState"] | null;
+            /**
+             * Installed Version At Least
+             * @description Holds once the hz installed on this machine (on disk, not the running process) is at least this.
+             */
+            installed_version_at_least?: string | null;
         };
         /**
          * Restart
@@ -14448,6 +14620,11 @@ export interface components {
              */
             before: string;
             /**
+             * Heads
+             * @description What each installed long-running head runs after the update, as its live process reported it.
+             */
+            heads?: components["schemas"]["HeadRefresh"][];
+            /**
              * Latest
              * @description Highest published release in SemVer order, when it was asked for: for an installation pinned to a release tag, a branch, a commit or a local source; none otherwise or if it couldn't be asked.
              */
@@ -14960,7 +15137,7 @@ export interface components {
              * Widget
              * @description What to show; none when there is nothing to show.
              */
-            widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"]) | null;
+            widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"] | components["schemas"]["ChartWidget"]) | null;
         };
         /** heinzel_abandon_chat_turn_Input */
         heinzel_abandon_chat_turn_Input: {
@@ -15832,6 +16009,7 @@ export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
+export type SchemaCapabilityState = components['schemas']['CapabilityState'];
 export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
 export type SchemaCapturedWriteActivityItem = components['schemas']['CapturedWriteActivityItem'];
 export type SchemaCapturedWriteActivityPage = components['schemas']['CapturedWriteActivityPage'];
@@ -15846,6 +16024,9 @@ export type SchemaChannelDeliveryTerms = components['schemas']['ChannelDeliveryT
 export type SchemaChannelNotice = components['schemas']['ChannelNotice'];
 export type SchemaChannelReport = components['schemas']['ChannelReport'];
 export type SchemaChannelTarget = components['schemas']['ChannelTarget'];
+export type SchemaChartPoint = components['schemas']['ChartPoint'];
+export type SchemaChartRange = components['schemas']['ChartRange'];
+export type SchemaChartWidget = components['schemas']['ChartWidget'];
 export type SchemaChatAction = components['schemas']['ChatAction'];
 export type SchemaChatContext = components['schemas']['ChatContext'];
 export type SchemaChatCosts = components['schemas']['ChatCosts'];
@@ -15908,6 +16089,7 @@ export type SchemaGraphMetadata = components['schemas']['GraphMetadata'];
 export type SchemaGraphNode = components['schemas']['GraphNode'];
 export type SchemaGraphicWidget = components['schemas']['GraphicWidget'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
+export type SchemaHeadRefresh = components['schemas']['HeadRefresh'];
 export type SchemaHealthReport = components['schemas']['HealthReport'];
 export type SchemaHeinzelAppearance = components['schemas']['HeinzelAppearance'];
 export type SchemaHeinzelList = components['schemas']['HeinzelList'];
@@ -16012,6 +16194,7 @@ export type SchemaReleaseFeedIdentity = components['schemas']['ReleaseFeedIdenti
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRendererBlock = components['schemas']['RendererBlock'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
+export type SchemaResolveWhen = components['schemas']['ResolveWhen'];
 export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRestarted = components['schemas']['Restarted'];
 export type SchemaRollingConnectedGrantProposal = components['schemas']['RollingConnectedGrantProposal'];
@@ -20260,6 +20443,8 @@ export interface operations {
                 limit?: number;
                 /** @description Only notices older than this id, for the next page. */
                 before?: string | null;
+                /** @description Include notices that resolved by themselves and disappeared, for their history. */
+                resolved?: boolean;
             };
             header?: never;
             path?: never;
