@@ -12,9 +12,10 @@ from urllib.request import urlopen
 import pytest
 from rich.console import Console
 
+from heinzel.heads import _desktop_copy as copy
 from heinzel.heads import _desktop_installation as installer
 from heinzel.heads import _desktop_release as release
-from heinzel.heads.cli._progress import PhaseReporter
+from heinzel.heads.cli._progress import StepReporter
 from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.unit
@@ -92,13 +93,13 @@ def test_stalled_server_reports_progress_at_once_then_a_clear_error(server, tmp_
     monkeypatch.setattr(release, "API_TIMEOUT", 0.3)
     monkeypatch.setattr(release, "ATTEMPTS", 2)
     stream = io.StringIO()
-    reporter = PhaseReporter(Console(file=stream, force_terminal=False, width=100))
+    reporter = _steps(Console(file=stream, force_terminal=False, width=100))
     started = time.monotonic()
     with pytest.raises(release.HeinzelError, match=r"failed: no answer in time\. Check your network"):
         release.fetch_archive("1.2.3", tmp_path, reporter)
     assert time.monotonic() - started < 3
     lines = stream.getvalue().splitlines()
-    assert lines[0] == f"Resolving release {TAG}..."
+    assert lines[0] == "  Downloading"
     assert any("retrying, attempt 2 of 2" in line for line in lines)
     assert not any("done" in line for line in lines)
 
@@ -125,47 +126,97 @@ def test_rate_limit_is_explained_not_retried(server, tmp_path):
     assert not [line for line in notes.lines if line.startswith("note:")]
 
 
-def _normalised(text: str) -> str:
-    return re.sub(r"\(\d+\.\ds\)|: done \(\d+\.\ds\)", lambda m: "(T)" if m[0].startswith("(") else ": done (T)", text)
+def _steps(console: Console, header: str | None = None) -> StepReporter:
+    return StepReporter(console, header=header, rows=copy.install_rows(keep_quarantine=False))
 
 
-def test_plain_output_when_redirected_has_no_escape_codes():
-    stream = io.StringIO()
-    reporter = PhaseReporter(Console(file=stream, force_terminal=False, width=80))
-    with reporter.phase("Verifying checksum"):
-        pass
-    with reporter.phase("Downloading the desktop app (2 MB)", 2_000_000) as advance:
+def _install_steps(reporter: StepReporter, clock: list[float] | None = None) -> None:
+    for step in (copy.RESOLVE.format(tag=TAG), copy.FETCH_MANIFEST):
+        with reporter.phase(step):
+            pass
+    with reporter.phase(copy.DOWNLOAD.format(megabytes=2.0), 2_000_000) as advance:
+        if clock is not None:
+            clock[0] += 3
         advance(2_000_000)
-    reporter.note("Verified: /home/x/Applications/Heinzelmaennchen.app exists.")
-    assert "\x1b" not in stream.getvalue()
-    assert _normalised(stream.getvalue()).splitlines() == [
-        "Verifying checksum...",
-        "Verifying checksum: done (T)",
-        "Downloading the desktop app (2 MB)...",
-        "Downloading the desktop app (2 MB): done (T)",
-        "Verified: /home/x/Applications/Heinzelmaennchen.app exists.",
-    ]
-
-
-def test_terminal_output_ends_each_phase_with_a_check_mark():
-    stream = io.StringIO()
-    reporter = PhaseReporter(Console(file=stream, force_terminal=True, width=100, color_system=None))
-    with reporter.phase("Extracting the app"):
+    for step in (copy.VERIFY_CHECKSUM, copy.EXTRACT, copy.CHECK_SEAL, copy.WRITE_RECEIPT):
+        with reporter.phase(step):
+            pass
+    with reporter.phase(copy.install_into(installer.SYSTEM_APPLICATIONS)):
         pass
-    assert (
-        _normalised(re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", stream.getvalue()))
-        .rstrip()
-        .endswith("✓ Extracting the app (T)")
-    )
+    with reporter.phase(copy.VERIFY_INSTALLED):
+        pass
+    reporter.close(complete=True)
 
 
-def test_download_progress_lines_are_throttled_when_redirected(monkeypatch):
-    monkeypatch.setattr("heinzel.heads.cli._progress.PLAIN_INTERVAL", 0)
+ROWS = [
+    "  ok Verified   checksum and build provenance match the GitHub release",
+    "  ok Sealed     local code seal; no quarantine, so it opens with a double-click",
+    "  ok Installed  /Applications/Heinzelmaennchen.app",
+    "  ok Recorded   hz owns this copy; hz app doctor checks it, hz app uninstall removes it",
+]
+
+
+def test_plain_output_when_redirected_is_one_line_per_row_without_escape_codes():
     stream = io.StringIO()
-    reporter = PhaseReporter(Console(file=stream, force_terminal=False, width=80))
-    with reporter.phase("Downloading", 4_000_000) as advance:
-        advance(1_000_000)
-    assert "  1.0 of 4.0 MB (25%)" in stream.getvalue()
+    clock = [0.0]
+    reporter = _steps(Console(file=stream, force_terminal=False, width=200, get_time=lambda: clock[0]), "Installing")
+    _install_steps(reporter, clock)
+    assert "\x1b" not in stream.getvalue()
+    assert stream.getvalue().splitlines() == ["Installing", "  Downloading 2.0 MB ... done (3 s)", *ROWS]
+
+
+def test_no_color_or_ci_gives_the_plain_rows_on_a_terminal(monkeypatch):
+    monkeypatch.setenv("CI", "true")
+    stream = io.StringIO()
+    reporter = _steps(Console(file=stream, force_terminal=True, width=200, color_system=None), "Installing")
+    _install_steps(reporter)
+    assert stream.getvalue().splitlines()[2:] == ROWS
+
+
+def test_terminal_output_has_the_hat_a_bar_and_check_marks(monkeypatch):
+    for name in ("CI", "NO_COLOR"):
+        monkeypatch.delenv(name, raising=False)
+    stream = io.StringIO()
+    clock = [0.0]
+    console = Console(
+        file=stream,
+        force_terminal=True,
+        force_interactive=False,
+        width=200,
+        color_system=None,
+        get_time=lambda: clock[0],
+    )
+    _install_steps(_steps(console, "Installing"), clock)
+    lines = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", stream.getvalue()).splitlines()
+    assert lines[0] == "▀ Installing"
+    assert lines[1] == f"  Downloading  {'━' * 40}  2.0/2.0 MB  0:00:03"
+    assert lines[2:] == [row.replace(" ok ", " ✓ ") for row in ROWS]
+
+
+def test_a_live_terminal_ends_with_the_same_rows(monkeypatch):
+    for name in ("CI", "NO_COLOR"):
+        monkeypatch.delenv(name, raising=False)
+    stream = io.StringIO()
+    console = Console(file=stream, force_terminal=True, force_interactive=True, width=200, color_system=None)
+    _install_steps(_steps(console, "Installing"))
+    text = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", stream.getvalue())
+    assert text.rstrip().endswith(ROWS[-1].replace(" ok ", " ✓ "))
+    assert "2.0/2.0 MB" in text
+
+
+def test_a_note_during_the_download_keeps_the_download_line_whole():
+    stream = io.StringIO()
+    reporter = _steps(Console(file=stream, force_terminal=False, width=200))
+    with reporter.phase(copy.RESOLVE.format(tag=TAG)):
+        reporter.note("Asking GitHub failed; retrying, attempt 2 of 3.")
+    with reporter.phase(copy.DOWNLOAD.format(megabytes=2.0), 2_000_000) as advance:
+        advance(2_000_000)
+    reporter.close(complete=False)
+    assert stream.getvalue().splitlines() == ["  Downloading", "Asking GitHub failed; retrying, attempt 2 of 3."]
+    with reporter.phase(copy.CHECK_SEAL):
+        pass
+    reporter.close(complete=True)
+    assert stream.getvalue().splitlines()[-1] == ROWS[1]
 
 
 def test_waiting_for_the_installation_lock_is_announced_and_bounded(tmp_path, monkeypatch):
@@ -239,28 +290,28 @@ def test_install_names_the_folder_the_installer_reports_not_a_fixed_one(monkeypa
     from heinzel.heads.cli import _app
 
     system = Path("/Applications/Heinzelmaennchen.app")
+    monkeypatch.setattr(installation, "desktop_installed", lambda home=None: None)
     monkeypatch.setattr(installation, "desktop_location", lambda home=None: system)
+    monkeypatch.setattr(installation, "system_applications_usable", lambda: True)
     monkeypatch.setattr(installation, "install_desktop", lambda *_args, **_options: "installed")
     monkeypatch.setattr(_app, "desktop_executable", lambda _kernel: tmp_path / "hz")
     out, err = io.StringIO(), io.StringIO()
     _app._install(None, Console(file=out, width=200), Console(file=err, width=200))
-    assert "Installing Heinzelmännchen" in err.getvalue()
-    assert f"Heinzel is installed at {system}." in out.getvalue()
-    assert "Next: open Heinzelmännchen from /Applications in Finder" in out.getvalue()
-    assert "cannot write to" not in out.getvalue()
-    assert "Go > Home" not in out.getvalue()
+    assert f"Done. Open it from Launchpad, or run: open {system}" in out.getvalue()
+    assert "It stayed in" not in err.getvalue()
 
 
-def test_install_in_the_users_folder_says_why_and_names_that_folder(monkeypatch, tmp_path):
+def test_install_that_could_not_move_the_app_says_where_it_stayed_and_why(monkeypatch, tmp_path):
     from heinzel.heads import _desktop_installation as installation
     from heinzel.heads.cli import _app
 
     own = tmp_path / "Applications" / "Heinzelmaennchen.app"
+    monkeypatch.setattr(installation, "desktop_installed", lambda home=None: None)
     monkeypatch.setattr(installation, "desktop_location", lambda home=None: own)
-    monkeypatch.setattr(installation, "system_applications_usable", lambda: False)
+    monkeypatch.setattr(installation, "system_applications_usable", lambda: True)
     monkeypatch.setattr(installation, "install_desktop", lambda *_args, **_options: "installed")
     monkeypatch.setattr(_app, "desktop_executable", lambda _kernel: tmp_path / "hz")
-    out = io.StringIO()
-    _app._install(None, Console(file=out, width=400), Console(file=io.StringIO(), width=200))
-    assert f"It is in {own.parent} because this user cannot write to /Applications" in out.getvalue()
-    assert f"Next: open Heinzelmännchen from {own.parent} in Finder" in out.getvalue()
+    out, err = io.StringIO(), io.StringIO()
+    _app._install(None, Console(file=out, width=400), Console(file=err, width=400))
+    assert f"It stayed in {own.parent} (your Applications folder)" in err.getvalue()
+    assert f"Done. Open it from Launchpad, or run: open {own}" in out.getvalue()

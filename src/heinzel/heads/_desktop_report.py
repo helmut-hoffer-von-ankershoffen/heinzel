@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Generator
 from contextlib import AbstractContextManager, contextmanager
+from dataclasses import dataclass
 from typing import Protocol
 
 type Advance = Callable[[int], None]
@@ -31,3 +32,12 @@ class _Silent:
 
 SILENT: Reporter = _Silent()
 """The reporter of background updates, which must not print."""
+
+
+@dataclass(frozen=True)
+class Row:
+    """One line of output that one or more installer steps fold into; heads decide how it looks."""
+
+    label: str
+    detail: str = ""
+    download: bool = False

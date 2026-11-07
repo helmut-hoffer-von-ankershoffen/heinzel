@@ -258,7 +258,6 @@ def _confirm_installed(bundle: Path, config: Path, reporter: Reporter) -> None:
             msg = f"The desktop app is not at {bundle} after installation."
             raise DesktopInstallationError(msg)
         _verify_bundle(bundle, record.release)
-        reporter.note(copy.verified(bundle, record.release))
 
 
 @contextmanager
@@ -589,15 +588,21 @@ def _migrate(bundle: Path, config: Path) -> Path:
     return target
 
 
-def desktop_location(home: Path | None = None) -> Path | None:
-    """Where the owned desktop app is installed now, or None when it is not installed."""
+def desktop_installed(home: Path | None = None) -> tuple[Path, str] | None:
+    """Where the owned desktop app is installed now and its release, or None when it is not installed."""
     home = (home or Path.home()).resolve(strict=True)
     config = home / ".config" / "heinzel"
     try:
         bundle, record = _locate(home, config)
     except DesktopInstallationError:
         return None
-    return bundle if record is not None and bundle.is_dir() else None
+    return (bundle, record.release) if record is not None and bundle.is_dir() else None
+
+
+def desktop_location(home: Path | None = None) -> Path | None:
+    """Where the owned desktop app is installed now, or None when it is not installed."""
+    installed = desktop_installed(home)
+    return None if installed is None else installed[0]
 
 
 def install_desktop(  # noqa: PLR0913 - keyword-only options: update mode, home, progress, quarantine

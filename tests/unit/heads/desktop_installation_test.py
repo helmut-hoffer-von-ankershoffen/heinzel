@@ -376,18 +376,21 @@ def test_install_and_uninstall_name_the_real_path_and_it_exists(monkeypatch, tmp
     bundle, _config, output, error, out, err = _cli(monkeypatch, local_installation, tmp_path)
     _app._install(None, output, error)
     assert bundle.is_dir()
-    assert f"Heinzel is installed at {bundle}." in out.getvalue()
-    assert f"open Heinzelmännchen from {bundle.parent} in Finder" in out.getvalue()
-    assert f"Verified: {bundle} exists" in err.getvalue()
-    assert "Verifying the installed app" in err.getvalue()
-    assert str(tmp_path / "Applications") in err.getvalue()
+    assert (
+        f"Installing Heinzelmännchen {_app.__version__} into {bundle.parent} (your Applications folder"
+        in err.getvalue()
+    )
+    assert f"ok Installed  {bundle}" in err.getvalue()
+    assert "ok Recorded   hz owns this copy" in err.getvalue()
+    assert f"Done. Open it from Launchpad, or run: open {bundle}" in out.getvalue()
 
     _app._install(None, output, error)
-    assert out.getvalue().count(f"Heinzel is installed at {bundle}.") == 2
+    assert f"is already installed at {bundle}. Nothing to do." in out.getvalue()
 
     _app._uninstall(output, error)
     assert not bundle.exists()
-    assert f"Removed the Heinzelmännchen desktop app from {bundle}" in out.getvalue()
+    assert f"ok Removed {bundle}" in out.getvalue()
+    assert "Your Heinzel profile and settings are kept." in out.getvalue()
 
 
 def test_interrupt_leaves_no_half_installed_bundle(monkeypatch, tmp_path, local_installation):

@@ -11,7 +11,7 @@ from rich.console import Console
 
 from heinzel import HeinzelError, Settings, __version__
 from heinzel.heads import _desktop_copy as copy
-from heinzel.heads.cli._progress import PhaseReporter
+from heinzel.heads.cli._progress import StepReporter
 from heinzel.heads.cli._render import message
 from heinzel.kernel import KERNEL_SECTION, Installation, Kernel
 
@@ -54,29 +54,18 @@ def _refresh_after_exit(kernel: Kernel) -> None:
         time.sleep(0.25)
 
 
-def _print_location(output: Console, error: Console) -> Path:
-    """Print where the app really is, checked on disk, and why it is not in /Applications when it is not.
-
-    Returns:
-        The installed bundle.
+def _located(error: Console) -> Path:
+    """Where the app really is after an install, checked on disk.
 
     Raises:
         typer.Exit: If the installed app cannot be found where the receipt says.
     """
-    from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
-        SYSTEM_APPLICATIONS,
-        desktop_location,
-        system_applications_usable,
-    )
+    from heinzel.heads._desktop_installation import desktop_location  # noqa: PLC0415 - native install only
 
     location = desktop_location()
     if location is None:
         error.print(copy.LOST)
         raise typer.Exit(1)
-    output.print(copy.installed_at(location), markup=False)
-    if location.parent != SYSTEM_APPLICATIONS:
-        reason = copy.not_moved if system_applications_usable() else copy.not_admin
-        output.print(reason(location, SYSTEM_APPLICATIONS), markup=False)
     return location
 
 
@@ -102,52 +91,94 @@ def _doctor(output: Console, error: Console, *, fix: bool, as_json: bool = False
         error.print(copy.NOT_INSTALLED_FOR_DOCTOR)
         raise typer.Exit(1)
     if not as_json:
-        for line in [*repairs, *report.lines()]:
+        from heinzel.heads._desktop_installation import SYSTEM_APPLICATIONS  # noqa: PLC0415 - native check only
+
+        seal_lines = report.lines()[1:]  # its "App: ..." line gives way to the copy module's, which names the folder
+        for line in [*repairs, copy.doctor_app(report.bundle, SYSTEM_APPLICATIONS), *seal_lines]:
             output.print(line, markup=False)
     if not report.opens:
         error.print(copy.DOCTOR_FIX)
         raise typer.Exit(1)
 
 
-def _install(kernel: Kernel, output: Console, error: Console, *, keep_quarantine: bool = False) -> None:
-    from heinzel.heads._desktop_installation import install_desktop  # noqa: PLC0415 - native install only
+def _plan(error: Console, *, keep_quarantine: bool) -> tuple[StepReporter, Path]:
+    """The install's rows and the folder the installer will pick, named in the first line with the reason.
 
+    The installer picks the system folder for an administrator, else the one the app is in, else the user's own.
+    """
+    from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
+        SYSTEM_APPLICATIONS,
+        desktop_installed,
+        system_applications_usable,
+    )
+
+    admin = system_applications_usable()
+    installed = desktop_installed()
+    previous = None if installed is None else installed[1]
+    if admin or (installed is not None and installed[0].parent == SYSTEM_APPLICATIONS):
+        folder = SYSTEM_APPLICATIONS
+    else:
+        folder = Path.home().resolve() / "Applications"
+    steps = StepReporter(
+        error,
+        header=copy.installing(__version__, previous, folder, SYSTEM_APPLICATIONS, admin=admin),
+        rows=copy.install_rows(keep_quarantine=keep_quarantine),
+    )
+    return steps, folder
+
+
+def _install(kernel: Kernel, output: Console, error: Console, *, keep_quarantine: bool = False) -> None:
+    from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
+        SYSTEM_APPLICATIONS,
+        install_desktop,
+    )
+
+    steps: StepReporter | None = None
     try:
-        error.print(copy.installing(__version__))
+        steps, folder = _plan(error, keep_quarantine=keep_quarantine)
         state = install_desktop(
-            __version__, desktop_executable(kernel), reporter=PhaseReporter(error), keep_quarantine=keep_quarantine
+            __version__, desktop_executable(kernel), reporter=steps, keep_quarantine=keep_quarantine
         )
     except KeyboardInterrupt as exc:
+        if steps is not None:
+            steps.close(complete=False)
         error.print(copy.CANCELLED_INSTALL)
         raise typer.Exit(130) from exc
     except (HeinzelError, OSError, SubprocessError) as exc:
+        if steps is not None:
+            steps.close(complete=False)
         error.print(message(copy.INSTALL_FAILED, str(exc)))
         raise typer.Exit(1) from exc
+    steps.close(complete=state in {"installed", "updated"})
     if state == "deferred":
         error.print(copy.DEFERRED)
         raise typer.Exit(1)
-    # Where the app really is, checked on disk: /Applications, or the user's own folder and why.
-    location = _print_location(output, error)
-    if state != "current":
-        output.print(copy.trust(keep_quarantine=keep_quarantine))
-    output.print(copy.next_step(location), markup=False)
+    location = _located(error)
+    if state == "current":
+        output.print(copy.current(__version__, location), markup=False, soft_wrap=True)
+        return
+    if location.parent != folder:
+        error.print(copy.not_moved(location, SYSTEM_APPLICATIONS), markup=False, soft_wrap=True)
+    output.print(copy.done(location), markup=False, soft_wrap=True)
 
 
 def _uninstall(output: Console, error: Console) -> None:
     from heinzel.heads._desktop_installation import uninstall_desktop  # noqa: PLC0415 - native removal only
 
+    steps = StepReporter(error)
     try:
-        removed = uninstall_desktop(reporter=PhaseReporter(error))
+        removed = uninstall_desktop(reporter=steps)
     except KeyboardInterrupt as exc:
         error.print(copy.CANCELLED_UNINSTALL)
         raise typer.Exit(130) from exc
     except (HeinzelError, OSError, SubprocessError) as exc:
         error.print(message(copy.UNINSTALL_FAILED, str(exc)))
         raise typer.Exit(1) from exc
-    output.print(
-        copy.removed(removed) if removed else copy.NOT_INSTALLED,
-        markup=False,
-    )
+    if removed is None:
+        output.print(copy.NOT_INSTALLED, markup=False, soft_wrap=True)
+        return
+    StepReporter(output).check(copy.removed(removed))
+    output.print(copy.PROFILE_KEPT, markup=False, soft_wrap=True)
 
 
 def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Typer:

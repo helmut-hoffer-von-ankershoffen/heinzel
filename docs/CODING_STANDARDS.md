@@ -145,10 +145,11 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
 Typer renders with Rich, so long commands use the shared helpers in `heinzel.heads.cli._progress` and never print nothing for more than a second.
 
 - Progress and prompts go to stderr; stdout carries only the result. A redirected stderr gets no ANSI codes and no spinner.
-- `PhaseReporter(err_console)` shows each step of a long operation: a spinner with elapsed time, or with a known byte total a bar with size, speed and time remaining (`rich.progress` columns). On a terminal a finished step stays as a check mark; when redirected it prints `step...` and `step: done` lines, and downloads add a byte-count line every two seconds. Pass it to code that must stay UI-free as a `Reporter` (`heinzel.heads._desktop_report`); background callers use `SILENT`.
+- `StepReporter(err_console, header=..., rows=...)` folds the steps of a long operation into labelled rows: one download row with a bar, size and elapsed time, then check-marked rows with a 10-character past-tense label and one fact each. Redirected, with `NO_COLOR` or under `CI` it prints the same words without art, bar or colour (`Downloading 48.2 MB ... done (7 s)`, `ok` for the check mark). Pass it to code that must stay UI-free as a `Reporter` (`heinzel.heads._desktop_report`); background callers use `SILENT`. `hz app`'s words all live in `heinzel.heads._desktop_copy`.
 - `ConsoleProgress.task(...)` is the kernel's `Progress` for operations (a spinner or a bar for `rich.progress.track`-style loops). Use `track(items, description=...)` or `typer.progressbar(..., length=...)` for a loop over known work.
 - Prompts are the exception: every answer has a flag (`--yes`, `--no-launch`) that works without a terminal. `confirm(console, question, yes=flag, flag="--yes")` asks only on a terminal and otherwise raises an error naming the flag, never blocking on stdin.
 - Network steps have timeouts and retry with a visible note; errors say what happened and what to do next.
+- An error the person sees is two lines: what happened, in the words of the person (app, folder, download, open), and the one command or action that fixes it. Internal names (receipt, bundle, metadata, journal, seal, lock) and exception text go under `--details` only. Every folder is a full path with its plain name. Progress that can take over two seconds shows a bar or a step line; a command never leaves the cursor blank. `tests/unit/heads/desktop_error_copy_test.py` enforces it on every `DesktopInstallationError` message.
 
 ## Mobile UI
 
