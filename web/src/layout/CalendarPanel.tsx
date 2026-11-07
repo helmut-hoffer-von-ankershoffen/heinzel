@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import { token } from "@/api/token";
 import { OperationDialog } from "@/components/OperationDialog";
 import { isLocalServer } from "@/lib/browser";
+import { conferenceLink } from "@/lib/conferenceLink";
 import { requestOperation } from "@/lib/operationRun";
 import { CONNECTORS } from "./settingsSections";
 
@@ -25,33 +26,6 @@ type Week = {
   fix: string | null;
 };
 type ReminderStatus = { enabled: boolean; service: string };
-
-/** Reject relative, credential-bearing and non-web links from calendar data. */
-function conferenceLink(value: string | null | undefined): string | null {
-  if (
-    !value ||
-    value.length > 2048 ||
-    /[\s\\"'<>]/.test(value) ||
-    [...value].some((char) => {
-      const code = char.codePointAt(0) ?? 0;
-      return code < 32 || (code >= 127 && code <= 159);
-    }) ||
-    !/^https?:\/\//i.test(value)
-  )
-    return null;
-  try {
-    const url = new URL(value);
-    return (url.protocol === "http:" || url.protocol === "https:") &&
-      url.hostname &&
-      !url.username &&
-      !url.password &&
-      url.port !== "0"
-      ? url.href
-      : null;
-  } catch {
-    return null;
-  }
-}
 
 export function CalendarPanel({ onClose }: { onClose: () => void }) {
   const [offset, setOffset] = useState(0);
