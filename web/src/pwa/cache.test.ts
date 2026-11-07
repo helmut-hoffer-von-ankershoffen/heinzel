@@ -81,3 +81,33 @@ it("precaches the offline page and the retry script, not the app's page", () => 
   expect(source).not.toMatch(/addAll\(\["\/"/);
   expect(/const SHELL = "hz-shell-v(\d+)"/.exec(source)?.[1]).toBeDefined();
 });
+
+it("serves an /assets/ file from the network on a cache miss even when the cache refuses the copy", async () => {
+  const source = readFileSync(resolve("public/sw.js"), "utf8");
+  let onFetch: Handler | undefined;
+  const self = {
+    addEventListener: (name: string, handler: Handler) => {
+      if (name === "fetch") onFetch = handler;
+    },
+    location: { origin: "http://localhost" },
+  };
+  const put = vi.fn(async () => {
+    throw new Error("quota exceeded");
+  });
+  const cache = { open: async () => ({ put }), match: vi.fn(async () => undefined) };
+  const response = { ok: true, type: "basic", clone: () => "copy" };
+  new Function("self", "caches", "fetch", "Response", source)(self, cache, async () => response, {});
+  const waiting: Promise<unknown>[] = [];
+  let responded: Promise<unknown> | undefined;
+  onFetch?.({
+    request: { method: "GET", url: "http://localhost/assets/index-abc123.js", mode: "same-origin" },
+    respondWith: (pending: Promise<unknown>) => {
+      responded = pending;
+    },
+    waitUntil: (pending: Promise<unknown>) => waiting.push(pending),
+  });
+  expect(await responded).toBe(response);
+  expect(waiting).toHaveLength(1);
+  await expect(Promise.all(waiting)).resolves.toBeDefined();
+  expect(put).toHaveBeenCalledWith(expect.anything(), "copy");
+});
