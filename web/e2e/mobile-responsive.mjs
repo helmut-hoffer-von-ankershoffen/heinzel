@@ -1449,7 +1449,7 @@ try {
     await player.getByText("YouTube asking you to sign in?").tap();
     const [youtubePage] = await Promise.all([
       soundPage.waitForEvent("popup"),
-      player.getByRole("link", { name: "Play on YouTube" }).tap(),
+      player.getByRole("link", { name: "Open on YouTube" }).tap(),
     ]);
     await youtubePage.waitForURL("https://www.youtube.com/watch**");
     assert.equal(new URL(youtubePage.url()).searchParams.get("v"), sound.stream.video);

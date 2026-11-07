@@ -71,18 +71,18 @@ describe("stream recovery", () => {
     expect(sent()).toEqual(["mute", "pauseVideo"]);
   });
 
-  it("switches to the account player only by choice, remembers it, and lets the viewer reverse it", () => {
+  it("switches to the account player only by choice, remembers it, and lets the viewer reverse it", async () => {
     const { unmount } = mount();
     expect(new URL(player().src).origin).toBe(ORIGIN);
     fireEvent.click(screen.getByText("YouTube asking you to sign in?"));
-    fireEvent.click(screen.getByRole("button", { name: "Use YouTube sign-in" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use YouTube sign-in" }));
     expect(new URL(player().src).origin).toBe("https://www.youtube.com");
     expect(player().getAttribute("sandbox")).toContain("allow-storage-access-by-user-activation");
     unmount();
     mount();
     expect(new URL(player().src).origin).toBe("https://www.youtube.com");
     fireEvent.click(screen.getByText("YouTube asking you to sign in?"));
-    fireEvent.click(screen.getByRole("button", { name: "Use private player" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use private player" }));
     expect(new URL(player().src).origin).toBe(ORIGIN);
     expect(player().getAttribute("sandbox")).not.toContain("allow-storage-access-by-user-activation");
   });
@@ -142,21 +142,21 @@ describe("stream recovery", () => {
     expect(post.mock.calls.every((call) => (call as unknown[])[1] === "https://www.youtube.com")).toBe(true);
   });
 
-  it("keeps the account choice for this player even when storage is blocked", () => {
+  it("keeps the account choice for this player even when storage is blocked", async () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("blocked");
     });
     mount();
     fireEvent.click(screen.getByText("YouTube asking you to sign in?"));
-    fireEvent.click(screen.getByRole("button", { name: "Use YouTube sign-in" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use YouTube sign-in" }));
     expect(new URL(player().src).origin).toBe("https://www.youtube.com");
   });
 
-  it.each(["Play on YouTube", "Open on YouTube"])("%s opens the actual video and stops the embedded player", (name) => {
+  it.each(["Open on YouTube"])("%s opens the actual video and stops the embedded player", async (name) => {
     toggle();
     mount();
     fireEvent.click(screen.getByText("YouTube asking you to sign in?"));
-    const link = screen.getByRole("link", { name });
+    const link = await screen.findByRole("link", { name });
     expect(link).toHaveAttribute("href", stream.watch_url);
     expect(link).toHaveAttribute("target", "_blank");
     fireEvent.click(link);

@@ -395,7 +395,7 @@ describe("Footer items are icons with a state and a pane", () => {
     expect(links[1]).toHaveAttribute("href", "http://meet.example/test");
     for (const link of links) {
       expect(link).toHaveAttribute("target", "_blank");
-      expect(link).toHaveAttribute("rel", "noreferrer noopener");
+      expect((link.getAttribute("rel") ?? "").split(" ").sort()).toEqual(["noopener", "noreferrer"]);
     }
   });
 

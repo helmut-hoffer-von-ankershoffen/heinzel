@@ -1,10 +1,11 @@
+import { RotateCw, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
+import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { PlayerCard } from "./PlayerCard";
 import { page } from "./queries";
-import { stop } from "./store";
 import {
   ACCOUNT_SANDBOX,
   accountStream,
@@ -22,7 +23,6 @@ type Level = { gain: number; seconds: number; playing: boolean };
 type Props = { soundscape: SchemaSoundscapeView; stream: StreamView; level: Level };
 const STEP_MS = 100;
 const PLAYBACK_WAIT_MS = 15_000;
-const button = "min-h-8 rounded-lg border border-border px-2.5 py-1 hover:bg-accent";
 
 /** A private player by default, with explicit account playback and recovery for restricted browsers (ADR 0092). */
 export function StreamPlayer(props: Props) {
@@ -135,13 +135,35 @@ function Player({
 
   if (!src) return null;
   return (
-    <PlayerCard title={soundscape.title} watchUrl={stream.watch_url} host="YouTube">
+    <PlayerCard
+      title={soundscape.title}
+      watchUrl={stream.watch_url}
+      host="YouTube"
+      actions={
+        <>
+          {blocked && (
+            <PaneAction key="reload" icon={RotateCw} onClick={page.reload}>
+              {t("sound.reload")}
+            </PaneAction>
+          )}
+          {help && (
+            <>
+              {chooseAccount && (
+                <PaneAction key="switch" icon={UserRound} onClick={() => chooseAccount(!account)}>
+                  {t(account ? "sound.privatePlayer" : "sound.accountPlayer")}
+                </PaneAction>
+              )}
+              <PaneAction key="retry" icon={RotateCw} onClick={retry}>
+                {t("sound.retryPlayer")}
+              </PaneAction>
+            </>
+          )}
+        </>
+      }
+    >
       {blocked ? (
         <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
           <p>{t("sound.reloadNeeded")}</p>
-          <button type="button" onClick={page.reload} className={button}>
-            {t("sound.reload")}
-          </button>
         </div>
       ) : (
         <iframe
@@ -161,17 +183,6 @@ function Player({
         </summary>
         <div className="flex flex-col gap-2 pt-2">
           <p>{t(account ? "sound.accountHelp" : "sound.privateHelp")}</p>
-          {chooseAccount && (
-            <button type="button" onClick={() => chooseAccount(!account)} className={button}>
-              {t(account ? "sound.privatePlayer" : "sound.accountPlayer")}
-            </button>
-          )}
-          <button type="button" onClick={retry} className={button}>
-            {t("sound.retryPlayer")}
-          </button>
-          <a href={stream.watch_url} target="_blank" rel="noopener noreferrer" onClick={stop} className={button}>
-            {t("sound.playOnYouTube")}
-          </a>
         </div>
       </details>
     </PlayerCard>

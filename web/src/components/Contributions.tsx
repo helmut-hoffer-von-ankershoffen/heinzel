@@ -70,7 +70,7 @@ import { FooterPart } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { HeinzelFace } from "@/components/HeinzelFace";
 import { OperationDialog } from "@/components/OperationDialog";
-import { PaneAction, PaneActions } from "@/components/PaneActions";
+import { PaneAction, PaneActions, PaneChrome } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { contributionPath } from "@/lib/navigation";
@@ -772,16 +772,6 @@ function WidgetBody({ widget, run }: { widget: Widget; run: (effect: Effect) => 
           {widget.body && (
             <p className="line-clamp-3 text-xs whitespace-pre-line text-muted-foreground">{widget.body}</p>
           )}
-          {(widget.actions ?? []).length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {(widget.actions ?? []).map((action) => (
-                <Button key={action.label} size="sm" variant="outline" onClick={() => run(action.effect)}>
-                  <IconOf icon={action.icon} />
-                  {action.label}
-                </Button>
-              ))}
-            </div>
-          )}
         </>
       );
     case "list":
@@ -800,7 +790,11 @@ function WidgetBody({ widget, run }: { widget: Widget; run: (effect: Effect) => 
               return (
                 <li key={item.text}>
                   {effect ? (
-                    <button type="button" onClick={() => run(effect)} className="w-full text-left hover:underline">
+                    <button
+                      type="button"
+                      onClick={() => run(effect)}
+                      className="w-full rounded px-1 text-left hover:bg-accent/60"
+                    >
                       {text}
                     </button>
                   ) : (
@@ -906,6 +900,7 @@ function WidgetCard({
   if (!widget || dismissed.has(widgetKey(current))) return null;
   const tone = "tone" in widget ? widget.tone : "neutral";
   const title = widget.kind === "card" || widget.kind === "list" ? widget.title : widget.label;
+  const cardActions = widget.kind === "card" ? (widget.actions ?? []) : [];
   return (
     <li
       className={cn(
@@ -916,41 +911,42 @@ function WidgetCard({
       data-widget={current.id}
       data-size={sizeOf(widget)}
     >
-      <div className="min-w-0 pr-16">
+      <PaneChrome>
+        <PaneAction ghost icon={X} onClick={() => onDismiss(widgetKey(current))}>
+          {t("today.dismiss", { title })}
+        </PaneAction>
+      </PaneChrome>
+      <div className="min-w-0 pr-10">
         <WidgetBody widget={widget} run={run} />
       </div>
-      <div className="absolute top-1.5 right-1.5 flex items-center">
-        {onAsk && (
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-8"
-            onClick={() =>
-              onAsk(
-                `text:what module ${current.module} shows`,
-                t("contrib.says", {
-                  module: current.module,
-                  text: widgetText(widget),
-                }),
-              )
-            }
-            aria-label={t("today.ask")}
-            title={t("today.ask")}
-          >
-            <MessageSquare aria-hidden />
-          </Button>
-        )}
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-8"
-          onClick={() => onDismiss(widgetKey(current))}
-          aria-label={t("today.dismiss", { title })}
-          title={t("today.dismiss", { title })}
-        >
-          <X aria-hidden />
-        </Button>
-      </div>
+      {(cardActions.length > 0 || onAsk) && (
+        <PaneActions className="mt-auto">
+          {ordered(cardActions).map((action) => (
+            <PaneAction
+              key={action.label}
+              icon={action.icon ? ICONS[action.icon] : effectIcon(action.effect)}
+              destructive={destroys(action.effect)}
+              onClick={() => run(action.effect)}
+            >
+              {action.label}
+            </PaneAction>
+          ))}
+          {onAsk && (
+            <PaneAction
+              key="ask"
+              icon={MessageSquare}
+              onClick={() =>
+                onAsk(
+                  `text:what module ${current.module} shows`,
+                  t("contrib.says", { module: current.module, text: widgetText(widget) }),
+                )
+              }
+            >
+              {t("today.ask")}
+            </PaneAction>
+          )}
+        </PaneActions>
+      )}
     </li>
   );
 }

@@ -27,12 +27,7 @@ const underlined = (tag: string) => /className=(?:"[^"]*|\{[^}]*)\bunderline\b/.
 
 // Text links still used as actions, to be converted by the rollout in research/design-action-audit.md. This list
 // only shrinks: a fixed file must leave it, and no new file may join it. Inline prose links take `data-prose-link`.
-const PENDING: Record<string, number> = {
-  "../components/Contributions.tsx": 1,
-  "../layout/CalendarPanel.tsx": 5,
-  "../notifications/TodayNotifications.tsx": 1,
-  "../pages/Heinzelmaennchen.tsx": 1,
-};
+const PENDING: Record<string, number> = {};
 
 it("uses buttons, not underlined text links, for actions", () => {
   const found: Record<string, number> = {};
@@ -100,40 +95,35 @@ it("has no withText: the first action of a row leads with words, the rest are ic
   expect(found).toEqual([]);
 });
 
-// Files that still draw a divider by hand (`border-t`) in a container instead of PaneActions; only shrinks (PR b).
-const BORDER_T: Record<string, number> = {
-  "../chat/ContractHistory.tsx": 1,
-  "../chat/DurableSession.tsx": 1,
-  "../heinzel/PersonalHeinzels.tsx": 1,
-  "../layout/Shell.tsx": 1,
-  "../layout/ThemePreviews.tsx": 1,
-  "../chat/ModelPicker.tsx": 2,
-  "../layout/ChatPanel.tsx": 1,
-  "../layout/NotificationCenter.tsx": 1,
-  "../pages/Heinzelmaennchen.tsx": 1,
-  "../sound/PlayerCard.tsx": 1,
-  "../sound/SoundControls.tsx": 1,
-  "../updates/AutoUpdateToggle.tsx": 1,
+// Files with a hand-drawn `border-t`: only a card's own outer edge may keep one (an action divider is PaneActions;
+// separators are `<hr>` or `divide-y`). A reason per entry; this list only shrinks.
+const EDGES: Record<string, { count: number; reason: string }> = {
+  "../chat/ContractHistory.tsx": {
+    count: 1,
+    reason: "the top edge of each earlier contract version in the history list",
+  },
+  "../chat/DurableSession.tsx": { count: 1, reason: "the composer form's top edge under the conversation" },
+  "../heinzel/PersonalHeinzels.tsx": { count: 1, reason: "the identity form's top edge under the Heinzel summary" },
+  "../layout/Shell.tsx": { count: 1, reason: "the workspace panel's top edge against the page" },
+  "../layout/ThemePreviews.tsx": { count: 1, reason: "the theme card's caption edge under its miniature" },
+  "../sound/PlayerCard.tsx": { count: 1, reason: "the docked player card's top edge above the account row" },
 };
+
 // Files with a right-aligned button row (`justify-end`) outside PaneActions; only shrinks (PR b).
-const JUSTIFY_END: Record<string, number> = {
-  "../sound/SoundControls.tsx": 1,
-};
+const JUSTIFY_END: Record<string, number> = {};
 // Icon buttons (`<Button size="icon"`) without both an aria-label and a title; only shrinks.
 const UNNAMED_ICONS: Record<string, number> = {};
 // Raw `<button>`s per file: switches, tabs, menu rows and navigation, plus those PR b converts; only shrinks.
 const RAW: Record<string, number> = {
   "../chat/Conversation.tsx": 1,
   "../chat/MessageInfo.tsx": 1,
-  "../chat/ModelPicker.tsx": 4,
+  "../chat/ModelPicker.tsx": 3,
   "../chat/SessionSwitcher.tsx": 4,
   "../components/ContributionToggle.tsx": 1,
   "../components/Contributions.tsx": 4,
   "../components/FooterItem.tsx": 1,
   "../components/FooterLayout.tsx": 1,
-  "../components/Prose.tsx": 2,
   "../layout/AiAccessSetting.tsx": 1,
-  "../layout/CalendarPanel.tsx": 6,
   "../layout/ConnectorsSection.tsx": 1,
   "../layout/InfoDialog.tsx": 2,
   "../layout/NotificationCenter.tsx": 3,
@@ -148,9 +138,7 @@ const RAW: Record<string, number> = {
   "../layout/TopBar.tsx": 2,
   "../layout/WorkspacePanels.tsx": 1,
   "../onboarding/OnboardingWizard.tsx": 1,
-  "../sound/PlayerCard.tsx": 4,
-  "../sound/SoundControls.tsx": 4,
-  "../sound/StreamPlayer.tsx": 3,
+  "../sound/SoundControls.tsx": 2,
 };
 
 it("keeps every action on the shared components: no new hand-drawn divider, end row, unnamed icon or raw button", () => {
@@ -174,8 +162,24 @@ it("keeps every action on the shared components: no new hand-drawn divider, end 
     );
     add("raw", file, openingTags(source, "button").length);
   }
-  expect(counts.border).toEqual(BORDER_T);
+  expect(counts.border).toEqual(Object.fromEntries(Object.entries(EDGES).map(([file, edge]) => [file, edge.count])));
   expect(counts.end).toEqual(JUSTIFY_END);
   expect(counts.unnamed).toEqual(UNNAMED_ICONS);
   expect(counts.raw).toEqual(RAW);
+});
+
+// Files that mark a link `data-prose-link` (a reference, not an action); only listed files may, and it only shrinks.
+const PROSE_LINKS: Record<string, string> = {
+  "../layout/PluginsSection.tsx": "the repository in a plugin row is a reference to where its code lives",
+  "../pages/Contracts.tsx": "a contract's title in the list is a reference to its page",
+  "../notifications/TodayNotifications.tsx": "a notice's title in the Today tease is a reference to the notice",
+  "../pages/Heinzelmaennchen.tsx": "a Heinzel's name in the table is a reference to its contract",
+};
+
+it("lets only listed files mark a link as a prose reference", () => {
+  const found = sources
+    .filter(([file, source]) => !file.endsWith("/PaneActions.tsx") && source.includes("data-prose-link"))
+    .map(([file]) => file)
+    .sort();
+  expect(found).toEqual(Object.keys(PROSE_LINKS).sort());
 });

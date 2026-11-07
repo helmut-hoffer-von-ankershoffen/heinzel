@@ -414,7 +414,6 @@ const en = {
   "sound.accountPlayer": "Use YouTube sign-in",
   "sound.privatePlayer": "Use private player",
   "sound.retryPlayer": "Retry player",
-  "sound.playOnYouTube": "Play on YouTube",
   "sound.noAudio": "This browser can't play layered sound.",
   "sound.cantLoad": "{title} couldn't be loaded.",
   "theme.light": "Light",

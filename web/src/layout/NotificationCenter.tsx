@@ -5,6 +5,7 @@ import {
   Bell,
   BellRing,
   CalendarClock,
+  CheckCheck,
   FileText,
   Gift,
   Puzzle,
@@ -17,7 +18,7 @@ import { useNavigate } from "react-router";
 import type { SchemaNotice } from "@/api/client";
 import { useNotices } from "@/api/queries";
 import { Gnome } from "@/components/Gnome";
-import { Button } from "@/components/ui/button";
+import { PaneAction, PaneTitle } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { isLocalServer } from "@/lib/browser";
 import { cn } from "@/lib/utils";
@@ -148,27 +149,17 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
         navOpen ? "left-14 sm:left-64 sm:max-w-[calc(100%-16rem)]" : "left-14",
       )}
     >
-      <header className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
-        <h2 className="text-ui font-medium">{t("notify.title")}</h2>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-auto text-muted-foreground"
-          disabled={!newest || newest <= seen}
-          onClick={() => markSeen(newest)}
+      <header className="flex h-12 shrink-0 items-center pr-2 pl-4">
+        <PaneTitle
+          as="h2"
+          chrome={
+            <PaneAction ghost icon={X} onClick={onClose}>
+              {t("notify.close")}
+            </PaneAction>
+          }
         >
-          {t("notify.markRead")}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClose}
-          aria-label={t("notify.close")}
-          title={t("notify.close")}
-          className="text-icon"
-        >
-          <X aria-hidden />
-        </Button>
+          {t("notify.title")}
+        </PaneTitle>
       </header>
       <div role="tablist" aria-label={t("notify.filter")} className="flex shrink-0 gap-1 overflow-x-auto px-3 pb-2">
         {kinds.map((item) => (
@@ -253,9 +244,18 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
           </section>
         ))}
       </div>
-      <footer className="flex max-h-[50%] shrink-0 flex-col gap-1.5 overflow-y-auto border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
+      <footer className="flex max-h-[50%] shrink-0 flex-col gap-1.5 overflow-y-auto px-4 pb-2.5 text-xs text-muted-foreground">
         {local && <span className="truncate">{notices.data?.native}</span>}
-        <NotificationTest />
+        <NotificationTest>
+          <PaneAction
+            key="read"
+            icon={CheckCheck}
+            disabled={!newest || newest <= seen}
+            onClick={() => markSeen(newest)}
+          >
+            {t("notify.markRead")}
+          </PaneAction>
+        </NotificationTest>
       </footer>
     </section>
   );

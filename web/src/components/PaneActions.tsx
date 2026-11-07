@@ -147,13 +147,20 @@ export function PaneAction({
   if (to)
     return (
       <Button {...look} asChild>
-        <Link to={to}>{body}</Link>
+        <Link to={to} {...(props as Omit<ComponentProps<"a">, "href">)}>
+          {body}
+        </Link>
       </Button>
     );
   if (href)
     return (
       <Button {...look} asChild>
-        <a href={href} target="_blank" rel="noopener noreferrer">
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={props.onClick as ComponentProps<"a">["onClick"]}
+        >
           {body}
         </a>
       </Button>
@@ -171,10 +178,19 @@ PaneAction.paneAction = true;
  * A container's title row: its words, then `chrome`, at most three ghost icon `PaneAction`s acting on the container
  * itself (Close, Dismiss, Collapse). Footer panes have no chrome: they close on their own.
  */
-export function PaneTitle({ children, chrome }: { children: ReactNode; chrome?: ReactNode }) {
+export function PaneTitle({
+  children,
+  chrome,
+  as: Heading = "p",
+}: {
+  children: ReactNode;
+  chrome?: ReactNode;
+  /** The element for the words: a panel's title is a heading. */
+  as?: "p" | "h2" | "h3";
+}) {
   return (
-    <div className="flex min-h-8 items-center justify-between gap-2 px-1.5">
-      <p className="min-w-0 font-medium">{children}</p>
+    <div className="flex min-h-8 min-w-0 flex-1 items-center justify-between gap-2 px-1.5">
+      <Heading className="min-w-0 font-medium">{children}</Heading>
       {chrome && (
         <div data-pane-chrome="" className="flex shrink-0 items-center gap-1.5">
           {chrome}
@@ -184,8 +200,21 @@ export function PaneTitle({ children, chrome }: { children: ReactNode; chrome?: 
   );
 }
 
+/**
+ * Chrome for a container without a title row of its own (a card whose heading is part of its body): the same ghost
+ * icons, pinned to the top right corner. The body leaves `pr-10` (one icon) or `pr-20` (two) free.
+ */
+export function PaneChrome({ children }: { children: ReactNode }) {
+  return (
+    <div data-pane-chrome="" className="absolute top-1.5 right-1.5 flex items-center gap-1.5">
+      {children}
+    </div>
+  );
+}
+
 /** Buttons and links a container may show only in its action row or chrome; switches and form fields are content. */
-const ACTION = 'button:not([role="switch"]), a[href], [role="button"], [role="link"], [role="menuitem"]';
+const ACTION =
+  'button:not([role="switch"]), a[href]:not([data-prose-link]), [role="button"], [role="link"]:not([data-prose-link]), [role="menuitem"]';
 
 /**
  * What breaks the action structure (design/README.md, "Actions") of a pane, card or dialog: an action outside the
