@@ -365,74 +365,84 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
         _stop_ui(ui)
 
 
+class _WindowDriver:
+    """A Node browser driver that talks to this test on stdout/stdin, one line each (see device-live-restart.mjs)."""
+
+    def __init__(self, run: list[str], script: str, *args: str) -> None:
+        self.process = subprocess.Popen(
+            [*run, "exec", "node", script, *args],
+            cwd=REPO,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert self.process.stdin is not None
+        assert self.process.stdout is not None
+        assert self.process.stderr is not None
+        # Read the driver's stderr as it comes, so a full pipe never stalls it and a driver that dies says why.
+        self.said: list[str] = []
+        self.reader = threading.Thread(target=lambda: self.said.extend(self.process.stderr), daemon=True)
+        self.reader.start()
+
+    def answer(self) -> str:
+        assert self.process.stdout is not None
+        got = self.process.stdout.readline()
+        if not got:  # the driver ended before answering
+            self.process.wait(30)
+            self.reader.join(30)
+            pytest.fail(f"the browser driver exited {self.process.returncode} without answering: {''.join(self.said)}")
+        return got.strip()
+
+    def expect(self, line: str) -> None:
+        got = self.answer()
+        assert got == line, got + "".join(self.said)
+
+    def tell(self, line: str) -> None:
+        assert self.process.stdin is not None
+        self.process.stdin.write(f"{line}\n")
+        self.process.stdin.flush()
+
+    def close(self) -> None:
+        self.process.kill()
+        self.process.wait(30)
+        self.reader.join(30)  # stderr is at its end once the driver is gone; close it only after the reader let go
+        for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
+            if stream is not None:
+                stream.close()
+
+
 @pytest.mark.timeout(900)
 @pytest.mark.parametrize("engine", ["chromium", "webkit"])
 def test_an_open_app_window_reconnects_when_the_daemon_restarts_on_the_same_port(environment, tmp_path, engine):
     """Stop `hz ui` under an open, paired window and start it again: the window recovers and never asks to sign in."""
     env, _ = environment
-    run = _browser_ready(engine)
     port = _free_port()
     ui, link = _start_ui(env, port)
-    driver = subprocess.Popen(
-        [
-            *run,
-            "exec",
-            "node",
-            "e2e/device-live-restart.mjs",
-            engine,
-            str(tmp_path / "profile"),
-            link,
-            f"http://127.0.0.1:{port}/",
-        ],
-        cwd=REPO,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+    driver = _WindowDriver(
+        _browser_ready(engine),
+        "e2e/device-live-restart.mjs",
+        engine,
+        str(tmp_path / "profile"),
+        link,
+        f"http://127.0.0.1:{port}/",
     )
-    assert driver.stdin is not None
-    assert driver.stdout is not None
-    assert driver.stderr is not None
-    # Read the driver's stderr as it comes, so a full pipe never stalls it and a driver that dies says why.
-    said: list[str] = []
-    reader = threading.Thread(target=lambda: said.extend(driver.stderr), daemon=True)
-    reader.start()
-
-    def answer() -> str:
-        got = driver.stdout.readline()
-        if not got:  # the driver ended before answering
-            driver.wait(30)
-            reader.join(30)
-            pytest.fail(f"the browser driver exited {driver.returncode} without answering: {''.join(said)}")
-        return got.strip()
-
-    def expect(line: str) -> None:
-        got = answer()
-        assert got == line, got + "".join(said)
-
     try:
-        expect("READY")
+        driver.expect("READY")
         _stop_ui(ui)
-        driver.stdin.write("stopped\n")
-        driver.stdin.flush()
-        expect("DOWN")
+        driver.tell("stopped")
+        driver.expect("DOWN")
         ui, new_link = _start_ui(env, port)  # a new session token on the same port, so the same origin
         assert new_link != link
-        driver.stdin.write("started\n")
-        driver.stdin.flush()
-        result = json.loads(answer())
+        driver.tell("started")
+        result = json.loads(driver.answer())
         if result != {"restarted": True, "stayedSignedIn": True, "askedToSignIn": False, "reopened": True}:
-            driver.wait(60)
-            reader.join(30)
-            pytest.fail(f"{result}\nwhat the window went through:\n{''.join(said)}")
-        assert driver.wait(60) == 0
+            driver.process.wait(60)
+            driver.reader.join(30)
+            pytest.fail(f"{result}\nwhat the window went through:\n{''.join(driver.said)}")
+        assert driver.process.wait(60) == 0
     finally:
-        driver.kill()
-        driver.wait(30)
-        reader.join(30)  # stderr is at its end once the driver is gone; close it only after the reader let go
-        for stream in (driver.stdin, driver.stdout, driver.stderr):
-            if stream is not None:
-                stream.close()
+        driver.close()
         _stop_ui(ui)
 
 
@@ -443,68 +453,34 @@ def test_an_installed_window_opened_while_hz_is_down_opens_the_app_by_itself_whe
 ):
     """A paired window reopened while `hz ui serve` is down shows the offline page, then the app, without a reload."""
     env, _ = environment
-    run = _browser_ready(engine)
     port = _free_port()
     ui, link = _start_ui(env, port)
-    driver = subprocess.Popen(
-        [
-            *run,
-            "exec",
-            "node",
-            "e2e/pwa-reconnect.mjs",
-            engine,
-            str(tmp_path / "profile"),
-            link,
-            f"http://127.0.0.1:{port}/",
-        ],
-        cwd=REPO,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+    driver = _WindowDriver(
+        _browser_ready(engine),
+        "e2e/pwa-reconnect.mjs",
+        engine,
+        str(tmp_path / "profile"),
+        link,
+        f"http://127.0.0.1:{port}/",
     )
-    assert driver.stdin is not None
-    assert driver.stdout is not None
-    assert driver.stderr is not None
-    said: list[str] = []
-    reader = threading.Thread(target=lambda: said.extend(driver.stderr), daemon=True)
-    reader.start()
-
-    def answer() -> str:
-        got = driver.stdout.readline()
-        if not got:
-            driver.wait(30)
-            reader.join(30)
-            pytest.fail(f"the browser driver exited {driver.returncode} without answering: {''.join(said)}")
-        return got.strip()
-
-    def tell(line: str) -> None:
-        driver.stdin.write(f"{line}\n")
-        driver.stdin.flush()
-
     try:
-        assert answer() == "READY", "".join(said)
+        driver.expect("READY")
         _stop_ui(ui)
-        tell("stopped")
-        assert answer() == "DOWN", "".join(said)
+        driver.tell("stopped")
+        driver.expect("DOWN")
         ui, _ = _start_ui(env, port)  # a new session token on the same port: the paired device token signs in
-        tell("started")
-        result = json.loads(answer())
+        driver.tell("started")
+        result = json.loads(driver.answer())
         assert result == {
             "offlineShowed": True,
             "noVersionShown": True,
             "iconLoaded": True,
             "openedByItself": True,
             "askedToSignIn": False,
-        }, f"{result}\n{''.join(said)}"
-        assert driver.wait(60) == 0
+        }, f"{result}\n{''.join(driver.said)}"
+        assert driver.process.wait(60) == 0
     finally:
-        driver.kill()
-        driver.wait(30)
-        reader.join(30)
-        for stream in (driver.stdin, driver.stdout, driver.stderr):
-            if stream is not None:
-                stream.close()
+        driver.close()
         _stop_ui(ui)
 
 
