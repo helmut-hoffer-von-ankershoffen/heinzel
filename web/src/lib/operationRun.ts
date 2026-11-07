@@ -22,6 +22,13 @@ export function parsePhase(data: Record<string, unknown>): Phase | null {
   return { id, label, state: state as PhaseState, ...(typeof detail === "string" && detail ? { detail } : {}) };
 }
 
+/** `phases` with `phase` told: a later report of a known step replaces it in place, a new one goes last. */
+export function mergePhase(phases: Phase[], phase: Phase): Phase[] {
+  return phases.some((entry) => entry.id === phase.id)
+    ? phases.map((entry) => (entry.id === phase.id ? { ...entry, ...phase } : entry))
+    : [...phases, phase];
+}
+
 let current: OperationRun = { stage: "idle" };
 let opener: HTMLElement | null = null;
 const listeners = new Set<() => void>();
@@ -70,10 +77,7 @@ export async function startOperation(onSettled: () => void): Promise<void> {
         if (event === "phase") {
           const phase = parsePhase(data);
           if (!phase) return;
-          const known = phases.some((entry) => entry.id === phase.id);
-          phases = known
-            ? phases.map((entry) => (entry.id === phase.id ? { ...entry, ...phase } : entry))
-            : [...phases, phase];
+          phases = mergePhase(phases, phase);
           set({ stage: "running", call, phases, task: null });
         } else if (event === "task" && typeof data.text === "string") {
           set({ stage: "running", call, phases, task: data.text });

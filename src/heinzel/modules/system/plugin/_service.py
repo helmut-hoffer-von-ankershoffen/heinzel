@@ -30,7 +30,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from heinzel import HeinzelError, Kernel, __version__
+from heinzel import HeinzelError, Kernel, Progress, __version__
 from heinzel.kernel import (
     CORE_DISTRIBUTION,
     ENTRY_POINT_GROUP,
@@ -49,6 +49,7 @@ from heinzel.kernel import (
     subprocess_environment,
 )
 from heinzel.modules.system._github import GITHUB_API
+from heinzel.modules.system._phases import Phases
 from heinzel.modules.system.plugin._models import (
     Action,
     AvailablePlugin,
@@ -444,30 +445,7 @@ class PluginService:
                 operation_id=receipt.operation_id,
             )
         with self._mutation() as mutation, self._receipts.installing(), self._exclusive():
-            before = self._host_list() if _requires_change(candidate) else []
-            generation = self._run_package_change(
-                self.add_command(candidate.requirement),
-                f"Failed to add plugin {spec!r}.",
-                f"Adding plugin {candidate.distribution or spec}",
-                self._git_environment(),
-                context=(mutation, ()),
-                adding=candidate.requirement,
-            )
-            installed = self._verify_added(candidate, before)
-            self._verify_candidate_generation(mutation)
-            change = self._changed("add", installed.distribution, candidate)
-            self._verify_candidate_generation(mutation)
-            self._record(
-                "add",
-                installed.distribution,
-                requirement=candidate.requirement,
-                source=candidate.source,
-                version=candidate.version,
-                publisher=candidate.publisher,
-                private_repository=candidate.private,
-            )
-            self._remember_package_change(generation)
-            return change
+            return self._install_candidate(candidate, spec, mutation)
 
     def operation(self, operation_id: str) -> PluginOperation:
         """Read the durable status of a preview receipt without repeating its mutation."""
@@ -484,29 +462,7 @@ class PluginService:
                     _raise_not_replayable(receipt.status)
                 claimed = True
                 with self._mutation() as mutation:
-                    before = self._host_list() if _requires_change(candidate) else []
-                    generation = self._run_package_change(
-                        self.add_command(candidate.requirement),
-                        f"Failed to add plugin {candidate.spec!r}.",
-                        f"Adding plugin {candidate.distribution or candidate.spec}",
-                        self._git_environment(),
-                        context=(mutation, ()),
-                        adding=candidate.requirement,
-                    )
-                    installed = self._verify_added(candidate, before)
-                    self._verify_candidate_generation(mutation)
-                    result = self._changed("add", installed.distribution, candidate)
-                    self._verify_candidate_generation(mutation)
-                    self._record(
-                        "add",
-                        installed.distribution,
-                        requirement=candidate.requirement,
-                        source=candidate.source,
-                        version=candidate.version,
-                        publisher=candidate.publisher,
-                        private_repository=candidate.private,
-                    )
-                    self._remember_package_change(generation)
+                    result = self._install_candidate(candidate, candidate.spec, mutation)
                 completed = self._receipts.complete(operation_id, result)
                 if completed.result is None:
                     _raise_missing_result()
@@ -515,6 +471,91 @@ class PluginService:
             if claimed:
                 self._receipts.unknown(operation_id)
             raise
+
+    def _install_candidate(
+        self, candidate: PluginCandidate, spec: str, mutation: _PackageMutation | None
+    ) -> PluginChange:
+        """Install the confirmed `candidate`, check and record it, telling each step (ADR 0056) as it happens.
+
+        The steps are the install, the check that exactly it is installed, then each plugin it needs, as the installed
+        metadata names them (installed with it, updated, or there already), and the record of the add.
+
+        Raises:
+            HeinzelError: If installing or any check fails; the failed step says why.
+        """
+        name = candidate.distribution or spec
+        phases = Phases(
+            self._kernel.resolve(Progress),
+            [("install", f"Installing {name}"), ("verify", "Checking that exactly it is installed")],
+        )
+        before = self._host_list() if _requires_change(candidate) else []
+        versions = self._plugin_versions_or_none()
+        with phases.step("install", f"Installing {name}"):
+            generation = self._run_package_change(
+                self.add_command(candidate.requirement),
+                f"Failed to add plugin {spec!r}.",
+                f"Adding plugin {name}",
+                self._git_environment(),
+                context=(mutation, ()),
+                adding=candidate.requirement,
+            )
+        with phases.step("verify", "Checking that exactly it is installed"):
+            installed = self._verify_added(candidate, before)
+            self._verify_candidate_generation(mutation)
+        self._tell_dependencies(phases, installed.distribution, versions)
+        with phases.step("record", "Recording the add"):
+            change = self._changed("add", installed.distribution, candidate)
+            self._verify_candidate_generation(mutation)
+            self._record(
+                "add",
+                installed.distribution,
+                requirement=candidate.requirement,
+                source=candidate.source,
+                version=candidate.version,
+                publisher=candidate.publisher,
+                private_repository=candidate.private,
+            )
+            self._remember_package_change(generation)
+        return change
+
+    def _plugin_versions_or_none(self) -> dict[str, str] | None:
+        """The installed plugins' versions by canonical name; None if they can't be read (nothing is compared then)."""
+        try:
+            return {item.distribution: item.version or "" for item in self._host_list()}
+        except HeinzelError:
+            return None
+
+    def _tell_dependencies(self, phases: Phases, distribution: str, before: dict[str, str] | None) -> None:
+        """One step per plugin `distribution` needs, directly or through another, as its installed metadata says.
+
+        Read without running anything; a dependency list that can't be read tells no steps rather than failing an add
+        that is already installed and checked.
+        """
+        try:
+            after = {item.distribution: item.version or "" for item in self._host_list()}
+            graph = required_by(self._host_distributions())
+        except (HeinzelError, OSError, ValueError, TypeError, KeyError):
+            return
+        needed: list[str] = []
+        todo: list[str] = [canonicalize_name(distribution)]
+        while todo:
+            requirer = todo.pop()
+            for dependency in sorted(dep for dep, requirers in graph.items() if requirer in requirers):
+                if dependency in after and dependency not in needed and dependency != canonicalize_name(distribution):
+                    needed.append(dependency)
+                    todo.append(dependency)
+        for dependency in needed:
+            label = f"Plugin {dependency}, which {distribution} needs"
+            version = after[dependency]
+            if before is None:
+                detail = f"Installed: {version}"
+            elif dependency not in before:
+                detail = f"Installed with it: {version}"
+            elif before[dependency] != version:
+                detail = f"Updated {before[dependency]} → {version}"
+            else:
+                detail = f"Already installed: {version}"
+            phases.note(f"needs:{dependency}", label, "done", detail)
 
     def develop(self, path: Path) -> PluginChange:
         """Install the plugin in a directory on this machine, as `add` would a released one.
