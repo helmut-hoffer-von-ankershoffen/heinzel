@@ -15,12 +15,15 @@ asked again, so `@main` moves to the newest commit. A plugin that blocks the ins
 version it has if that still resolves, and otherwise taken out of the installation with the command that brings it back.
 """
 
+import importlib.metadata
 import json
+import platform
 import re
 import shlex
 import tempfile
+import time
 from collections.abc import Callable, Generator, Mapping, Sequence
-from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,11 +38,14 @@ from heinzel import HeinzelError, __version__
 from heinzel.kernel import (
     CorePin,
     DaemonHandoverPlan,
+    DaemonHandoverRequest,
     DaemonInstallationLifecycle,
     DaemonMutationScope,
+    HeadRefresh,
     Installation,
     ReleaseSource,
     ToolConstraintPolicy,
+    WebHeadRefresh,
     subprocess_environment,
 )
 from heinzel.modules.system._announced import (
@@ -53,13 +59,21 @@ from heinzel.modules.system._announced import (
 )
 from heinzel.modules.system._models import AnnouncedUpdate, PluginUpdate, UpdateResult
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
-from heinzel.modules.system.plugin._sources import git_credentials
+from heinzel.modules.system.plugin._sources import dependents, git_credentials, required_by
 
 DEFAULT_BRANCH = "main"
 """The repository's default branch: a pin to it is kept in place, the way an install without a ref is."""
 
 type UpdateChannel = Literal["stable", "edge", "main", "release"]
 """Where updates come from; `release` is the earlier name of stable, still accepted (ADR 0114)."""
+
+DAEMON_SECONDS = 90.0
+"""How long an update waits for the handed-over daemon's first tick to report the version it loaded."""
+DAEMON_POLL_SECONDS = 1.0
+DESKTOP_RECEIPT = Path(".config/heinzel/desktop-installation.json")
+"""Under the home folder: the managed Mac app's receipt (`heinzel.heads._desktop_installation`)."""
+SETTLED = frozenset({"verified", "not-installed", "self"})
+"""Head outcomes that leave nothing running older code; `pending` and `failed` do not."""
 
 PLACEHOLDER_TAG = "vX.Y.Z"
 """Stands in for the latest release tag in a suggested command when the package source couldn't be asked."""
@@ -116,24 +130,33 @@ class Installed:
 class UpdateService:
     """Updates the uv tool environment Heinzelmännchen runs in, keeping its plugins."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - the installation, its boundaries, its heads and the seams tests replace
         self,
         installation: Installation,
         releases: ReleaseSource,
         *,
         lifecycle: DaemonInstallationLifecycle | None = None,
         require_lifecycle: bool = False,
+        web: WebHeadRefresh | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+        home: Path | None = None,
     ) -> None:
-        """Create the service with an optional trusted lifecycle boundary."""
+        """Create the service with an optional trusted lifecycle boundary and the heads it refreshes afterwards."""
         self._installation = installation
         self._releases = releases
         self._lifecycle = lifecycle
         self._require_lifecycle = require_lifecycle
+        self._web = web
+        self._clock, self._sleep = clock, sleep
+        self._home = home
+        self._handover: tuple[DaemonHandoverPlan, DaemonHandoverRequest] | None = None
+        """What the daemon was before the last completed mutation and the handover it requested, for the heads."""
 
     def _mutation(self) -> AbstractContextManager[DaemonMutationScope | None]:
         if self._lifecycle is not None:
             return self._lifecycle.mutation(
-                self._installation.startup_state_matches, self._installation.rollback_identity
+                self._installation.repaired_startup_state_matches, self._installation.rollback_identity
             )
         if self._require_lifecycle:
             msg = "The daemon lifecycle boundary is unavailable; the installation was not changed."
@@ -217,6 +240,7 @@ class UpdateService:
             self._installation.record_startup_state(expected=candidate)
         scope.verified_complete(candidate)
         handover = scope.request(plan)
+        self._handover = (plan, handover)
         if handover.requested:
             message = f"{result.message}\nThe daemon handover was requested; a fresh service tick is pending."
             return result.model_copy(update={"message": message})
@@ -237,11 +261,12 @@ class UpdateService:
         these or nothing. Only the announced packages are asked again (`--refresh-package`); a dependency the new
         versions need that isn't installed yet resolves only among uploads as old as the minimum ages
         (`--exclude-newer`). hz from a release tag is installed from the commit the tag named when it was announced,
-        and the receipt names the tag again afterwards. Plugins from git, a folder or a URL can't be held this way,
-        so their installation is updated by hand. Nothing installed runs to verify it: its metadata must name exactly
-        these versions. Then `trial` starts the new hz on throwaway folders. Any failure after the copy puts the tool
-        folder back from it (`ToolSnapshot`), so its continuity record matches again and the daemon mutation
-        completes with no handover pending.
+        and the receipt names the tag again afterwards; so is a plugin pinned to a GitHub commit whose release tag was
+        announced, and its receipt names that commit (ADR 0137). Other plugins from git, a folder or a URL can't be
+        held this way, so their installation is updated by hand. Nothing installed runs to verify it: its metadata
+        must name exactly these versions and commits. Then `trial` starts the new hz on throwaway folders. Any
+        failure after the copy puts the tool folder back from it (`ToolSnapshot`), so its continuity record matches
+        again and the daemon mutation completes with no handover pending.
 
         Raises:
             HeinzelError: If the installation can't be updated this way, before anything was installed.
@@ -303,9 +328,15 @@ class UpdateService:
                 )
                 if scope is not None and plan is not None:
                     self._finish_mutation(scope, plan, generation, result)
-                return AnnouncedUpdate(
-                    updated=True, after=target, restored=False, refused=False, message=f"Installed hz {target}."
-                )
+        heads = self._refresh_heads(target)
+        return AnnouncedUpdate(
+            updated=True,
+            after=target,
+            restored=False,
+            refused=False,
+            message=_with_heads(f"Installed hz {target}.", heads),
+            heads=heads,
+        )
 
     def _announced_selection(self, target: str, announced: Announcement) -> "_Selection | AnnouncedUpdate":
         """What goes into uv, before anything changes: the exact core, and every plugin as it must stay or move.
@@ -346,20 +377,34 @@ class UpdateService:
     ) -> tuple[list[str], list[str], list[str], list[str]] | AnnouncedUpdate:
         """Each plugin's name and requirement for uv, those updated by hand, and those held at their git commit.
 
+        An announced plugin pinned to a commit of a GitHub repository goes in at the commit its release tag named
+        when it was announced (ADR 0137); the receipt names that commit afterwards, so it stays pinned.
+
         Raises:
-            HeinzelError: If a plugin from git has no commit to hold it to, or an announced plugin isn't an installed
-                one from PyPI.
+            HeinzelError: If a plugin from git has no commit to hold it to, or an announced plugin is neither an
+                installed one from PyPI nor one pinned to a git commit with a recorded tag commit.
         """
         names: list[str] = [str(canonicalize_name(Requirement(plugin.requirement).name)) for plugin in plugin_pins]
         indexed = {name for name, plugin in zip(names, plugin_pins, strict=True) if plugin.kind == "index"}
-        if missing := sorted(set(announced.plugins) - indexed):
-            msg = f"Announced plugins aren't installed from PyPI: {', '.join(missing)}."
+        tagged = {
+            name
+            for name, plugin in zip(names, plugin_pins, strict=True)
+            if plugin.kind == "commit" and plugin.git is not None and name in announced.plugin_commits
+        }
+        if missing := sorted((set(announced.plugins) - indexed - tagged) | (set(announced.plugin_commits) - tagged)):
+            msg = (
+                "Announced plugins aren't installed from PyPI or pinned to a tagged GitHub commit: "
+                f"{', '.join(missing)}."
+            )
             raise HeinzelError(msg)
         specs: list[str] = []
         held_at_commit: list[str] = []
         for name, plugin in zip(names, plugin_pins, strict=True):
             if plugin.kind == "index":
                 specs.append(plugin.requirement)
+                continue
+            if name in tagged and name in announced.plugins:
+                specs.append(plugin.at(announced.plugin_commits[name]))
                 continue
             if not allows_core(prefix, name, target):
                 return _by_hand(target, f"{name}, a plugin updated by hand, doesn't allow hz {target}. Update it first")
@@ -372,7 +417,7 @@ class UpdateService:
                 raise HeinzelError(msg)
             specs.append(plugin.at(commit))
             held_at_commit.append(name)
-        return names, specs, sorted(set(names) - indexed), held_at_commit
+        return names, specs, sorted(set(names) - indexed - (tagged & set(announced.plugins))), held_at_commit
 
     def _install_announced(
         self,
@@ -421,6 +466,10 @@ class UpdateService:
         if commit is not None and installed != commit:
             msg = f"hz came from commit {(installed or 'none')[:12]}, not {commit[:12]}"
             raise HeinzelError(msg)
+        for name, wanted in announced.plugin_commits.items():  # a tagged plugin: exactly the commit announced
+            if (came := plugin_commit(self._installation.prefix.resolve(strict=True), name)) != wanted:
+                msg = f"{name} came from commit {(came or 'none')[:12]}, not {wanted[:12]}"
+                raise HeinzelError(msg)
         return generation
 
     def _prepare_announced(
@@ -483,6 +532,10 @@ class UpdateService:
         if generation != before:
             msg = "The installation isn't as it was after putting it back; explicit recovery is required."
             raise HeinzelError(msg)
+        # A change that failed half way left the marker; the folder matches its record again. If it can't go, it stays
+        # and says so: the next update or `hz ui restart` tries again.
+        with suppress(OSError, HeinzelError):
+            self._installation.clear_stale_startup_pending()
         if scope is not None and plan is not None:
             # The folder is as it was, byte for byte, but not inode for inode: the mutation completes with the
             # original generation, its record stays valid, and the daemon is handed over to the same code.
@@ -507,6 +560,10 @@ class UpdateService:
     ) -> UpdateResult:
         """Update to the latest release, or reinstall from `source`; `current` is the version running now.
 
+        After a change, every installed long-running head is moved onto the installed code through its own owned
+        restart path and asked which version its live process loaded (`heads`): the daemon's handover tick and the
+        persistent web server. The update is complete only when each is verified; the message says which aren't.
+
         `channel` is where the installation follows: `edge` (the newest edge release's wheel, verified by digest) or
         stable, which `release` also names: the releases (a pin to the newest release tag, which every later
         update follows; an installation on `main` moves there once a release is as new as it, never as a downgrade) or
@@ -516,6 +573,14 @@ class UpdateService:
             HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, the latest release can't be
                 asked for, or the install fails, naming the plugins that block it; Heinzelmännchen still works.
         """
+        self._handover = None
+        result = self._update(source, current, channel)
+        if not getattr(result, "updated", False):  # nothing changed, so every head already runs what is installed
+            return result
+        heads = self._refresh_heads(result.after)
+        return result.model_copy(update={"heads": heads, "message": _with_heads(result.message, heads)})
+
+    def _update(self, source: str | None, current: str, channel: UpdateChannel) -> UpdateResult:
         pin, requirements = self._installation.core_pin(), self._installation.requirements()
         if pin is None or not requirements:
             msg = "Heinzelmännchen wasn't installed with `uv tool install`; update it the way you installed it."
@@ -1140,6 +1205,7 @@ class UpdateService:
         modes: dict[str, Mode] = dict.fromkeys(names, "new")
         reasons: dict[str, str] = {}
         output = ""
+        graph = self._requirers()
         for _ in range(2 * len(plugins) + 2):
             specs = [
                 self._spec(p, modes[n], core, before.get(n))
@@ -1171,7 +1237,13 @@ class UpdateService:
                     return None, reasons, output
                 modes[name] = "keep" if modes[name] == "new" else "drop"
                 reasons[name] = _reason(output)
+            _drop_dependents(modes, reasons, graph)
         return None, reasons, output
+
+    def _requirers(self) -> dict[str, set[str]]:
+        """Which installed distributions require each one, read from the tool folder's metadata; never run."""
+        paths = [str(path) for path in self._installation.prefix.glob("lib/python*/site-packages")]
+        return required_by(importlib.metadata.distributions(path=paths)) if paths else {}
 
     @staticmethod
     def _spec(plugin: CorePin, mode: Mode, _core: str, installed: Installed | None) -> str:
@@ -1205,7 +1277,10 @@ class UpdateService:
                     handle = plugin.requirement
                     add = f"hz system plugin add {shlex.quote(handle)} --confirm"
                     reason = (
-                        f"{reasons[name]} It does not allow the new hz, so it was taken out of the installation "
+                        f"{reasons[name]} It was taken out of the installation with it (disabled), and hz was updated "
+                        f"without them. Once the plugin it needs is back: {add}"
+                        if reasons[name].startswith(NEEDS)
+                        else f"{reasons[name]} It does not allow the new hz, so it was taken out of the installation "
                         f"(disabled), and hz was updated without it. Once a release allows the new hz: {add}"
                     )
                     updates.append(
@@ -1327,6 +1402,97 @@ class UpdateService:
             pass
         return f"hz may not start; restore it with: {self._installation.tool_restore_hint(restore)}"
 
+    def _refresh_heads(self, target: str) -> list[HeadRefresh]:
+        """Move each installed long-running head onto the installed code and observe what its live process runs.
+
+        Runs only after the installation mutation completed, so no pending marker blocks an owned restart. Nothing
+        here raises: a head that can't be verified is reported as `pending` or `failed`, with the command that
+        finishes it, and the update never claims it.
+        """
+        heads: list[HeadRefresh] = []
+        if self._lifecycle is not None:
+            heads.append(self._daemon_head(target))
+        if self._web is not None:
+            try:
+                heads.append(self._web.refresh(target))
+            except Exception as exc:  # noqa: BLE001 - a head's own failure is reported, never hidden or raised
+                heads.append(
+                    HeadRefresh(
+                        head="web",
+                        status="failed",
+                        detail=f"The web server couldn't be refreshed ({exc}). Run `hz ui restart`, then "
+                        "`hz ui status`.",
+                    )
+                )
+        if self._desktop_installed():
+            heads.append(
+                HeadRefresh(
+                    head="desktop",
+                    status="pending",
+                    detail="Not verified by this update: the desktop app updates itself at the web server's next "
+                    "automatic update check, if automatic updates are on; otherwise run the installer again.",
+                )
+            )
+        return heads
+
+    def _desktop_installed(self) -> bool:
+        try:
+            return platform.system() == "Darwin" and (self._home or Path.home()).joinpath(DESKTOP_RECEIPT).exists()
+        except (OSError, RuntimeError):  # no home to look in: nothing is claimed about a desktop app
+            return False
+
+    def _daemon_head(self, target: str) -> HeadRefresh:
+        """Wait, within `DAEMON_SECONDS`, for the handed-over daemon's own tick to report the version it loaded."""
+        if self._handover is None:
+            return HeadRefresh(head="daemon", status="not-installed", detail="No daemon handover was requested.")
+        plan, handover = self._handover
+        if not handover.requested and not plan.active:  # no daemon, a paused one or one not running: nothing old runs
+            return HeadRefresh(head="daemon", status="not-installed", detail=handover.reason)
+        if not handover.requested:
+            return HeadRefresh(
+                head="daemon",
+                status="pending",
+                detail=f"The daemon wasn't asked to restart ({handover.reason}) and may still run the old code. Run "
+                "`hz system daemon restart`, then `hz system daemon status`.",
+            )
+        if handover.request_id is None or self._lifecycle is None:
+            return HeadRefresh(
+                head="daemon",
+                status="pending",
+                detail="The daemon was asked to restart; check `hz system daemon status` for the version it runs.",
+            )
+        return self._await_daemon(self._lifecycle, handover.request_id, target)
+
+    def _await_daemon(self, lifecycle: DaemonInstallationLifecycle, request_id: str, target: str) -> HeadRefresh:
+        """The handed-over tick's own report of the version it loaded, or `pending` after `DAEMON_SECONDS`."""
+        deadline = self._clock() + DAEMON_SECONDS
+        while True:
+            try:
+                observed = lifecycle.observation(request_id)
+            except Exception:  # noqa: BLE001 - an unreadable observation stays pending, never verified
+                observed = None
+            if observed is not None:
+                if observed.version == target:
+                    return HeadRefresh(
+                        head="daemon", status="verified", version=target, detail="The daemon restarted into it."
+                    )
+                return HeadRefresh(
+                    head="daemon",
+                    status="failed",
+                    version=observed.version,
+                    detail=f"The daemon restarted but runs hz {observed.version}, not {target}. Run "
+                    "`hz system daemon restart`.",
+                )
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                return HeadRefresh(
+                    head="daemon",
+                    status="pending",
+                    detail=f"The daemon was asked to restart; its first tick hadn't finished within "
+                    f"{DAEMON_SECONDS:g} seconds. Check `hz system daemon status` for the version it runs.",
+                )
+            self._sleep(min(DAEMON_POLL_SECONDS, remaining))
+
     def _original_generation(self) -> str | None:
         try:
             return self._installation.startup_fingerprint()
@@ -1351,6 +1517,39 @@ class UpdateService:
             HeinzelError: If `hz` doesn't start.
         """
         return self._installation.hz("--version").splitlines()[0].removeprefix("hz ").strip()
+
+
+HEAD_LABELS = {"daemon": "Daemon", "web": "Web server", "notifier": "Notifier", "desktop": "Desktop app"}
+PENDING_TICK = "\nThe daemon handover was requested; a fresh service tick is pending."
+
+
+def _with_heads(message: str, heads: list[HeadRefresh]) -> str:
+    """`message`, with one line per installed head and, unless every one is settled, that the update isn't done."""
+    shown = [head for head in heads if head.status != "not-installed"]
+    if not shown:
+        return message
+    if any(head.head == "daemon" for head in shown):  # its own line says what the handover did
+        message = message.replace(PENDING_TICK, "")
+    lines = [f"{HEAD_LABELS[head.head]}: {head.status}. {head.detail}".rstrip() for head in shown]
+    if any(head.status not in SETTLED for head in shown):
+        lines.append("Not everything runs the new version yet; the lines above say what finishes it.")
+    return "\n".join([message, *lines])
+
+
+NEEDS = "It needs "
+"""How the reason of a plugin taken out with the plugin it needs begins (`_drop_dependents`)."""
+
+
+def _drop_dependents(modes: dict[str, Mode], reasons: dict[str, str], graph: dict[str, set[str]]) -> None:
+    """Take out with each dropped plugin every plugin that needs it: uv would put it back as their dependency.
+
+    Leaving a dependent in would install the dropped plugin again, and the update would then refuse its own result.
+    """
+    for name in [name for name, mode in modes.items() if mode == "drop"]:
+        for dependent in sorted(dependents(name, graph) & modes.keys()):
+            if modes[dependent] != "drop":
+                modes[dependent] = "drop"
+                reasons[dependent] = f"{NEEDS}{name}, which was taken out: {reasons[name]}"
 
 
 def _with_summary(message: str, updates: list[PluginUpdate]) -> str:

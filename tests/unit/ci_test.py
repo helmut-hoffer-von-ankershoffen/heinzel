@@ -85,6 +85,13 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "merge-gate.yml": {
         "uv run --no-build --frozen --script scripts/merge_gate.py": "judges by public APIs, from the base branch",
+        '[[ "$PR_HEAD_SHA" =~': "finds the open pull request whose finished CI the gates judge",
+        "for check in merge-gate coverage-floor": "reports the gates as check runs on the pull request's head",
+        "for check in MERGE_GATE COVERAGE_FLOOR": "completes both check runs, failing closed",
+    },
+    "focused-job.yml": {
+        '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
+        "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
     },
     "acceptance-sharded.yml": {
         "uv python install 3.13": "the isolated acceptance study interpreter",
@@ -256,7 +263,7 @@ def test_affected_selector_runs_in_shadow_mode_and_skips_no_job():
             assert "affected_" not in json.dumps(job), job_name
 
 
-def test_every_main_commit_gets_its_own_ci_run_while_pull_requests_cancel_superseded_runs():
+def test_every_main_commit_and_release_pr_run_completes_while_other_pull_requests_cancel_superseded_runs():
     concurrency = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["concurrency"]
 
     def group(ref: str, sha: str) -> str:
@@ -267,7 +274,9 @@ def test_every_main_commit_gets_its_own_ci_run_while_pull_requests_cancel_supers
 
     assert group("refs/heads/main", "a") != group("refs/heads/main", "b")
     assert group("refs/pull/1/merge", "a") == group("refs/pull/1/merge", "b")
-    assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
+    assert concurrency["cancel-in-progress"] == (
+        "${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }}"
+    )
 
 
 def test_source_plugin_audits_receive_authoritative_repository_visibility():

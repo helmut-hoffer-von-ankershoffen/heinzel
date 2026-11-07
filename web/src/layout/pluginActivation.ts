@@ -118,6 +118,16 @@ export function completePluginRestart() {
   set({ observation: undefined, error: null });
 }
 
+/** The server kept running without restarting, so nothing is under way: offer Restart and apply again. */
+export function forgetPluginRestart() {
+  try {
+    window.sessionStorage.removeItem(ACTIVATION_STORAGE_KEY);
+  } catch {
+    // Without storage the observation would be restored as uncertain; this tab still offers the action.
+  }
+  set({ observation: undefined });
+}
+
 export function stopPluginActivation() {
   active?.abort();
 }
@@ -145,6 +155,11 @@ export async function activatePlugins(reload: () => void, canStart: () => boolea
     set({ phase: "applied" });
     reload();
   } catch (error) {
+    if (error instanceof RestartApplyError && error.kind === "stale") {
+      forgetPluginRestart();
+      set({ error: error.message, phase: null });
+      return;
+    }
     set({
       error: error instanceof Error ? error.message : t("lifecycle.failed"),
       observation: error instanceof RestartApplyError ? error.observation : state.observation,
