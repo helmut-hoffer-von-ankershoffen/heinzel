@@ -7,7 +7,8 @@ package source, which a module provides as a `ReleaseSource`, nor how heads pres
 
 import json
 import os
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,20 @@ class PluginRelease:
     version: str
     uploaded_at: datetime | None
     """When its last file was uploaded; None when the index can't tell, which counts as too new."""
+    commit: str | None = None
+    """For a plugin pinned to a GitHub commit: the commit its release tag named when it was asked (ADR 0137)."""
+
+
+@dataclass(frozen=True)
+class PluginNews:
+    """What automatic updates may announce for plugins at one check (ADR 0116, ADR 0137)."""
+
+    releases: dict[str, PluginRelease]
+    """Each plugin that may move, mapped to its release; a plugin's dependencies among them come before it."""
+    held: list[str] = field(default_factory=list[str])
+    """One plain line per plugin release held back because another plugin can't move with it."""
+    followed: list[str] = field(default_factory=list[str])
+    """Plugins pinned to a GitHub commit whose repository tags their releases: no longer updated by hand."""
 
 
 class ReleaseSource:
@@ -116,6 +131,15 @@ class PluginReleases:
     def newer_releases(self, timeout: float) -> dict[str, PluginRelease]:
         """Like `newer`, with when each release was uploaded; this base class can't tell, so none counts as old."""
         return {name: PluginRelease(version, None) for name, version in self.newer(timeout).items()}
+
+    def announceable(self, timeout: float, old_enough: Callable[[PluginRelease], bool]) -> PluginNews:
+        """The newer releases that are `old_enough`; this base class knows nothing of what plugins need of others."""
+        return PluginNews({name: r for name, r in self.newer_releases(timeout).items() if old_enough(r)})
+
+    def tag_commit(self, name: str, version: str, timeout: float) -> str | None:
+        """The commit the release tag of `version` of plugin `name` names now; None when there is no such tag."""
+        del name, version, timeout
+        return None
 
 
 @dataclass(frozen=True, slots=True)

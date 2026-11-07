@@ -6973,6 +6973,58 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HeadRefresh": {
+        "description": "What one installed head runs after an update; only `verified` is evidence of the target version.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "description": "What happened, and the command that checks or finishes it.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "head": {
+            "description": "The installed head: daemon, web, notifier or desktop.",
+            "enum": [
+              "daemon",
+              "web",
+              "notifier",
+              "desktop"
+            ],
+            "title": "Head",
+            "type": "string"
+          },
+          "status": {
+            "description": "verified: its live process reported the target version; pending: requested, not yet observed; failed: it reported another version or could not restart; not-installed: nothing to refresh; self: the process that ran the update hosts this head and restarts itself afterwards.",
+            "enum": [
+              "verified",
+              "pending",
+              "failed",
+              "not-installed",
+              "self"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The version its live process reported, when observed.",
+            "title": "Version"
+          }
+        },
+        "required": [
+          "head",
+          "status"
+        ],
+        "title": "HeadRefresh",
+        "type": "object"
+      },
       "HealthReport": {
         "description": "All health checks, and the overall status: DOWN beats DEGRADED beats UP.",
         "properties": {
@@ -18272,6 +18324,14 @@
             "description": "Heinzelmännchen version installed before.",
             "title": "Before",
             "type": "string"
+          },
+          "heads": {
+            "description": "What each installed long-running head runs after the update, as its live process reported it.",
+            "items": {
+              "$ref": "#/components/schemas/HeadRefresh"
+            },
+            "title": "Heads",
+            "type": "array"
           },
           "latest": {
             "anyOf": [

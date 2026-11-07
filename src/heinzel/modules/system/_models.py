@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from heinzel.kernel import HeadRefresh
+
 
 class ModuleInfo(BaseModel):
     """A registered module."""
@@ -108,6 +110,10 @@ class UpdateResult(BaseModel):
         description="What happened to each installed plugin: upgraded together with hz, unchanged or failed. A plugin "
         "that doesn't allow the new hz never blocks it.",
     )
+    heads: list[HeadRefresh] = Field(
+        default_factory=list[HeadRefresh],
+        description="What each installed long-running head runs after the update, as its live process reported it.",
+    )
 
 
 class AnnouncedUpdate(BaseModel):
@@ -118,3 +124,7 @@ class AnnouncedUpdate(BaseModel):
     restored: bool = Field(description="Whether hz and every plugin were put back as they were.")
     refused: bool = Field(description="Whether the update installed but didn't start: it is never tried again.")
     message: str = Field(description="What happened, in one plain message.")
+    heads: list[HeadRefresh] = Field(
+        default_factory=list[HeadRefresh],
+        description="What each installed long-running head runs after the update, as its live process reported it.",
+    )
