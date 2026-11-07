@@ -410,7 +410,13 @@ def test_the_web_head_streams_an_independent_plugin_installation(sandbox, tmp_pa
                     event_name = data = ""
                     if events[-1][0] in {"result", "error"}:
                         break
-        assert events[0] == ("task", {"text": "Adding plugin heinzel-dummy"})
+        # The planned steps come first, pending, so the dialog can say "step 1 of 2"; then each step runs.
+        phases = [data for kind, data in events if kind == "phase"]
+        assert [(step["id"], step["state"]) for step in phases[:2]] == [("install", "pending"), ("verify", "pending")]
+        assert [kind for kind, _ in events[:2]] == ["phase", "phase"]
+        assert ("task", {"text": "Adding plugin heinzel-dummy"}) in events
+        assert {step["id"]: step["state"] for step in phases}["install"] == "done"
+        assert {step["id"]: step["state"] for step in phases}["verify"] == "done"
         assert events[-1][0] == "result", events
         assert events[-1][1]["data"]["done"] is True
     finally:

@@ -1984,3 +1984,47 @@ def test_a_failed_add_marks_the_install_step_failed(make_kernel, tmp_path, monke
         service.add("heinzel-crm", confirm=True)
     states = {event[0]: event[1] for event in progress.events}
     assert states == {"install": "failed", "verify": "pending"}
+
+
+def test_a_plugin_add_logs_each_step_and_each_needed_plugin(make_kernel, tool_env, monkeypatch, caplog):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    auth = PluginInfo(distribution="heinzel-auth", version="1.0.0", modules=[], name="auth")
+    crm = PluginInfo(distribution="heinzel-crm", version="1.1.0", modules=["crm"], name="crm", source_kind="pypi")
+    monkeypatch.setattr(service, "_host_list", lambda **_kwargs: [crm, auth] if runs else [])
+    monkeypatch.setattr(
+        service,
+        "_host_distributions",
+        lambda: [
+            types.SimpleNamespace(metadata={"Name": "heinzel-crm"}, requires=["heinzel-auth"]),
+            types.SimpleNamespace(metadata={"Name": "heinzel-auth"}, requires=[]),
+        ],
+    )
+    caplog.set_level("INFO", logger="heinzel.operation")
+    service.add("heinzel-crm", confirm=True)
+    events = [
+        (r.getMessage(), r.step, getattr(r, "outcome", None))
+        for r in caplog.records
+        if r.name == "heinzel.operation" and r.operation == "system.plugin.add"
+    ]
+    for step in ("install", "verify", "needs:heinzel-auth", "record"):
+        assert [(e[0], e[2]) for e in events if e[1] == step] == [
+            ("operation.step.start", None),
+            ("operation.step.outcome", "done"),
+        ]
+    [needed] = [r for r in caplog.records if getattr(r, "plugin", None) == "heinzel-auth" and hasattr(r, "outcome")]
+    assert needed.version == "1.0.0"
+
+
+def test_a_failed_plugin_add_logs_the_failed_install(make_kernel, tmp_path, monkeypatch, caplog):
+    service, _ = installing(make_kernel, tmp_path, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    service._installation._runner = lambda command, environment=None: subprocess.CompletedProcess(
+        command, 1, stdout="", stderr="no such release"
+    )
+    caplog.set_level("INFO", logger="heinzel.operation")
+    with pytest.raises(HeinzelError):
+        service.add("heinzel-crm", confirm=True)
+    [failed] = [r for r in caplog.records if getattr(r, "outcome", None) == "failed"]
+    assert (failed.operation, failed.step, failed.levelname) == ("system.plugin.add", "install", "WARNING")
+    assert failed.detail
