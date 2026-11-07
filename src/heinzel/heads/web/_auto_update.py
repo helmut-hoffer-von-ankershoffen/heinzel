@@ -255,7 +255,8 @@ def settle(plan: Plan, running: str, now: datetime) -> None:
 
     hz may have been updated by other means since (`hz system update`, the footer, another server): news of a release
     that is not newer than `running` is done, and its failure, or one reported while another version ran, is history.
-    A failure without a recorded version is history once its news is: older state files didn't record one.
+    A failure without a recorded version is history once its news is, or no news is left: older state files didn't
+    record one.
     """
     if plan.applying or plan.restarting_to is not None:
         return
@@ -266,7 +267,8 @@ def settle(plan: Plan, running: str, now: datetime) -> None:
             plan.window_at = plan.apply_at = None
             plan.postponements = 0
     stale = plan.failed_on is not None and plan.failed_on != running
-    if plan.retry_at is not None and (stale or (plan.failed_on is None and done_news)):
+    legacy = plan.failed_on is None and (done_news or not plan.pending)  # older files; no news left to retry
+    if plan.retry_at is not None and (stale or legacy):
         plan.retry_at = plan.message = plan.failed_on = None  # only a failure sets `retry_at`, with its message
         if plan.pending:  # other news, e.g. a plugin, waits only for its own window again
             plan.window_at = now
@@ -551,8 +553,8 @@ class AutoUpdater:
                 elif plan.restarting_to is not None:
                     failed(plan, failure_message(version), now, version)
         with self._editing() as plan:
-            settle(plan, version, now)
             self._forget_installed_plugins(plan)
+            settle(plan, version, now)
 
     def _forget_installed_plugins(self, plan: Plan) -> None:
         """Drop plugin news the installation already has (another update installed it): no needless restart."""

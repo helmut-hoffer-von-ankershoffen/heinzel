@@ -752,3 +752,28 @@ def test_plugin_news_the_installation_already_has_is_forgotten_at_start(make_ker
         kernel, restart=lambda: None, development=None, clock=clock, version="1.0.0", settings=made._read_settings
     )
     assert (after.plan.plugins, after.plan.window_at, after.status().phase) == ({}, None, "idle")
+
+
+def test_an_older_files_plugin_failure_is_history_once_a_manual_update_installed_the_plugin(make_kernel, tmp_path):
+    """The Mini, 0.9.26 to 0.9.27: a backoff written without a version survived a successful update by hand."""
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    auto.found(made.plan, None, {"heinzel-example": "2.0.0"}, clock.now)
+    auto.failed(made.plan, auto.failure_message("1.0.0"), clock.now)  # no `failed_on`: as 0.9.26 wrote it
+    made._save()
+    kernel.resolve(Installation).installed_versions = lambda names: {"heinzel-example": "2.0.0"}
+    after = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="1.0.0", settings=made._read_settings
+    )
+    assert (after.plan.plugins, after.plan.retry_at, after.status().message) == ({}, None, None)
+
+
+def test_an_older_files_failure_with_news_still_pending_keeps_its_backoff(make_kernel, tmp_path):
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    auto.found(made.plan, None, {"heinzel-example": "2.0.0"}, clock.now)
+    auto.failed(made.plan, auto.failure_message("1.0.0"), clock.now)
+    made._save()
+    kernel.resolve(Installation).installed_versions = lambda names: {"heinzel-example": "1.0.0"}
+    after = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="1.0.0", settings=made._read_settings
+    )
+    assert after.plan.retry_at == clock.now + timedelta(hours=6)
