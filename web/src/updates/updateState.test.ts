@@ -64,13 +64,13 @@ it("stays neutral when the plugins were not confirmed", () => {
     expect(view.allCurrent).toBe(false);
     expect(view.rows.map((row) => row.text).join(" ")).not.toMatch(/all .*up to date/);
   }
-  expect(texts({ plan: { ...plan, plugins_checked: false } })).toContain("Couldn't check plugin updates just now");
+  expect(texts({ plan: { ...plan, plugins_checked: false } })).toContain("Couldn't check plugin updates right now");
 });
 
 it("does not call a stale check current", () => {
   const view = describe({ ...base, status: { ...status, last_ok_at: at("06:00") } });
   expect(view.tone).toBe("off");
-  expect(view.rows[0]?.text).toBe("Couldn't check for updates just now");
+  expect(view.rows[0]?.text).toBe("Couldn't check for updates right now");
   expect(view.rows[0]?.detail).toBe("Last successful check: 06:00");
   expect(view.canRetry).toBe(true);
 });
@@ -78,7 +78,7 @@ it("does not call a stale check current", () => {
 it("says a failed check could not run, with the last good one, and offers a retry", () => {
   const view = describe({ ...base, status: { ...status, check_failed: true, checked_at: at("10:39") } });
   expect(view.rows[0]).toMatchObject({
-    text: "Couldn't check for updates just now",
+    text: "Couldn't check for updates right now",
     detail: "Last successful check: 10:32",
     tone: "off",
   });
@@ -89,7 +89,7 @@ it("says a failed check could not run, with the last good one, and offers a retr
 it("says there has been no successful check yet, and checks while the first answer is awaited", () => {
   const never = describe({ ...base, status: { ...status, last_ok_at: null, check_failed: true } });
   expect(never.rows[0]).toMatchObject({
-    text: "Couldn't check for updates just now",
+    text: "Couldn't check for updates right now",
     detail: "No successful check yet.",
   });
   const first = describe({ ...base, status: { ...status, last_ok_at: null, checked_at: null } });
@@ -113,8 +113,8 @@ it("gives Heinzel and each plugin its own line when they differ", () => {
   expect(view.rows.map((row) => row.text)).toEqual([
     "Heinzel 0.9.28 is available",
     "heinzel-weather 0.9.3 is available",
-    "heinzel-google is pinned to 0.9.1 and isn't updated automatically",
-    "heinzel-acme is installed from the Heinzel catalog source and is not followed automatically yet",
+    "heinzel-google is pinned to 0.9.1; hz doesn't update it",
+    "heinzel-acme is installed from the Heinzel catalog source and isn't followed for updates yet",
   ]);
   expect(view.count).toBe(2);
   expect(view.tone).toBe("warn");
@@ -128,7 +128,7 @@ it("keeps core current and a held plugin from showing green", () => {
   expect(view.tone).toBe("off");
   expect(view.rows[0]?.tone).toBe("ok");
   expect(view.rows.map((row) => row.text)).toContain(
-    "heinzel-google is pinned to 0.9.1 and isn't updated automatically",
+    "heinzel-google is pinned to 0.9.1; hz doesn't update it",
   );
 });
 
@@ -145,8 +145,8 @@ it("describes folders and links, progress, and a failed update with its reason",
     }),
   ).toEqual(
     expect.arrayContaining([
-      "a is installed from a folder and is not followed automatically yet",
-      "b is installed from a link and is not followed automatically yet",
+      "a is installed from a folder and isn't followed for updates yet",
+      "b is installed from a link and isn't followed for updates yet",
     ]),
   );
   expect(describe({ ...base, phase: "Installing" }).rows[0]).toMatchObject({ text: "Installing", busy: true });

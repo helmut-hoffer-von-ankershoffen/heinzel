@@ -64,7 +64,7 @@ it("keeps a current core neutral because an empty plan cannot establish every pl
     expect(icon).not.toHaveClass("animate-pulse", "text-bad");
   });
   await userEvent.setup().hover(icon);
-  expect(await screen.findByText("Couldn't check plugin updates just now")).toBeInTheDocument();
+  expect(await screen.findByText("Couldn't check plugin updates right now")).toBeInTheDocument();
   const expectedDate = new Date(status.installed_at).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -255,7 +255,7 @@ it("names the plugins from git or a folder that are updated by hand", async () =
   await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
   expect(
     await screen.findByText(
-      "heinzel-crm is installed from the Heinzel catalog source and is not followed automatically yet",
+      "heinzel-crm is installed from the Heinzel catalog source and isn't followed for updates yet",
     ),
   ).toBeInTheDocument();
 });
