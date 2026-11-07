@@ -168,7 +168,8 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
         </ul>
         <ProviderNavigation />
       </nav>
-      <div className="mt-4 flex shrink-0 flex-col">
+      {/* Spaced from the navigation only while it holds something: an empty slot leaves no band behind. */}
+      <div className="not-empty:mt-4 flex shrink-0 flex-col">
         <ViewSlot slot="sidebar" />
         <StatusItems slot="sidebar" className="pb-1" />
       </div>
@@ -405,7 +406,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
         "relative flex items-center gap-1",
         // The compact controls determine their own height; the divider stays above the whole cluster.
         "shrink-0 border-t-[0.5px] border-foreground/20 [&>button]:shrink-0",
-        compact ? "w-full flex-col gap-1 py-2" : "-mx-2 mt-2 h-[60px] px-2",
+        compact ? "w-full flex-col gap-1 py-2" : "-mx-2 h-12 px-2",
       )}
     >
       {open &&
