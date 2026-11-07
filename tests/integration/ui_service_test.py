@@ -516,10 +516,12 @@ def test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loadi
             prefix=service.prefix,
             is_tool=True,
             startup_state_matches=lambda: True,
+            clear_stale_startup_pending=lambda: False,
             tool_destination=lambda: (service.prefix.parent, service.executable.parent),
         ),
     )
     created = WebService.for_user(kernel)
+    assert created.repair is kernel.resolve(Installation).clear_stale_startup_pending
     assert created.prefix == service.prefix
     assert created.uv == service.prefix / "bin/uv"
     assert created.which("launchctl") == "/bin/launchctl"
@@ -823,6 +825,7 @@ def test_real_user_factory_binds_profile_and_refuses_process_behavior_before_man
             prefix=selected.prefix,
             is_tool=True,
             startup_state_matches=lambda: True,
+            clear_stale_startup_pending=lambda: False,
             tool_destination=lambda: (selected.prefix.parent, selected.executable.parent),
         ),
     )

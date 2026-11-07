@@ -131,6 +131,7 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0133](0133-owned-host-integrations-join-maintenance.md) Owned host integrations join one maintenance inventory | proposed · 4 Nov<br>partial |  |
 | [0134](0134-promote-signed-core-release-artifacts-to-pypi.md) Promote signed core release artifacts to PyPI | proposed · 5 Nov<br>partial |  |
 | [0135](0135-distribute-a-managed-macos-desktop-app.md) Distribute a managed macOS desktop app | proposed · 6 Nov<br>planned |  |
+| [0137](0137-tagged-git-plugins-update-automatically-with-what-they-need.md) Tagged git plugins update automatically, with what they need | proposed · 7 Nov<br>built |  |
 
 </div>
 <!-- adr-index:end -->

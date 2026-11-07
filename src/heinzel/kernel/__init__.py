@@ -164,6 +164,7 @@ from heinzel.kernel._git import (
     check_repository_url,
     git_command,
 )
+from heinzel.kernel._head_refresh import HeadRefresh, WebHeadRefresh
 from heinzel.kernel._host_maintenance import (
     HostIntegration,
     HostIntegrationScope,
@@ -301,6 +302,7 @@ from heinzel.kernel._protocols import (
 )
 from heinzel.kernel._release import (
     EdgeRelease,
+    PluginNews,
     PluginRelease,
     PluginReleases,
     ReleaseCache,
@@ -540,6 +542,7 @@ __all__ = [
     "FreeBusy",
     "GitRunner",
     "GraphicWidget",
+    "HeadRefresh",
     "HealthLet",
     "HeinzelError",
     "Homebrew",
@@ -616,6 +619,7 @@ __all__ = [
     "Person",
     "PlaybookLet",
     "PlaybookSetup",
+    "PluginNews",
     "PluginRelease",
     "PluginReleases",
     "PostedMessage",
@@ -735,6 +739,7 @@ __all__ = [
     "ViewLet",
     "ViewSlot",
     "Weather",
+    "WebHeadRefresh",
     "WebOverview",
     "Widget",
     "WidgetAction",

@@ -5,8 +5,8 @@ from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import Config, Kernel, Module, Settings
-from heinzel.kernel import PersistentWeb
+from heinzel import Config, HeinzelError, Kernel, Module, Settings
+from heinzel.kernel import HeadRefresh, PersistentWeb, WebHeadRefresh
 from heinzel.modules.ui._service import WebChange, WebRestart, WebService, WebStatus
 
 module = Module("ui", "Open the web workspace or manage its optional persistent service.")
@@ -26,6 +26,29 @@ def _persistent_web(kernel: Kernel) -> PersistentWeb:
 
 
 module.service(PersistentWeb, _persistent_web)
+
+
+def _web_head_refresh(kernel: Kernel) -> WebHeadRefresh:
+    def refresh(target: str) -> HeadRefresh:
+        settings = Config.load(Path.home()).settings(Settings, "hz")
+        try:
+            (settings.state_dir / "ui/service.json").lstat()
+        except FileNotFoundError:
+            return HeadRefresh(head="web", status="not-installed")
+        except OSError as exc:
+            return HeadRefresh(head="web", status="failed", detail=f"The web service record can't be read ({exc}).")
+        try:
+            service = kernel.resolve(WebService)
+        except (OSError, HeinzelError) as exc:
+            return HeadRefresh(
+                head="web", status="failed", detail=f"The web service can't be inspected ({exc}). Run `hz ui status`."
+            )
+        return service.refresh(target)
+
+    return WebHeadRefresh(refresh=refresh)
+
+
+module.service(WebHeadRefresh, _web_head_refresh)
 
 
 @module.operation(read_only=False, heads={"cli"}, audience="everyday")
