@@ -157,3 +157,40 @@ it("keeps a deliberate pin unchanged and does not restart or reload an unchanged
   expect(transport.reload).not.toHaveBeenCalled();
   expect(pendingUpdate()).toBeNull();
 });
+
+it("tells the server's steps, each plugin among them, then the app's own restart, files and reload", async () => {
+  const { transport } = setup();
+  transport.install = vi.fn(async (_signal, onPhase) => {
+    onPhase?.({ id: "install", label: "Installing the update", state: "running" });
+    onPhase?.({ id: "plugin:heinzel-acme", label: "Plugin heinzel-acme", state: "pending" });
+    onPhase?.({ id: "install", label: "Installing the update", state: "done" });
+    onPhase?.({ id: "plugin:heinzel-acme", label: "Plugin heinzel-acme", state: "warn", detail: "Held back at 1.0.0" });
+    return result;
+  });
+  const reports: { id: string; state: string; detail?: string }[][] = [];
+  await startUpdate(new AbortController().signal, vi.fn(), transport, (phases) => reports.push(phases));
+  const last = reports.at(-1) ?? [];
+  expect(last.map(({ id, state }) => [id, state])).toEqual([
+    ["install", "done"],
+    ["plugin:heinzel-acme", "warn"],
+    ["restart", "done"],
+    ["frontend", "done"],
+    ["reload", "running"],
+  ]);
+  expect(last[1]?.detail).toBe("Held back at 1.0.0");
+});
+
+it("marks the app's step that failed with the error that stopped the update", async () => {
+  const { transport } = setup();
+  transport.frontend = vi.fn(async () => {
+    throw new Error("No frontend.");
+  });
+  const reports: { id: string; state: string; detail?: string }[][] = [];
+  await expect(
+    startUpdate(new AbortController().signal, vi.fn(), transport, (phases) => reports.push(phases)),
+  ).rejects.toThrow("No frontend.");
+  expect(reports.at(-1)?.find((phase) => phase.id === "frontend")).toMatchObject({
+    state: "failed",
+    detail: "No frontend.",
+  });
+});

@@ -1083,6 +1083,7 @@ const en = {
   "fromClaude.source.code-project": "Claude Code, project",
   "fromClaude.source.code-plugin": "Claude Code, plugin",
   "updates.action": "Update now",
+  "updates.dialogTitle": "Updating Heinzel and its plugins",
   "updates.manualAction": "Manually update…",
   "updates.known": "Known updates: {updates}",
   "updates.installedVersion": "Installed: hz {version}",

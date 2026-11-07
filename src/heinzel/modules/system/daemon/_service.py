@@ -63,6 +63,7 @@ from heinzel.kernel import (
     tick_interval,
 )
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
+from heinzel.modules.system._phases import Phases
 from heinzel.modules.system.daemon import _process_birth
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._abandoned_mutation import host_boot, marker_token_matches, mutation_record
@@ -89,7 +90,6 @@ from heinzel.modules.system.daemon._ownership import (
     systemd_owned,
     tick_environment,
 )
-from heinzel.modules.system.daemon._phases import Phases
 from heinzel.modules.system.daemon._runtime import (
     Outcome,
     Runner,
