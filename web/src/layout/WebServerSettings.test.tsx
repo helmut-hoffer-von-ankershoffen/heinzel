@@ -30,7 +30,7 @@ it("finds Web server under This computer and confirms once before verifying a re
   await user.click(restart);
   await user.click(within(within(dialog).getByRole("alertdialog")).getByRole("button", { name: "Restart web server" }));
   await waitFor(() =>
-    expect(within(dialog).getByRole("status")).toHaveTextContent("Waiting for the replacement server"),
+    expect(within(dialog).getByRole("status")).toHaveTextContent("Waiting for hz to come back"),
   );
   expect(within(dialog).queryByText("Web server restarted and reconnected.")).not.toBeInTheDocument();
   const post = calls.filter((request) => request.url.endsWith("/api/restart"));
