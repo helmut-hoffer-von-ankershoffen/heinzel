@@ -5,6 +5,7 @@ Every case uses a fake home and a fake system Applications folder; bundles are i
 
 import os
 import plistlib
+import shutil
 import struct
 import sys
 from pathlib import Path
@@ -217,3 +218,99 @@ def test_the_install_message_gives_the_true_reason_the_app_is_not_in_application
     assert f"installed at {where / desktop.BUNDLE_NAME}" in text
     for key, words in _REASONS.items():
         assert (words in text) is (key == reason)
+
+
+def _record(home: Path) -> tuple[Path, Path]:
+    config = home / ".config" / "heinzel"
+    return config / desktop._RECEIPT, config / desktop._BINDING
+
+
+def _orphan(mac) -> tuple[Path, Path, Path]:
+    """Install, then remove the app by hand as Finder's Move to Trash does, leaving our record behind."""
+    home, system, executable = mac
+    assert desktop.install_desktop("1.0.0", executable, home=home) == "installed"
+    shutil.rmtree(system / desktop.BUNDLE_NAME)
+    return home, system, executable
+
+
+def test_install_after_the_app_was_moved_to_the_trash_by_hand_sets_the_old_record_aside(mac):
+    home, system, executable = _orphan(mac)
+    receipt, binding = _record(home)
+    old = (receipt.read_bytes(), binding.read_bytes())
+    notes: list[str] = []
+    assert desktop.install_desktop("1.0.0", executable, home=home, notes=notes) == "installed"
+    assert _bundles(home, system) == [system / desktop.BUNDLE_NAME]
+    backups = sorted(receipt.parent.glob("*.orphaned-*"))
+    assert [path.name.split(".orphaned-")[0] for path in backups] == [receipt.name, binding.name]
+    assert {path.read_bytes() for path in backups} == set(old)
+    assert len(notes) == 2
+    assert all("removed without hz app uninstall" in note for note in notes)
+    assert desktop.desktop_location(home) == system / desktop.BUNDLE_NAME
+
+
+def test_uninstall_after_the_app_was_moved_to_the_trash_by_hand_finishes(mac):
+    home, _system, _executable = _orphan(mac)
+    receipt, binding = _record(home)
+    notes: list[str] = []
+    assert desktop.uninstall_desktop(home=home, notes=notes) is None
+    assert not receipt.exists()
+    assert not binding.exists()
+    assert len(list(receipt.parent.glob("*.orphaned-*"))) == 2
+    assert notes
+    assert desktop.uninstall_desktop(home=home) is None
+
+
+def test_a_hand_copied_app_is_named_in_the_error_and_replace_moves_it_to_the_trash(mac):
+    home, system, executable = mac
+    copied = system / desktop.BUNDLE_NAME
+    (copied / "Contents").mkdir(parents=True)
+    (copied / "Contents" / "mine").write_text("keep me")
+    (home / ".Trash").mkdir()
+    receipt, _binding = _record(home)
+    receipt.parent.mkdir(parents=True)
+    receipt.parent.parent.chmod(0o700)
+    receipt.parent.chmod(0o700)
+    receipt.write_text("{}")
+    receipt.chmod(0o600)
+    with pytest.raises(desktop.DesktopInstallationError) as failure:
+        desktop.install_desktop("1.0.0", executable, home=home)
+    assert str(copied) in str(failure.value)
+    assert "--replace" in str(failure.value)
+    assert (copied / "Contents" / "mine").read_text() == "keep me"
+
+    notes: list[str] = []
+    assert desktop.install_desktop("1.0.0", executable, home=home, replace=True, notes=notes) == "installed"
+    (trashed,) = (home / ".Trash").iterdir()
+    assert (trashed / "Contents" / "mine").read_text() == "keep me"
+    assert (copied / "release").read_text() == "1.0.0"
+    assert any("to the Trash" in note for note in notes)
+
+
+def test_a_replaced_app_names_the_receipt_it_does_not_match(mac):
+    home, system, executable = mac
+    desktop.install_desktop("1.0.0", executable, home=home)
+    bundle = system / desktop.BUNDLE_NAME
+    shutil.rmtree(bundle)
+    bundle.mkdir()
+    receipt, _binding = _record(home)
+    with pytest.raises(desktop.DesktopInstallationError) as failure:
+        desktop.install_desktop("1.0.0", executable, home=home)
+    assert f"{bundle} is not the copy recorded in {receipt}" in str(failure.value)
+
+
+def test_replace_never_moves_the_app_this_installer_owns(mac):
+    home, system, executable = mac
+    (home / ".Trash").mkdir()
+    desktop.install_desktop("1.0.0", executable, home=home)
+    inode = (system / desktop.BUNDLE_NAME).stat().st_ino
+    assert desktop.install_desktop("1.0.0", executable, home=home, replace=True) == "current"
+    assert (system / desktop.BUNDLE_NAME).stat().st_ino == inode
+    assert not list((home / ".Trash").iterdir())
+
+
+def test_a_pending_journal_keeps_the_record_for_recovery(mac):
+    home, _system, _executable = _orphan(mac)
+    receipt, _binding = _record(home)
+    (receipt.parent / desktop._JOURNAL).write_text("{}")
+    assert desktop._clear_orphaned_record(home, receipt.parent) == []
+    assert receipt.exists()

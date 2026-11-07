@@ -11,6 +11,7 @@ import stat
 import struct
 import subprocess
 import sys
+import time
 from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
@@ -38,6 +39,25 @@ _JOURNAL = "desktop-installation-journal.json"
 _USE_LOCK = "desktop-use.lock"
 _STAGE_PREFIX = ".heinzel-desktop-"
 _CONFLICT = "The desktop bundle or its metadata is present without a matching ownership receipt."
+# Every message the ownership checks and their recovery print, in one place (the CLI copy is being redesigned).
+_REPLACE_HINT = (
+    "Run hz app install --replace: it moves that app to the Trash (nothing is deleted) and installs a verified copy."
+)
+_MSG_NOT_PRIVATE = "{path} is not a private file owned by this user."
+_MSG_TOO_LARGE = "{path} is larger than an install record can be."
+_MSG_ORPHANED = "Found {found} but no app at {bundle}. Run hz app uninstall to clear the stale record."
+_MSG_NO_RECORD = "{bundle} has no install record ({missing} is missing): it was not installed by hz app install. "
+_MSG_MISMATCH = "{bundle} is not the copy recorded in {receipt}: it was replaced, restored or copied by hand. "
+_MSG_FOREIGN = (
+    "{target} is already there and was not installed by hz app install. Run hz app install --replace to move it to "
+    "the Trash (nothing is deleted) and install a verified copy."
+)
+_MSG_SET_ASIDE = "The desktop app was removed without hz app uninstall; kept its old record as {backup}."
+_MSG_BACKUP_EXISTS = "{backup} is already there; move it away, then run the command again."
+_MSG_REPLACE_RUNNING = "Quit Heinzelmännchen ({bundle}) before replacing it."
+_MSG_TRASH_FAILED = "Move {bundle} to the Trash in Finder, then run hz app install again ({reason})."
+_MSG_TRASHED = "Moved {bundle}, which hz app install did not install, to the Trash as {name}."
+_MSG_JOURNAL_KEPT = "{error} An interrupted install left {journal}; it was kept as it is."
 _RENAME_SWAP = 0x00000002
 _RENAME_EXCL = 0x00000004
 _MAX_METADATA_BYTES = 4096
@@ -163,7 +183,7 @@ def _locate(home: Path, config: Path) -> tuple[Path, _Receipt | None]:
     Raises:
         DesktopInstallationError: If the receipt matches neither location or the target is not ours.
     """
-    candidates = (SYSTEM_APPLICATIONS / BUNDLE_NAME, home / "Applications" / BUNDLE_NAME)
+    candidates = _bundles(home)
     for bundle in candidates:
         if os.path.lexists(bundle):
             try:
@@ -174,10 +194,7 @@ def _locate(home: Path, config: Path) -> tuple[Path, _Receipt | None]:
                 return bundle, record
     target = candidates[0] if system_applications_usable() else candidates[1]
     if target == candidates[0] and os.path.lexists(target) and _read_metadata(config / _RECEIPT) is None:
-        msg = (
-            f"{target} is already there and was not installed by hz app install. Move it to the Trash, then run "
-            "hz app install again."
-        )
+        msg = _MSG_FOREIGN.format(target=target)
         raise DesktopInstallationError(msg)
     return target, _owned_installation(target, config)
 
@@ -237,11 +254,18 @@ def _read_metadata(path: Path) -> bytes | None:
     with os.fdopen(fd, "rb") as source:
         info = os.fstat(source.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_mode & 0o077:
-            raise DesktopInstallationError(_CONFLICT)
+            msg = _MSG_NOT_PRIVATE.format(path=path)
+            raise _conflict(msg)
         contents = source.read(_MAX_METADATA_BYTES + 1)
         if len(contents) > _MAX_METADATA_BYTES:
-            raise DesktopInstallationError(_CONFLICT)
+            msg = _MSG_TOO_LARGE.format(path=path)
+            raise _conflict(msg)
         return contents
+
+
+def _conflict(detail: str) -> DesktopInstallationError:
+    """The ownership error, naming what was found where and what to do about it."""
+    return DesktopInstallationError(f"{_CONFLICT} {detail}")
 
 
 def _owned_installation(bundle: Path, config: Path) -> _Receipt | None:
@@ -252,13 +276,18 @@ def _owned_installation(bundle: Path, config: Path) -> _Receipt | None:
     except FileNotFoundError as exc:
         if receipt is None and binding is None:
             return None
-        raise DesktopInstallationError(_CONFLICT) from exc
+        found = " and ".join(str(config / name) for name, data in ((_RECEIPT, receipt), (_BINDING, binding)) if data)
+        msg = _MSG_ORPHANED.format(found=found, bundle=bundle)
+        raise _conflict(msg) from exc
     if receipt is None or binding is None:
-        raise DesktopInstallationError(_CONFLICT)
+        missing = config / (_RECEIPT if receipt is None else _BINDING)
+        msg = _MSG_NO_RECORD.format(bundle=bundle, missing=missing)
+        raise _conflict(msg + _REPLACE_HINT)
+    mismatch = _conflict(_MSG_MISMATCH.format(bundle=bundle, receipt=config / _RECEIPT) + _REPLACE_HINT)
     try:
         record = _Receipt.model_validate_json(receipt)
     except ValidationError as exc:
-        raise DesktopInstallationError(_CONFLICT) from exc
+        raise mismatch from exc
     if (
         not stat.S_ISDIR(info.st_mode)
         or info.st_uid != os.getuid()
@@ -269,8 +298,74 @@ def _owned_installation(bundle: Path, config: Path) -> _Receipt | None:
         or "\0" in record.executable
         or binding != record.binding()
     ):
-        raise DesktopInstallationError(_CONFLICT)
+        raise mismatch
     return record
+
+
+def _bundles(home: Path) -> tuple[Path, Path]:
+    return (SYSTEM_APPLICATIONS / BUNDLE_NAME, home / "Applications" / BUNDLE_NAME)
+
+
+def _set_aside(path: Path, stamp: str) -> Path:
+    backup = path.with_name(f"{path.name}.orphaned-{stamp}")
+    if os.path.lexists(backup):
+        msg = _MSG_BACKUP_EXISTS.format(backup=backup)
+        raise DesktopInstallationError(msg)
+    path.rename(backup)
+    return backup
+
+
+def _clear_orphaned_record(home: Path, config: Path) -> list[str]:
+    """Set our own install record aside when the app it describes is gone from both folders.
+
+    This happens when the app was moved to the Trash by hand (macOS offers only that for an app it calls damaged).
+    Only the receipt and the binding, both written by this installer, are renamed and kept as backups; nothing is
+    deleted and no other file is touched. A pending transaction journal is left to recovery.
+
+    Returns:
+        What was set aside, in plain words.
+    """
+    if os.path.lexists(config / _JOURNAL) or any(os.path.lexists(bundle) for bundle in _bundles(home)):
+        return []
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    notes: list[str] = []
+    for name in (_RECEIPT, _BINDING):
+        if _read_metadata(config / name) is not None:
+            backup = _set_aside(config / name, stamp)
+            notes.append(_MSG_SET_ASIDE.format(backup=backup))
+    if notes:
+        _sync_directory(config)
+    return notes
+
+
+def _trash_unowned(home: Path, config: Path) -> list[str]:
+    """Move every Heinzelmaennchen.app this installer does not own to the Trash; never delete it.
+
+    Returns:
+        What was moved, in plain words.
+
+    Raises:
+        DesktopInstallationError: If such an app is running or cannot be moved to the Trash.
+    """
+    notes: list[str] = []
+    for bundle in _bundles(home):
+        if not os.path.lexists(bundle):
+            continue
+        with suppress(DesktopInstallationError):
+            if _owned_installation(bundle, config) is not None:
+                continue
+        if _in_use(bundle):
+            msg = _MSG_REPLACE_RUNNING.format(bundle=bundle)
+            raise DesktopInstallationError(msg)
+        trash = home / ".Trash" / f"Heinzelmaennchen {time.strftime('%Y-%m-%d %H.%M.%S')}.app"
+        try:
+            _rename(bundle, trash)
+        except OSError as exc:
+            msg = _MSG_TRASH_FAILED.format(bundle=bundle, reason=exc.strerror)
+            raise DesktopInstallationError(msg) from exc
+        _sync_directory(bundle.parent)
+        notes.append(_MSG_TRASHED.format(bundle=bundle, name=trash.name))
+    return notes
 
 
 def _in_use(bundle: Path) -> bool:
@@ -520,7 +615,11 @@ def _recover_before_use(home: Path, config: Path) -> bool:
     with _desktop_use(config) as locked:
         if not locked or _any_in_use(home):
             return False
-        _recover_transaction(home / "Applications" / BUNDLE_NAME, config)
+        try:
+            _recover_transaction(home / "Applications" / BUNDLE_NAME, config)
+        except DesktopInstallationError as exc:
+            msg = _MSG_JOURNAL_KEPT.format(error=exc, journal=config / _JOURNAL)
+            raise DesktopInstallationError(msg) from exc
     return True
 
 
@@ -556,22 +655,32 @@ def desktop_location(home: Path | None = None) -> Path | None:
     return bundle if record is not None and bundle.is_dir() else None
 
 
-def install_desktop(
+def install_desktop(  # noqa: PLR0913 - keyword-only options of one CLI command
     version: str,
     executable: Path,
     *,
     update_only: bool = False,
     home: Path | None = None,
     keep_quarantine: bool = False,
+    replace: bool = False,
+    notes: list[str] | None = None,
 ) -> DesktopInstallStatus:
-    """Install or refresh a verified desktop release, or defer if the bundle is in use."""
+    """Install or refresh a verified desktop release, or defer if the bundle is in use.
+
+    A record whose app is gone is set aside first. With `replace`, an app this installer did not install is moved to
+    the Trash before the install. What was set aside or moved is appended to `notes`.
+    """
     _check_platform()
     home = (home or Path.home()).resolve(strict=True)
+    notes = [] if notes is None else notes
     with _locked_config(home) as config:
         if os.path.lexists(home / "Applications"):
             _owned_directory(home / "Applications")
         if not _recover_before_use(home, config):
             return "deferred"
+        if replace and not update_only:
+            notes += _trash_unowned(home, config)
+        notes += _clear_orphaned_record(home, config)
         bundle, existing = _locate(home, config)
         if update_only:
             if existing is None:
@@ -643,8 +752,10 @@ def _install_release(  # noqa: PLR0913 - the transaction needs each of these
     return "updated" if existing else "installed"
 
 
-def uninstall_desktop(*, home: Path | None = None) -> Path | None:
+def uninstall_desktop(*, home: Path | None = None, notes: list[str] | None = None) -> Path | None:
     """Remove an owned, stopped desktop bundle and its binding from whichever Applications folder holds it.
+
+    A record whose app is already gone is set aside instead (noted in `notes`), so uninstall always finishes.
 
     Returns:
         Where the removed app was, or None when no owned app was installed.
@@ -654,12 +765,14 @@ def uninstall_desktop(*, home: Path | None = None) -> Path | None:
     """
     _check_platform()
     home = (home or Path.home()).resolve(strict=True)
+    notes = [] if notes is None else notes
     with _locked_config(home) as config:
         if os.path.lexists(home / "Applications"):
             _owned_directory(home / "Applications")
         if not _recover_before_use(home, config):
             msg = "Quit Heinzelmännchen before uninstalling the desktop app."
             raise DesktopInstallationError(msg)
+        notes += _clear_orphaned_record(home, config)
         bundle, existing = _locate(home, config)
         if existing is None:
             return None

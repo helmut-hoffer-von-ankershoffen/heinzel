@@ -88,6 +88,12 @@ def _print_location(output: Console, error: Console) -> None:
         )
 
 
+def _print_notes(output: Console, notes: list[str]) -> None:
+    """Say what the installer set aside or moved before it did its main work."""
+    for note in notes:
+        output.print(note, markup=False)
+
+
 def _trust_note(*, keep_quarantine: bool) -> str:
     """Say honestly what was checked and how macOS will treat the first open."""
     opening = (
@@ -144,6 +150,14 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
                 "System Settings, Privacy & Security).",
             ),
         ] = False,
+        replace: Annotated[
+            bool,
+            typer.Option(
+                "--replace",
+                help="Move a Heinzelmaennchen.app that hz app install did not install to the Trash (nothing is "
+                "deleted), then install a verified copy.",
+            ),
+        ] = False,
     ) -> None:
         """Install the desktop app for this version of Heinzel.
 
@@ -155,11 +169,16 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         """
         from heinzel.heads._desktop_installation import install_desktop  # noqa: PLC0415 - native install only
 
+        notes: list[str] = []
         try:
-            state = install_desktop(__version__, desktop_executable(kernel), keep_quarantine=keep_quarantine)
+            state = install_desktop(
+                __version__, desktop_executable(kernel), keep_quarantine=keep_quarantine, replace=replace, notes=notes
+            )
         except (HeinzelError, OSError, SubprocessError) as exc:
+            _print_notes(output, notes)
             error.print(message("Desktop installation failed.", str(exc)))
             raise typer.Exit(1) from exc
+        _print_notes(output, notes)
         if state == "deferred":
             error.print("Quit the Heinzel desktop app, then run hz app install again.")
             raise typer.Exit(1)
@@ -191,11 +210,14 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         """
         from heinzel.heads._desktop_installation import uninstall_desktop  # noqa: PLC0415 - native removal only
 
+        notes: list[str] = []
         try:
-            removed = uninstall_desktop()
+            removed = uninstall_desktop(notes=notes)
         except (HeinzelError, OSError, SubprocessError) as exc:
+            _print_notes(output, notes)
             error.print(message("Desktop uninstall failed.", str(exc)))
             raise typer.Exit(1) from exc
+        _print_notes(output, notes)
         output.print(
             f"Heinzel desktop app removed from {removed}." if removed else "The Heinzel desktop app is not installed.",
             markup=False,

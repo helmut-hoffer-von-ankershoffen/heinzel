@@ -234,6 +234,7 @@ $ hz app install [OPTIONS]
 **Options**:
 
 * `--keep-quarantine`: Mark the app as downloaded so macOS asks once before the first open (Open Anyway in System Settings, Privacy &amp; Security).
+* `--replace`: Move a Heinzelmaennchen.app that hz app install did not install to the Trash (nothing is deleted), then install a verified copy.
 * `--help`: Show this message and exit.
 
 ### `hz app refresh`
