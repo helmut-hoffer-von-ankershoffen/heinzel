@@ -31,7 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from heinzel import HeinzelError
 from heinzel.kernel import Installation, installation_mutation_paths
@@ -72,23 +72,26 @@ def mutation_record(token: str, pid: int, boot: str | None) -> dict[str, str | i
 def parse_marker(content: bytes) -> MutationOwner | None:
     """Accept only the exact indented forms written by `DaemonService._write_state`, else None."""
     try:
-        value = json.loads(content)
+        parsed: object = json.loads(content)
     except (ValueError, UnicodeError):
         return None
-    if not isinstance(value, dict) or content != (json.dumps(value, indent=2) + "\n").encode():
+    if not isinstance(parsed, dict) or content != (json.dumps(parsed, indent=2) + "\n").encode():
         return None
+    value = cast("dict[str, object]", parsed)
     token, pid, boot = value.get("token"), value.get("pid"), value.get("boot")
     if not isinstance(token, str) or _TOKEN.fullmatch(token) is None:
         return None
     if set(value) == {"token"}:
         return MutationOwner(token, None, None)
-    valid = (
-        not set(value) - {"token", "pid", "boot"}
-        and type(pid) is int
-        and 0 < pid <= _MAX_PID
-        and (boot is None or (isinstance(boot, str) and _BOOT.fullmatch(boot) is not None))
-    )
-    return MutationOwner(token, pid, boot) if valid else None
+    if (
+        set(value) - {"token", "pid", "boot"}
+        or not isinstance(pid, int)
+        or type(pid) is not int
+        or not 0 < pid <= _MAX_PID
+        or (boot is not None and not (isinstance(boot, str) and _BOOT.fullmatch(boot) is not None))
+    ):
+        return None
+    return MutationOwner(token, pid, boot if isinstance(boot, str) else None)
 
 
 def marker_token_matches(content: bytes, token: str) -> bool:
