@@ -5,7 +5,8 @@ import os
 import re
 import stat
 import subprocess
-from collections.abc import Generator, Sequence
+import time
+from collections.abc import Callable, Generator, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,9 @@ from heinzel.kernel._private_control import private_directory, private_lock
 from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
 from heinzel.kernel._uninstall_recovery import manager_identity_matches, manager_properties
+
+STOP_SECONDS = 5.0
+STOP_POLL_SECONDS = 0.1
 
 
 def host_maintenance_directory(prefix: Path) -> Path:
@@ -164,8 +168,17 @@ MAX_MANAGER_BYTES = 1_000_000
 class HostIntegrationRemoval:
     """Runtime-only verified stop/final-delete plan; recovery retains only the descriptor's plain data."""
 
-    def __init__(self, integration: HostIntegration, manager: HostServiceManager, locks: MaintenanceLocks) -> None:
+    def __init__(
+        self,
+        integration: HostIntegration,
+        manager: HostServiceManager,
+        locks: MaintenanceLocks,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
         self.integration, self.manager, self.locks = integration, manager, locks
+        self._clock, self._sleep = clock, sleep
         self._verify_files()
         self._state = self._observe()
 
@@ -280,13 +293,26 @@ class HostIntegrationRemoval:
             )
             if self.manager.command(command).returncode:
                 self._refuse()
-        loaded, pid, active = self._observe()
-        if active or pid is not None or (self.integration.platform == "darwin" and loaded):
-            self._refuse()
+        loaded = self._settled()
         if self.integration.platform == "linux" and loaded:
             result = self.manager.command(["/usr/bin/systemctl", "--user", "is-enabled", self.integration.name])
             if result.stdout.strip() != "disabled":
                 self._refuse()
+
+    def _settled(self) -> bool:
+        """Bound native stop settlement; every observation retains exact file and manager ownership."""
+        deadline = self._clock() + STOP_SECONDS
+        while True:
+            self._verify_files()
+            loaded, pid, active = self._observe()
+            if self._clock() > deadline:
+                self._refuse()
+            if not active and pid is None and not (self.integration.platform == "darwin" and loaded):
+                return loaded
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                self._refuse()
+            self._sleep(min(STOP_POLL_SECONDS, remaining))
 
     def quiescent(self) -> None:
         """Recheck exact files and no worker execution immediately before removing its SDK."""
