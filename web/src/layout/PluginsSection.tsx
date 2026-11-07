@@ -296,6 +296,12 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
           ...(candidate.installed_version ? [`${t("plugins.field.replaces")} ${candidate.installed_version}`] : []),
         ].join(" · ")}
       </p>
+      {/* Said before it starts: the plugins it installs with this one (one step each), and those it only offers. */}
+      {candidate.also && (
+        <p className="mt-1 font-medium" data-testid="plugin-also">
+          {candidate.also}
+        </p>
+      )}
       <details className="mt-1">
         <summary className="cursor-pointer text-muted-foreground">{t("plugins.sourceDetails")}</summary>
         <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">

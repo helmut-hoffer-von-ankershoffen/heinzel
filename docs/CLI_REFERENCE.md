@@ -3043,6 +3043,7 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `operation`: (expert) Read the status and result of a...
 * `pending`: (expert) List plugins changed on this...
 * `remove`: (expert) Remove a plugin.
+* `repair`: (expert) Install every plugin an installed...
 * `sdk`: (expert) Export the versioned plugin view...
 * `search`: (expert) Find plugins to install:...
 
@@ -3299,6 +3300,23 @@ $ hz system plugin remove [OPTIONS] {distribution}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin repair`
+
+(expert) Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
+
+**Usage**:
+
+```console
+$ hz system plugin repair [OPTIONS]
+```
+
+**Options**:
+
+* `--automatic / --no-automatic`: As the automatic updater asks: try each missing plugin once per version of the plugin that requires it, so a failure isn&#x27;t retried every half hour.  [default: no-automatic]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

@@ -30,7 +30,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from heinzel import HeinzelError, Kernel, Progress, __version__
+from heinzel import HeinzelError, Kernel, NoticeKind, Notifications, Progress, ResolveWhen, __version__
 from heinzel.kernel import (
     CORE_DISTRIBUTION,
     ENTRY_POINT_GROUP,
@@ -59,9 +59,11 @@ from heinzel.modules.system.plugin._models import (
     PluginInfo,
     PluginKind,
     PluginLayer,
+    PluginNeed,
     PluginOperation,
     PluginPending,
     PluginPendingChange,
+    PluginRepair,
     PluginSearch,
     PluginSettings,
     Source,
@@ -172,6 +174,8 @@ class PluginService:
         self._catalog_warnings: list[str] = []
         self._pending_signature: tuple[tuple[str, str, str | None], ...] = ()
         self._pending_themes: dict[str, list[str]] = {}
+        self._unreadable: set[str] = set()
+        """Installed plugin versions whose catalog entry couldn't be read for a repair, so it isn't asked again."""
         self.distributions: Mapping[str, Distribution] | None = None
         """Installed plugin distributions by canonical name; read from the entry points when None (tests set it)."""
 
@@ -333,6 +337,20 @@ class PluginService:
     def candidate(self, spec: str) -> PluginCandidate:
         """What `add` would install for `spec`, read from PyPI or GitHub and pinned where it can be.
 
+        It also says which plugins it requires that aren't installed (or are too old), each read from the same catalog
+        and installed first, and which it recommends, offered only.
+
+        Raises:
+            HeinzelError: If the source isn't one `add` takes, names a package, repository or ref that doesn't exist, or
+                requires a plugin that can't be found in a trusted catalog.
+        """
+        candidate, metadata = self._read_candidate(spec)
+        needs = self._needs(candidate, metadata)
+        return candidate.model_copy(update={"needs": needs, "also": _also(candidate, needs)})
+
+    def _read_candidate(self, spec: str) -> tuple[PluginCandidate, Metadata]:
+        """What `add` would install for `spec` alone, and what its metadata said (including what it needs).
+
         Raises:
             HeinzelError: If the source isn't one `add` takes, or names a package, repository or ref that doesn't exist.
         """
@@ -381,7 +399,7 @@ class PluginService:
         if distribution is not None and not distribution.startswith(PREFIX):
             warnings.append(f"It is named {distribution}, not {PREFIX}<name> as plugins are (ADR 0025).")
         installed = self._installed_version(distribution)
-        return PluginCandidate(
+        candidate = PluginCandidate(
             spec=spec,
             requirement=requirement,
             distribution=distribution,
@@ -396,6 +414,233 @@ class PluginService:
             installed_version=installed,
             warnings=warnings,
         )
+        return candidate, metadata
+
+    # What a plugin needs: other plugins it requires (installed first) or recommends (offered).
+
+    def _needs(self, candidate: PluginCandidate, metadata: Metadata) -> list[PluginNeed]:
+        """Every plugin `candidate` requires, dependencies first and each once, then those it recommends.
+
+        A required plugin that is installed in a matching version is `present`; one that is missing or too old is read
+        from the catalog (`hz system plugin search`), which must be first-party or the requirer's own GitHub owner, and
+        its own requirements come before it. A cycle ends where it meets a plugin already visited.
+
+        Raises:
+            HeinzelError: If a required plugin can't be read from a trusted catalog, or no version of it matches.
+        """
+        requirer = candidate.distribution or candidate.spec
+        seen: set[str] = {canonicalize_name(requirer)}
+        ordered: list[PluginNeed] = []
+        installed = self._versions_now()
+
+        def visit(declared: str, needed_by: str, owner: PluginCandidate, depth: int) -> None:
+            requirement = Requirement(declared)
+            name = canonicalize_name(requirement.name)
+            if name in seen:
+                return
+            seen.add(name)
+            have = installed.get(name)
+            install = short_name(name)
+            if have is not None and _satisfies(requirement, have):
+                ordered.append(
+                    PluginNeed(
+                        distribution=name,
+                        requirement=declared,
+                        required=True,
+                        needed_by=needed_by,
+                        state="present",
+                        installed_version=have,
+                        version=have,
+                        install=install,
+                    )
+                )
+                return
+            if depth > MAX_NEED_DEPTH:
+                msg = f"{needed_by} needs {name} through more than {MAX_NEED_DEPTH} plugins; nothing was installed."
+                raise HeinzelError(msg)
+            try:
+                found, found_metadata = self._read_candidate(install)
+            except HeinzelError as exc:
+                msg = f"{needed_by} needs {declared}, which can't be read from the plugin catalog: {exc}"
+                raise HeinzelError(msg) from exc
+            _require_trusted_need(owner, found, needed_by)
+            if found.version is not None and not _satisfies(requirement, found.version):
+                msg = (
+                    f"{needed_by} needs {declared}, but the catalog has {name} {found.version}; nothing was installed."
+                )
+                raise HeinzelError(msg)
+            for nested in found_metadata.requires:
+                visit(nested, found.distribution or name, found, depth + 1)
+            ordered.append(
+                PluginNeed(
+                    distribution=name,
+                    requirement=declared,
+                    required=True,
+                    needed_by=needed_by,
+                    state="install" if have is None else "update",
+                    installed_version=have,
+                    version=found.version,
+                    install=install,
+                    candidate=found,
+                )
+            )
+
+        for declared in metadata.requires:
+            visit(declared, requirer, candidate, 1)
+        ordered.extend(_offered(metadata.recommends, requirer, seen, installed))
+        return ordered
+
+    def _install_needs(self, candidate: PluginCandidate, phases: Phases | None) -> list[PluginNeed]:
+        """Install or update each plugin `candidate` requires that is missing or too old, in order, one step each.
+
+        Each is its own checked add, exactly as shown before confirming; one already there by now (another add
+        installed it) is left as it is. The first failure stops: later ones are `not-reached`.
+
+        Raises:
+            HeinzelError: If a required plugin fails to install; what was installed before it stays installed.
+        """
+        results: list[PluginNeed] = []
+        failed: str | None = None
+        for need in candidate.needs:
+            if not need.required or need.candidate is None:
+                results.append(need)
+                continue
+            label = _need_label(need)
+            if failed is not None:
+                results.append(need.model_copy(update={"state": "not-reached", "candidate": None}))
+                if phases is not None:
+                    phases.note(f"requires:{need.distribution}", label, "skipped", f"{failed} failed first")
+                continue
+            have = self._versions_now().get(need.distribution)
+            if have is not None and _satisfies(Requirement(need.requirement), have):
+                results.append(need.model_copy(update={"state": "present", "version": have, "candidate": None}))
+                if phases is not None:
+                    phases.note(f"requires:{need.distribution}", label, "done", f"Already installed: {have}")
+                continue
+            try:
+                with _step(phases, f"requires:{need.distribution}", label), self._mutation() as mutation:
+                    done = self._install_candidate(need.candidate, need.install, mutation, phases=None)
+            except HeinzelError as exc:
+                failed = need.distribution
+                results.append(need.model_copy(update={"state": "failed", "candidate": None, "detail": str(exc)}))
+                continue
+            version = next((p.version for p in done.plugins if _same(p.distribution, need.distribution)), need.version)
+            state = "installed" if need.state == "install" else "updated"
+            results.append(need.model_copy(update={"state": state, "version": version, "candidate": None}))
+        if failed is not None:
+            requirer = candidate.distribution or candidate.spec
+            reason = next(n.detail for n in results if n.state == "failed")
+            msg = f"{failed}, which {requirer} needs, couldn't be installed, so {requirer} wasn't either: {reason}"
+            raise HeinzelError(msg)
+        return results
+
+    def _add_confirmed(self, candidate: PluginCandidate, spec: str) -> PluginChange:
+        """Install what `candidate` requires, then it, telling one step per required plugin and its own steps.
+
+        Raises:
+            HeinzelError: If a required plugin or the plugin itself fails to install.
+        """
+        name = candidate.distribution or spec
+        plan = [(f"requires:{n.distribution}", _need_label(n)) for n in candidate.needs if n.required and n.candidate]
+        phases = Phases(
+            self._kernel.resolve(Progress),
+            [*plan, ("install", f"Installing {name}"), ("verify", "Checking that exactly it is installed")],
+        )
+        needs = self._install_needs(candidate, phases)
+        with self._mutation() as mutation:
+            change = self._install_candidate(candidate, spec, mutation, phases=phases)
+        return change.model_copy(update={"needs": needs})
+
+    def repair(self, *, automatic: bool = False) -> PluginRepair:
+        """Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
+
+        It reads what each installed plugin requires from its catalog entry (remembered per version, so a plugin is
+        read once), and installs what is missing, dependencies first, one step each. It never signs in anywhere:
+        System health still names the sign-in step of each plugin installed. `automatic` (the automatic updater) tries
+        each missing plugin once per requiring plugin's version; asked by hand, it tries again.
+
+        Raises:
+            HeinzelError: If another plugin change is running.
+        """
+        memory = _NeedsMemory(self._kernel.settings.state_dir / NEEDS_FILE)
+        results: list[PluginNeed] = []
+        installed_any = False
+        for plugin in self.installed():
+            key = f"{canonicalize_name(plugin.distribution)}@{plugin.version or ''}@{plugin.revision or ''}"
+            declared = memory.requires(key)
+            if declared is None:
+                if key in self._unreadable:
+                    continue
+                try:
+                    _found, metadata = self._read_candidate(short_name(plugin.distribution))
+                except HeinzelError:
+                    # Not in a catalog (a local or third-party install), or offline: asked again by the next process.
+                    self._unreadable.add(key)
+                    continue
+                declared = list(metadata.requires)
+                memory.remember(key, declared)
+            now = self._versions_now()
+            missing = [d for d in declared if not _satisfies(Requirement(d), now.get(_need_name(d)) or "")]
+            if not missing or (automatic and memory.tried(key)):
+                continue
+            if automatic:
+                memory.try_once(key)
+            requirer = PluginCandidate.model_validate(_bare_candidate(plugin))
+            try:
+                needs = self._needs(requirer, Metadata(name=plugin.distribution, requires=tuple(missing)))
+                with self._receipts.installing(), self._exclusive():
+                    phases = Phases(
+                        self._kernel.resolve(Progress),
+                        [(f"requires:{n.distribution}", _need_label(n)) for n in needs if n.required and n.candidate],
+                    )
+                    done = self._install_needs(requirer.model_copy(update={"needs": needs}), phases)
+            except HeinzelError as exc:
+                results.extend(
+                    PluginNeed(
+                        distribution=_need_name(d),
+                        requirement=d,
+                        required=True,
+                        needed_by=plugin.distribution,
+                        state="failed",
+                        install=short_name(Requirement(d).name),
+                        detail=str(exc),
+                    )
+                    for d in missing
+                )
+                continue
+            installed_any = installed_any or any(n.state in {"installed", "updated"} for n in done)
+            results.extend(n for n in done if n.state != "present")
+        repair = PluginRepair(needs=results, restart_required=installed_any, message=_repair_message(results))
+        if automatic and results:
+            self._notify(repair)
+        return repair
+
+    def _notify(self, repair: PluginRepair) -> None:
+        """Tell the person what an automatic repair did: what was installed, and what wasn't, until it is there."""
+        if not self._kernel.provides(Notifications):
+            return
+        notifications = self._kernel.resolve(Notifications)
+        if done := [n for n in repair.needs if n.state in {"installed", "updated"}]:
+            names = ", ".join(n.distribution for n in done)
+            notifications.emit(
+                NoticeKind.PLUGIN,
+                f"Installed {names}, which {_names(sorted({n.needed_by for n in done}))} needs",
+                "Nothing was signed in: System health names each sign-in step.",
+                route="/doctor",
+                command="hz system doctor",
+                key=f"plugin-needs:installed:{names}",
+            )
+        if failed := sorted({n.distribution for n in repair.needs if n.state == "failed"}):
+            detail = next(n.detail for n in repair.needs if n.state == "failed")
+            notifications.emit(
+                NoticeKind.PLUGIN,
+                f"{_names(failed)} couldn't be installed",
+                f"{detail} Try again with hz system plugin repair.",
+                route="/doctor",
+                command="hz system plugin repair",
+                key=f"plugin-needs:failed:{','.join(failed)}",
+                resolve_when=ResolveWhen(plugins_installed=tuple(failed)),
+            )
 
     def add(self, spec: str, *, confirm: bool = False, operation_id: str | None = None) -> PluginChange:
         """Show what `spec` installs; with `confirm`, install exactly that, record it and list the plugins after.
@@ -444,8 +689,8 @@ class PluginService:
                 next=[f"hz system plugin add {shlex.quote(handle)} --confirm --operation-id {receipt.operation_id}"],
                 operation_id=receipt.operation_id,
             )
-        with self._mutation() as mutation, self._receipts.installing(), self._exclusive():
-            return self._install_candidate(candidate, spec, mutation)
+        with self._receipts.installing(), self._exclusive():
+            return self._add_confirmed(candidate, spec)
 
     def operation(self, operation_id: str) -> PluginOperation:
         """Read the durable status of a preview receipt without repeating its mutation."""
@@ -461,8 +706,7 @@ class PluginService:
                         return receipt.result
                     _raise_not_replayable(receipt.status)
                 claimed = True
-                with self._mutation() as mutation:
-                    result = self._install_candidate(candidate, candidate.spec, mutation)
+                result = self._add_confirmed(candidate, candidate.spec)
                 completed = self._receipts.complete(operation_id, result)
                 if completed.result is None:
                     _raise_missing_result()
@@ -473,24 +717,21 @@ class PluginService:
             raise
 
     def _install_candidate(
-        self, candidate: PluginCandidate, spec: str, mutation: _PackageMutation | None
+        self, candidate: PluginCandidate, spec: str, mutation: _PackageMutation | None, *, phases: Phases | None
     ) -> PluginChange:
         """Install the confirmed `candidate`, check and record it, telling each step (ADR 0056) as it happens.
 
         The steps are the install, the check that exactly it is installed, then each plugin it needs, as the installed
-        metadata names them (installed with it, updated, or there already), and the record of the add.
+        metadata names them (installed with it, updated, or there already), and the record of the add. Without
+        `phases` (a required plugin installed first, which is one step of the add that needs it) it tells none.
 
         Raises:
             HeinzelError: If installing or any check fails; the failed step says why.
         """
         name = candidate.distribution or spec
-        phases = Phases(
-            self._kernel.resolve(Progress),
-            [("install", f"Installing {name}"), ("verify", "Checking that exactly it is installed")],
-        )
         before = self._host_list() if _requires_change(candidate) else []
         versions = self._plugin_versions_or_none()
-        with phases.step("install", f"Installing {name}"):
+        with _step(phases, "install", f"Installing {name}"):
             generation = self._run_package_change(
                 self.add_command(candidate.requirement),
                 f"Failed to add plugin {spec!r}.",
@@ -499,11 +740,12 @@ class PluginService:
                 context=(mutation, ()),
                 adding=candidate.requirement,
             )
-        with phases.step("verify", "Checking that exactly it is installed"):
+        with _step(phases, "verify", "Checking that exactly it is installed"):
             installed = self._verify_added(candidate, before)
             self._verify_candidate_generation(mutation)
-        self._tell_dependencies(phases, installed.distribution, versions)
-        with phases.step("record", "Recording the add"):
+        if phases is not None:
+            self._tell_dependencies(phases, installed.distribution, versions)
+        with _step(phases, "record", "Recording the add"):
             change = self._changed("add", installed.distribution, candidate)
             self._verify_candidate_generation(mutation)
             self._record(
@@ -517,6 +759,13 @@ class PluginService:
             )
             self._remember_package_change(generation)
         return change
+
+    def _versions_now(self) -> dict[str, str | None]:
+        """The plugins installed now by canonical name, read from disk (what this process loaded if that fails)."""
+        versions = self._plugin_versions_or_none()
+        if versions is None:
+            return {canonicalize_name(p.distribution): p.version for p in self.installed()}
+        return {canonicalize_name(name): version or None for name, version in versions.items()}
 
     def _plugin_versions_or_none(self) -> dict[str, str] | None:
         """The installed plugins' versions by canonical name; None if they can't be read (nothing is compared then)."""
@@ -1524,3 +1773,180 @@ def _source_of(
     if url is not None and url.startswith("file:"):
         return "path", None, None
     return None, browser_url(url), None
+
+
+MAX_NEED_DEPTH = 8
+"""How deep plugins may require plugins that require plugins: a bound, not a design target."""
+NEEDS_FILE = "plugin-needs.json"
+"""In the state folder: what each installed plugin version requires, and which the automatic repair already tried."""
+
+
+@contextlib.contextmanager
+def _step(phases: Phases | None, id_: str, label: str) -> Generator[None]:
+    """`phases.step`, or nothing when the steps aren't told (a required plugin's own add, inside its one step)."""
+    if phases is None:
+        yield
+        return
+    with phases.step(id_, label):
+        yield
+
+
+def _satisfies(requirement: Requirement, version: str) -> bool:
+    """Whether an installed `version` (empty: not installed) meets `requirement`; an unreadable one meets no range."""
+    if not version:
+        return False
+    if not requirement.specifier:
+        return True
+    try:
+        return requirement.specifier.contains(Version(version), prereleases=True)
+    except InvalidVersion:
+        return False
+
+
+def _offered(
+    recommends: Sequence[str], requirer: str, seen: set[str], installed: Mapping[str, str | None]
+) -> list[PluginNeed]:
+    """The recommended plugins not installed or required already: offered with their command, never installed."""
+    offered: list[PluginNeed] = []
+    for declared in recommends:
+        name = _need_name(declared)
+        if name in seen or name in installed:
+            continue
+        seen.add(name)
+        offered.append(
+            PluginNeed(
+                distribution=name,
+                requirement=declared,
+                required=False,
+                needed_by=requirer,
+                state="offered",
+                install=short_name(name),
+                detail=f"add it with: hz system plugin add {short_name(name)} --confirm",
+            )
+        )
+    return offered
+
+
+def _need_name(declared: str) -> str:
+    return canonicalize_name(Requirement(declared).name)
+
+
+def _owner(url: str) -> str | None:
+    """The GitHub owner of a repository URL, lower-cased; None for anything else."""
+    parts = urlsplit(url)
+    if (parts.hostname or "").lower() != "github.com":
+        return None
+    owner = parts.path.strip("/").split("/", 1)[0]
+    return owner.lower() or None
+
+
+def _require_trusted_need(requirer: PluginCandidate, found: PluginCandidate, needed_by: str) -> None:
+    """A required plugin is installed only from a first-party catalog or the requirer's own GitHub owner.
+
+    Raises:
+        HeinzelError: If the catalog entry comes from anyone else.
+    """
+    if found.first_party or (_owner(found.url) is not None and _owner(found.url) == _owner(requirer.url)):
+        return
+    msg = (
+        f"{needed_by} needs {found.distribution or found.spec}, but the catalog's {found.url or 'entry'} is neither "
+        "first-party nor from the same publisher; install it yourself if you trust it. Nothing was installed."
+    )
+    raise HeinzelError(msg)
+
+
+def _need_label(need: PluginNeed) -> str:
+    verb = "Installing" if need.state == "install" else "Updating"
+    return f"{verb} {need.distribution}, which {need.needed_by} needs"
+
+
+def _names(items: Sequence[str]) -> str:
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def _also(candidate: PluginCandidate, needs: Sequence[PluginNeed]) -> str:
+    """The sentence shown before an add starts: which plugins come with it, and which it offers."""
+    name = candidate.distribution or candidate.spec
+    parts: list[str] = []
+    if coming := [n.distribution for n in needs if n.required and n.state in {"install", "update"}]:
+        them = "it" if len(coming) == 1 else "them"
+        parts.append(f"{name} also needs {_names(coming)}; installing {them} too.")
+    if offered := [n for n in needs if n.state == "offered"]:
+        adds = "; ".join(f"hz system plugin add {n.install}" for n in offered)
+        parts.append(f"It recommends {_names([n.distribution for n in offered])}, not installed: {adds}.")
+    return " ".join(parts)
+
+
+def _repair_message(results: Sequence[PluginNeed]) -> str:
+    done = [n for n in results if n.state in {"installed", "updated"}]
+    failed = [n for n in results if n.state == "failed"]
+    parts: list[str] = []
+    if done:
+        by = _names(sorted({n.needed_by for n in done}))
+        parts.append(
+            f"Installed {_names([n.distribution for n in done])}, which {by} needs; sign in where System health says."
+        )
+    if failed:
+        parts.append(f"Couldn't install {_names([n.distribution for n in failed])}: {failed[0].detail}")
+    return " ".join(parts) or "Every installed plugin has the plugins it requires."
+
+
+def _bare_candidate(plugin: PluginInfo) -> dict[str, object]:
+    """An installed plugin as the requirer of a repair: enough to check where what it needs may come from."""
+    return {
+        "spec": short_name(plugin.distribution),
+        "requirement": plugin.distribution,
+        "distribution": plugin.distribution,
+        "version": plugin.version,
+        "summary": "",
+        "source": "git" if plugin.source_kind == "git" else "unknown",
+        "url": plugin.source_url or "",
+        "publisher": None,
+        "first_party": False,
+        "private": None,
+        "revision": plugin.revision,
+        "installed_version": plugin.version,
+        "warnings": [],
+    }
+
+
+class _NeedsMemory:
+    """What each installed plugin version requires, read once from its catalog, and the automatic repairs tried."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        table = cast("dict[str, object]", data) if isinstance(data, dict) else {}
+        requires, tried = table.get("requires"), table.get("tried")
+        self._requires: dict[str, list[str]] = {
+            str(k): [str(v) for v in cast("list[object]", vs)]
+            for k, vs in (cast("dict[str, object]", requires) if isinstance(requires, dict) else {}).items()
+            if isinstance(vs, list)
+        }
+        self._tried: set[str] = {str(k) for k in cast("list[object]", tried)} if isinstance(tried, list) else set()
+
+    def requires(self, key: str) -> list[str] | None:
+        return self._requires.get(key)
+
+    def remember(self, key: str, declared: list[str]) -> None:
+        self._requires[key] = declared
+        self._save()
+
+    def tried(self, key: str) -> bool:
+        return key in self._tried
+
+    def try_once(self, key: str) -> None:
+        self._tried.add(key)
+        self._save()
+
+    def _save(self) -> None:
+        with contextlib.suppress(OSError):
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self._path.with_suffix(".tmp")
+            temporary.write_text(
+                json.dumps({"requires": self._requires, "tried": sorted(self._tried)}, indent=2), encoding="utf-8"
+            )
+            temporary.replace(self._path)

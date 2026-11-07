@@ -17,6 +17,7 @@ from heinzel.modules.system.plugin._models import (
     PluginLayer,
     PluginOperation,
     PluginPending,
+    PluginRepair,
     PluginSearch,
     PluginSettings,
 )
@@ -28,6 +29,13 @@ def render_change(change: PluginChange) -> RenderableType:
     from heinzel.modules.system.plugin._render import render_change  # noqa: PLC0415 - CLI presentation is loaded only when rendered
 
     return render_change(change)
+
+
+def render_repair(repair: PluginRepair) -> RenderableType:
+    """Each required plugin a repair installed or couldn't install, then what it means."""
+    from heinzel.modules.system.plugin._render import render_repair  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_repair(repair)
 
 
 def render_list(plugins: list[PluginInfo]) -> RenderableType:
@@ -132,6 +140,26 @@ def add(
     if prompter.confirm(f"Install {name} now?", default=False):
         return service.add(spec, confirm=True, operation_id=change.operation_id)
     return change.model_copy(update={"previewed": True})
+
+
+@module.operation(read_only=False, heads=CHANGES, render=render_repair)
+def repair(
+    service: PluginService,
+    automatic: Annotated[
+        bool,
+        Field(
+            description="As the automatic updater asks: try each missing plugin once per version of the plugin that "
+            "requires it, so a failure isn't retried every half hour."
+        ),
+    ] = False,
+) -> PluginRepair:
+    """Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
+
+    A plugin declares the plugins it can't work without in `[tool.heinzel.plugin] requires`; `add` installs them
+    first, and this repairs an installation that lacks them (one installed before they were declared). It never signs
+    in: `hz system doctor` still names each plugin's sign-in step. Running servers load them after a restart.
+    """
+    return service.repair(automatic=automatic)
 
 
 @module.operation(heads=CHANGES)
