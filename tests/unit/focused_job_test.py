@@ -2,10 +2,8 @@
 
 import importlib.util
 import json
-import os
-import subprocess
-import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -102,8 +100,37 @@ def test_repeat_refuses_lanes_and_parametrized_cases(selector):
         focused_job.plan("e2e" if selector == "web-2" else "pytest", selector, OUT, repeat=3)
 
 
-def test_the_round_plugin_repeats_in_one_process_and_tallies(tmp_path):
-    (tmp_path / "flaky_test.py").write_text(
+class _Failures:
+    """Collects the node ids that failed in a nested pytest session."""
+
+    def __init__(self) -> None:
+        self.nodeids: list[str] = []
+
+    def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
+        if report.failed:
+            self.nodeids.append(report.nodeid)
+
+
+def _run_rounds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str, rounds: int) -> list[str]:
+    """Run `source` as a test file in this process (no interpreter start-up) with the round plugin; failed ids."""
+    (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    (tmp_path / "rounds_case_test.py").write_text(source, encoding="utf-8")
+    monkeypatch.setenv("FOCUSED_REPEAT", str(rounds))
+    monkeypatch.setenv("FOCUSED_OUT", str(tmp_path / "out"))
+    monkeypatch.setattr(focused_job, "_ROUNDS", {})
+    monkeypatch.setattr(focused_job, "_START", focused_job.time.monotonic())
+    monkeypatch.chdir(tmp_path)
+    failures = _Failures()
+    args = ["-q", "-p", "no:cacheprovider", "-p", "no:xdist", "-c", str(tmp_path / "pytest.ini"), "rounds_case_test.py"]
+    pytest.main(args, plugins=[focused_job, failures])
+    return failures.nodeids
+
+
+def test_the_round_plugin_repeats_in_one_process_and_tallies(tmp_path, monkeypatch):
+    """The second execution in the same process fails, plain and parametrized, and is booked to round 2."""
+    failed = _run_rounds(
+        tmp_path,
+        monkeypatch,
         "import pytest\n"
         "RUNS = []\n"
         "@pytest.fixture\n"
@@ -112,55 +139,25 @@ def test_the_round_plugin_repeats_in_one_process_and_tallies(tmp_path):
         "def test_second_run_fails(resource):\n"
         "    RUNS.append(1)\n"
         "    assert len(RUNS) != 2\n"
-        "def test_other():\n"
-        "    pass\n",
-        encoding="utf-8",
-    )
-    env = {
-        **os.environ,
-        "FOCUSED_REPEAT": "3",
-        "FOCUSED_OUT": str(tmp_path / "out"),
-        "PYTHONPATH": os.pathsep.join(filter(None, [str(REPO / "scripts"), os.environ.get("PYTHONPATH")])),
-    }
-    command = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "focused_job", "-p", "no:xdist"]
-    result = subprocess.run(
-        [*command, "flaky_test.py", "-o", "addopts=", "-rA"],
-        cwd=tmp_path,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-    )
-    assert "FAILED flaky_test.py::test_second_run_fails[round2]" in result.stdout, result.stdout + result.stderr
-    assert json.loads((tmp_path / "out" / "tally.json").read_text()) == {"rounds": 3, "green": 2, "asked": 3}
-
-
-def test_parametrized_tests_book_failures_to_their_round(tmp_path):
-    (tmp_path / "param_test.py").write_text(
-        "import pytest\n"
-        "RUNS = []\n"
         "@pytest.mark.parametrize('case', ['a'])\n"
         "def test_case(case):\n"
-        "    RUNS.append(case)\n"
-        "    assert len(RUNS) != 2\n",
-        encoding="utf-8",
+        "    pass\n",
+        rounds=2,
     )
-    env = {
-        **os.environ,
-        "FOCUSED_REPEAT": "2",
-        "FOCUSED_OUT": str(tmp_path / "out"),
-        "PYTHONPATH": os.pathsep.join(filter(None, [str(REPO / "scripts"), os.environ.get("PYTHONPATH")])),
-    }
-    command = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "focused_job", "-p", "no:xdist"]
-    result = subprocess.run(
-        [*command, "param_test.py", "-o", "addopts=", "-rA"],
-        cwd=tmp_path,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-    )
-    assert "round2" in result.stdout, result.stdout + result.stderr
+    assert failed == ["rounds_case_test.py::test_second_run_fails[round2]"]
     assert json.loads((tmp_path / "out" / "tally.json").read_text()) == {"rounds": 2, "green": 1, "asked": 2}
+
+
+@pytest.mark.parametrize(
+    ("nodeid", "booked"),
+    [
+        ("t.py::test_x[round1]", 0),
+        ("t.py::test_x[round2]", 1),
+        ("t.py::test_x[round2-a]", 1),  # pytest joins the round with the test's own parameters
+        ("t.py::test_x[a-round3]", 2),
+        ("t.py::test_x[around2]", 0),  # only a whole `roundN` parameter counts
+        ("t.py::test_x", 0),
+    ],
+)
+def test_a_failure_is_booked_to_its_round(nodeid, booked):
+    assert focused_job._round_of(SimpleNamespace(nodeid=nodeid)) == booked
