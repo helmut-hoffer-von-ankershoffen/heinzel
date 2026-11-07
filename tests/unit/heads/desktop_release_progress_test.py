@@ -79,6 +79,7 @@ def server(monkeypatch):
     monkeypatch.setattr(release, "RETRY_PAUSE", 0)
     yield behaviour
     httpd.shutdown()
+    httpd.server_close()  # an open listening socket warns when collected, inside whichever test runs then
 
 
 RELEASE_PATH = f"/repos/{release.REPOSITORY}/releases/tags/{TAG}"
