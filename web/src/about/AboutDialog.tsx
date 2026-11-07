@@ -17,22 +17,9 @@ type Bridge = { about?: () => Promise<Desktop> };
 const desktopBridge = (): Bridge | undefined => (window as Window & { heinzelDesktop?: Bridge }).heinzelDesktop;
 
 type Info = NonNullable<ReturnType<typeof useInfo>["data"]>;
-type Plugin = { name: string; version: string; source: string; repository: string | null };
 
-/** The installed plugins, one row per distribution (a distribution may ship several modules). */
-export function pluginsOf(info: Info): Plugin[] {
-  const seen = new Map<string, Plugin>();
-  for (const module of info.modules) {
-    if (module.builtin || seen.has(module.distribution)) continue;
-    seen.set(module.distribution, {
-      name: module.distribution,
-      version: module.version,
-      source: module.source,
-      repository: module.repository,
-    });
-  }
-  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
-}
+/** The installed plugins, one row per distribution, as the API lists them. */
+export const pluginsOf = (info: Info) => info.plugins;
 
 /** The same lines as `hz --version`, plus the daemon and the desktop app. */
 export function detailsText(info: Info, desktop: Desktop | null): string {

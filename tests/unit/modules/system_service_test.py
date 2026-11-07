@@ -372,4 +372,4 @@ def test_info_names_the_installation_kind_and_modules_their_source(make_kernel, 
     assert info.installation == "environment"
     (tmp_path / "uv-receipt.toml").write_text("")
     assert SystemService(make_kernel()).info().installation == "uv tool"
-    assert {module.source for module in info.modules} <= {"built-in", "PyPI", "git", "path"}
+    assert [plugin.name for plugin in info.plugins] == ["heinzel-test"]  # the fixture kernel's one plugin

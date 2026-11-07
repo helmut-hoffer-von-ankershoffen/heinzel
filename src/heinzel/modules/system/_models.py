@@ -19,10 +19,20 @@ class ModuleInfo(BaseModel):
     repository: str | None = Field(
         description="Source repository of that distribution, from its Project-URL metadata; none if it names none."
     )
-    source: Literal["built-in", "PyPI", "git", "path"] = Field(
-        description="Where the distribution was installed from: built-in, an index (PyPI), a git repository or a path."
-    )
     lets: dict[str, list[str]] = Field(description="Names of the advertised lets, by kind.")
+
+
+class InstalledPlugin(BaseModel):
+    """An installed plugin distribution."""
+
+    name: str = Field(description="Distribution name.")
+    version: str = Field(description="Installed version.")
+    source: Literal["PyPI", "git", "path"] = Field(
+        description="Where it was installed from: an index (PyPI), a git repository or a path."
+    )
+    repository: str | None = Field(
+        description="Source repository, from its Project-URL metadata; none if it names none."
+    )
 
 
 class SystemInfo(BaseModel):
@@ -38,6 +48,7 @@ class SystemInfo(BaseModel):
     )
     settings: dict[str, Any] = Field(description="Kernel settings in effect, by name.")
     modules: list[ModuleInfo] = Field(description="Every registered module.")
+    plugins: list[InstalledPlugin] = Field(description="Every installed plugin distribution, built-ins excluded.")
     plugin_errors: dict[str, str] = Field(description="Plugins that failed to load, by entry point name.")
     sections: dict[str, Any] = Field(description="Sections contributed by modules, by qualified module name.")
     latest_release: str | None = Field(

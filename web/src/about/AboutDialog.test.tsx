@@ -5,16 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AboutDialog, detailsText, pluginsOf } from "./AboutDialog";
 import { requestMenuAction } from "./menu";
 
-const module = (distribution: string, builtin: boolean, source = "PyPI") => ({
-  qualname: distribution,
-  summary: "",
-  distribution,
-  version: builtin ? "1.2.3" : "0.4.0",
-  builtin,
-  repository: null,
-  source,
-  lets: {},
-});
 const info = {
   version: "1.2.3",
   repository: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel",
@@ -23,11 +13,9 @@ const info = {
   platform: "macOS",
   installation: "uv tool",
   latest_release: null,
-  modules: [
-    module("hz", true, "built-in"),
-    module("heinzel-b", false, "git"),
-    module("heinzel-a", false),
-    module("heinzel-a", false),
+  plugins: [
+    { name: "heinzel-a", version: "0.4.0", source: "PyPI", repository: null },
+    { name: "heinzel-b", version: "0.4.0", source: "git", repository: null },
   ],
 };
 
@@ -43,7 +31,7 @@ const show = () =>
 afterEach(() => vi.restoreAllMocks());
 
 describe("About dialog", () => {
-  it("lists each installed plugin once, sorted, without built-ins", () => {
+  it("lists the installed plugins the API reports", () => {
     expect(pluginsOf(info as never).map((p) => p.name)).toEqual(["heinzel-a", "heinzel-b"]);
   });
 

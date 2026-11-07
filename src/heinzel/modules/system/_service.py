@@ -19,7 +19,7 @@ from pydantic import BaseModel, SecretStr
 from heinzel import InfoLet, Kernel, __version__
 from heinzel.kernel import EDGE_WHEEL_PREFIX, EdgeRelease, Installation, ReleaseCache, ReleaseFacts, ReleaseSource
 from heinzel.modules.system import _github
-from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
+from heinzel.modules.system._models import InstalledPlugin, ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
 
 DEFAULT_REPOSITORY = "helmut-hoffer-von-ankershoffen/heinzel"
 """Where releases come from when the installation doesn't say, e.g. in a development checkout."""
@@ -350,14 +350,28 @@ class SystemService:
                     version=record.origin.version,
                     builtin=record.origin.builtin,
                     repository=record.origin.url,
-                    source="built-in" if record.origin.builtin else _source_of(record.origin.distribution),
                     lets=dict(lets),
                 )
             )
         return infos
 
+    def _plugins(self) -> list[InstalledPlugin]:
+        """One entry per installed plugin distribution (a distribution may ship several modules), by name."""
+        found: dict[str, InstalledPlugin] = {}
+        for record in self._kernel.modules:
+            origin = record.origin
+            if not origin.builtin and origin.distribution not in found:
+                found[origin.distribution] = InstalledPlugin(
+                    name=origin.distribution,
+                    version=origin.version,
+                    source=_source_of(origin.distribution),
+                    repository=origin.url,
+                )
+        return sorted(found.values(), key=lambda plugin: plugin.name)
+
     def info(self) -> SystemInfo:
         """Versions, interpreter, settings, modules and the sections modules contribute."""
+        modules = self.modules()
         return SystemInfo(
             version=__version__,
             repository=next((r.origin.url for r in self._kernel.modules if r.origin.builtin), None),
@@ -366,7 +380,8 @@ class SystemService:
             platform=platform.platform(),
             installation="uv tool" if (Path(sys.prefix) / "uv-receipt.toml").is_file() else "environment",
             settings=self._kernel.settings.model_dump(mode="json"),
-            modules=self.modules(),
+            modules=modules,
+            plugins=self._plugins(),
             plugin_errors=dict(self._kernel.errors),
             sections={
                 record.qualname: section

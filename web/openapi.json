@@ -7748,6 +7748,51 @@
         "title": "Installed",
         "type": "object"
       },
+      "InstalledPlugin": {
+        "description": "An installed plugin distribution.",
+        "properties": {
+          "name": {
+            "description": "Distribution name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source repository, from its Project-URL metadata; none if it names none.",
+            "title": "Repository"
+          },
+          "source": {
+            "description": "Where it was installed from: an index (PyPI), a git repository or a path.",
+            "enum": [
+              "PyPI",
+              "git",
+              "path"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "version": {
+            "description": "Installed version.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "source",
+          "repository"
+        ],
+        "title": "InstalledPlugin",
+        "type": "object"
+      },
       "InstalledSkill": {
         "description": "A skill copied into an agent's skill directory.",
         "properties": {
@@ -9171,17 +9216,6 @@
             "description": "Source repository of that distribution, from its Project-URL metadata; none if it names none.",
             "title": "Repository"
           },
-          "source": {
-            "description": "Where the distribution was installed from: built-in, an index (PyPI), a git repository or a path.",
-            "enum": [
-              "built-in",
-              "PyPI",
-              "git",
-              "path"
-            ],
-            "title": "Source",
-            "type": "string"
-          },
           "summary": {
             "description": "What the module is for, in one sentence.",
             "title": "Summary",
@@ -9200,7 +9234,6 @@
           "version",
           "builtin",
           "repository",
-          "source",
           "lets"
         ],
         "title": "ModuleInfo",
@@ -16335,6 +16368,14 @@
             "title": "Plugin Errors",
             "type": "object"
           },
+          "plugins": {
+            "description": "Every installed plugin distribution, built-ins excluded.",
+            "items": {
+              "$ref": "#/components/schemas/InstalledPlugin"
+            },
+            "title": "Plugins",
+            "type": "array"
+          },
           "python_executable": {
             "description": "Path of the Python interpreter running hz.",
             "title": "Python Executable",
@@ -16384,6 +16425,7 @@
           "installation",
           "settings",
           "modules",
+          "plugins",
           "plugin_errors",
           "sections",
           "latest_release"
