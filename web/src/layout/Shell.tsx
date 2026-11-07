@@ -480,8 +480,8 @@ function Layout() {
                   : beside
                     ? "w-96 shrink-0 border-l border-border"
                     : selectedPanel === "page" || flowingWorkspace
-                      ? "shrink-0 border-t border-border"
-                      : "absolute inset-x-0 top-12 bottom-0 border-t border-border",
+                      ? "shrink-0 shadow-[0_-1px_0_0_var(--color-border)]"
+                      : "absolute inset-x-0 top-12 bottom-0 shadow-[0_-1px_0_0_var(--color-border)]",
               )}
             >
               <WorkspacePanels

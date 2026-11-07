@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { useId, useState } from "react";
 import { useChangelog, useExpert } from "@/api/queries";
 import { CopyCommand, Loaded } from "@/components/common";
+import { PaneAction } from "@/components/PaneActions";
 import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -29,16 +30,11 @@ export function InfoDialog({ panel, onClose }: { panel: Panel; onClose: () => vo
           <h2 id={titleId} className="text-ui font-medium">
             {panel === "changelog" ? t("account.changelog") : t("account.help")}
           </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t("settings.close")}
-            // biome-ignore lint/a11y/noAutofocus: the dialog takes focus so Escape works at once
-            autoFocus
-            className="ml-auto flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <X aria-hidden className="size-(--icon)" />
-          </button>
+          <div data-pane-chrome="" className="ml-auto">
+            <PaneAction ghost icon={X} onClick={onClose} autoFocus>
+              {t("settings.close")}
+            </PaneAction>
+          </div>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-10">
           {panel === "changelog" ? <Changelog /> : <Help />}

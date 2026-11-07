@@ -4,6 +4,7 @@
 // that pinned requirement with `confirm=true` (ADR 0047). The app then restarts `hz ui` itself and reloads.
 import {
   BookOpen,
+  Download,
   ExternalLink,
   type LucideIcon,
   Package,
@@ -16,6 +17,7 @@ import {
   Sparkles,
   Trash2,
   Users,
+  X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { SchemaPluginCandidate, SchemaPluginChange, SchemaPluginInfo } from "@/api/client";
@@ -30,6 +32,7 @@ import {
   usePlugins,
 } from "@/api/queries";
 import { Loaded } from "@/components/common";
+import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { CodeInput } from "@/components/ui/code-input";
 import { SearchField } from "@/components/ui/search-field";
@@ -178,16 +181,9 @@ export function repositoryLabel(url: string): string {
 function sourceLink(url: string | null | undefined, name: string) {
   if (!url) return null;
   return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={t("plugins.source", { name })}
-      title={url}
-      className="flex size-8 shrink-0 items-center justify-center rounded-lg text-icon hover:bg-accent"
-    >
-      <ExternalLink aria-hidden className="size-4" />
-    </a>
+    <PaneAction ghost icon={ExternalLink} href={url} className="text-icon">
+      {t("plugins.source", { name })}
+    </PaneAction>
   );
 }
 
@@ -196,7 +192,7 @@ function RepositoryLine({ url }: { url: string | null | undefined }) {
   return url ? (
     <span className="block truncate text-xs text-muted-foreground/80">
       {t("plugins.fromPrefix")}{" "}
-      <a href={url} target="_blank" rel="noreferrer" className="hover:text-foreground hover:underline">
+      <a data-prose-link href={url} target="_blank" rel="noreferrer" className="hover:text-foreground hover:underline">
         {repositoryLabel(url)}
       </a>
     </span>
@@ -554,9 +550,8 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
                   }}
                 />
                 {(pending.action !== "add" || operation.data?.status === "previewed") && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
+                  <PaneAction
+                    icon={X}
                     onClick={() => {
                       if (pending.action === "add") {
                         setReceiptId(null);
@@ -567,7 +562,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
                     disabled={change.isPending || activation.changing}
                   >
                     {t("plugins.cancel")}
-                  </Button>
+                  </PaneAction>
                 )}
               </>
             )}
@@ -750,7 +745,7 @@ function Yours({
                           <RepositoryLine url={url} />
                         </span>
                         {/* Narrow settings panels keep provenance and controls below the name instead of clipping. */}
-                        <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-end gap-2 @md:contents">
+                        <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 @md:contents">
                           <span className="mr-auto flex min-w-0 flex-wrap items-center gap-2 @md:mr-0 @md:shrink-0">
                             {!enabled && (
                               <span className="rounded-md border border-warn/50 px-1.5 text-[11px] text-muted-foreground">
@@ -763,9 +758,9 @@ function Yours({
                             <span className={VERSION}>v{plugin.version}</span>
                           </span>
                           {sourceLink(url, plugin.distribution)}
-                          <Button
-                            variant="ghost"
-                            size="icon"
+                          <PaneAction
+                            ghost
+                            icon={enabled ? PowerOff : Power}
                             onClick={() =>
                               onChange({ action: enabled ? "disable" : "enable", name: plugin.distribution }, rowKey)
                             }
@@ -776,19 +771,19 @@ function Yours({
                             title={enabled ? t("plugins.disable") : t("plugins.enable")}
                             className="text-icon"
                           >
-                            {enabled ? <PowerOff aria-hidden /> : <Power aria-hidden />}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
+                            {enabled ? t("plugins.disable") : t("plugins.enable")}
+                          </PaneAction>
+                          <PaneAction
+                            ghost
+                            destructive
+                            icon={Trash2}
                             onClick={() => onChange({ action: "remove", name: plugin.distribution }, rowKey)}
                             aria-expanded={slot?.key === rowKey}
                             aria-label={t("plugins.removeName", { name: plugin.distribution })}
                             title={t("plugins.remove")}
-                            className="text-icon"
                           >
-                            <Trash2 aria-hidden />
-                          </Button>
+                            {t("plugins.remove")}
+                          </PaneAction>
                         </div>
                       </div>
                       {slot?.key === rowKey && slot.node}
@@ -937,15 +932,15 @@ function Discover({
                     <span aria-hidden className={VERSION} />
                   </span>
                   {sourceLink(repositoryOfEntry(plugin), plugin.name)}
-                  <Button
-                    size="sm"
-                    variant="outline"
+                  <PaneAction
+                    ghost
+                    icon={Download}
                     disabled={checking === `discover:${plugin.name}`}
                     aria-expanded={slot?.key === `discover:${plugin.name}`}
                     onClick={() => onInstall(plugin.install_spec, `discover:${plugin.name}`)}
                   >
                     {checking === `discover:${plugin.name}` ? t("plugins.checking") : t("plugins.install")}
-                  </Button>
+                  </PaneAction>
                 </div>
                 {slot?.key === `discover:${plugin.name}` && slot.node}
               </li>

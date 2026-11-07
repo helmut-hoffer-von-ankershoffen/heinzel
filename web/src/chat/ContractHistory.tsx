@@ -2,7 +2,7 @@ import type { SchemaContractVersion } from "@/api/client";
 
 function Version({ contract }: { contract: SchemaContractVersion }) {
   return (
-    <article className="space-y-1 border-t border-border pt-2">
+    <article className="space-y-1 pt-2 shadow-[0_-1px_0_0_var(--color-border)]">
       <h4 className="font-medium">{contract.title}</h4>
       <p>
         Contract v{contract.version}: {contract.status}

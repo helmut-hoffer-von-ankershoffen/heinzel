@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
 import { api, type SchemaSettingInfo, unwrap as unwrapResponse } from "@/api/client";
 import { useConfig, useSetSetting } from "@/api/queries";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { RestartAndApply } from "@/lifecycle/RestartAndApply";
@@ -143,15 +144,17 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
     />
   );
   const reset = ownValue && !fromEnv && (
-    <button
+    <Button
       type="button"
+      size="sm"
+      variant="ghost"
       disabled={disabled}
       title="Remove your user override"
       onClick={() => commit(null)}
-      className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+      className="text-muted-foreground"
     >
       {t("settings.reset")}
-    </button>
+    </Button>
   );
   const serializedStaged =
     staged === null ? null : control.kind === "text" && typeof staged === "string" ? staged : toToml(staged);
@@ -224,17 +227,19 @@ function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; ma
               }}
             />
           )}
-          <button
+          <Button
             type="button"
+            size="sm"
+            variant="ghost"
             disabled={save.isPending}
             onClick={() => {
               setStaged(undefined);
               setEditorVersion((version) => version + 1);
             }}
-            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="text-muted-foreground"
           >
             {t("lifecycle.cancel")}
-          </button>
+          </Button>
           {save.error && (
             <span role="alert" className="text-xs text-bad">
               {save.error.message}
@@ -319,9 +324,9 @@ function SecretValue({ id, disabled, onCommit }: { id: string; disabled: boolean
         onChange={(event) => setText(event.target.value)}
         className="h-8 w-40 rounded-lg border border-border bg-input px-2 text-sm"
       />
-      <button type="submit" disabled={disabled || !text} className="rounded-md px-2 py-1 text-xs disabled:opacity-50">
+      <Button type="submit" size="sm" variant="outline" disabled={disabled || !text}>
         Save
-      </button>
+      </Button>
     </form>
   );
 }
@@ -336,15 +341,16 @@ function PathReveal({ settingKey, value, saving }: { settingKey: string; value: 
   if (!config.data?.can_reveal || typeof value !== "string" || !value) return null;
   return (
     <span>
-      <button
+      <Button
         type="button"
+        size="sm"
+        variant="ghost"
         disabled={saving || reveal.isPending}
         onClick={() => reveal.mutate()}
         aria-label={`Show in ${config.data.file_manager}: ${settingKey}`}
-        className="rounded-md px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
       >
         Show in {config.data.file_manager}
-      </button>
+      </Button>
       {(reveal.data || reveal.error) && (
         <span role={reveal.error ? "alert" : "status"} className="block text-xs text-muted-foreground">
           {reveal.error?.message ?? reveal.data?.message}

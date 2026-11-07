@@ -1344,17 +1344,17 @@ function DurableSessionView({
             {daemonReadinessMessage && (
               <p className="text-sm text-warn" role="status">
                 {daemonReadinessMessage}{" "}
-                <Link className="underline" to="/?settings=daemon">
-                  {t("durable.daemonSettings")}
-                </Link>
+                <Button asChild variant="outline" size="sm" className="align-middle">
+                  <Link to="/?settings=daemon">{t("durable.daemonSettings")}</Link>
+                </Button>
               </p>
             )}
             {query.data.schedule?.status === "active" && daemonStatus.isError && (
               <p className="text-sm text-warn" role="status">
                 {t("durable.daemonStatusUnavailable")}{" "}
-                <Link className="underline" to="/?settings=daemon">
-                  {t("durable.daemonSettings")}
-                </Link>
+                <Button asChild variant="outline" size="sm" className="align-middle">
+                  <Link to="/?settings=daemon">{t("durable.daemonSettings")}</Link>
+                </Button>
               </p>
             )}
             {query.data.schedule && !scheduleApprovalNeedsAttention && uncertainApprovalActions.length === 0 ? (
@@ -1451,7 +1451,7 @@ function DurableSessionView({
         )}
       </div>
       <form
-        className="space-y-2 border-t border-border p-3"
+        className="space-y-2 p-3 shadow-[0_-1px_0_0_var(--color-border)]"
         onSubmit={(event) => {
           event.preventDefault();
           void send();

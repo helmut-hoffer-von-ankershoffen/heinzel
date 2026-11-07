@@ -1,4 +1,6 @@
+import { RotateCw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import {
@@ -145,14 +147,14 @@ export function RestartAndApply({
             ))}
           </ul>
           <p className="text-muted-foreground">{t("lifecycle.pageStays")}</p>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => void run()}>
-              {actionLabel ?? t("lifecycle.targetAction", { target })}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+          <PaneActions align="end" words="all">
+            <PaneAction key="cancel" icon={X} onClick={() => setConfirming(false)}>
               {t("lifecycle.cancel")}
-            </Button>
-          </div>
+            </PaneAction>
+            <PaneAction key="apply" icon={RotateCw} primary onClick={() => void run()}>
+              {actionLabel ?? t("lifecycle.targetAction", { target })}
+            </PaneAction>
+          </PaneActions>
         </div>
       )}
       {phase && !error && (

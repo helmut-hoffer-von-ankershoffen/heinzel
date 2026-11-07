@@ -2,11 +2,11 @@
 // happen, then how it ended with the next step when it failed (ADR 0056). One dialog serves every status item,
 // sidebar entry and setup button, so a footer that lays itself out again cannot hide a running install.
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, CircleAlert, Loader2, TriangleAlert, X } from "lucide-react";
+import { Check, CircleAlert, Loader2, Play, RotateCw, TriangleAlert, X } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { daemonStatusKey } from "@/api/daemon";
-import { Button } from "@/components/ui/button";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { type MessageKey, t } from "@/i18n";
 import {
   dismissOperation,
@@ -161,14 +161,14 @@ export function OperationDialog() {
               {run.call.command}
             </code>
           )}
-          <div className="mt-3 flex justify-end gap-2">
-            <Button size="sm" variant="outline" autoFocus onClick={dismissOperation}>
+          <PaneActions align="end" words="all">
+            <PaneAction key="cancel" icon={X} autoFocus onClick={dismissOperation}>
               {t("contrib.cancel")}
-            </Button>
-            <Button size="sm" onClick={go}>
+            </PaneAction>
+            <PaneAction key="go" icon={Play} primary onClick={go}>
               {persistent ? t(`op.daemon.${copy}.button` as MessageKey) : t("contrib.run")}
-            </Button>
-          </div>
+            </PaneAction>
+          </PaneActions>
         </>
       )}
       {run.stage === "running" && (
@@ -179,12 +179,11 @@ export function OperationDialog() {
           </output>
           <Steps phases={run.phases} active />
           <p className="mt-3 text-xs text-muted-foreground">{t("op.noStop")}</p>
-          <div className="mt-3 flex justify-end">
-            <Button size="sm" disabled aria-disabled>
-              <Loader2 aria-hidden className="motion-safe:animate-spin" />
+          <PaneActions align="end" words="all">
+            <PaneAction key="working" icon={Loader2} primary disabled aria-disabled>
               {quick ? plain("running") : persistent ? t(`op.daemon.${copy}.running` as MessageKey) : t("op.working")}
-            </Button>
-          </div>
+            </PaneAction>
+          </PaneActions>
         </>
       )}
       {run.stage === "done" && (
@@ -194,11 +193,11 @@ export function OperationDialog() {
             {quick ? plain("done") : persistent ? t(`op.daemon.${copy}.done` as MessageKey) : t("op.done")}
           </output>
           <Steps phases={run.phases} active={false} />
-          <div className="mt-3 flex justify-end">
-            <Button size="sm" autoFocus onClick={dismissOperation}>
+          <PaneActions align="end" words="all">
+            <PaneAction key="close" icon={Check} primary autoFocus onClick={dismissOperation}>
               {t("op.close")}
-            </Button>
-          </div>
+            </PaneAction>
+          </PaneActions>
         </>
       )}
       {run.stage === "failed" && (
@@ -213,14 +212,14 @@ export function OperationDialog() {
               {run.phases.some((phase) => phase.state === "failed") ? t("op.failedNext") : t("op.lost")}
             </p>
           )}
-          <div className="mt-3 flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={dismissOperation}>
+          <PaneActions align="end" words="all">
+            <PaneAction key="close" icon={X} onClick={dismissOperation}>
               {t("op.close")}
-            </Button>
-            <Button size="sm" onClick={go}>
+            </PaneAction>
+            <PaneAction key="retry" icon={RotateCw} primary onClick={go}>
               {t("op.retry")}
-            </Button>
-          </div>
+            </PaneAction>
+          </PaneActions>
         </>
       )}
     </div>,

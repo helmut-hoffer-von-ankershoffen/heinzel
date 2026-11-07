@@ -28,17 +28,10 @@ const underlined = (tag: string) => /className=(?:"[^"]*|\{[^}]*)\bunderline\b/.
 // Text links still used as actions, to be converted by the rollout in research/design-action-audit.md. This list
 // only shrinks: a fixed file must leave it, and no new file may join it. Inline prose links take `data-prose-link`.
 const PENDING: Record<string, number> = {
-  "../chat/DurableSession.tsx": 2,
   "../components/Contributions.tsx": 1,
   "../layout/CalendarPanel.tsx": 5,
-  "../layout/PluginsSection.tsx": 1,
   "../notifications/TodayNotifications.tsx": 1,
-  "../pages/Contracts.tsx": 1,
   "../pages/Heinzelmaennchen.tsx": 1,
-  "../pages/Inventory.tsx": 1,
-  "../pages/PersonalArtifacts.tsx": 1,
-  "../pages/Profile.tsx": 2,
-  "../pages/workflow/NodePanel.tsx": 2,
 };
 
 it("uses buttons, not underlined text links, for actions", () => {
@@ -109,28 +102,16 @@ it("has no withText: the first action of a row leads with words, the rest are ic
 
 // Files that still draw a divider by hand (`border-t`) in a container instead of PaneActions; only shrinks (PR b).
 const BORDER_T: Record<string, number> = {
-  "../chat/ContractHistory.tsx": 1,
-  "../chat/DurableSession.tsx": 1,
   "../chat/ModelPicker.tsx": 2,
-  "../heinzel/PersonalHeinzels.tsx": 1,
   "../layout/ChatPanel.tsx": 1,
-  "../layout/DaemonSettings.tsx": 1,
   "../layout/NotificationCenter.tsx": 1,
-  "../layout/Shell.tsx": 1,
-  "../layout/ThemePreviews.tsx": 1,
-  "../onboarding/OnboardingWizard.tsx": 1,
-  "../pages/Doctor.tsx": 1,
   "../pages/Heinzelmaennchen.tsx": 1,
-  "../pages/Organisation.tsx": 1,
   "../sound/PlayerCard.tsx": 1,
   "../sound/SoundControls.tsx": 1,
   "../updates/AutoUpdateToggle.tsx": 1,
 };
 // Files with a right-aligned button row (`justify-end`) outside PaneActions; only shrinks (PR b).
 const JUSTIFY_END: Record<string, number> = {
-  "../components/CommandDialog.tsx": 1,
-  "../components/OperationDialog.tsx": 4,
-  "../layout/PluginsSection.tsx": 1,
   "../sound/SoundControls.tsx": 1,
 };
 // Icon buttons (`<Button size="icon"`) without both an aria-label and a title; only shrinks.
@@ -148,20 +129,20 @@ const RAW: Record<string, number> = {
   "../components/Prose.tsx": 2,
   "../layout/AiAccessSetting.tsx": 1,
   "../layout/CalendarPanel.tsx": 6,
-  "../layout/ConnectorsSection.tsx": 2,
-  "../layout/InfoDialog.tsx": 3,
+  "../layout/ConnectorsSection.tsx": 1,
+  "../layout/InfoDialog.tsx": 2,
   "../layout/NotificationCenter.tsx": 3,
   "../layout/PluginsSection.tsx": 5,
-  "../layout/SchemaValue.tsx": 4,
-  "../layout/SettingControls.tsx": 5,
-  "../layout/SettingsDialog.tsx": 3,
+  "../layout/SchemaValue.tsx": 1,
+  "../layout/SettingControls.tsx": 1,
+  "../layout/SettingsDialog.tsx": 2,
   "../layout/Sidebar.tsx": 7,
   "../layout/TerminalPanel.tsx": 8,
   "../layout/ThemePreviews.tsx": 2,
   "../layout/TimeZonePicker.tsx": 1,
   "../layout/TopBar.tsx": 2,
   "../layout/WorkspacePanels.tsx": 1,
-  "../onboarding/OnboardingWizard.tsx": 2,
+  "../onboarding/OnboardingWizard.tsx": 1,
   "../sound/PlayerCard.tsx": 4,
   "../sound/SoundControls.tsx": 4,
   "../sound/StreamPlayer.tsx": 3,

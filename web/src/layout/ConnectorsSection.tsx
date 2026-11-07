@@ -5,6 +5,7 @@ import { ChevronLeft, Plug } from "lucide-react";
 import type { ReactNode } from "react";
 import type { SchemaSettingInfo } from "@/api/client";
 import { useCapabilities, useConnectorReport } from "@/api/queries";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { PluginsPending } from "./PluginsPending";
 import { BINDINGS, group, type SettingsNav } from "./settingsSections";
@@ -43,14 +44,16 @@ export function ConnectorsSection({ connectors, open, settings, onOpen, renderSe
     return (
       <>
         <PluginsPending inline />
-        <button
+        <Button
           type="button"
+          size="sm"
+          variant="ghost"
           onClick={() => onOpen("connectors")}
-          className="mb-3 -ml-1.5 flex items-center gap-1 rounded-lg px-1.5 py-1 text-ui-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+          className="mb-3 -ml-2.5 text-muted-foreground"
         >
-          <ChevronLeft aria-hidden className="size-4 text-icon" />
+          <ChevronLeft aria-hidden />
           {t("connectors.title")}
-        </button>
+        </Button>
         <p className="mb-1 text-sm text-muted-foreground">{open.plugin.summary}</p>
         <p className="mb-4 text-sm text-muted-foreground">
           {t("connectors.connects", { what: connects(open).join(", ") })}

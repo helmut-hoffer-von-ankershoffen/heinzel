@@ -389,7 +389,7 @@ export function ProfileEditor({
   }, [hasUncommittedChanges, pending, pendingStorageInvalid, busy, onLock]);
   return (
     <form
-      className="space-y-3 border-t border-border pt-4"
+      className="space-y-3 pt-4 shadow-[0_-1px_0_0_var(--color-border)]"
       onSubmit={(event) => {
         event.preventDefault();
         void save();
