@@ -22,6 +22,7 @@ from heinzel.modules.system.notify._models import (
     NoticeList,
     NotifySettings,
     Opened,
+    Recovered,
     Tested,
 )
 from heinzel.modules.system.notify._native import SESSION
@@ -156,6 +157,28 @@ def clean(service: NotifyService) -> Cleaned:
     return service.clean()
 
 
+def _recovered_exit_code(result: Recovered) -> int:
+    return 1 if result.state == "refused" else 0
+
+
+# Replaces the notification store after archiving it: for the person at the terminal who read doctor's finding.
+@module.operation(read_only=False, exit_code=_recovered_exit_code, heads={"cli"})
+def recover(
+    service: NotifyService,
+    apply: Annotated[
+        bool, Field(description="Archive the store and start a new replay-key set; without it only report.")
+    ] = False,
+) -> Recovered:
+    """Recover a durable notification store whose replay keys a legacy notice list replaced.
+
+    Without --apply it only reports. With it, it archives every original file (SHA-256, mode and time kept) and a
+    receipt under the state directory's `notify-recovery`, keeps the old notices without popping them up again, and
+    starts a new replay-key set from their own keys; lost keys are never rebuilt. Any other damage is refused untouched
+    and exits 1: restore a trusted backup instead.
+    """
+    return service.recover(apply=apply)
+
+
 # Opens a window on the machine hz runs on, for the person who clicked: the CLI and the web app, not agents.
 @module.operation(name="settings", read_only=False, heads={"cli", "web"})
 def open_settings(service: NotifyService) -> Opened:
@@ -178,6 +201,7 @@ __all__ = [
     "NotifyService",
     "NotifySettings",
     "Opened",
+    "Recovered",
     "Tested",
     "module",
 ]

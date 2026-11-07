@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import { api, problem } from "@/api/client";
 import { useSharedChat } from "@/chat/ChatContext";
-import { Composer, Conversation, Costs } from "@/chat/Conversation";
+import { Composer, Conversation } from "@/chat/Conversation";
 import { DurableSession } from "@/chat/DurableSession";
 import { SessionSwitcher } from "@/chat/SessionSwitcher";
 import { isDurableSession } from "@/chat/useChat";
@@ -232,7 +232,6 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           onCreatePersonal={createPersonal}
           initialPersonalMessage={handoff?.message}
         />
-        <Costs chat={chat} className="chat-panel-costs mt-1.5" />
       </div>
     </div>
   );

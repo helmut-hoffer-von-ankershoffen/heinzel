@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Heinzelmännchen</title>
+    <!-- What the service worker shows while hz is down (public/sw.js): no version and no command that could go stale
+         beyond the one below; boot-retry.js reloads the page the moment hz answers. -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf8f3;
+        --fg: #263b32;
+        --muted: #56675e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #18231e;
+          --fg: #e9ede5;
+          --muted: #b4c3b5;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 24px 16px;
+        box-sizing: border-box;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        text-align: center;
+      }
+      img {
+        width: 28px;
+        height: 28px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+      }
+      p {
+        margin: 0;
+        max-width: 28rem;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      code {
+        font-family: ui-monospace, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <img src="/favicon.svg" alt="" width="28" height="28" />
+    <h1>Heinzelmännchen</h1>
+    <p id="boot-status" role="status" aria-live="polite">Looking for hz…</p>
+    <p>This window reconnects by itself and opens the app as soon as hz answers. An installed hz starts again on its own; otherwise run <code>hz ui serve</code> in a terminal.</p>
+    <script src="/boot-retry.js" data-mode="offline"></script>
+  </body>
+</html>

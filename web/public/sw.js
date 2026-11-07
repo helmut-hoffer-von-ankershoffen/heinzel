@@ -1,13 +1,14 @@
 // The web app's service worker (ADR 0046): it shows notifications, opens the app at a notice when one is clicked, and
-// keeps the app's shell for when `hz ui` isn't running. It never caches API data and never talks to another origin.
-const SHELL = "hz-shell-v3";
-const PRECACHED = ["/manifest.webmanifest", "/favicon.svg", "/icons/icon-192.png"];
+// answers with a small offline page that reloads itself once hz is back when `hz ui serve` isn't running. It never caches API data and never talks to another origin.
+const SHELL = "hz-shell-v4";
+const OFFLINE = "/offline.html";
+const PRECACHED = ["/manifest.webmanifest", "/favicon.svg", "/icons/icon-192.png", "/boot-retry.js"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(SHELL)
-      .then((cache) => cache.addAll(["/", ...PRECACHED]))
+      .then((cache) => cache.addAll([OFFLINE, ...PRECACHED]))
       .then(() => self.skipWaiting()),
   );
 });
@@ -38,24 +39,19 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) {
     return; // the network, always: API data is never cached
   }
+  if (url.searchParams.has("hz-probe")) {
+    return; // the offline page asking whether hz is back: the network's answer, never a cached copy
+  }
   if (event.request.mode === "navigate") {
-    // The page from the network, so it is always current; the shell when `hz ui` isn't running.
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response.ok && response.type === "basic") {
-            const copy = response.clone();
-            event.waitUntil(remember("/", copy));
-          }
-          return response;
-        })
-        .catch(() => caches.match("/")),
-    );
+    // The page from the network, so it is always current. When hz isn't running, the offline page: it reloads itself
+    // once hz answers. The app's old page is not kept: it could not start without hz, and went stale (an old version,
+    // a missing icon, old guidance).
+    event.respondWith(fetch(event.request).catch(() => caches.match(OFFLINE).then((page) => page || Response.error())));
     return;
   }
   if (PRECACHED.includes(url.pathname)) {
-    // The installed shell's own files: current from the network, the cached copy when `hz ui` isn't running.
-    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+    // The installed shell's own files: current from the network, the cached copy (whatever its `?v=`) when hz is down.
+    event.respondWith(fetch(event.request).catch(() => caches.match(event.request, { ignoreSearch: true })));
     return;
   }
   if (url.pathname.startsWith("/assets/")) {

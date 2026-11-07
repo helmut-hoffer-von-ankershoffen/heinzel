@@ -179,7 +179,7 @@ describe("Schema setting metadata", () => {
     await user.click(screen.getByRole("switch", { name: "Enabled" }));
     expect(screen.getByTestId("restart-target")).toHaveTextContent("hz ui");
     expect(screen.getByTestId("deferred-message")).toHaveTextContent(
-      "Saved Enabled. This server cannot restart hz ui. Run `hz ui` in a terminal to apply this setting.",
+      "Saved Enabled. This server cannot restart hz ui. Run `hz ui serve` in a terminal to apply this setting.",
     );
     expect(mutateAsync).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Unsupported restart" }));

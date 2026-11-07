@@ -85,6 +85,23 @@ describe("the mini-player docked in the sidebar", () => {
     expect(dockSlot().parentElement).toBe(account.parentElement);
   });
 
+  it("sits directly above a compact account row: no margin band, one hairline, same height as the window footer", async () => {
+    api();
+    const { card } = await play();
+    const account = dockSlot().nextElementSibling as HTMLElement;
+    // The card closes on the account row's hairline: no border of its own below, no margin or padding band between.
+    expect(card.className).toContain("border-t");
+    expect(card.className).not.toMatch(/(^|\s)border-(y|b)(\s|$)/);
+    expect(account.className).toContain("border-t-[0.5px]");
+    expect(account.className).not.toMatch(/(^|\s)(mt-|mb-)/);
+    expect(dockSlot().className).not.toMatch(/(^|\s)(mt-|mb-|p[tby]?-)/);
+    // The row hugs its 36px buttons (h-12, as the top bars) instead of the old 60px, and the window footer matches
+    // so the hairline still runs across the window.
+    expect(account.className).toContain("h-12");
+    expect(account.className).not.toContain("h-[60px]");
+    expect(screen.getByRole("contentinfo").className).toContain("h-12");
+  });
+
   it("pops out with its button, docks again with its button, and remembers both", async () => {
     api();
     const { user, card } = await play();

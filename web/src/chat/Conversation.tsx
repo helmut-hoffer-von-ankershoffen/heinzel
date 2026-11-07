@@ -1,10 +1,11 @@
 // What a chat shows wherever it is (Home, the right sidebar): the messages, the answer as it streams with the tools
 // it calls, every proposed action as a card that runs only on Confirm, the costs, and the composer.
 import { Check, Info, Plus, Send, X } from "lucide-react";
-import { type FormEvent, type ReactNode, type RefObject, useEffect, useId, useState } from "react";
+import { type FormEvent, type ReactNode, type RefObject, useEffect, useId, useRef, useState } from "react";
 import type { ModelChoice } from "@/api/chat";
 import type { SchemaChatAction, SchemaChatMessage } from "@/api/client";
 import { useConfig } from "@/api/queries";
+import { AnchoredPopover } from "@/components/AnchoredPopover";
 import { CopyCommand } from "@/components/common";
 import { Prose } from "@/components/Prose";
 import { Button } from "@/components/ui/button";
@@ -123,30 +124,101 @@ function MessageItem({ message, first }: { message: SchemaChatMessage; first: bo
   );
 }
 
-/** The caps before anything is sent, and what this chat has cost. */
+const INFO_LABEL = { ok: "chat.costInfo", near: "chat.costInfo.near", over: "chat.costInfo.over" } as const;
+
+/** The share of a chat's cost cap from which its icon warns that the limit is near. */
+export const COST_NEAR_RATIO = 0.8;
+
+/** How close this chat is to its cost cap: drives the icon's colour and badge so overspending is never hidden. */
+export function costState(spent: number, cap: number | null): "ok" | "near" | "over" {
+  if (cap == null || cap <= 0) return "ok";
+  if (spent >= cap) return "over";
+  return spent >= cap * COST_NEAR_RATIO ? "near" : "ok";
+}
+
+/**
+ * The caps before anything is sent, and what this chat has cost: an info icon beside the model picker. The text is a
+ * tooltip (hover, keyboard focus, a tap focuses it; Escape hides it) and the button's accessible description, so it
+ * is never persistent text. Near or over the chat's cap the icon turns warn or bad and carries a badge.
+ */
 export function Costs({ chat, className }: { chat: Chat; className?: string }) {
   const config = useConfig();
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
+  // Touch fires focus and mouse events around its tap: the tap toggles the tooltip, and nothing else opens it then.
+  const touch = useRef(false);
+  // Escape closes the tooltip however it opened, also when only the pointer is over the icon.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
   const value = (section: string, key: string) => {
     const found = config.data?.settings.find((s) => s.section === section && s.key === key)?.value;
     return typeof found === "number" ? found : null;
   };
   const message = chat.session?.costs.message_max_usd ?? value("system.runner", "ask_max_usd");
   const session = chat.session?.costs.session_max_usd ?? value("system.runner.chat", "session_max_usd");
+  const spentUsd = chat.session?.costs.spent_usd ?? 0;
   const values = {
     message: message == null ? "…" : format.usd(message),
     session: session == null ? "…" : format.usd(session),
-    spent: format.usd(chat.session?.costs.spent_usd ?? 0),
+    spent: format.usd(spentUsd),
   };
-  const full = t("chat.cost", values);
-  // One short line; the whole explanation is the info icon's tooltip, and read out to screen readers.
+  const state = costState(spentUsd, session);
   return (
-    <p className={cn("flex items-center gap-1 text-xs text-muted-foreground", className)}>
-      <span className="truncate">{t("chat.costShort", values)}</span>
-      <span title={full} className="inline-flex shrink-0 cursor-help text-icon">
-        <Info aria-hidden className="size-3.5" />
-        <span className="sr-only">{full}</span>
-      </span>
-    </p>
+    <span className={cn("relative inline-flex", className)}>
+      <button
+        ref={trigger}
+        type="button"
+        aria-label={t(INFO_LABEL[state])}
+        aria-describedby={panelId}
+        onPointerDown={(event) => {
+          touch.current = event.pointerType === "touch";
+        }}
+        onKeyDown={() => {
+          touch.current = false;
+        }}
+        onFocus={() => !touch.current && setOpen(true)}
+        onMouseEnter={() => !touch.current && setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onBlur={() => setOpen(false)}
+        onClick={() => touch.current && setOpen((shown) => !shown)}
+        data-cost-state={state}
+        className={cn(
+          "relative inline-flex size-6 items-center justify-center rounded-full hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring [&_svg]:size-3.5",
+          state === "ok" && "text-muted-foreground",
+          state === "near" && "text-warn",
+          state === "over" && "text-bad",
+        )}
+      >
+        <Info aria-hidden />
+        {state !== "ok" && (
+          <span
+            aria-hidden
+            className={cn("absolute top-0.5 right-0.5 size-1.5 rounded-full", state === "near" ? "bg-warn" : "bg-bad")}
+          />
+        )}
+      </button>
+      <AnchoredPopover
+        anchor={trigger}
+        side="above"
+        id={panelId}
+        role="tooltip"
+        hidden={!open}
+        className="w-72 p-3 text-xs text-foreground"
+      >
+        <span className="block font-medium">{t("chat.costShort", values)}</span>
+        {state !== "ok" && (
+          <span className={cn("mt-1 block", state === "near" ? "text-warn" : "text-bad")}>
+            {t(state === "near" ? "chat.costNear" : "chat.costOver", values)}
+          </span>
+        )}
+        <span className="mt-1 block text-muted-foreground">{t("chat.cost", values)}</span>
+      </AnchoredPopover>
+    </span>
   );
 }
 
@@ -297,7 +369,10 @@ export function Composer({
           An earlier creation is unresolved. Retry it with the preserved message.
         </p>
       )}
-      <ModelPicker value={choice} onChange={setPicked} disabled={chat.live != null || creating} />
+      <div className="flex items-center gap-0.5">
+        <ModelPicker value={choice} onChange={setPicked} disabled={chat.live != null || creating} />
+        <Costs chat={chat} />
+      </div>
     </div>
   );
 }

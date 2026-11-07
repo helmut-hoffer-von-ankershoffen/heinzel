@@ -27,7 +27,7 @@ import {
   visible,
   waiting,
 } from "./machine";
-import { remember } from "./snapshot";
+import { readSnapshot, remember } from "./snapshot";
 import { type SplashStore, splash, unreachableError } from "./store";
 
 const LINES: Record<Exclude<Phase, "error">, MessageKey> = {
@@ -91,8 +91,8 @@ function Command({ command }: { command: string }) {
   );
 }
 
-/** What starts the server this page talks to: `hz ui`, or `make web-dev` while developing the app. */
-export const START = import.meta.env.DEV ? "make web-dev" : "hz ui";
+/** What starts the server this page talks to: `hz ui serve`, or `make web-dev` while developing the app. */
+export const START = import.meta.env.DEV ? "make web-dev" : "hz ui serve";
 
 /**
  * The link `hz ui` printed, pasted: an installed app has no address bar to open it in. Only this page's own address
@@ -286,10 +286,16 @@ function useSplashElement(state: SplashState, now: () => number) {
   }, [state]);
 }
 
-type Props = { store?: SplashStore; probe?: () => Promise<ProbeResult>; now?: () => number };
+type Props = {
+  store?: SplashStore;
+  probe?: () => Promise<ProbeResult>;
+  now?: () => number;
+  reload?: () => void;
+};
+const reloadPage = () => window.location.reload();
 const clock = () => performance.now();
 
-export function Splash({ store = splash, probe = probeServer, now = clock }: Props) {
+export function Splash({ store = splash, probe = probeServer, now = clock, reload = reloadPage }: Props) {
   const state = useSyncExternalStore(store.subscribe, store.get);
   const client = useQueryClient();
   const theme = useSelectedTheme();
@@ -308,6 +314,13 @@ export function Splash({ store = splash, probe = probeServer, now = clock }: Pro
         // hz answers after it didn't (before the app booted, too): every screen reads again, where the person was.
         const back = store.get().lost;
         const version = (answer.info as { version?: unknown } | undefined)?.version;
+        // hz came back as another version: this page's files are the old ones, so load the new app.
+        const known = readSnapshot().version;
+        if (back && typeof version === "string" && known && known !== version) {
+          remember({ version });
+          reload();
+          return false;
+        }
         if (answer.info) client.setQueryData(["system", "info"], answer.info);
         if (typeof version === "string") {
           remember({ version });
@@ -325,7 +338,7 @@ export function Splash({ store = splash, probe = probeServer, now = clock }: Pro
       store.send({ type: "unreachable", at: now() });
       return polling(store.get());
     },
-    [store, client, now],
+    [store, client, now, reload],
   );
 
   // Answers apply in the order the questions went out: a late "not there" never undoes a newer answer.
@@ -402,7 +415,7 @@ export function Splash({ store = splash, probe = probeServer, now = clock }: Pro
 }
 
 /** Without a token there's nothing to wait for: the page says how to get one, so the splash goes at once. */
-export function SplashGone({ store = splash, now = clock }: Omit<Props, "probe">) {
+export function SplashGone({ store = splash, now = clock }: Pick<Props, "store" | "now">) {
   const state = useSyncExternalStore(store.subscribe, store.get);
   useSplashElement(state, now);
   useEffect(() => {

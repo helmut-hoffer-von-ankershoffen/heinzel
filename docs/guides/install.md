@@ -146,6 +146,18 @@ current hz version. Have the backup and restoration procedure reviewed before ch
 `hz system doctor` again before resuming notification delivery. If no coherent backup is available, keep the store
 unchanged and ask for recovery help.
 
+One shape has a supported recovery when no backup exists: doctor says *a legacy notice list replaced its replay
+keys*. A writer from before durable notices replaced the key-bearing state with a plain list, so the lost keys cannot
+come back from this store. `hz system notify recover` reports what it found and changes nothing. With `--apply` it
+archives every original file under the state directory's `notify-recovery` with its SHA-256, mode and time, writes a
+`receipt.json`, keeps the old notices without popping them up again, and starts a new replay-key set taken only from
+those notices' own keys. Any other damage is refused untouched and exits 1.
+
+Run it after updating hz, so no writer from before durable notices is still running. The receipt names the new state's SHA-256; the recovery completed when
+`notices.json` has that digest. A Heinzel's interrupted delivery from before the overwrite stays uncertain or
+abandoned, as it already was, and recovery itself posts nothing. One check-in slot per session may be recorded once
+more if its notice was recorded right before a crash and the legacy writer then dropped it.
+
 
 On first interactive setup, provide your real name, team and required profile details. Existing values are kept.
 Choose **Set up AI later** to use Heinzel without an AI account; this saves an explicit unconfigured choice for uses
