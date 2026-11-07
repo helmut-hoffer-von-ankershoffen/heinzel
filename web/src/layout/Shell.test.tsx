@@ -114,6 +114,28 @@ describe("Shell", () => {
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
   });
 
+  it("clears the search query and puts focus back in the input", async () => {
+    mockApi(answers);
+    const user = userEvent.setup();
+    renderAt("/");
+    await screen.findByRole("link", { name: "Weekly digest" });
+    await user.keyboard("{Meta>}k{/Meta}");
+    const search = await screen.findByRole("combobox", { name: /Search/ });
+    const results = within(screen.getByRole("listbox", { name: /Search/ }));
+    const firstResult = results.getAllByRole("option")[0]?.textContent ?? "";
+    expect(screen.queryByRole("button", { name: "Clear search" })).not.toBeInTheDocument();
+    await user.type(search, "log_level");
+    expect(screen.getByRole("option", { name: /hz\.log_level/ })).toBeInTheDocument();
+    await user.tab();
+    const clear = screen.getByRole("button", { name: "Clear search" });
+    expect(clear).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(search).toHaveValue("");
+    expect(search).toHaveFocus();
+    expect(results.getByRole("option", { selected: true })).toHaveTextContent(firstResult);
+    expect(screen.queryByRole("button", { name: "Clear search" })).not.toBeInTheDocument();
+  });
+
   it("switches between light and dark and remembers it", async () => {
     mockApi(answers);
     const user = userEvent.setup();

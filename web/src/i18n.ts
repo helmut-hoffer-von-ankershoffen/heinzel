@@ -368,6 +368,7 @@ const en = {
   "search.open": "Search",
   "search.label": "Search navigation, settings, contracts and artifacts",
   "search.placeholder": "Search…",
+  "search.clear": "Clear search",
   "search.none": "Nothing matches.",
   "theme.toggle": "Switch between light and dark",
   "sound.title": "Sound",
