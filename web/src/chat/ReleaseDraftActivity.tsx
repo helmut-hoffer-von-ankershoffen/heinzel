@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { api, type SchemaChatAction, type SchemaChatSession, unwrap } from "@/api/client";
-import { token } from "@/api/token";
+import { api, authorityMiddleware, type SchemaChatAction, type SchemaChatSession, unwrap } from "@/api/client";
+import { authorityEpoch } from "@/api/token";
 import { Button } from "@/components/ui/button";
 
 const activityLabels: Record<string, string> = {
@@ -98,10 +98,12 @@ export function ReleaseDraftReviewDetails({ review }: { review: NonNullable<Retu
 
 /** Read private journal activity and stage a review. Only the conversation can decide the resulting action. */
 export function ReleaseDraftActivity({
+  authority,
   sessionId,
   conversationBusy,
   onReview,
 }: {
+  authority: number;
   sessionId: string;
   conversationBusy: boolean;
   onReview: (chat: SchemaChatSession) => void;
@@ -111,32 +113,36 @@ export function ReleaseDraftActivity({
   const [message, setMessage] = useState<string>();
   const mutation = useRef<AbortController | null>(null);
   useEffect(() => () => mutation.current?.abort(), []);
-  const authority = token();
   const query = useQuery({
-    queryKey: ["heinzel", "release-draft-activity", sessionId],
+    queryKey: ["heinzel", "release-draft-activity", authority, sessionId],
     enabled: open,
     gcTime: 0,
     retry: false,
     queryFn: async ({ signal }) => {
       const items = await unwrap(
-        api.GET("/heinzel/release-draft-activity", { params: { query: { session_id: sessionId } }, signal }),
+        api.GET("/heinzel/release-draft-activity", {
+          params: { query: { session_id: sessionId } },
+          middleware: authorityMiddleware(authority),
+          signal,
+        }),
       );
-      if (token() !== authority) throw new Error("Release draft activity scope changed");
-      return { items, isCurrent: () => token() === authority };
+      if (authorityEpoch() !== authority) throw new Error("Release draft activity scope changed");
+      return { items, isCurrent: () => authorityEpoch() === authority };
     },
   });
 
   async function stage(draftKey: string) {
-    if (conversationBusy || mutation.current || token() !== authority) return;
+    if (conversationBusy || mutation.current || authorityEpoch() !== authority) return;
     const controller = new AbortController();
     mutation.current = controller;
-    const current = () => !controller.signal.aborted && token() === authority;
+    const current = () => !controller.signal.aborted && authorityEpoch() === authority;
     setWorking(true);
     setMessage(undefined);
     try {
       const requestId = await unwrap(
         api.POST("/heinzel/prepare-release-draft-share", {
           body: { session_id: sessionId, draft_key: draftKey },
+          middleware: authorityMiddleware(authority),
           signal: controller.signal,
         }),
       );
@@ -145,6 +151,7 @@ export function ReleaseDraftActivity({
       const chat = await unwrap(
         api.POST("/system/runner/chat/propose-release-draft-share", {
           body: { durable_session: sessionId, request_id: requestId },
+          middleware: authorityMiddleware(authority),
           signal: controller.signal,
         }),
       );
@@ -171,7 +178,7 @@ export function ReleaseDraftActivity({
     } catch {
       if (current()) setMessage("Couldn’t open the release draft review.");
     } finally {
-      mutation.current = null;
+      if (mutation.current === controller) mutation.current = null;
       if (current()) setWorking(false);
     }
   }

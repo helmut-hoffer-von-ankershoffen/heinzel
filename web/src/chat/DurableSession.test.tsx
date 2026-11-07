@@ -1429,7 +1429,7 @@ describe("personal conversation links", () => {
     expect(new URL(secondProposal.url).searchParams.get("request_id")).toBe("review-request");
   });
 
-  it("stages the exact edited draft, restores review on reload, and shares only after Confirm", async () => {
+  it("stages the exact edited draft, restores review on reload, and binds Confirm to the reviewing authority", async () => {
     const draftKey = "a".repeat(64);
     const requestId = "b".repeat(64);
     const otherSession = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW";
@@ -1458,6 +1458,25 @@ describe("personal conversation links", () => {
       status: "pending",
     };
     const chat = { ...reviewChat, actions: [shareAction] };
+    const newRevision = "revision-new-authority";
+    const newAction = {
+      ...shareAction,
+      id: "draft-share-new-authority",
+      arguments: {
+        ...shareAction.arguments,
+        request_id: "c".repeat(64),
+        review: {
+          ...shareAction.arguments.review,
+          snapshot: {
+            ...shareAction.arguments.review.snapshot,
+            target: { ...shareAction.arguments.review.snapshot.target, revision: newRevision },
+            text: "The new authority’s release note.",
+          },
+        },
+      },
+    };
+    const newChat = { ...chat, actions: [newAction] };
+    let finishConfirmation: (() => void) | undefined;
     const { calls } = mockApi({
       ...shell,
       "/api/heinzel/session": (request: Request) => ({
@@ -1476,12 +1495,21 @@ describe("personal conversation links", () => {
         expect(await request.json()).toEqual({ durable_session: sessionId, request_id: requestId });
         return chat;
       },
-      "/api/system/runner/chat/show": chat,
+      "/api/system/runner/chat/show": (request: Request) => {
+        const bearer = request.headers.get("Authorization");
+        if (bearer === "Bearer test-token") return chat;
+        if (bearer === "Bearer replacement-token") return newChat;
+        return { status: 403, body: { error: "Conversation is unavailable" } };
+      },
       "/api/system/runner/chat/confirm": (request: Request) => {
         const query = new URL(request.url).searchParams;
+        expect(request.headers.get("Authorization")).toBe("Bearer replacement-token");
         expect(query.get("session")).toBe(chat.id);
-        expect(query.get("action")).toBe(shareAction.id);
-        return { ...chat, actions: [{ ...shareAction, status: "done" }] };
+        expect(query.get("action")).toBe(newAction.id);
+        return new Promise((resolve) => {
+          finishConfirmation = () =>
+            resolve({ ...newChat, messages: [{ role: "action", text: "Old authority’s late private response" }] });
+        });
       },
     });
     const pendingPath = `/heinzel?chat=${sessionId}&agent-chat=${chat.id}`;
@@ -1520,8 +1548,34 @@ describe("personal conversation links", () => {
     const restored = await screen.findByRole("heading", { name: "Review release draft share" });
     const card = restored.closest("section");
     if (!card) throw new Error("Missing restored draft review");
-    fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
+    const staleConfirm = within(card).getByRole("button", { name: "Confirm" });
+    sessionStorage.setItem("hz.token", "replacement-token");
+    fireEvent.click(staleConfirm);
+    expect(called("/chat/confirm")).toHaveLength(0);
+    act(() => window.dispatchEvent(new Event("storage")));
+    expect(screen.queryByText("The edited release note.")).not.toBeInTheDocument();
+    expect(await screen.findByText(newRevision)).toBeVisible();
+    expect(
+      called("/chat/show").some((request) => request.headers.get("Authorization") === "Bearer replacement-token"),
+    ).toBe(true);
+    expect(called("/chat/confirm")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(called("/chat/confirm")).toHaveLength(1));
+
+    act(() => {
+      sessionStorage.setItem("hz.token", "other-token");
+      window.dispatchEvent(new Event("storage"));
+    });
+    expect(screen.queryByText("The new authority’s release note.")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        called("/chat/show").some((request) => request.headers.get("Authorization") === "Bearer other-token"),
+      ).toBe(true),
+    );
+    await act(async () => finishConfirmation?.());
+    expect(screen.queryByText("Old authority’s late private response")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+    expect(called("/chat/confirm")).toHaveLength(1);
     expect(called("/share-draft-link")).toHaveLength(0);
   });
 

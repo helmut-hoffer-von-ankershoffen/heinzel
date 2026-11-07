@@ -1,11 +1,19 @@
 // A durable personal session has a different id and service from the legacy runner chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
-import { ApiError, api, problem, type SchemaChatSession, type SchemaSessionSnapshot } from "@/api/client";
+import {
+  ApiError,
+  api,
+  authorityMiddleware,
+  problem,
+  type SchemaChatSession,
+  type SchemaSessionSnapshot,
+} from "@/api/client";
 import { useDaemonStatus } from "@/api/daemon";
 import { useConfig, usePreviewFeature } from "@/api/queries";
+import { authorityEpoch, subscribeAuthority } from "@/api/token";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { AgentProposalSummary } from "@/chat/AgentProposalSummary";
 import { AgentSchedules } from "@/chat/AgentSchedules";
@@ -104,7 +112,22 @@ function rejectedBeforeAcceptance(reason: unknown): boolean {
 }
 
 export function DurableSession({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
+  const authority = useSyncExternalStore(subscribeAuthority, authorityEpoch);
+  return <DurableSessionView key={authority} authority={authority} sessionId={sessionId} onClose={onClose} />;
+}
+
+function DurableSessionView({
+  authority,
+  sessionId,
+  onClose,
+}: {
+  authority: number;
+  sessionId: string;
+  onClose: () => void;
+}) {
   const client = useQueryClient();
+  const shareDecision = useRef<AbortController | null>(null);
+  useEffect(() => () => shareDecision.current?.abort(), []);
   const connectedFrontdoor = usePreviewFeature("connected_frontdoor");
   const [params, setParams] = useSearchParams();
   const { state: routeState } = useLocation();
@@ -221,9 +244,12 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const daemonStatus = useDaemonStatus(query.data?.schedule?.status === "active");
   const approvalChatId = params.get("approval-chat");
   const agentChatId = params.get("agent-chat");
+  const scopedChatKey = (id: string) => [...chatKey(id), "durable", authority, sessionId];
+  const authorityCurrent = () => authorityEpoch() === authority;
   const rememberChat = (chat: SchemaChatSession, expectedId?: string) => {
+    if (!authorityCurrent()) throw new Error("Browser authority changed");
     requirePersonalChat(chat, sessionId, expectedId);
-    client.setQueryData(chatKey(chat.id), chat);
+    client.setQueryData(scopedChatKey(chat.id), chat);
   };
   const openAgentReview = (chat: SchemaChatSession) => {
     rememberChat(chat);
@@ -233,35 +259,42 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       return next;
     });
   };
+  async function readScopedChat(id: string, signal?: AbortSignal) {
+    const chat = await result(
+      api.GET("/system/runner/chat/show", {
+        params: { query: { session: id } },
+        middleware: authorityMiddleware(authority),
+        signal,
+      }),
+    );
+    if (!authorityCurrent()) throw new Error("Browser authority changed");
+    return requirePersonalChat(chat, sessionId, id);
+  }
   const agentChatQuery = useQuery({
-    queryKey: chatKey(agentChatId ?? ""),
-    queryFn: async () =>
-      requirePersonalChat(
-        await result(api.GET("/system/runner/chat/show", { params: { query: { session: agentChatId ?? "" } } })),
-        sessionId,
-        agentChatId ?? "",
-      ),
+    queryKey: scopedChatKey(agentChatId ?? ""),
+    queryFn: ({ signal }) => readScopedChat(agentChatId ?? "", signal),
     enabled: agentChatId !== null,
     retry: false,
+    gcTime: 0,
   });
   const agentChat =
-    agentChatQuery.data?.personal_session_id === sessionId && agentChatQuery.data.id === agentChatId
+    authorityCurrent() &&
+    agentChatQuery.data?.personal_session_id === sessionId &&
+    agentChatQuery.data.id === agentChatId
       ? agentChatQuery.data
       : undefined;
   const agentChatUnavailable = agentChatId !== null && !agentChat;
   const approvalQuery = useQuery({
-    queryKey: chatKey(approvalChatId ?? ""),
-    queryFn: async () =>
-      requirePersonalChat(
-        await result(api.GET("/system/runner/chat/show", { params: { query: { session: approvalChatId ?? "" } } })),
-        sessionId,
-        approvalChatId ?? "",
-      ),
+    queryKey: scopedChatKey(approvalChatId ?? ""),
+    queryFn: ({ signal }) => readScopedChat(approvalChatId ?? "", signal),
     enabled: approvalChatId !== null,
     retry: false,
+    gcTime: 0,
   });
   const approvalChat =
-    approvalQuery.data?.personal_session_id === sessionId && approvalQuery.data.id === approvalChatId
+    authorityCurrent() &&
+    approvalQuery.data?.personal_session_id === sessionId &&
+    approvalQuery.data.id === approvalChatId
       ? approvalQuery.data
       : undefined;
   const activeDaemon = query.data?.schedule?.status === "active" ? daemonStatus.data : undefined;
@@ -932,6 +965,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         {query.data?.session_id === sessionId && (
           <ReleaseDraftActivity
             key={`release-draft-${sessionId}`}
+            authority={authority}
             sessionId={sessionId}
             conversationBusy={busy || !!pending || !!agentPending}
             onReview={openAgentReview}
@@ -1187,7 +1221,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                   }
                   reviewDetails={shareReview && <ReleaseDraftReviewDetails review={shareReview} />}
                   onDecide={(confirm) => {
-                    if (!agentChat || busy) return;
+                    if (!agentChat || busy || (isShare && (!authorityCurrent() || shareDecision.current))) return;
                     if (decisionKey && !recordWriteDecision(decisionKey)) {
                       setScheduleError(true);
                       setScheduleErrorMessage(
@@ -1197,6 +1231,12 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                       );
                       return;
                     }
+                    const controller = isShare ? new AbortController() : undefined;
+                    if (controller) shareDecision.current = controller;
+                    const decisionCurrent = () => !controller || (!controller.signal.aborted && authorityCurrent());
+                    const authorityOptions = controller
+                      ? { middleware: authorityMiddleware(authority), signal: controller.signal }
+                      : {};
                     void (async () => {
                       setBusy(true);
                       try {
@@ -1204,11 +1244,14 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                           confirm
                             ? api.POST("/system/runner/chat/confirm", {
                                 params: { query: { session: agentChat.id, action: action.id } },
+                                ...authorityOptions,
                               })
                             : api.POST("/system/runner/chat/decline", {
                                 params: { query: { session: agentChat.id, action: action.id } },
+                                ...authorityOptions,
                               }),
                         );
+                        if (!decisionCurrent()) return;
                         if (isWrite || isShare) {
                           const recorded = updated.actions?.find((item) => item.id === action.id);
                           if (
@@ -1228,22 +1271,26 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                             queryKey: ["heinzel", isShare ? "release-draft-activity" : "captured-write-activity"],
                           });
                         }
+                        if (!decisionCurrent()) return;
                         rememberChat(updated, agentChat.id);
                         await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
                       } catch (reason) {
+                        if (!decisionCurrent()) return;
                         setScheduleError(true);
                         setScheduleErrorMessage(reason instanceof Error ? reason.message : null);
                         try {
-                          const current = await result(
-                            api.GET("/system/runner/chat/show", { params: { query: { session: agentChat.id } } }),
-                          );
+                          const current = await readScopedChat(agentChat.id, controller?.signal);
+                          if (!decisionCurrent()) return;
                           rememberChat(current, agentChat.id);
                           await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
                         } catch {
                           // Keep the recovery link; a later reload reads the same action without replaying it.
                         }
                       } finally {
-                        setBusy(false);
+                        if (!controller || shareDecision.current === controller) {
+                          if (controller) shareDecision.current = null;
+                          setBusy(false);
+                        }
                       }
                     })();
                   }}

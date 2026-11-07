@@ -2,7 +2,7 @@
 import createClient, { type Middleware } from "openapi-fetch";
 import { dropRefusedDevice } from "./device";
 import type { paths } from "./schema";
-import { token } from "./token";
+import { authorityEpoch, token } from "./token";
 
 export type * from "./schema";
 
@@ -36,6 +36,21 @@ export const api = createClient<paths>({
   fetch: (request) => globalThis.fetch(request),
 });
 api.use(bearer);
+
+/** Reject a queued request if its original browser authority has been replaced. */
+export function authorityMiddleware(expected: number): Middleware[] {
+  return [
+    {
+      onRequest({ request }) {
+        if (authorityEpoch() !== expected) throw new Error("Browser authority changed");
+        const value = token();
+        if (!value) throw new Error("Browser authority is unavailable");
+        request.headers.set("Authorization", `Bearer ${value}`);
+        return request;
+      },
+    },
+  ];
+}
 
 /** Why a call failed, in words: the API's `error`, a validation detail, or the HTTP status. */
 export function problem(status: number, body: unknown): ApiError {

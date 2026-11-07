@@ -1,6 +1,6 @@
 // Pairing (ADR 0046): with the session token `hz ui` opened the tab with, ask once for a device token and keep it,
 // so this browser, or the app installed from it, opens without a new link. `hz ui --devices` lists the paired ones.
-import { DEVICE_KEY, deviceToken, dropSessionToken, sessionToken } from "./token";
+import { DEVICE_KEY, deviceToken, dropSessionToken, notifyAuthorityChange, sessionToken } from "./token";
 
 /** What the browser is, in words, for `hz ui --devices`: no fingerprint, just the browser, the system and the mode. */
 export function deviceName(agent: string = navigator.userAgent): string {
@@ -35,6 +35,7 @@ export async function pairDevice(fetcher: typeof fetch = (request) => globalThis
     const { token } = (await response.json()) as { token?: string };
     if (!token) return false;
     localStorage.setItem(DEVICE_KEY, token);
+    notifyAuthorityChange();
     return true;
   } catch {
     return false; // storage blocked or `hz ui` gone: the session token still works in this tab
@@ -54,6 +55,7 @@ export async function forgetDevice(fetcher: typeof fetch = (request) => globalTh
     );
   } finally {
     localStorage.removeItem(DEVICE_KEY);
+    notifyAuthorityChange();
   }
 }
 
@@ -67,7 +69,10 @@ export function dropRefusedDevice(status: number, sent: string | null, reload: (
   if (sent === sessionToken() && deviceToken()) {
     dropSessionToken();
     reload();
-  } else if (sent === deviceToken() && !sessionToken()) localStorage.removeItem(DEVICE_KEY);
+  } else if (sent === deviceToken() && !sessionToken()) {
+    localStorage.removeItem(DEVICE_KEY);
+    notifyAuthorityChange();
+  }
 }
 
 /**

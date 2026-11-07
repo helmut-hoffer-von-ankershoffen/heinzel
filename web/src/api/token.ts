@@ -11,6 +11,7 @@ export function adoptToken(location: Location = window.location, history: Histor
   const fresh = fragment.get("token");
   if (fresh) {
     sessionStorage.setItem(KEY, fresh);
+    notifyAuthorityChange();
     fragment.delete("token");
     const rest = fragment.toString();
     history.replaceState(history.state, "", `${location.pathname}${location.search}${rest ? `#${rest}` : ""}`);
@@ -26,6 +27,7 @@ export function sessionToken(): string | null {
 /** Forget this tab's session token, e.g. once `hz ui` started again and no longer knows it. */
 export function dropSessionToken(): void {
   sessionStorage.removeItem(KEY);
+  notifyAuthorityChange();
 }
 
 /** This browser's device token, if it is paired. */
@@ -39,4 +41,34 @@ export function deviceToken(): string | null {
 
 export function token(): string | null {
   return sessionToken() ?? deviceToken();
+}
+
+let lastAuthority: string | null | undefined;
+let epoch = 0;
+const authorityListeners = new Set<() => void>();
+
+/** Non-secret cache identity. Compare the effective token even before a notification has been delivered. */
+export function authorityEpoch(): number {
+  const current = token();
+  if (current !== lastAuthority) {
+    lastAuthority = current;
+    epoch += 1;
+  }
+  return epoch;
+}
+
+export function notifyAuthorityChange(): void {
+  authorityEpoch();
+  for (const listener of authorityListeners) listener();
+}
+
+export function subscribeAuthority(listener: () => void): () => void {
+  authorityListeners.add(listener);
+  window.addEventListener("storage", listener);
+  window.addEventListener("focus", listener);
+  return () => {
+    authorityListeners.delete(listener);
+    window.removeEventListener("storage", listener);
+    window.removeEventListener("focus", listener);
+  };
 }
