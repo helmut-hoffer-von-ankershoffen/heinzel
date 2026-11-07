@@ -52,10 +52,11 @@ from heinzel.modules.system.notify._models import (
     NoticeList,
     NotifySettings,
     Opened,
+    Recovered,
     Tested,
 )
 from heinzel.modules.system.notify._native import ALLOW, DENIED_DETAIL, DENIED_FIX, HEINZEL, ICON_CACHE, Native, native
-from heinzel.modules.system.notify._store import Store
+from heinzel.modules.system.notify._store import INTEGRITY_LEGACY, Store, recover
 from heinzel.modules.system.notify._watch import daemon_state, watch
 
 logger = logging.getLogger(__name__)
@@ -502,6 +503,10 @@ class NotifyService(Notifications):
             logger.warning("macOS forgot %d stray Heinzel Notifier cop(ies)", forgotten)
         return forgotten
 
+    def recover(self, *, apply: bool) -> Recovered:
+        """Archive and restart a durable store a legacy writer overwrote; refuse every other shape untouched."""
+        return recover(self.store, self._clock(), apply=apply)
+
     def clean(self) -> Cleaned:
         """End every leftover Heinzel Notifier process (ones that ran longer than five minutes)."""
         notifier = self.notifier
@@ -641,18 +646,18 @@ class NotifyService(Notifications):
     def health(self) -> list[Check]:
         """Report durable store integrity and how notices reach you, without changing notification state."""
         if problem := self.store.integrity_problem():
-            return [
-                Check(
-                    name="notification store",
-                    status=Status.DOWN,
-                    detail=problem,
-                    fix=(
-                        "Preserve the store for recovery review; "
-                        "use a coherent trusted backup if replay evidence is damaged. "
-                        "Do not delete its marker or rebuild replay keys."
-                    ),
+            fix = (
+                "Preserve the store for recovery review; "
+                "use a coherent trusted backup if replay evidence is damaged. "
+                "Do not delete its marker or rebuild replay keys."
+            )
+            if problem == INTEGRITY_LEGACY:
+                fix = (
+                    "Restore a coherent trusted backup if you have one; otherwise run "
+                    "`hz system notify recover --apply` in your own terminal, which archives the store with a receipt "
+                    "and starts a new replay-key set. Do not delete its marker or rebuild replay keys by hand."
                 )
-            ]
+            return [Check(name="notification store", status=Status.DOWN, detail=problem, fix=fix)]
         settings = self.settings
         if not settings.enabled:
             return [Check(name="notifications", status=Status.UP, detail="off ([system.notify] enabled = false)")]

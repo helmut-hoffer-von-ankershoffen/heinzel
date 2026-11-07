@@ -308,6 +308,7 @@ function FooterStatus({
           : undefined
       }
       text={item.presentation === "value" && item.live ? liveText(item.live, now) : label}
+      steady={Boolean(item.live)}
       content={
         item.meters?.length ? (
           <span aria-hidden className="flex h-4 items-end gap-px">
@@ -870,19 +871,22 @@ function WidgetCard({
   return (
     <li
       className={cn(
-        "flex min-w-0 flex-col gap-2 rounded-lg border-l-4 bg-card p-3 text-sm shadow-sm",
+        "relative flex min-w-0 flex-col gap-2 rounded-lg border-l-4 bg-card p-3 text-sm shadow-sm",
         TONE_BORDER[tone],
         SIZES[sizeOf(widget)],
       )}
       data-widget={current.id}
       data-size={sizeOf(widget)}
     >
-      <WidgetBody widget={widget} run={run} />
-      <div className="mt-auto flex items-center gap-2 pt-1">
+      <div className="min-w-0 pr-16">
+        <WidgetBody widget={widget} run={run} />
+      </div>
+      <div className="absolute top-1.5 right-1.5 flex items-center">
         {onAsk && (
           <Button
-            size="sm"
-            variant="outline"
+            size="icon"
+            variant="ghost"
+            className="size-8"
             onClick={() =>
               onAsk(
                 `text:what module ${current.module} shows`,
@@ -892,15 +896,16 @@ function WidgetCard({
                 }),
               )
             }
+            aria-label={t("today.ask")}
+            title={t("today.ask")}
           >
             <MessageSquare aria-hidden />
-            {t("today.ask")}
           </Button>
         )}
         <Button
           size="icon"
           variant="ghost"
-          className="ml-auto"
+          className="size-8"
           onClick={() => onDismiss(widgetKey(current))}
           aria-label={t("today.dismiss", { title })}
           title={t("today.dismiss", { title })}
