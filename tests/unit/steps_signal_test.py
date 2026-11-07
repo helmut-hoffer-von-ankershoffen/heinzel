@@ -1,12 +1,14 @@
 """Real process groups are stopped when the step runner receives termination signals."""
 
 import os
+import runpy
 import shlex
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -90,8 +92,9 @@ def test_interrupt_stops_only_owned_children_and_grandchildren(tmp_path, sent, v
             os.kill(runner.pid, signal.SIGINT)
         runner.communicate(timeout=8)
         assert runner.returncode == 128 + sent
-        if not leader_ignores:
-            assert all((directory / "term-exit").read_text() == "term" for directory in directories)
+        # Whether a TERM handler gets to run inside STOP_GRACE depends on the scheduler of a loaded runner (bead 3qj:
+        # term-exit missing once on 4 vCPU); the order, TERM to every group before the grace and KILL after it, is
+        # checked deterministically by test_stop_terms_every_group_before_the_grace_and_kills_after_it.
         _wait_for(lambda: all(not _alive(pid) for pid in pids))
         assert unrelated.poll() is None
     finally:
@@ -143,3 +146,30 @@ def test_timeout_has_standard_exit_code_in_both_modes(verbose):
         check=False,
     )
     assert result.returncode == 124
+
+
+def test_stop_terms_every_group_before_the_grace_and_kills_after_it(monkeypatch):
+    steps = runpy.run_path(str(_RUNNER), run_name="steps_under_test")
+    calls = []
+    monkeypatch.setattr(os, "killpg", lambda pid, sig: calls.append(("signal", pid, sig)))
+    monkeypatch.setattr(time, "sleep", lambda seconds: calls.append(("grace", seconds)))
+    waits = []
+    processes = [
+        SimpleNamespace(pid=pid, returncode=None, wait=lambda timeout, pid=pid: waits.append(pid)) for pid in (7, 8)
+    ]
+    done = SimpleNamespace(pid=9, returncode=0, wait=lambda timeout: waits.append(9))
+    owned = [steps["Step"](f"step-{p.pid}", "true", process=p) for p in (*processes, done)]
+    try:
+        steps["stop_steps"](owned, "interrupted", 130)
+    finally:
+        for step in owned:
+            step.output.close()
+    assert calls == [
+        ("signal", 7, signal.SIGTERM),
+        ("signal", 8, signal.SIGTERM),
+        ("grace", steps["STOP_GRACE"]),
+        ("signal", 7, signal.SIGKILL),
+        ("signal", 8, signal.SIGKILL),
+    ]
+    assert waits == [7, 8]  # a finished step is neither signalled nor waited for
+    assert [(step.code, step.note) for step in owned[:2]] == [(130, "interrupted")] * 2
