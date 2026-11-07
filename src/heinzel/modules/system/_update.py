@@ -1564,7 +1564,7 @@ class _Steps:
             **{f"plugin:{name}": f"Plugin {name}" for name in plugins},
             "heads": "Moving the background services onto it",
         }
-        self._phases = Phases(progress, list(self._labels.items()))
+        self._phases = Phases(progress, list(self._labels.items()), operation="system.update")
         self._running: str | None = None
 
     def _note(self, id_: str, state: State, detail: str | None = None) -> None:
@@ -1604,7 +1604,7 @@ class _Steps:
                 self.skip(id_, "Not asked: hz stays as it is.")
                 continue
             state, detail = _plugin_step(update)
-            self._note(id_, state, detail)
+            self._phases.note(id_, self._labels[id_], state, detail, version=update.after or update.before)
 
     def restarted(self, heads: Sequence[HeadRefresh]) -> None:
         """Finish the restart: a warning names the first service not verified on the new version."""
