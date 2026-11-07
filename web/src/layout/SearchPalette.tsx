@@ -1,9 +1,11 @@
 // ⌘K: one search over the navigation, every setting, every contract and every asset type. A native <dialog>
 // (focus trap, Escape, inert background) rather than a library one: those inject <style>, which the CSP refuses.
+import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useConfig, useContracts, useExpert, usePlaybooks } from "@/api/queries";
 import { Gnome } from "@/components/Gnome";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { contractPath, listed, sections, visibleSections } from "./navigation";
@@ -55,6 +57,7 @@ export function SearchPalette({ open, onOpenChange }: { open: boolean; onOpenCha
     needle ? entries.filter((entry) => `${entry.label} ${entry.hint}`.toLowerCase().includes(needle)) : entries
   ).slice(0, 50);
   const dialog = useRef<HTMLDialogElement>(null);
+  const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const element = dialog.current;
     if (!element) return;
@@ -88,26 +91,49 @@ export function SearchPalette({ open, onOpenChange }: { open: boolean; onOpenCha
     >
       {open && (
         <>
-          <input
-            autoFocus
-            role="combobox"
-            aria-expanded
-            aria-controls="search-results"
-            aria-activedescendant={matches[active] ? `search-${active}` : undefined}
-            aria-label={t("search.label")}
-            placeholder={t("search.placeholder")}
-            className="w-full border-b border-border bg-transparent px-4 py-3 outline-none focus-visible:shadow-[inset_0_-2px_0_var(--color-ring)] focus-visible:outline-none"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setActive(0);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowDown") setActive((index) => Math.min(index + 1, matches.length - 1));
-              if (event.key === "ArrowUp") setActive((index) => Math.max(index - 1, 0));
-              if (event.key === "Enter") go(matches[active]);
-            }}
-          />
+          <div className="relative">
+            <input
+              ref={input}
+              autoFocus
+              role="combobox"
+              aria-expanded
+              aria-controls="search-results"
+              aria-activedescendant={matches[active] ? `search-${active}` : undefined}
+              aria-label={t("search.label")}
+              placeholder={t("search.placeholder")}
+              className={cn(
+                "w-full border-b border-border bg-transparent px-4 py-3 outline-none focus-visible:shadow-[inset_0_-2px_0_var(--color-ring)] focus-visible:outline-none",
+                query && "pr-14",
+              )}
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setActive(0);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown") setActive((index) => Math.min(index + 1, matches.length - 1));
+                if (event.key === "ArrowUp") setActive((index) => Math.max(index - 1, 0));
+                if (event.key === "Enter") go(matches[active]);
+              }}
+            />
+            {query && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute inset-y-0 right-1 my-auto size-11"
+                aria-label={t("search.clear")}
+                title={t("search.clear")}
+                onClick={() => {
+                  setQuery("");
+                  setActive(0);
+                  input.current?.focus();
+                }}
+              >
+                <X aria-hidden />
+              </Button>
+            )}
+          </div>
           <div
             id="search-results"
             role="listbox"
