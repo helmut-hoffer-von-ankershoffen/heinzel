@@ -1,6 +1,10 @@
 """The focused-job workflow runs exactly the selection it was given, and refuses anything else."""
 
 import importlib.util
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -78,3 +82,55 @@ def test_an_invalid_selection_fails_before_anything_runs(monkeypatch, capsys):
     monkeypatch.setattr(focused_job.subprocess, "run", pytest.fail)
     assert focused_job.main(["focused_job.py"]) == 2
     assert "::error::" in capsys.readouterr().out
+
+
+def test_repeat_runs_ids_in_one_pytest_process_with_the_round_plugin():
+    commands = focused_job.plan("pytest", "tests/unit/ci_test.py::test_every_job_has_a_timeout", OUT, repeat=5)
+    assert commands[-1][commands[-1].index("-p", commands[-1].index("no:cacheprovider")) + 1] == "focused_job"
+    assert focused_job.plan("e2e", "web-2", OUT) == [["make", "test-e2e", "SUITE=web-2"]]
+
+
+@pytest.mark.parametrize("value", ["0", "61", "x", "-1", "5;id"])
+def test_refuses_a_repeat_outside_1_to_60(value):
+    with pytest.raises(focused_job.SelectorError):
+        focused_job.repeat_count("pytest", value)
+
+
+@pytest.mark.parametrize("selector", ["web-2", "tests/unit/ci_test.py::test_every_job_has_a_timeout[ci.yml]"])
+def test_repeat_refuses_lanes_and_parametrized_cases(selector):
+    with pytest.raises(focused_job.SelectorError):
+        focused_job.plan("e2e" if selector == "web-2" else "pytest", selector, OUT, repeat=3)
+
+
+def test_the_round_plugin_repeats_in_one_process_and_tallies(tmp_path):
+    (tmp_path / "flaky_test.py").write_text(
+        "import pytest\n"
+        "RUNS = []\n"
+        "@pytest.fixture\n"
+        "def resource():\n"
+        "    yield 1\n"
+        "def test_second_run_fails(resource):\n"
+        "    RUNS.append(1)\n"
+        "    assert len(RUNS) != 2\n"
+        "def test_other():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    env = {
+        **os.environ,
+        "FOCUSED_REPEAT": "3",
+        "FOCUSED_OUT": str(tmp_path / "out"),
+        "PYTHONPATH": os.pathsep.join(filter(None, [str(REPO / "scripts"), os.environ.get("PYTHONPATH")])),
+    }
+    command = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "focused_job", "-p", "no:xdist"]
+    result = subprocess.run(
+        [*command, "flaky_test.py", "-o", "addopts=", "-rA"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert "FAILED flaky_test.py::test_second_run_fails[round2]" in result.stdout, result.stdout + result.stderr
+    assert json.loads((tmp_path / "out" / "tally.json").read_text()) == {"rounds": 3, "green": 2, "asked": 3}

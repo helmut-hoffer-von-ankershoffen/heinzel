@@ -24,6 +24,16 @@ on:
         description: "e2e: a lane (cli, supervised, web-1, web-2) or test ids under tests/e2e/; pytest: ids under tests/; vitest: files under web/"
         required: true
         type: string
+      repeat:
+        description: "Rounds of the selection in this one job, 1-60 (pytest/e2e ids repeat inside one pytest process)"
+        required: false
+        default: "1"
+        type: string
+      stress:
+        description: Keep every CPU busy while the selection runs (timing flakes)
+        required: false
+        default: false
+        type: boolean
 permissions: {}
 # One focused run per ref at a time; a second dispatch for the same ref waits instead of competing for runners.
 concurrency:
@@ -45,6 +55,8 @@ jobs:
       FOCUSED_REF: ${{ inputs.ref }}
       FOCUSED_KIND: ${{ inputs.kind }}
       FOCUSED_SELECTOR: ${{ inputs.selector }}
+      FOCUSED_REPEAT: ${{ inputs.repeat }}
+      FOCUSED_STRESS: ${{ inputs.stress }}
       FOCUSED_OUT: focused-artifacts
     steps:
       # The checkout is the dispatched branch itself (github.ref), never a ref taken from an input, so no other code can
@@ -80,7 +92,7 @@ jobs:
           # read-only (contents: read), as in ci.yml's end-to-end job: the tests ask GitHub's API, which rate-limits
           # shared runners' unauthenticated requests; hz sends the token to api.github.com only (ADR 0031)
           GITHUB_TOKEN: ${{ github.token }}
-      - name: Keep the report, screenshots and logs
+      - name: Keep the report, tally, screenshots and logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
