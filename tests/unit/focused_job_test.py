@@ -127,12 +127,14 @@ def _run_rounds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str, ro
 
 
 def test_the_round_plugin_repeats_in_one_process_and_tallies(tmp_path, monkeypatch):
-    """The second execution in the same process fails, plain and parametrized, and is booked to round 2."""
+    """Failures on a later execution in the same process, plain and parametrized, land in their own round under
+    pytest's real ids; a test that always passes keeps its rounds green."""
     failed = _run_rounds(
         tmp_path,
         monkeypatch,
         "import pytest\n"
         "RUNS = []\n"
+        "PRUNS = []\n"
         "@pytest.fixture\n"
         "def resource():\n"
         "    yield 1\n"
@@ -141,11 +143,15 @@ def test_the_round_plugin_repeats_in_one_process_and_tallies(tmp_path, monkeypat
         "    assert len(RUNS) != 2\n"
         "@pytest.mark.parametrize('case', ['a'])\n"
         "def test_case(case):\n"
+        "    PRUNS.append(case)\n"
+        "    assert len(PRUNS) != 3\n"
+        "def test_other():\n"
         "    pass\n",
-        rounds=2,
+        rounds=3,
     )
-    assert failed == ["rounds_case_test.py::test_second_run_fails[round2]"]
-    assert json.loads((tmp_path / "out" / "tally.json").read_text()) == {"rounds": 2, "green": 1, "asked": 2}
+    assert failed == ["rounds_case_test.py::test_second_run_fails[round2]", "rounds_case_test.py::test_case[round3-a]"]
+    # round 1 green, rounds 2 and 3 red; booking test_case[round3-a] to another round changes the count
+    assert json.loads((tmp_path / "out" / "tally.json").read_text()) == {"rounds": 3, "green": 1, "asked": 3}
 
 
 @pytest.mark.parametrize(
