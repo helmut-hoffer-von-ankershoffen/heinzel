@@ -1,4 +1,4 @@
-"""The named steps of installing and removing the daemon, told to whoever shows progress.
+"""The named steps of a write the app shows as it runs: installing the daemon, updating hz and its plugins.
 
 A step is real work: the web app lists them as they start and end (a checklist, never an invented percentage), and the
 command line shows a spinner for the one that is running. A head that doesn't show progress drops them.

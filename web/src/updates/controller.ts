@@ -1,5 +1,7 @@
-import { api, type SchemaUpdateResult, unwrap } from "@/api/client";
+import type { SchemaUpdateResult } from "@/api/client";
+import { stream } from "@/api/stream";
 import { token } from "@/api/token";
+import { type Phase, type PhaseState, parsePhase } from "@/lib/operationRun";
 import { compareCodeUnits } from "@/lib/sort";
 import {
   clearOwnedShellCaches,
@@ -31,7 +33,8 @@ const ASSET = /^\/assets\/[A-Za-z0-9_.-]+$/;
 
 export interface UpdateTransport {
   lifecycle: LifecycleTransport;
-  install(signal: AbortSignal): Promise<SchemaUpdateResult>;
+  /** Install hz and its plugins, telling each step the server reports as it happens. */
+  install(signal: AbortSignal, onPhase?: (phase: Phase) => void): Promise<SchemaUpdateResult>;
   frontend(signal: AbortSignal): Promise<Frontend>;
   assets(build: Frontend, signal: AbortSignal, loaded: boolean): Promise<void>;
   clean(): Promise<void>;
@@ -102,7 +105,16 @@ async function verifyAssets(build: Frontend, signal: AbortSignal, loaded: boolea
 
 export const updateTransport: UpdateTransport = {
   lifecycle: lifecycleTransport,
-  install: (signal) => unwrap(api.POST("/system/update", { signal })),
+  install: (signal, onPhase) =>
+    stream<SchemaUpdateResult>(
+      "/system/update",
+      {},
+      ({ event, data }) => {
+        const phase = event === "phase" ? parsePhase(data) : null;
+        if (phase) onPhase?.(phase);
+      },
+      signal,
+    ),
   frontend: async (signal) => validFrontend(await read<Frontend>("/frontend", signal)),
   assets: verifyAssets,
   clean: async () => {
@@ -158,11 +170,51 @@ async function bounded<T>(run: (signal: AbortSignal) => Promise<T>, owner: Abort
   }
 }
 
+/**
+ * The update's steps as one list: the server's (asking, installing, each plugin, the background services) as it
+ * reports them, then the app's own (restart, files, reload), each told when it starts and ends.
+ */
+class UpdateSteps {
+  private server: Phase[] = [];
+  private local: Phase[] = [
+    { id: "restart", label: "Restarting hz and checking its version", state: "pending" },
+    { id: "frontend", label: "Checking the app's files", state: "pending" },
+    { id: "reload", label: "Reloading the app", state: "pending" },
+  ];
+  private running: string | null = null;
+  constructor(private readonly report: (phases: Phase[]) => void) {}
+  private tell() {
+    this.report([...this.server, ...this.local]);
+  }
+  /** A step the server reported; a later report of the same step replaces it. */
+  readonly heard = (phase: Phase) => {
+    const known = this.server.some((entry) => entry.id === phase.id);
+    this.server = known
+      ? this.server.map((entry) => (entry.id === phase.id ? { ...entry, ...phase } : entry))
+      : [...this.server, phase];
+    this.tell();
+  };
+  mark(id: string, state: PhaseState) {
+    this.local = this.local.map((entry) => (entry.id === id ? { ...entry, state } : entry));
+    this.running = state === "running" ? id : this.running === id ? null : this.running;
+    this.tell();
+  }
+  /** The app's step that was running failed with the error that stopped the update. */
+  failed(error: unknown) {
+    if (!this.running) return;
+    const detail = error instanceof Error ? error.message : String(error);
+    this.local = this.local.map((entry) => (entry.id === this.running ? { ...entry, state: "failed", detail } : entry));
+    this.running = null;
+    this.tell();
+  }
+}
+
 /** Only the explicit update gesture calls this; any uncertain attempt remains recorded and is never replayed. */
 export async function startUpdate(
   signal: AbortSignal,
   onPhase: (phase: string) => void,
   transport = updateTransport,
+  onSteps: (phases: Phase[]) => void = () => {},
 ): Promise<string> {
   if (pendingUpdate()) throw new Error("An update needs verification; installation will not be repeated.");
   const before = await bounded((signal) => transport.lifecycle.read(signal), signal, 4_000);
@@ -170,7 +222,8 @@ export async function startUpdate(
   preserveUpdateWork();
   save({ stage: "uncertain" });
   onPhase("Updating core and plugins…");
-  const result = await bounded((signal) => transport.install(signal), signal, 900_000);
+  const steps = new UpdateSteps(onSteps);
+  const result = await bounded((signal) => transport.install(signal, steps.heard), signal, 900_000);
   if (!result || typeof result.after !== "string" || !result.after.trim() || !Array.isArray(result.plugins))
     throw new Error("The updater returned no verifiable result; inspect the installation.");
   if (!result.updated) {
@@ -178,14 +231,21 @@ export async function startUpdate(
     return result.message;
   }
   save({ stage: "installed", result });
-  preserveUpdateWork();
-  onPhase("Restarting and verifying hz…");
-  const running = await restartAndApply(
-    { confirmed: true, version: result.after },
-    { signal, transport: transport.lifecycle },
-  );
-  save({ stage: "installed", result, running });
-  return reloadVerifiedUpdate(result, running, signal, transport, onPhase);
+  try {
+    preserveUpdateWork();
+    onPhase("Restarting and verifying hz…");
+    steps.mark("restart", "running");
+    const running = await restartAndApply(
+      { confirmed: true, version: result.after },
+      { signal, transport: transport.lifecycle },
+    );
+    steps.mark("restart", "done");
+    save({ stage: "installed", result, running });
+    return await reloadVerifiedUpdate(result, running, signal, transport, onPhase, steps);
+  } catch (error) {
+    steps.failed(error);
+    throw error;
+  }
 }
 
 async function reloadVerifiedUpdate(
@@ -194,14 +254,18 @@ async function reloadVerifiedUpdate(
   signal: AbortSignal,
   transport: UpdateTransport,
   onPhase: (phase: string) => void = () => {},
+  steps?: UpdateSteps,
 ): Promise<string> {
+  steps?.mark("frontend", "running");
   const frontend = await bounded((signal) => transport.frontend(signal), signal, 4_000);
   if (frontend.version !== running.version) throw new Error("The frontend belongs to a different backend version.");
   onPhase("Checking frontend assets…");
   await bounded((signal) => transport.assets(frontend, signal, false), signal, 30_000);
   await bounded(() => transport.clean(), signal, 15_000);
+  steps?.mark("frontend", "done");
   preserveUpdateWork();
   save({ stage: "reloading", result, running, frontend });
+  steps?.mark("reload", "running");
   transport.reload();
   return "Reloading to verify the updated app…";
 }
