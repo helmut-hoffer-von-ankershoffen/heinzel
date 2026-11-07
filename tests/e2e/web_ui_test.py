@@ -436,6 +436,78 @@ def test_an_open_app_window_reconnects_when_the_daemon_restarts_on_the_same_port
         _stop_ui(ui)
 
 
+@pytest.mark.timeout(900)
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_an_installed_window_opened_while_hz_is_down_opens_the_app_by_itself_when_hz_returns(
+    environment, tmp_path, engine
+):
+    """A paired window reopened while `hz ui serve` is down shows the offline page, then the app, without a reload."""
+    env, _ = environment
+    run = _browser_ready(engine)
+    port = _free_port()
+    ui, link = _start_ui(env, port)
+    driver = subprocess.Popen(
+        [
+            *run,
+            "exec",
+            "node",
+            "e2e/pwa-reconnect.mjs",
+            engine,
+            str(tmp_path / "profile"),
+            link,
+            f"http://127.0.0.1:{port}/",
+        ],
+        cwd=REPO,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert driver.stdin is not None
+    assert driver.stdout is not None
+    assert driver.stderr is not None
+    said: list[str] = []
+    reader = threading.Thread(target=lambda: said.extend(driver.stderr), daemon=True)
+    reader.start()
+
+    def answer() -> str:
+        got = driver.stdout.readline()
+        if not got:
+            driver.wait(30)
+            reader.join(30)
+            pytest.fail(f"the browser driver exited {driver.returncode} without answering: {''.join(said)}")
+        return got.strip()
+
+    def tell(line: str) -> None:
+        driver.stdin.write(f"{line}\n")
+        driver.stdin.flush()
+
+    try:
+        assert answer() == "READY", "".join(said)
+        _stop_ui(ui)
+        tell("stopped")
+        assert answer() == "DOWN", "".join(said)
+        ui, _ = _start_ui(env, port)  # a new session token on the same port: the paired device token signs in
+        tell("started")
+        result = json.loads(answer())
+        assert result == {
+            "offlineShowed": True,
+            "noVersionShown": True,
+            "iconLoaded": True,
+            "openedByItself": True,
+            "askedToSignIn": False,
+        }, f"{result}\n{''.join(said)}"
+        assert driver.wait(60) == 0
+    finally:
+        driver.kill()
+        driver.wait(30)
+        reader.join(30)
+        for stream in (driver.stdin, driver.stdout, driver.stderr):
+            if stream is not None:
+                stream.close()
+        _stop_ui(ui)
+
+
 @pytest.mark.timeout(600)
 def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(environment, tmp_path):
     """Install on a row low in Discover shows its confirmation next to the click, focused, on desktop and phone."""
