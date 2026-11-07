@@ -32,7 +32,7 @@ const PENDING: Record<string, number> = {
   "../components/Contributions.tsx": 1,
   "../layout/CalendarPanel.tsx": 5,
   "../layout/PluginsSection.tsx": 1,
-  "../notifications/TodayNotifications.tsx": 2,
+  "../notifications/TodayNotifications.tsx": 1,
   "../pages/Contracts.tsx": 1,
   "../pages/Heinzelmaennchen.tsx": 1,
   "../pages/Inventory.tsx": 1,
