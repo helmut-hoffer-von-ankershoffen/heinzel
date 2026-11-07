@@ -9171,6 +9171,17 @@
             "description": "Source repository of that distribution, from its Project-URL metadata; none if it names none.",
             "title": "Repository"
           },
+          "source": {
+            "description": "Where the distribution was installed from: built-in, an index (PyPI), a git repository or a path.",
+            "enum": [
+              "built-in",
+              "PyPI",
+              "git",
+              "path"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
           "summary": {
             "description": "What the module is for, in one sentence.",
             "title": "Summary",
@@ -9189,6 +9200,7 @@
           "version",
           "builtin",
           "repository",
+          "source",
           "lets"
         ],
         "title": "ModuleInfo",
@@ -16281,6 +16293,15 @@
       "SystemInfo": {
         "description": "The state of this Heinzelmännchen installation.",
         "properties": {
+          "installation": {
+            "description": "Whether hz runs from a uv tool environment or from another Python environment.",
+            "enum": [
+              "uv tool",
+              "environment"
+            ],
+            "title": "Installation",
+            "type": "string"
+          },
           "latest_release": {
             "anyOf": [
               {
@@ -16360,6 +16381,7 @@
           "python_version",
           "python_executable",
           "platform",
+          "installation",
           "settings",
           "modules",
           "plugin_errors",

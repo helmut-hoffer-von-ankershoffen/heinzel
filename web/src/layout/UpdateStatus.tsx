@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { Download, LoaderCircle } from "lucide-react";
+import { Download, LoaderCircle, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { onMenuAction } from "@/about/menu";
 import { FooterItem } from "@/components/FooterItem";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
@@ -29,6 +30,17 @@ export function UpdateStatus() {
   const [problem, setProblem] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<"none" | "inspect" | "verify">("none");
   const [message, setMessage] = useState<string | null>(null);
+  const [openRequest, setOpenRequest] = useState(0);
+  const { refetch } = query;
+  // "Check for Updates…" in the desktop app menu opens this pane and asks again.
+  useEffect(
+    () =>
+      onMenuAction(["updates"], () => {
+        setOpenRequest((count) => count + 1);
+        void refetch();
+      }),
+    [refetch],
+  );
   const run = useCallback(async (resume: boolean) => {
     if (active.current) return;
     const controller = new AbortController();
@@ -105,6 +117,7 @@ export function UpdateStatus() {
       icon={busy ? LoaderCircle : Download}
       className={available && !problem ? "animate-pulse text-bad" : undefined}
       disabled={busy}
+      openRequest={openRequest}
     >
       <div className="space-y-2 px-1.5 pb-1.5">
         {summary && <p role="status">{summary}</p>}
@@ -127,12 +140,18 @@ export function UpdateStatus() {
             {t("updates.verify")}
           </Button>
         )}
-        {/* The primary action stays at the bottom when late automatic-update facts grow this above-anchored pane. */}
-        {canUpdate && (
-          <Button size="sm" variant="outline" onClick={() => void run(false)}>
-            {available ? t("updates.action") : t("updates.manualAction")}
+        {/* One action row under a divider, at the bottom when late facts grow this above-anchored pane. */}
+        <div className="flex items-center gap-2 border-t border-border pt-2">
+          <Button size="sm" variant="outline" disabled={busy || query.isFetching} onClick={() => void refetch()}>
+            <RefreshCw aria-hidden className={query.isFetching ? "animate-spin" : undefined} />
+            {t("updates.check")}
           </Button>
-        )}
+          {canUpdate && (
+            <Button size="sm" variant="outline" onClick={() => void run(false)}>
+              {available ? t("updates.action") : t("updates.manualAction")}
+            </Button>
+          )}
+        </div>
       </div>
     </FooterItem>
   );

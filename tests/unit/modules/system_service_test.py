@@ -346,3 +346,30 @@ def test_release_facts_name_the_publish_time_and_the_commit_behind_an_annotated_
     facts = GitHubReleases("someone/heinzel").release_facts("1.2.3", 2)
     assert facts.published_at == datetime(2026, 11, 1, 8, 0, tzinfo=UTC)
     assert (facts.commit, facts.prerelease) == ("c" * 40, False)
+
+
+@pytest.mark.parametrize(
+    ("direct_url", "source"),
+    [
+        (None, "PyPI"),
+        ('{"url": "https://github.com/x/y", "vcs_info": {"vcs": "git"}}', "git"),
+        ('{"url": "file:///src/y", "dir_info": {"editable": true}}', "path"),
+        ('{"url": "https://example.org/y.whl", "archive_info": {}}', "PyPI"),
+        ("not json", "PyPI"),
+    ],
+)
+def test_the_install_source_of_a_distribution_comes_from_its_direct_url(monkeypatch, direct_url, source):
+    from heinzel.modules.system import _service
+
+    dist = SimpleNamespace(read_text=lambda name: direct_url if name == "direct_url.json" else None)
+    monkeypatch.setattr(_service.importlib.metadata, "distribution", lambda name: dist)
+    assert _service._source_of("some-plugin") == source
+
+
+def test_info_names_the_installation_kind_and_modules_their_source(make_kernel, tmp_path, monkeypatch):
+    monkeypatch.setattr("sys.prefix", str(tmp_path))
+    info = SystemService(make_kernel(good=Module(name="good", summary="Good."))).info()
+    assert info.installation == "environment"
+    (tmp_path / "uv-receipt.toml").write_text("")
+    assert SystemService(make_kernel()).info().installation == "uv tool"
+    assert {module.source for module in info.modules} <= {"built-in", "PyPI", "git", "path"}

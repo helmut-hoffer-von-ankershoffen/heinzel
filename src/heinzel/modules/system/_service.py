@@ -1,5 +1,6 @@
 """Service of the system module."""
 
+import importlib.metadata
 import json
 import platform
 import re
@@ -8,7 +9,8 @@ import unicodedata
 import urllib.error
 from collections import defaultdict
 from datetime import date, datetime
-from typing import Any, cast, override
+from pathlib import Path
+from typing import Any, Literal, cast, override
 from urllib.parse import urlsplit
 
 from packaging.version import InvalidVersion, Version
@@ -312,6 +314,20 @@ def installed_releases(installation: Installation, channel: str = "stable") -> G
     return GitHubReleases(repository_of(requirements[0] if requirements else None), channel)
 
 
+def _source_of(distribution: str) -> Literal["PyPI", "git", "path"]:
+    """Where a distribution was installed from, per its `direct_url.json` (PEP 610); no such file means an index."""
+    try:
+        text = importlib.metadata.distribution(distribution).read_text("direct_url.json") or "{}"
+        direct = json.loads(text)
+    except (importlib.metadata.PackageNotFoundError, ValueError):
+        return "PyPI"
+    if not isinstance(direct, dict):
+        return "PyPI"
+    if "vcs_info" in direct:
+        return "git"
+    return "path" if "dir_info" in direct or str(direct.get("url", "")).startswith("file:") else "PyPI"
+
+
 class SystemService:
     """Reports on the Heinzelmännchen installation."""
 
@@ -334,6 +350,7 @@ class SystemService:
                     version=record.origin.version,
                     builtin=record.origin.builtin,
                     repository=record.origin.url,
+                    source="built-in" if record.origin.builtin else _source_of(record.origin.distribution),
                     lets=dict(lets),
                 )
             )
@@ -347,6 +364,7 @@ class SystemService:
             python_version=platform.python_version(),
             python_executable=sys.executable,
             platform=platform.platform(),
+            installation="uv tool" if (Path(sys.prefix) / "uv-receipt.toml").is_file() else "environment",
             settings=self._kernel.settings.model_dump(mode="json"),
             modules=self.modules(),
             plugin_errors=dict(self._kernel.errors),

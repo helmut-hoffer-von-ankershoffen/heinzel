@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, webContents } from "electron";
+import path from "node:path";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, webContents } from "electron";
+import { appMenuTemplate, isAllowedHelpUrl, menuScript } from "./app-menu.js";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
-import { createLifecycleHandler } from "./lifecycle-ipc.js";
+import { createAboutHandler, createLifecycleHandler } from "./lifecycle-ipc.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
 import { createWorkspaceAudio } from "./workspace-audio.js";
@@ -92,6 +94,16 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     connection: () => instance.currentConnection(),
     lifecycle,
   }));
+  ipcMain.handle("hz:about", createAboutHandler({
+    windows,
+    fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+    connection: () => instance.currentConnection(),
+    about: () => ({
+      version: app.getVersion(),
+      // A packaged app runs from <name>.app/Contents/MacOS/<exe>; show the bundle, not the inner file.
+      path: app.isPackaged ? path.resolve(app.getPath("exe"), "..", "..", "..") : app.getAppPath(),
+    }),
+  }));
   let serviceStarted = false;
   let unexpectedExitReported = false;
   void ownedCli.exited().then(() => {
@@ -144,6 +156,15 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
   });
   void app.whenReady().then(() => {
     if (stopping) return;
+    // The page owns what About, Settings and Updates show; the menu only asks it to open them.
+    Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate({
+      name: app.name,
+      open: (url) => { if (isAllowedHelpUrl(url)) void shell.openExternal(url); },
+      send: (action) => {
+        const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+        if (window && windows.has(window) && !window.isDestroyed()) void window.webContents.executeJavaScript(menuScript(action));
+      },
+    })));
     return (managedMac ? acquireDesktopGate() : Promise.resolve(null)).then((gate) => {
       if (gate) {
         desktopGate = gate;

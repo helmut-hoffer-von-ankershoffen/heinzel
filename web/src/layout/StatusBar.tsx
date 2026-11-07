@@ -2,8 +2,9 @@
 // one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
-import { Calendar } from "lucide-react";
+import { Calendar, Info as InfoIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { requestMenuAction } from "@/about/menu";
 import { useChangelog, useInfo } from "@/api/queries";
 import { token } from "@/api/token";
 import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
@@ -86,6 +87,15 @@ function ReleaseNotes({ version }: { version: string }) {
           <span className="block">{t("status.tagline")}</span>
           <span className="block">{t("status.origin")}</span>
         </p>
+        <button
+          type="button"
+          onClick={() => requestMenuAction("about")}
+          aria-label={t("about.open")}
+          title={t("about.open")}
+          className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-accent"
+        >
+          <InfoIcon aria-hidden className="size-4" />
+        </button>
         <a
           href={`${RELEASES}/v${version}`}
           target="_blank"

@@ -46,6 +46,7 @@ export function FooterItem({
   paneName,
   hideHeading = false,
   steady = false,
+  openRequest = 0,
 }: {
   /** What it says, as its accessible name and the pane's heading. */
   label: string;
@@ -73,6 +74,8 @@ export function FooterItem({
   hideHeading?: boolean;
   /** `text` changes while shown (a clock): fixed-width digits and a width that never shrinks, so neighbours stay put. */
   steady?: boolean;
+  /** Raised by the owner to pin the pane open (the desktop menu asks for the Updates pane this way). */
+  openRequest?: number;
 }) {
   // Longest text seen, in characters: monospace `ch` units make the slot's width exact and never smaller.
   const widest = useRef(0);
@@ -88,6 +91,9 @@ export function FooterItem({
   const returningFocus = useRef(false);
   const visible = useFooterVisibility();
   const id = useId();
+  useEffect(() => {
+    if (openRequest > 0) setPinned(true);
+  }, [openRequest]);
   const open = visible && (hovered || focused || pinned);
   useEffect(() => {
     if (!visible) {

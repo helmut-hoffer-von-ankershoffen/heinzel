@@ -9253,6 +9253,12 @@ export interface components {
              */
             repository: string | null;
             /**
+             * Source
+             * @description Where the distribution was installed from: built-in, an index (PyPI), a git repository or a path.
+             * @enum {string}
+             */
+            source: "built-in" | "PyPI" | "git" | "path";
+            /**
              * Summary
              * @description What the module is for, in one sentence.
              */
@@ -13454,6 +13460,12 @@ export interface components {
          * @description The state of this Heinzelmännchen installation.
          */
         SystemInfo: {
+            /**
+             * Installation
+             * @description Whether hz runs from a uv tool environment or from another Python environment.
+             * @enum {string}
+             */
+            installation: "uv tool" | "environment";
             /**
              * Latest Release
              * @description Latest release last seen by `hz system release` or the CLI's hourly check, from the cache; none if never asked.

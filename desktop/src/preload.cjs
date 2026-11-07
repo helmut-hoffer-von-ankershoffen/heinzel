@@ -4,4 +4,5 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
   workspaceAudio: true,
   lifecycle: () => ipcRenderer.invoke("hz:lifecycle"),
+  about: () => ipcRenderer.invoke("hz:about"),
 }));

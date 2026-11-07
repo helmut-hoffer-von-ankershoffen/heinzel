@@ -2,7 +2,9 @@
 // beside the screen when the window leaves it at least 30rem, below it otherwise; never both at once.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Outlet, useLocation, useSearchParams } from "react-router";
+import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router";
+import { AboutDialog } from "@/about/AboutDialog";
+import { onMenuAction } from "@/about/menu";
 import { useConfig } from "@/api/queries";
 import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { ChatProvider } from "@/chat/ChatContext";
@@ -191,6 +193,22 @@ function Layout() {
     }
   }, [durableChat, setChatOpen]);
   const settings = params.get("settings");
+  const navigate = useNavigate();
+  // The desktop app's menu asks for these screens; About, Updates and Copy are answered where they live.
+  useEffect(
+    () =>
+      onMenuAction(["settings", "daemon", "changelog", "doctor"], (action) => {
+        if (action === "doctor") navigate("/doctor");
+        else
+          setParams((current) => {
+            const next = new URLSearchParams(current);
+            if (action === "changelog") next.set("panel", "changelog");
+            else next.set("settings", action === "daemon" ? "daemon" : "");
+            return next;
+          });
+      }),
+    [navigate, setParams],
+  );
   const requestedView = panelViews.find((view) => view.id === params.get("panel"));
   const viewOpen = Boolean(requestedView);
   const requestedId = requestedView?.id;
@@ -628,6 +646,7 @@ function Layout() {
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <Onboarding />
       <OperationDialog />
+      <AboutDialog />
       {(params.get("panel") === "changelog" || params.get("panel") === "help") && (
         <InfoDialog
           panel={params.get("panel") as Panel}

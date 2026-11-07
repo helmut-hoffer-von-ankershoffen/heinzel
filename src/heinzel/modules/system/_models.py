@@ -19,6 +19,9 @@ class ModuleInfo(BaseModel):
     repository: str | None = Field(
         description="Source repository of that distribution, from its Project-URL metadata; none if it names none."
     )
+    source: Literal["built-in", "PyPI", "git", "path"] = Field(
+        description="Where the distribution was installed from: built-in, an index (PyPI), a git repository or a path."
+    )
     lets: dict[str, list[str]] = Field(description="Names of the advertised lets, by kind.")
 
 
@@ -30,6 +33,9 @@ class SystemInfo(BaseModel):
     python_version: str = Field(description="Version of the Python running hz.")
     python_executable: str = Field(description="Path of the Python interpreter running hz.")
     platform: str = Field(description="Operating system and architecture.")
+    installation: Literal["uv tool", "environment"] = Field(
+        description="Whether hz runs from a uv tool environment or from another Python environment."
+    )
     settings: dict[str, Any] = Field(description="Kernel settings in effect, by name.")
     modules: list[ModuleInfo] = Field(description="Every registered module.")
     plugin_errors: dict[str, str] = Field(description="Plugins that failed to load, by entry point name.")
