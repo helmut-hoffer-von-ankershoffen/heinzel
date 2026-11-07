@@ -1429,6 +1429,102 @@ describe("personal conversation links", () => {
     expect(new URL(secondProposal.url).searchParams.get("request_id")).toBe("review-request");
   });
 
+  it("stages the exact edited draft, restores review on reload, and shares only after Confirm", async () => {
+    const draftKey = "a".repeat(64);
+    const requestId = "b".repeat(64);
+    const otherSession = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW";
+    const shareAction = {
+      ...reviewChat.actions[0],
+      id: "draft-share",
+      module: "heinzel",
+      operation: "share-draft-link",
+      command: "Review the edited release draft",
+      arguments: {
+        session_id: sessionId,
+        request_id: requestId,
+        review: {
+          session_id: sessionId,
+          draft_key: draftKey,
+          snapshot: {
+            draft_key: draftKey,
+            target: { reference: "https://example.invalid/document", revision: "revision-42", section: "Turing" },
+            text: "The edited release note.",
+          },
+          channel: "publication",
+          channel_target: { account: "owner-account", destination: "release-channel", scope: "post-link" },
+          link_text: "https://example.invalid/document",
+        },
+      },
+      status: "pending",
+    };
+    const chat = { ...reviewChat, actions: [shareAction] };
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": (request: Request) => ({
+        ...snapshot,
+        session_id: new URL(request.url).searchParams.get("session_id"),
+      }),
+      "/api/heinzel/release-draft-activity": (request: Request) => {
+        expect(new URL(request.url).searchParams.get("session_id")).toBe(sessionId);
+        return [{ kind: "draft.append-acknowledged", draft_key: draftKey, at: "2026-11-07T01:00:00Z" }];
+      },
+      "/api/heinzel/prepare-release-draft-share": async (request: Request) => {
+        expect(await request.json()).toEqual({ session_id: sessionId, draft_key: draftKey });
+        return requestId;
+      },
+      "/api/system/runner/chat/propose-release-draft-share": async (request: Request) => {
+        expect(await request.json()).toEqual({ durable_session: sessionId, request_id: requestId });
+        return chat;
+      },
+      "/api/system/runner/chat/show": chat,
+      "/api/system/runner/chat/confirm": (request: Request) => {
+        const query = new URL(request.url).searchParams;
+        expect(query.get("session")).toBe(chat.id);
+        expect(query.get("action")).toBe(shareAction.id);
+        return { ...chat, actions: [{ ...shareAction, status: "done" }] };
+      },
+    });
+    const pendingPath = `/heinzel?chat=${sessionId}&agent-chat=${chat.id}`;
+    const called = (suffix: string) => calls.filter((request) => new URL(request.url).pathname.endsWith(suffix));
+    function renderDraftPath(path: string) {
+      sessionStorage.setItem("hz.token", "test-token");
+      const router = createMemoryRouter(routes, { initialEntries: [path] });
+      const view = render(
+        <Providers client={queryClient()}>
+          <RouterProvider router={router} />
+        </Providers>,
+      );
+      return { router, unmount: view.unmount };
+    }
+    const first = renderDraftPath(`/heinzel?chat=${sessionId}`);
+    fireEvent.click(await screen.findByText("Release draft activity"));
+    fireEvent.click(await screen.findByRole("button", { name: "Review draft share" }));
+    const heading = await screen.findByRole("heading", { name: "Review release draft share" });
+    const review = heading.closest("section");
+    if (!review) throw new Error("Missing release draft review");
+    expect(within(review).getByText("revision-42")).toBeVisible();
+    expect(within(review).getByText("release-channel")).toBeVisible();
+    expect(within(review).getByText("The edited release note.")).toBeVisible();
+    expect(first.router.state.location.search).toContain(`agent-chat=${chat.id}`);
+    expect(called("/chat/confirm")).toHaveLength(0);
+    first.unmount();
+
+    const reload = renderDraftPath(pendingPath);
+    expect(await screen.findByText("revision-42")).toBeVisible();
+    expect(called("/propose-release-draft-share")).toHaveLength(1);
+    expect(called("/chat/confirm")).toHaveLength(0);
+    await act(async () => reload.router.navigate(`/heinzel?chat=${otherSession}&agent-chat=${chat.id}`));
+    await waitFor(() => expect(screen.queryByText("revision-42")).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+    await act(async () => reload.router.navigate(pendingPath));
+    const restored = await screen.findByRole("heading", { name: "Review release draft share" });
+    const card = restored.closest("section");
+    if (!card) throw new Error("Missing restored draft review");
+    fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(called("/chat/confirm")).toHaveLength(1));
+    expect(called("/share-draft-link")).toHaveLength(0);
+  });
+
   it("keeps a submitted document decision read-only after remount even if the server still lists it as pending", async () => {
     const chat = {
       ...reviewChat,

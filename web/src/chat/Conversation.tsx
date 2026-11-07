@@ -1,7 +1,7 @@
 // What a chat shows wherever it is (Home, the right sidebar): the messages, the answer as it streams with the tools
 // it calls, every proposed action as a card that runs only on Confirm, the costs, and the composer.
 import { Check, Info, Plus, Send, X } from "lucide-react";
-import { type FormEvent, type RefObject, useEffect, useId, useState } from "react";
+import { type FormEvent, type ReactNode, type RefObject, useEffect, useId, useState } from "react";
 import type { ModelChoice } from "@/api/chat";
 import type { SchemaChatAction, SchemaChatMessage } from "@/api/client";
 import { useConfig } from "@/api/queries";
@@ -43,12 +43,14 @@ export function ActionCard({
   onDecide,
   onAuthorizeMcp,
   proposalTitle,
+  reviewDetails,
 }: {
   action: SchemaChatAction;
   busy: boolean;
   onDecide: (confirm: boolean) => void;
   onAuthorizeMcp?: () => void;
   proposalTitle?: string;
+  reviewDetails?: ReactNode;
 }) {
   const titleId = useId();
   return (
@@ -59,14 +61,15 @@ export function ActionCard({
         </h3>
         <p className="mt-1 text-xs text-muted-foreground">{t("chat.proposalHelp")}</p>
         <code className="mt-2 block break-all rounded bg-background p-2 text-xs">{action.command}</code>
-        {Object.keys(action.arguments ?? {}).length > 0 && (
-          <>
-            <p className="mt-2 text-xs text-muted-foreground">{t("chat.arguments")}</p>
-            <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-all rounded bg-background p-2 text-xs">
-              {JSON.stringify(action.arguments, null, 2)}
-            </pre>
-          </>
-        )}
+        {reviewDetails ??
+          (Object.keys(action.arguments ?? {}).length > 0 && (
+            <>
+              <p className="mt-2 text-xs text-muted-foreground">{t("chat.arguments")}</p>
+              <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-all rounded bg-background p-2 text-xs">
+                {JSON.stringify(action.arguments, null, 2)}
+              </pre>
+            </>
+          ))}
         <div className="mt-2 flex gap-2">
           {onAuthorizeMcp && (
             <Button size="sm" variant="outline" disabled={busy} onClick={onAuthorizeMcp}>

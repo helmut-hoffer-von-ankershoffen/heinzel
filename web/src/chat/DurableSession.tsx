@@ -19,6 +19,7 @@ import { useDurableDraft } from "@/chat/durableDraft";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
 import { NotificationPanel } from "@/chat/NotificationPanel";
 import { OwnerConversationSearch } from "@/chat/OwnerConversationSearch";
+import { ReleaseDraftActivity, ReleaseDraftReviewDetails, releaseDraftReview } from "@/chat/ReleaseDraftActivity";
 import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
 import { ToolEvents } from "@/chat/ToolEvents";
 import { UncertainTurnRecovery } from "@/chat/UncertainTurnRecovery";
@@ -224,6 +225,14 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     requirePersonalChat(chat, sessionId, expectedId);
     client.setQueryData(chatKey(chat.id), chat);
   };
+  const openAgentReview = (chat: SchemaChatSession) => {
+    rememberChat(chat);
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("agent-chat", chat.id);
+      return next;
+    });
+  };
   const agentChatQuery = useQuery({
     queryKey: chatKey(agentChatId ?? ""),
     queryFn: async () =>
@@ -284,7 +293,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const agentActions = (agentChat?.actions ?? []).filter(
     (action) =>
       action.module === "heinzel" &&
-      (action.operation === "propose-check-in" || (capturedWrites && action.operation === "execute-captured-write")) &&
+      (action.operation === "propose-check-in" ||
+        action.operation === "share-draft-link" ||
+        (capturedWrites && action.operation === "execute-captured-write")) &&
       action.arguments?.session_id === sessionId,
   );
   const pendingAgentActions = agentActions.filter((action) => action.status === "pending");
@@ -915,14 +926,15 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             key={sessionId}
             sessionId={sessionId}
             conversationBusy={busy || !!pending || !!agentPending}
-            onReview={(chat) => {
-              rememberChat(chat);
-              setParams((current) => {
-                const next = new URLSearchParams(current);
-                next.set("agent-chat", chat.id);
-                return next;
-              });
-            }}
+            onReview={openAgentReview}
+          />
+        )}
+        {query.data?.session_id === sessionId && (
+          <ReleaseDraftActivity
+            key={`release-draft-${sessionId}`}
+            sessionId={sessionId}
+            conversationBusy={busy || !!pending || !!agentPending}
+            onReview={openAgentReview}
           />
         )}
         {query.data?.messages?.map((message, index) => {
@@ -1135,11 +1147,26 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           <ol className="space-y-2">
             {pendingAgentActions.map((action) => {
               const isWrite = action.operation === "execute-captured-write";
-              const decisionKey = isWrite ? `hz.write-decision:${sessionId}:${agentChat?.id}:${action.id}` : null;
+              const isShare = action.operation === "share-draft-link";
+              const shareReview = isShare ? releaseDraftReview(action, sessionId) : undefined;
+              if (isShare && !shareReview) {
+                return (
+                  <li key={action.id} role="alert">
+                    The exact release draft share review is unavailable. Open a fresh review from draft activity.
+                  </li>
+                );
+              }
+              const decisionKind = isWrite ? "write" : isShare ? "draft-share" : null;
+              const decisionKey = decisionKind
+                ? `hz.${decisionKind}-decision:${sessionId}:${agentChat?.id}:${action.id}`
+                : null;
               if (decisionKey && savedWriteDecision(decisionKey)) {
                 return (
                   <li key={action.id} className="space-y-2" role="status">
-                    <p>Write decision submitted. Check the recorded outcome before taking another action.</p>
+                    <p>
+                      {isShare ? "Draft share" : "Write"} decision submitted. Check the recorded outcome before taking
+                      another action.
+                    </p>
                     <Button size="sm" variant="outline" disabled={busy} onClick={() => void agentChatQuery.refetch()}>
                       Check outcome
                     </Button>
@@ -1151,12 +1178,23 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                   key={`${agentChat?.id}-${action.id}`}
                   action={action}
                   busy={busy}
-                  proposalTitle={isWrite ? "Review document write" : t("durable.scheduleActionTitle")}
+                  proposalTitle={
+                    isShare
+                      ? "Review release draft share"
+                      : isWrite
+                        ? "Review document write"
+                        : t("durable.scheduleActionTitle")
+                  }
+                  reviewDetails={shareReview && <ReleaseDraftReviewDetails review={shareReview} />}
                   onDecide={(confirm) => {
                     if (!agentChat || busy) return;
                     if (decisionKey && !recordWriteDecision(decisionKey)) {
                       setScheduleError(true);
-                      setScheduleErrorMessage("Couldn’t safely record the write decision. No request was sent.");
+                      setScheduleErrorMessage(
+                        isShare
+                          ? "Couldn’t safely record the draft share decision. No request was sent."
+                          : "Couldn’t safely record the write decision. No request was sent.",
+                      );
                       return;
                     }
                     void (async () => {
@@ -1171,16 +1209,24 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                                 params: { query: { session: agentChat.id, action: action.id } },
                               }),
                         );
-                        if (isWrite) {
+                        if (isWrite || isShare) {
                           const recorded = updated.actions?.find((item) => item.id === action.id);
                           if (
                             recorded?.module !== action.module ||
                             recorded.operation !== action.operation ||
-                            JSON.stringify(recorded.arguments) !== JSON.stringify(action.arguments)
+                            (isShare
+                              ? canonical(recorded.arguments) !== canonical(action.arguments)
+                              : JSON.stringify(recorded.arguments) !== JSON.stringify(action.arguments))
                           ) {
-                            throw new Error("The response did not match the reviewed write.");
+                            throw new Error(
+                              isShare
+                                ? "The response did not match the reviewed draft share."
+                                : "The response did not match the reviewed write.",
+                            );
                           }
-                          await client.invalidateQueries({ queryKey: ["heinzel", "captured-write-activity"] });
+                          await client.invalidateQueries({
+                            queryKey: ["heinzel", isShare ? "release-draft-activity" : "captured-write-activity"],
+                          });
                         }
                         rememberChat(updated, agentChat.id);
                         await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
@@ -1206,6 +1252,18 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             })}
           </ol>
         )}
+        {agentActions
+          .filter(
+            (action) => action.operation === "share-draft-link" && ["running", "uncertain"].includes(action.status),
+          )
+          .map((action) => (
+            <div key={action.id} role="status" className="space-y-2 rounded border border-warn p-3 text-sm">
+              <p>Draft share outcome is unresolved. Check the recorded outcome before taking another action.</p>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void agentChatQuery.refetch()}>
+                Check outcome
+              </Button>
+            </div>
+          ))}
         {runningAgentActions.map((action) => (
           <div key={`agent-${action.id}`} className="space-y-2 rounded border border-warn p-3 text-sm" role="status">
             <p>{t("durable.proposalInterrupted")}</p>
