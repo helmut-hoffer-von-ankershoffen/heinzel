@@ -41,11 +41,12 @@ def gate_exec(monkeypatch, tmp_path, *, held=None):
 
 def test_the_checks_queue_in_hz_gate_with_a_wait_limit_and_mark_themselves_held(monkeypatch, tmp_path):
     calls = gate_exec(monkeypatch, tmp_path)
-    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "preflight", "--base", "origin/main"])
-    scoped.through_gate(["src/heinzel/x.py", "README.md"])
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "preflight", "--base", "origin/main;--evil"])
+    scoped.through_gate(["src/heinzel/x.py", "README.md"], "preflight", "a" * 40)
     [(path, argv, env)] = calls
     assert path == str(tmp_path / "hz-gate")
-    assert argv[1:] == [sys.executable, str(REPO / "scripts/scoped_checks.py"), "preflight", "--base", "origin/main"]
+    # Rebuilt from the parsed mode and the resolved commit, never the raw command line.
+    assert argv[1:] == [sys.executable, str(REPO / "scripts/scoped_checks.py"), "preflight", "--base", "a" * 40]
     assert env["HZ_GATE_HELD"] == "routed"  # what runs inside never routes itself again
     assert env["HZ_GATE_MAX_WAIT"] == scoped.GATE_MAX_WAIT
     assert "HZ_GATE_LIGHT" not in env
@@ -53,17 +54,26 @@ def test_the_checks_queue_in_hz_gate_with_a_wait_limit_and_mark_themselves_held(
 
 def test_documents_alone_take_the_gates_light_lane(monkeypatch, tmp_path):
     calls = gate_exec(monkeypatch, tmp_path)
-    scoped.through_gate(["README.md", "docs/guide.md"])
+    scoped.through_gate(["README.md", "docs/guide.md"], "push", "b" * 40)
     assert calls[0][2]["HZ_GATE_LIGHT"] == "1"
 
 
 def test_inside_a_gate_or_without_one_the_checks_run_directly(monkeypatch, tmp_path):
     calls = gate_exec(monkeypatch, tmp_path, held="4242")
-    scoped.through_gate(["src/heinzel/x.py"])
+    scoped.through_gate(["src/heinzel/x.py"], "push", "c" * 40)
     monkeypatch.delenv("HZ_GATE_HELD")
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
-    scoped.through_gate(["src/heinzel/x.py"])
+    scoped.through_gate(["src/heinzel/x.py"], "push", "c" * 40)
     assert calls == []
+
+
+def test_fast_mode_passes_no_base_and_an_unknown_mode_never_reaches_the_gate(monkeypatch, tmp_path):
+    calls = gate_exec(monkeypatch, tmp_path)
+    scoped.through_gate(["src/heinzel/x.py"], "fast", "HEAD")
+    assert calls[0][1][3:] == ["fast"]
+    with pytest.raises(ValueError, match="Unknown mode"):
+        scoped.through_gate(["src/heinzel/x.py"], "--evil", "c" * 40)
+    assert len(calls) == 1
 
 
 def names(steps: list[str]) -> list[str]:
