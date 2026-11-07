@@ -5439,6 +5439,98 @@ export interface components {
             scope: string;
         };
         /**
+         * ChartPoint
+         * @description One point of a chart: where on the axis, and its value.
+         */
+        ChartPoint: {
+            /**
+             * At
+             * @description Where on the axis: an ISO 8601 timestamp such as `2026-11-07T14:00` or a plain label.
+             */
+            at: string;
+            /**
+             * Value
+             * @description The value at that point, in the chart's unit.
+             */
+            value: number;
+        };
+        /**
+         * ChartRange
+         * @description A band across the chart, e.g. the day's lowest and highest value.
+         */
+        ChartRange: {
+            /**
+             * High
+             * @description Top of the band, at least `low`.
+             */
+            high: number;
+            /**
+             * Low
+             * @description Bottom of the band, in the chart's unit.
+             */
+            low: number;
+        };
+        /**
+         * ChartWidget
+         * @description A line over time, with optional bars, a range band and a now marker; `summary` is its text alternative.
+         */
+        ChartWidget: {
+            /**
+             * Bars
+             * @description A second series drawn as bars from 0 to 1, one per point, e.g. chance of rain.
+             */
+            bars?: number[] | null;
+            /**
+             * Bars Label
+             * @description What the bars are, e.g. `Rain chance`.
+             */
+            bars_label?: string | null;
+            /**
+             * @description Chart. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "chart";
+            /**
+             * Now
+             * @description The `at` of the point to mark as now.
+             */
+            now?: string | null;
+            /** @description A band across the chart, e.g. the day's low and high. */
+            range?: components["schemas"]["ChartRange"] | null;
+            /**
+             * Series
+             * @description The line, left to right.
+             */
+            series: components["schemas"]["ChartPoint"][];
+            /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
+            /**
+             * Summary
+             * @description The chart in words for people who can't see it, e.g. `Warms to 18° by 15:00`.
+             */
+            summary: string;
+            /**
+             * Title
+             * @description What the chart shows, e.g. `Temperature today`; also its accessible name.
+             */
+            title: string;
+            /**
+             * Tone
+             * @description How the line reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Unit
+             * @description The unit of `series` values, e.g. `°C`.
+             */
+            unit?: string | null;
+        };
+        /**
          * ChatAction
          * @description An operation the agent proposed; it runs only when the person confirms it, with exactly these arguments.
          */
@@ -14960,7 +15052,7 @@ export interface components {
              * Widget
              * @description What to show; none when there is nothing to show.
              */
-            widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"]) | null;
+            widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"] | components["schemas"]["ChartWidget"]) | null;
         };
         /** heinzel_abandon_chat_turn_Input */
         heinzel_abandon_chat_turn_Input: {
@@ -15846,6 +15938,9 @@ export type SchemaChannelDeliveryTerms = components['schemas']['ChannelDeliveryT
 export type SchemaChannelNotice = components['schemas']['ChannelNotice'];
 export type SchemaChannelReport = components['schemas']['ChannelReport'];
 export type SchemaChannelTarget = components['schemas']['ChannelTarget'];
+export type SchemaChartPoint = components['schemas']['ChartPoint'];
+export type SchemaChartRange = components['schemas']['ChartRange'];
+export type SchemaChartWidget = components['schemas']['ChartWidget'];
 export type SchemaChatAction = components['schemas']['ChatAction'];
 export type SchemaChatContext = components['schemas']['ChatContext'];
 export type SchemaChatCosts = components['schemas']['ChatCosts'];

@@ -8,6 +8,7 @@ from pydantic import TypeAdapter, ValidationError
 from heinzel import (
     ActionLet,
     CardWidget,
+    ChartWidget,
     DetailLine,
     ListEntry,
     ListWidget,
@@ -25,7 +26,7 @@ from heinzel import (
     WidgetAction,
     WidgetLet,
 )
-from heinzel.kernel import Badge, link_problem
+from heinzel.kernel import Badge, ChartPoint, ChartRange, Widget, link_problem
 
 pytestmark = pytest.mark.unit
 
@@ -317,3 +318,49 @@ def test_detail_designations_use_bounded_text_and_optional_state_icons():
     assert DetailLine(text="Berlin").badge is None
     with pytest.raises(ValidationError, match="at most 80"):
         DetailLine(text="Berlin", badge="x" * 81)
+
+
+def _points(n: int = 3) -> list[ChartPoint]:
+    return [ChartPoint(at=f"2026-11-07T{12 + i}:00", value=10.0 + i) for i in range(n)]
+
+
+def test_chart_widget_takes_a_line_bars_range_and_now():
+    chart = ChartWidget(
+        title="Temperature today",
+        summary="Warms from 10 to 12 degrees.",
+        unit="°C",
+        series=_points(),
+        bars=[0, 0.5, 1],
+        bars_label="Rain chance",
+        range=ChartRange(low=9, high=13),
+        now="2026-11-07T13:00",
+    )
+    assert chart.kind == "chart"
+    assert TypeAdapter(Widget).validate_python(chart.model_dump(mode="json")) == chart
+
+
+@pytest.mark.parametrize(
+    ("message", "fields"),
+    [
+        ("at least 2", {"series": 1}),
+        ("one value per point", {"bars": [0.1]}),
+        ("less than or equal to 1", {"bars": [0, 0, 2]}),
+        ("must be the `at` of one", {"now": "later"}),
+    ],
+)
+def test_chart_widget_refuses_what_cannot_be_drawn(message, fields):
+    points = _points(fields["series"]) if "series" in fields else _points()
+    extra = {key: value for key, value in fields.items() if key != "series"}
+    with pytest.raises(ValidationError, match=message):
+        ChartWidget(title="t", summary="s", series=points, **extra)
+
+
+def test_chart_widget_refuses_what_it_cannot_describe():
+    series = [p.model_dump() for p in _points()]
+    with pytest.raises(ValidationError, match="summary"):
+        ChartWidget.model_validate({"title": "t", "series": series})
+
+
+def test_chart_range_refuses_a_high_below_the_low():
+    with pytest.raises(ValidationError, match="can't be below low"):
+        ChartRange(low=5, high=1)
