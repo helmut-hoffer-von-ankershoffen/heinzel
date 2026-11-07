@@ -28,8 +28,10 @@ type Agenda = AgendaData;
 function useAgenda() {
   return useQuery({
     queryKey: ["org", "agenda"],
-    queryFn: async (): Promise<Agenda> => {
+    queryFn: async ({ signal }): Promise<Agenda> => {
       const request = new Request(new URL("/api/org/agenda", window.location.origin), {
+        signal,
+        cache: "no-store",
         headers: { Authorization: `Bearer ${token() ?? ""}` },
       });
       const response = await fetch(request);

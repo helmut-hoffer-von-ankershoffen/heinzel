@@ -24,3 +24,18 @@ export function conferenceLink(value: string | null | undefined): string | null 
     return null;
   }
 }
+
+const PROVIDERS: [RegExp, string][] = [
+  [/(^|\.)zoom\.(us|com)$/i, "Zoom"],
+  [/^meet\.google\.com$/i, "Google Meet"],
+  [/(^|\.)teams\.(microsoft|live)\.com$/i, "Microsoft Teams"],
+  [/(^|\.)webex\.com$/i, "Webex"],
+];
+
+/** The meeting tool a conference link belongs to, by host; none when it is not a known one (or not a safe link). */
+export function conferenceProvider(value: string | null | undefined): string | null {
+  const href = conferenceLink(value);
+  if (!href) return null;
+  const host = new URL(href).hostname;
+  return PROVIDERS.find(([pattern]) => pattern.test(host))?.[1] ?? null;
+}
