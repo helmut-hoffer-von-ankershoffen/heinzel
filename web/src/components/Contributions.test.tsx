@@ -351,10 +351,26 @@ describe("Chart widget", () => {
     expect(img.querySelectorAll("polyline")).toHaveLength(1);
     expect(img.querySelectorAll("rect")).toHaveLength(4);
     expect(img.querySelector("line[stroke-dasharray]")).toBeInTheDocument();
-    expect(within(img as unknown as HTMLElement).getByText("12:00")).toBeInTheDocument();
-    expect(screen.getByText("°C · Rain chance")).toBeInTheDocument();
+    expect(screen.getAllByText("12:00").length).toBeGreaterThan(0); // an axis label and the table row
+    expect(img.querySelectorAll("text")).toHaveLength(0); // labels are HTML, so they follow the text size
+    expect(img.querySelector("rect.opacity-70")).toBeInTheDocument(); // bars keep 3:1 against the card
+    expect(img.querySelectorAll("g.stroke-muted-foreground line")).toHaveLength(2); // a visible range band
+    expect(screen.getByText("9 to 15 °C · Rain chance")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Time" })).toBeInTheDocument();
     expect((img.closest("li") as HTMLElement).dataset.size).toBe("medium");
     await expectAccessible((img.closest("li") as HTMLElement).parentElement as HTMLElement);
+  });
+
+  it("draws a two-point series with each label once", async () => {
+    const two: ChartData = { ...chart, series: chart.series.slice(0, 2), bars: [0.9, 0.2], now: "2026-11-07T12:00" };
+    mockApi({
+      ...answers,
+      "/api/system/ui/widgets": [{ ...entry, id: "acme:two", slots: { today: true }, refresh: 300, widget: two }],
+    });
+    renderAt("/");
+    const img = await screen.findByRole("img", { name: "Temperature today" });
+    const labels = (img.parentElement as HTMLElement).querySelectorAll("div[aria-hidden] span");
+    expect([...labels].map((label) => label.textContent)).toEqual(["12:00", "14:00"]);
   });
 
   it("reads as its title and summary when asked about", () => {

@@ -45,6 +45,8 @@ HEINZEL = [
     "ChannelReplyConsumer",
     "ChannelReplySource",
     "ChannelTarget",
+    "ChartPoint",
+    "ChartRange",
     "ChartWidget",
     "Chat",
     "ChatDraftTemplate",

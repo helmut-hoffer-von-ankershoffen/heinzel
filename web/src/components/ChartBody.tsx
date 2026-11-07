@@ -3,13 +3,14 @@
 // prefers-reduced-motion needs nothing. It is an image with the title as its name and `summary` as its description.
 import { useId } from "react";
 import type { components } from "@/api/schema";
+import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 export type ChartData = components["schemas"]["ChartWidget"];
 
 const W = 240;
 const H = 96;
-const PAD = { left: 30, right: 6, top: 6, bottom: 16 };
+const PAD = { left: 4, right: 4, top: 6, bottom: 4 };
 const LINE: Record<ChartData["tone"], string> = {
   neutral: "stroke-primary text-primary",
   ok: "stroke-ok text-ok",
@@ -23,7 +24,6 @@ export function axisLabel(at: string): string {
   return match ? (match[1] as string) : at;
 }
 
-const ANCHOR = ["start", "middle", "end"] as const;
 const round = (n: number) => Math.round(n * 10) / 10;
 
 export function ChartBody({ widget }: Readonly<{ widget: ChartData }>) {
@@ -40,7 +40,7 @@ export function ChartBody({ widget }: Readonly<{ widget: ChartData }>) {
   const points = series.map((point, i) => `${round(x(i))},${round(y(point.value))}`).join(" ");
   const barWidth = Math.max(2, (innerW / series.length) * 0.6);
   const nowIndex = now === undefined || now === null ? -1 : series.findIndex((point) => point.at === now);
-  const ticks = [0, Math.floor((series.length - 1) / 2), series.length - 1];
+  const ticks = [...new Set([0, Math.floor((series.length - 1) / 2), series.length - 1])];
   const fmt = (value: number) => `${round(value)}`;
   return (
     <figure className="flex flex-col gap-1">
@@ -63,6 +63,12 @@ export function ChartBody({ widget }: Readonly<{ widget: ChartData }>) {
             className="fill-current opacity-10"
           />
         )}
+        {range && (
+          <g className="stroke-muted-foreground" strokeWidth={1} strokeDasharray="2 2">
+            <line x1={PAD.left} x2={W - PAD.right} y1={round(y(range.high))} y2={round(y(range.high))} />
+            <line x1={PAD.left} x2={W - PAD.right} y1={round(y(range.low))} y2={round(y(range.low))} />
+          </g>
+        )}
         <line x1={PAD.left} x2={W - PAD.right} y1={H - PAD.bottom} y2={H - PAD.bottom} className="stroke-border" />
         {bars?.map((bar, i) => (
           <rect
@@ -71,7 +77,7 @@ export function ChartBody({ widget }: Readonly<{ widget: ChartData }>) {
             y={round(H - PAD.bottom - bar * innerH * 0.5)}
             width={round(barWidth)}
             height={round(bar * innerH * 0.5)}
-            className="fill-muted-foreground opacity-40"
+            className="fill-muted-foreground opacity-70"
           />
         ))}
         <polyline points={points} fill="none" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
@@ -86,27 +92,19 @@ export function ChartBody({ widget }: Readonly<{ widget: ChartData }>) {
             className="stroke-foreground"
           />
         )}
-        <g className="fill-muted-foreground text-[9px] tabular-nums">
-          <text x={PAD.left - 3} y={PAD.top + 8} textAnchor="end">
-            {fmt(high)}
-          </text>
-          <text x={PAD.left - 3} y={H - PAD.bottom} textAnchor="end">
-            {fmt(low)}
-          </text>
-          {ticks.map((i, n) => (
-            <text key={i} x={x(i)} y={H - 4} textAnchor={ANCHOR[n]}>
-              {axisLabel((series[i] as { at: string }).at)}
-            </text>
-          ))}
-        </g>
       </svg>
+      <div aria-hidden className="flex justify-between text-xs tabular-nums text-muted-foreground">
+        {ticks.map((i) => (
+          <span key={i}>{axisLabel((series[i] as { at: string }).at)}</span>
+        ))}
+      </div>
       <table className="sr-only">
         <caption>{widget.title}</caption>
         <thead>
           <tr>
-            <th scope="col">Time</th>
-            <th scope="col">{widget.unit || "Value"}</th>
-            {bars && <th scope="col">{widget.bars_label || "Share"}</th>}
+            <th scope="col">{t("contrib.chart.time")}</th>
+            <th scope="col">{widget.unit || t("contrib.chart.value")}</th>
+            {bars && <th scope="col">{widget.bars_label || t("contrib.chart.share")}</th>}
           </tr>
         </thead>
         <tbody>
@@ -119,11 +117,11 @@ export function ChartBody({ widget }: Readonly<{ widget: ChartData }>) {
           ))}
         </tbody>
       </table>
-      {(widget.unit || widget.bars_label) && (
-        <figcaption className="text-xs text-muted-foreground">
-          {[widget.unit, widget.bars_label].filter(Boolean).join(" · ")}
-        </figcaption>
-      )}
+      <figcaption className="text-xs tabular-nums text-muted-foreground">
+        {[`${fmt(low)} to ${fmt(high)}${widget.unit ? ` ${widget.unit}` : ""}`, widget.bars_label]
+          .filter(Boolean)
+          .join(" · ")}
+      </figcaption>
     </figure>
   );
 }

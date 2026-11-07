@@ -346,10 +346,13 @@ def test_chart_widget_takes_a_line_bars_range_and_now():
         ("one value per point", {"bars": [0.1]}),
         ("less than or equal to 1", {"bars": [0, 0, 2]}),
         ("must be the `at` of one", {"now": "later"}),
+        ("distinct `at`", {"series": "duplicate"}),
     ],
 )
 def test_chart_widget_refuses_what_cannot_be_drawn(message, fields):
-    points = _points(fields["series"]) if "series" in fields else _points()
+    points = _points(fields["series"]) if isinstance(fields.get("series"), int) else _points()
+    if fields.get("series") == "duplicate":
+        points = [points[0], points[0], points[1]]
     extra = {key: value for key, value in fields.items() if key != "series"}
     with pytest.raises(ValidationError, match=message):
         ChartWidget(title="t", summary="s", series=points, **extra)

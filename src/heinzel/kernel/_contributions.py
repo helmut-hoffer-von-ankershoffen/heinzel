@@ -582,6 +582,10 @@ class ChartWidget(_Data):
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
+        ats = [point.at for point in self.series]
+        if len(set(ats)) != len(ats):
+            msg = "series needs a distinct `at` for every point"
+            raise ValueError(msg)
         if self.bars is not None and len(self.bars) != len(self.series):
             msg = f"bars needs one value per point: {len(self.bars)} for {len(self.series)} points"
             raise ValueError(msg)
