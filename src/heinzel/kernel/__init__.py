@@ -164,6 +164,7 @@ from heinzel.kernel._git import (
     check_repository_url,
     git_command,
 )
+from heinzel.kernel._head_refresh import HeadRefresh, WebHeadRefresh
 from heinzel.kernel._host_maintenance import (
     HostIntegration,
     HostIntegrationScope,
@@ -540,6 +541,7 @@ __all__ = [
     "FreeBusy",
     "GitRunner",
     "GraphicWidget",
+    "HeadRefresh",
     "HealthLet",
     "HeinzelError",
     "Homebrew",
@@ -735,6 +737,7 @@ __all__ = [
     "ViewLet",
     "ViewSlot",
     "Weather",
+    "WebHeadRefresh",
     "WebOverview",
     "Widget",
     "WidgetAction",

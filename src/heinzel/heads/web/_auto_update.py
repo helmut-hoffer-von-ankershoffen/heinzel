@@ -29,7 +29,7 @@ from subprocess import SubprocessError
 from typing import IO, Any, Literal, cast
 
 from fastapi import FastAPI, HTTPException, Response
-from packaging.version import Version
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Field
 
 from heinzel import HeinzelError, __version__
@@ -97,6 +97,8 @@ class Plan:
     """The commit the announced hz release's tag named when it was announced; checked once it is installed."""
     refused: dict[str, Any] | None = None
     """News that was installed but didn't start, and was put back: never applied again; newer news is."""
+    failed_on: str | None = None
+    """The hz version that was running when `message` reported a failure; another version makes it history."""
 
     @property
     def pending(self) -> bool:
@@ -120,6 +122,7 @@ class Plan:
             "restarting_to": self.restarting_to,
             "refused": self.refused,
             "commit": self.commit,
+            "failed_on": self.failed_on,
         }
 
     @classmethod
@@ -160,6 +163,7 @@ class Plan:
             restarting_to=text("restarting_to"),
             refused=_news(values.get("refused")),
             commit=text("commit"),
+            failed_on=text("failed_on"),
         )
 
 
@@ -230,8 +234,9 @@ def postpone(plan: Plan, now: datetime) -> None:
     plan.postponements += 1
 
 
-def failed(plan: Plan, message: str, now: datetime) -> None:
-    """Keep the news, wait at least six hours, and say what happened once."""
+def failed(plan: Plan, message: str, now: datetime, running: str | None = None) -> None:
+    """Keep the news, wait at least six hours, and say what happened once, naming the version still `running`."""
+    plan.failed_on = running
     plan.applying = False
     plan.apply_at = None
     plan.restarting_to = None
@@ -243,6 +248,37 @@ def failed(plan: Plan, message: str, now: datetime) -> None:
 def done(plan: Plan, message: str) -> None:
     """Forget what was pending after an update that worked, keeping only the message that says so."""
     plan.__dict__.update(Plan(message=message).__dict__)
+
+
+def settle(plan: Plan, running: str, now: datetime) -> None:
+    """At a server's start: forget what the installation already has, and a failure another version reported.
+
+    hz may have been updated by other means since (`hz system update`, the footer, another server): news of a release
+    that is not newer than `running` is done, and its failure, or one reported while another version ran, is history.
+    A failure without a recorded version is history once its news is: older state files didn't record one.
+    """
+    if plan.applying or plan.restarting_to is not None:
+        return
+    done_news = plan.core is not None and _not_newer(plan.core, running)
+    if done_news:
+        plan.core, plan.commit = None, None
+        if not plan.plugins:
+            plan.window_at = plan.apply_at = None
+            plan.postponements = 0
+    stale = plan.failed_on is not None and plan.failed_on != running
+    if plan.retry_at is not None and (stale or (plan.failed_on is None and done_news)):
+        plan.retry_at = plan.message = plan.failed_on = None  # only a failure sets `retry_at`, with its message
+        if plan.pending:  # other news, e.g. a plugin, waits only for its own window again
+            plan.window_at = now
+    elif stale:
+        plan.failed_on = None
+
+
+def _not_newer(release: str, running: str) -> bool:
+    try:
+        return Version(release) <= Version(running)
+    except InvalidVersion:
+        return False
 
 
 def failure_message(running: str) -> str:
@@ -513,7 +549,25 @@ class AutoUpdater:
                 if plan.restarting_to == version:
                     done(plan, f"hz is up to date: {version}, updated automatically.")
                 elif plan.restarting_to is not None:
-                    failed(plan, failure_message(version), now)
+                    failed(plan, failure_message(version), now, version)
+        with self._editing() as plan:
+            settle(plan, version, now)
+            self._forget_installed_plugins(plan)
+
+    def _forget_installed_plugins(self, plan: Plan) -> None:
+        """Drop plugin news the installation already has (another update installed it): no needless restart."""
+        if not plan.plugins or plan.applying or plan.restarting_to is not None:
+            return
+        try:
+            installed = self._kernel.resolve(Installation).installed_versions(list(plan.plugins))
+        except Exception:  # noqa: BLE001 - unreadable metadata keeps the news; the next check asks again
+            return
+        for name, version in list(plan.plugins.items()):
+            if name in installed and _not_newer(version, installed[name]):
+                del plan.plugins[name]
+        if not plan.pending:
+            plan.window_at = plan.apply_at = None
+            plan.postponements = 0
 
     # Settings and conditions ----------------------------------------------------------------------------------------
 
@@ -758,7 +812,7 @@ class AutoUpdater:
 
     def _fail(self, message: str) -> None:
         with self._editing() as plan:
-            failed(plan, message, self._clock())
+            failed(plan, message, self._clock(), self._version)
         _unlock(self._applying)
         self._applying = None
 

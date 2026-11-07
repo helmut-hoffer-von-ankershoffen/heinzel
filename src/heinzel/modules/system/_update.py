@@ -16,9 +16,11 @@ version it has if that still resolves, and otherwise taken out of the installati
 """
 
 import json
+import platform
 import re
 import shlex
 import tempfile
+import time
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
@@ -35,11 +37,14 @@ from heinzel import HeinzelError, __version__
 from heinzel.kernel import (
     CorePin,
     DaemonHandoverPlan,
+    DaemonHandoverRequest,
     DaemonInstallationLifecycle,
     DaemonMutationScope,
+    HeadRefresh,
     Installation,
     ReleaseSource,
     ToolConstraintPolicy,
+    WebHeadRefresh,
     subprocess_environment,
 )
 from heinzel.modules.system._announced import (
@@ -60,6 +65,14 @@ DEFAULT_BRANCH = "main"
 
 type UpdateChannel = Literal["stable", "edge", "main", "release"]
 """Where updates come from; `release` is the earlier name of stable, still accepted (ADR 0114)."""
+
+DAEMON_SECONDS = 90.0
+"""How long an update waits for the handed-over daemon's first tick to report the version it loaded."""
+DAEMON_POLL_SECONDS = 1.0
+DESKTOP_RECEIPT = Path(".config/heinzel/desktop-installation.json")
+"""Under the home folder: the managed Mac app's receipt (`heinzel.heads._desktop_installation`)."""
+SETTLED = frozenset({"verified", "not-installed", "self"})
+"""Head outcomes that leave nothing running older code; `pending` and `failed` do not."""
 
 PLACEHOLDER_TAG = "vX.Y.Z"
 """Stands in for the latest release tag in a suggested command when the package source couldn't be asked."""
@@ -116,19 +129,28 @@ class Installed:
 class UpdateService:
     """Updates the uv tool environment Heinzelmännchen runs in, keeping its plugins."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - the installation, its boundaries, its heads and the seams tests replace
         self,
         installation: Installation,
         releases: ReleaseSource,
         *,
         lifecycle: DaemonInstallationLifecycle | None = None,
         require_lifecycle: bool = False,
+        web: WebHeadRefresh | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+        home: Path | None = None,
     ) -> None:
-        """Create the service with an optional trusted lifecycle boundary."""
+        """Create the service with an optional trusted lifecycle boundary and the heads it refreshes afterwards."""
         self._installation = installation
         self._releases = releases
         self._lifecycle = lifecycle
         self._require_lifecycle = require_lifecycle
+        self._web = web
+        self._clock, self._sleep = clock, sleep
+        self._home = home
+        self._handover: tuple[DaemonHandoverPlan, DaemonHandoverRequest] | None = None
+        """What the daemon was before the last completed mutation and the handover it requested, for the heads."""
 
     def _mutation(self) -> AbstractContextManager[DaemonMutationScope | None]:
         if self._lifecycle is not None:
@@ -217,6 +239,7 @@ class UpdateService:
             self._installation.record_startup_state(expected=candidate)
         scope.verified_complete(candidate)
         handover = scope.request(plan)
+        self._handover = (plan, handover)
         if handover.requested:
             message = f"{result.message}\nThe daemon handover was requested; a fresh service tick is pending."
             return result.model_copy(update={"message": message})
@@ -303,9 +326,15 @@ class UpdateService:
                 )
                 if scope is not None and plan is not None:
                     self._finish_mutation(scope, plan, generation, result)
-                return AnnouncedUpdate(
-                    updated=True, after=target, restored=False, refused=False, message=f"Installed hz {target}."
-                )
+        heads = self._refresh_heads(target)
+        return AnnouncedUpdate(
+            updated=True,
+            after=target,
+            restored=False,
+            refused=False,
+            message=_with_heads(f"Installed hz {target}.", heads),
+            heads=heads,
+        )
 
     def _announced_selection(self, target: str, announced: Announcement) -> "_Selection | AnnouncedUpdate":
         """What goes into uv, before anything changes: the exact core, and every plugin as it must stay or move.
@@ -507,6 +536,10 @@ class UpdateService:
     ) -> UpdateResult:
         """Update to the latest release, or reinstall from `source`; `current` is the version running now.
 
+        After a change, every installed long-running head is moved onto the installed code through its own owned
+        restart path and asked which version its live process loaded (`heads`): the daemon's handover tick and the
+        persistent web server. The update is complete only when each is verified; the message says which aren't.
+
         `channel` is where the installation follows: `edge` (the newest edge release's wheel, verified by digest) or
         stable, which `release` also names: the releases (a pin to the newest release tag, which every later
         update follows; an installation on `main` moves there once a release is as new as it, never as a downgrade) or
@@ -516,6 +549,14 @@ class UpdateService:
             HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, the latest release can't be
                 asked for, or the install fails, naming the plugins that block it; Heinzelmännchen still works.
         """
+        self._handover = None
+        result = self._update(source, current, channel)
+        if not getattr(result, "updated", False):  # nothing changed, so every head already runs what is installed
+            return result
+        heads = self._refresh_heads(result.after)
+        return result.model_copy(update={"heads": heads, "message": _with_heads(result.message, heads)})
+
+    def _update(self, source: str | None, current: str, channel: UpdateChannel) -> UpdateResult:
         pin, requirements = self._installation.core_pin(), self._installation.requirements()
         if pin is None or not requirements:
             msg = "Heinzelmännchen wasn't installed with `uv tool install`; update it the way you installed it."
@@ -1327,6 +1368,97 @@ class UpdateService:
             pass
         return f"hz may not start; restore it with: {self._installation.tool_restore_hint(restore)}"
 
+    def _refresh_heads(self, target: str) -> list[HeadRefresh]:
+        """Move each installed long-running head onto the installed code and observe what its live process runs.
+
+        Runs only after the installation mutation completed, so no pending marker blocks an owned restart. Nothing
+        here raises: a head that can't be verified is reported as `pending` or `failed`, with the command that
+        finishes it, and the update never claims it.
+        """
+        heads: list[HeadRefresh] = []
+        if self._lifecycle is not None:
+            heads.append(self._daemon_head(target))
+        if self._web is not None:
+            try:
+                heads.append(self._web.refresh(target))
+            except Exception as exc:  # noqa: BLE001 - a head's own failure is reported, never hidden or raised
+                heads.append(
+                    HeadRefresh(
+                        head="web",
+                        status="failed",
+                        detail=f"The web server couldn't be refreshed ({exc}). Run `hz ui restart`, then "
+                        "`hz ui status`.",
+                    )
+                )
+        if self._desktop_installed():
+            heads.append(
+                HeadRefresh(
+                    head="desktop",
+                    status="pending",
+                    detail="Not verified by this update: the desktop app updates itself at the web server's next "
+                    "automatic update check, if automatic updates are on; otherwise run the installer again.",
+                )
+            )
+        return heads
+
+    def _desktop_installed(self) -> bool:
+        try:
+            return platform.system() == "Darwin" and (self._home or Path.home()).joinpath(DESKTOP_RECEIPT).exists()
+        except (OSError, RuntimeError):  # no home to look in: nothing is claimed about a desktop app
+            return False
+
+    def _daemon_head(self, target: str) -> HeadRefresh:
+        """Wait, within `DAEMON_SECONDS`, for the handed-over daemon's own tick to report the version it loaded."""
+        if self._handover is None:
+            return HeadRefresh(head="daemon", status="not-installed", detail="No daemon handover was requested.")
+        plan, handover = self._handover
+        if not handover.requested and not plan.active:  # no daemon, a paused one or one not running: nothing old runs
+            return HeadRefresh(head="daemon", status="not-installed", detail=handover.reason)
+        if not handover.requested:
+            return HeadRefresh(
+                head="daemon",
+                status="pending",
+                detail=f"The daemon wasn't asked to restart ({handover.reason}) and may still run the old code. Run "
+                "`hz system daemon restart`, then `hz system daemon status`.",
+            )
+        if handover.request_id is None or self._lifecycle is None:
+            return HeadRefresh(
+                head="daemon",
+                status="pending",
+                detail="The daemon was asked to restart; check `hz system daemon status` for the version it runs.",
+            )
+        return self._await_daemon(self._lifecycle, handover.request_id, target)
+
+    def _await_daemon(self, lifecycle: DaemonInstallationLifecycle, request_id: str, target: str) -> HeadRefresh:
+        """The handed-over tick's own report of the version it loaded, or `pending` after `DAEMON_SECONDS`."""
+        deadline = self._clock() + DAEMON_SECONDS
+        while True:
+            try:
+                observed = lifecycle.observation(request_id)
+            except Exception:  # noqa: BLE001 - an unreadable observation stays pending, never verified
+                observed = None
+            if observed is not None:
+                if observed.version == target:
+                    return HeadRefresh(
+                        head="daemon", status="verified", version=target, detail="The daemon restarted into it."
+                    )
+                return HeadRefresh(
+                    head="daemon",
+                    status="failed",
+                    version=observed.version,
+                    detail=f"The daemon restarted but runs hz {observed.version}, not {target}. Run "
+                    "`hz system daemon restart`.",
+                )
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                return HeadRefresh(
+                    head="daemon",
+                    status="pending",
+                    detail=f"The daemon was asked to restart; its first tick hadn't finished within "
+                    f"{DAEMON_SECONDS:g} seconds. Check `hz system daemon status` for the version it runs.",
+                )
+            self._sleep(min(DAEMON_POLL_SECONDS, remaining))
+
     def _original_generation(self) -> str | None:
         try:
             return self._installation.startup_fingerprint()
@@ -1351,6 +1483,23 @@ class UpdateService:
             HeinzelError: If `hz` doesn't start.
         """
         return self._installation.hz("--version").splitlines()[0].removeprefix("hz ").strip()
+
+
+HEAD_LABELS = {"daemon": "Daemon", "web": "Web server", "notifier": "Notifier", "desktop": "Desktop app"}
+PENDING_TICK = "\nThe daemon handover was requested; a fresh service tick is pending."
+
+
+def _with_heads(message: str, heads: list[HeadRefresh]) -> str:
+    """`message`, with one line per installed head and, unless every one is settled, that the update isn't done."""
+    shown = [head for head in heads if head.status != "not-installed"]
+    if not shown:
+        return message
+    if any(head.head == "daemon" for head in shown):  # its own line says what the handover did
+        message = message.replace(PENDING_TICK, "")
+    lines = [f"{HEAD_LABELS[head.head]}: {head.status}. {head.detail}".rstrip() for head in shown]
+    if any(head.status not in SETTLED for head in shown):
+        lines.append("Not everything runs the new version yet; the lines above say what finishes it.")
+    return "\n".join([message, *lines])
 
 
 def _with_summary(message: str, updates: list[PluginUpdate]) -> str:

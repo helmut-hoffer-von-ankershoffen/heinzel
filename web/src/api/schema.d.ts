@@ -7832,6 +7832,35 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * HeadRefresh
+         * @description What one installed head runs after an update; only `verified` is evidence of the target version.
+         */
+        HeadRefresh: {
+            /**
+             * Detail
+             * @description What happened, and the command that checks or finishes it.
+             * @default
+             */
+            detail: string;
+            /**
+             * Head
+             * @description The installed head: daemon, web, notifier or desktop.
+             * @enum {string}
+             */
+            head: "daemon" | "web" | "notifier" | "desktop";
+            /**
+             * Status
+             * @description verified: its live process reported the target version; pending: requested, not yet observed; failed: it reported another version or could not restart; not-installed: nothing to refresh; self: the process that ran the update hosts this head and restarts itself afterwards.
+             * @enum {string}
+             */
+            status: "verified" | "pending" | "failed" | "not-installed" | "self";
+            /**
+             * Version
+             * @description The version its live process reported, when observed.
+             */
+            version?: string | null;
+        };
+        /**
          * HealthReport
          * @description All health checks, and the overall status: DOWN beats DEGRADED beats UP.
          */
@@ -14448,6 +14477,11 @@ export interface components {
              */
             before: string;
             /**
+             * Heads
+             * @description What each installed long-running head runs after the update, as its live process reported it.
+             */
+            heads?: components["schemas"]["HeadRefresh"][];
+            /**
              * Latest
              * @description Highest published release in SemVer order, when it was asked for: for an installation pinned to a release tag, a branch, a commit or a local source; none otherwise or if it couldn't be asked.
              */
@@ -15908,6 +15942,7 @@ export type SchemaGraphMetadata = components['schemas']['GraphMetadata'];
 export type SchemaGraphNode = components['schemas']['GraphNode'];
 export type SchemaGraphicWidget = components['schemas']['GraphicWidget'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
+export type SchemaHeadRefresh = components['schemas']['HeadRefresh'];
 export type SchemaHealthReport = components['schemas']['HealthReport'];
 export type SchemaHeinzelAppearance = components['schemas']['HeinzelAppearance'];
 export type SchemaHeinzelList = components['schemas']['HeinzelList'];

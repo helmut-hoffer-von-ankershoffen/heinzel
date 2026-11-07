@@ -17,6 +17,7 @@ from heinzel.kernel import (
     ReleaseSource,
     Settings,
     UninstallResult,
+    WebHeadRefresh,
 )
 from heinzel.modules.system._announced import Announcement, ToolSnapshot, trial_start
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
@@ -80,7 +81,8 @@ module.service(CoreMetadataVerifier, CoreMetadataIdentity)
 
 def _update_service(installation: Installation, releases: ReleaseSource, kernel: Kernel) -> UpdateService:
     lifecycle = kernel.resolve(DaemonInstallationLifecycle) if kernel.provides(DaemonInstallationLifecycle) else None
-    return UpdateService(installation, releases, lifecycle=lifecycle, require_lifecycle=True)
+    web = kernel.resolve(WebHeadRefresh) if kernel.provides(WebHeadRefresh) else None
+    return UpdateService(installation, releases, lifecycle=lifecycle, require_lifecycle=True, web=web)
 
 
 module.service(UpdateService, _update_service)

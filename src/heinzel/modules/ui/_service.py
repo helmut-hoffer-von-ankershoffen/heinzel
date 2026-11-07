@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from heinzel import Config, HeinzelError, Kernel, Settings
 from heinzel.kernel import (
+    HeadRefresh,
     HostServiceManager,
     Installation,
     MaintenanceLocks,
@@ -55,6 +56,9 @@ UNIT = "hz-web.service"
 MAX_PORT = 65535
 STOP_SECONDS = 5.0
 STOP_POLL_SECONDS = 0.05
+READY_SECONDS = 12.0
+"""How long a restarted supervised web server may take to report ready: the owner's readiness bound (11-04)."""
+READY_POLL_SECONDS = 0.1
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 
@@ -826,6 +830,56 @@ class WebService:
             retiring_instance=str(response["instance"]),
             message="Restart requested. Use `hz ui status` to verify a different ready instance.",
         )
+
+    def refresh(self, target: str) -> HeadRefresh:
+        """After an update: restart the owned web server, then observe its successor.
+
+        It restarts even when it reports `target` already: a plugin-only update leaves the core version as it was, and
+        the old process still runs the plugins it imported. Only a different ready instance reporting exactly `target`
+        within `READY_SECONDS` counts as verified. The server that is itself running this update restarts itself
+        afterwards, so it is reported, never restarted.
+        Never raises: ownership, readiness and restart problems are outcomes.
+        """
+        before = self.status()
+        if not before.installed:
+            return HeadRefresh(head="web", status="not-installed")
+        if before.ready and before.pid == os.getpid():
+            return HeadRefresh(
+                head="web", status="self", version=before.version, detail="This web server restarts itself next."
+            )
+        try:
+            retiring = self.restart().retiring_instance
+        except (OSError, ValueError, HeinzelError, subprocess.SubprocessError) as exc:
+            return HeadRefresh(
+                head="web",
+                status="failed",
+                version=before.version,
+                detail=f"The web server couldn't restart ({exc}). Finish it with `hz ui restart`, then `hz ui status`.",
+            )
+        deadline = self._clock() + READY_SECONDS
+        while True:
+            now = self.status()
+            if now.ready and now.instance not in {None, retiring}:
+                if now.version == target:
+                    return HeadRefresh(
+                        head="web", status="verified", version=target, detail="The web server restarted into it."
+                    )
+                return HeadRefresh(
+                    head="web",
+                    status="failed",
+                    version=now.version,
+                    detail=f"The web server restarted but runs hz {now.version}, not {target}. Run `hz ui restart`.",
+                )
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                return HeadRefresh(
+                    head="web",
+                    status="pending",
+                    version=before.version,
+                    detail=f"No restarted web server reported ready within {READY_SECONDS:g} seconds. Check "
+                    "`hz ui status`; if it still shows the old version, run `hz ui restart`.",
+                )
+            self._sleep(min(READY_POLL_SECONDS, remaining))
 
     @contextmanager
     def removal_guard(self, *, locks: MaintenanceLocks | None = None) -> Generator[WebRemoval, None, None]:

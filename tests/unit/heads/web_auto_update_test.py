@@ -693,3 +693,62 @@ def test_turning_automatic_updates_on_checks_at_once_not_at_the_next_half_hour(m
     assert made.reason() is None
     advance(made, clock, 1)  # turned on, a minute after the last check
     assert checked == [clock.now]
+
+
+# A later update by other means: the old failure is history ------------------------------------------------------------
+
+
+def test_a_failure_another_version_reported_is_history_once_the_server_runs_a_later_version(make_kernel, tmp_path):
+    made, clock, _, kernel = updater(make_kernel, tmp_path, outcome=RuntimeError("uv failed"))
+    advance(made, clock, 5 * 60)
+    advance(made, clock, 30)
+    assert made.status().message == auto.failure_message("1.0.0")
+    assert made.plan.failed_on == "1.0.0"
+    # `hz system update` (or the footer) installed 9.9.9 and restarted the web server: no stale failure, no news.
+    after = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="9.9.9", settings=made._read_settings
+    )
+    status = after.status()
+    assert (status.message, status.core) == (None, None)
+    assert after.plan.retry_at is None
+    assert status.plugins == {"heinzel-example": "2.0.0"}  # the next check says whether the plugin is current too
+    assert after.plan.window_at == clock.now  # it waits for nothing but its own countdown, not for six hours
+
+
+def test_a_failure_from_an_older_state_file_is_history_once_its_news_is_installed(make_kernel, tmp_path):
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    auto.found(made.plan, "9.9.9", {}, clock.now)
+    auto.failed(made.plan, auto.failure_message("1.0.0"), clock.now)  # as 0.9.26 and older wrote it: no version
+    made._save()
+    after = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="9.9.9", settings=made._read_settings
+    )
+    assert (after.status().message, after.plan.core, after.plan.retry_at) == (None, None, None)
+
+
+def test_the_same_version_keeps_its_failure_and_plugin_news_keeps_waiting(make_kernel, tmp_path):
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    auto.found(made.plan, "9.9.9", {"heinzel-example": "2.0.0"}, clock.now)
+    auto.failed(made.plan, auto.failure_message("1.0.0"), clock.now, "1.0.0")
+    made._save()
+    same = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="1.0.0", settings=made._read_settings
+    )
+    assert same.status().message == auto.failure_message("1.0.0")
+    assert same.plan.retry_at == clock.now + timedelta(hours=6)
+    later = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="9.9.9", settings=made._read_settings
+    )
+    assert (later.plan.core, later.plan.plugins) == (None, {"heinzel-example": "2.0.0"})
+    assert (later.plan.message, later.plan.retry_at, later.plan.window_at) == (None, None, clock.now)
+
+
+def test_plugin_news_the_installation_already_has_is_forgotten_at_start(make_kernel, tmp_path):
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    auto.found(made.plan, None, {"heinzel-example": "2.0.0"}, clock.now)
+    made._save()
+    kernel.resolve(Installation).installed_versions = lambda names: {"heinzel-example": "2.0.0"}
+    after = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="1.0.0", settings=made._read_settings
+    )
+    assert (after.plan.plugins, after.plan.window_at, after.status().phase) == ({}, None, "idle")
