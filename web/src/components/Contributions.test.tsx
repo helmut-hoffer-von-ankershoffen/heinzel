@@ -347,6 +347,7 @@ describe("Chart widget", () => {
     renderAt("/");
     const img = await screen.findByRole("img", { name: "Temperature today" });
     expect(img).toHaveAccessibleDescription(chart.summary);
+    expect(screen.getAllByRole("row").length).toBe(chart.series.length + 1); // a header row and one row per point
     expect(img.querySelectorAll("polyline")).toHaveLength(1);
     expect(img.querySelectorAll("rect")).toHaveLength(4);
     expect(img.querySelector("line[stroke-dasharray]")).toBeInTheDocument();

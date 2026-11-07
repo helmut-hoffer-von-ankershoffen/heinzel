@@ -100,6 +100,25 @@ export function ChartBody({ widget }: { widget: ChartData }) {
           ))}
         </g>
       </svg>
+      <table className="sr-only">
+        <caption>{widget.title}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Time</th>
+            <th scope="col">{widget.unit || "Value"}</th>
+            {bars && <th scope="col">{widget.bars_label || "Share"}</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {series.map((point, i) => (
+            <tr key={point.at}>
+              <th scope="row">{axisLabel(point.at)}</th>
+              <td>{fmt(point.value)}</td>
+              {bars && <td>{Math.round((bars[i] ?? 0) * 100)}%</td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
       {(widget.unit || widget.bars_label) && (
         <figcaption className="text-xs text-muted-foreground">
           {[widget.unit, widget.bars_label].filter(Boolean).join(" · ")}
