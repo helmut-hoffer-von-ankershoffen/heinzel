@@ -19,7 +19,7 @@ const desktopBridge = (): Bridge | undefined => (window as Window & { heinzelDes
 type Info = NonNullable<ReturnType<typeof useInfo>["data"]>;
 
 /** The installed plugins, one row per distribution, as the API lists them. */
-export const pluginsOf = (info: Info) => info.plugins;
+export const pluginsOf = (info: Info) => info.plugins ?? [];
 
 /** The same lines as `hz --version`, plus the daemon and the desktop app. */
 export function detailsText(info: Info, desktop: Desktop | null): string {
