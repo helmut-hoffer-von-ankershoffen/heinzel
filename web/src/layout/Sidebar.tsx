@@ -90,6 +90,7 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
       <div className={cn(HAIRLINE_BELOW, "h-12")}>
         <Link
           to="/"
+          aria-label={t("nav.brand")}
           className="ml-0.5 flex min-w-0 items-center rounded-lg px-1 py-1 transition-colors hover:bg-accent/70"
         >
           <ThemeLogo />
