@@ -1,15 +1,14 @@
 """Shared fixtures. The test-suite policy (one level per test, in order, with timeouts) and the isolation of every
 test from the developer's HZ_* variables, config and state (`hz_isolation`) are heinzel.testing's."""
 
+import importlib.util
 import math
 import os
 import re
 import sys
 import time
 from collections.abc import Callable, Iterator
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Protocol
 
 import pytest
 
@@ -378,60 +377,19 @@ class _SessionTiming:
         )
 
 
-def _spread_early_e2e(items: list[pytest.Item], workers: int) -> list[pytest.Item]:
-    """Place one hinted test per known xdist initial batch, preserving all other order."""
-    if workers != 3 or len(items) < 2 * workers:
-        return list(items)
-    early = [item for item in items if item.get_closest_marker("e2e_early")]
-    if not early:
-        return list(items)
-    regular = [item for item in items if not item.get_closest_marker("e2e_early")]
-    batch = max(2, (len(items) // workers) // 4)
-    result: list[pytest.Item] = []
-    for _ in range(workers):
-        capacity = batch
-        if early:
-            result.append(early.pop(0))
-            capacity -= 1
-        take = min(capacity, len(regular))
-        result.extend(regular[:take])
-        del regular[:take]
-    return result + early + regular
+def _e2e_schedule():
+    """Load the E2E scheduling hint from the file beside this conftest, wherever a test copies the two (bead 0bb)."""
+    path = Path(__file__).with_name("_e2e_schedule.py")
+    spec = importlib.util.spec_from_file_location("heinzel_tests_e2e_schedule", path)
+    assert spec is not None, path
+    assert spec.loader is not None, path
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-class _WorkerNode(Protocol):
-    config: pytest.Config
-    workerinput: dict[str, object]
-
-
-def _early_scheduler(config: pytest.Config) -> bool:
-    if (
-        config.getoption("markexpr") != "e2e"
-        or getattr(config.option, "numprocesses", None) != 3
-        or getattr(config.option, "dist", None) != "load"
-        or getattr(config.option, "maxschedchunk", None) is not None
-        or getattr(config.option, "maxprocesses", None) is not None
-    ):
-        return False
-    try:
-        return version("pytest-xdist") == "3.8.0"
-    except PackageNotFoundError:
-        return False
-
-
-@pytest.hookimpl(optionalhook=True)
-def pytest_configure_node(node: _WorkerNode) -> None:
-    """Propagate the checked controller scheduler choice to each xdist worker."""
-    node.workerinput["heinzel_e2e_early"] = _early_scheduler(node.config)
-
-
-@pytest.hookimpl(trylast=True)
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Use E2E hints only for the known three-worker xdist load scheduler."""
-    workerinput = getattr(config, "workerinput", None)
-    if isinstance(workerinput, dict):
-        enabled = workerinput.get("heinzel_e2e_early") is True and workerinput.get("workercount") == 3
-    else:
-        enabled = _early_scheduler(config)
-    if enabled:
-        items[:] = _spread_early_e2e(items, 3)
+# The hint lives in its own file so a nested run can load it without heinzel; binding its hooks here registers them
+# exactly as before.
+_schedule = _e2e_schedule()
+pytest_configure_node = _schedule.pytest_configure_node
+pytest_collection_modifyitems = _schedule.pytest_collection_modifyitems
