@@ -30,7 +30,7 @@ export function HealthStatus() {
           <PaneAction icon={Stethoscope} to="/doctor">
             {t("health.doctor")}
           </PaneAction>
-          <PaneAction icon={RefreshCw} iconOnly disabled={query.isFetching} onClick={() => void query.refetch()}>
+          <PaneAction icon={RefreshCw} disabled={query.isFetching} onClick={() => void query.refetch()}>
             {t("health.refresh")}
           </PaneAction>
         </>

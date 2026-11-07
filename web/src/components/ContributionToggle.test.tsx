@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ScrollText } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SchemaOperationCall } from "@/api/client";
 import { expectAccessible } from "@/test/render";
@@ -310,7 +311,11 @@ describe("authenticated URL copy", () => {
         control={value}
         refresh={vi.fn(async () => value)}
         applySettings={vi.fn(async () => {})}
-        actions={<PaneAction onClick={() => {}}>Logs</PaneAction>}
+        actions={
+          <PaneAction icon={ScrollText} onClick={() => {}}>
+            Logs
+          </PaneAction>
+        }
       />,
     );
     expect(container.querySelectorAll("[data-pane-actions]")).toHaveLength(1);

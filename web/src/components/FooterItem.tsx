@@ -297,7 +297,7 @@ export function FooterItem({
 const ACTION = 'button:not([role="switch"]), a[href], [role="button"], [role="link"], [role="menuitem"]';
 
 /**
- * What breaks the pane structure (design/README.md, "Actions in panes"): content first, then one divider and one
+ * What breaks the pane structure (design/README.md, "Pane actions"): content first, then one divider and one
  * row of action buttons, nothing after it, and no button or link anywhere else in the pane.
  */
 export function paneStructureProblems(pane: Element): string[] {
@@ -311,6 +311,20 @@ export function paneStructureProblems(pane: Element): string[] {
   const all = pane.querySelectorAll("*");
   const last = all[all.length - 1];
   if (row && last && !row.contains(last)) problems.push("content follows the action row");
+  if (row) {
+    const actions = [...row.querySelectorAll(ACTION)];
+    const name = (element: Element) => element.getAttribute("aria-label") ?? element.textContent?.trim();
+    for (const action of actions) {
+      // Only PaneAction draws an action: icon-only by default, words beside the icon only with a stated reason.
+      if (!action.hasAttribute("data-pane-action")) problems.push(`"${name(action)}" is not a PaneAction`);
+      else if (!action.querySelector("svg")) problems.push(`"${name(action)}" has no icon`);
+      else if (action.getAttribute("data-pane-action") === "icon" && !action.getAttribute("aria-label"))
+        problems.push(`"${name(action)}" is icon-only without an accessible name`);
+    }
+    // One row, never wrapped: every action starts at the same height (measurable wherever layout runs).
+    const tops = new Set(actions.map((action) => Math.round(action.getBoundingClientRect().top)));
+    if (tops.size > 1) problems.push(`the actions wrap onto ${tops.size} lines; use icon-only actions`);
+  }
   return problems;
 }
 

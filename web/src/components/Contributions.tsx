@@ -277,6 +277,11 @@ function effectIcon(effect: Effect): LucideIcon {
 }
 
 /** A footer status item: only its icon, in the colour and shape of its declared tone; text, detail and buttons in a pane. */
+/** Why a plugin action without its own icon keeps its words: the generic effect icon alone would be ambiguous. */
+const NO_ICON = "The plugin declared no icon, so its words tell this action from the others.";
+/** An item's own action has only a generic open or run icon; its words say what it does. */
+const OWN_ACTION = "An item's own action has only a generic open or run icon, so its words say what it does.";
+
 function FooterStatus({
   entry,
   updatedAt,
@@ -297,14 +302,15 @@ function FooterStatus({
   const actions = (
     <>
       {effect && (
-        <PaneAction icon={effectIcon(effect)} onClick={() => run(effect)}>
+        <PaneAction icon={effectIcon(effect)} withText={OWN_ACTION} onClick={() => run(effect)}>
           {effectLabel(effect)}
         </PaneAction>
       )}
       {(item.actions ?? []).map((action) => (
         <PaneAction
           key={action.label}
-          icon={action.icon ? ICONS[action.icon] : undefined}
+          icon={action.icon ? ICONS[action.icon] : effectIcon(action.effect)}
+          withText={action.icon ? undefined : NO_ICON}
           onClick={() => run(action.effect)}
         >
           {action.label}
@@ -582,7 +588,8 @@ function SidebarStatusItem({
             {actions.map((action) => (
               <PaneAction
                 key={action.label}
-                icon={action.icon ? ICONS[action.icon] : undefined}
+                icon={action.icon ? ICONS[action.icon] : effectIcon(action.effect)}
+                withText={action.icon ? undefined : NO_ICON}
                 onClick={() => run(action.effect)}
               >
                 {action.label}

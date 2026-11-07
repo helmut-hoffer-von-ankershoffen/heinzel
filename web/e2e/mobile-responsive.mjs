@@ -254,7 +254,20 @@ async function footerPane(page, id, label, ready) {
   // can become obsolete when an independent provider changes footer capacity before Playwright sends the tap.
   await direct.or(more).first().tap();
   if ((await trigger.getAttribute("aria-expanded")) !== "true") await direct.tap();
-  return page.getByRole("region", { name: label, exact: true }).locator("..");
+  const pane = page.getByRole("region", { name: label, exact: true });
+  await pane.waitFor();
+  await assertOneActionRow(pane, `${id} pane`);
+  return pane.locator("..");
+}
+
+/** A pane's actions sit in one row that never wraps, at this phone width too (design/README.md, "Pane actions"). */
+async function assertOneActionRow(pane, name) {
+  const tops = await pane.evaluate((element) =>
+    [...element.querySelectorAll("[data-pane-actions] [data-pane-action]")].map((action) =>
+      Math.round(action.getBoundingClientRect().top),
+    ),
+  );
+  assert.ok(new Set(tops).size <= 1, `${name}: its actions wrap onto ${new Set(tops).size} lines`);
 }
 
 try {

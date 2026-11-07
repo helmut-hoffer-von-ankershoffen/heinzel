@@ -9,6 +9,9 @@ import { checkNow, KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
 import { canVerifyUpdate, finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
 import { describe } from "@/updates/updateState";
 
+/** Why the install actions keep their words: they replace the running Heinzel and restart it. */
+const INSTALLS = "Installing an update is consequential: it replaces the running Heinzel and restarts it.";
+
 function updateRecoveryState(): "none" | "inspect" | "verify" {
   const receipt = pendingUpdate();
   return receipt ? (canVerifyUpdate(receipt) ? "verify" : "inspect") : "none";
@@ -118,7 +121,7 @@ export function UpdateStatus() {
       actions={
         <>
           {recovery === "verify" && (
-            <PaneAction icon={RotateCcw} disabled={busy} onClick={() => void run(true)}>
+            <PaneAction icon={RotateCcw} withText={INSTALLS} disabled={busy} onClick={() => void run(true)}>
               {t("updates.verify")}
             </PaneAction>
           )}
@@ -128,7 +131,7 @@ export function UpdateStatus() {
             </PaneAction>
           )}
           {canUpdate && (
-            <PaneAction icon={Download} onClick={() => void run(false)}>
+            <PaneAction icon={Download} withText={INSTALLS} onClick={() => void run(false)}>
               {view.count > 1
                 ? t("updates.allAction")
                 : view.count === 1

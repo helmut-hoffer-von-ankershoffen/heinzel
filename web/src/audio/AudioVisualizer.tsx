@@ -50,6 +50,9 @@ function captureProblem(error: unknown) {
  * inline, as a tab share or the microphone. Nothing is captured before a click (a microphone already allowed may be
  * resumed), and nothing is scheduled while the sound is silent, the page hidden or every style off.
  */
+/** Why the capture actions keep their words: each starts a browser capture that asks for permission. */
+const CAPTURE = "Starting a tab or microphone capture is consequential: the browser asks for permission.";
+
 export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean }) {
   const own = useOwnAudio();
   const settings = useVizSettings();
@@ -330,6 +333,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             <PaneAction
               icon={MonitorSpeaker}
               primary={remembered === "tab"}
+              withText={CAPTURE}
               title="Exact signal. The browser shows a sharing bar."
               onClick={() => (session || requesting ? stop() : void start("tab"))}
             >
@@ -338,6 +342,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             <PaneAction
               icon={Mic}
               primary={remembered === "mic"}
+              withText={CAPTURE}
               title="Uses your microphone; nothing is recorded or uploaded. No sharing bar, lower fidelity."
               onClick={() => (session || requesting ? stop() : void start("mic"))}
             >

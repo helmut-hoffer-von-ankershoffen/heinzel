@@ -1,6 +1,5 @@
-// The two places a pane's actions may live (design/README.md, "Actions in panes"): one icon-only button in the
-// title row, or one bottom action row under a divider. Panes use these instead of hand-rolled rows or text links, so
-// placement, divider, size and accessible names stay the same everywhere.
+// Pane actions (design/README.md, "Pane actions"): content, one divider, then one unwrapped row of icon-only
+// buttons whose words are their name and tooltip; words beside the icon only with a stated reason (`withText`).
 import type { LucideIcon } from "lucide-react";
 import { Children, type ComponentProps, cloneElement, Fragment, isValidElement, type ReactNode } from "react";
 import { Link } from "react-router";
@@ -8,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 
-/** The bottom action row: a divider, then the buttons side by side, wrapping when the pane is narrow. */
+/** The bottom action row: a divider, then the buttons side by side on one line that never wraps. */
 export function PaneActions({ children, className }: { children?: ReactNode; className?: string }) {
   // Only PaneAction may sit in the row, so a text link or a differently sized button cannot creep in beside them:
   // development and tests fail loudly, a release drops the stranger rather than the whole pane.
@@ -27,7 +26,7 @@ export function PaneActions({ children, className }: { children?: ReactNode; cla
       data-pane-actions=""
       aria-label={t("pane.actions")}
       className={cn(
-        "mt-2 flex min-w-0 flex-wrap items-center gap-1.5 border-t border-border px-1.5 pt-2 pb-1",
+        "mt-2 flex min-w-0 flex-nowrap items-center gap-1.5 border-t border-border px-1.5 pt-2 pb-1",
         className,
       )}
     >
@@ -48,10 +47,10 @@ function flatten(children: ReactNode, prefix = ""): ReactNode[] {
 type Target = { onClick?: () => void; to?: string; href?: string };
 
 /**
- * An action in the bottom row: icon and text, outlined unless it is the pane's one primary action.
- * `to` navigates inside the app, `href` opens outside it in a new tab (with its external-link meaning in the icon).
- * `iconOnly` keeps a well-known verb (refresh, copy) to its icon at the same height; its text becomes the
- * accessible name and tooltip, so it must be a plain string.
+ * An action in the bottom row (design/README.md, "Pane actions"): icon-only by default, its words the accessible
+ * name and the tooltip, so `children` is a plain string. `withText` shows the words beside the icon and says why
+ * (an icon alone would be ambiguous, or the action is consequential); pane-actions-standards.test.ts lists them.
+ * Outlined unless it is the pane's one primary action. `to` navigates inside the app, `href` opens outside it.
  */
 export function PaneAction({
   icon: Icon,
@@ -60,30 +59,27 @@ export function PaneAction({
   destructive = false,
   to,
   href,
-  iconOnly = false,
+  withText,
   className,
   ...props
 }: Omit<ComponentProps<"button">, "children"> &
-  Target &
-  (
-    | { iconOnly?: false; icon?: LucideIcon; children: ReactNode }
-    | { iconOnly: true; icon: LucideIcon; children: string }
-  ) & { primary?: boolean; destructive?: boolean }) {
+  Target & { icon: LucideIcon; children: string; withText?: string; primary?: boolean; destructive?: boolean }) {
   const look = {
     size: "sm" as const,
     variant: primary ? ("default" as const) : ("outline" as const),
     className: cn(
-      "pointer-coarse:h-11",
-      iconOnly && "w-8 px-0 pointer-coarse:w-11",
+      "shrink-0 pointer-coarse:h-11",
+      !withText && "w-8 px-0 pointer-coarse:w-11",
       destructive && "text-bad",
       className,
     ),
-    ...(iconOnly ? { "aria-label": children as string, title: children as string } : {}),
+    "data-pane-action": withText ? "text" : "icon",
+    ...(withText ? {} : { "aria-label": children, title: children }),
   };
   const body = (
     <>
-      {Icon && <Icon aria-hidden />}
-      {!iconOnly && children}
+      <Icon aria-hidden />
+      {withText && children}
     </>
   );
   if (to)
@@ -109,51 +105,11 @@ export function PaneAction({
 
 PaneAction.paneAction = true;
 
-/** The one icon-only action in a pane's title row. `label` is its accessible name and tooltip: verb and object. */
-export function PaneIconAction({
-  icon: Icon,
-  label,
-  to,
-  href,
-  onClick,
-  disabled,
-  className,
-}: Target & { icon: LucideIcon; label: string; disabled?: boolean; className?: string }) {
-  const look = {
-    variant: "ghost" as const,
-    size: "icon" as const,
-    className: cn("size-8 shrink-0 pointer-coarse:size-11", className),
-    title: label,
-    "aria-label": label,
-  };
-  const icon = <Icon aria-hidden />;
-  if (to)
-    return (
-      <Button {...look} asChild>
-        <Link to={to}>{icon}</Link>
-      </Button>
-    );
-  if (href)
-    return (
-      <Button {...look} asChild>
-        <a href={href} target="_blank" rel="noopener noreferrer">
-          {icon}
-        </a>
-      </Button>
-    );
+/** A pane's title row: words only; every action is in the bottom row (design/README.md, "Pane actions"). */
+export function PaneTitle({ children }: { children: ReactNode }) {
   return (
-    <Button type="button" {...look} disabled={disabled} onClick={onClick}>
-      {icon}
-    </Button>
-  );
-}
-
-/** A pane title with its optional icon action at the right, for panes that draw their own heading. */
-export function PaneTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
-  return (
-    <div className="flex min-h-8 items-center justify-between gap-2 px-1.5">
+    <div className="flex min-h-8 items-center px-1.5">
       <p className="min-w-0 font-medium">{children}</p>
-      {action}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-// Keep actions in panes on the shared primitives (design/README.md, "Actions in panes"): no text links used as
+// Keep actions in panes on the shared primitives (design/README.md, "Pane actions"): no text links used as
 // actions, and no hand-made action rows or buttons inside footer panes, which draw them with PaneActions.
 import { expect, it } from "vitest";
 
@@ -97,10 +97,32 @@ it("gives every footer pane one structure: content, a divider, then one row of a
         freeform[file] = (freeform[file] ?? 0) + 1;
       }
     }
-    // A pane's own bottom row comes from FooterItem or the shared ContributionToggle, never a second hand-made row.
-    if (source.includes("<FooterItem") && /<PaneTitle\s[^>]*action=/.test(source))
-      titleActions.push(`${file}: PaneTitle action`);
   }
   expect(titleActions).toEqual([]);
   expect(freeform).toEqual(FREEFORM);
+});
+
+// Pane actions are icon-only; these keep their words beside the icon, each with a `withText` reason (an icon alone
+// would be ambiguous, or the action is consequential). This list only changes with a reason in the source.
+const WITH_TEXT: Record<string, number> = {
+  "../audio/AudioVisualizer.tsx": 2,
+  "../components/Contributions.tsx": 3,
+  "../layout/PluginsPending.tsx": 1,
+  "../layout/UpdateStatus.tsx": 2,
+};
+
+it("keeps pane actions icon-only unless a listed action says why it shows its words", () => {
+  const found: Record<string, number> = {};
+  for (const [file, source] of sources) {
+    for (const tag of openingTags(source, "PaneAction")) {
+      const reason = /\swithText=(?:"([^"]*)"|\{([^}]*)\})/.exec(tag);
+      if (!reason) continue;
+      found[file] = (found[file] ?? 0) + 1;
+      // An inline reason, or a named constant (`withText={CAPTURE}`, `withText={icon ? undefined : NO_ICON}`).
+      const constant = /\b[A-Z][A-Z_]{2,}\b/.exec(reason[2] ?? "")?.[0];
+      const text = reason[1] ?? new RegExp(`const ${constant} = "([^"]*)"`).exec(source)?.[1] ?? "";
+      expect(text.length, `${file}: withText needs a written reason`).toBeGreaterThanOrEqual(20);
+    }
+  }
+  expect(found).toEqual(WITH_TEXT);
 });

@@ -145,10 +145,11 @@ it("leaves an ordinary footer text item unconstrained", () => {
 });
 
 it("names every way a pane breaks its structure: actions outside the bottom row, content after it, two rows", () => {
+  const icon = '<svg aria-hidden="true"></svg>';
   const pane = document.createElement("section");
   pane.innerHTML =
     '<p>Facts</p><a href="/chat">Open chat</a>' +
-    '<div data-pane-actions=""><button type="button">Create</button></div>' +
+    `<div data-pane-actions=""><button type="button" data-pane-action="icon" aria-label="Create">${icon}</button></div>` +
     '<div data-pane-actions=""></div><p>Late</p>';
   expect(paneStructureProblems(pane)).toEqual([
     "2 action rows; a pane has one",
@@ -157,8 +158,27 @@ it("names every way a pane breaks its structure: actions outside the bottom row,
   ]);
   pane.innerHTML =
     '<p>Facts</p><button type="button" role="switch" aria-label="On"></button>' +
-    '<div data-pane-actions=""><button type="button">Create</button></div>';
+    `<div data-pane-actions=""><button type="button" data-pane-action="icon" aria-label="Create">${icon}</button>` +
+    `<a href="/" data-pane-action="text">${icon}Open chat</a></div>`;
   expect(paneStructureProblems(pane)).toEqual([]);
+});
+
+it("rejects a text-only or hand-made action and a row that wraps onto a second line", () => {
+  const pane = document.createElement("section");
+  pane.innerHTML =
+    '<div data-pane-actions=""><button type="button" data-pane-action="text">Create</button>' +
+    '<a href="/">Open chat</a><button type="button" data-pane-action="icon"><svg></svg></button></div>';
+  expect(paneStructureProblems(pane)).toEqual([
+    '"Create" has no icon',
+    '"Open chat" is not a PaneAction',
+    '"" is icon-only without an accessible name',
+  ]);
+  pane.innerHTML =
+    '<div data-pane-actions=""><button type="button" data-pane-action="icon" aria-label="A"><svg></svg></button>' +
+    '<button type="button" data-pane-action="icon" aria-label="B"><svg></svg></button></div>';
+  for (const [index, button] of pane.querySelectorAll("button").entries())
+    button.getBoundingClientRect = () => new DOMRect(0, 100 + 36 * index, 32, 32);
+  expect(paneStructureProblems(pane)).toEqual(["the actions wrap onto 2 lines; use icon-only actions"]);
 });
 
 it("fails loudly in development when an open pane draws a button in its content, unless it is freeform", async () => {

@@ -87,7 +87,12 @@ export function PluginsPending({
       )}
       {confirming && ready && (
         <>
-          <PaneAction icon={RotateCw} primary onClick={start}>
+          <PaneAction
+            icon={RotateCw}
+            primary
+            withText="The confirmed restart is consequential: the server restarts and the page reconnects."
+            onClick={start}
+          >
             {action}
           </PaneAction>
           <PaneAction icon={X} onClick={() => setConfirming(false)}>
