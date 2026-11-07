@@ -62,6 +62,7 @@ import {
   unwrap,
 } from "@/api/client";
 import { token } from "@/api/token";
+import { ChartBody } from "@/components/ChartBody";
 import { CommandDialog } from "@/components/CommandDialog";
 import { ContributionToggle } from "@/components/ContributionToggle";
 import { FooterItem, stateOf } from "@/components/FooterItem";
@@ -718,6 +719,8 @@ export function widgetText(widget: Widget): string {
       return `${widget.label}: ${widget.value}${widget.delta ? ` (${widget.delta})` : ""}`;
     case "progress":
       return `${widget.label}: ${widget.done} of ${widget.total}`;
+    case "chart":
+      return `${widget.title}: ${widget.summary}`;
     case "graphic":
       return `${widget.label}: ${widget.value}${widget.caption ? ` (${widget.caption})` : ""}`;
   }
@@ -791,6 +794,8 @@ function WidgetBody({ widget, run }: { widget: Widget; run: (effect: Effect) => 
           <p className="text-xs tabular-nums">{t("contrib.progress", { done: widget.done, total: widget.total })}</p>
         </>
       );
+    case "chart":
+      return <ChartBody widget={widget} />;
     case "graphic":
       // Data only: a big value beside an icon or a Heinzelmännchen dressed by the closed list of accessories.
       return (
@@ -828,6 +833,7 @@ const DEFAULT_SIZE: Record<Widget["kind"], keyof typeof SIZES> = {
   card: "small",
   list: "small",
   graphic: "medium",
+  chart: "medium",
 };
 export const sizeOf = (widget: Widget): keyof typeof SIZES => widget.size ?? DEFAULT_SIZE[widget.kind];
 
@@ -863,7 +869,7 @@ function WidgetCard({
   const widget = current.widget;
   if (!widget || dismissed.has(widgetKey(current))) return null;
   const tone = "tone" in widget ? widget.tone : "neutral";
-  const title = widget.kind === "card" || widget.kind === "list" ? widget.title : widget.label;
+  const title = "title" in widget ? widget.title : widget.label;
   return (
     <li
       className={cn(

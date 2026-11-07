@@ -1231,7 +1231,31 @@ try {
     await scrollPage.setViewportSize({ width: 844, height: 320 });
     await scrollPage.getByRole("button", { name: "Show terminal" }).tap();
     await atPanel("terminal");
-    await terminalKeys.waitFor({ state: "visible" });
+    // Bead f87: on hosted macOS this row stayed invisible for the whole wait, once in 13 main runs. The same wait now
+    // says why: what hides the row (display, an inactive or hidden tab, a zero box) and which media rules apply.
+    await terminalKeys.waitFor({ state: "visible" }).catch(async (error) => {
+      const state = await scrollPage.evaluate(() => {
+        const rows = [...document.querySelectorAll('fieldset[aria-label="Terminal keys"]')];
+        return {
+          viewport: [innerWidth, innerHeight],
+          pointerFine: matchMedia("(pointer: fine)").matches,
+          regions: document.querySelectorAll('section[aria-label="Terminal"], [role="region"][aria-label="Terminal"]')
+            .length,
+          rows: rows.map((row) => {
+            const box = row.getBoundingClientRect();
+            const view = row.parentElement;
+            return {
+              display: getComputedStyle(row).display,
+              box: [Math.round(box.width), Math.round(box.height)],
+              tabHidden: view?.getAttribute("aria-hidden") === "true",
+              insideHidden: Boolean(row.closest("[hidden]")),
+              tabBox: Math.round(view?.getBoundingClientRect().height ?? -1),
+            };
+          }),
+        };
+      });
+      throw new Error(`${error.message}\nTerminal keys state: ${JSON.stringify(state)}`);
+    });
     const landscapeEscape = terminalKeys.getByRole("button", { name: "Escape", exact: true });
     await landscapeEscape.scrollIntoViewIfNeeded();
     await assertTouchTarget(landscapeEscape, "landscape Escape key", "phone");
@@ -1380,7 +1404,9 @@ try {
     await soundPage.waitForFunction(() => document.querySelector('[data-dock="floating"]'));
     await soundPage.setViewportSize({ width: 360, height: 400 });
     await assertContained(soundPage, player, "rotated floating player");
-    await player.getByText("YouTube asking you to sign in?").tap();
+    const playbackHelp = player.getByRole("button", { name: /Playback or sign-in trouble\?/ });
+    await assertTouchTarget(playbackHelp, "playback help button", "short-landscape");
+    await playbackHelp.tap();
     await assertContained(soundPage, player, "expanded playback recovery");
     const accountChoice = player.getByRole("button", { name: "Use YouTube sign-in" });
     await assertTouchTarget(accountChoice, "YouTube account player choice", "short-landscape");
@@ -1398,17 +1424,17 @@ try {
         "the regular player can receive the browser's YouTube session when third-party cookies are allowed",
       );
     }
-    await player.getByText("YouTube asking you to sign in?").tap();
+    await playbackHelp.tap();
     const accountFrame = await player.locator("iframe").elementHandle();
     await player.getByRole("button", { name: "Retry player" }).tap();
     assert.equal(await accountFrame.evaluate((frame) => frame.isConnected), false, "retry must replace the frame");
-    await player.getByText("YouTube asking you to sign in?").tap();
+    await playbackHelp.tap();
     await player.getByRole("button", { name: "Use private player" }).tap();
     assert.ok(
       (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube-nocookie.com/embed/"),
       "private player choice must restore the privacy-enhanced origin",
     );
-    await player.getByText("YouTube asking you to sign in?").tap();
+    await playbackHelp.tap();
     const [youtubePage] = await Promise.all([
       soundPage.waitForEvent("popup"),
       player.getByRole("link", { name: "Play on YouTube" }).tap(),

@@ -1,5 +1,6 @@
 """Exercise the owned desktop transaction against an isolated home."""
 
+import inspect
 import json
 import os
 import platform
@@ -204,18 +205,22 @@ def test_receipt_publication_failure_rolls_back(operation, local_installation, m
         assert desktop.install_desktop("1.0.0", executable, home=tmp_path) == "current"
 
 
-_CRASH_SCRIPT = """
+# The child gets the fakes as source instead of running this file: importing pytest and executing the test module
+# doubled its start-up, and on a busy hosted macOS runner that alone used up the unit test's 5 s budget.
+_CRASH_SCRIPT = f"""
 import os
-import runpy
+import plistlib
 import signal
+import struct
 import sys
 from pathlib import Path
 from heinzel.heads import _desktop_installation as desktop
 
-test_file, operation, boundary, executable, home = sys.argv[1:]
-helpers = runpy.run_path(test_file)
-desktop.fetch_archive = helpers["fetch"]
-desktop.extract_bundle = helpers["extract"]
+{inspect.getsource(fetch)}
+{inspect.getsource(extract)}
+operation, boundary, executable, home = sys.argv[1:]
+desktop.fetch_archive = fetch
+desktop.extract_bundle = extract
 desktop._prepare_for_gatekeeper = lambda _bundle, **_options: None
 desktop._in_use = lambda _: False
 rename = desktop._rename
@@ -253,7 +258,7 @@ def test_sigkill_leaves_recoverable_transaction(operation, boundary, local_insta
         original_inode = bundle.stat().st_ino
 
     process = subprocess.run(
-        [sys.executable, "-c", _CRASH_SCRIPT, __file__, operation, boundary, str(executable), str(tmp_path)],
+        [sys.executable, "-c", _CRASH_SCRIPT, operation, boundary, str(executable), str(tmp_path)],
         check=False,
         timeout=5,
     )
@@ -283,7 +288,7 @@ def test_recovery_leaves_replaced_foreign_bundle_untouched(local_installation, t
     executable, bundle, config = local_installation
     desktop.install_desktop("1.0.0", executable, home=tmp_path)
     process = subprocess.run(
-        [sys.executable, "-c", _CRASH_SCRIPT, __file__, "update", "1", str(executable), str(tmp_path)],
+        [sys.executable, "-c", _CRASH_SCRIPT, "update", "1", str(executable), str(tmp_path)],
         check=False,
         timeout=5,
     )

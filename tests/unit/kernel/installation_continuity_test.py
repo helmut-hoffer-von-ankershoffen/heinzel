@@ -330,8 +330,15 @@ def test_interruption_after_record_write_leaves_durable_pending_evidence(tool, m
     assert (tool.prefix / ".heinzel-startup-state").exists()
     assert (tool.prefix / ".heinzel-startup-pending").exists()
     assert not tool.startup_state_matches()
-    with pytest.raises(FileExistsError):
-        _record(tool)
+    monkeypatch.undo()
+    stale = tool.startup_fingerprint()
+    (tool.prefix / "bin/hz").write_text("another generation")
+    with pytest.raises(HeinzelError, match="verified generation"):  # the marker never yields to an unverified one
+        tool.record_startup_state(expected=stale)
+    assert (tool.prefix / ".heinzel-startup-pending").exists()
+    _record(tool)  # a later verified generation supersedes the unfinished transaction under the writer lock
+    assert not (tool.prefix / ".heinzel-startup-pending").exists()
+    assert tool.startup_state_matches()
 
 
 def test_pending_removal_denial_leaves_guard(tool, monkeypatch):
@@ -439,6 +446,7 @@ def test_inspection_diagnostic_identifies_directory_change_without_path(tool, mo
     cache.mkdir()
     (cache / "old.pyc").write_bytes(b"inert")
     original = os.scandir
+    changes: list[None] = []
 
     class ChangingScan:
         def __init__(self, fd):
@@ -449,13 +457,16 @@ def test_inspection_diagnostic_identifies_directory_change_without_path(tool, mo
 
         def __iter__(self):
             yield from self.inner
-            (cache / "new.pyc").write_bytes(b"inert")
+            changes.append(None)
+            (package / f"new_{len(changes)}.py").write_bytes(b"inert")  # read content, not bytecode
 
         def __exit__(self, *_args):
             self.inner.close()
 
     def scan(fd):
-        return ChangingScan(fd) if isinstance(fd, int) and os.fstat(fd).st_ino == cache.stat().st_ino else original(fd)
+        if isinstance(fd, int) and os.fstat(fd).st_ino == package.stat().st_ino and len(changes) < 100:
+            return ChangingScan(fd)
+        return original(fd)
 
     monkeypatch.setattr(os, "scandir", scan)
     with pytest.raises(HeinzelError, match=r"inspection \(directory metadata\)") as error:
@@ -695,3 +706,114 @@ def test_reuse_expires(tool, monkeypatch):
     reads = _reads(monkeypatch)
     tool.startup_fingerprint()
     assert reads
+
+
+def _scan_writing(monkeypatch, directory, write):
+    """Make each read of `directory`'s entries write something into it right after listing them."""
+    original = os.scandir
+
+    class Scan:
+        def __init__(self, fd):
+            self.inner = original(fd)
+
+        def __enter__(self):
+            return self
+
+        def __iter__(self):
+            yield from self.inner
+            write()
+
+        def __exit__(self, *_args):
+            self.inner.close()
+
+    def scan(fd):
+        if isinstance(fd, int) and os.fstat(fd).st_ino == directory.stat().st_ino:
+            return Scan(fd)
+        return original(fd)
+
+    monkeypatch.setattr(os, "scandir", scan)
+
+
+def test_bytecode_written_while_a_directory_is_read_is_benign(tool, monkeypatch):
+    """The Mini, 0.9.27: a concurrent hz compiling bytecode aborted the update ("directory metadata")."""
+    cache = tool.prefix / "lib/site-packages/example/__pycache__"
+    cache.mkdir()
+    undisturbed = tool.startup_fingerprint()
+    written: list[int] = []
+
+    def compile_bytecode():
+        written.append(1)
+        (cache / f"module_{len(written)}.cpython-314.pyc").write_bytes(b"inert")
+
+    _scan_writing(monkeypatch, cache, compile_bytecode)
+    assert tool.startup_fingerprint() == undisturbed
+    assert written
+
+
+def test_continuity_files_written_while_the_top_is_read_are_benign(tool, monkeypatch):
+    undisturbed = tool.startup_fingerprint()
+    _scan_writing(monkeypatch, tool.prefix, lambda: (tool.prefix / ".heinzel-startup-pending").touch(mode=0o600))
+    assert tool.startup_fingerprint() == undisturbed
+
+
+def test_a_file_added_once_while_read_is_retried_and_the_settled_state_observed(tool, monkeypatch):
+    package = tool.prefix / "lib/site-packages/example"
+    added: list[int] = []
+
+    def add_once():
+        if not added:
+            added.append(1)
+            (package / "late.py").write_text("arrived during the read")
+
+    _scan_writing(monkeypatch, package, add_once)
+    observed = tool.startup_fingerprint()
+    monkeypatch.undo()
+    assert observed == tool.startup_fingerprint()  # the state after the change, read twice alike, never the torn one
+
+
+def test_a_mode_change_while_read_is_never_benign(tool, monkeypatch):
+    package = tool.prefix / "lib/site-packages/example"
+    _scan_writing(monkeypatch, package, lambda: package.chmod(0o700 if package.stat().st_mode & 0o055 else 0o755))
+    with pytest.raises(HeinzelError, match=r"inspection \(directory metadata\)"):
+        tool.startup_fingerprint()
+
+
+def test_a_stale_marker_goes_only_while_the_tool_matches_its_record(tool):
+    """A put-back restored the verified generation, but the failed change's marker held updates and web restarts."""
+    _record(tool)
+    marker = tool.prefix / ".heinzel-startup-pending"
+    marker.touch(mode=0o600)
+    assert not tool.startup_state_matches()
+    (tool.prefix / "bin/hz").write_text("half installed")
+    assert not tool.clear_stale_startup_pending()  # uncertain: it stays
+    assert marker.exists()
+    assert not tool.repaired_startup_state_matches()
+    (tool.prefix / "bin/hz").write_text("entrypoint")  # put back as it was
+    assert tool.repaired_startup_state_matches()
+    assert not marker.exists()
+    assert not tool.clear_stale_startup_pending()  # nothing left to remove
+
+
+def test_an_unsafe_stale_marker_is_never_removed(tool):
+    _record(tool)
+    marker = tool.prefix / ".heinzel-startup-pending"
+    marker.symlink_to(tool.prefix / "bin/hz")
+    with pytest.raises(HeinzelError, match="pending marker is unsafe"):
+        tool.clear_stale_startup_pending()
+    assert marker.is_symlink()
+    assert not tool.repaired_startup_state_matches()
+
+
+def test_a_running_writer_keeps_its_marker(tool):
+    import fcntl
+
+    _record(tool)
+    marker = tool.prefix / ".heinzel-startup-pending"
+    marker.touch(mode=0o600)
+    held = os.open(tool.prefix, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert not tool.clear_stale_startup_pending()
+        assert marker.exists()
+    finally:
+        os.close(held)

@@ -17,6 +17,7 @@ import logging
 import os
 import platform
 import random
+import re
 import sys
 import threading
 import weakref
@@ -29,7 +30,7 @@ from subprocess import SubprocessError
 from typing import IO, Any, Literal, cast
 
 from fastapi import FastAPI, HTTPException, Response
-from packaging.version import Version
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Field
 
 from heinzel import HeinzelError, __version__
@@ -41,6 +42,7 @@ from heinzel.kernel import (
     Installation,
     Kernel,
     OperationLet,
+    PluginNews,
     PluginReleases,
     ReleaseCache,
     ReleaseSource,
@@ -99,6 +101,14 @@ class Plan:
     """The commit the announced hz release's tag named when it was announced; checked once it is installed."""
     refused: dict[str, Any] | None = None
     """News that was installed but didn't start, and was put back: never applied again; newer news is."""
+    failed_on: str | None = None
+    """The hz version that was running when `message` reported a failure; another version makes it history."""
+    plugin_commits: dict[str, str] = field(default_factory=dict[str, str])
+    """For announced plugins pinned to a GitHub commit: the commit their release tag named when announced."""
+    followed: list[str] = field(default_factory=list[str])
+    """Plugins pinned to a GitHub commit whose release tags the last check could read: not updated by hand."""
+    held_plugins: list[str] = field(default_factory=list[str])
+    """One line per plugin release the last check held back, because another plugin can't move with it."""
 
     @property
     def pending(self) -> bool:
@@ -122,6 +132,10 @@ class Plan:
             "restarting_to": self.restarting_to,
             "refused": self.refused,
             "commit": self.commit,
+            "failed_on": self.failed_on,
+            "plugin_commits": self.plugin_commits,
+            "followed": self.followed,
+            "held_plugins": self.held_plugins,
         }
 
     @classmethod
@@ -149,6 +163,17 @@ class Plan:
             if isinstance(found_plugins, dict)
             else {}
         )
+
+        def texts(name: str) -> list[str]:
+            value: object = values.get(name)
+            return [str(item) for item in cast("list[object]", value)] if isinstance(value, list) else []
+
+        found_commits: object = values.get("plugin_commits")
+        commits = (
+            {str(k): str(v) for k, v in cast("dict[object, object]", found_commits).items()}
+            if isinstance(found_commits, dict)
+            else {}
+        )
         count = values.get("postponements")
         return cls(
             core=text("core"),
@@ -162,6 +187,10 @@ class Plan:
             restarting_to=text("restarting_to"),
             refused=_news(values.get("refused")),
             commit=text("commit"),
+            failed_on=text("failed_on"),
+            plugin_commits=commits,
+            followed=texts("followed"),
+            held_plugins=texts("held_plugins"),
         )
 
 
@@ -232,8 +261,9 @@ def postpone(plan: Plan, now: datetime) -> None:
     plan.postponements += 1
 
 
-def failed(plan: Plan, message: str, now: datetime) -> None:
-    """Keep the news, wait at least six hours, and say what happened once."""
+def failed(plan: Plan, message: str, now: datetime, running: str | None = None) -> None:
+    """Keep the news, wait at least six hours, and say what happened once, naming the version still `running`."""
+    plan.failed_on = running
     plan.applying = False
     plan.apply_at = None
     plan.restarting_to = None
@@ -243,8 +273,41 @@ def failed(plan: Plan, message: str, now: datetime) -> None:
 
 
 def done(plan: Plan, message: str) -> None:
-    """Forget what was pending after an update that worked, keeping only the message that says so."""
-    plan.__dict__.update(Plan(message=message).__dict__)
+    """Forget what was pending after an update that worked, keeping the message that says so and what is followed."""
+    plan.__dict__.update(Plan(message=message, followed=list(plan.followed)).__dict__)
+
+
+def settle(plan: Plan, running: str, now: datetime) -> None:
+    """At a server's start: forget what the installation already has, and a failure another version reported.
+
+    hz may have been updated by other means since (`hz system update`, the footer, another server): news of a release
+    that is not newer than `running` is done, and its failure, or one reported while another version ran, is history.
+    A failure without a recorded version is history once its news is, or no news is left: older state files didn't
+    record one.
+    """
+    if plan.applying or plan.restarting_to is not None:
+        return
+    done_news = plan.core is not None and _not_newer(plan.core, running)
+    if done_news:
+        plan.core, plan.commit = None, None
+        if not plan.plugins:
+            plan.window_at = plan.apply_at = None
+            plan.postponements = 0
+    stale = plan.failed_on is not None and plan.failed_on != running
+    legacy = plan.failed_on is None and (done_news or not plan.pending)  # older files; no news left to retry
+    if plan.retry_at is not None and (stale or legacy):
+        plan.retry_at = plan.message = plan.failed_on = None  # only a failure sets `retry_at`, with its message
+        if plan.pending:  # other news, e.g. a plugin, waits only for its own window again
+            plan.window_at = now
+    elif stale:
+        plan.failed_on = None
+
+
+def _not_newer(release: str, running: str) -> bool:
+    try:
+        return Version(release) <= Version(running)
+    except InvalidVersion:
+        return False
 
 
 def failure_message(running: str) -> str:
@@ -288,7 +351,12 @@ class AutoUpdateStatus(BaseModel):
     )
     by_hand: list[str] = Field(
         default_factory=list[str],
-        description="Installed plugins from git, a folder or a URL, which only a person updates.",
+        description="Installed plugins from git, a folder or a URL, which only a person updates; not those pinned to "
+        "a GitHub commit whose repository tags their releases.",
+    )
+    plugins_held: list[str] = Field(
+        default_factory=list[str],
+        description="One line per plugin release held back because another plugin can't move with it.",
     )
     holds: list[PluginHold] = Field(
         default_factory=list[PluginHold],
@@ -440,6 +508,11 @@ def update_summary(plan: Plan) -> str:
     return ", ".join([*parts, *(f"{name} {version}" for name, version in plan.plugins.items())])
 
 
+def _canonical(name: str) -> str:
+    """A distribution's canonical name, without extras: `Heinzel_CRM[x]` is `heinzel-crm`."""
+    return re.sub(r"[-_.]+", "-", name.split("[", 1)[0]).lower()
+
+
 def _old_enough(published: datetime | None, hours: int, now: datetime) -> bool:
     """Whether a release published at `published` is at least `hours` old; an unknown time counts as too new."""
     if hours <= 0:
@@ -544,7 +617,25 @@ class AutoUpdater:
                 if plan.restarting_to == version:
                     done(plan, f"hz is up to date: {version}, updated automatically.")
                 elif plan.restarting_to is not None:
-                    failed(plan, failure_message(version), now)
+                    failed(plan, failure_message(version), now, version)
+        with self._editing() as plan:
+            self._forget_installed_plugins(plan)
+            settle(plan, version, now)
+
+    def _forget_installed_plugins(self, plan: Plan) -> None:
+        """Drop plugin news the installation already has (another update installed it): no needless restart."""
+        if not plan.plugins or plan.applying or plan.restarting_to is not None:
+            return
+        try:
+            installed = self._kernel.resolve(Installation).installed_versions(list(plan.plugins))
+        except Exception:  # noqa: BLE001 - unreadable metadata keeps the news; the next check asks again
+            return
+        for name, version in list(plan.plugins.items()):
+            if name in installed and _not_newer(version, installed[name]):
+                del plan.plugins[name]
+        if not plan.pending:
+            plan.window_at = plan.apply_at = None
+            plan.postponements = 0
 
     # Settings and conditions ----------------------------------------------------------------------------------------
 
@@ -587,10 +678,16 @@ class AutoUpdater:
     def by_hand(self) -> list[str]:
         """Installed plugins from git, a folder or a URL: automatic updates leave them exactly as they are (ADR 0116).
 
-        hz and the plugins from PyPI update around them; a person updates these.
+        hz and the plugins from PyPI update around them; a person updates these. A plugin pinned to a GitHub commit
+        whose repository tags its releases updates by itself (ADR 0137), once a check could read those tags.
         """
+        followed = set(self.plan.followed)
         try:
-            return sorted(pin.name for pin in self._kernel.resolve(Installation).plugin_pins() if pin.kind != "index")
+            return sorted(
+                pin.name
+                for pin in self._kernel.resolve(Installation).plugin_pins()
+                if pin.kind != "index" and not (pin.kind == "commit" and _canonical(pin.name) in followed)
+            )
         except Exception:  # noqa: BLE001 - an unreadable receipt holds updates as well
             return ["the plugins (the uv receipt can't be read)"]
 
@@ -718,17 +815,26 @@ class AutoUpdater:
             core, commit = self.plan.core, self.plan.commit
             core_ok = False
         try:
-            plugins = self._check_plugins(settings, now)
+            news = self._check_plugins(settings, now)
         except Exception as exc:  # noqa: BLE001 - the same for the plugins
             log.info("automatic update check of the plugins failed: %s", exc)
-            plugins = dict(self.plan.plugins)
+            news = None
             plugins_ok = False
+        plugins = dict(self.plan.plugins) if news is None else {n: r.version for n, r in news.releases.items()}
         self._looked = (now, core_ok, plugins_ok)
         with self._editing() as plan:
             before = (plan.core, dict(plan.plugins))
             found(plan, core, plugins, now)
             if plan.core == core:
                 plan.commit = commit
+            if news is not None:
+                commits = {n: r.commit for n, r in news.releases.items() if r.commit is not None}
+                plan.plugin_commits = {n: c for n, c in commits.items() if n in plan.plugins}
+                plan.followed = list(news.followed)
+                if news.held != plan.held_plugins:
+                    for line in news.held:
+                        log.info("automatic update holds a plugin back: %s", line)
+                plan.held_plugins = list(news.held)
             if (plan.core, plan.plugins) != before:
                 log.info("automatic update found: %s", update_summary(plan) or "nothing newer")
 
@@ -749,14 +855,14 @@ class AutoUpdater:
         facts = source.release_facts(str(version), TIMEOUT)
         return (None, None) if facts.prerelease else (str(version), facts.commit)
 
-    def _check_plugins(self, settings: Settings, now: datetime) -> dict[str, str]:
+    def _check_plugins(self, settings: Settings, now: datetime) -> PluginNews:
+        """Newer plugin releases old enough to install that can move with what they need, dependencies first."""
         if not self._kernel.provides(PluginReleases):
-            return {}
-        return {
-            name: release.version
-            for name, release in self._kernel.resolve(PluginReleases).newer_releases(TIMEOUT).items()
-            if _old_enough(release.uploaded_at, settings.auto_update_plugin_min_age_hours, now)
-        }
+            return PluginNews({})
+        hours = settings.auto_update_plugin_min_age_hours
+        return self._kernel.resolve(PluginReleases).announceable(
+            TIMEOUT, lambda release: _old_enough(release.uploaded_at, hours, now)
+        )
 
     def _from_tag(self) -> bool:
         """Whether hz is installed from a release tag (else from PyPI)."""
@@ -783,7 +889,9 @@ class AutoUpdater:
                 plan.window_at = self._clock() + POSTPONE
             return
         news: dict[str, Any] = {"core": self.plan.core, "plugins": dict(self.plan.plugins), "commit": self.plan.commit}
-        if (moved := self._tag_moved(news)) is not None:
+        if commits := {n: c for n, c in self.plan.plugin_commits.items() if n in self.plan.plugins}:
+            news["plugin_commits"] = commits
+        if (moved := self._tag_moved(news) or self._plugin_tag_moved(news)) is not None:
             self._fail(moved)
             return
         try:
@@ -813,7 +921,7 @@ class AutoUpdater:
 
     def _fail(self, message: str) -> None:
         with self._editing() as plan:
-            failed(plan, message, self._clock())
+            failed(plan, message, self._clock(), self._version)
         _unlock(self._applying)
         self._applying = None
 
@@ -833,6 +941,23 @@ class AutoUpdater:
             f"The tag of hz {core} names another commit than when it was announced, so nothing was installed and "
             f"hz {self._version} keeps running. It will look again in 6 hours."
         )
+
+    def _plugin_tag_moved(self, news: dict[str, Any]) -> str | None:
+        """Why a tagged plugin can't be trusted now: its tag names another commit than when announced, or is unasked."""
+        commits: dict[str, str] = news.get("plugin_commits") or {}
+        for name, commit in commits.items():
+            version = news["plugins"][name]
+            try:
+                now = self._kernel.resolve(PluginReleases).tag_commit(name, version, TIMEOUT)
+            except Exception as exc:  # noqa: BLE001 - offline: not now, and say so
+                log.info("automatic update: the tag of %s %s couldn't be asked: %s", name, version, exc)
+                return failure_message(self._version)
+            if now != commit:
+                return (
+                    f"The tag of {name} {version} names another commit than when it was announced, so nothing was "
+                    f"installed and hz {self._version} keeps running. It will look again in 6 hours."
+                )
+        return None
 
     def _recover(self) -> None:
         """Put back an update that a dead process left half done, before anything else (`system.recover-announced`).
@@ -858,10 +983,14 @@ class AutoUpdater:
 
     def _update(self, news: dict[str, Any]) -> object:
         plugins = [f"{name}=={version}" for name, version in news["plugins"].items()]
+        tagged: dict[str, str] = news.get("plugin_commits") or {}
+        commits = [f"{name}@{commit}" for name, commit in tagged.items()]
         for record, operation in self._kernel.lets(OperationLet):
             if record.qualname == UPDATE_MODULE and operation.name == UPDATE_OPERATION:
                 with self._kernel.resolve(CurrentUser).local("daemon"):
-                    return self._kernel.invoke(operation, core=news["core"], plugins=plugins, commit=news["commit"])
+                    return self._kernel.invoke(
+                        operation, core=news["core"], plugins=plugins, commit=news["commit"], plugin_commits=commits
+                    )
         msg = "The system module is off, so hz can't update itself."
         raise RuntimeError(msg)
 
@@ -894,6 +1023,7 @@ class AutoUpdater:
                 checked_at=self._looked[0] if self._looked else None,
                 core_checked=self._looked[1] if self._looked else None,
                 plugins_checked=self._looked[2] if self._looked else None,
+                plugins_held=[] if self.development is not None else list(plan.held_plugins),
             )
 
     def recheck(self) -> AutoUpdateStatus:

@@ -16,6 +16,7 @@ from rich.text import Text
 
 from heinzel import (
     CardWidget,
+    ChartWidget,
     Check,
     GraphicWidget,
     ListWidget,
@@ -104,22 +105,23 @@ def render_actions(entries: list[ActionEntry]) -> RenderableType:
     return _table(entries, shows)
 
 
+def _widget_line(widget: object) -> str:
+    """One widget as a line: its label and value, or its kind and title."""
+    if isinstance(widget, GraphicWidget | MetricWidget):
+        extra = widget.caption if isinstance(widget, GraphicWidget) else widget.delta
+        return f"{widget.label}: {widget.value}" + (f" ({extra})" if extra else "")
+    if isinstance(widget, ProgressWidget):
+        return f"{widget.label}: {widget.done}/{widget.total}"
+    if isinstance(widget, ChartWidget):
+        return f"chart: {widget.title}"
+    if isinstance(widget, CardWidget | ListWidget):
+        return f"{widget.kind}: {widget.title}"
+    return "(nothing now)"
+
+
 def render_widgets(entries: list[WidgetEntry]) -> RenderableType:
     """Each widget's kind and title, or its problem."""
-
-    def shows(entry: WidgetEntry) -> str:
-        widget = entry.widget
-        if isinstance(widget, GraphicWidget):
-            return f"{widget.label}: {widget.value}" + (f" ({widget.caption})" if widget.caption else "")
-        if isinstance(widget, MetricWidget):
-            return f"{widget.label}: {widget.value}" + (f" ({widget.delta})" if widget.delta else "")
-        if isinstance(widget, ProgressWidget):
-            return f"{widget.label}: {widget.done}/{widget.total}"
-        if isinstance(widget, CardWidget | ListWidget):
-            return f"{widget.kind}: {widget.title}"
-        return "(nothing now)"
-
-    return _table(entries, shows)
+    return _table(entries, lambda entry: _widget_line(entry.widget))
 
 
 @module.operation(render=render_status, heads=HEADS)

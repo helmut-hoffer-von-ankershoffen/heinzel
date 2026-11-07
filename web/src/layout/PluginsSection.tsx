@@ -42,6 +42,7 @@ import {
   acknowledgePluginRestart,
   acquirePluginChange,
   completePluginRestart,
+  forgetPluginRestart,
   pluginActivationBlocksChanges,
   RECEIPT_STORAGE_KEY,
   retainPluginRestart,
@@ -517,6 +518,18 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
                   preserve={confirm}
                   acquire={acquirePluginChange}
                   initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
+                  onNotRestarted={() => {
+                    if (pending.action !== "add") {
+                      forgetPluginRestart();
+                      return;
+                    }
+                    try {
+                      window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
+                    } catch {
+                      // A kept observation only offers Check again after a reload; Apply stays available here.
+                    }
+                    setRestartObservation(null);
+                  }}
                   onApplied={() => {
                     if (pending.action === "add") {
                       try {
@@ -903,8 +916,12 @@ function Discover({
         const installedNames = installed.data
           ? new Set(installed.data.map((plugin) => pluginIdentity(plugin.distribution)))
           : null;
-        const available = result.plugins.filter((plugin) =>
-          installedNames ? !installedNames.has(pluginIdentity(plugin.name)) : !plugin.installed,
+        // The row being installed holds the confirmation, whose restart is cancelled if it unmounts. It stays until
+        // the change is applied, although the plugin is installed now (as Installed keeps a row being removed).
+        const available = result.plugins.filter(
+          (plugin) =>
+            slot?.key === `discover:${plugin.name}` ||
+            (installedNames ? !installedNames.has(pluginIdentity(plugin.name)) : !plugin.installed),
         );
         return available.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
