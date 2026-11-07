@@ -31,6 +31,8 @@ def test_first_use_installs_defaults_and_later_use_opens_without_installing(monk
     sequence = [] if already_installed else [None]
     installed, launched = [], []
     monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
+    monkeypatch.setattr(bootstrap, "_interactive_launch", lambda _args: False)
+    monkeypatch.setattr(install, "latest_profile", lambda: pytest.fail("Noninteractive reuse must stay offline"))
     monkeypatch.setattr(bootstrap, "installed_app", lambda: sequence.pop(0) if sequence else executable)
     selector = "https://example.com/standard.json"
     monkeypatch.setenv("HZ_APP_PROFILE", selector)
@@ -56,6 +58,80 @@ def test_first_use_installs_defaults_and_later_use_opens_without_installing(monk
     assert environment["PATH"].split(bootstrap.os.pathsep)[0] == str(executable.parent)
     assert environment.get("HZ_APP_PROFILE") is None
     assert environment["HZ_CONFIG_HOME"] == str(tmp_path / "profile")
+
+
+@pytest.mark.parametrize(
+    ("release", "exit_code"),
+    [
+        ("0.9.24", None),
+        ("0.9.17", None),
+        ("0.9.16", None),
+        ("offline", None),
+        ("invalid", 1),
+        ("failed-update", 7),
+    ],
+)
+def test_interactive_retained_app_checks_freshness_before_opening(monkeypatch, tmp_path, capsys, release, exit_code):
+    executable = tmp_path / "tools/heinzel/bin/hz"
+    events = []
+    monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
+    monkeypatch.setattr(bootstrap, "_interactive_launch", lambda _args: True)
+    monkeypatch.setattr(bootstrap, "_service_choices", lambda _args: [])
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: executable)
+    monkeypatch.delenv("HZ_APP_PROFILE", raising=False)
+    monkeypatch.setattr(install, "uv_executable", lambda: "/trusted/uv")
+    monkeypatch.setattr(bootstrap.Installation, "installed_core_version", lambda _self: "0.9.17")
+
+    def latest():
+        if release == "offline":
+            msg = "Connection unavailable"
+            raise install.ReleaseUnavailableError(msg)
+        if release == "invalid":
+            msg = "Invalid published release authority"
+            raise HeinzelError(msg)
+        version = "0.9.24" if release == "failed-update" else release
+        return install.AppProfile(
+            format=2,
+            sdk=1,
+            core_version=version,
+            artifacts=[
+                install.Artifact(
+                    name="heinzel",
+                    version=version,
+                    filename=f"heinzel-{version}-py3-none-any.whl",
+                    sha256="a" * 64,
+                    url="https://example.invalid/heinzel.whl",
+                )
+            ],
+        )
+
+    def update(args, *, newer_profile):
+        assert args == []
+        assert newer_profile.core_version == "0.9.24"
+        events.append("update")
+        return 7 if release == "failed-update" else 0
+
+    monkeypatch.setattr(install, "latest_profile", latest)
+    monkeypatch.setattr(install, "main", update)
+    monkeypatch.setattr(bootstrap.os, "execve", lambda *_args: events.append("launch"))
+    if exit_code is None:
+        bootstrap.main()
+        assert events == (["update", "launch"] if release in {"0.9.24", "failed-update"} else ["launch"])
+    else:
+        with pytest.raises(SystemExit) as result:
+            bootstrap.main()
+        assert result.value.code == exit_code
+        assert events == (["update"] if release in {"0.9.24", "failed-update"} else [])
+    output = capsys.readouterr()
+    assert ("Opening verified installed version 0.9.17" in output.err) == (release == "offline")
+
+
+def test_retained_app_with_an_explicit_profile_selector_never_checks_floating_release(monkeypatch, tmp_path):
+    executable = tmp_path / "tools/heinzel/bin/hz"
+    monkeypatch.setenv("HZ_APP_PROFILE", "/explicit/standard.json")
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: executable)
+    monkeypatch.setattr(install, "latest_profile", lambda: pytest.fail("Explicit selector must stay independent"))
+    assert bootstrap._ensure_app(interactive=True) == executable
 
 
 def test_explicit_arguments_keep_existing_cli_behavior(monkeypatch):
@@ -319,6 +395,7 @@ def test_interactive_choices_are_separate_and_run_only_in_verified_persistent_py
     calls = []
     monkeypatch.setattr(ConsolePrompter, "confirm", confirm)
     monkeypatch.setattr(bootstrap, "installed_app", verified)
+    monkeypatch.setattr(bootstrap, "_newer_profile", lambda _app: None)
     monkeypatch.setattr(install, "main", lambda *_args: pytest.fail("Verified installed app must be reused"))
     monkeypatch.setattr(bootstrap.subprocess, "run", run)
     monkeypatch.setattr(bootstrap.os, "execve", lambda *_args: events.append("open"))

@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from packaging.version import Version
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from heinzel import Config, HeinzelError, Progress, Prompter, Settings
@@ -124,6 +125,25 @@ def installed_app() -> Path | None:
     if not matching:
         raise HeinzelError(inspection_guidance(target, uv, reason))
     return executable
+
+
+def _newer_profile(executable: Path) -> install.AppProfile | None:
+    """Resolve a newer stable composition for an already verified app, when reachable.
+
+    Raises:
+        HeinzelError: If the installed Core or published release metadata cannot be verified.
+        ValueError: If the installed Core version is invalid.
+    """
+    if os.environ.get("HZ_APP_PROFILE"):
+        return None  # An explicit installer selector never opts a retained app into floating upgrades.
+    installation = Installation(Progress(), prefix=executable.parent.parent, uv=install.uv_executable())
+    current = Version(installation.installed_core_version())
+    try:
+        profile = install.latest_profile()
+    except install.ReleaseUnavailableError:
+        sys.stderr.write(f"Could not check for a newer Heinzel. Opening verified installed version {current}.\n")
+        return None
+    return profile if Version(profile.core_version) > current else None
 
 
 def _human_console() -> "Console":
@@ -481,6 +501,27 @@ def _launch_app(executable: Path, workspace: list[str], environment: dict[str, s
     )
 
 
+def _ensure_app(*, interactive: bool) -> Path:
+    """Install or refresh the standard app before its workspace or profile is opened."""
+    executable = installed_app()
+    if executable is None:
+        sys.stderr.write("Installing Heinzel and its default plugins…\n")
+        status = install.main([])
+        if status:
+            sys.exit(status)
+        executable = installed_app()
+    elif interactive and (profile := _newer_profile(executable)) is not None:
+        sys.stderr.write(f"Updating Heinzel to {profile.core_version}…\n")
+        status = install.main([], newer_profile=profile)
+        if status:
+            sys.exit(status)
+        executable = installed_app()
+    if executable is None:
+        sys.stderr.write("Installation did not leave a usable standard app. Retry `uvx heinzel@latest`.\n")
+        sys.exit(1)
+    return executable
+
+
 def main() -> None:
     """Install the verified standard app, offer separate interactive services, and open its workspace."""
     arguments = sys.argv[1:]
@@ -492,16 +533,7 @@ def main() -> None:
     try:
         interactive = _interactive_launch(arguments)
         choices = _service_choices(arguments)
-        executable = installed_app()
-        if executable is None:
-            sys.stderr.write("Installing Heinzel and its default plugins…\n")
-            status = install.main([])
-            if status:
-                sys.exit(status)
-            executable = installed_app()
-        if executable is None:
-            sys.stderr.write("Installation did not leave a usable standard app. Retry `uvx heinzel@latest`.\n")
-            sys.exit(1)
+        executable = _ensure_app(interactive=interactive)
         # The installer has consumed the app selector; it is not a runtime or service setting.
         environment = {
             key: value for key, value in os.environ.items() if key not in {"PYTHONPATH", "PYTHONHOME", "HZ_APP_PROFILE"}

@@ -19,7 +19,10 @@ from heinzel.modules.system.daemon._service import DaemonService
 pytestmark = pytest.mark.unit
 
 
-def test_standard_managed_scope_binds_target_before_resolve_and_checkpoints_under_guard(tmp_path, monkeypatch):
+@pytest.mark.parametrize("retained_version", [None, "0.9", "1.1"])
+def test_standard_managed_scope_binds_target_before_resolve_and_checkpoints_under_guard(
+    tmp_path, monkeypatch, retained_version
+):
     target = tool.ToolTarget(tmp_path / "tools", tmp_path / "bin")
     target.store.mkdir()
     target.binary.mkdir()
@@ -30,6 +33,7 @@ def test_standard_managed_scope_binds_target_before_resolve_and_checkpoints_unde
     artifact = install.Artifact(name="heinzel", version="1.0", filename=wheel.name, sha256="a" * 64, url="fixture")
     profile = install.AppProfile(format=2, core_version="1.0", sdk=1, artifacts=[artifact])
     events = []
+    concurrent_newer = retained_version == "1.1"
 
     class Lifecycle:
         @contextmanager
@@ -37,7 +41,7 @@ def test_standard_managed_scope_binds_target_before_resolve_and_checkpoints_unde
             assert binary == target.binary
             events.append("enter")
             yield
-            assert (settings.data_dir / "standard-app.json").exists()
+            assert (settings.data_dir / "standard-app.json").exists() is (not concurrent_newer)
             events.append("commit")
 
     class Kernel:
@@ -77,8 +81,15 @@ def test_standard_managed_scope_binds_target_before_resolve_and_checkpoints_unde
     monkeypatch.setattr(install, "existing_requirements", lambda _prefix: [])
     monkeypatch.setattr(install, "run_tool", run)
     monkeypatch.setattr(tool._TargetInstallation, "record_startup_state", record)
-    assert install._managed_install(profile, [artifact], [wheel], settings, set()) == 0
-    assert events == ["bind", "resolve", "enter", "run", "record", "commit"]
+    monkeypatch.setattr(tool._TargetInstallation, "startup_state_matches", lambda _self: True)
+    monkeypatch.setattr(tool._TargetInstallation, "installed_core_version", lambda _self: retained_version)
+    assert (
+        install._managed_install(
+            profile, [artifact], [wheel], settings, set(), only_if_newer=retained_version is not None
+        )
+        == 0
+    )
+    assert events == ["bind", "resolve", "enter", *([] if concurrent_newer else ["run", "record"]), "commit"]
 
 
 @pytest.mark.parametrize("quiescent", [True, False])
