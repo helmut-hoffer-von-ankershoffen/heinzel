@@ -249,7 +249,7 @@ quarantine-plan: ## Print selected=true|false and browsers=true|false for the Qu
 
 test-quarantine: ## Run only the quarantined tests, retrying a failure up to 3 times; reports, never fails on a test
 	@if $(QUARANTINE) plan | grep -qx 'browsers=true'; then $(MAKE) --no-print-directory e2e-prepare; else uv run --quiet --script scripts/build.py sync; fi
-	@uv run --no-sync python scripts/quarantine.py run --attempts 3 --report reports/quarantine.json --summary "$${GITHUB_STEP_SUMMARY:-reports/quarantine.md}"
+	@uv run --frozen --no-sync --no-build python scripts/quarantine.py run --attempts 3 --report reports/quarantine.json --summary "$${GITHUB_STEP_SUMMARY:-reports/quarantine.md}"
 
 test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries when needed
 	@if [ "$$(uname -s)" = Linux ]; then \
