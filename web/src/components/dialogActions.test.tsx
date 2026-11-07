@@ -37,3 +37,18 @@ it("command dialog: Close first, the committing action last", () => {
   fireEvent.click(within(row).getByRole("button", { name: "Close" }));
   expect(onClose).toHaveBeenCalled();
 });
+
+it("a destructive change confirms with a red committing button", () => {
+  render(
+    <RestartAndApply
+      target="Clock"
+      changes={["Remove x"]}
+      destructive
+      cancel={{ label: "Cancel", onClick: vi.fn() }}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "Restart and apply" }).className).toMatch(/bg-bad/);
+  fireEvent.click(screen.getByRole("button", { name: "Restart and apply" }));
+  const dialog = screen.getByRole("alertdialog");
+  expect(within(dialog).getByRole("button", { name: "Restart and apply Clock" }).className).toMatch(/bg-bad/);
+});

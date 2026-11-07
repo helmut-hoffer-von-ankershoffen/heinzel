@@ -195,7 +195,7 @@ function ThemeCard({ theme, dark, signals, selected, disabled, onSelect }: CardP
       )}
     >
       <Miniature theme={theme} dark={dark} signals={signals} />
-      <span className="flex items-baseline gap-2 shadow-[0_-1px_0_0_var(--color-border)] px-3 py-2">
+      <span className="flex items-baseline gap-2 border-t border-border px-3 py-2">
         <span className="truncate text-ui font-medium">{theme.title}</span>
         {plugin && <span className="truncate text-ui-sm text-muted-foreground">{plugin}</span>}
         {selected && <span className="ml-auto shrink-0 text-ui-sm text-primary">{t("settings.themeInUse")}</span>}

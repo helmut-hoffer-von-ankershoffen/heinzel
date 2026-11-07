@@ -6,6 +6,7 @@ import {
   BookOpen,
   Download,
   ExternalLink,
+  Loader2,
   type LucideIcon,
   Package,
   Palette,
@@ -511,6 +512,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
                 preserve={confirm}
                 acquire={acquirePluginChange}
                 initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
+                destructive={pending.action === "remove"}
                 cancel={
                   pending.action !== "add" || operation.data?.status === "previewed"
                     ? {
@@ -929,7 +931,8 @@ function Discover({
                   {sourceLink(repositoryOfEntry(plugin), plugin.name)}
                   <PaneAction
                     ghost
-                    icon={Download}
+                    icon={checking === `discover:${plugin.name}` ? Loader2 : Download}
+                    className={checking === `discover:${plugin.name}` ? "[&_svg]:motion-safe:animate-spin" : undefined}
                     disabled={checking === `discover:${plugin.name}`}
                     aria-expanded={slot?.key === `discover:${plugin.name}`}
                     onClick={() => onInstall(plugin.install_spec, `discover:${plugin.name}`)}

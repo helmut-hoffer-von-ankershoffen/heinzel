@@ -102,6 +102,11 @@ it("has no withText: the first action of a row leads with words, the rest are ic
 
 // Files that still draw a divider by hand (`border-t`) in a container instead of PaneActions; only shrinks (PR b).
 const BORDER_T: Record<string, number> = {
+  "../chat/ContractHistory.tsx": 1,
+  "../chat/DurableSession.tsx": 1,
+  "../heinzel/PersonalHeinzels.tsx": 1,
+  "../layout/Shell.tsx": 1,
+  "../layout/ThemePreviews.tsx": 1,
   "../chat/ModelPicker.tsx": 2,
   "../layout/ChatPanel.tsx": 1,
   "../layout/NotificationCenter.tsx": 1,

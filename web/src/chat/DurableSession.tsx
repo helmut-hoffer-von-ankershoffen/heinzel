@@ -1451,7 +1451,7 @@ function DurableSessionView({
         )}
       </div>
       <form
-        className="space-y-2 p-3 shadow-[0_-1px_0_0_var(--color-border)]"
+        className="space-y-2 border-t border-border p-3"
         onSubmit={(event) => {
           event.preventDefault();
           void send();

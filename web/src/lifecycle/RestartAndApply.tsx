@@ -32,6 +32,8 @@ type Props = {
   acquire?: (resume?: RestartObservation) => (() => void) | null;
   options?: ApplyOptions;
   /** A Cancel for the surface that holds this one: drawn with the apply action as one dialog row, Cancel first. */
+  /** The change destroys something: its committing buttons are red. */
+  destructive?: boolean;
   cancel?: { label: string; disabled?: boolean; onClick: () => void };
 };
 
@@ -52,6 +54,7 @@ export function RestartAndApply({
   acquire,
   options,
   cancel,
+  destructive = false,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [phase, setPhase] = useState<ApplyPhase | null>(null);
@@ -137,7 +140,14 @@ export function RestartAndApply({
             {cancel.label}
           </PaneAction>
           {!deferred && !observation && (
-            <PaneAction key="apply" icon={RotateCw} primary disabled={pending} onClick={() => setConfirming(true)}>
+            <PaneAction
+              key="apply"
+              icon={RotateCw}
+              primary
+              destructive={destructive}
+              disabled={pending}
+              onClick={() => setConfirming(true)}
+            >
               {actionLabel ?? t("lifecycle.action")}
             </PaneAction>
           )}
@@ -168,7 +178,7 @@ export function RestartAndApply({
             <PaneAction key="cancel" icon={X} onClick={() => setConfirming(false)}>
               {t("lifecycle.cancel")}
             </PaneAction>
-            <PaneAction key="apply" icon={RotateCw} primary onClick={() => void run()}>
+            <PaneAction key="apply" icon={RotateCw} primary destructive={destructive} onClick={() => void run()}>
               {actionLabel ?? t("lifecycle.targetAction", { target })}
             </PaneAction>
           </PaneActions>

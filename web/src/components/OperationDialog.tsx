@@ -180,7 +180,14 @@ export function OperationDialog() {
           <Steps phases={run.phases} active />
           <p className="mt-3 text-xs text-muted-foreground">{t("op.noStop")}</p>
           <PaneActions align="end" words="all">
-            <PaneAction key="working" icon={Loader2} primary disabled aria-disabled>
+            <PaneAction
+              key="working"
+              icon={Loader2}
+              primary
+              disabled
+              aria-disabled
+              className="[&_svg]:motion-safe:animate-spin"
+            >
               {quick ? plain("running") : persistent ? t(`op.daemon.${copy}.running` as MessageKey) : t("op.working")}
             </PaneAction>
           </PaneActions>
