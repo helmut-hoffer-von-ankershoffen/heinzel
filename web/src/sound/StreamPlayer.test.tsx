@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaSoundscapeView } from "@/api/client";
 import { StreamPlayer } from "./StreamPlayer";
@@ -201,6 +202,49 @@ describe("playback help pane", () => {
     message("onError", 150);
     expect(attention()).not.toBeNull();
     expect(info()).toHaveAccessibleName("Playback or sign-in trouble? (needs attention)");
+    expect(info()).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it.each([
+    ["onError", () => message("onError", 150)],
+    ["onAutoplayBlocked", () => message("onAutoplayBlocked")],
+    ["a 15 s stall", () => act(() => vi.advanceTimersByTime(15_000))],
+  ])("%s marks the button and one click reaches recovery", (_name, trigger) => {
+    vi.useFakeTimers();
+    mount();
+    message("onReady");
+    trigger();
+    expect(attention()).not.toBeNull();
+    expect(info()).toHaveAccessibleName("Playback or sign-in trouble? (needs attention)");
+    fireEvent.click(info());
+    expect(screen.getByRole("button", { name: "Retry player" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Play on YouTube" })).toHaveAttribute("href", stream.watch_url);
+  });
+
+  it("reaches the action row by keyboard and returns focus to the button on Escape", async () => {
+    const user = userEvent.setup();
+    mount();
+    info().focus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Use YouTube sign-in" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Retry player" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(info()).toHaveFocus();
+    expect(info()).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("toggles after hover then click (touch), never sticks, and an outside tap closes it", () => {
+    mount();
+    fireEvent.mouseEnter(info());
+    fireEvent.click(info());
+    expect(info()).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(info());
+    expect(info()).toHaveAttribute("aria-expanded", "false");
+    fireEvent.mouseEnter(info());
+    fireEvent.click(info());
+    expect(info()).toHaveAttribute("aria-expanded", "true");
+    fireEvent.pointerDown(document.body);
     expect(info()).toHaveAttribute("aria-expanded", "false");
   });
 });

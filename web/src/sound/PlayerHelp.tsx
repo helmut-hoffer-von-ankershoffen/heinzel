@@ -74,7 +74,14 @@ export function PlayerHelp({ attention, children, actions }: Props) {
       <button
         ref={trigger}
         type="button"
-        onClick={() => setPinned((was) => !was)}
+        onClick={() => {
+          // Hover (or a touch's emulated hover) has already opened it: a click pins it, a second click closes it.
+          if (pinned) {
+            setPinned(false);
+            setHovered(false);
+            setFocused(false);
+          } else setPinned(true);
+        }}
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         aria-label={attention ? `${label} ${t("sound.needsAttention")}` : label}
