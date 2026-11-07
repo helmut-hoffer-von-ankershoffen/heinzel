@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { doctorCards, eventCards, jobCards, type TodayCard } from "@/chat/today";
@@ -20,7 +20,8 @@ describe("Home", () => {
     expect(await screen.findByRole("heading", { name: "Today" })).toBeInTheDocument();
     expect(screen.getByLabelText("Your message")).toHaveFocus();
     expect(screen.queryByRole("complementary", { name: "Ask" })).not.toBeInTheDocument();
-    expect(await screen.findByText(/at most \$0\.25 per message/)).toBeInTheDocument();
+    const info = await screen.findByRole("button", { name: "What this chat may cost" });
+    await waitFor(() => expect(info).toHaveAccessibleDescription(/at most \$0\.25 per message/));
     await screen.findByRole("heading", { name: "Doctor: 2 checks need attention" });
     await expectAccessible(container);
   });
