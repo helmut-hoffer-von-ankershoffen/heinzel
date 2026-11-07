@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-from heinzel import Config, HeinzelError, Progress, Prompter, Settings
+from heinzel import Config, HeinzelError, Progress, Prompter, Settings, __version__
 from heinzel.heads import install
 from heinzel.heads._tool_install import inspection_guidance, resolve_target
 from heinzel.kernel import FILENAME, Installation
@@ -127,16 +127,10 @@ def installed_app() -> Path | None:
 
 
 def _human_console() -> "Console":
-    """Use the CLI's terminal policy and shared hat colour for human setup on stderr."""
+    """Render setup on stderr with the terminal's default foreground."""
     from rich.console import Console  # noqa: PLC0415 - interactive presentation only
 
-    from heinzel.heads.cli import _playful  # noqa: PLC0415 - one shared brand and terminal policy
-
-    console = Console(file=sys.stderr)
-    settings = Config.load(Path.home()).settings(Settings, "hz")
-    if _playful.allowed(settings, console):
-        console.style = _playful.HAT
-    return console
+    return Console(file=sys.stderr)
 
 
 def _welcome() -> None:
@@ -145,7 +139,9 @@ def _welcome() -> None:
 
     console = _human_console()
     if _playful.allowed(Config.load(Path.home()).settings(Settings, "hz"), console):
-        console.print(_playful.banner(["Heinzelmännchen", TAGLINE, "Let's set up your Heinzel."]), end="")
+        console.print(
+            _playful.banner([f"Heinzelmännchen {__version__}", TAGLINE, "Let's set up your Heinzel."], body_style=""),
+        )
 
 
 def _interactive_launch(arguments: list[str]) -> bool:
