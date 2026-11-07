@@ -17,7 +17,7 @@ affected = importlib.util.module_from_spec(spec)
 sys.modules["affected"] = affected
 spec.loader.exec_module(affected)
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.timeout(60)]  # the import graph parses the tree: ~1 s idle, more loaded
 
 # Each case is (name, changed files, expectations). `<key>_has` / `<key>_not` check containment, so the repo may grow.
 CASES: list[tuple[str, list[str], dict[str, Any]]] = [
