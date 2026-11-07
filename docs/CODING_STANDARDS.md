@@ -140,6 +140,16 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
 - README explains how to use Heinzelmännchen; AGENTS.md how to work on it; this file how to write code for it.
 - Docs are part of the change: a pull request that changes behaviour updates the docs in the same commit.
 
+## CLI progress and prompts
+
+Typer renders with Rich, so long commands use the shared helpers in `heinzel.heads.cli._progress` and never print nothing for more than a second.
+
+- Progress and prompts go to stderr; stdout carries only the result. A redirected stderr gets no ANSI codes and no spinner.
+- `PhaseReporter(err_console)` shows each step of a long operation: a spinner with elapsed time, or with a known byte total a bar with size, speed and time remaining (`rich.progress` columns). On a terminal a finished step stays as a check mark; when redirected it prints `step...` and `step: done` lines, and downloads add a byte-count line every two seconds. Pass it to code that must stay UI-free as a `Reporter` (`heinzel.heads._desktop_report`); background callers use `SILENT`.
+- `ConsoleProgress.task(...)` is the kernel's `Progress` for operations (a spinner or a bar for `rich.progress.track`-style loops). Use `track(items, description=...)` or `typer.progressbar(..., length=...)` for a loop over known work.
+- Prompts are the exception: every answer has a flag (`--yes`, `--no-launch`) that works without a terminal. `confirm(console, question, yes=flag, flag="--yes")` asks only on a terminal and otherwise raises an error naming the flag, never blocking on stdin.
+- Network steps have timeouts and retry with a visible note; errors say what happened and what to do next.
+
 ## Mobile UI
 
 Every screen and overlay must remain usable at phone portrait and landscape sizes, including a software keyboard,
