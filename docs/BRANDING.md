@@ -42,14 +42,15 @@ This page fixes the names, taglines and claims of Heinzelmännchen. `tests/unit/
 
 ## Terminal art is a garnish
 
-- The bust appears in bare `hz` and `hz --version`. The swarm appears in `hz setup`.
+- The three-Heinzel product mark appears in bare `hz`, `hz --version`, setup and the installer welcome.
 - A walking glyph shows during work, and a finish glyph shows when it ends.
 - `hz --help` has no art, by design.
 - Art is off with `--json`, `NO_COLOR`, `CI`, a dumb `TERM` or the playful setting turned off.
 
 ## Marks come from one drawing
 
-- The swarm, `mark.svg`, is the site logo, favicon and theme logo.
+- **One Heinzel is a voice; several Heinzels are the logo.** A single Heinzel stands for the chat and for a quote or testimonial. The product mark is always the three-Heinzel swarm.
+- The three-Heinzel swarm is the product mark. Use it for the app’s theme logo, the GitHub Pages header, footer and favicon, and the CLI banner.
 - The bust, `favicon.svg` and the app icons, is for the web app and the notifier.
 - All of them derive from `web/src/components/heinzel.ts`. Regenerate them with `make icons`.
 

@@ -22,8 +22,8 @@ theme:
   name: material
   custom_dir: docs/overrides
   font: false
-  logo: assets/website/head.svg
-  favicon: assets/website/head.svg
+  logo: assets/website/mark.svg
+  favicon: assets/website/mark.svg
   language: en
   icon:
     logo: material/account-group-outline
