@@ -22,7 +22,7 @@ until a manual `hz ui restart`.
 | --- | --- | --- | --- | --- | --- |
 | Core tool folder | n/a | `uv tool install` in one resolver run with every plugin | metadata inspection (`verify_installed_requirements`), `hz --version` | verified | unchanged |
 | Plugins (index) | n/a | same run; a blocker is kept, then dropped | metadata versions per plugin | verified | unchanged; dependency closure see below |
-| Plugins (git, folder, URL) | n/a | updated by hand; automatic updates hold them | identity unchanged (`installed_identity`) | verified | unchanged |
+| Plugins (git, folder, URL) | n/a | updated by hand; automatic updates hold them | identity unchanged (`installed_identity`) | verified | a plugin pinned to a commit of a GitHub repository with `<distribution>/vX.Y.Z` tags updates automatically at the commit its tag named (ADR 0137), with the plugins it needs; the others stay by hand |
 | Daemon (`launchd`/`systemd`) | yes | handover: `launchctl kickstart` / `systemctl try-restart` after the mutation completes | the handed-over tick writes `handover-observation.json` with the version it imported | requested only; "a fresh service tick is pending" | the update waits up to 90 s for that observation and reports `verified`, `failed` (other version) or `pending` with `hz system daemon status` |
 | Supervised web server (`hz ui serve --supervised`) | yes | owned restart through its private control socket (`hz ui restart`) | `hz ui status`: a different ready instance and the version it loaded | **missing** for the CLI path: it kept the old code until someone restarted it | the update restarts it after the mutation completes (even on an unchanged core, since plugins may have changed) and waits up to 12 s for a new instance reporting the target; `failed`/`pending` name `hz ui restart` |
 | Web server that runs the update (footer, automatic) | yes | restarts itself in place after the operation returns | at its next start: `restarting_to == version` → success, else failure | verified for itself | reported as `self`; never restarted from inside |
@@ -40,9 +40,12 @@ until a manual `hz ui restart`.
 | Automatic update installs but the new hz doesn't start | snapshot restored byte for byte; daemon handed over to the same code; message says it won't retry that release |
 | Announced plugin needs a dependency that isn't announced (plugin depending on plugin) | uv can't install exactly the announced versions; snapshot restored; no head restarted (integration test `update_heads_real_uv_test.py`) |
 | A head can't be verified after a successful install | the installation stays updated (it is consistent); the receipt says which head is `pending`/`failed` and the command that finishes it; the message never claims the update complete |
-| Process dies mid-mutation | `mutation-pending.json` blocks web launch and supported commands until recovery; dead-owner recovery is handled separately (branch `fix/reboot-stale-fence`) |
+| Process dies mid-mutation | `mutation-pending.json` blocks web launch and supported commands until recovery; a tick archives it once its owner provably ended (#576) |
+| A continuity write fails half way (e.g. "directory metadata" while bytecode is written) | the put-back removes `.heinzel-startup-pending` once the tool matches its record again; the next update does so when it begins, so its checkpoint holds and it records the new generation; `hz ui restart` removes only that marker, or names `hz system update` |
+| Reading the tool while something writes bytecode | changes only by `.pyc`/`.pyo` or the continuity files are benign; a read that noticed another change is retried until two complete reads agree |
+| Handover request no later tick can complete (other boot, changed unit, no fence) or none at all while `install.json` names another version | the first manager-bound tick re-arms one request (once per version and boot, `handover-rearm.json`); the next scheduled tick, a new process, commits `install.json` through the ordinary observation; nothing restarts |
 
-## Plugin → plugin dependencies (gaps found, fixed separately)
+## Plugin → plugin dependencies (fixed in this change)
 
 - `hz system update` steps a blocking plugin down to `drop`. If another kept plugin requires it, uv installs it anyway
   as a dependency, the post-install metadata check refuses the result ("forbidden" distribution present) and the
