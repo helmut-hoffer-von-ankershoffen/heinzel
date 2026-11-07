@@ -17,6 +17,7 @@ from heinzel.kernel import (
     ReleaseSource,
     Settings,
     UninstallResult,
+    WebHeadRefresh,
 )
 from heinzel.modules.system._announced import Announcement, ToolSnapshot, trial_start
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
@@ -80,7 +81,8 @@ module.service(CoreMetadataVerifier, CoreMetadataIdentity)
 
 def _update_service(installation: Installation, releases: ReleaseSource, kernel: Kernel) -> UpdateService:
     lifecycle = kernel.resolve(DaemonInstallationLifecycle) if kernel.provides(DaemonInstallationLifecycle) else None
-    return UpdateService(installation, releases, lifecycle=lifecycle, require_lifecycle=True)
+    web = kernel.resolve(WebHeadRefresh) if kernel.provides(WebHeadRefresh) else None
+    return UpdateService(installation, releases, lifecycle=lifecycle, require_lifecycle=True, web=web)
 
 
 module.service(UpdateService, _update_service)
@@ -186,7 +188,7 @@ def uninstall() -> UninstallResult:
 
 
 @module.operation(private=True, read_only=False, heads={"auto-update"}, audience="everyday")
-def apply_announced(
+def apply_announced(  # noqa: PLR0913, PLR0917 - the services and each part of the announcement
     service: UpdateService,
     kernel: Kernel,
     core: Annotated[str | None, Field(description="The announced hz version; none to keep the running one.")] = None,
@@ -194,6 +196,10 @@ def apply_announced(
         list[str], Field(description="Each announced plugin as `name==version`; every other plugin stays.")
     ] = [],  # noqa: B006 - never changed
     commit: Annotated[str | None, Field(description="The commit hz's tag named when it was announced.")] = None,
+    plugin_commits: Annotated[
+        list[str],
+        Field(description="Each announced plugin pinned to a GitHub commit as `name@commit`, its tag's commit then."),
+    ] = [],  # noqa: B006 - never changed
 ) -> AnnouncedUpdate:
     """Install exactly the announced versions for automatic updates, or put everything back.
 
@@ -210,6 +216,7 @@ def apply_announced(
         core=core,
         plugins=dict(item.split("==", 1) for item in plugins),
         commit=commit,
+        plugin_commits=dict(item.split("@", 1) for item in plugin_commits),
         exclude_newer=now - timedelta(hours=settings.auto_update_plugin_min_age_hours),
         exclude_newer_core=now - timedelta(hours=settings.auto_update_min_age_hours),
     )

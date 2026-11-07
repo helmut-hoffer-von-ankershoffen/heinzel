@@ -621,7 +621,9 @@ try {
       });
     }
 
-    await page.getByRole("button", { name: "Close settings" }).click();
+    // A phone closes the dialog with a touch. A mouse click would leave Playwright's pointer hovering the top-right
+    // corner, where the Audio rail's trigger sits once the dialog is gone, and open its hover preview over the footer.
+    await page.getByRole("button", { name: "Close settings" }).tap();
 
     // Every footer pane must fit, including the wide release notes and controls moved into More.
     for (const [id, label] of [["@version", /^v/]]) {
@@ -1352,7 +1354,9 @@ try {
     await soundPage.waitForFunction(() => document.querySelector('[data-dock="floating"]'));
     await soundPage.setViewportSize({ width: 360, height: 400 });
     await assertContained(soundPage, player, "rotated floating player");
-    await player.getByText("YouTube asking you to sign in?").tap();
+    const playbackHelp = player.getByRole("button", { name: /Playback or sign-in trouble\?/ });
+    await assertTouchTarget(playbackHelp, "playback help button", "short-landscape");
+    await playbackHelp.tap();
     await assertContained(soundPage, player, "expanded playback recovery");
     const accountChoice = player.getByRole("button", { name: "Use YouTube sign-in" });
     await assertTouchTarget(accountChoice, "YouTube account player choice", "short-landscape");
@@ -1370,17 +1374,17 @@ try {
         "the regular player can receive the browser's YouTube session when third-party cookies are allowed",
       );
     }
-    await player.getByText("YouTube asking you to sign in?").tap();
+    await playbackHelp.tap();
     const accountFrame = await player.locator("iframe").elementHandle();
     await player.getByRole("button", { name: "Retry player" }).tap();
     assert.equal(await accountFrame.evaluate((frame) => frame.isConnected), false, "retry must replace the frame");
-    await player.getByText("YouTube asking you to sign in?").tap();
+    await playbackHelp.tap();
     await player.getByRole("button", { name: "Use private player" }).tap();
     assert.ok(
       (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube-nocookie.com/embed/"),
       "private player choice must restore the privacy-enhanced origin",
     );
-    await player.getByText("YouTube asking you to sign in?").tap();
+    await playbackHelp.tap();
     const [youtubePage] = await Promise.all([
       soundPage.waitForEvent("popup"),
       player.getByRole("link", { name: "Play on YouTube" }).tap(),

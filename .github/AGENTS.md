@@ -20,8 +20,11 @@ Constraints per workflow:
   `macOS smoke`. Native/platform and unknown changes retain macOS setup, end-to-end and Electron checks, with failures
   blocking. The full matrix runs on main, daily and dispatch; every scheduled macOS job blocks `CI OK`. A failing cheap check cancels the rest of
   a same-repository pull request's run as soon as it completes; fork PRs finish normally with read-only tokens. Every main
-  commit keeps its own CI run. Explicit queue proofs may delegate intermediate commits to one uncancellable final
-  full run with the aggregate base. Unknown proof runs full CI; admissions never claim CI OK or full-suite greens.
+  commit keeps its own CI run, and a release PR's (head `release/*`) run is never cancelled. Explicit queue proofs may
+  delegate intermediate commits to one uncancellable final full run with the aggregate base. Unknown proof runs full CI; admissions never claim CI OK or full-suite greens.
+- `merge-gate.yml`: runs on `workflow_run` once a PR's CI finishes (no runner held while CI runs) from the default
+  branch, never checks out PR code, and reports the required `merge-gate` and `coverage-floor` check runs on the PR
+  head; a gate that did not pass or did not run fails closed.
 - `update-prs.yml`: core keeps tested PR heads for the merge queue; plugin repositories update behind branches and
   approve the resulting CI runs. Closed code-scanning threads are resolved in both.
 - `acceptance.yml`: `contents: read`, no secrets, publishes nothing; uploads `result.json`, which promotion reads. A
@@ -35,6 +38,10 @@ Constraints per workflow:
 - `release.yml`: manual dispatch for one optional plugin; never builds or tests core.
 - `source-review.yml`: dispatch on the protected ref `trusted/source-review` only (`make review PR=<n>`); paid, tool-free
   review of one PR's source; fails closed unless live head, base and protected ref equal the dispatch; core only.
+- `focused-job.yml`: core only; manual dispatch of one e2e lane or test ids, pytest ids or vitest files on one hosted
+  runner, testing only the dispatched branch (input `ref` must equal it); `os`, `kind` and `selector` are validated by
+  `scripts/focused_job.py` and never pass through a shell. `contents: read`, no repository secrets (the read-only job
+  token only, as in ci.yml's e2e), never writes the cache, 20 min; a diagnostic that gates nothing.
 - `fuzz.yml`: core only. `claude-review.yml`: opt-in (`vars.CLAUDE_REVIEW`).
 - `docs.yml`: deploys to GitHub Pages when the repository is public or `vars.DOCS_PAGES` is `true`, else keeps an
   artifact (ADR 0082).

@@ -228,7 +228,7 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `contributions` | `HZ_SYSTEM_UI__CONTRIBUTIONS` | platform-specific | Which status items, actions and widgets show in which place of the app; anything you leave out keeps the place its module chose. Never read from a project's hz.toml. |
-| `audio_visualizer` | `HZ_SYSTEM_UI__AUDIO_VISUALIZER` | `False` | Show the optional audio sharing visualizer at the right edge of the app. Off by default; turn it on to show Audio, then choose Share audio to select a browser source. Nothing is captured until you share. Never read from a project's hz.toml. |
+| `audio_visualizer` | `HZ_SYSTEM_UI__AUDIO_VISUALIZER` | `True` | Show the audio visualizer at the right edge of the app. On by default; the sounds Heinzel plays itself need no permission, and nothing is captured from other audio until you share a tab or use the microphone. Styles are chosen in Appearance. Never read from a project's hz.toml. |
 
 ## `[team]`
 

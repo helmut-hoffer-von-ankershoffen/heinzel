@@ -886,6 +886,27 @@ class Installation:
         """Check existing continuity evidence, without creating or refreshing it."""
         return _installation_continuity.matches(self.prefix, self._continuity_authority)
 
+    def clear_stale_startup_pending(self) -> bool:
+        """Remove a continuity pending marker an unfinished change left, once the tool matches its record again.
+
+        A put-back that restored the verified generation, or a change that failed before it changed anything, leaves
+        the marker although nothing is uncertain any more; it would hold every later update and web restart. True if
+        one was removed; a marker whose installation doesn't match the record stays.
+
+        Raises:
+            HeinzelError: If the marker is unsafe.
+            OSError: If it can't be removed durably.
+        """
+        return _installation_continuity.clear_stale_pending(self.prefix, self._continuity_authority)
+
+    def repaired_startup_state_matches(self) -> bool:
+        """`startup_state_matches`, after removing a stale pending marker (`clear_stale_startup_pending`)."""
+        try:
+            self.clear_stale_startup_pending()
+        except (OSError, HeinzelError):
+            return False
+        return self.startup_state_matches()
+
     def verify_tool_destination(self, store: Path, binary: Path) -> None:
         """Verify requested uv store and executable directory against this tool's receipt.
 

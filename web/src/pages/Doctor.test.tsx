@@ -48,6 +48,6 @@ describe("Doctor", () => {
   it("says to open the link again when the token is stale", async () => {
     mockApi({ ...shell, "/api/system/doctor": { status: 401, body: { error: "Refused: send the session token" } } });
     renderAt("/doctor");
-    expect(await screen.findByRole("alert")).toHaveTextContent("Open the link the running `hz ui` printed");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Open the link the running `hz ui serve` printed");
   });
 });

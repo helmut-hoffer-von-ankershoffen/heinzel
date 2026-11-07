@@ -400,8 +400,81 @@ def test_the_receipt_names_the_tag_again_and_nothing_else_changes():
 
 def test_an_announced_plugin_that_is_not_installed_installs_nothing(tmp_path, monkeypatch):
     update, _, _, runs = service(tmp_path, monkeypatch)
-    with pytest.raises(HeinzelError, match="aren't installed from PyPI: heinzel-other"):
+    with pytest.raises(
+        HeinzelError, match="aren't installed from PyPI or pinned to a tagged GitHub commit: heinzel-other"
+    ):
         update.apply_announced(news(plugins={"heinzel-other": "1.0"}), folder=tmp_path / "state", trial=lambda v: True)
+    assert runs == []
+
+
+# A plugin pinned to a tagged GitHub commit (ADR 0137) -----------------------------------------------------------------
+
+CRM_REPO = "https://github.com/acme-example/crm"
+TAGGED_CRM = f'{{ name = "heinzel-crm", git = "{CRM_REPO}?rev={CRM_COMMIT}" }}'
+NEW_COMMIT = "b" * 40
+
+
+def crm_at(version: str, commit: str) -> dict[str, str]:
+    return {
+        **CRM,
+        "METADATA": CRM["METADATA"].replace("0.3.0", version),
+        "direct_url.json": json.dumps({"url": CRM_REPO, "vcs_info": {"vcs": "git", "commit_id": commit}}),
+    }
+
+
+def tagged(tmp_path, monkeypatch, lands):
+    """The update service with heinzel-crm pinned to a GitHub commit; uv leaves it at `lands` (version, commit)."""
+    update, tool, lifecycle, runs = service(tmp_path, monkeypatch, crm=CRM, plugin=TAGGED_CRM)
+
+    def run(command, failure, activity, environment=None, *, additional_constraints=()):
+        runs.append((command, additional_constraints))
+        held = dict(c.split("==") for c in additional_constraints)
+        install(tool.prefix, {**held, "heinzel-crm": lands[0]}, {"heinzel-crm": crm_at(*lands)})
+
+    monkeypatch.setattr(tool, "run", run)
+    return update, tool, lifecycle, runs
+
+
+def tagged_news(commit=NEW_COMMIT):
+    return Announcement(None, {"heinzel-crm": "0.4.0"}, plugin_commits={"heinzel-crm": commit}, exclude_newer=CUTOFF)
+
+
+def test_a_tagged_plugin_installs_exactly_the_commit_its_tag_named_and_stays_pinned(tmp_path, monkeypatch):
+    update, tool, lifecycle, runs = tagged(tmp_path, monkeypatch, ("0.4.0", NEW_COMMIT))
+    result = update.apply_announced(tagged_news(), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+    assert (result.updated, result.after) == (True, "1.0.0")  # a plugins-only update keeps the running hz
+    command, constraints = runs[0]
+    assert f"heinzel-crm @ git+{CRM_REPO}@{NEW_COMMIT}" in command  # the recorded commit, never the tag that can move
+    moving = [command[i + 1] for i, part in enumerate(command) if part in {"--refresh-package", "--reinstall-package"}]
+    assert moving == ["heinzel-crm", "heinzel-crm"]  # only it is asked again and rebuilt
+    assert {"heinzel-crm==0.4.0", "heinzel-clock==1.0.0", "heinzel==1.0.0"} <= set(constraints)
+    assert ("receipt", ("heinzel-crm",)) not in update.retagged  # the receipt names the new commit: still pinned
+    assert announced.plugin_commit(tool.prefix, "heinzel-crm") == NEW_COMMIT
+    assert not lifecycle.pending
+
+
+@pytest.mark.parametrize(
+    ("lands", "why"),
+    [
+        (("0.4.0", "d" * 40), "heinzel-crm came from commit dddddddddddd, not bbbbbbbbbbbb"),
+        (("0.3.9", NEW_COMMIT), "heinzel-crm 0.3.9 instead of 0.4.0"),
+    ],
+)
+def test_a_tagged_plugin_that_lands_at_another_commit_or_version_is_put_back(tmp_path, monkeypatch, lands, why):
+    update, tool, lifecycle, _ = tagged(tmp_path, monkeypatch, lands)
+    before = crm_files(tool.prefix)
+    result = update.apply_announced(tagged_news(), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+    assert (result.updated, result.restored) == (False, True)
+    assert why in result.message
+    assert crm_files(tool.prefix) == before
+    assert tool.startup_state_matches()
+    assert not lifecycle.pending
+
+
+def test_a_commit_announced_for_a_plugin_on_a_branch_installs_nothing(tmp_path, monkeypatch):
+    update, _, _, runs = service(tmp_path, monkeypatch, crm=CRM, plugin=GIT_CRM)
+    with pytest.raises(HeinzelError, match="pinned to a tagged GitHub commit: heinzel-crm"):
+        update.apply_announced(tagged_news(), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
     assert runs == []
 
 
@@ -482,3 +555,56 @@ def test_the_receipt_follows_a_git_plugins_branch_again_and_nothing_else_changes
     )
     pinned = original.replace("rev=main", f"rev={CRM_COMMIT}").encode()
     assert _requirements_from(pinned, original.encode(), ["heinzel-crm"]).decode() == original
+
+
+# A failed change's continuity marker (the Mini, 0.9.27 to 0.9.28) -----------------------------------------------------
+
+
+class CheckingLifecycle(Lifecycle):
+    """Like `system.daemon`: the checkpoint is asked when the mutation begins."""
+
+    def mutation(self, checkpoint, rollback_identity):
+        self.checkpoint_matched = checkpoint()
+        return super().mutation(checkpoint, rollback_identity)
+
+
+def test_a_put_back_removes_the_marker_its_failed_change_left(tmp_path, monkeypatch):
+    update, tool, lifecycle, _ = service(tmp_path, monkeypatch, moves={"urllib3": "2.8.0"})
+    lifecycle.checkpoint_matched = False  # no record is written on the way back: only the repair removes it
+    marker = tool.prefix / ".heinzel-startup-pending"
+    install = tool.run
+
+    def failing_half_way(*args, **kwargs):
+        install(*args, **kwargs)
+        marker.touch(mode=0o600)  # as a continuity write that failed after taking its marker leaves it
+
+    monkeypatch.setattr(tool, "run", failing_half_way)
+    result = update.apply_announced(news(), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+    assert (result.updated, result.restored) == (False, True)
+    assert not marker.exists()
+    assert tool.startup_state_matches()  # web restarts and later updates are no longer held
+
+
+def test_the_next_update_repairs_a_stale_marker_and_records_its_new_generation(tmp_path, monkeypatch):
+    update, tool, _, _ = service(tmp_path, monkeypatch)
+    lifecycle = CheckingLifecycle()
+    update._lifecycle = lifecycle
+    marker = tool.prefix / ".heinzel-startup-pending"
+    marker.touch(mode=0o600)  # left by an earlier automatic update that was put back
+    result = update.apply_announced(news(), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+    assert result.updated
+    assert lifecycle.checkpoint_matched  # the tool matched its record, so the chain of verified generations holds
+    assert not marker.exists()
+    assert tool.startup_state_matches()  # the new generation is recorded, not the old one
+
+
+def test_a_marker_over_an_uncertain_installation_stays(tmp_path, monkeypatch):
+    update, tool, _, _ = service(tmp_path, monkeypatch)
+    lifecycle = CheckingLifecycle()
+    update._lifecycle = lifecycle
+    (tool.prefix / "bin/hz").write_text("changed outside any update")
+    marker = tool.prefix / ".heinzel-startup-pending"
+    marker.touch(mode=0o600)
+    update.apply_announced(news(), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+    assert not lifecycle.checkpoint_matched
+    assert marker.exists()
