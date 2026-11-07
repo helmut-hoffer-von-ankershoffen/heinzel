@@ -373,13 +373,16 @@ def _write_setting(executable: Path, environment: dict[str, str], key: str, valu
         raise HeinzelError(msg)
 
 
-def _profile_gaps(executable: Path, environment: dict[str, str]) -> list[tuple[str, dict[str, JsonValue]]]:
+def _profile_questions(
+    executable: Path, environment: dict[str, str], *, confirm_names: bool = False
+) -> list[tuple[str, list[str], str | None]]:
     profile = _managed_json(executable, environment, ["org", "show"])
     report = _managed_json(executable, environment, ["system", "config", "show"])
     settings = _setting_rows(report.get("settings"))
     missing = _missing_fields(profile)
-    gaps: list[tuple[str, dict[str, JsonValue]]] = []
-    for key in dict.fromkeys(["org.name", "team.name", *missing]):
+    questions: list[tuple[str, list[str], str | None]] = []
+    names = ("org.name", "team.name")
+    for key in dict.fromkeys([*names, *missing]):
         if not key.startswith(("org.", "team.")):
             msg = "The profile declared unexpected requirements; inspect `hz org show`."
             raise HeinzelError(msg)
@@ -387,14 +390,16 @@ def _profile_gaps(executable: Path, environment: dict[str, str]) -> list[tuple[s
         if field is None or "value" not in field:
             msg = f"The required profile setting {key} is unavailable; inspect configuration before continuing."
             raise HeinzelError(msg)
-        _profile_choices(field.get("json_schema"))  # Validate every required field before returning any prompt.
+        choices = _profile_choices(field.get("json_schema"))
         value = field["value"]
         if value is not None and not isinstance(value, str):
             msg = f"The required profile setting {key} is invalid; inspect configuration before continuing."
             raise HeinzelError(msg)
         if key in missing or value is None or not value.strip():
-            gaps.append((key, field))
-    return gaps
+            questions.append((key, choices, None))
+        elif confirm_names and key in names:
+            questions.append((key, choices, value))
+    return questions
 
 
 def _complete_profile(executable: Path, environment: dict[str, str], prompter: Prompter | None = None) -> None:
@@ -402,9 +407,8 @@ def _complete_profile(executable: Path, environment: dict[str, str], prompter: P
         from heinzel.heads.cli._setup import ConsolePrompter  # noqa: PLC0415 - same terminal boundary as service consent
 
         prompter = ConsolePrompter(_human_console())
-    prompter.say("Your profile stays on this computer. Existing values will be kept.")
-    for key, field in _profile_gaps(executable, environment):
-        choices = _profile_choices(field.get("json_schema"))
+    prompter.say("Your profile stays on this computer. Press Enter to keep a saved value.")
+    for key, choices, default in _profile_questions(executable, environment, confirm_names=True):
         title = {
             "org.name": "Your name",
             "team.name": "Team name",
@@ -413,18 +417,21 @@ def _complete_profile(executable: Path, environment: dict[str, str], prompter: P
             "org.timezone": "Time zone (IANA, e.g. Europe/Berlin)",
         }.get(key, key)
         answer = (
-            prompter.choice(title, choices)
+            prompter.choice(title, choices, default=default)
             if choices
             else prompter.text(
-                title, validate=lambda value: None if value.strip() else "Enter a real value to complete your profile."
+                title,
+                default=default,
+                validate=lambda value: None if value.strip() else "Enter a real value to complete your profile.",
             )
         )
-        _write_setting(executable, environment, key, answer)
-    prompter.say("Profile saved through Heinzel configuration. Existing values were preserved.")
+        if answer != default:
+            _write_setting(executable, environment, key, answer)
+    prompter.say("Profile confirmed.")
 
 
 def _require_profile(executable: Path, environment: dict[str, str]) -> None:
-    if _profile_gaps(executable, environment):
+    if _profile_questions(executable, environment):
         msg = "Setup is incomplete: run `uvx heinzel@latest` in an interactive terminal to complete your real profile."
         raise HeinzelError(msg)
 

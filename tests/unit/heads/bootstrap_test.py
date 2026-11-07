@@ -9,6 +9,7 @@ import pytest
 from heinzel import HeinzelError
 from heinzel.heads import bootstrap, install
 from heinzel.heads._tool_install import ToolTarget
+from heinzel.kernel._prompter import Prompter
 
 pytestmark = pytest.mark.unit
 WORKSPACE_COMMAND = bootstrap._workspace_command
@@ -480,6 +481,30 @@ def test_managed_json_boundary_refuses_non_objects_and_malformed_output(monkeypa
     )
     with pytest.raises(HeinzelError, match="invalid JSON"):
         bootstrap._managed_json(executable, {}, ["org", "show"])
+
+
+def test_interactive_setup_confirms_saved_names_and_writes_only_edits(monkeypatch, tmp_path):
+    class Answers(Prompter):
+        def read(self, prompt, *, secret=False):
+            prompts.append(prompt)
+            return next(answers)
+
+    prompts = []
+    answers = iter(["", "New team"])
+    writes = []
+    rows = [
+        {"section": section, "key": "name", "source": "user", "value": value, "json_schema": {"type": "string"}}
+        for section, value in [("org", "Saved name"), ("team", "Saved team")]
+    ]
+    monkeypatch.setattr(
+        bootstrap, "_managed_json", lambda _exe, _env, args: {"missing": []} if args[0] == "org" else {"settings": rows}
+    )
+    monkeypatch.setattr(bootstrap, "_write_setting", lambda _exe, _env, key, value: writes.append((key, value)))
+
+    assert bootstrap._profile_questions(tmp_path, {}) == []
+    COMPLETE_PROFILE(tmp_path, {}, Answers())
+    assert prompts == ["Your name [Saved name]: ", "Team name [Saved team]: "]
+    assert writes == [("team.name", "New team")]
 
 
 @pytest.mark.parametrize("missing", [None, "org.handle", [1], [False], ["org.handle", {}]])
