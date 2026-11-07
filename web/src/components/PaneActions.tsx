@@ -147,13 +147,15 @@ export function PaneAction({
   if (to)
     return (
       <Button {...look} asChild>
-        <Link to={to}>{body}</Link>
+        <Link to={to} onClick={props.onClick}>
+          {body}
+        </Link>
       </Button>
     );
   if (href)
     return (
       <Button {...look} asChild>
-        <a href={href} target="_blank" rel="noopener noreferrer">
+        <a href={href} target="_blank" rel="noopener noreferrer" onClick={props.onClick}>
           {body}
         </a>
       </Button>

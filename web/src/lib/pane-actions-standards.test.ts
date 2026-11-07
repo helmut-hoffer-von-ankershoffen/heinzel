@@ -163,8 +163,10 @@ const RAW: Record<string, number> = {
   "../layout/WorkspacePanels.tsx": 1,
   "../onboarding/OnboardingWizard.tsx": 2,
   "../sound/PlayerCard.tsx": 4,
+  // The help icon on the video is a popover's disclosure trigger, the same kind as FooterItem's (landed with #599).
+  "../sound/PlayerHelp.tsx": 1,
   "../sound/SoundControls.tsx": 4,
-  "../sound/StreamPlayer.tsx": 3,
+  "../sound/StreamPlayer.tsx": 1,
 };
 
 it("keeps every action on the shared components: no new hand-drawn divider, end row, unnamed icon or raw button", () => {
