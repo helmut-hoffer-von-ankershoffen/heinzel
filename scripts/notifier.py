@@ -54,6 +54,8 @@ ARTWORK = SOURCES / "heinzel.svg"
 """One Heinzelmännchen, the default one (grown, cropped to the bust): what every app icon shows."""
 DANCE = ROOT / "web" / "public" / "loading-dance.svg"
 """The four dancing in a ring while hz starts."""
+DESKTOP_ICON = ROOT / "desktop" / "assets" / "heinzel.icns"
+"""The desktop app's icon, packaged by desktop/ci/package.mjs."""
 SWARM = SOURCES / "heinzel-swarm.svg"
 """A busy swarm of them, the product's logo: the logo, not an app icon."""
 THEME_LOGO = ROOT / "src" / "heinzel" / "kernel" / "assets" / "theme" / "logo"
@@ -166,6 +168,17 @@ def draw() -> None:
     _run(node, "--input-type=module", "-e", DRAW, DRAWING.as_uri(), str(ARTWORK), str(SWARM), str(DANCE))
 
 
+def _icns(icon: Path, work: Path, target: Path) -> None:
+    """Write the app icon, an .icns of the Heinzelmännchen tile, to ``target``."""
+    iconset = work / "heinzel.iconset"
+    iconset.mkdir(exist_ok=True)
+    for size in ICON_SIZES:
+        for name, pixels in ((f"icon_{size}x{size}.png", size), (f"icon_{size}x{size}@2x.png", size * 2)):
+            _run(str(icon), str(artwork_for(pixels)), str(iconset / name), str(pixels), "tile")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _run("iconutil", "-c", "icns", "-o", str(target), str(iconset))
+
+
 def icons() -> None:
     """Draw Heinzelmännchen from heinzel.ts, then every icon and logo from the two SVGs that gives.
 
@@ -190,6 +203,7 @@ def icons() -> None:
             _run(str(icon), str(artwork_for(size)), str(out), str(size))
             favicons.append((size, out.read_bytes()))
         (PUBLIC / "favicon.ico").write_bytes(_ico(favicons))
+        _icns(icon, work, DESKTOP_ICON)
     for copy, source in COPIES.items():
         copy.write_bytes(source.read_bytes())
     for name, (background, fill) in WORDMARKS.items():
@@ -256,12 +270,7 @@ def build() -> None:
         _run("lipo", "-create", "-output", str(app / "Contents" / "MacOS" / "notifier"), *slices)
         icon = work / "icon"
         _run("swiftc", "-O", "-o", str(icon), str(SOURCES / "icon.swift"))
-        iconset = work / "heinzel.iconset"
-        iconset.mkdir()
-        for size in ICON_SIZES:
-            for name, pixels in ((f"icon_{size}x{size}.png", size), (f"icon_{size}x{size}@2x.png", size * 2)):
-                _run(str(icon), str(artwork_for(pixels)), str(iconset / name), str(pixels), "tile")
-        _run("iconutil", "-c", "icns", "-o", str(app / "Contents" / "Resources" / "heinzel.icns"), str(iconset))
+        _icns(icon, work, app / "Contents" / "Resources" / "heinzel.icns")
         shutil.copyfile(SOURCES / "heinzel.svg", app / "Contents" / "Resources" / "face.svg")
         plist = (SOURCES / "Info.plist").read_text(encoding="utf-8").replace("@VERSION@", version)
         (app / "Contents" / "Info.plist").write_text(plist, encoding="utf-8")

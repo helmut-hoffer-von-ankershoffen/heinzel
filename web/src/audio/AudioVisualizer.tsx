@@ -1,9 +1,11 @@
-import { AudioLines, BarChart3, Mic, MonitorSpeaker, Sparkles } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { AudioLines, BarChart3, Layers, Mic, MicOff, MonitorSpeaker, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FooterItem, type State } from "@/components/FooterItem";
 import { Button } from "@/components/ui/button";
+import { type Segment, SegmentedControl } from "@/components/ui/segmented";
 import { t } from "@/i18n";
+import { Switch } from "@/layout/SettingControls";
 import {
   BANDS,
   bandEdges,
@@ -18,23 +20,63 @@ import {
 import { type CapturedAudio, captureAudio, captureMicrophone } from "./capture";
 import { useOwnAudio } from "./own";
 import { Analysis, bandRanges } from "./viz/analysis";
+import { watchTheme } from "./viz/color";
 import { drawRail } from "./viz/rail";
-import { setMaster, setStyle, styleOn, useVizSettings } from "./viz/settings";
+import { setMaster, setShown, shownOf, styleOn, useVizSettings, type VizShown } from "./viz/settings";
 import { readVizTheme } from "./viz/theme";
 
 export { spectrumLevel } from "./aurora";
 
-type Remembered = "tab" | "mic" | null;
+/** What the person last chose to listen to; "off" is remembered too, so nothing resumes until they pick a source. */
+type Source = "off" | "mic" | "tab";
+type Remembered = Source | null;
 const SOURCE_KEY = "hz.audio.source";
 
 function readSource(): Remembered {
   try {
     const saved = localStorage.getItem(SOURCE_KEY);
-    return saved === "tab" || saved === "mic" ? saved : null;
+    return saved === "tab" || saved === "mic" || saved === "off" ? saved : null;
   } catch {
     return null;
   }
 }
+
+function remember(source: Source) {
+  try {
+    localStorage.setItem(SOURCE_KEY, source);
+  } catch {
+    // the choice just isn't remembered
+  }
+}
+
+const FELL_BACK = "Shared audio is not offered by this browser, so Heinzel listens with the microphone.";
+const UNSHARED_KEY = "hz.audio.unshared";
+
+/**
+ * Whether this browser can share a tab's audio: feature detection, never the user agent. Every iPhone and iPad browser
+ * (Safari, Chrome, Firefox) is WebKit without getDisplayMedia; a browser that has it but refused it as unsupported is
+ * remembered for the session, so the choice is not offered again.
+ */
+export function canShareAudio(): boolean {
+  if (typeof navigator.mediaDevices?.getDisplayMedia !== "function") return false;
+  try {
+    return sessionStorage.getItem(UNSHARED_KEY) !== "1";
+  } catch {
+    return true;
+  }
+}
+
+function markUnshared() {
+  try {
+    sessionStorage.setItem(UNSHARED_KEY, "1");
+  } catch {
+    // not remembered: the next try fails the same way and falls back again
+  }
+}
+
+/** The browser cannot share at all, as opposed to the person cancelling or refusing. */
+const unsupported = (error: unknown) =>
+  (error instanceof DOMException && error.name === "NotSupportedError") || error instanceof TypeError;
 
 function captureProblem(error: unknown) {
   if (error instanceof DOMException && error.name === "AbortError") return "Audio sharing was cancelled.";
@@ -54,14 +96,17 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const settings = useVizSettings();
   const [remembered, setRemembered] = useState<Remembered>(readSource);
   const [session, setSession] = useState<CapturedAudio | null>(null);
-  const [requesting, setRequesting] = useState(false);
+  const [requesting, setRequesting] = useState<"mic" | "tab" | null>(null);
   const [problem, setProblem] = useState("");
+  const [sharing, setSharing] = useState(canShareAudio);
+  const [notice, setNotice] = useState("");
   const [hasSignal, setHasSignal] = useState(false);
   const current = useRef<CapturedAudio | null>(null);
   const request = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const auroraCanvas = useRef<HTMLCanvasElement>(null);
   const railCanvas = useRef<HTMLCanvasElement>(null);
+  const masterId = useId();
   const stop = useCallback(() => {
     generation.current += 1;
     request.current?.abort();
@@ -70,11 +115,11 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     current.current = null;
     setSession(null);
     setHasSignal(false);
-    setRequesting(false);
+    setRequesting(null);
   }, []);
   useEffect(() => {
-    if (!enabled) stop();
-  }, [enabled, stop]);
+    if (!enabled || !settings.master) stop();
+  }, [enabled, settings.master, stop]);
   useEffect(
     () => () => {
       generation.current += 1;
@@ -83,11 +128,16 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     },
     [],
   );
+  /**
+   * Listen to `kind`, switching live: the new source is asked for first, and the one running is stopped only once the
+   * new one is granted, so a cancelled or refused prompt leaves the old source playing.
+   */
   const start = useCallback(async (kind: "mic" | "tab") => {
     const revision = ++generation.current;
+    request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
-    setRequesting(true);
+    setRequesting(kind);
     setProblem("");
     try {
       const captured = await (kind === "mic" ? captureMicrophone : captureAudio)(controller.signal);
@@ -95,21 +145,47 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         captured.stop();
         return;
       }
+      const previous = current.current;
       current.current = captured;
       setSession(captured);
-      setRequesting(false);
+      setHasSignal(false);
+      previous?.stop();
+      setRequesting(null);
       setRemembered(kind);
-      try {
-        localStorage.setItem(SOURCE_KEY, kind);
-      } catch {
-        // the choice just isn't remembered
-      }
+      remember(kind);
     } catch (error) {
       if (generation.current !== revision) return;
-      setRequesting(false);
+      setRequesting(null);
+      if (kind === "tab" && unsupported(error)) {
+        // Offered but not supported here: stop offering it and listen with the microphone instead, in one line.
+        markUnshared();
+        setSharing(false);
+        setNotice(FELL_BACK);
+        if (!current.current) void start("mic");
+        return;
+      }
       setProblem(captureProblem(error));
     }
   }, []);
+  const choose = useCallback(
+    (source: Source) => {
+      if (source === "off") {
+        stop();
+        setProblem("");
+        setRemembered("off");
+        remember("off");
+        return;
+      }
+      if (source === "tab" && !canShareAudio()) {
+        setSharing(false);
+        setNotice("Shared audio is not offered by this browser.");
+        return;
+      }
+      setNotice("");
+      void start(source);
+    },
+    [start, stop],
+  );
   useEffect(() => {
     if (!session) return;
     const tracks = session.stream.getTracks();
@@ -121,13 +197,17 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   }, [session, stop]);
   // A microphone the person already allowed and chose before listens again without another question.
   const framed = own.mode === "frame";
+  // Once per page: a stopped or ended microphone never restarts itself.
+  const resumed = useRef(false);
   useEffect(() => {
-    if (!enabled || !framed || session || requesting || remembered !== "mic") return;
+    if (!enabled || !framed || session || requesting || remembered !== "mic" || resumed.current) return;
     let cancelled = false;
     void navigator.permissions
       ?.query({ name: "microphone" as PermissionName })
       .then((status) => {
-        if (!cancelled && status.state === "granted") void start("mic");
+        if (cancelled || status.state !== "granted") return;
+        resumed.current = true;
+        void start("mic");
       })
       .catch(() => undefined);
     return () => {
@@ -163,7 +243,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     let audible = false;
     let railSize = { width: 0, height: 0 };
     let skySize = { width: 0, height: 0 };
-    let age = 0;
+    let resting = false;
     const sizeOf = (element: HTMLCanvasElement, context: CanvasRenderingContext2D) => {
       const width = Math.max(1, element.clientWidth);
       const height = Math.max(1, element.clientHeight);
@@ -212,6 +292,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         audible = false;
         setHasSignal(false);
       }
+      resting = true;
       analysis.rest();
       publish();
       if (rail && railContext) {
@@ -244,10 +325,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       }
       const dt = last ? Math.min(0.1, (now - last) / 1000) : 1 / 60;
       last = now;
-      if (age++ % 120 === 0) {
-        palette = readPalette();
-        theme = readVizTheme();
-      }
+      resting = false;
       sample(now, dt);
       if (rail && railContext) {
         if (railSize.width !== Math.max(1, rail.clientWidth) || railSize.height !== Math.max(1, rail.clientHeight))
@@ -277,27 +355,40 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       last = 0;
       if (document.visibilityState !== "hidden") frame = requestAnimationFrame(paint);
     };
+    // Colours follow the theme live: light/dark, a plugin theme or its daypart variant re-colour the next frame, and
+    // the resting rail is redrawn at once.
+    const unwatch = watchTheme(() => {
+      palette = readPalette();
+      theme = readVizTheme();
+      if (resting && rail && railContext) drawRail(railContext, analysis, theme, railSize.width, railSize.height, true);
+    });
     document.addEventListener("visibilitychange", visibility);
     visibility();
     return () => {
+      unwatch();
       cancelAnimationFrame(frame);
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", visibility);
     };
   }, [analyser, microphone, railOn, auroraOn]);
-  if (!enabled || !settings.master) return null;
+  if (!enabled) return null;
   const workspaceAudio =
     (window as Window & { heinzelDesktop?: { workspaceAudio?: boolean } }).heinzelDesktop?.workspaceAudio === true;
-  let status = "Nothing to visualize yet. Press Play on a sound, or share a tab.";
+  const sharedWord = workspaceAudio ? "Workspace audio" : "Shared audio";
+  const listening: Source = session ? (microphone ? "mic" : "tab") : "off";
+  let status = "Off. Heinzel's own sound still shows.";
   let state: State = "off";
   let triggerLabel = "Audio visualizer";
   let controlWord = "Audio";
-  if (requesting) {
+  if (!settings.master) {
+    status = "Audio visualisation is off.";
+    controlWord = "Off";
+  } else if (requesting) {
     status = "Waiting for the browser to allow audio.";
     triggerLabel = "Audio request";
     controlWord = "Wait";
   } else if (session) {
-    const what = microphone ? "the microphone" : "this tab";
+    const what = microphone ? "the microphone" : sharedWord.toLowerCase();
     status = hasSignal ? `Visualizing ${what}` : `Listening to ${what}. Waiting for sound.`;
     state = hasSignal ? "ok" : "warn";
     triggerLabel = "Audio sharing active";
@@ -310,19 +401,30 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     triggerLabel = "Audio sharing active";
     controlWord = "On";
   } else if (framed) {
-    status = "This sound plays in a frame the page cannot analyse. Share this tab or use the microphone to see it.";
+    status = sharing
+      ? "Off. Music in a player frame shows once you pick Microphone or Shared audio."
+      : "Off. Music in a player frame shows once you pick Microphone.";
     state = "warn";
     controlWord = "Share";
   }
-  if (problem) {
+  if (problem && settings.master) {
     status = problem;
     state = "bad";
     triggerLabel = "Audio sharing problem";
     controlWord = "Retry";
   }
-  const pick = "min-h-11 flex-1";
-  const toggle =
-    "flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-2 text-xs aria-pressed:bg-accent aria-pressed:font-medium";
+  const shown: VizShown | null = shownOf(settings);
+  const showSegments: Segment<VizShown>[] = [
+    { value: "spectrum", label: "Spectrum", icon: BarChart3 },
+    { value: "aurora", label: "Aurora", icon: Sparkles },
+    { value: "both", label: "Both", icon: Layers },
+  ];
+  const sourceSegments: Segment<Source>[] = [
+    { value: "off", label: "Off", icon: MicOff },
+    { value: "mic", label: "Microphone", icon: Mic },
+    ...(sharing ? [{ value: "tab" as const, label: sharedWord, icon: MonitorSpeaker }] : []),
+  ];
+  const mark = { ok: "text-ok", warn: "text-warn", bad: "text-bad", off: "text-muted-foreground" }[state] ?? "";
   return (
     <div className="flex h-full min-h-0 flex-col items-center text-muted-foreground">
       <FooterItem
@@ -336,64 +438,48 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             <span className="text-[10px]">{controlWord}</span>
           </>
         }
-        className={`h-12 min-w-11 flex-col gap-0.5 px-1 ${state === "bad" ? "text-bad" : "text-foreground"}`}
+        className={`h-12 min-w-11 flex-col gap-0.5 px-1 ${
+          state === "bad" ? "text-bad" : settings.master ? "text-foreground" : "text-muted-foreground"
+        }`}
         popoverClassName="w-80 max-w-[calc(100vw-1rem)] p-3"
       >
         <div className="space-y-3 px-1.5 pb-1">
-          <output className={problem ? "block break-words text-bad" : "block break-words text-foreground"}>
-            {status}
-          </output>
-          <fieldset className="flex gap-2 border-0 p-0">
-            <legend className="mb-1 text-xs">Show</legend>
-            <button
-              type="button"
-              className={toggle}
-              aria-pressed={settings.styles.spectrum}
-              onClick={() => setStyle("spectrum", !settings.styles.spectrum)}
+          {settings.master && (
+            <>
+              <SegmentedControl legend="Show" segments={showSegments} value={shown} onSelect={setShown} selectOnArrow />
+              <SegmentedControl
+                legend="Listen to"
+                segments={sourceSegments}
+                value={listening}
+                busy={requesting}
+                onSelect={choose}
+              />
+            </>
+          )}
+          <p className="flex items-start gap-1.5 text-sm">
+            <span aria-hidden className={mark}>
+              ●
+            </span>
+            <output
+              aria-live="polite"
+              className={state === "bad" ? "break-words text-bad" : "break-words text-foreground"}
             >
-              <BarChart3 aria-hidden className="size-4" />
-              Spectrum
-            </button>
-            <button
-              type="button"
-              className={toggle}
-              aria-pressed={settings.styles.aurora}
-              onClick={() => setStyle("aurora", !settings.styles.aurora)}
-            >
-              <Sparkles aria-hidden className="size-4" />
-              Aurora
-            </button>
-          </fieldset>
-          <fieldset className="flex gap-2 border-0 p-0">
-            <legend className="mb-1 text-xs">Source for sound in a frame, such as YouTube</legend>
-            <Button
-              className={pick}
-              variant={remembered === "tab" ? "default" : "outline"}
-              title="Exact signal. The browser shows a sharing bar."
-              onClick={() => (session || requesting ? stop() : void start("tab"))}
-            >
-              <MonitorSpeaker aria-hidden className="size-4" />
-              {session && !microphone ? "Stop sharing audio" : workspaceAudio ? "Share workspace audio" : "Share audio"}
-            </Button>
-            <Button
-              className={pick}
-              variant={remembered === "mic" ? "default" : "outline"}
-              title="Uses your microphone; nothing is recorded or uploaded. No sharing bar, lower fidelity."
-              onClick={() => (session || requesting ? stop() : void start("mic"))}
-            >
-              <Mic aria-hidden className="size-4" />
-              {session && microphone ? "Stop listening" : "Use microphone"}
-            </Button>
-          </fieldset>
-          <p className="text-xs text-muted-foreground">
-            Heinzel's own sound needs no permission. Sharing a tab shows your browser's sharing bar; the microphone
-            hears speakers and the room.
+              {status}
+            </output>
           </p>
-          <p className="text-xs text-muted-foreground">{t("audio.visualizerHelp")}</p>
-          <label className="flex min-h-8 items-center gap-2 text-xs">
-            <input type="checkbox" checked={settings.master} onChange={(event) => setMaster(event.target.checked)} />
-            Audio visualisation
-          </label>
+          {notice && settings.master && <p className="text-xs text-foreground">{notice}</p>}
+          <p className="text-xs text-muted-foreground">
+            {t(sharing ? "audio.visualizerHelp" : "audio.visualizerHelpMicrophone")}
+          </p>
+          <div className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground">
+            <span id={masterId}>Audio visualisation</span>
+            <Switch
+              labelledBy={masterId}
+              on={settings.master}
+              disabled={false}
+              onToggle={() => setMaster(!settings.master)}
+            />
+          </div>
         </div>
       </FooterItem>
       {railOn && analyser ? (
@@ -417,8 +503,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           />,
           document.body,
         )}
-      {framed && !session && !requesting && (
-        <SourcePrompt remembered={remembered} onTab={() => void start("tab")} onMic={() => void start("mic")} />
+      {settings.master && framed && !session && !requesting && remembered !== "off" && (
+        <SourcePrompt
+          remembered={remembered}
+          onTab={sharing ? () => choose("tab") : null}
+          onMic={() => choose("mic")}
+        />
       )}
     </div>
   );
@@ -427,7 +517,16 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
 /** The one compact question, once music plays in a frame: browsers require the person's own yes. On a phone or a short
  * landscape screen a floating card would cover the player it asks about, so there the question stays in the Audio
  * pane (its trigger reads "Share", with Share audio and Use microphone). */
-function SourcePrompt({ remembered, onTab, onMic }: { remembered: Remembered; onTab: () => void; onMic: () => void }) {
+function SourcePrompt({
+  remembered,
+  onTab,
+  onMic,
+}: {
+  remembered: Remembered;
+  /** Null where the browser cannot share a tab's audio (every iPhone browser): only the microphone is offered. */
+  onTab: (() => void) | null;
+  onMic: () => void;
+}) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
   return createPortal(
@@ -437,10 +536,12 @@ function SourcePrompt({ remembered, onTab, onMic }: { remembered: Remembered; on
     >
       <p className="mb-2 font-medium">Let Heinzel see the music?</p>
       <div className="flex gap-2">
-        <Button size="sm" variant={remembered === "mic" ? "outline" : "default"} onClick={onTab}>
-          Share this tab
-        </Button>
-        <Button size="sm" variant={remembered === "mic" ? "default" : "outline"} onClick={onMic}>
+        {onTab && (
+          <Button size="sm" variant={remembered === "mic" ? "outline" : "default"} onClick={onTab}>
+            Share this tab
+          </Button>
+        )}
+        <Button size="sm" variant={remembered === "mic" || !onTab ? "default" : "outline"} onClick={onMic}>
           Use microphone
         </Button>
         <Button size="sm" variant="ghost" aria-label="Not now" onClick={() => setDismissed(true)}>

@@ -14,7 +14,11 @@ from heinzel.modules.system.daemon._legacy_retirement import LegacyRetirement, _
 from heinzel.modules.system.daemon._units import LABEL, launchd_plist, plist_path
 from tests.fixtures.daemon_manager import RecordedManager, record_tool
 
-pytestmark = pytest.mark.unit
+pytest_plugins = ("tests.fixtures.flushes",)
+
+# Every journal step flushes the transaction file and its folder; real flushes made the crash-boundary cases miss
+# their 5 s budget on loaded CI runners (stack in os.fsync). The tests that cross boundaries assert the flushes.
+pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("recorded_flushes")]
 
 
 @pytest.fixture
@@ -556,7 +560,7 @@ def test_unknown_or_torn_handover_history_refuses_without_archiving_anything(com
     "boundary", ["unload-intent", "move-0-intent", "moved-0", "move-1-intent", "moved-1", "move-2-intent", "moved-2"]
 )
 def test_completed_history_interruption_restores_exact_coherent_three_file_set(
-    completed_history, monkeypatch, boundary
+    completed_history, monkeypatch, boundary, recorded_flushes
 ):
     recovery, service, manager = completed_history
     plan = recovery.plan()
@@ -571,11 +575,15 @@ def test_completed_history_interruption_restores_exact_coherent_three_file_set(
             raise RuntimeError(message)
 
     monkeypatch.setattr(recovery, "_write", interrupted)
+    flushed = len(recorded_flushes)
     with pytest.raises(RuntimeError):
         recovery.retire(plan.digest)
+    assert len(recorded_flushes) > flushed, "the journal step before the crash was flushed"
     monkeypatch.setattr(recovery, "_write", write)
     restore = recovery.restore_plan(plan.digest)
+    flushed = len(recorded_flushes)
     assert recovery.restore(plan.digest, restore.digest).status == "restored"
+    assert len(recorded_flushes) > flushed, "the restore was flushed"
     assert [path.read_bytes() for path in paths] == before
     assert manager.registered
     assert not (service.state_dir / "standard-install-pending.json").exists()

@@ -9,6 +9,7 @@ import pytest
 from heinzel import HeinzelError, Progress
 from heinzel.kernel import CorePin, EdgeRelease, Installation, ReleaseCache, ReleaseSource, Settings
 from heinzel.modules.system._github import asset_host
+from heinzel.modules.system._models import UpdateResult
 from heinzel.modules.system._service import _edge_release, _published_version
 from heinzel.modules.system._update import UpdateService, blocking_plugins
 
@@ -1434,7 +1435,9 @@ def _channels(pin, releases):
 
     def record(core, *_args, **kwargs):
         service.installs.append((core, kwargs.get("channel")))
-        return "installed"
+        return UpdateResult(
+            before="0", after="0", latest=None, pinned_to=None, updated=False, message="installed", next=[]
+        )
 
     service._install = record
     return service
@@ -1455,7 +1458,7 @@ def test_the_default_channel_never_asks_for_or_installs_edge(pin, channel):
 
 def test_stable_to_edge_installs_the_digest_bound_wheel():
     service = _channels(CorePin("index", "heinzel"), FakeChannels())
-    assert service.update(current="0.4.0", channel="edge") == "installed"
+    assert service.update(current="0.4.0", channel="edge").message == "installed"
     assert service.installs == [(f"heinzel @ {EDGE_WHEEL}#sha256={'a' * 64}", "edge")]
 
 
@@ -1480,7 +1483,7 @@ def test_edge_to_stable_stays_until_stable_catches_up():
 @pytest.mark.parametrize("stable", ["0.5.0", "0.5.1"])
 def test_edge_to_stable_moves_once_stable_is_as_new(stable):
     service = _channels(_edge_pin(), FakeChannels(highest=stable))
-    assert service.update(current="0.5.0.dev7", channel="stable") == "installed"
+    assert service.update(current="0.5.0.dev7", channel="stable").message == "installed"
     assert service.installs == [(f"heinzel>={stable}", "stable")]
 
 
@@ -1488,8 +1491,10 @@ def test_someone_elses_wheel_stays_pinned_on_edge():
     other = CorePin("url", "heinzel @ https://example.org/heinzel.whl", "https://example.org/heinzel.whl")
     releases = FakeChannels()
     service = _channels(other, releases)
-    service._pinned = lambda *_a: "pinned"
-    assert service.update(current="0.4.0", channel="edge") == "pinned"
+    service._pinned = lambda *_a: UpdateResult(
+        before="0.4.0", after="0.4.0", latest=None, pinned_to=None, updated=False, message="pinned", next=[]
+    )
+    assert service.update(current="0.4.0", channel="edge").message == "pinned"
     assert releases.edge_asked == 0
 
 
@@ -1997,3 +2002,38 @@ def test_a_failed_update_marks_the_step_that_failed(tmp_path):
     steps = final_steps(progress)
     assert steps["check"][0] == "failed"
     assert steps["install"] == ("pending", None)
+
+
+def _step_events(caplog):
+    return [
+        (r.getMessage(), r.step, getattr(r, "outcome", None), getattr(r, "plugin", None), getattr(r, "version", None))
+        for r in caplog.records
+        if r.name == "heinzel.operation" and r.operation == "system.update"
+    ]
+
+
+def test_each_update_step_logs_a_start_and_an_outcome_with_fields(tmp_path, caplog):
+    uv = FakeUv("0.2.0")
+    uv.available = {"heinzel-acme": "1.2.0"}
+    caplog.set_level("INFO", logger="heinzel.operation")
+    UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv), FakeReleases("0.4.0")).update(
+        current="0.2.0"
+    )
+    events = _step_events(caplog)
+    for step in ("check", "install", "plugin:heinzel-acme", "heads"):
+        assert [e[0] for e in events if e[1] == step] == ["operation.step.start", "operation.step.outcome"]
+    plugin = next(e for e in events if e[1] == "plugin:heinzel-acme" and e[2])
+    assert plugin[2:] == ("done", "heinzel-acme", "1.2.0")
+    outcomes = [r for r in caplog.records if r.getMessage() == "operation.step.outcome"]
+    assert all(isinstance(r.duration_ms, int) and r.duration_ms >= 0 for r in outcomes)
+
+
+def test_a_failed_update_step_logs_its_failure_with_the_reason(tmp_path, caplog):
+    uv = FakeUv("0.2.0")
+    caplog.set_level("INFO", logger="heinzel.operation")
+    service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv), FakeReleases(OSError("offline")))
+    with pytest.raises(HeinzelError):
+        service.update(current="0.2.0")
+    [failed] = [r for r in caplog.records if getattr(r, "outcome", None) == "failed"]
+    assert (failed.step, failed.levelname) == ("check", "WARNING")
+    assert "offline" in failed.detail

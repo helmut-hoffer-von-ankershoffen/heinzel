@@ -585,6 +585,7 @@ class PluginService:
         phases = Phases(
             self._kernel.resolve(Progress),
             [*plan, ("install", f"Installing {name}"), ("verify", "Checking that exactly it is installed")],
+            operation="system.plugin.add",
         )
         needs = self._install_needs(candidate, phases)
         with self._mutation() as mutation:
@@ -636,6 +637,7 @@ class PluginService:
                     phases = Phases(
                         self._kernel.resolve(Progress),
                         [(f"requires:{n.distribution}", _need_label(n)) for n in needs if n.required and n.candidate],
+                        operation="system.plugin.repair",
                     )
                     done = self._install_needs(requirer.model_copy(update={"needs": needs}), phases, "repair")
             except HeinzelError as exc:
