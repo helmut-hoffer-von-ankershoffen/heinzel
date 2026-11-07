@@ -22,9 +22,9 @@ const STEP = 16;
 
 const iconButton = "flex size-7 shrink-0 items-center justify-center rounded-lg text-icon hover:bg-accent";
 
-type Props = { title: string; watchUrl: string; host: string; children: ReactNode };
+type Props = { title: string; watchUrl: string; host: string; help?: ReactNode; children: ReactNode };
 
-export function PlayerCard({ title, watchUrl, host, children }: Props) {
+export function PlayerCard({ title, watchUrl, host, help, children }: Props) {
   const pref = useDockPref();
   const slot = useDockSlot();
   const docked = pref.docked && slot !== null;
@@ -210,6 +210,7 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
             <GripHorizontal aria-hidden className="size-3.5" />
           </button>
         )}
+        {help}
         {docked ? (
           <button
             type="button"
