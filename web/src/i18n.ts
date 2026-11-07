@@ -400,7 +400,8 @@ const en = {
   "sound.close": "Stop and close the player",
   "sound.reloadNeeded": "This page loaded before this stream was picked; load it again to play it.",
   "sound.reload": "Reload",
-  "sound.playbackHelp": "YouTube asking you to sign in?",
+  "sound.playbackHelp": "Playback or sign-in trouble?",
+  "sound.needsAttention": "(needs attention)",
   "sound.privateHelp":
     "The private player may not use your YouTube sign-in. Try the regular player to use your YouTube account.",
   "sound.accountHelp":

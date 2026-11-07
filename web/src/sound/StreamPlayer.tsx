@@ -1,8 +1,10 @@
+import { ExternalLink, EyeOff, LogIn, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { PlayerCard } from "./PlayerCard";
+import { helpButton, PlayerHelp } from "./PlayerHelp";
 import { page } from "./queries";
 import { stop } from "./store";
 import {
@@ -135,7 +137,42 @@ function Player({
 
   if (!src) return null;
   return (
-    <PlayerCard title={soundscape.title} watchUrl={stream.watch_url} host="YouTube">
+    <PlayerCard
+      title={soundscape.title}
+      watchUrl={stream.watch_url}
+      host="YouTube"
+      help={
+        <PlayerHelp
+          attention={help}
+          actions={
+            <>
+              {chooseAccount && (
+                <button type="button" onClick={() => chooseAccount(!account)} className={helpButton}>
+                  {account ? <EyeOff aria-hidden className="size-3.5" /> : <LogIn aria-hidden className="size-3.5" />}
+                  {t(account ? "sound.privatePlayer" : "sound.accountPlayer")}
+                </button>
+              )}
+              <button type="button" onClick={retry} className={helpButton}>
+                <RotateCw aria-hidden className="size-3.5" />
+                {t("sound.retryPlayer")}
+              </button>
+              <a
+                href={stream.watch_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={stop}
+                className={helpButton}
+              >
+                <ExternalLink aria-hidden className="size-3.5" />
+                {t("sound.playOnYouTube")}
+              </a>
+            </>
+          }
+        >
+          <p>{t(account ? "sound.accountHelp" : "sound.privateHelp")}</p>
+        </PlayerHelp>
+      }
+    >
       {blocked ? (
         <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
           <p>{t("sound.reloadNeeded")}</p>
@@ -155,25 +192,6 @@ function Player({
           allow={FRAME_ATTRIBUTES.allow}
         />
       )}
-      <details open={help} onToggle={(event) => setHelp(event.currentTarget.open)} className="p-2 text-ui-sm">
-        <summary className="min-h-8 cursor-pointer content-center rounded-lg px-1 hover:bg-accent">
-          {t("sound.playbackHelp")}
-        </summary>
-        <div className="flex flex-col gap-2 pt-2">
-          <p>{t(account ? "sound.accountHelp" : "sound.privateHelp")}</p>
-          {chooseAccount && (
-            <button type="button" onClick={() => chooseAccount(!account)} className={button}>
-              {t(account ? "sound.privatePlayer" : "sound.accountPlayer")}
-            </button>
-          )}
-          <button type="button" onClick={retry} className={button}>
-            {t("sound.retryPlayer")}
-          </button>
-          <a href={stream.watch_url} target="_blank" rel="noopener noreferrer" onClick={stop} className={button}>
-            {t("sound.playOnYouTube")}
-          </a>
-        </div>
-      </details>
     </PlayerCard>
   );
 }
