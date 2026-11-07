@@ -2,11 +2,11 @@
 // happen, then how it ended with the next step when it failed (ADR 0056). One dialog serves every status item,
 // sidebar entry and setup button, so a footer that lays itself out again cannot hide a running install.
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, CircleAlert, Loader2, TriangleAlert, X } from "lucide-react";
+import { Check, CircleAlert, Loader2, Play, RotateCw, TriangleAlert, X } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { daemonStatusKey } from "@/api/daemon";
-import { Button } from "@/components/ui/button";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { type MessageKey, t } from "@/i18n";
 import {
   dismissOperation,
@@ -20,6 +20,8 @@ import {
 import { cn } from "@/lib/utils";
 
 const PERSISTENT = new Set(["/system/daemon/install", "/system/daemon/uninstall"]);
+/** Safe, easily repeated writes the app runs at once, with plain words instead of the exact call. */
+const QUICK = new Set(["/system/daemon/restart"]);
 const copyOf = (path: string) => (path.endsWith("/uninstall") ? "uninstall" : "install");
 
 const ICON: Record<PhaseState, typeof Check | null> = {
@@ -115,9 +117,7 @@ export function OperationDialog() {
   useEffect(() => {
     if (primary && (stage === "done" || stage === "failed")) box.current?.focus();
   }, [primary, stage]);
-  if (!primary || run.stage === "idle") return null;
-  const persistent = PERSISTENT.has(run.call.path);
-  const copy = copyOf(run.call.path);
+  const quick = run.stage !== "idle" && QUICK.has(run.call.path);
   const settled = () =>
     Promise.all([
       client.invalidateQueries({ queryKey: ["ui"], refetchType: "all" }),
@@ -125,6 +125,14 @@ export function OperationDialog() {
       client.invalidateQueries({ queryKey: ["org", "calendar-reminders-status"], refetchType: "all" }),
     ]).then(() => undefined);
   const go = () => void startOperation(() => void settled());
+  // A quick write needs no confirmation: asking for it starts it.
+  useEffect(() => {
+    if (primary && stage === "confirm" && quick) void startOperation(() => void settled());
+  });
+  if (!primary || run.stage === "idle" || (quick && run.stage === "confirm")) return null;
+  const persistent = PERSISTENT.has(run.call.path);
+  const copy = copyOf(run.call.path);
+  const plain = (kind: "running" | "done" | "failed") => t(`op.daemon.restart.${kind}` as MessageKey);
   return createPortal(
     <div
       ref={box}
@@ -153,63 +161,72 @@ export function OperationDialog() {
               {run.call.command}
             </code>
           )}
-          <div className="mt-3 flex justify-end gap-2">
-            <Button size="sm" variant="outline" autoFocus onClick={dismissOperation}>
+          <PaneActions align="end" words="all">
+            <PaneAction key="cancel" icon={X} autoFocus onClick={dismissOperation}>
               {t("contrib.cancel")}
-            </Button>
-            <Button size="sm" onClick={go}>
+            </PaneAction>
+            <PaneAction key="go" icon={Play} primary onClick={go}>
               {persistent ? t(`op.daemon.${copy}.button` as MessageKey) : t("contrib.run")}
-            </Button>
-          </div>
+            </PaneAction>
+          </PaneActions>
         </>
       )}
       {run.stage === "running" && (
         <>
           <output className="mt-1 block text-muted-foreground">
-            {run.task ?? (persistent ? t(`op.daemon.${copy}.running` as MessageKey) : t("op.working"))}
+            {run.task ??
+              (quick ? plain("running") : persistent ? t(`op.daemon.${copy}.running` as MessageKey) : t("op.working"))}
           </output>
           <Steps phases={run.phases} active />
           <p className="mt-3 text-xs text-muted-foreground">{t("op.noStop")}</p>
-          <div className="mt-3 flex justify-end">
-            <Button size="sm" disabled aria-disabled>
-              <Loader2 aria-hidden className="motion-safe:animate-spin" />
-              {persistent ? t(`op.daemon.${copy}.running` as MessageKey) : t("op.working")}
-            </Button>
-          </div>
+          <PaneActions align="end" words="all">
+            <PaneAction
+              key="working"
+              icon={Loader2}
+              primary
+              disabled
+              aria-disabled
+              className="[&_svg]:motion-safe:animate-spin"
+            >
+              {quick ? plain("running") : persistent ? t(`op.daemon.${copy}.running` as MessageKey) : t("op.working")}
+            </PaneAction>
+          </PaneActions>
         </>
       )}
       {run.stage === "done" && (
         <>
           <output className="mt-1 flex items-start gap-2 text-ok">
             <Check aria-hidden className="mt-0.5 size-4 shrink-0" />
-            {persistent ? t(`op.daemon.${copy}.done` as MessageKey) : t("op.done")}
+            {quick ? plain("done") : persistent ? t(`op.daemon.${copy}.done` as MessageKey) : t("op.done")}
           </output>
           <Steps phases={run.phases} active={false} />
-          <div className="mt-3 flex justify-end">
-            <Button size="sm" autoFocus onClick={dismissOperation}>
+          <PaneActions align="end" words="all">
+            <PaneAction key="close" icon={Check} primary autoFocus onClick={dismissOperation}>
               {t("op.close")}
-            </Button>
-          </div>
+            </PaneAction>
+          </PaneActions>
         </>
       )}
       {run.stage === "failed" && (
         <>
           <p role="alert" className="mt-1 flex items-start gap-2 text-bad">
             <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-            <span className="min-w-0 break-words">{run.error}</span>
+            <span className="min-w-0 break-words">{quick ? plain("failed") : run.error}</span>
           </p>
-          <Steps phases={run.phases} active={false} />
-          <p className="mt-3 text-xs text-muted-foreground">
-            {run.phases.some((phase) => phase.state === "failed") ? t("op.failedNext") : t("op.lost")}
-          </p>
-          <div className="mt-3 flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={dismissOperation}>
+          {!quick && <Steps phases={run.phases} active={false} />}
+          {!quick && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              {run.phases.some((phase) => phase.state === "failed") ? t("op.failedNext") : t("op.lost")}
+            </p>
+          )}
+          <PaneActions align="end" words="all">
+            <PaneAction key="close" icon={X} onClick={dismissOperation}>
               {t("op.close")}
-            </Button>
-            <Button size="sm" onClick={go}>
+            </PaneAction>
+            <PaneAction key="retry" icon={RotateCw} primary onClick={go}>
               {t("op.retry")}
-            </Button>
-          </div>
+            </PaneAction>
+          </PaneActions>
         </>
       )}
     </div>,

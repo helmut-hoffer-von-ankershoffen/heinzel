@@ -3,9 +3,9 @@
 // access; what the calendar does not say stays unsaid (no attendee count, organizer or teaser is invented).
 
 import { useQuery } from "@tanstack/react-query";
-import { MessageSquareText, PanelRight, TimerReset, UserX, Video } from "lucide-react";
-import { Link } from "react-router";
+import { MessageSquareText, PanelRight, ShieldCheck, TimerReset, UserX, Video } from "lucide-react";
 import { token } from "@/api/token";
+import { PaneAction } from "@/components/PaneActions";
 import { conferenceLink } from "@/lib/conferenceLink";
 import { cn } from "@/lib/utils";
 import { type GlyphModel, spanText } from "./calendarModel";
@@ -88,7 +88,6 @@ export function CalendarSummary({
   now,
   zone,
   clock,
-  onOpen,
 }: {
   model: GlyphModel;
   active: SummaryEvent | null;
@@ -96,11 +95,8 @@ export function CalendarSummary({
   now: number;
   zone?: string | null;
   clock: (iso: string) => string;
-  onOpen: () => void;
 }) {
   const level = model.kind === "meeting" || model.kind === "free" ? model.level : "calm";
-  const join = conferenceLink((active ?? upcoming)?.conference_url);
-  const joinTitle = (active ?? upcoming)?.title ?? "";
   const startsIn = upcoming ? Math.max(1, Math.ceil((Date.parse(upcoming.start) - now) / 60_000)) : null;
   return (
     <div className="space-y-3.5 p-3 text-[14px] leading-snug">
@@ -154,54 +150,61 @@ export function CalendarSummary({
         )}
       </section>
       {upcoming && <Then after={upcoming} now={now} zone={zone} />}
-      <div className="flex items-center gap-1 border-t border-border pt-3" role="toolbar" aria-label="Calendar actions">
-        {join ? (
-          <a
-            href={join}
-            target="_blank"
-            rel="noreferrer noopener"
-            aria-label={`Join ${joinTitle}`}
-            title={`Join ${joinTitle}`}
-            className="flex size-11 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:opacity-90"
-          >
-            <Video aria-hidden className="size-5" />
-          </a>
-        ) : null}
-        {(
+    </div>
+  );
+}
+
+/**
+ * The pane's one action row: Join (when the meeting has a link), the write actions that stay disabled until the
+ * connector grants write access, the consent link, and Open calendar, which closes the pane it sits in.
+ */
+export function calendarActions({
+  active,
+  upcoming,
+  onOpen,
+  full,
+}: {
+  active: SummaryEvent | null;
+  upcoming: SummaryEvent | null;
+  onOpen: () => void;
+  full: boolean;
+}) {
+  const meeting = active ?? upcoming;
+  const join = full ? conferenceLink(meeting?.conference_url) : null;
+  const title = meeting?.title ?? "";
+  return (
+    <>
+      {join && (
+        <PaneAction key="join" icon={Video} href={join}>
+          {`Join ${title}`}
+        </PaneAction>
+      )}
+      <PaneAction key="open" icon={PanelRight} onClick={onOpen} leaves>
+        Open calendar
+      </PaneAction>
+      {full && (
+        <PaneAction key="allow" icon={ShieldCheck} to={`?settings=${CONNECTORS}`}>
+          Allow your Heinzels to change your calendar
+        </PaneAction>
+      )}
+      {full &&
+        (
           [
             ["Decline", UserX],
             ["Extend", TimerReset],
             ["Tell the next meeting you are late", MessageSquareText],
           ] as const
         ).map(([name, Icon]) => (
-          <button
+          <PaneAction
             key={name}
-            type="button"
+            icon={Icon}
             disabled
             aria-label={`${name} (needs permission to change your calendar)`}
             title="Needs permission to change your calendar"
-            className="flex size-11 items-center justify-center rounded-lg text-muted-foreground disabled:opacity-50"
           >
-            <Icon aria-hidden className="size-5" />
-          </button>
+            {name}
+          </PaneAction>
         ))}
-        <span className="flex-1" />
-        <button
-          type="button"
-          aria-label="Open calendar"
-          title="Open calendar"
-          className="flex size-11 items-center justify-center rounded-lg hover:bg-accent"
-          onClick={onOpen}
-        >
-          <PanelRight aria-hidden className="size-5" />
-        </button>
-      </div>
-      <Link
-        to={`?settings=${CONNECTORS}`}
-        className="inline-flex min-h-11 items-center text-[13px] text-primary underline"
-      >
-        Allow your Heinzels to change your calendar
-      </Link>
-    </div>
+    </>
   );
 }

@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Play } from "lucide-react";
 import { afterEach, expect, it, vi } from "vitest";
-import { FooterItem } from "./FooterItem";
+import { FooterItem, paneStructureProblems } from "./FooterItem";
+import { PaneAction } from "./PaneActions";
 
 const clients: QueryClient[] = [];
 afterEach(() => {
@@ -19,11 +21,17 @@ function LateQuery({ facts }: { facts: Promise<string> }) {
 function Example({ facts, onRender, onRun }: { facts: Promise<string>; onRender: () => void; onRun: () => void }) {
   onRender();
   return (
-    <FooterItem label="Runtime facts" state="ok" text="Inspect">
+    <FooterItem
+      label="Runtime facts"
+      state="ok"
+      text="Inspect"
+      actions={
+        <PaneAction icon={Play} onClick={onRun}>
+          Run action
+        </PaneAction>
+      }
+    >
       <LateQuery facts={facts} />
-      <button type="button" onClick={onRun}>
-        Run action
-      </button>
     </FooterItem>
   );
 }
@@ -134,4 +142,67 @@ it("leaves an ordinary footer text item unconstrained", () => {
   render(<FooterItem label="Plain" state="ok" text="Inspect" />);
   expect(screen.getByRole("button").className).not.toContain("tabular-nums");
   expect(screen.getByText("Inspect").style.minWidth).toBe("");
+});
+
+it("names every way a pane breaks its structure: actions outside the bottom row, content after it, two rows", () => {
+  const icon = '<svg aria-hidden="true"></svg>';
+  const pane = document.createElement("section");
+  pane.innerHTML =
+    '<p>Facts</p><a href="/chat">Open chat</a>' +
+    `<div data-pane-actions="" data-words="lead"><button type="button" data-pane-action="text">${icon}Create</button></div>` +
+    '<div data-pane-actions=""></div><p>Late</p>';
+  expect(paneStructureProblems(pane)).toEqual([
+    "2 action rows; a pane has one",
+    '"Open chat" is outside the action row',
+    "content follows the action row",
+  ]);
+  pane.innerHTML =
+    '<p>Facts</p><button type="button" role="switch" aria-label="On"></button>' +
+    `<div data-pane-actions="" data-words="lead"><button type="button" data-pane-action="text">${icon}Create</button>` +
+    `<a href="/" data-pane-action="icon" aria-label="Open chat" title="Open chat">${icon}</a></div>`;
+  expect(paneStructureProblems(pane)).toEqual([]);
+});
+
+it("rejects a text-only, hand-made or unnamed action, words beyond the lead, and a wrapped row", () => {
+  const pane = document.createElement("section");
+  pane.innerHTML =
+    '<div data-pane-actions="" data-words="lead"><button type="button" data-pane-action="text">Create</button>' +
+    '<a href="/">Open chat</a><button type="button" data-pane-action="icon"><svg></svg></button>' +
+    '<button type="button" data-pane-action="text"><svg></svg>Logs</button></div>';
+  expect(paneStructureProblems(pane)).toEqual([
+    '"Create" has no icon',
+    '"Open chat" is not a PaneAction',
+    '"" is icon-only without a name and tooltip',
+    '"Logs" shows words; only the lead does',
+  ]);
+  pane.innerHTML =
+    '<div data-pane-actions="" data-words="lead"><button type="button" data-pane-action="icon" aria-label="A" title="A"><svg></svg></button></div>';
+  expect(paneStructureProblems(pane)).toEqual(['"A" is the lead without its words']);
+  pane.innerHTML =
+    '<div data-pane-actions="" data-words="none"><button type="button" data-pane-action="icon" aria-label="A" title="A"><svg></svg></button>' +
+    '<button type="button" data-pane-action="icon" aria-label="B" title="B"><svg></svg></button></div>';
+  for (const [index, button] of pane.querySelectorAll("button").entries())
+    button.getBoundingClientRect = () => new DOMRect(0, 100 + 36 * index, 32, 32);
+  expect(paneStructureProblems(pane)).toEqual(["the actions wrap onto 2 lines"]);
+});
+
+it("fails loudly in development when an open pane draws a button in its content, unless it is freeform", async () => {
+  const user = userEvent.setup();
+  const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const stray = (
+    <FooterItem label="Stray" state="ok" text="Stray">
+      <button type="button">Do it</button>
+    </FooterItem>
+  );
+  const view = render(stray);
+  await expect(user.click(screen.getByRole("button", { name: "Stray" }))).rejects.toThrow(/Action structure/);
+  view.unmount();
+  errors.mockRestore();
+  render(
+    <FooterItem label="Version" state="off" text="Version" freeform="Release notes are prose with their own links.">
+      <a href="/notes">Notes</a>
+    </FooterItem>,
+  );
+  await user.click(screen.getByRole("button", { name: "Version" }));
+  expect(screen.getByRole("link", { name: "Notes" })).toBeVisible();
 });
