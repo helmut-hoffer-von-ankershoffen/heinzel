@@ -2,7 +2,7 @@
 // one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
-import { Calendar } from "lucide-react";
+import { Calendar, CalendarDays } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useChangelog, useInfo } from "@/api/queries";
 import { token } from "@/api/token";
@@ -10,6 +10,7 @@ import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions
 import { FooterItem } from "@/components/FooterItem";
 import { FooterLayout, FooterMore, FooterPart } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
+import { PaneAction } from "@/components/PaneActions";
 import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
 import { zoneTime } from "@/lib/zoneTime";
@@ -184,10 +185,13 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
       content={showProgress ? <MeetingIcon elapsed={elapsed} approach={approach} /> : undefined}
       state={unavailable ? "bad" : "off"}
       paneName="Calendar summary"
-      hideHeading
+      actions={
+        <PaneAction icon={CalendarDays} onClick={onOpen}>
+          Open calendar
+        </PaneAction>
+      }
     >
       <div className="space-y-2 px-1.5 py-1">
-        <p className="font-medium">Calendar</p>
         {agenda.isPending ? (
           <p>Loading calendar…</p>
         ) : agenda.isError ? (
@@ -231,9 +235,6 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
         {!unavailable && (elapsed !== null || approach !== null) && (
           <p className="text-xs text-muted-foreground">Top arc: meeting elapsed. Bottom arc: starts within an hour.</p>
         )}
-        <button type="button" className="min-h-10 text-primary underline" onClick={onOpen}>
-          Open calendar
-        </button>
       </div>
     </FooterItem>
   );
@@ -253,6 +254,7 @@ export function StatusBar({ onOpenCalendar = () => {} }: { onOpenCalendar?: () =
               state="off"
               text={`v${info.data.version}`}
               align="left"
+              freeform="The about card links to its release on GitHub and the release notes are prose with their own links."
               popoverClassName="w-[min(28rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
             >
               <ReleaseNotes version={info.data.version} />

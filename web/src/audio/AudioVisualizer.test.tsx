@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectPaneStructure } from "@/test/pane";
 import { AudioVisualizer, spectrumLevel } from "./AudioVisualizer";
 import { captureAudio, captureMicrophone } from "./capture";
 import { publishOwnAudio } from "./own";
@@ -124,6 +125,26 @@ describe("AudioVisualizer", () => {
     act(() => setMaster(false));
     expect(screen.queryByRole("region", { name: "Audio visualizer" })).not.toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "Shared audio spectrum" })).not.toBeInTheDocument();
+  });
+
+  it("switches each style from the pane's checkboxes and keeps its buttons in the bottom row", () => {
+    render(<AudioVisualizer />);
+    fireEvent.click(screen.getByRole("button", { name: /Audio visualizer,/ }));
+    const controls = screen.getByRole("region", { name: "Audio visualizer controls" });
+    expectPaneStructure(controls);
+    const spectrum = within(controls).getByRole("checkbox", { name: "Spectrum" });
+    const aurora = within(controls).getByRole("checkbox", { name: "Aurora" });
+    expect(spectrum).toBeChecked();
+    expect(aurora).toBeChecked();
+    fireEvent.click(spectrum);
+    expect(spectrum).not.toBeChecked();
+    expect(aurora).toBeChecked();
+    expect(JSON.parse(localStorage.getItem("hz.audio.viz") ?? "{}").styles?.spectrum).toBe(false);
+    fireEvent.click(spectrum);
+    expect(spectrum).toBeChecked();
+    const row = within(controls).getByRole("group", { name: "Actions" });
+    expect(within(row).getByRole("button", { name: "Share audio" })).toBeVisible();
+    expect(within(row).getByRole("button", { name: "Use microphone" })).toBeVisible();
   });
 
   it("asks once, inline, to see music playing in a frame, and remembers the answer", () => {

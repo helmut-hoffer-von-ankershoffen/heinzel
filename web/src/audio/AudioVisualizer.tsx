@@ -2,6 +2,7 @@ import { AudioLines, BarChart3, Mic, MonitorSpeaker, Sparkles } from "lucide-rea
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FooterItem, type State } from "@/components/FooterItem";
+import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import {
@@ -309,9 +310,6 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     triggerLabel = "Audio sharing problem";
     controlWord = "Retry";
   }
-  const pick = "min-h-11 flex-1";
-  const toggle =
-    "flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-2 text-xs aria-pressed:bg-accent aria-pressed:font-medium";
   return (
     <div className="flex h-full min-h-0 flex-col items-center text-muted-foreground">
       <FooterItem
@@ -327,52 +325,51 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         }
         className={`h-12 min-w-11 flex-col gap-0.5 px-1 ${state === "bad" ? "text-bad" : "text-foreground"}`}
         popoverClassName="w-80 max-w-[calc(100vw-1rem)] p-3"
+        actions={
+          <>
+            <PaneAction
+              icon={MonitorSpeaker}
+              primary={remembered === "tab"}
+              title="Exact signal. The browser shows a sharing bar."
+              onClick={() => (session || requesting ? stop() : void start("tab"))}
+            >
+              {session && !microphone ? "Stop sharing audio" : workspaceAudio ? "Share workspace audio" : "Share audio"}
+            </PaneAction>
+            <PaneAction
+              icon={Mic}
+              primary={remembered === "mic"}
+              title="Uses your microphone; nothing is recorded or uploaded. No sharing bar, lower fidelity."
+              onClick={() => (session || requesting ? stop() : void start("mic"))}
+            >
+              {session && microphone ? "Stop listening" : "Use microphone"}
+            </PaneAction>
+          </>
+        }
       >
         <div className="space-y-3 px-1.5 pb-1">
           <output className={problem ? "block break-words text-bad" : "block break-words text-foreground"}>
             {status}
           </output>
-          <fieldset className="flex gap-2 border-0 p-0">
-            <legend className="mb-1 text-xs">Show</legend>
-            <button
-              type="button"
-              className={toggle}
-              aria-pressed={settings.styles.spectrum}
-              onClick={() => setStyle("spectrum", !settings.styles.spectrum)}
-            >
+          <fieldset className="flex flex-wrap gap-x-4 gap-y-1 border-0 p-0 text-xs">
+            <legend className="mb-1">Show</legend>
+            <label className="flex min-h-8 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={settings.styles.spectrum}
+                onChange={(event) => setStyle("spectrum", event.target.checked)}
+              />
               <BarChart3 aria-hidden className="size-4" />
               Spectrum
-            </button>
-            <button
-              type="button"
-              className={toggle}
-              aria-pressed={settings.styles.aurora}
-              onClick={() => setStyle("aurora", !settings.styles.aurora)}
-            >
+            </label>
+            <label className="flex min-h-8 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={settings.styles.aurora}
+                onChange={(event) => setStyle("aurora", event.target.checked)}
+              />
               <Sparkles aria-hidden className="size-4" />
               Aurora
-            </button>
-          </fieldset>
-          <fieldset className="flex gap-2 border-0 p-0">
-            <legend className="mb-1 text-xs">Source for sound in a frame, such as YouTube</legend>
-            <Button
-              className={pick}
-              variant={remembered === "tab" ? "default" : "outline"}
-              title="Exact signal. The browser shows a sharing bar."
-              onClick={() => (session || requesting ? stop() : void start("tab"))}
-            >
-              <MonitorSpeaker aria-hidden className="size-4" />
-              {session && !microphone ? "Stop sharing audio" : workspaceAudio ? "Share workspace audio" : "Share audio"}
-            </Button>
-            <Button
-              className={pick}
-              variant={remembered === "mic" ? "default" : "outline"}
-              title="Uses your microphone; nothing is recorded or uploaded. No sharing bar, lower fidelity."
-              onClick={() => (session || requesting ? stop() : void start("mic"))}
-            >
-              <Mic aria-hidden className="size-4" />
-              {session && microphone ? "Stop listening" : "Use microphone"}
-            </Button>
+            </label>
           </fieldset>
           <p className="text-xs text-muted-foreground">
             Heinzel's own sound needs no permission. Sharing a tab shows your browser's sharing bar; the microphone
