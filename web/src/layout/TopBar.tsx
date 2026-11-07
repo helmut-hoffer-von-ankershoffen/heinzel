@@ -1,6 +1,6 @@
 // The centre pane's header: the screen's title with a menu on the left, quick actions on the right.
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
-import { Calendar, Check, ChevronDown, Link2, RefreshCw, SquareTerminal } from "lucide-react";
+import { Calendar, Check, ChevronDown, Globe, Link2, RefreshCw, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { matchPath, useLocation } from "react-router";
 import { usePlayful } from "@/api/queries";
@@ -45,6 +45,8 @@ type Props = {
   onToggleTerminal: () => void;
   calendarOpen: boolean;
   onOpenCalendar: () => void;
+  browserOpen?: boolean;
+  onToggleBrowser?: () => void;
   navigationMode?: boolean;
 };
 
@@ -55,6 +57,8 @@ export function TopBar({
   onToggleTerminal,
   calendarOpen,
   onOpenCalendar,
+  browserOpen = false,
+  onToggleBrowser,
   navigationMode = false,
 }: Props) {
   const { title, command } = useScreen();
@@ -135,6 +139,19 @@ export function TopBar({
         >
           <SquareTerminal aria-hidden />
         </Button>
+        {onToggleBrowser && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleBrowser}
+            aria-pressed={browserOpen}
+            aria-label={browserOpen ? t("browser.close") : t("browser.open")}
+            title={browserOpen ? t("browser.close") : t("browser.open")}
+            className={cn(browserOpen && "bg-accent text-accent-foreground")}
+          >
+            <Globe aria-hidden />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"
