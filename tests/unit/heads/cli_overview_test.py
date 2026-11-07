@@ -4,6 +4,7 @@ from io import StringIO
 from unittest.mock import Mock
 
 import pytest
+import typer
 from rich.console import Console
 
 from heinzel.heads.cli._overview import show
@@ -33,10 +34,15 @@ def test_interactive_bare_invocation_adds_status_to_banner_and_help(monkeypatch:
     show_screen = Mock()
     banner = Mock()
     start_check = Mock(return_value=None)
-    build = Mock(return_value=Mock())
+    app = typer.Typer(no_args_is_help=True)
+    app.callback()(lambda: None)
+    app.command("example")(lambda: None)
+    build = Mock(return_value=Mock(wraps=app))
     monkeypatch.setattr(cli, "boot", lambda: kernel)
     monkeypatch.setattr(cli, "console", Mock(is_terminal=True))
-    monkeypatch.setattr(cli.sys, "stdout", Mock(isatty=lambda: True))
+    output = StringIO()
+    monkeypatch.setattr(output, "isatty", lambda: True)
+    monkeypatch.setattr(cli.sys, "stdout", output)
     monkeypatch.setattr(cli, "start_check", start_check)
     monkeypatch.setattr(cli, "build", build)
     monkeypatch.setattr(cli, "show", show_screen)
@@ -46,13 +52,16 @@ def test_interactive_bare_invocation_adds_status_to_banner_and_help(monkeypatch:
     cli.main()
     show_screen.assert_called_once()
     start_check.assert_not_called()
+    assert "example" in output.getvalue()
     banner.assert_called_once_with(kernel)
     build.assert_called_once_with(kernel)
-    build.return_value.assert_called_once_with()
+    build.return_value.assert_called_once_with(args=["--help"], standalone_mode=False)
     build.reset_mock()
 
     monkeypatch.setattr(cli.sys, "argv", ["hz", "--help"])
-    cli.main()
+    with pytest.raises(SystemExit) as result:
+        cli.main()
+    assert result.value.code == 0
     start_check.assert_called_once_with(kernel)
     build.assert_called_once_with(kernel)
 

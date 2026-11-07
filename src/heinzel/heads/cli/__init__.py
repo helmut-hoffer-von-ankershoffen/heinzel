@@ -255,6 +255,8 @@ def main() -> None:
     if interactive:
         show(kernel, console)
         console.print()
+        build(kernel)(args=["--help"], standalone_mode=False)
+        return
     try:
         # Root discovery/help/version still build the complete tree. Click parses the same UI group,
         # including service subcommands and invalid options, for an invocation beginning with `ui`.
