@@ -53,6 +53,36 @@ def _refresh_after_exit(kernel: Kernel) -> None:
         time.sleep(0.25)
 
 
+def _print_location(output: Console, error: Console) -> Path:
+    """Print where the app really is, checked on disk, and why it is not in /Applications when it is not.
+
+    Returns:
+        The installed bundle.
+
+    Raises:
+        typer.Exit: If the installed app cannot be found where the receipt says.
+    """
+    from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
+        SYSTEM_APPLICATIONS,
+        desktop_location,
+    )
+
+    location = desktop_location()
+    if location is None:
+        error.print("The desktop app was installed but cannot be found. Run hz app doctor.")
+        raise typer.Exit(1)
+    output.print(f"Heinzel is installed at {location}.", markup=False)
+    if location.parent != SYSTEM_APPLICATIONS:
+        output.print(
+            f"It is in your own Applications folder because this user cannot write to {SYSTEM_APPLICATIONS} "
+            "without an administrator password; Finder, Launchpad and Spotlight find it there too. To have it in "
+            f"{SYSTEM_APPLICATIONS}, make this account an administrator and run hz app install again: it moves "
+            "the app for you.",
+            markup=False,
+        )
+    return location
+
+
 def _trust_note(*, keep_quarantine: bool) -> str:
     """Say honestly what was checked and how macOS will treat the first open."""
     opening = (
@@ -96,11 +126,10 @@ def _doctor(output: Console, error: Console, *, fix: bool, as_json: bool = False
 
 
 def _install(kernel: Kernel, output: Console, error: Console, *, keep_quarantine: bool = False) -> None:
-    from heinzel.heads._desktop_installation import bundle_path, install_desktop  # noqa: PLC0415 - native install only
+    from heinzel.heads._desktop_installation import install_desktop  # noqa: PLC0415 - native install only
 
     try:
-        target = bundle_path()
-        error.print(f"Installing Heinzelmännchen {__version__} into {target.parent} ...")
+        error.print(f"Installing Heinzelmännchen {__version__} ...")
         state = install_desktop(
             __version__, desktop_executable(kernel), reporter=PhaseReporter(error), keep_quarantine=keep_quarantine
         )
@@ -113,22 +142,20 @@ def _install(kernel: Kernel, output: Console, error: Console, *, keep_quarantine
     if state == "deferred":
         error.print("Quit the Heinzel desktop app, then run hz app install again.")
         raise typer.Exit(1)
-    if state == "current":
-        output.print(f"Heinzelmännchen {__version__} is already installed at {target}.")
-    else:
-        output.print(f"{state.capitalize()} Heinzelmännchen {__version__} at {target}")
+    # Where the app really is, checked on disk: /Applications, or the user's own folder and why.
+    location = _print_location(output, error)
+    if state != "current":
         output.print(_trust_note(keep_quarantine=keep_quarantine))
-    # The folder the installer reports, not a fixed one: ~/Applications today, /Applications once it installs there.
     output.print(
-        f"Next: open Heinzelmännchen from {target.parent} in Finder, or press Cmd+Space and type Heinzelmännchen."
+        f"Next: open Heinzelmännchen from {location.parent} in Finder, or press Cmd+Space and type Heinzelmännchen.",
+        markup=False,
     )
 
 
 def _uninstall(output: Console, error: Console) -> None:
-    from heinzel.heads._desktop_installation import bundle_path, uninstall_desktop  # noqa: PLC0415 - native only
+    from heinzel.heads._desktop_installation import uninstall_desktop  # noqa: PLC0415 - native removal only
 
     try:
-        target = bundle_path()
         removed = uninstall_desktop(reporter=PhaseReporter(error))
     except KeyboardInterrupt as exc:
         error.print("Cancelled. The app was left as it was.")
@@ -137,9 +164,10 @@ def _uninstall(output: Console, error: Console) -> None:
         error.print(message("Desktop uninstall failed.", str(exc)))
         raise typer.Exit(1) from exc
     output.print(
-        f"Removed the Heinzelmännchen desktop app from {target}; your profile is kept."
+        f"Removed the Heinzelmännchen desktop app from {removed}; your profile is kept."
         if removed
-        else f"The Heinzelmännchen desktop app is not installed (looked at {target})."
+        else "The Heinzelmännchen desktop app is not installed.",
+        markup=False,
     )
 
 

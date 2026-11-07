@@ -16,7 +16,6 @@ import pytest
 import typer
 from rich.console import Console
 
-from heinzel import __version__
 from heinzel.heads import _desktop_installation as desktop
 from heinzel.heads.cli import _app
 
@@ -73,6 +72,8 @@ def local_installation(monkeypatch, tmp_path):
         holding.rename(target)
 
     monkeypatch.setattr(desktop, "_check_platform", lambda: None)
+    # Never the real /Applications: these cases cover the per-user fallback; desktop_location_test the system one.
+    monkeypatch.setattr(desktop, "SYSTEM_APPLICATIONS", tmp_path / "no-system-Applications")
     if sys.platform != "darwin":
         monkeypatch.setattr(desktop, "_rename", rename)
     monkeypatch.setattr(desktop, "fetch_archive", fetch)
@@ -227,6 +228,7 @@ operation, boundary, executable, home = sys.argv[1:]
 desktop.fetch_archive = fetch
 desktop.extract_bundle = extract
 desktop._prepare_for_gatekeeper = lambda _bundle, **_options: None
+desktop.SYSTEM_APPLICATIONS = Path(home) / "no-system-Applications"
 desktop._in_use = lambda _: False
 rename = desktop._rename
 write_journal = desktop._write_journal
@@ -374,14 +376,14 @@ def test_install_and_uninstall_name_the_real_path_and_it_exists(monkeypatch, tmp
     bundle, _config, output, error, out, err = _cli(monkeypatch, local_installation, tmp_path)
     _app._install(None, output, error)
     assert bundle.is_dir()
-    assert f"Installed Heinzelmännchen {__version__} at {bundle}" in out.getvalue()
+    assert f"Heinzel is installed at {bundle}." in out.getvalue()
     assert f"open Heinzelmännchen from {bundle.parent} in Finder" in out.getvalue()
     assert f"Verified: {bundle} exists" in err.getvalue()
     assert "Verifying the installed app" in err.getvalue()
     assert str(tmp_path / "Applications") in err.getvalue()
 
     _app._install(None, output, error)
-    assert f"is already installed at {bundle}" in out.getvalue()
+    assert out.getvalue().count(f"Heinzel is installed at {bundle}.") == 2
 
     _app._uninstall(output, error)
     assert not bundle.exists()
