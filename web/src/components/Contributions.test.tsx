@@ -282,6 +282,11 @@ describe("Contributions", () => {
     const card = (await screen.findByText("2/3")).closest("li") as HTMLElement;
     expect(within(card).getByText("Zones at work now")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Weather" })).toBeInTheDocument();
+    const ask = within(card).getByRole("button", { name: "Ask about it" });
+    expect(ask).toHaveTextContent("");
+    expect(ask).toHaveAttribute("title", "Ask about it");
+    // Simple actions sit together at the card's top right, not on a row of their own.
+    expect(ask.parentElement).toHaveClass("absolute", "top-1.5", "right-1.5");
     await user.click(within(card).getByRole("button", { name: "Dismiss Zones at work now" }));
     expect(screen.queryByText("2/3")).not.toBeInTheDocument();
   });

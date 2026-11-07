@@ -165,6 +165,9 @@ including long provider labels. Exercise advanced settings as well as basic sett
 An expanded menu must not hide its own trigger or dismiss control. A pointer press inside the workspace stops its active
 programmatic scroll, so that reveal animation cannot carry the pressed control away before release.
 
+Scrollbars are styled once in `web/src/index.css`: thin, transparent track, thumb shown only on hover or focus inside the
+scroll container. Do not add per-component scrollbar styles or hide scrolling with `overflow: hidden`.
+
 `mobile-standards.test.ts` rejects layout-viewport heights and independent absolute dropdowns. The mobile browser
 sweep discovers static router paths and settings sections automatically; add interactive flows there when introducing a
 new panel, menu or control. Right-side content uses `WorkspacePanels` descriptors with stable ids: one selected
