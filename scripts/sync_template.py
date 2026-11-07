@@ -18,8 +18,18 @@ TEMPLATE = ROOT / "template"
 PYPROJECT_HEAD = ROOT / "scripts" / "template_pyproject_head.toml.tmpl"
 
 
-def _one_e2e_suite(text: str) -> str:
-    """Core separates supervised, CLI and browser E2E lanes; a plugin runs one complete suite."""
+def _plugin_test_suites(text: str) -> str:
+    """Remove Core's owning-unit mitigation and E2E partitions from plugin test commands."""
+    # This measured mitigation owns a Core-only module; plugin lanes keep their original complete command.
+    text = re.sub(
+        r"# Core Linux retirement mitigation:[^\n]*\n(?:[^\n]*\n)*?test-parallel:[^\n]*\n(?:\t[^\n]*\n)+",
+        "test-parallel: ## Unit and integration tests on 4 workers (3 on macOS), "
+        "stopping at the first failure; no coverage (the CI test matrix)\n"
+        '\t@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"\n'
+        "\t$(STEPS) \"tests=uv run pytest -m '($(TEST_LEVELS)) and not perf' "
+        '-n $(PARALLEL_WORKERS) -x -q --session-timeout=420 --durations=20"\n',
+        text,
+    )
     return re.sub(
         r"# Core E2E lanes[^\n]*\n(?:[^\n]*\n)*?test-e2e:[^\n]*\n(?:\t[^\n]*\n)+",
         "test-e2e: ## Run end-to-end tests (needs network), on 3 workers\n"
@@ -53,7 +63,7 @@ def makefile() -> str:
     text = re.sub(r"\nlinux-user-manager-proof:.*?\n(?:\t.*\n)+", "\n", text)
     text = text.replace(" linux-user-manager-proof", "")
     # Core README e2e builds its own candidate wheel; plugins have no core web/notifier assets to prepare.
-    text = _one_e2e_suite(
+    text = _plugin_test_suites(
         re.sub(r"\ne2e-prepare:.*?\n(?:\t.*\n)+", "\n", text)
         .replace(" test-e2e e2e-prepare ", " test-e2e ")
         .replace("test-e2e: e2e-prepare", "test-e2e:")

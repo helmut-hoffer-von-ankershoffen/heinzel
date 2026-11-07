@@ -46,6 +46,27 @@ def test_complete_inventory_is_config_local_and_does_not_reuse_another_config(in
         plugin._complete_e2e_inventory(config)
 
 
+def test_inventory_allows_only_the_exact_physical_serial_retirement_exclusion(inventory):
+    plugin, config, options, _patterns, node = inventory
+    relative = Path("tests/unit/modules/daemon_legacy_retirement_test.py")
+    retirement = config.invocation_params.dir / relative
+    retirement.parent.mkdir(parents=True)
+    retirement.write_text("# Unit file selected by the serial lane.\n")
+    options["ignore"] = [str(relative)]
+    assert plugin._complete_e2e_inventory(config) == (node,)
+    options["ignore"] = [str(relative), "tests/e2e/example_test.py"]
+    with pytest.raises(AssertionError, match="without --ignore"):
+        plugin._complete_e2e_inventory(config)
+    options["ignore"] = ["tests/unit/another_test.py"]
+    with pytest.raises(AssertionError, match="without --ignore"):
+        plugin._complete_e2e_inventory(config)
+    options["ignore"] = [str(relative)]
+    retirement.unlink()
+    retirement.symlink_to(config.invocation_params.dir / "tests/e2e/example_test.py")
+    with pytest.raises(AssertionError, match="without --ignore"):
+        plugin._complete_e2e_inventory(config)
+
+
 @pytest.mark.parametrize(
     ("arguments", "option", "value", "message"),
     [

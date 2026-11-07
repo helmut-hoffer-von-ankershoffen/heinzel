@@ -131,7 +131,13 @@ def _complete_e2e_inventory(config: pytest.Config) -> tuple[str, ...]:
     root = _ROOT / "tests/e2e"
     guidance = "Collect the whole tests/e2e directory with -m integration when focusing the partition guard"
     assert _argument_covers(config, root), guidance
-    assert not config.getoption("ignore"), "E2E inventory requires collection without --ignore"
+    if ignored := config.getoption("ignore"):
+        # The Linux Python lane excludes this physical unit file after running it serially.
+        retirement = _ROOT / "tests/unit/modules/daemon_legacy_retirement_test.py"
+        message = "E2E inventory requires collection without --ignore outside the serial retirement module"
+        assert [config.invocation_params.dir / path for path in ignored] == [retirement], message
+        assert retirement.is_file(), message
+        assert retirement.resolve() == retirement, message
     assert not config.getoption("ignore_glob"), "E2E inventory requires collection without --ignore-glob"
     assert not config.getoption("pyargs"), "E2E inventory requires directory-based collection"
     assert not config.getoption("deselect"), "E2E inventory requires collection without --deselect"
