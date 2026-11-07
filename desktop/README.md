@@ -37,6 +37,29 @@ delivery or audio capture. These restrictions are development limitations, not a
 `pnpm test:navigation` separately exercises real Electron page navigation and redirects, including an initial
 fragment-bearing redirect, against isolated temporary servers. Cross-origin destinations receive no request.
 
+## Installing on a Mac: `hz app install`
+
+`hz app install` downloads the macOS arm64 app from the official release, checks its sha256 against the release
+manifest and its build provenance, and installs `Heinzelmaennchen.app` into `~/Applications`. The app is not signed
+with an Apple Developer ID and not notarized by Apple. Every macOS build carries an ad-hoc code seal
+(`codesign --sign -`, no identity), because Apple silicon refuses to run arm64 code without a valid signature.
+
+What macOS does with it (macOS 15 to 27 on Apple silicon):
+
+- Valid seal, not quarantined: a double-click opens it. This is the default after `hz app install`, since Heinzel
+  downloaded and verified the bytes itself and macOS never quarantined them.
+- Valid seal, quarantined (`hz app install --keep-quarantine`, or a copy downloaded with a browser): macOS says it
+  cannot verify the app. Choose Done, open System Settings, Privacy & Security, and click Open Anyway next to
+  Heinzelmaennchen. Right-click, Open no longer skips this step on current macOS.
+- Broken seal and quarantined: macOS says the app "is damaged and can't be opened" and offers only Move to Trash.
+  Releases up to 0.9.26 shipped without a bundle seal and the installer quarantined them, which produced this.
+
+`hz app doctor` reports the signature, quarantine and Gatekeeper's `spctl --assess` verdict in plain words without
+launching anything (an unnotarized app is always "rejected" there; that is expected). `hz app doctor --fix`, with the
+app closed, reseals a broken installed bundle ad hoc and removes only the quarantine mark Heinzel
+itself added. Installs and automatic updates check the seal of the verified download before it reaches
+`~/Applications`, and reseal it locally if a release lacks one.
+
 ## Local unsigned packaging
 
 Node.js 24.19.0 and pnpm 12.15.0 are pinned by repository CI, which (`CI=true`) requires exactly that Node.js. Local
@@ -49,7 +72,7 @@ current host by default; CI builds Linux x64 on Ubuntu and macOS arm64 on macOS.
 ASAR; Linux emits an unpacked app directory and macOS emits an `.app` bundle. CI checks that both contain the expected
 ASAR payload.
 
-These are unsigned local/CI verification artifacts. They are not notarized, published, or suitable for a trusted
+These are unsigned (ad-hoc sealed on macOS) local/CI verification artifacts. They are not notarized, published, or suitable for a trusted
 production install. Gatekeeper may block macOS launches, and Linux desktop integration/package-manager installation
 is not included. There is no auto-update, login item, background service, OS permission request, installer/uninstaller,
 or Python runtime provisioning. The shell invokes `hz ui serve --port 0 --no-browser` without a shell, accepts only its
