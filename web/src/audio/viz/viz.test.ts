@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import { readPalette } from "../aurora";
 import { Analysis, bandRanges, VIZ_BANDS } from "./analysis";
+import { watchTheme } from "./color";
 import { drawRail, railLayout } from "./rail";
 import { DEFAULT_SETTINGS, parseSettings, styleOn } from "./settings";
+import { readVizTheme } from "./theme";
 
 const theme = { a: { r: 166, g: 64, b: 40 }, b: { r: 31, g: 116, b: 68 }, c: { r: 183, g: 132, b: 28 }, dark: false };
 
@@ -147,5 +150,32 @@ describe("settings", () => {
     expect(stored.styles).toEqual({ spectrum: true, aurora: false });
     expect(styleOn(stored, "aurora")).toBe(false);
     expect(styleOn(parseSettings(JSON.stringify({ master: false })), "spectrum")).toBe(false);
+  });
+});
+
+describe("theme colours", () => {
+  it("takes every hue from the live tokens and reports a theme switch", async () => {
+    const root = document.documentElement;
+    root.style.setProperty("--color-primary", "#123456");
+    root.style.setProperty("--color-ok", "rgb(1, 2, 3)");
+    root.style.setProperty("--color-warn", "#abcdef");
+    const changed = vi.fn();
+    const unwatch = watchTheme(changed);
+    try {
+      expect(readVizTheme()).toMatchObject({ a: { r: 18, g: 52, b: 86 }, b: { r: 1, g: 2, b: 3 } });
+      expect(readPalette()).toMatchObject({ low: { r: 18, g: 52, b: 86 }, high: { r: 171, g: 205, b: 239 } });
+      root.style.setProperty("--color-primary", "#654321");
+      root.classList.add("dark");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(changed).toHaveBeenCalled();
+      expect(readVizTheme()).toMatchObject({ a: { r: 101, g: 67, b: 33 }, dark: true });
+      // A token the browser cannot read falls back to another token, never to a written colour.
+      root.style.setProperty("--color-ok", "not-a-colour");
+      expect(readVizTheme().b).toEqual(readVizTheme().a);
+    } finally {
+      unwatch();
+      root.classList.remove("dark");
+      for (const name of ["--color-primary", "--color-ok", "--color-warn"]) root.style.removeProperty(name);
+    }
   });
 });
