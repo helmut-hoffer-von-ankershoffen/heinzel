@@ -29,7 +29,7 @@ KINDS = ("e2e", "pytest", "vitest")
 LANES = ("cli", "supervised", "web-1", "web-2")
 MAX_IDS = 10
 # A path, then optionally `::test_name` and a parametrize id; never a leading `-` (no option injection), never `..`.
-TOKEN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./]{0,199}(::[A-Za-z0-9_]{1,120}(\[[A-Za-z0-9_.,=+-]{1,80}\])?){0,2}")
+TOKEN = re.compile(r"\w[\w./]{0,199}(::\w{1,120}(\[[\w.,=+-]{1,80}\])?){0,2}", re.ASCII)
 SERIAL = ("-n", "0", "-q", "-p", "no:cacheprovider", "--session-timeout=900")  # one selection, no worker noise
 TIMEOUT = 1080  # under the job's 20 minutes, so the report and screenshots are still written and uploaded
 
@@ -117,8 +117,9 @@ def main(argv: list[str]) -> int:
     env = dict(os.environ, HZ_SCREENSHOTS=str((out / "screenshots").resolve()), VERBOSE="1")
     code = 0
     for command in commands:
+        # validated argument lists from plan(), never a shell
         try:
-            code = subprocess.run(command, cwd=ROOT, env=env, check=False, timeout=TIMEOUT).returncode  # noqa: S603 - validated argument lists, no shell
+            code = subprocess.run(command, cwd=ROOT, env=env, check=False, timeout=TIMEOUT).returncode  # noqa: S603
         except subprocess.TimeoutExpired:
             print(f"::error::timed out after {TIMEOUT} s: {' '.join(command)}")
             code = 124

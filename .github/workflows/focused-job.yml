@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Branch or commit to test
+        description: The branch this is dispatched on (`--ref`); the run tests that branch's head and nothing else
         required: true
         type: string
       os:
@@ -27,7 +27,7 @@ on:
 permissions: {}
 # One focused run per ref at a time; a second dispatch for the same ref waits instead of competing for runners.
 concurrency:
-  group: focused-job-${{ inputs.ref }}
+  group: focused-job-${{ github.ref }}
   cancel-in-progress: false
 defaults:
   run:
@@ -47,12 +47,13 @@ jobs:
       FOCUSED_SELECTOR: ${{ inputs.selector }}
       FOCUSED_OUT: focused-artifacts
     steps:
-      - name: Refuse a ref that is not a plain branch name or commit
+      # The checkout is the dispatched branch itself (github.ref), never a ref taken from an input, so no other code can
+      # reach this run or the cache scope of another branch; the input only states the intent and must match.
+      - name: Refuse a ref other than the branch this was dispatched on
         run: |
-          [[ "$FOCUSED_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ && "$FOCUSED_REF" != *..* ]] || { echo "::error::ref is not a branch or commit"; exit 2; }
+          [[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]] || { echo "::error::dispatch with --ref equal to the ref input"; exit 2; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref }}
           fetch-depth: 0 # the install-from-git end-to-end tests clone this repository
           persist-credentials: false
       - uses: ./.github/actions/setup-uv
@@ -61,7 +62,7 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: false # a dispatched diagnostic never writes the cache main and pull requests read
       - name: Validate the selection before installing anything
-        run: uv run --quiet --script scripts/focused_job.py --check
+        run: uv run --no-build --quiet --script scripts/focused_job.py --check
       - name: Reuse the browsers this lockfile's Playwright installs
         if: inputs.kind == 'e2e' && inputs.selector != 'cli'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -70,14 +71,11 @@ jobs:
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
-      - name: Use Ubuntu's primary archive for browser dependencies
-        if: inputs.os == 'ubuntu-24.04' && inputs.kind == 'e2e' && inputs.selector != 'cli'
-        run: sudo sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources
       - name: Install browser runtimes and host dependencies
         if: inputs.kind == 'e2e' && inputs.selector != 'cli'
         run: make test-browser-deps
       - name: Run the selection
-        run: uv run --quiet --script scripts/focused_job.py
+        run: uv run --no-build --quiet --script scripts/focused_job.py
         env:
           # read-only (contents: read), as in ci.yml's end-to-end job: the tests ask GitHub's API, which rate-limits
           # shared runners' unauthenticated requests; hz sends the token to api.github.com only (ADR 0031)
