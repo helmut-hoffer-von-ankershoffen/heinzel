@@ -2425,8 +2425,117 @@ $ hz system connector [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `access`: (expert) Show who a connector is signed in...
+* `cancel`: (expert) Stop a sign-in that is waiting...
+* `connect`: (expert) Sign a connector in through its...
+* `disconnect`: (expert) Sign a connector&#x27;s tool out...
+* `flow`: (expert) Show where a sign-in started here...
 * `list`: (expert) List connectors with their...
+* `open`: (expert) Open a sign-in&#x27;s consent page in...
 * `test`: (expert) Test a connector live: one cheap...
+
+#### `hz system connector access`
+
+(expert) Show who a connector is signed in as, which of its grants hold, and its latest sign-in here.
+
+**Usage**:
+
+```console
+$ hz system connector access [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The connector, as `hz system connector list` names it, e.g. `github`.  [required]
+
+**Options**:
+
+* `--live / --no-live`: Ask the vendor too: confirms the account and which grants hold.  [default: no-live]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system connector cancel`
+
+(expert) Stop a sign-in that is waiting for consent; nothing changes in your account.
+
+**Usage**:
+
+```console
+$ hz system connector cancel [OPTIONS] {flow}
+```
+
+**Arguments**:
+
+* `flow`: The sign-in, by the id `connect` returned.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system connector connect`
+
+(expert) Sign a connector in through its vendor&#x27;s own page, keeping what it holds and adding what you allow.
+
+**Usage**:
+
+```console
+$ hz system connector connect [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The connector, as `hz system connector list` names it, e.g. `github`.  [required]
+
+**Options**:
+
+* `--allow <str>`: A grant to add, such as `calendar-write`, as `access` lists them; repeat for each.
+* `--wait / --no-wait`: Wait here until it ends, opening the consent page in this machine&#x27;s browser; only where a person is told (the terminal). Elsewhere it returns at once: poll `flow`, open the page with `open`.  [default: wait]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system connector disconnect`
+
+(expert) Sign a connector&#x27;s tool out through its own command; reading and writing through it stop.
+
+**Usage**:
+
+```console
+$ hz system connector disconnect [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The connector, as `hz system connector list` names it, e.g. `github`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system connector flow`
+
+(expert) Show where a sign-in started here is: waiting for your consent, or how it ended.
+
+**Usage**:
+
+```console
+$ hz system connector flow [OPTIONS] {flow}
+```
+
+**Arguments**:
+
+* `flow`: The sign-in, by the id `connect` returned.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
 
 #### `hz system connector list`
 
@@ -2437,6 +2546,26 @@ $ hz system connector [OPTIONS] COMMAND [ARGS]...
 ```console
 $ hz system connector list [OPTIONS]
 ```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system connector open`
+
+(expert) Open a sign-in&#x27;s consent page in the browser of the machine hz runs on, where the vendor returns to.
+
+**Usage**:
+
+```console
+$ hz system connector open [OPTIONS] {flow}
+```
+
+**Arguments**:
+
+* `flow`: The sign-in, by the id `connect` returned.  [required]
 
 **Options**:
 
