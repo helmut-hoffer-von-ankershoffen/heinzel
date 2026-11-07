@@ -2,6 +2,7 @@
 
 import json
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -12,6 +13,7 @@ from packaging.version import Version
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from heinzel import Config, HeinzelError, Progress, Prompter, Settings, __version__
+from heinzel.heads import _start_messages as words
 from heinzel.heads import install
 from heinzel.heads._tool_install import inspection_guidance, resolve_target
 from heinzel.kernel import FILENAME, Installation
@@ -23,6 +25,82 @@ _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
 _JSON_OBJECTS = TypeAdapter(list[dict[str, JsonValue]])
 _STRINGS = TypeAdapter(list[str])
 _JSON_STRING = TypeAdapter(str)
+_START_FLAGS = ("--yes", "--no-app", "--ask")
+_APP_WORKSPACE = ["app", "open"]
+
+
+def _start_options(arguments: list[str]) -> tuple[list[str], set[str]]:
+    """Split the start flags (`--yes`, `--no-app`, `--ask`) from the arguments delegated to the managed CLI."""
+    return [item for item in arguments if item not in _START_FLAGS], {
+        item for item in arguments if item in _START_FLAGS
+    }
+
+
+def _supports_app() -> bool:
+    return sys.platform == "darwin" and platform.machine() == "arm64"
+
+
+def _start_state() -> Path:
+    return Config.load(Path.home()).settings(Settings, "hz").state_dir / "start.json"
+
+
+def _app_declined() -> bool:
+    try:
+        return _JSON_OBJECT.validate_json(_start_state().read_text(encoding="utf-8")).get("app") == "declined"
+    except (OSError, ValidationError):
+        return False
+
+
+def _remember_app_decline() -> None:
+    path = _start_state()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"app": "declined"}), encoding="utf-8")
+    except OSError:
+        return  # A decline that cannot be remembered only means the question returns.
+
+
+def _app_choice(arguments: list[str], flags: set[str], *, interactive: bool) -> bool:
+    """Whether to install and open the desktop app: asked first, only on Apple silicon, declines remembered."""
+    if arguments or "--no-app" in flags:
+        return False
+    if not _supports_app():
+        if interactive:
+            _human_console().print(words.APP_UNSUPPORTED, style="dim", markup=False)
+        return False  # Elsewhere the web app opens instead.
+    if "--yes" in flags or not interactive:
+        return "--yes" in flags
+    from heinzel.heads._desktop_installation import desktop_location  # noqa: PLC0415 - macOS app question only
+
+    if "--ask" not in flags and (desktop_location() is not None or _app_declined()):
+        return desktop_location() is not None  # Installed: refresh and open without asking; declined: stay quiet.
+    from heinzel.heads.cli._setup import ConsolePrompter  # noqa: PLC0415 - same explicit consent boundary
+
+    place = "Heinzelmännchen.app into /Applications, or ~/Applications without an administrator"
+    if ConsolePrompter(_human_console()).confirm(words.APP_QUESTION.format(location=place), default=True):
+        return True
+    _remember_app_decline()
+    return False
+
+
+def _install_app(executable: Path, environment: dict[str, str]) -> bool:
+    """Run the app installer with its own progress on the terminal, then require that macOS will open the app."""
+    command = [str(executable.parent / "python"), "-I", "-m", "heinzel", "app"]
+    try:
+        installed = subprocess.run(  # noqa: S603 - verified persistent interpreter and fixed operation
+            [*command, "install"], env=environment, check=False, timeout=900, stdout=sys.stderr
+        )
+        checked = subprocess.run(  # noqa: S603 - same interpreter, read-only check
+            [*command, "doctor", "--json"], env=environment, capture_output=True, text=True, check=False, timeout=120
+        )
+        opens = (
+            not installed.returncode and not checked.returncode and _json_object(checked.stdout).get("opens") is True
+        )
+    except (OSError, subprocess.SubprocessError, HeinzelError):
+        opens = False
+    if not opens:
+        sys.stderr.write(words.APP_DOWNLOAD_FAILED + "\n")
+    return opens
 
 
 def _json_object(raw: str) -> dict[str, JsonValue]:
@@ -306,7 +384,20 @@ def _notifier_result(result: object) -> None:
         )
 
 
-def _workspace_command(executable: Path, environment: dict[str, str], choices: list[tuple[str, ...]]) -> list[str]:
+def _has_command(children: list[JsonValue], group: str, command: str) -> bool:
+    for item in children:
+        subcommands = item.get("commands") if isinstance(item, dict) and item.get("command") == group else None
+        if isinstance(subcommands, list):
+            return any(isinstance(sub, dict) and sub.get("command") == command for sub in subcommands)
+    return False
+
+
+def _workspace_command(
+    executable: Path,
+    environment: dict[str, str],
+    choices: list[tuple[str, ...]],
+    app: bool = False,
+) -> list[str]:
     discovery = subprocess.run(  # noqa: S603 - read-only offline discovery in the verified managed interpreter
         [str(executable.parent / "python"), "-I", "-m", "heinzel", "--command-tree"],
         env=environment,
@@ -327,6 +418,8 @@ def _workspace_command(executable: Path, environment: dict[str, str], choices: l
     if not isinstance(children, list):
         msg = "The installed app returned invalid command discovery; inspect it before launching."
         raise HeinzelError(msg)
+    if app and _has_command(children, "hz app", "hz app open"):
+        return _APP_WORKSPACE
     ui = next((item for item in children if isinstance(item, dict) and item.get("command") == "hz ui"), None)
     subcommands = ui.get("commands") if ui is not None else None
     if not isinstance(subcommands, list):
@@ -549,31 +642,43 @@ def _ensure_app(*, interactive: bool) -> Path:
     return executable
 
 
+def _start(arguments: list[str], flags: set[str]) -> None:
+    interactive = _interactive_launch(arguments)
+    unattended = not arguments and "--yes" in flags
+    want_app = _app_choice(arguments, flags, interactive=interactive)
+    choices = [("system", "daemon"), ("ui",), ("system", "notify")] if unattended else _service_choices(arguments)
+    executable = _ensure_app(interactive=interactive)
+    if not arguments and not interactive and not unattended:
+        sys.stdout.write(words.NOT_STARTED.format(version=__version__, path=executable) + "\n")
+        return
+    environment = _app_environment(executable)
+    app_ready = want_app and _install_app(executable, environment)
+    workspace = arguments or _workspace_command(executable, environment, choices, app_ready)
+    if not arguments and not unattended:
+        _prepare_profile(executable, environment, workspace, interactive=interactive)
+    _install_services(executable, choices, environment)
+    if interactive and workspace == ["ui", "open"]:
+        _verify_setup(executable, environment)
+    if not arguments:
+        if unattended and not sys.stdout.isatty():
+            sys.stderr.write(words.RUNNING_BACKGROUND + "\n")
+            return  # An open from a script or ssh would pop up on someone's desk.
+        sys.stderr.write((words.RUNNING_APP if workspace == _APP_WORKSPACE else words.RUNNING_WEB) + "\n")
+    _launch_app(executable, workspace, environment)
+
+
 def main() -> None:
     """Install the verified standard app, offer separate interactive services, and open its workspace."""
-    arguments = sys.argv[1:]
+    arguments, flags = _start_options(sys.argv[1:])
     if any(argument in {"--help", "-h", "--version", "-V", "--command-tree"} for argument in arguments):
         from heinzel.heads.cli import main as cli_main  # noqa: PLC0415 - argument-driven CLI remains independent
 
         cli_main()
         return
     try:
-        interactive = _interactive_launch(arguments)
-        choices = _service_choices(arguments)
-        executable = _ensure_app(interactive=interactive)
-        environment = _app_environment(executable)
-        workspace = arguments or _workspace_command(executable, environment, choices)
-        if not arguments:
-            _prepare_profile(executable, environment, workspace, interactive=interactive)
-        _install_services(executable, choices, environment)
-        if interactive and workspace == ["ui", "open"]:
-            _verify_setup(executable, environment)
-        _launch_app(executable, workspace, environment)
+        _start(arguments, flags)
     except KeyboardInterrupt:
-        sys.stderr.write(
-            "Setup interrupted. Inspect service status and notifier setup before retrying; "
-            "completed choices are preserved.\n"
-        )
+        sys.stderr.write(words.INTERRUPTED + "\n")
         sys.exit(130)
     except HeinzelError as error:
         sys.stderr.write(f"Heinzel could not start. {error}\n")
