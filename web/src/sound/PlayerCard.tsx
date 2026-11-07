@@ -7,6 +7,7 @@
 import { ExternalLink, GripHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { clampToWindow } from "@/lib/placement";
 import { cn } from "@/lib/utils";
@@ -20,11 +21,9 @@ const HEADER = 44;
 const DRAG_PX = 6;
 const STEP = 16;
 
-const iconButton = "flex size-7 shrink-0 items-center justify-center rounded-lg text-icon hover:bg-accent";
+type Props = { title: string; watchUrl: string; host: string; children: ReactNode; actions?: ReactNode };
 
-type Props = { title: string; watchUrl: string; host: string; children: ReactNode };
-
-export function PlayerCard({ title, watchUrl, host, children }: Props) {
+export function PlayerCard({ title, watchUrl, host, children, actions }: Props) {
   const pref = useDockPref();
   const slot = useDockSlot();
   const docked = pref.docked && slot !== null;
@@ -181,7 +180,7 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
       className={cn(
         "viewport-popover fixed z-(--layer-media) overflow-y-auto bg-popover",
         docked
-          ? "border-t border-border" // the account row's hairline closes it below, so no band or double line follows
+          ? "shadow-[0_-1px_0_0_var(--color-border)]" // the account row's hairline closes it below, so no band or double line follows
           : "w-72 max-w-[calc(var(--hz-viewport-width,100vw)-1rem)] rounded-xl border border-border shadow-xl",
       )}
     >
@@ -199,67 +198,44 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
           <p className="truncate text-ui-sm font-medium">{title}</p>
           <p className="truncate text-xs text-muted-foreground">{t("sound.playsFrom", { host })}</p>
         </div>
-        {!docked && (
-          <button
-            type="button"
-            onKeyDown={key}
-            aria-label={t("sound.move")}
-            title={t("sound.move")}
-            className={iconButton}
-          >
-            <GripHorizontal aria-hidden className="size-3.5" />
-          </button>
-        )}
-        {docked ? (
-          <button
-            type="button"
-            onClick={() => {
-              const rect = card.current?.getBoundingClientRect();
-              if (!rect) return setDocked(false);
-              const at = clampToWindow(rect.right + 16, rect.top, size());
-              setFloating(at.x, at.y);
-            }}
-            aria-label={t("sound.popOut")}
-            title={t("sound.popOut")}
-            className={iconButton}
-          >
-            <PanelLeftOpen aria-hidden className="size-3.5" />
-          </button>
-        ) : (
-          slot && (
-            <button
-              type="button"
-              onClick={() => setDocked(true)}
-              aria-label={t("sound.dock")}
-              title={t("sound.dock")}
-              className={iconButton}
+        <div data-pane-chrome="" className="flex shrink-0 items-center gap-1.5">
+          {!docked && (
+            <PaneAction ghost icon={GripHorizontal} onKeyDown={key}>
+              {t("sound.move")}
+            </PaneAction>
+          )}
+          {docked ? (
+            <PaneAction
+              ghost
+              icon={PanelLeftOpen}
+              onClick={() => {
+                const rect = card.current?.getBoundingClientRect();
+                if (!rect) return setDocked(false);
+                const at = clampToWindow(rect.right + 16, rect.top, size());
+                setFloating(at.x, at.y);
+              }}
             >
-              <PanelLeftClose aria-hidden className="size-3.5" />
-            </button>
-          )
-        )}
-        <a
-          href={watchUrl}
-          onClick={stop}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={t("sound.openOn", { host })}
-          title={t("sound.openOn", { host })}
-          className={iconButton}
-        >
-          <ExternalLink aria-hidden className="size-3.5" />
-        </a>
-        <button
-          type="button"
-          onClick={stop}
-          aria-label={t("sound.close")}
-          title={t("sound.close")}
-          className={iconButton}
-        >
-          <X aria-hidden className="size-3.5" />
-        </button>
+              {t("sound.popOut")}
+            </PaneAction>
+          ) : (
+            slot && (
+              <PaneAction ghost icon={PanelLeftClose} onClick={() => setDocked(true)}>
+                {t("sound.dock")}
+              </PaneAction>
+            )
+          )}
+          <PaneAction ghost icon={X} onClick={stop}>
+            {t("sound.close")}
+          </PaneAction>
+        </div>
       </header>
       {children}
+      <PaneActions className="mx-3 mb-2">
+        <PaneAction icon={ExternalLink} href={watchUrl} onClick={stop}>
+          {t("sound.openOn", { host })}
+        </PaneAction>
+        {actions}
+      </PaneActions>
     </section>
   );
   return createPortal(body, document.body);

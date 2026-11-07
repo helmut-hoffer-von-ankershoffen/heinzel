@@ -90,7 +90,7 @@ describe("the mini-player docked in the sidebar", () => {
     const { card } = await play();
     const account = dockSlot().nextElementSibling as HTMLElement;
     // The card closes on the account row's hairline: no border of its own below, no margin or padding band between.
-    expect(card.className).toContain("border-t");
+    expect(card.className).toContain("shadow-[0_-1px_0_0_var(--color-border)]");
     expect(card.className).not.toMatch(/(^|\s)border-(y|b)(\s|$)/);
     expect(account.className).toContain("border-t-[0.5px]");
     expect(account.className).not.toMatch(/(^|\s)(mt-|mb-)/);

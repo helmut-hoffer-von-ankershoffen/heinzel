@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { Bell, CalendarDays, ChevronLeft, ChevronRight, Plug, Trash2, Video, Wrench, X } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
 import { token } from "@/api/token";
 import { OperationDialog } from "@/components/OperationDialog";
+import { PaneAction, PaneActions, PaneTitle } from "@/components/PaneActions";
 import { isLocalServer } from "@/lib/browser";
 import { requestOperation } from "@/lib/operationRun";
 import { CONNECTORS } from "./settingsSections";
@@ -81,17 +81,17 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
   return (
     <section aria-label="Calendar" className="flex h-full min-h-0 flex-col">
       <OperationDialog />
-      <header className="flex items-center justify-between gap-2 border-b border-border p-3">
-        <h2 className="font-semibold">Calendar</h2>
-        <button
-          type="button"
-          className="flex min-h-10 min-w-10 items-center justify-center rounded-lg hover:bg-accent"
-          onClick={onClose}
-          aria-label="Close calendar"
-          title="Close calendar"
+      <header className="flex items-center border-b border-border p-3">
+        <PaneTitle
+          as="h2"
+          chrome={
+            <PaneAction ghost icon={X} onClick={onClose}>
+              Close calendar
+            </PaneAction>
+          }
         >
-          <X aria-hidden className="size-4" />
-        </button>
+          Calendar
+        </PaneTitle>
       </header>
       <div className="border-b border-border p-3 text-sm" aria-live="polite">
         {reminders.isPending ? (
@@ -99,12 +99,7 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
         ) : reminders.isError ? (
           "Reminder status unavailable."
         ) : !reminders.data.enabled ? (
-          <>
-            Calendar reminders are off or unavailable.{" "}
-            <Link to="?settings=notifications" className="underline">
-              Notification settings
-            </Link>
-          </>
+          "Calendar reminders are off or unavailable."
         ) : reminders.data.service === "running" ? (
           "Calendar reminder worker is running."
         ) : reminders.data.service === "not installed" ? (
@@ -112,78 +107,9 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
         ) : (
           "Calendar reminders are enabled, but the worker's running state is unavailable."
         )}
-        {reminders.data && (
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {isLocalServer() ? (
-              <>
-                <button
-                  type="button"
-                  className="min-h-10 px-2 underline"
-                  onClick={() =>
-                    requestOperation({
-                      method: "POST",
-                      path: `/org/calendar-reminders-${reminders.data.service === "running" ? "uninstall" : "install"}`,
-                      query: { confirm: true },
-                      body: null,
-                      read_only: false,
-                      command: "",
-                      summary:
-                        reminders.data.service === "running"
-                          ? "Remove this profile's calendar reminder worker from login?"
-                          : "Install a calendar reminder worker for this profile at every login? Calendar reads require separate consent in Notification settings.",
-                    })
-                  }
-                >
-                  {reminders.data.service === "running" ? "Remove reminder worker" : "Set up reminder worker"}
-                </button>
-                {reminders.data.service !== "running" && reminders.data.service !== "not installed" && (
-                  <button
-                    type="button"
-                    className="min-h-10 px-2 underline"
-                    onClick={() =>
-                      requestOperation({
-                        method: "POST",
-                        path: "/org/calendar-reminders-uninstall",
-                        query: { confirm: true },
-                        body: null,
-                        read_only: false,
-                        command: "",
-                        summary: "Remove this profile's calendar reminder worker from login?",
-                      })
-                    }
-                  >
-                    Remove reminder worker
-                  </button>
-                )}
-              </>
-            ) : (
-              <p>Open Calendar on this computer to set up its reminder worker.</p>
-            )}
-          </div>
+        {reminders.data && !isLocalServer() && (
+          <p className="mt-2">Open Calendar on this computer to set up its reminder worker.</p>
         )}
-      </div>
-      <div className="flex items-center justify-between gap-2 border-b border-border p-2">
-        <button
-          type="button"
-          className="min-h-10 px-2"
-          aria-label="Previous week"
-          disabled={offset <= -52}
-          onClick={() => setOffset(offset - 1)}
-        >
-          ←
-        </button>
-        <button type="button" className="min-h-10 px-2" onClick={() => setOffset(0)}>
-          Today
-        </button>
-        <button
-          type="button"
-          className="min-h-10 px-2"
-          aria-label="Next week"
-          disabled={offset >= 52}
-          onClick={() => setOffset(offset + 1)}
-        >
-          →
-        </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3" aria-live="polite">
         {week.isPending ? (
@@ -193,11 +119,6 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
         ) : week.data.problem ? (
           <div>
             <p>{week.data.problem}</p>
-            {week.data.fix && (
-              <Link className="underline" to={`?settings=${CONNECTORS}`}>
-                Connect a calendar…
-              </Link>
-            )}
           </div>
         ) : (
           <>
@@ -230,14 +151,9 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
                         ` – ${new Date(event.end).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", hourCycle: "h23", timeZone: week.data.timezone ?? undefined })}`}
                     </p>
                     {conferenceLink(event.conference_url) && (
-                      <a
-                        href={conferenceLink(event.conference_url) ?? undefined}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        className="inline-flex min-h-10 items-center text-primary underline"
-                      >
+                      <PaneAction ghost icon={Video} href={conferenceLink(event.conference_url) ?? undefined}>
                         Join meeting
-                      </a>
+                      </PaneAction>
                     )}
                   </li>
                 ))}
@@ -246,6 +162,73 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
           </>
         )}
       </div>
+      <PaneActions className="mx-3 mb-2">
+        <PaneAction key="today" icon={CalendarDays} onClick={() => setOffset(0)}>
+          Today
+        </PaneAction>
+        <PaneAction key="previous" icon={ChevronLeft} disabled={offset <= -52} onClick={() => setOffset(offset - 1)}>
+          Previous week
+        </PaneAction>
+        <PaneAction key="next" icon={ChevronRight} disabled={offset >= 52} onClick={() => setOffset(offset + 1)}>
+          Next week
+        </PaneAction>
+        {reminders.data && !reminders.data.enabled && (
+          <PaneAction key="notifications" icon={Bell} to="?settings=notifications">
+            Notification settings
+          </PaneAction>
+        )}
+        {week.data?.problem && week.data.fix && (
+          <PaneAction key="connect" icon={Plug} to={`?settings=${CONNECTORS}`}>
+            Connect a calendar…
+          </PaneAction>
+        )}
+        {reminders.data && isLocalServer() && (
+          <PaneAction
+            key="worker"
+            icon={reminders.data.service === "running" ? Trash2 : Wrench}
+            destructive={reminders.data.service === "running"}
+            onClick={() =>
+              requestOperation({
+                method: "POST",
+                path: `/org/calendar-reminders-${reminders.data.service === "running" ? "uninstall" : "install"}`,
+                query: { confirm: true },
+                body: null,
+                read_only: false,
+                command: "",
+                summary:
+                  reminders.data.service === "running"
+                    ? "Remove this profile's calendar reminder worker from login?"
+                    : "Install a calendar reminder worker for this profile at every login? Calendar reads require separate consent in Notification settings.",
+              })
+            }
+          >
+            {reminders.data.service === "running" ? "Remove reminder worker" : "Set up reminder worker"}
+          </PaneAction>
+        )}
+        {reminders.data &&
+          isLocalServer() &&
+          reminders.data.service !== "running" &&
+          reminders.data.service !== "not installed" && (
+            <PaneAction
+              key="remove"
+              icon={Trash2}
+              destructive
+              onClick={() =>
+                requestOperation({
+                  method: "POST",
+                  path: "/org/calendar-reminders-uninstall",
+                  query: { confirm: true },
+                  body: null,
+                  read_only: false,
+                  command: "",
+                  summary: "Remove this profile's calendar reminder worker from login?",
+                })
+              }
+            >
+              Remove reminder worker
+            </PaneAction>
+          )}
+      </PaneActions>
     </section>
   );
 }

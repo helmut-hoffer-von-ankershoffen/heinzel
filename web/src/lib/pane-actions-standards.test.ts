@@ -29,12 +29,8 @@ const underlined = (tag: string) => /className=(?:"[^"]*|\{[^}]*)\bunderline\b/.
 // only shrinks: a fixed file must leave it, and no new file may join it. Inline prose links take `data-prose-link`.
 const PENDING: Record<string, number> = {
   "../chat/DurableSession.tsx": 2,
-  "../components/Contributions.tsx": 1,
-  "../layout/CalendarPanel.tsx": 5,
   "../layout/PluginsSection.tsx": 1,
-  "../notifications/TodayNotifications.tsx": 1,
   "../pages/Contracts.tsx": 1,
-  "../pages/Heinzelmaennchen.tsx": 1,
   "../pages/Inventory.tsx": 1,
   "../pages/PersonalArtifacts.tsx": 1,
   "../pages/Profile.tsx": 2,
@@ -111,27 +107,19 @@ it("has no withText: the first action of a row leads with words, the rest are ic
 const BORDER_T: Record<string, number> = {
   "../chat/ContractHistory.tsx": 1,
   "../chat/DurableSession.tsx": 1,
-  "../chat/ModelPicker.tsx": 2,
   "../heinzel/PersonalHeinzels.tsx": 1,
-  "../layout/ChatPanel.tsx": 1,
   "../layout/DaemonSettings.tsx": 1,
-  "../layout/NotificationCenter.tsx": 1,
   "../layout/Shell.tsx": 1,
   "../layout/ThemePreviews.tsx": 1,
   "../onboarding/OnboardingWizard.tsx": 1,
   "../pages/Doctor.tsx": 1,
-  "../pages/Heinzelmaennchen.tsx": 1,
   "../pages/Organisation.tsx": 1,
-  "../sound/PlayerCard.tsx": 1,
-  "../sound/SoundControls.tsx": 1,
-  "../updates/AutoUpdateToggle.tsx": 1,
 };
 // Files with a right-aligned button row (`justify-end`) outside PaneActions; only shrinks (PR b).
 const JUSTIFY_END: Record<string, number> = {
   "../components/CommandDialog.tsx": 1,
   "../components/OperationDialog.tsx": 4,
   "../layout/PluginsSection.tsx": 1,
-  "../sound/SoundControls.tsx": 1,
 };
 // Icon buttons (`<Button size="icon"`) without both an aria-label and a title; only shrinks.
 const UNNAMED_ICONS: Record<string, number> = {};
@@ -139,15 +127,13 @@ const UNNAMED_ICONS: Record<string, number> = {};
 const RAW: Record<string, number> = {
   "../chat/Conversation.tsx": 1,
   "../chat/MessageInfo.tsx": 1,
-  "../chat/ModelPicker.tsx": 4,
+  "../chat/ModelPicker.tsx": 3,
   "../chat/SessionSwitcher.tsx": 4,
   "../components/ContributionToggle.tsx": 1,
   "../components/Contributions.tsx": 4,
   "../components/FooterItem.tsx": 1,
   "../components/FooterLayout.tsx": 1,
-  "../components/Prose.tsx": 2,
   "../layout/AiAccessSetting.tsx": 1,
-  "../layout/CalendarPanel.tsx": 6,
   "../layout/ConnectorsSection.tsx": 2,
   "../layout/InfoDialog.tsx": 3,
   "../layout/NotificationCenter.tsx": 3,
@@ -162,9 +148,7 @@ const RAW: Record<string, number> = {
   "../layout/TopBar.tsx": 2,
   "../layout/WorkspacePanels.tsx": 1,
   "../onboarding/OnboardingWizard.tsx": 2,
-  "../sound/PlayerCard.tsx": 4,
-  "../sound/SoundControls.tsx": 4,
-  "../sound/StreamPlayer.tsx": 3,
+  "../sound/SoundControls.tsx": 2,
 };
 
 it("keeps every action on the shared components: no new hand-drawn divider, end row, unnamed icon or raw button", () => {
