@@ -112,8 +112,8 @@ def test_complete_genuine_full_candidate_preserves_event_source_and_wall_clock(e
     assert result["workflow_wall_seconds"] == 900
     assert result["event"] == event
     assert value == original
-    assert len(value["jobs"]) == 64
-    assert len([j for j in value["jobs"] if j["name"].startswith("Test (")]) == 12
+    assert len(value["jobs"]) == 68
+    assert len([j for j in value["jobs"] if j["name"].startswith("Test (")]) == 16
     assert len([j for j in value["jobs"] if j["name"].startswith("End-to-end ")]) == 8
 
 
@@ -274,7 +274,7 @@ def test_verification_uses_unique_same_run_artifact_reviewed_sources_and_termina
         calls.append(path)
         mapping = {
             f"actions/runs/{RUN}": data["run"],
-            f"actions/runs/{RUN}/attempts/1/jobs?per_page=100&page=1": {"total_count": 64, "jobs": data["jobs"]},
+            f"actions/runs/{RUN}/attempts/1/jobs?per_page=100&page=1": {"total_count": 68, "jobs": data["jobs"]},
             f"actions/runs/{RUN}/artifacts?per_page=100": {
                 "total_count": 1,
                 "artifacts": [
@@ -311,7 +311,7 @@ def test_verification_uses_unique_same_run_artifact_reviewed_sources_and_termina
             candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
         return
     result = candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
-    assert result["job_count"] == 64
+    assert result["job_count"] == 68
     assert calls.count(f"actions/runs/{RUN}") == 2
 
 
