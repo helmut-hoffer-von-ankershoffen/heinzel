@@ -289,6 +289,12 @@ class RunOperation(_Data):
         max_length=32,
         description="Fixed JSON arguments by parameter name; structured values require a private mutation.",
     )
+    inputs: tuple[Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_]*$")], ...] = Field(
+        default=(),
+        max_length=8,
+        description="Parameters the person fills in, in a view's form, e.g. `text`; only for a private mutation, "
+        "and still confirmed before it runs.",
+    )
     call: OperationCall | None = Field(
         default=None, description="Filled in by `system.ui`; whatever a plugin sets here is replaced."
     )

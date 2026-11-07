@@ -3,7 +3,7 @@
 import inspect
 import json
 import shlex
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -414,17 +414,8 @@ class UiService:
             msg = f"its operation `{effect.operation}` isn't exposed on the web head"
             raise Unusable(msg)
         parameters = {p.name: p for p in public_parameters(self._kernel, operation)}
-        if unknown := sorted(set(effect.arguments) - set(parameters)):
-            msg = f"`{effect.operation}` takes no argument {', '.join(unknown)}"
-            raise Unusable(msg)
-        if missing := sorted(
-            name
-            for name, p in parameters.items()
-            if p.default is inspect.Parameter.empty and name not in effect.arguments
-        ):
-            msg = f"`{effect.operation}` needs {', '.join(missing)}"
-            raise Unusable(msg)
         body = operation.private and not operation.read_only
+        _check_names(effect, parameters, body=body)
         arguments: dict[str, JsonValue] = {}
         query: dict[str, str | bool | int | float] = {}
         for name, value in effect.arguments.items():
@@ -561,3 +552,24 @@ def _map_effects[T: BaseModel](
         items = [i.model_copy(update={"effect": resolve(i.effect)}) if i.effect else i for i in value.items]
         return value.model_copy(update={"items": items})
     return value
+
+
+def _check_names(effect: RunOperation, parameters: Mapping[str, inspect.Parameter], *, body: bool) -> None:
+    """Fixed arguments and typed inputs name the operation's parameters once each, and cover the required ones.
+
+    Raises:
+        Unusable: If a name is unknown, typed into an operation without a JSON body, both fixed and typed, or missing.
+    """
+    if unknown := sorted((set(effect.arguments) | set(effect.inputs)) - set(parameters)):
+        msg = f"`{effect.operation}` takes no argument {', '.join(unknown)}"
+        raise Unusable(msg)
+    if effect.inputs and not body:
+        msg = f"`{effect.operation}` takes what a person types only as a private mutation with a JSON body"
+        raise Unusable(msg)
+    if both := sorted(set(effect.arguments) & set(effect.inputs)):
+        msg = f"`{effect.operation}` argument {', '.join(both)} is both fixed and typed"
+        raise Unusable(msg)
+    given = set(effect.arguments) | set(effect.inputs)
+    if missing := sorted(n for n, p in parameters.items() if p.default is inspect.Parameter.empty and n not in given):
+        msg = f"`{effect.operation}` needs {', '.join(missing)}"
+        raise Unusable(msg)
