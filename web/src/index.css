@@ -456,9 +456,6 @@ body {
   --workspace-composer-padding: 0.5rem;
   --workspace-input-height: 2.25rem;
   --workspace-chat-header-height: 2rem;
-  --workspace-cost-margin: 0px;
-  --workspace-cost-font: 10px;
-  --workspace-cost-leading: 14px;
 }
 @media (max-height: 400px) {
   .workspace-panel {
@@ -466,9 +463,6 @@ body {
     --workspace-composer-padding: 0.5rem;
     --workspace-input-height: 2.25rem;
     --workspace-chat-header-height: 2rem;
-    --workspace-cost-margin: 0px;
-    --workspace-cost-font: 10px;
-    --workspace-cost-leading: 14px;
   }
   .workspace-panel[data-placement="below"]:not([data-active="page"]) {
     top: 0;
@@ -490,9 +484,4 @@ body {
 }
 .chat-panel-composer textarea {
   height: var(--workspace-input-height, auto);
-}
-.chat-panel-costs {
-  margin-top: var(--workspace-cost-margin, 0.375rem);
-  font-size: var(--workspace-cost-font, 0.75rem);
-  line-height: var(--workspace-cost-leading, 1rem);
 }
