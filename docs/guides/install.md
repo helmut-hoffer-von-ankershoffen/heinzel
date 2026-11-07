@@ -30,7 +30,12 @@ wget -qO- https://heinzel.team/install.sh | sh
 ```
 
 The first run picks the newest standard release, verifies its hashes, installs the default plugins and opens
-the workspace. Later runs open the installed app. On Linux you need a systemd user manager in your session.
+the workspace. Later interactive runs check the latest standard release and update an older verified app when
+the managed installation can safely change. If the release server cannot be reached, the launcher reports the
+installed version before opening it. The launcher also reports when it defers a newer release because the
+owned daemon is loaded or applying the standard profile would replace newer or explicitly selected plugins.
+
+On Linux you need a systemd user manager in your session.
 Tailscale sharing is opt-in; installing its plugin does not make your workspace public.
 
 First interactive setup asks for missing name, team name and required profile details through normal configuration.
