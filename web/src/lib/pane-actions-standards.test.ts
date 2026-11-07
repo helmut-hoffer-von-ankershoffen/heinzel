@@ -142,10 +142,6 @@ const EDGES: Record<string, { count: number; reason: string }> = {
     count: 1,
     reason: "PENDING #606: its builder turns this into PaneActions, hr or divide-y, or states the card edge here",
   },
-  "../sound/PlayerHelp.tsx": {
-    count: 1,
-    reason: "PENDING: the on-video help overlay (#599) draws its own action divider; follow-up moves it to PaneActions",
-  },
   "../sound/PlayerCard.tsx": { count: 1, reason: "the docked player card's top edge above the account row" },
 };
 
