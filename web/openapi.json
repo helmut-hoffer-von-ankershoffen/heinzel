@@ -2616,6 +2616,195 @@
         "title": "ChannelTarget",
         "type": "object"
       },
+      "ChartPoint": {
+        "additionalProperties": false,
+        "description": "One point of a chart: where on the axis, and its value.",
+        "properties": {
+          "at": {
+            "description": "Where on the axis: an ISO 8601 timestamp such as `2026-11-07T14:00` or a plain label.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "At",
+            "type": "string"
+          },
+          "value": {
+            "description": "The value at that point, in the chart's unit.",
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "at",
+          "value"
+        ],
+        "title": "ChartPoint",
+        "type": "object"
+      },
+      "ChartRange": {
+        "additionalProperties": false,
+        "description": "A band across the chart, e.g. the day's lowest and highest value.",
+        "properties": {
+          "high": {
+            "description": "Top of the band, at least `low`.",
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "description": "Bottom of the band, in the chart's unit.",
+            "title": "Low",
+            "type": "number"
+          }
+        },
+        "required": [
+          "low",
+          "high"
+        ],
+        "title": "ChartRange",
+        "type": "object"
+      },
+      "ChartWidget": {
+        "additionalProperties": false,
+        "description": "A line over time, with optional bars, a range band and a now marker; `summary` is its text alternative.",
+        "properties": {
+          "bars": {
+            "anyOf": [
+              {
+                "items": {
+                  "maximum": 1.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A second series drawn as bars from 0 to 1, one per point, e.g. chance of rain.",
+            "title": "Bars"
+          },
+          "bars_label": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the bars are, e.g. `Rain chance`.",
+            "title": "Bars Label"
+          },
+          "kind": {
+            "const": "chart",
+            "default": "chart",
+            "description": "Chart.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "now": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The `at` of the point to mark as now.",
+            "title": "Now"
+          },
+          "range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChartRange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A band across the chart, e.g. the day's low and high."
+          },
+          "series": {
+            "description": "The line, left to right.",
+            "items": {
+              "$ref": "#/components/schemas/ChartPoint"
+            },
+            "maxItems": 48,
+            "minItems": 2,
+            "title": "Series",
+            "type": "array"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "medium",
+                  "wide"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Room in the Today grid; each kind has a default.",
+            "title": "Size"
+          },
+          "summary": {
+            "description": "The chart in words for people who can't see it, e.g. `Warms to 18° by 15:00`.",
+            "maxLength": 280,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "description": "What the chart shows, e.g. `Temperature today`; also its accessible name.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How the line reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The unit of `series` values, e.g. `°C`.",
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "title",
+          "summary",
+          "series"
+        ],
+        "title": "ChartWidget",
+        "type": "object"
+      },
       "ChatAction": {
         "description": "An operation the agent proposed; it runs only when the person confirms it, with exactly these arguments.",
         "properties": {
@@ -19027,6 +19216,7 @@
                 "discriminator": {
                   "mapping": {
                     "card": "#/components/schemas/CardWidget",
+                    "chart": "#/components/schemas/ChartWidget",
                     "graphic": "#/components/schemas/GraphicWidget",
                     "list": "#/components/schemas/ListWidget",
                     "metric": "#/components/schemas/MetricWidget",
@@ -19049,6 +19239,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/GraphicWidget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ChartWidget"
                   }
                 ]
               },
