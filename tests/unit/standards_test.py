@@ -70,6 +70,25 @@ def test_every_subprocess_call_has_a_timeout(path):
     assert calls_without_timeout(python_source(path)) == [], f"add timeout= or `# {EXEMPT}`"
 
 
+SYSTEM_BINARY = re.compile(r"""\bcopy(?:file|2|)\(\s*["'](?:/usr)?/s?bin/""")
+"""A test that copies a macOS system binary to run it: launch constraints kill the copy and macOS shows a "damaged
+app" dialog on the person's screen. Link to it instead; the binary then runs where it lives."""
+
+
+def test_finds_copied_system_binaries():
+    assert SYSTEM_BINARY.search('shutil.copyfile("/bin/sleep", target)')
+    assert SYSTEM_BINARY.search("shutil.copy2('/usr/bin/true', target)")
+    assert not SYSTEM_BINARY.search('target.symlink_to("/bin/sleep")')
+
+
+@pytest.mark.parametrize("path", sorted(REPO.glob("tests/**/*.py")), ids=lambda p: str(p.relative_to(REPO)))
+def test_tests_never_copy_a_system_binary(path):
+    """Copies of platform binaries are killed by macOS with a dialog on the desktop; link to the original."""
+    if path == Path(__file__).resolve():
+        return
+    assert not SYSTEM_BINARY.search(path.read_text(encoding="utf-8")), "link to the system binary instead of copying it"
+
+
 def repository_files() -> list[str]:
     """Paths of the files git tracks or would track (not ignored ones), relative to the repository."""
     listed = subprocess.run(

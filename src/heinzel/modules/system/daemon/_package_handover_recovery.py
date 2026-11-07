@@ -22,6 +22,7 @@ from heinzel.kernel import (
     installation_mutation_paths,
     private_lock,
 )
+from heinzel.modules.system.daemon._abandoned_mutation import parse_marker
 from heinzel.modules.system.daemon._recovery_files import RecoveryFile, path_absent, recovery_file, rename_exclusive
 from heinzel.modules.system.daemon._service import handover_absolute_path, verified_handover_file
 
@@ -168,13 +169,12 @@ class PackageHandoverRecovery:
         marker = recovery_file(daemon / "install.json")
         heartbeat = recovery_file(daemon / "heartbeat.json")
         request = self._request(request_file)
-        mutation_data = _object(mutation)
+        owner = parse_marker(mutation.content)
         marker_data = _object(marker)
         heartbeat_data = _object(heartbeat)
         if (
-            set(mutation_data) != {"token"}
-            or not _is_digest(mutation_data["token"])
-            or mutation_data["token"] == request["request_id"]
+            owner is None
+            or owner.token == request["request_id"]
             or checkpoint.content != (generation + "\n").encode()
             or not max(marker.modified_ns, heartbeat.modified_ns)
             < mutation.modified_ns

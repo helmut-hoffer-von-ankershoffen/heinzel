@@ -37,7 +37,7 @@ type Props = HeinzelLook & {
 };
 
 /** Runs of shapes of one movable part share a group, so a cap tilts or a hand waves as one. */
-function Parts({ shapes }: { shapes: Shape[] }) {
+export function Parts({ shapes }: { shapes: Shape[] }) {
   const runs: Shape[][] = [];
   for (const shape of shapes) {
     const last = runs[runs.length - 1];
