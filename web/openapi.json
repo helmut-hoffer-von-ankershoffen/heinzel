@@ -1682,6 +1682,48 @@
         "title": "CapabilityReport",
         "type": "object"
       },
+      "CapabilityState": {
+        "additionalProperties": false,
+        "description": "A capability's reported state, read through a read-only operation of the module that owns it (ADR 0094).\n\nThe core never imports a plugin: it finds the operation among the kernel's lets by name and compares one top-level\nfield of its result. An operation that is missing, unavailable, not read-only or failing never resolves a notice.",
+        "properties": {
+          "equals": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "description": "The value that field must have for the condition to hold.",
+            "title": "Equals"
+          },
+          "field": {
+            "description": "A top-level field of its result, e.g. `loaded`.",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Field",
+            "type": "string"
+          },
+          "operation": {
+            "description": "`<module>:<operation>`, read-only, e.g. `system.daemon:status`.",
+            "maxLength": 120,
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*:[a-z][a-z0-9_-]*$",
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "field",
+          "equals"
+        ],
+        "title": "CapabilityState",
+        "type": "object"
+      },
       "CapabilityUse": {
         "description": "One row of the matrix: who needs which capability in which modes, through which adapter and hosts.",
         "properties": {
@@ -9384,6 +9426,42 @@
             "title": "Popup",
             "type": "boolean"
           },
+          "resolve_when": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResolveWhen"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it resolves by itself and disappears; none: it stays until it ages out."
+          },
+          "resolved": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it disappeared, in words; none while it is shown.",
+            "title": "Resolved"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When its condition held and it disappeared; none while it is shown.",
+            "title": "Resolved At"
+          },
           "route": {
             "description": "Where the web app shows it, a path such as `/doctor`.",
             "title": "Route",
@@ -12621,6 +12699,38 @@
           "problem"
         ],
         "title": "RequirementStatus",
+        "type": "object"
+      },
+      "ResolveWhen": {
+        "additionalProperties": false,
+        "description": "When a notice stops deserving attention; every condition given must hold.\n\nThe service evaluates it, never a head, so a stale browser or process can't keep a notice alive.",
+        "properties": {
+          "capability": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapabilityState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Holds once a capability reports a state."
+          },
+          "installed_version_at_least": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]+(\\.[0-9]+){1,3}([.-]?(a|b|rc|dev|post)[0-9]*)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Holds once the hz installed on this machine (on disk, not the running process) is at least this.",
+            "title": "Installed Version At Least"
+          }
+        },
+        "title": "ResolveWhen",
         "type": "object"
       },
       "Restart": {
@@ -26581,6 +26691,18 @@
               ],
               "description": "Only notices older than this id, for the next page.",
               "title": "Before"
+            }
+          },
+          {
+            "description": "Include notices that resolved by themselves and disappeared, for their history.",
+            "in": "query",
+            "name": "resolved",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include notices that resolved by themselves and disappeared, for their history.",
+              "title": "Resolved",
+              "type": "boolean"
             }
           }
         ],
