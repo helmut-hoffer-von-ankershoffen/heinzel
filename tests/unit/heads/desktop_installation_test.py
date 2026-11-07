@@ -356,8 +356,8 @@ def _cli(monkeypatch, local_installation, tmp_path):
     return (
         bundle,
         config,
-        Console(file=out, width=200, force_terminal=False),
-        Console(file=err, width=200, force_terminal=False),
+        Console(file=out, width=1000, force_terminal=False),
+        Console(file=err, width=1000, force_terminal=False),
         out,
         err,
     )
