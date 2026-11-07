@@ -1103,7 +1103,7 @@ def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full, pyt
         for python in pythons
         for level in ("unit", "integration")
     ]
-    recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-parallel: ##", 1)[1].split("\n\n", 1)[0]
+    recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-parallel:", 1)[1].split("\n\n", 1)[0]
     assert "-m '($(TEST_LEVELS)) and not perf'" in recipe
     assert "--session-timeout=420" in recipe  # each shard has the cap the whole suite had
     assert {"changes", "notifier", "build"} <= set(jobs["ci-ok"]["needs"])
