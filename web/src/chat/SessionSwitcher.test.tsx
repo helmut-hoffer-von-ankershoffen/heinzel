@@ -5,8 +5,8 @@ import { Providers, queryClient } from "@/App";
 import { answered, at, base, empty, frame, mockWithHeldStream } from "@/test/chat";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { COST_NEAR_RATIO, Costs, costState } from "./Conversation";
-import type { Chat } from "./useChat";
 import { ago, switcherGroups } from "./SessionSwitcher";
+import type { Chat } from "./useChat";
 
 afterEach(() => {
   sessionStorage.clear();
@@ -133,22 +133,29 @@ describe("The chat's session switcher", () => {
   it.each([
     [1.6, "near", "What this chat may cost: near the chat limit", "bg-warn", "text-warn"],
     [2, "over", "What this chat may cost: over the chat limit", "bg-bad", "text-bad"],
-  ])("renders the icon at %s of $2.00 as %s: badge, colour and words, not colour alone", async (spent, state, label, badge, colour) => {
-    mockApi(base);
-    const chat = { session: { costs: { message_max_usd: 0.25, session_max_usd: 2, spent_usd: spent } } } as unknown as Chat;
-    render(
-      <Providers client={queryClient()}>
-        <Costs chat={chat} />
-      </Providers>,
-    );
-    const icon = screen.getByRole("button", { name: label });
-    expect(icon).toHaveAttribute("data-cost-state", state);
-    expect(icon).toHaveClass(colour);
-    expect(icon.querySelector(`span.size-1\\.5.${badge}`)).not.toBeNull();
-    const tip = screen.getByRole("tooltip", { hidden: true });
-    expect(icon).toHaveAccessibleDescription(new RegExp(state === "near" ? "has cost \\$1\\.60 of its \\$2\\.00 limit" : "reached its \\$2\\.00 limit"));
-    expect(tip).not.toBeVisible();
-  });
+  ])(
+    "renders the icon at %s of $2.00 as %s: badge, colour and words, not colour alone",
+    async (spent, state, label, badge, colour) => {
+      mockApi(base);
+      const chat = {
+        session: { costs: { message_max_usd: 0.25, session_max_usd: 2, spent_usd: spent } },
+      } as unknown as Chat;
+      render(
+        <Providers client={queryClient()}>
+          <Costs chat={chat} />
+        </Providers>,
+      );
+      const icon = screen.getByRole("button", { name: label });
+      expect(icon).toHaveAttribute("data-cost-state", state);
+      expect(icon).toHaveClass(colour);
+      expect(icon.querySelector(`span.size-1\\.5.${badge}`)).not.toBeNull();
+      const tip = screen.getByRole("tooltip", { hidden: true });
+      expect(icon).toHaveAccessibleDescription(
+        new RegExp(state === "near" ? "has cost \\$1\\.60 of its \\$2\\.00 limit" : "reached its \\$2\\.00 limit"),
+      );
+      expect(tip).not.toBeVisible();
+    },
+  );
 
   it("closes on Escape when only the pointer opened it, and a tap toggles it", async () => {
     const user = userEvent.setup();
