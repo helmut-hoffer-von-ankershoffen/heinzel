@@ -242,7 +242,7 @@ export function StatusBar({ onOpenCalendar = () => {} }: { onOpenCalendar?: () =
   return (
     <>
       <AutoUpdate />
-      <FooterLayout className="h-[60px] shrink-0 gap-2 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
+      <FooterLayout className="h-12 shrink-0 gap-2 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
         <FooterPart id="@version" priority={950} className="mr-auto">
           {info.data && (
             <FooterItem

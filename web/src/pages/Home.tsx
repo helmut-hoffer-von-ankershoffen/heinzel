@@ -52,9 +52,16 @@ function Card({
         <Button asChild size="sm" variant="outline">
           <Link to={card.route}>{t("today.open")}</Link>
         </Button>
-        <Button size="sm" variant="outline" onClick={onAsk} disabled={busy}>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-8"
+          onClick={onAsk}
+          disabled={busy}
+          aria-label={t("today.ask")}
+          title={t("today.ask")}
+        >
           <MessageSquarePlus aria-hidden />
-          {t("today.ask")}
         </Button>
         <Button
           size="icon"
@@ -93,11 +100,12 @@ export function Home() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <section aria-labelledby="today" className="@container px-4 pt-6 pb-4 sm:px-6">
-        <h1 id="today" className="text-2xl font-semibold">
+      <section aria-labelledby="today" className="@container px-4 pt-3 pb-4 sm:px-6">
+        {/* The header's screen selector already shows "Today"; the heading stays for screen readers and landmarks. */}
+        <h1 id="today" className="sr-only">
           {t("today.title")}
         </h1>
-        <ul className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(15rem,100%),1fr))] gap-3 empty:hidden">
+        <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(15rem,100%),1fr))] gap-3 empty:hidden">
           <TodayNotifications />
           {today.cards.map((card) => (
             <Card

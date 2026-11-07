@@ -2867,6 +2867,7 @@ $ hz system notify [OPTIONS] COMMAND [ARGS]...
 * `clean`: (expert) End leftover Heinzel Notifier...
 * `install`: (expert) Install the native notifier...
 * `list`: (expert) Show the latest notices, whether...
+* `recover`: (expert) Recover a durable notification...
 * `settings`: (expert) Open the system&#x27;s notification...
 * `test`: (expert) Record a test notice, report each...
 
@@ -2936,6 +2937,23 @@ $ hz system notify list [OPTIONS]
 
 * `--limit <int>`: How many of the latest notices to show.  [default: 50]
 * `--before <str>`: Only notices older than this id, for the next page.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system notify recover`
+
+(expert) Recover a durable notification store whose replay keys a legacy notice list replaced.
+
+**Usage**:
+
+```console
+$ hz system notify recover [OPTIONS]
+```
+
+**Options**:
+
+* `--apply / --no-apply`: Archive the store and start a new replay-key set; without it only report.  [default: no-apply]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
