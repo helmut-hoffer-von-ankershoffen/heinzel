@@ -14,6 +14,8 @@ from heinzel.modules.system.daemon._legacy_retirement import LegacyRetirement, _
 from heinzel.modules.system.daemon._units import LABEL, launchd_plist, plist_path
 from tests.fixtures.daemon_manager import RecordedManager, record_tool
 
+pytest_plugins = ("tests.fixtures.flushes",)
+
 # Every journal step flushes the transaction file and its folder; real flushes made the crash-boundary cases miss
 # their 5 s budget on loaded CI runners (stack in os.fsync). The tests that cross boundaries assert the flushes.
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("recorded_flushes")]

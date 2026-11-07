@@ -30,16 +30,3 @@ def pytest_collection_finish() -> None:
 def no_paid_model_requests(monkeypatch: pytest.MonkeyPatch) -> None:
     """Unit tests can use FunctionModel/TestModel, never a real paid provider by accident."""
     monkeypatch.setattr("pydantic_ai.models.ALLOW_MODEL_REQUESTS", False)
-
-
-@pytest.fixture
-def recorded_flushes(monkeypatch: pytest.MonkeyPatch) -> list[int]:
-    """Record each os.fsync instead of waiting on the disk; the returned list holds the flushed descriptors.
-
-    A unit test cannot observe a physical flush, and on a loaded runner each one can take tens of milliseconds:
-    tests that write a journal step by step spent their 5 s budget inside fsync. Tests using this fixture assert
-    that the flushes happened instead.
-    """
-    flushed: list[int] = []
-    monkeypatch.setattr(os, "fsync", flushed.append)
-    return flushed

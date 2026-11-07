@@ -12,6 +12,8 @@ from pydantic import ValidationError
 from heinzel import HeinzelError, SessionEvent, SessionStore
 from heinzel.kernel import _session_store
 
+pytest_plugins = ("tests.fixtures.flushes",)
+
 pytestmark = pytest.mark.unit
 NOW = datetime(2026, 10, 25, 10, tzinfo=UTC)
 
