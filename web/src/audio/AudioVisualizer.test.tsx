@@ -129,8 +129,8 @@ describe("AudioVisualizer", () => {
     render(<AudioVisualizer />);
     fireEvent.click(screen.getByRole("button", { name: /Audio visualizer,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Share audio" }));
-    const status = await screen.findByRole("status");
-    expect(status).toHaveTextContent("cancelled or blocked");
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("cancelled or blocked"));
+    const status = screen.getByRole("status");
     expect(status).toBeVisible();
     expect(status).not.toHaveClass("sr-only");
     cleanup();
