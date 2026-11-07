@@ -1,15 +1,19 @@
 """Commands for the managed native desktop app."""
 
+import os
 import platform
+import subprocess
+import sys
 import time
 from pathlib import Path
 from subprocess import SubprocessError
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 import typer
 from rich.console import Console
 
 from heinzel import HeinzelError, Settings, __version__
+from heinzel.heads import _desktop_messages as say
 from heinzel.heads.cli._render import message
 from heinzel.kernel import KERNEL_SECTION, Installation, Kernel
 
@@ -136,6 +140,150 @@ def _doctor(output: Console, error: Console, *, fix: bool, as_json: bool = False
         raise typer.Exit(1)
 
 
+_DETAILS_HELP = "Also print the installer's full diagnosis (paths and internal state) when something fails."
+
+
+def _interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _fail(error: Console, exc: Exception, fallback: str, *, details: bool) -> NoReturn:
+    """Print a failure as two plain lines, the diagnosis only with --details or HZ_DEBUG=1, and exit 1.
+
+    Raises:
+        typer.Exit: Always, with 1.
+    """
+    problem = getattr(exc, "problem", None)
+    if problem is None:
+        error.print(message(fallback, str(exc)))
+    else:
+        for line in problem.lines():
+            error.print(line, markup=False)
+        if details or os.environ.get("HZ_DEBUG"):
+            error.print(str(exc), markup=False)
+    raise typer.Exit(1) from exc
+
+
+def _confirm_forget(error: Console, exc: HeinzelError) -> bool:
+    """In a terminal, say what was found and ask before forgetting the earlier install; elsewhere, do not ask.
+
+    Raises:
+        typer.Exit: If the person answers no.
+    """
+    problem = getattr(exc, "problem", None)
+    if problem is None or not _interactive():
+        return False
+    error.print(problem.happened, markup=False)
+    if not typer.confirm(say.FORGET_PROMPT, default=True):
+        raise typer.Exit(1)
+    return True
+
+
+def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with hz app open
+    kernel: Kernel,
+    output: Console,
+    error: Console,
+    *,
+    keep_quarantine: bool = False,
+    replace: bool = False,
+    yes: bool = False,
+    details: bool = False,
+) -> None:
+    """Install or refresh the app, asking once in a terminal before forgetting an install whose app is gone.
+
+    Raises:
+        typer.Exit: If the app cannot be installed now.
+    """
+    from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
+        LeftoverInstallError,
+        install_desktop,
+    )
+
+    notes: list[str] = []
+
+    def run(*, forget: bool) -> str:
+        return install_desktop(
+            __version__,
+            desktop_executable(kernel),
+            keep_quarantine=keep_quarantine,
+            replace=replace,
+            forget=forget,
+            notes=notes,
+        )
+
+    try:
+        try:
+            state = run(forget=yes)
+        except LeftoverInstallError as exc:
+            if not _confirm_forget(error, exc):
+                _print_notes(output, notes)
+                _fail(error, exc, "Desktop installation failed.", details=details)
+            state = run(forget=True)
+    except (HeinzelError, OSError, SubprocessError) as exc:
+        _print_notes(output, notes)
+        _fail(error, exc, "Desktop installation failed.", details=details)
+    _print_notes(output, notes)
+    if state == "deferred":
+        for line in say.app_running(_where_installed()).lines():
+            error.print(line, markup=False)
+        raise typer.Exit(1)
+    _print_location(output, error)
+    if state != "current":
+        output.print(_trust_note(keep_quarantine=keep_quarantine))
+
+
+def _where_installed() -> Path:
+    from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
+        SYSTEM_APPLICATIONS,
+        desktop_location,
+        system_applications_usable,
+    )
+
+    location = desktop_location()
+    if location is not None:
+        return location.parent
+    return SYSTEM_APPLICATIONS if system_applications_usable() else Path.home() / "Applications"
+
+
+def _open_app(kernel: Kernel, output: Console, error: Console, *, details: bool = False) -> Path:
+    """Open the app hz manages, installing it first when it is not there yet; never launch a broken copy.
+
+    Returns:
+        The app that was opened.
+
+    Raises:
+        typer.Exit: If it cannot be installed, would not open, or `open` fails.
+    """
+    from heinzel.heads._desktop_installation import desktop_location  # noqa: PLC0415 - native only
+    from heinzel.heads._desktop_seal import inspect_bundle  # noqa: PLC0415 - native only
+
+    location = desktop_location()
+    if location is None:
+        output.print("Not installed yet, installing…")
+        _install_app(kernel, output, error, details=details)
+        location = desktop_location()
+        if location is None:
+            for line in say.Problem(f"{say.APP} was installed but cannot be found.", "Run hz app doctor.").lines():
+                error.print(line, markup=False)
+            raise typer.Exit(1)
+    report = inspect_bundle(location)
+    if not report.opens:
+        for line in say.would_not_open(location).lines():
+            error.print(line, markup=False)
+        raise typer.Exit(1)
+    if report.quarantine != "none":
+        output.print(say.asks_once(), markup=False)
+    result = subprocess.run(  # noqa: S603 - fixed system executable and the receipt-owned app path
+        ["/usr/bin/open", str(location)], check=False, capture_output=True, text=True, timeout=30
+    )
+    if result.returncode:
+        for line in say.open_failed(location).lines():
+            error.print(line, markup=False)
+        raise typer.Exit(1)
+    output.print(f"Opened {location}", markup=False)
+    return location
+
+
 def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Typer:
     """Build the app command group without loading installer code during CLI discovery."""
     app = typer.Typer(help="Manage the native Heinzel desktop app.", no_args_is_help=True)
@@ -158,6 +306,11 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
                 "deleted), then install a verified copy.",
             ),
         ] = False,
+        yes: Annotated[
+            bool,
+            typer.Option("--yes", "-y", help="Forget an earlier install whose app is gone, without asking."),
+        ] = False,
+        details: Annotated[bool, typer.Option("--details", help=_DETAILS_HELP)] = False,
     ) -> None:
         """Install the desktop app for this version of Heinzel.
 
@@ -167,24 +320,21 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         Raises:
             typer.Exit: If the app cannot be installed now.
         """
-        from heinzel.heads._desktop_installation import install_desktop  # noqa: PLC0415 - native install only
+        _install_app(kernel, output, error, keep_quarantine=keep_quarantine, replace=replace, yes=yes, details=details)
 
-        notes: list[str] = []
-        try:
-            state = install_desktop(
-                __version__, desktop_executable(kernel), keep_quarantine=keep_quarantine, replace=replace, notes=notes
-            )
-        except (HeinzelError, OSError, SubprocessError) as exc:
-            _print_notes(output, notes)
-            error.print(message("Desktop installation failed.", str(exc)))
-            raise typer.Exit(1) from exc
-        _print_notes(output, notes)
-        if state == "deferred":
-            error.print("Quit the Heinzel desktop app, then run hz app install again.")
-            raise typer.Exit(1)
-        _print_location(output, error)
-        if state != "current":
-            output.print(_trust_note(keep_quarantine=keep_quarantine))
+    @app.command("open")
+    def open_app(
+        details: Annotated[bool, typer.Option("--details", help=_DETAILS_HELP)] = False,
+        as_json: Annotated[bool, typer.Option("--json", help="Print the opened app's path as JSON on stdout.")] = False,
+    ) -> None:
+        """Open the desktop app, installing it first when it is not there yet.
+
+        Raises:
+            typer.Exit: If the app cannot be installed or would not open.
+        """
+        location = _open_app(kernel, error if as_json else output, error, details=details)
+        if as_json:
+            output.print_json(data={"opened": str(location)})
 
     @app.command("doctor")
     def doctor(
@@ -202,7 +352,7 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         _doctor(output, error, fix=fix, as_json=as_json)
 
     @app.command("uninstall")
-    def uninstall() -> None:
+    def uninstall(details: Annotated[bool, typer.Option("--details", help=_DETAILS_HELP)] = False) -> None:
         """Remove the managed desktop app and keep your Heinzel profile.
 
         Raises:
@@ -215,8 +365,7 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
             removed = uninstall_desktop(notes=notes)
         except (HeinzelError, OSError, SubprocessError) as exc:
             _print_notes(output, notes)
-            error.print(message("Desktop uninstall failed.", str(exc)))
-            raise typer.Exit(1) from exc
+            _fail(error, exc, "Desktop uninstall failed.", details=details)
         _print_notes(output, notes)
         output.print(
             f"Heinzel desktop app removed from {removed}." if removed else "The Heinzel desktop app is not installed.",

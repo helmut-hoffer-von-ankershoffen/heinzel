@@ -233,18 +233,23 @@ def _orphan(mac) -> tuple[Path, Path, Path]:
     return home, system, executable
 
 
-def test_install_after_the_app_was_moved_to_the_trash_by_hand_sets_the_old_record_aside(mac):
+def test_install_after_the_app_was_moved_to_the_trash_by_hand_asks_then_sets_the_old_record_aside(mac):
     home, system, executable = _orphan(mac)
     receipt, binding = _record(home)
     old = (receipt.read_bytes(), binding.read_bytes())
+    with pytest.raises(desktop.LeftoverInstallError) as failure:
+        desktop.install_desktop("1.0.0", executable, home=home)
+    assert failure.value.problem is not None
+    assert "the app is gone from" in failure.value.problem.happened
+    assert str(receipt) in str(failure.value)
+    assert receipt.read_bytes() == old[0]
     notes: list[str] = []
-    assert desktop.install_desktop("1.0.0", executable, home=home, notes=notes) == "installed"
+    assert desktop.install_desktop("1.0.0", executable, home=home, forget=True, notes=notes) == "installed"
     assert _bundles(home, system) == [system / desktop.BUNDLE_NAME]
     backups = sorted(receipt.parent.glob("*.orphaned-*"))
     assert [path.name.split(".orphaned-")[0] for path in backups] == [receipt.name, binding.name]
     assert {path.read_bytes() for path in backups} == set(old)
-    assert len(notes) == 2
-    assert all("removed without hz app uninstall" in note for note in notes)
+    assert notes == [f"Set aside  old install record ({backups[0]})"]
     assert desktop.desktop_location(home) == system / desktop.BUNDLE_NAME
 
 
@@ -256,7 +261,7 @@ def test_uninstall_after_the_app_was_moved_to_the_trash_by_hand_finishes(mac):
     assert not receipt.exists()
     assert not binding.exists()
     assert len(list(receipt.parent.glob("*.orphaned-*"))) == 2
-    assert notes
+    assert len(notes) == 1
     assert desktop.uninstall_desktop(home=home) is None
 
 
@@ -275,7 +280,9 @@ def test_a_hand_copied_app_is_named_in_the_error_and_replace_moves_it_to_the_tra
     with pytest.raises(desktop.DesktopInstallationError) as failure:
         desktop.install_desktop("1.0.0", executable, home=home)
     assert str(copied) in str(failure.value)
-    assert "--replace" in str(failure.value)
+    assert failure.value.problem is not None
+    assert "--replace" in failure.value.problem.action
+    assert str(copied.parent) in failure.value.problem.happened
     assert (copied / "Contents" / "mine").read_text() == "keep me"
 
     notes: list[str] = []
@@ -312,5 +319,5 @@ def test_a_pending_journal_keeps_the_record_for_recovery(mac):
     home, _system, _executable = _orphan(mac)
     receipt, _binding = _record(home)
     (receipt.parent / desktop._JOURNAL).write_text("{}")
-    assert desktop._clear_orphaned_record(home, receipt.parent) == []
+    assert desktop._clear_orphaned_record(home, receipt.parent, forget=True) == []
     assert receipt.exists()
