@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { RotateCw } from "lucide-react";
+import { useState } from "react";
 import { type DaemonAction, useChangeDaemon, useDaemonStatus } from "@/api/daemon";
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";

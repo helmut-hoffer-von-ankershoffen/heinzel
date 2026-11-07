@@ -174,7 +174,8 @@ export function OperationDialog() {
       {run.stage === "running" && (
         <>
           <output className="mt-1 block text-muted-foreground">
-            {run.task ?? (quick ? plain("running") : persistent ? t(`op.daemon.${copy}.running` as MessageKey) : t("op.working"))}
+            {run.task ??
+              (quick ? plain("running") : persistent ? t(`op.daemon.${copy}.running` as MessageKey) : t("op.working"))}
           </output>
           <Steps phases={run.phases} active />
           <p className="mt-3 text-xs text-muted-foreground">{t("op.noStop")}</p>
