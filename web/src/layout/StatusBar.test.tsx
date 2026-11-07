@@ -353,6 +353,8 @@ describe("Footer items are icons with a state and a pane", () => {
     await user.click(within(summary).getByRole("button", { name: "Open calendar" }));
     const panel = await screen.findByRole("region", { name: "Calendar" });
     expect(await within(panel).findByText("Review")).toBeInTheDocument();
+    // The pane that opened the panel closes, so its bottom row never covers the panel's own.
+    expect(screen.queryByRole("region", { name: "Calendar summary" })).not.toBeInTheDocument();
   });
 
   it("only renders safe conference links in the calendar", async () => {

@@ -260,6 +260,7 @@ export function FooterItem({
         createPortal(
           // The pane shares hover/focus with its trigger across the small gap, and stays above body-portaled media.
           // biome-ignore lint/a11y/noStaticElementInteractions: hover only previews what the trigger opens on click
+          // biome-ignore lint/a11y/useKeyWithClickEvents: the click is a link's or button's own, which the keyboard activates too
           <div
             ref={pane}
             id={id}
@@ -277,6 +278,11 @@ export function FooterItem({
               timer.current = window.setTimeout(() => setHovered(false), CLOSE_DELAY);
             }}
             onFocus={() => setFocused(true)}
+            // An action that goes somewhere (a `to=` link, or one marked `data-pane-leaves`) takes the person there: the pane
+            // has said its piece and must not cover what opened.
+            onClick={(event) => {
+              if ((event.target as Element).closest("a[data-pane-action]:not([target]), [data-pane-leaves]")) close();
+            }}
           >
             <section
               aria-label={paneName ?? label}
