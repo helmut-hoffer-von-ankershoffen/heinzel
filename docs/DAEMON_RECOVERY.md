@@ -67,6 +67,23 @@ Restoration refuses changed targets, foreign state and completed retirement. An 
 a later read is not an acknowledgement of an earlier manager request. Installed tests with a manager protocol
 double establish package and command behavior, not native manager acceptance or a completed published upgrade.
 
+## An update interrupted by a restart or crash
+
+An update holds `mutation-pending.json` in the daemon state folder while it changes the installed program. If the
+computer restarts or the update's process ends before it finishes, that marker stays, and the web service and every
+lifecycle command refuse to start. Never remove it by hand.
+
+The next daemon tick, `hz system update`, `hz system daemon restart` or `hz system daemon install` recovers it when
+the evidence proves the update ended: no other lifecycle writer holds its lock, the marker comes from an earlier boot
+or from a process that no longer exists, no rollback copy or other pending change from that update remains, and the
+installed program still matches its verified startup checkpoint. The marker is moved, unchanged, to
+`abandoned-mutation-DIGEST.json` beside a `.receipt.json` that records this evidence. No settings, data, sign-ins or
+services are changed. The web service starts by itself within seconds afterwards; `hz ui status --json` confirms it.
+
+When any of that evidence is missing, the marker stays and the commands keep refusing. Check
+`hz system daemon status --json` and `hz ui status --json`, and the web server's own errors in `web.err.log` in the
+log folder (`hz system config get hz.log_dir`).
+
 ## Interrupted macOS update from 0.9.21 to 0.9.22
 
 This recovery applies when the automatic updater installed and tested 0.9.22, but could not finish handing off the
