@@ -1,11 +1,12 @@
-import { RotateCw, UserRound } from "lucide-react";
+import { ExternalLink, EyeOff, LogIn, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
-import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { PlayerCard } from "./PlayerCard";
+import { helpButton, PlayerHelp } from "./PlayerHelp";
 import { page } from "./queries";
+import { stop } from "./store";
 import {
   ACCOUNT_SANDBOX,
   accountStream,
@@ -23,6 +24,7 @@ type Level = { gain: number; seconds: number; playing: boolean };
 type Props = { soundscape: SchemaSoundscapeView; stream: StreamView; level: Level };
 const STEP_MS = 100;
 const PLAYBACK_WAIT_MS = 15_000;
+const button = "min-h-8 rounded-lg border border-border px-2.5 py-1 hover:bg-accent";
 
 /** A private player by default, with explicit account playback and recovery for restricted browsers (ADR 0092). */
 export function StreamPlayer(props: Props) {
@@ -135,56 +137,57 @@ function Player({
 
   if (!src) return null;
   return (
-    <PlayerCard
-      title={soundscape.title}
-      watchUrl={stream.watch_url}
-      host="YouTube"
-      actions={
-        <>
-          {blocked && (
-            <PaneAction key="reload" icon={RotateCw} onClick={page.reload}>
+    <PlayerCard title={soundscape.title} watchUrl={stream.watch_url} host="YouTube">
+      <div className="group/video relative">
+        {blocked ? (
+          <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
+            <p>{t("sound.reloadNeeded")}</p>
+            <button type="button" onClick={page.reload} className={button}>
               {t("sound.reload")}
-            </PaneAction>
-          )}
-          {help && (
+            </button>
+          </div>
+        ) : (
+          <iframe
+            ref={frame}
+            title={t("sound.player", { title: soundscape.title })}
+            src={src}
+            onLoad={() => listen(frame.current, origin)}
+            className="aspect-video min-h-[200px] w-full border-0"
+            referrerPolicy={FRAME_ATTRIBUTES.referrerPolicy}
+            sandbox={account ? ACCOUNT_SANDBOX : FRAME_ATTRIBUTES.sandbox}
+            allow={FRAME_ATTRIBUTES.allow}
+          />
+        )}
+        <PlayerHelp
+          attention={help}
+          actions={
             <>
               {chooseAccount && (
-                <PaneAction key="switch" icon={UserRound} onClick={() => chooseAccount(!account)}>
+                <button type="button" onClick={() => chooseAccount(!account)} className={helpButton}>
+                  {account ? <EyeOff aria-hidden className="size-3.5" /> : <LogIn aria-hidden className="size-3.5" />}
                   {t(account ? "sound.privatePlayer" : "sound.accountPlayer")}
-                </PaneAction>
+                </button>
               )}
-              <PaneAction key="retry" icon={RotateCw} onClick={retry}>
+              <button type="button" onClick={retry} className={helpButton}>
+                <RotateCw aria-hidden className="size-3.5" />
                 {t("sound.retryPlayer")}
-              </PaneAction>
+              </button>
+              <a
+                href={stream.watch_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={stop}
+                className={helpButton}
+              >
+                <ExternalLink aria-hidden className="size-3.5" />
+                {t("sound.playOnYouTube")}
+              </a>
             </>
-          )}
-        </>
-      }
-    >
-      {blocked ? (
-        <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
-          <p>{t("sound.reloadNeeded")}</p>
-        </div>
-      ) : (
-        <iframe
-          ref={frame}
-          title={t("sound.player", { title: soundscape.title })}
-          src={src}
-          onLoad={() => listen(frame.current, origin)}
-          className="aspect-video min-h-[200px] w-full border-0"
-          referrerPolicy={FRAME_ATTRIBUTES.referrerPolicy}
-          sandbox={account ? ACCOUNT_SANDBOX : FRAME_ATTRIBUTES.sandbox}
-          allow={FRAME_ATTRIBUTES.allow}
-        />
-      )}
-      <details open={help} onToggle={(event) => setHelp(event.currentTarget.open)} className="p-2 text-ui-sm">
-        <summary className="min-h-8 cursor-pointer content-center rounded-lg px-1 hover:bg-accent">
-          {t("sound.playbackHelp")}
-        </summary>
-        <div className="flex flex-col gap-2 pt-2">
+          }
+        >
           <p>{t(account ? "sound.accountHelp" : "sound.privateHelp")}</p>
-        </div>
-      </details>
+        </PlayerHelp>
+      </div>
     </PlayerCard>
   );
 }

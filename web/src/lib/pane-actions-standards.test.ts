@@ -178,7 +178,9 @@ const RAW: Record<string, number> = {
   "../layout/TopBar.tsx": 2,
   "../layout/WorkspacePanels.tsx": 1,
   "../onboarding/OnboardingWizard.tsx": 2,
+  "../sound/PlayerHelp.tsx": 1,
   "../sound/SoundControls.tsx": 2,
+  "../sound/StreamPlayer.tsx": 3,
 };
 
 it("keeps every action on the shared components: no new hand-drawn divider, end row, unnamed icon or raw button", () => {
