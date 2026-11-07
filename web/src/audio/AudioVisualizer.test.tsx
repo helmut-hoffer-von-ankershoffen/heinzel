@@ -347,6 +347,27 @@ describe("AudioVisualizer", () => {
       within(screen.getByRole("radiogroup", { name: "Listen to" })).queryByRole("radio", { name: "Shared audio" }),
     ).not.toBeInTheDocument();
     expect(sessionStorage.getItem("hz.audio.unshared")).toBe("1");
+    // Quietly: no red problem and no "Retry" on the trigger for an option that cannot work here.
+    expect(screen.getByRole("status")).not.toHaveClass("text-bad");
+    expect(screen.queryByRole("button", { name: /problem|Retry/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("Retry")).not.toBeInTheDocument();
     // A cancelled or refused prompt is not "unsupported": that keeps the choice (covered above).
+  });
+
+  it("treats Safari's missing audio capture the same: hidden, the microphone instead, no error", async () => {
+    // What iPhone Safari answered the owner: the capture itself reports that audio sharing is unavailable.
+    vi.mocked(captureAudio).mockRejectedValueOnce(
+      new DOMException(
+        "Audio sharing is unavailable. Your browser or operating system may not support audio capture.",
+        "NotSupportedError",
+      ),
+    );
+    vi.mocked(captureMicrophone).mockResolvedValueOnce(listening);
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(source("Shared audio"));
+    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    expect(screen.queryByText(/Audio sharing is unavailable/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Retry")).not.toBeInTheDocument();
   });
 });
