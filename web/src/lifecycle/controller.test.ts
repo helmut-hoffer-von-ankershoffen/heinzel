@@ -120,6 +120,50 @@ describe("verified restart and apply", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("says the restart never happened when the retired server keeps answering past its shutdown grace", async () => {
+    const transport = server();
+    transport.read.mockResolvedValue(before);
+    const result = resumeRestartAndApply(
+      { retired: [before.instance], version: before.version, settings: [] },
+      { transport, interval: 100, staleAfter: 1_000 },
+    );
+    const failed = expect(result).rejects.toMatchObject({ kind: "stale", observation: { retired: [before.instance] } });
+    await vi.advanceTimersByTimeAsync(1_100);
+    await failed;
+    expect(transport.restart).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("resets the not-restarted window when the retired server drops out for a moment", async () => {
+    const transport = server();
+    transport.read.mockReset();
+    for (let read = 0; read < 9; read += 1) transport.read.mockResolvedValueOnce(before);
+    transport.read.mockRejectedValueOnce(new TypeError("Disconnected"));
+    for (let read = 0; read < 9; read += 1) transport.read.mockResolvedValueOnce(before);
+    transport.read.mockResolvedValue({ ...after, version: before.version });
+    const result = resumeRestartAndApply(
+      { retired: [before.instance], version: before.version, settings: [] },
+      { transport, interval: 100, staleAfter: 1_000 },
+    );
+    await vi.advanceTimersByTimeAsync(2_500);
+    await expect(result).resolves.toMatchObject({ instance: after.instance });
+  });
+
+  it("stops checking at once while a status read is still waiting for an answer", async () => {
+    const transport = server();
+    transport.read.mockImplementation(() => new Promise(() => {}));
+    const controller = new AbortController();
+    const result = resumeRestartAndApply(
+      { retired: [before.instance], version: before.version, settings: [] },
+      { transport, signal: controller.signal },
+    );
+    const stopped = expect(result).rejects.toMatchObject({ kind: "aborted" });
+    await vi.advanceTimersByTimeAsync(10);
+    controller.abort();
+    await stopped;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("waits through old-process 200 responses and a disconnect before accepting the replacement", async () => {
     const transport = server();
     transport.read.mockResolvedValueOnce(before).mockRejectedValueOnce(new TypeError("Disconnected"));

@@ -159,6 +159,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/acceptance/README.md": "documents the core's public installer acceptance harness",
     "scripts/acceptance/run_acceptance.py": "public installer acceptance of the published core; plugins have none",
     "scripts/prepare_release_ui.py": "checks the Core app CLI for its acceptance harness; plugins have neither",
+    ".github/workflows/focused-job.yml": "dispatched diagnostic of one core test selection on one hosted runner",
+    "scripts/focused_job.py": "validates and runs the core focused-job workflow's selection; plugins have none",
     ".github/workflows/acceptance-sharded.yml": "manual hosted-VM acceptance study, separate from release acceptance",
     "scripts/acceptance/reduce.py": "fails closed on incomplete or mixed acceptance study shards",
     "scripts/acceptance/summary.py": "summarizes the acceptance harness's result.json for a job summary",

@@ -50,6 +50,20 @@ describe("analysis", () => {
     expect(beats / 3).toBeLessThanOrEqual(3.1);
   });
 
+  it("places the sound on the spectrum: low for bass, high for treble, -1 when silent", () => {
+    const low = analysis();
+    expect(low.centroid()).toBe(-1);
+    const bass = new Uint8Array(1024);
+    bass.fill(255, 1, 6);
+    low.step(bass, null, 1000, 0.033);
+    const high = analysis();
+    const treble = new Uint8Array(1024);
+    treble.fill(255, 400, 512);
+    high.step(treble, null, 1000, 0.033);
+    expect(low.centroid()).toBeLessThan(0.15);
+    expect(high.centroid()).toBeGreaterThan(0.85);
+  });
+
   it("goes quiet after 1.5 s of silence and rests", () => {
     const a = analysis();
     for (let frame = 0; frame < 80; frame += 1) a.step(new Uint8Array(1024), null, frame * 33, 0.033);

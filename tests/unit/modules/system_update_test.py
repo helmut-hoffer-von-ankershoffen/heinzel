@@ -900,7 +900,9 @@ def test_core_update_holds_lifecycle_from_before_uv_through_checkpoint_and_hando
     assert events.index("capture") < events.index("uv") < events.index("metadata") < events.index("checkpoint")
     assert events.index("checkpoint") < events.index("verified") < events.index("request") < events.index("exit")
     assert not lifecycle.pending
-    assert "fresh service tick is pending" in result.message
+    # The handover was requested but no tick has reported yet: said once, on the daemon's own line, never claimed.
+    assert [(head.head, head.status) for head in result.heads] == [("daemon", "pending")]
+    assert "Daemon: pending. The daemon was asked to restart" in result.message
 
 
 def test_plugin_only_refresh_keeps_plain_sdk_unseeded_and_hands_over(tmp_path):
@@ -1666,3 +1668,250 @@ def test_update_hash_forwarding_refuses_a_conflict_before_uv(tmp_path, wrong):
         pytest.fail("Conflicting source must not reach UV")
     assert receipt.read_bytes() == original
     assert not uv.commands
+
+
+# After the update: every installed head runs the installed code -------------------------------------------------------
+
+
+class HandingOverLifecycle(FakeMutationLifecycle):
+    """A daemon whose handover tick reports `version` after `ticks` looks, or never (`version=None`)."""
+
+    def __init__(self, events, *, version, ticks=2):
+        super().__init__(events, checkpoint_matched=True)
+        self.version, self.ticks, self.looks = version, ticks, 0
+
+    def request(self, plan):
+        from heinzel.kernel import DaemonHandoverRequest
+
+        super().request(plan)
+        return DaemonHandoverRequest(requested=True, reason="fake manager", request_id="c" * 64)
+
+    def observation(self, request_id):
+        from heinzel.kernel import DaemonHandoverObservation
+
+        assert request_id == "c" * 64
+        assert not self.pending, "a head is asked only after the mutation completed"
+        self.looks += 1
+        if self.version is None or self.looks < self.ticks:
+            return None
+        return DaemonHandoverObservation(request_id, self.version, "d" * 64, (), "now", "old", "new")
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+def _heads_target(tmp_path, events):
+    uv = FakeUv("0.2.0")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: True  # type: ignore[method-assign]
+    target.record_startup_state = lambda *, expected: events.append("checkpoint")  # type: ignore[method-assign]
+    target.verify_installed_requirements = lambda requirements, **kwargs: {"heinzel": "0.4.0", **uv.plugins}  # type: ignore[method-assign]
+    return target
+
+
+def _web(events, outcome):
+    from heinzel.kernel import HeadRefresh, WebHeadRefresh
+
+    def refresh(version):
+        events.append(f"web {version}")
+        if isinstance(outcome, Exception):
+            raise outcome
+        return HeadRefresh(head="web", status=outcome, version=version if outcome == "verified" else "0.2.0")
+
+    return WebHeadRefresh(refresh=refresh)
+
+
+def test_after_an_update_the_daemon_and_the_web_server_are_verified_on_the_new_version(tmp_path):
+    events: list[str] = []
+    lifecycle = HandingOverLifecycle(events, version="0.4.0")
+    clock = FakeClock()
+    service = UpdateService(
+        _heads_target(tmp_path, events),
+        FakeReleases("0.4.0"),
+        lifecycle=lifecycle,
+        web=_web(events, "verified"),
+        clock=clock,
+        sleep=clock.sleep,
+        home=tmp_path,
+    )
+    result = service.update(current="0.2.0")
+    assert result.after == "0.4.0"
+    assert [(head.head, head.status, head.version) for head in result.heads] == [
+        ("daemon", "verified", "0.4.0"),
+        ("web", "verified", "0.4.0"),
+    ]
+    assert events.index("exit") < events.index("web 0.4.0")  # no head restarts while the mutation is pending
+    assert "fresh service tick is pending" not in result.message
+    assert "Daemon: verified" in result.message
+    assert "Web server: verified" in result.message
+    assert "Not everything runs the new version" not in result.message
+
+
+def test_a_head_that_does_not_report_the_new_version_is_never_claimed(tmp_path):
+    events: list[str] = []
+    clock = FakeClock()
+    service = UpdateService(
+        _heads_target(tmp_path, events),
+        FakeReleases("0.4.0"),
+        lifecycle=HandingOverLifecycle(events, version=None),
+        web=_web(events, "failed"),
+        clock=clock,
+        sleep=clock.sleep,
+        home=tmp_path,
+    )
+    result = service.update(current="0.2.0")
+    assert result.updated
+    assert [(head.head, head.status) for head in result.heads] == [("daemon", "pending"), ("web", "failed")]
+    assert clock.now == pytest.approx(90.0)  # bounded: the daemon's first tick may run long jobs first
+    assert "hz system daemon status" in result.message
+    assert "Not everything runs the new version yet" in result.message
+
+
+def test_a_daemon_that_restarts_into_another_version_fails_and_a_raising_web_head_is_reported(tmp_path):
+    events: list[str] = []
+    clock = FakeClock()
+    service = UpdateService(
+        _heads_target(tmp_path, events),
+        FakeReleases("0.4.0"),
+        lifecycle=HandingOverLifecycle(events, version="0.2.0"),
+        web=_web(events, HeinzelError("socket gone")),
+        clock=clock,
+        sleep=clock.sleep,
+        home=tmp_path,
+    )
+    result = service.update(current="0.2.0")
+    daemon, web_head = result.heads
+    assert (daemon.status, daemon.version) == ("failed", "0.2.0")
+    assert web_head.status == "failed"
+    assert "socket gone" in web_head.detail
+    assert "hz ui restart" in result.message
+
+
+def test_nothing_is_restarted_when_the_update_changed_nothing(tmp_path):
+    events: list[str] = []
+    uv = FakeUv("0.4.0")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv)
+    service = UpdateService(target, FakeReleases("0.4.0"), web=_web(events, "verified"), home=tmp_path)
+    result = service.update(current="0.4.0")
+    assert not result.updated
+    assert result.heads == []
+    assert events == []
+
+
+def test_a_daemon_that_was_running_but_not_asked_to_restart_is_pending_not_hidden(tmp_path):
+    events: list[str] = []
+
+    class Unchanged(HandingOverLifecycle):
+        def request(self, plan):
+            from heinzel.kernel import DaemonHandoverRequest
+
+            FakeMutationLifecycle.request(self, plan)
+            return DaemonHandoverRequest(
+                requested=False, reason="The service state changed; no handover was requested."
+            )
+
+    clock = FakeClock()
+    service = UpdateService(
+        _heads_target(tmp_path, events),
+        FakeReleases("0.4.0"),
+        lifecycle=Unchanged(events, version="0.4.0"),
+        clock=clock,
+        sleep=clock.sleep,
+        home=tmp_path,
+    )
+    [daemon] = service.update(current="0.2.0").heads
+    assert daemon.status == "pending"
+    assert "hz system daemon restart" in daemon.detail
+
+
+def test_a_daemon_that_was_not_running_is_nothing_to_restart(tmp_path):
+    events: list[str] = []
+    lifecycle = HandingOverLifecycle(events, version="0.4.0")
+    lifecycle.active = False
+    lifecycle.request = lambda plan: FakeMutationLifecycle.request(lifecycle, plan)  # type: ignore[method-assign]
+    service = UpdateService(_heads_target(tmp_path, events), FakeReleases("0.4.0"), lifecycle=lifecycle, home=tmp_path)
+    result = service.update(current="0.2.0")
+    assert [(head.head, head.status) for head in result.heads] == [("daemon", "not-installed")]
+    assert "Not everything" not in result.message
+
+
+ADDON = "heinzel-acme-addon @ git+https://github.com/example-org/heinzel-acme-addon@v1.0.0"
+
+
+def test_a_plugin_that_needs_a_plugin_taken_out_is_taken_out_with_it(tmp_path):
+    """uv would install the dropped plugin again as the other's dependency, and the update would refuse its result."""
+    uv = FakeUv("0.2.0")
+    uv.failures = [BLOCKED, BLOCKED]
+    uv.plugins = {"heinzel-acme": "1.0.0", "heinzel-acme-addon": "1.0.0"}
+    uv.available = {"heinzel-acme": "1.0.0", "heinzel-acme-addon": "1.0.0"}
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    lines = [
+        f'{{ name = "heinzel", git = "{REPO}?rev=v0.2.0" }}',
+        f'{{ name = "heinzel-acme", git = "{REPO}-acme?rev=v1.0.0" }}',
+        f'{{ name = "heinzel-acme-addon", git = "{REPO}-acme-addon?rev=v1.0.0" }}',
+    ]
+    receipt = target.prefix / "uv-receipt.toml"
+    entrypoints = receipt.read_text(encoding="utf-8").split("entrypoints = ", 1)[1]
+    receipt.write_text(
+        "[tool]\nrequirements = [\n" + ",\n".join(lines) + "\n]\nentrypoints = " + entrypoints, encoding="utf-8"
+    )
+    site = target.prefix / "lib/python3.14/site-packages"
+    for name, requires in [("heinzel-acme", "heinzel<0.3"), ("heinzel-acme-addon", "heinzel-acme>=1")]:
+        info = site / f"{name}-1.0.0.dist-info"
+        info.mkdir(parents=True)
+        (info / "METADATA").write_text(
+            f"Metadata-Version: 2.1\nName: {name}\nVersion: 1.0.0\nRequires-Dist: {requires}\n"
+            "Requires-Dist: pytest; extra == 'test'\n"
+        )
+    result = UpdateService(target, FakeReleases("0.4.0")).update(current="0.2.0")
+    assert uv.commands[-1] == install_command(f"heinzel @ git+{REPO}@v0.4.0")  # neither goes back in
+    acme, addon = result.plugins
+    assert (acme.distribution, acme.status, acme.disabled) == ("heinzel-acme", "failed", True)
+    assert (addon.distribution, addon.status, addon.disabled) == ("heinzel-acme-addon", "failed", True)
+    assert "It needs heinzel-acme, which was taken out" in str(addon.reason)
+    assert "does not allow the new hz, so" not in str(addon.reason)  # that is the plugin it needs
+    assert "Once the plugin it needs is back" in str(addon.reason)
+    assert addon.next == [f"hz system plugin add {shlex.quote(ADDON)} --confirm"]
+
+
+def test_the_plugin_dependency_graph_follows_requirements_through_plugins_and_ignores_extras():
+    from types import SimpleNamespace
+
+    from heinzel.modules.system.plugin._sources import dependents, required_by
+
+    def dist(name, *requires):
+        return SimpleNamespace(metadata={"Name": name}, requires=list(requires))
+
+    graph = required_by(
+        [
+            dist("Heinzel_Clock", "heinzel>=1"),
+            dist("heinzel-alarm", "heinzel-clock>=1"),
+            dist("heinzel-snooze", "heinzel-alarm", "heinzel-extra; extra == 'docs'", "not a requirement !"),
+            dist("heinzel-other", "heinzel-here; python_version >= '3'"),
+        ]
+    )  # type: ignore[list-item]
+    assert dependents("heinzel-clock", graph) == {"heinzel-alarm", "heinzel-snooze"}
+    assert dependents("heinzel-alarm", graph) == {"heinzel-snooze"}
+    assert dependents("heinzel-extra", graph) == set()
+    assert dependents("heinzel-other", graph) == set()
+    assert dependents("heinzel-here", graph) == {"heinzel-other"}  # a marker that holds here counts
+
+
+def test_dropping_a_plugin_drops_everything_that_needs_it_through_others_too():
+    from heinzel.modules.system._update import _drop_dependents
+
+    modes = {"heinzel-clock": "drop", "heinzel-alarm": "keep", "heinzel-snooze": "new", "heinzel-other": "new"}
+    reasons = {"heinzel-clock": "blocked."}
+    graph = {"heinzel-clock": {"heinzel-alarm"}, "heinzel-alarm": {"heinzel-snooze"}, "heinzel": {"heinzel-other"}}
+    _drop_dependents(modes, reasons, graph)  # type: ignore[arg-type]
+    assert modes == {"heinzel-clock": "drop", "heinzel-alarm": "drop", "heinzel-snooze": "drop", "heinzel-other": "new"}
+    assert reasons["heinzel-snooze"] == "It needs heinzel-clock, which was taken out: blocked."

@@ -15,6 +15,10 @@ from typing import Protocol
 from heinzel.kernel._errors import HeinzelError
 
 
+class _ChangedError(HeinzelError):
+    """The installation changed while it was read: a later read may see it settled."""
+
+
 class _Digest(Protocol):
     def update(self, data: bytes, /) -> None: ...
 
@@ -27,6 +31,11 @@ _FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
 _DIRECTORY = _FLAGS | os.O_DIRECTORY
 _SETTLE_NS = 2_000_000_000
 _REUSE_NS = 60_000_000_000
+_SNAPSHOTS = 3
+"""Complete reads of one fingerprint; two consecutive ones must agree."""
+_ATTEMPTS = 5
+"""Reads in all, counting those that noticed a change under them and start the pair again."""
+_RETRY_SECONDS = 0.05
 _settled: dict[Path, tuple[object, str, str, int]] = {}
 _seen: set[Path] = set()
 
@@ -63,12 +72,12 @@ def _regular(fd: int, digest: _Digest, budget: list[int]) -> None:
         chunk = os.read(fd, min(remaining, 1024 * 1024))
         if not chunk:
             msg = "Installation changed during inspection (file short read)."
-            raise HeinzelError(msg)
+            raise _ChangedError(msg)
         digest.update(chunk)
         remaining -= len(chunk)
     if _identity(info) != _identity(os.fstat(fd)):
         msg = "Installation changed during inspection (file metadata)."
-        raise HeinzelError(msg)
+        raise _ChangedError(msg)
 
 
 def _external_parents(path: Path) -> None:
@@ -78,6 +87,25 @@ def _external_parents(path: Path) -> None:
         if info.st_uid not in {0, os.getuid()} or (info.st_mode & 0o022 and not sticky_root):
             msg = "External interpreter directory has unsafe ownership or permissions."
             raise HeinzelError(msg)
+
+
+def _ignored(relative: Path, name: str) -> bool:
+    """Entries a fingerprint never reads: bytecode, and the continuity files at the top."""
+    return name.endswith((".pyc", ".pyo")) or (relative == Path() and name in {_RECORD, _PENDING})
+
+
+def _benign(directory: int, relative: Path, names: list[str], before: tuple[int, ...], after: tuple[int, ...]) -> bool:
+    """Whether a directory changed only by entries a fingerprint ignores, such as Python writing bytecode.
+
+    Its device, inode, mode and owner must be the same, and every entry the walk reads must still be there, alone.
+    """
+    if before[:5] != after[:5]:  # device, inode, mode, owner and group; size and times change with any entry
+        return False
+    with os.scandir(directory) as scan:
+        now = sorted(entry.name for entry in scan)
+    return [name for name in names if not _ignored(relative, name)] == [
+        name for name in now if not _ignored(relative, name)
+    ]
 
 
 class _Observation:
@@ -111,9 +139,10 @@ class _Observation:
                 if self.strict_identity:
                     self.digest.update(repr(_identity(info)).encode("ascii"))
             self.entry(directory, name, path, info)
-        if before != _identity(os.fstat(directory)):
+        after = _identity(os.fstat(directory))
+        if before != after and not _benign(directory, relative, names, before, after):
             msg = "Installation changed during inspection (directory metadata)."
-            raise HeinzelError(msg)
+            raise _ChangedError(msg)
 
     def entry(self, directory: int, name: str, path: Path, info: os.stat_result) -> None:
         if stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode):
@@ -122,7 +151,7 @@ class _Observation:
             try:
                 if _identity(info) != _identity(os.fstat(fd)):
                     msg = "Installation changed during inspection (entry identity)."
-                    raise HeinzelError(msg)
+                    raise _ChangedError(msg)
                 if is_directory:
                     self.visit(fd, path)
                 elif path == Path("uv-receipt.toml") and self.receipt is not None:
@@ -170,7 +199,7 @@ class _Observation:
                 os.close(fd)
         if _identity(info) != _identity(os.stat(name, dir_fd=directory, follow_symlinks=False)):
             msg = "Installation changed during inspection (link metadata)."
-            raise HeinzelError(msg)
+            raise _ChangedError(msg)
 
 
 class _Metadata(_Observation):
@@ -261,16 +290,28 @@ def _stable(
     receipt: bytes | None = None,
 ) -> str:
     previous = None
-    for _ in range(3):
+    changed: _ChangedError | None = None
+    completed = 0
+    for attempt in range(_ATTEMPTS):
         _require_authority(authority, target)
-        if receipt is not None:
-            current = _snapshot(prefix, strict_identity=strict_identity, receipt=receipt)
-        else:
-            current = _snapshot(prefix, strict_identity=True) if strict_identity else _snapshot(prefix)
+        try:
+            if receipt is not None:
+                current = _snapshot(prefix, strict_identity=strict_identity, receipt=receipt)
+            else:
+                current = _snapshot(prefix, strict_identity=True) if strict_identity else _snapshot(prefix)
+        except _ChangedError as exc:  # something wrote while it was read; a later pair of reads must still agree
+            changed, previous = exc, None
+            time.sleep(_RETRY_SECONDS * (attempt + 1))
+            continue
         _require_authority(authority, target)
         if previous == current:
             return current
         previous = current
+        completed += 1
+        if completed == _SNAPSHOTS:
+            break
+    if changed is not None and previous is None:
+        raise changed
     msg = "Installation changed during inspection (snapshot mismatch)."
     raise HeinzelError(msg)
 
@@ -280,7 +321,9 @@ def fingerprint(
 ) -> str:
     """Observe two consecutive matching snapshots under the same tool authority.
 
-    Up to three snapshots allow a later stable observation after a transient change.
+    Up to five snapshots allow a later stable observation after a transient change, also one a read noticed itself
+    (a file or directory that changed under it); a directory that changed only by bytecode or the continuity files
+    counts as unchanged, since none of them is read.
     This does not establish an atomic snapshot or uninterrupted history.
 
     A plain fingerprint repeated within a minute in this process is reused while every file keeps its size, timestamps
@@ -429,8 +472,7 @@ def record(prefix: Path, authority: Callable[[], object], *, expected: str) -> N
     committed = False
     try:
         fcntl.flock(directory, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        value = fingerprint(prefix, authority)
-        _require_generation(value, expected)
+        value = _verified_generation(prefix, authority, expected, directory)
         original_authority = authority()
         marker = os.open(_PENDING, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
         os.fsync(marker)
@@ -469,6 +511,64 @@ def record(prefix: Path, authority: Callable[[], object], *, expected: str) -> N
         if marker >= 0:
             _close_fd(marker, committed=committed)
         _close_fd(directory, committed=committed)
+
+
+def _verified_generation(prefix: Path, authority: Callable[[], object], expected: str, directory: int) -> str:
+    """The fingerprint `expected` names, read again; an earlier writer's leftover marker goes, as it supersedes it.
+
+    Raises:
+        HeinzelError: If the installation isn't that generation, or the marker is unsafe.
+        OSError: If the marker can't be removed durably.
+    """
+    value = fingerprint(prefix, authority)
+    _require_generation(value, expected)
+    _remove_stale_marker(directory)
+    return value
+
+
+def _remove_stale_marker(directory: int) -> None:
+    """Remove a pending marker an earlier writer left; the caller holds the writer lock, so none is running.
+
+    Every writer creates the marker only under that lock and removes it once it committed; one that failed keeps it,
+    so uncertainty stays visible until a verified generation is recorded or found to match the record.
+
+    Raises:
+        HeinzelError: If the marker isn't a private regular file of this user.
+        OSError: If it can't be removed durably.
+    """
+    try:
+        info = os.stat(_PENDING, dir_fd=directory, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1:
+        msg = "Continuity pending marker is unsafe; inspect the installation."
+        raise HeinzelError(msg)
+    os.unlink(_PENDING, dir_fd=directory)
+    os.fsync(directory)
+
+
+def clear_stale_pending(prefix: Path, authority: Callable[[], object]) -> bool:
+    """Remove a pending marker left by an unfinished transaction when the installation matches its record again.
+
+    That is the case after a put-back restored the verified generation, or when the transaction failed before it
+    changed anything. Under the writer lock, so no transaction is running. True if a marker was removed.
+
+    Raises:
+        HeinzelError: If the marker is unsafe.
+        OSError: If it can't be removed durably.
+    """
+    directory = os.open(prefix, _DIRECTORY)
+    try:
+        try:
+            fcntl.flock(directory, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False  # a writer runs now and finishes its own marker
+        if not _pending_exists(directory) or not matches(prefix, authority, pending=True):
+            return False
+        _remove_stale_marker(directory)
+        return True
+    finally:
+        os.close(directory)
 
 
 def _validate_expected(expected: object) -> None:

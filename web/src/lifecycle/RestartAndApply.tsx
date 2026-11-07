@@ -27,6 +27,8 @@ type Props = {
   onUnsupported?: () => Promise<void> | void;
   deferredMessage?: string;
   initialObservation?: RestartObservation;
+  /** The server kept running without restarting: forget the saved observation, since applying again is safe. */
+  onNotRestarted?: () => void;
   acquire?: (resume?: RestartObservation) => (() => void) | null;
   options?: ApplyOptions;
 };
@@ -45,6 +47,7 @@ export function RestartAndApply({
   onUnsupported,
   deferredMessage,
   initialObservation,
+  onNotRestarted,
   acquire,
   options,
 }: Props) {
@@ -113,9 +116,13 @@ export function RestartAndApply({
           failure = deferredError;
         }
       }
+      const notRestarted = failure instanceof RestartApplyError && failure.kind === "stale";
+      if (notRestarted) onNotRestarted?.();
       if (mounted.current) {
+        setPhase(null);
         setError(failure instanceof Error ? failure : new Error(t("lifecycle.failed")));
-        setObservation(failure instanceof RestartApplyError ? failure.observation : undefined);
+        // Check again only helps while a restart may be under way; a server that never restarted needs Apply again.
+        setObservation(failure instanceof RestartApplyError && !notRestarted ? failure.observation : undefined);
       }
     } finally {
       controller.current = null;

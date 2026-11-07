@@ -24,10 +24,14 @@ def test_generated_audio_drives_visible_spectrum_and_capture_controls(tmp_path):
         check=False,
     )
     assert driven.returncode == 0, driven.stderr
-    assert json.loads(driven.stdout.strip().splitlines()[-1]) == {
+    result = json.loads(driven.stdout.strip().splitlines()[-1])
+    # The measured tone positions (spectrum centroid, rail mass, aurora pixels), named in any failure below.
+    tones = result.pop("tones")
+    assert [tone["width"] for tone in tones] == [1440, 390], tones
+    assert result == {
         "viewports": [1440, 390],
         "realSignal": True,
         "realSilence": True,
         "cleanup": True,
         "errors": [],
-    }
+    }, tones

@@ -42,6 +42,7 @@ const candidate = {
 };
 let receiptCount = 0;
 let confirmedStreamDelay = 0;
+let restartDelay = 0;
 
 describe("plugin source labels", () => {
   it.each([
@@ -171,6 +172,14 @@ function serve(answer: Answer) {
         };
       }
       if (!found) return Response.json({ error: `no answer for ${url.pathname}` }, { status: 404 });
+      if (url.pathname === "/api/restart" && restartDelay > 0)
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, restartDelay);
+          request.signal.addEventListener("abort", () => {
+            clearTimeout(timer);
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        });
       if (url.pathname.startsWith("/api/stream/")) {
         const text = url.pathname.endsWith("/remove") ? "Removing heinzel-clock" : "Adding plugin heinzel-crm";
         const task = `event: task\ndata: ${JSON.stringify({ text })}\n\n`;
@@ -240,6 +249,7 @@ beforeEach(() => {
   sessionStorage.clear();
   receiptCount = 0;
   confirmedStreamDelay = 0;
+  restartDelay = 0;
   lifecycleReads = 0;
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -371,6 +381,62 @@ describe("PluginsSection", () => {
     expect(inventory.every((call) => new URL(call.url).searchParams.get("fresh") === "true")).toBe(true);
     expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(0);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("restarts once and reloads after a Discover install whose row leaves the list", async () => {
+    let done = false;
+    const crm = { ...installed, distribution: "heinzel-crm", name: "crm", version: "1.2.0", summary: "CRM notes." };
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/list") return { body: done ? [installed, crm] : [installed] };
+      if (url.pathname === "/api/system/plugin/search")
+        return {
+          body: {
+            plugins: [
+              {
+                name: "heinzel-crm",
+                short_name: "crm",
+                description: "CRM notes.",
+                source: "github",
+                install_spec: candidate.spec,
+                installed: false,
+                community: true,
+              },
+              {
+                name: "heinzel-other",
+                short_name: "other",
+                description: "Another plugin.",
+                source: "github",
+                install_spec: "heinzel-other",
+                installed: false,
+                community: true,
+              },
+            ],
+            warnings: [],
+          },
+        };
+      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
+        done = url.searchParams.get("confirm") === "true";
+        return { body: change("add", done, { plugins: done ? [installed, crm] : [installed] }) };
+      }
+      return base(url);
+    });
+    // The restart request takes a moment, as over a real connection, while the installed row leaves Discover.
+    restartDelay = 50;
+    const reload = vi.fn();
+    const user = userEvent.setup();
+    show({ reload, restartInterval: 1 });
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    await user.click((await screen.findAllByRole("button", { name: "Install" }))[0] as HTMLElement);
+    await user.click(
+      within(await screen.findByRole("group", { name: /Install this plugin/ })).getByRole("button", {
+        name: "Restart and apply",
+      }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(screen.queryByText(/may already be restarting/)).not.toBeInTheDocument();
+    expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(1);
+    expect(calls.filter((call) => new URL(call.url).searchParams.get("confirm") === "true")).toHaveLength(1);
   });
 
   it("keeps the installation result visible after a refused restart and never replays the confirmed add", async () => {

@@ -72,6 +72,7 @@ from heinzel.modules.system.plugin._sources import (
     Metadata,
     PluginSource,
     browser_url,
+    dependents,
     from_github,
     from_pypi,
     git_credentials,
@@ -80,6 +81,7 @@ from heinzel.modules.system.plugin._sources import (
     parse,
     pypi_get,
     repository_url,
+    required_by,
 )
 
 TEMPLATE = "gh:helmut-hoffer-von-ankershoffen/heinzel"
@@ -571,6 +573,18 @@ class PluginService:
             Heinzelmännchen.
         """
         target = self._known(distribution)
+        try:
+            graph = required_by(self._host_distributions())
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            msg = "The installed plugins' requirements could not be read safely; nothing was changed."
+            raise HeinzelError(msg) from exc
+        if needed := sorted(dependents(target, graph)):
+            names = ", ".join(needed)
+            msg = (
+                f"{distribution} can't be removed: {names} needs it, and uv would keep it for them. Remove "
+                f"{names} first, then {distribution}. Nothing was changed."
+            )
+            raise HeinzelError(msg)
         requirements = self._installation.requirements()
         if requirements is None:
             return self._installation.pip_command("uninstall", distribution)
