@@ -943,3 +943,14 @@ def test_settings_search_font_floor_precedes_focus_for_phone_input_modes(environ
     result = drive_ui_script(env, tmp_path, "search-field-font.mjs")
     assert len(result["cases"]) == 8
     assert all(case["fontSize"] >= max(16, case["themeSize"]) for case in result["cases"])
+
+
+@pytest.mark.timeout(600)
+def test_phone_pages_never_pan_sideways(environment, tmp_path):
+    """On 375 and 390 px touch viewports no main page, panel or dialog scrolls or pans horizontally."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "no-horizontal-pan.mjs")
+    pages = ("today", "forecast", "notifications", "calendar", "heinzels", "settings", "terminal")
+    assert result["cases"] == [
+        {"viewport": viewport, "page": page} for viewport in ("iphone-375", "iphone-390") for page in pages
+    ]

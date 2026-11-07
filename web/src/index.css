@@ -140,6 +140,14 @@ body,
   height: 100%;
 }
 
+/* The app never pans sideways on a phone: a touch drag or rubber band must not slide the layout and show a gap.
+   Wide content scrolls in its own overflow-x container (tables, code, tab rows). */
+html,
+body {
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
 body {
   background: var(--color-background);
   color: var(--color-foreground);
