@@ -1269,7 +1269,31 @@ try {
     await scrollPage.setViewportSize({ width: 844, height: 320 });
     await scrollPage.getByRole("button", { name: "Show terminal" }).tap();
     await atPanel("terminal");
-    await terminalKeys.waitFor({ state: "visible" });
+    // Bead f87: on hosted macOS this row stayed invisible for the whole wait, once in 13 main runs. The same wait now
+    // says why: what hides the row (display, an inactive or hidden tab, a zero box) and which media rules apply.
+    await terminalKeys.waitFor({ state: "visible" }).catch(async (error) => {
+      const state = await scrollPage.evaluate(() => {
+        const rows = [...document.querySelectorAll('fieldset[aria-label="Terminal keys"]')];
+        return {
+          viewport: [innerWidth, innerHeight],
+          pointerFine: matchMedia("(pointer: fine)").matches,
+          regions: document.querySelectorAll('section[aria-label="Terminal"], [role="region"][aria-label="Terminal"]')
+            .length,
+          rows: rows.map((row) => {
+            const box = row.getBoundingClientRect();
+            const view = row.parentElement;
+            return {
+              display: getComputedStyle(row).display,
+              box: [Math.round(box.width), Math.round(box.height)],
+              tabHidden: view?.getAttribute("aria-hidden") === "true",
+              insideHidden: Boolean(row.closest("[hidden]")),
+              tabBox: Math.round(view?.getBoundingClientRect().height ?? -1),
+            };
+          }),
+        };
+      });
+      throw new Error(`${error.message}\nTerminal keys state: ${JSON.stringify(state)}`);
+    });
     const landscapeEscape = terminalKeys.getByRole("button", { name: "Escape", exact: true });
     await landscapeEscape.scrollIntoViewIfNeeded();
     await assertTouchTarget(landscapeEscape, "landscape Escape key", "phone");

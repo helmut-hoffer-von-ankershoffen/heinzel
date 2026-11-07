@@ -1900,3 +1900,17 @@ def test_replacing_a_plugin_cannot_inherit_its_previously_checkpointed_wheel_sou
         command, "Fixture change failed", "Fixture mutation", context=(mutation, ()), adding="heinzel-old==1.0.0"
     )
     assert captured == [["heinzel @ git+https://github.com/org/heinzel@v0.1.0"]]
+
+
+def test_a_plugin_another_plugin_needs_is_not_removed_and_nothing_changes(make_kernel, tool_env):
+    site = tool_env / "lib/python3.12/site-packages"
+    for name, requires in [("heinzel-old", "heinzel>=0.1"), ("heinzel-older", "heinzel-old>=1")]:
+        info = site / f"{name}-1.0.0.dist-info"
+        info.mkdir(parents=True)
+        (info / "METADATA").write_text(
+            f"Metadata-Version: 2.1\nName: {name}\nVersion: 1.0.0\nRequires-Dist: {requires}\n"
+        )
+    with pytest.raises(
+        HeinzelError, match=r"heinzel_old can't be removed: heinzel-older needs it.*Nothing was changed"
+    ):
+        service_for(make_kernel, tool_env).remove_command("heinzel_old")
