@@ -23,12 +23,12 @@ const ready = () =>
     ([{ type: "mounted" }, { type: "answered" }, { type: "themed" }] as SplashEvent[]).reduce(reduce, initial),
   );
 
-function mount(probe: () => Promise<ProbeResult>, store = createSplashStore()) {
+function mount(probe: () => Promise<ProbeResult>, store = createSplashStore(), reload: () => void = () => undefined) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const refresh = vi.spyOn(client, "invalidateQueries");
   render(
     <QueryClientProvider client={client}>
-      <Splash store={store} probe={probe} now={now} />
+      <Splash store={store} probe={probe} now={now} reload={reload} />
     </QueryClientProvider>,
     { container: document.getElementById("root") as HTMLElement },
   );
@@ -108,7 +108,7 @@ describe("the splash", () => {
     await passes(0); // playful preference query settles before inspecting its optional illustration
     expect(screen.getByRole("alert")).toHaveTextContent("hz isn't answering");
     expect(screen.getByTestId("offline-scene")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("Start it in a terminal");
+    expect(screen.getByRole("alert")).toHaveTextContent("An installed hz starts again on its own");
     expect(screen.getByRole("alert")).toHaveTextContent("Trying again every few seconds");
     expect(screen.getByRole("button", { name: `Copy the command ${START}` })).toBeInTheDocument();
     expect(splash().dataset.state).toBe("error");
@@ -161,6 +161,43 @@ describe("the splash", () => {
     expect(screen.getByTestId("connection-scene").querySelector("svg")).toBeInTheDocument();
   });
 
+  it("names the current command, never the old one", () => {
+    expect(START).toMatch(/^(hz ui serve|make web-dev)$/);
+    expect(START).not.toBe("hz ui");
+  });
+
+  it("keeps asking with bounded waits for as long as hz is down, then opens the app by itself", async () => {
+    let calls = 0;
+    const probe = vi.fn(async (): Promise<ProbeResult> => (++calls > 12 ? ok : gone));
+    mount(probe);
+    await passes(GIVE_UP_MS + 100);
+    expect(screen.getByRole("alert")).toHaveTextContent("hz isn't answering");
+    await passes(10 * 60_000);
+    expect(calls).toBeGreaterThan(12);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("loads the new app when hz comes back as another version than this page last knew", async () => {
+    localStorage.setItem("hz.splash", JSON.stringify({ version: "0.9.21" }));
+    const reload = vi.fn();
+    let calls = 0;
+    mount(async () => (++calls > 2 ? { kind: "ok", info: { version: "0.9.22" } } : gone), createSplashStore(), reload);
+    await passes(60_000);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(localStorage.getItem("hz.splash") ?? "{}").version).toBe("0.9.22");
+    localStorage.clear();
+  });
+
+  it("does not reload when hz comes back as the same version", async () => {
+    localStorage.setItem("hz.splash", JSON.stringify({ version: "0.9.1" }));
+    const reload = vi.fn();
+    let calls = 0;
+    mount(async () => (++calls > 2 ? ok : gone), createSplashStore(), reload);
+    await passes(60_000);
+    expect(reload).not.toHaveBeenCalled();
+    localStorage.clear();
+  });
+
   it("doesn't give up before hz was asked, however long the page took to load", async () => {
     started = Date.now() - 2 * GIVE_UP_MS; // the bundle took 16 s
     let answer: (result: ProbeResult) => void = () => undefined;
@@ -194,7 +231,7 @@ describe("the splash", () => {
     mount(probe);
     await passes(0);
     expect(screen.getByRole("alert")).toHaveTextContent("no address bar");
-    expect(screen.getByLabelText("Paste the link `hz ui` printed")).toBeInTheDocument();
+    expect(screen.getByLabelText("Paste the link `hz ui serve` printed")).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
 
