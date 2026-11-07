@@ -40,6 +40,7 @@ const candidate = {
   revision: "b".repeat(40),
   installed_version: null as string | null,
   warnings: ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."],
+  also: "",
 };
 let receiptCount = 0;
 let confirmedStreamDelay = 0;
@@ -262,6 +263,13 @@ describe("PluginsSection", () => {
     render(<CandidateDetails candidate={{ ...candidate, source: "git", installed_version: "0.9.3" }} />);
     const line = screen.getByText(/Replaces 0\.9\.3/);
     expect(line.closest("details")).toBeNull();
+  });
+
+  it("says before it starts which plugins it installs with this one", () => {
+    const also = "heinzel-crm also needs heinzel-github; installing it too.";
+    render(<CandidateDetails candidate={{ ...candidate, source: "git", also }} />);
+    expect(screen.getByTestId("plugin-also").textContent).toBe(also);
+    expect(screen.getByText(also).closest("details")).toBeNull();
   });
 
   it("does not call an uncompleted backend reply an installed plugin or restart the server", async () => {
