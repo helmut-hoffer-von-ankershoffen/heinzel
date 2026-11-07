@@ -487,6 +487,7 @@ class PluginService:
         phases = Phases(
             self._kernel.resolve(Progress),
             [("install", f"Installing {name}"), ("verify", "Checking that exactly it is installed")],
+            operation="system.plugin.add",
         )
         before = self._host_list() if _requires_change(candidate) else []
         versions = self._plugin_versions_or_none()
@@ -555,7 +556,7 @@ class PluginService:
                 detail = f"Updated {before[dependency]} → {version}"
             else:
                 detail = f"Already installed: {version}"
-            phases.note(f"needs:{dependency}", label, "done", detail)
+            phases.note(f"needs:{dependency}", label, "done", detail, version=version)
 
     def develop(self, path: Path) -> PluginChange:
         """Install the plugin in a directory on this machine, as `add` would a released one.
