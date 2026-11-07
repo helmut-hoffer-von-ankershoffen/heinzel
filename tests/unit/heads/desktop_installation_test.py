@@ -375,7 +375,7 @@ def test_install_and_uninstall_name_the_real_path_and_it_exists(monkeypatch, tmp
     _app._install(None, output, error)
     assert bundle.is_dir()
     assert f"Installed Heinzelmännchen {__version__} at {bundle}" in out.getvalue()
-    assert "Go > Home > Applications" in out.getvalue()
+    assert f"open Heinzelmännchen from {bundle.parent} in Finder" in out.getvalue()
     assert f"Verified: {bundle} exists" in err.getvalue()
     assert "Verifying the installed app" in err.getvalue()
     assert str(tmp_path / "Applications") in err.getvalue()

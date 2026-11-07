@@ -118,9 +118,9 @@ def _install(kernel: Kernel, output: Console, error: Console, *, keep_quarantine
     else:
         output.print(f"{state.capitalize()} Heinzelmännchen {__version__} at {target}")
         output.print(_trust_note(keep_quarantine=keep_quarantine))
+    # The folder the installer reports, not a fixed one: ~/Applications today, /Applications once it installs there.
     output.print(
-        "Next: open Heinzelmännchen from your user Applications folder (Finder: Go > Home > Applications), "
-        "or press Cmd+Space and type Heinzelmännchen."
+        f"Next: open Heinzelmännchen from {target.parent} in Finder, or press Cmd+Space and type Heinzelmännchen."
     )
 
 

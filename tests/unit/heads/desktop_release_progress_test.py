@@ -229,3 +229,22 @@ def test_verification_failure_and_timeout_stay_fatal(tmp_path, monkeypatch):
     monkeypatch.setattr(release, "_run_gh", stalled)
     with pytest.raises(release.HeinzelError, match="did not finish verifying"):
         release._verify("gh", tmp_path / "a", tmp_path / "p", core)
+
+
+def test_install_names_the_folder_the_installer_reports_not_a_fixed_one(monkeypatch, tmp_path):
+    from pathlib import Path
+
+    from heinzel.heads import _desktop_installation as installation
+    from heinzel.heads.cli import _app
+
+    system = Path("/Applications/Heinzelmaennchen.app")
+    monkeypatch.setattr(installation, "bundle_path", lambda home=None: system)
+    monkeypatch.setattr(installation, "install_desktop", lambda *_args, **_options: "installed")
+    monkeypatch.setattr(_app, "desktop_executable", lambda _kernel: tmp_path / "hz")
+    out, err = io.StringIO(), io.StringIO()
+    _app._install(None, Console(file=out, width=200), Console(file=err, width=200))
+    assert "Installing Heinzelmännchen" in err.getvalue()
+    assert "into /Applications ..." in err.getvalue()
+    assert "Next: open Heinzelmännchen from /Applications in Finder" in out.getvalue()
+    assert "user Applications" not in out.getvalue()
+    assert "Go > Home" not in out.getvalue()
