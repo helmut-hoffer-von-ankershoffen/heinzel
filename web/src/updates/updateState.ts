@@ -114,6 +114,10 @@ export function describe(input: Inputs): View {
     });
   }
 
+  // A newer release automatic updates hold back until it is accepted: said once, under the Heinzel line.
+  if (plan?.core_held && !planOff)
+    rows.push({ id: "core-held", tone: "off", text: t("updates.coreHeld", { version: plan.core_held }) });
+
   // Plugins: only the ones that differ from "current" get a line.
   for (const [name, version] of plugins)
     rows.push({ id: `plugin:${name}`, tone: "warn", text: t("updates.pluginAvailable", { name, version }) });

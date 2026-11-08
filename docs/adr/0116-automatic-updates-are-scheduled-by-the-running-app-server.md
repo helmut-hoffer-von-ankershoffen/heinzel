@@ -65,6 +65,12 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
   new. Pre-releases, GitHub drafts and yanked releases never count. The commit that hz's tag names is recorded when
   hz is announced. `hz system update` on the stable channel never moves onto a
   pre-release either, not even from one (this amends ADR 0006).
+- **hz installs itself only once its release is accepted.** The release train judges every published release with
+  an acceptance run and uploads the verdict as the release asset `acceptance.json` (`project`, `version`,
+  `accepted`). A newer hz old enough to install but without that asset, or with one that does not say accepted for
+  exactly this version, is held: the Updates pane says so (`core_held`) and `web.auto_update.acceptance` logs the
+  check with its outcome. A verdict that can't be read counts as a failed check. Plugins still move. `hz system
+  update` never asks, so a person can always install the release by hand.
 - When something is newer and nothing is busy (no request that changes state is in flight, no daemon job holds the
   tick lock), it opens a 30-second countdown. A request is in flight until its response body has been sent or
   dropped, so a streamed chat turn holds it off while it streams, and a streamed operation holds it in its own thread

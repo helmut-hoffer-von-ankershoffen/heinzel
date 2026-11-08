@@ -48,8 +48,13 @@ from heinzel.kernel import (
     ReleaseSource,
     Settings,
 )
+from heinzel.kernel._logging import get_logger
+from heinzel.kernel._logging import step as log_step
 
 log = logging.getLogger(__name__)
+events = get_logger("web.auto_update")
+ACCEPTANCE_EVENT = "web.auto_update.acceptance"
+"""Once per check of a newer hz old enough to install: whether its release was accepted (ADR 0138)."""
 
 CHECK_EVERY = timedelta(minutes=30)
 """How often the server asks for newer releases."""
@@ -109,6 +114,8 @@ class Plan:
     """Plugins pinned to a GitHub commit whose release tags the last check could read: not updated by hand."""
     held_plugins: list[str] = field(default_factory=list[str])
     """One line per plugin release the last check held back, because another plugin can't move with it."""
+    core_held: str | None = None
+    """A newer hz release the last check held back, because its release is not accepted (yet)."""
 
     @property
     def pending(self) -> bool:
@@ -136,6 +143,7 @@ class Plan:
             "plugin_commits": self.plugin_commits,
             "followed": self.followed,
             "held_plugins": self.held_plugins,
+            "core_held": self.core_held,
         }
 
     @classmethod
@@ -191,6 +199,7 @@ class Plan:
             plugin_commits=commits,
             followed=texts("followed"),
             held_plugins=texts("held_plugins"),
+            core_held=text("core_held"),
         )
 
 
@@ -357,6 +366,11 @@ class AutoUpdateStatus(BaseModel):
     plugins_held: list[str] = Field(
         default_factory=list[str],
         description="One line per plugin release held back because another plugin can't move with it.",
+    )
+    core_held: str | None = Field(
+        default=None,
+        description="A newer hz release automatic updates hold back because it is not accepted yet; installing it by "
+        "hand (`hz system update`) still works.",
     )
     holds: list[PluginHold] = Field(
         default_factory=list[PluginHold],
@@ -809,10 +823,10 @@ class AutoUpdater:
         settings = self._read_settings()
         core_ok = plugins_ok = True
         try:
-            core, commit = self._check_core(settings, now)
+            core, commit, core_held = self._check_core(settings, now)
         except Exception as exc:  # noqa: BLE001 - offline or rate-limited: keep what hz's last check found
             log.info("automatic update check of hz failed: %s", exc)
-            core, commit = self.plan.core, self.plan.commit
+            core, commit, core_held = self.plan.core, self.plan.commit, self.plan.core_held
             core_ok = False
         try:
             news = self._check_plugins(settings, now)
@@ -827,6 +841,7 @@ class AutoUpdater:
             found(plan, core, plugins, now)
             if plan.core == core:
                 plan.commit = commit
+            plan.core_held = core_held
             if news is not None:
                 commits = {n: r.commit for n, r in news.releases.items() if r.commit is not None}
                 plan.plugin_commits = {n: c for n, c in commits.items() if n in plan.plugins}
@@ -838,22 +853,33 @@ class AutoUpdater:
             if (plan.core, plan.plugins) != before:
                 log.info("automatic update found: %s", update_summary(plan) or "nothing newer")
 
-    def _check_core(self, settings: Settings, now: datetime) -> tuple[str | None, str | None]:
-        """A newer stable hz old enough to install, and the commit its tag names for an installation from a tag."""
+    def _check_core(self, settings: Settings, now: datetime) -> tuple[str | None, str | None, str | None]:
+        """A newer stable, accepted hz old enough to install, its tag's commit, and a newer one held back.
+
+        The commit is the one its tag names, for an installation from a tag; the held one is a release that is
+        not accepted (yet).
+
+        Acceptance is the release train's verdict on the published wheel, uploaded with the release; a release
+        without it never installs itself, however old. `hz system update` doesn't ask.
+        """
         source = self._kernel.resolve(ReleaseSource)
         latest = source.latest_version(TIMEOUT)
         ReleaseCache(self._kernel.settings.cache_dir).remember(latest, now)
         version = Version(latest)
         if version.is_prerelease or version.is_devrelease or version <= Version(self._version):
-            return None, None
+            return None, None, None
         index = self._kernel.resolve(PluginReleases) if self._kernel.provides(PluginReleases) else None
         uploaded = index.release("heinzel", str(version), TIMEOUT) if index is not None else None
         if not _old_enough(uploaded.uploaded_at if uploaded else None, settings.auto_update_min_age_hours, now):
-            return None, None
+            return None, None, None
+        with log_step(events, ACCEPTANCE_EVENT, operation="auto_update", step="acceptance", version=str(version)) as s:
+            if not source.accepted(str(version), TIMEOUT):
+                s.skip("not accepted")
+                return None, None, str(version)
         if not self._from_tag():
-            return str(version), None  # from PyPI: its release there is what counts, GitHub isn't asked again
+            return str(version), None, None  # from PyPI: its release there is what counts, GitHub isn't asked again
         facts = source.release_facts(str(version), TIMEOUT)
-        return (None, None) if facts.prerelease else (str(version), facts.commit)
+        return (None, None, None) if facts.prerelease else (str(version), facts.commit, None)
 
     def _check_plugins(self, settings: Settings, now: datetime) -> PluginNews:
         """Newer plugin releases old enough to install that can move with what they need, dependencies first."""
@@ -1024,6 +1050,7 @@ class AutoUpdater:
                 core_checked=self._looked[1] if self._looked else None,
                 plugins_checked=self._looked[2] if self._looked else None,
                 plugins_held=[] if self.development is not None else list(plan.held_plugins),
+                core_held=None if self.development is not None else plan.core_held,
             )
 
     def recheck(self) -> AutoUpdateStatus:

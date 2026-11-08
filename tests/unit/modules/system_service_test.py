@@ -346,3 +346,54 @@ def test_release_facts_name_the_publish_time_and_the_commit_behind_an_annotated_
     facts = GitHubReleases("someone/heinzel").release_facts("1.2.3", 2)
     assert facts.published_at == datetime(2026, 11, 1, 8, 0, tzinfo=UTC)
     assert (facts.commit, facts.prerelease) == ("c" * 40, False)
+
+
+# The acceptance marker automatic updates require (bead m3kj) ----------------------------------------------------------
+
+
+def _marker(monkeypatch, answer):
+    asked = []
+
+    def read_asset(url, timeout):
+        asked.append(url)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(_github, "read_asset", read_asset)
+    return asked
+
+
+@pytest.mark.parametrize(
+    ("marker", "expected"),
+    [
+        ({"project": "heinzel", "version": "1.2.4", "accepted": True}, True),
+        ({"project": "heinzel", "version": "1.2.4", "accepted": False}, False),
+        ({"project": "heinzel", "version": "1.2.3", "accepted": True}, False),
+        ({"project": "other", "version": "1.2.4", "accepted": True}, False),
+        ({"project": "heinzel", "version": "1.2.4", "accepted": "yes"}, False),
+        (["accepted"], False),
+    ],
+)
+def test_only_a_marker_naming_this_release_as_accepted_counts(monkeypatch, marker, expected):
+    asked = _marker(monkeypatch, json.dumps(marker).encode())
+    assert GitHubReleases("org/heinzel").accepted("1.2.4", 1.0) is expected
+    assert asked == ["https://github.com/org/heinzel/releases/download/v1.2.4/acceptance.json"]
+
+
+def test_a_release_without_a_marker_is_not_accepted_and_other_errors_raise(monkeypatch):
+    url = "https://github.com/org/heinzel/releases/download/v1.2.4/acceptance.json"
+    _marker(monkeypatch, urllib.error.HTTPError(url, 404, "Not Found", {}, io.BytesIO()))
+    assert GitHubReleases("org/heinzel").accepted("1.2.4", 1.0) is False
+    unavailable = urllib.error.HTTPError(url, 503, "Unavailable", {}, io.BytesIO())
+    _marker(monkeypatch, unavailable)
+    with pytest.raises(OSError, match="503"):
+        GitHubReleases("org/heinzel").accepted("1.2.4", 1.0)
+    unavailable.close()
+    _marker(monkeypatch, b"x" * 5000)
+    with pytest.raises(ValueError, match="too large"):
+        GitHubReleases("org/heinzel").accepted("1.2.4", 1.0)
+
+
+def test_the_base_release_source_never_counts_a_release_as_accepted():
+    assert ReleaseSource().accepted("1.2.4", 1.0) is False

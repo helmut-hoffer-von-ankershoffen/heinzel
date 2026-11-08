@@ -1102,6 +1102,7 @@ const en = {
   "progress.of": "{done} of {total}",
   "updates.coreAvailable": "Heinzel {version} is available",
   "updates.coreCurrent": "Heinzel {version} is up to date · checked {when}",
+  "updates.coreHeld": "Heinzel {version} isn't accepted yet, so it won't update itself; you can still update by hand",
   "updates.coreUnknown": "Couldn't check for updates right now",
   "updates.lastGood": "Last successful check: {when}",
   "updates.neverChecked": "No successful check yet.",

@@ -153,3 +153,19 @@ it("describes folders and links, progress, and a failed update with its reason",
   expect(failed.tone).toBe("bad");
   expect(failed.rows[0]).toMatchObject({ text: "Installer failed.", alert: true });
 });
+
+it("says a newer release waits for its acceptance, and only while it is held", () => {
+  const view = describe({
+    ...base,
+    status: { ...status, latest: "0.9.31", available: true },
+    plan: { ...plan, core_held: "0.9.31" },
+  });
+  expect(view.rows.map((row) => [row.id, row.tone, row.text])).toEqual([
+    ["core", "warn", "Heinzel 0.9.31 is available"],
+    ["core-held", "off", "Heinzel 0.9.31 isn't accepted yet, so it won't update itself; you can still update by hand"],
+  ]);
+  expect(texts({ plan: { ...plan, core_held: null } })).toEqual(["Heinzel 0.9.27 is up to date · checked 10:32"]);
+  expect(
+    texts({ plan: { ...plan, phase: "off", reason: "Automatic updates are off.", core_held: "0.9.31" } }),
+  ).not.toContain("Heinzel 0.9.31 isn't accepted yet, so it won't update itself; you can still update by hand");
+});

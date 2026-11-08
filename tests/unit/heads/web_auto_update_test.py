@@ -142,11 +142,16 @@ COMMIT = "c" * 40
 
 
 class Releases(ReleaseSource):
-    def __init__(self, latest="9.9.9", published=START - timedelta(days=7), prerelease=False):
-        self.latest, self.published, self.prerelease = latest, published, prerelease
+    def __init__(self, latest="9.9.9", published=START - timedelta(days=7), prerelease=False, accepted=True):
+        self.latest, self.published, self.prerelease, self.is_accepted = latest, published, prerelease, accepted
 
     def latest_version(self, timeout):
         return self.latest
+
+    def accepted(self, version, timeout):
+        if isinstance(self.is_accepted, Exception):
+            raise self.is_accepted
+        return self.is_accepted
 
     def release_facts(self, version, timeout):
         return ReleaseFacts(version, self.published, COMMIT, prerelease=self.prerelease)
@@ -919,3 +924,71 @@ def test_the_plan_keeps_plugin_commits_what_it_follows_and_what_waits_across_a_r
     )
     auto.done(again, "Updated.")
     assert (again.plugins, again.plugin_commits, again.followed) == ({}, {}, ["heinzel-maps"])
+
+
+# Acceptance (bead m3kj): a release installs itself only once the release train published its acceptance verdict ---
+
+
+def _acceptance_events(caplog):
+    return [
+        (r.__dict__.get("phase"), r.__dict__.get("outcome"), r.__dict__.get("version"), r.__dict__.get("reason"))
+        for r in caplog.records
+        if r.getMessage() == auto.ACCEPTANCE_EVENT
+    ]
+
+
+def test_an_unaccepted_release_is_held_with_a_status_line_and_an_event(make_kernel, tmp_path, caplog):
+    made, clock, calls, kernel = updater(make_kernel, tmp_path)
+    kernel.bind(ReleaseSource, Releases(accepted=False))
+    with caplog.at_level("INFO", logger="heinzel.web.auto_update"):
+        advance(made, clock, 5 * 60)
+    status = made.status()
+    assert (status.core, status.core_held, status.core_checked) == (None, "9.9.9", True)
+    assert status.plugins == {"heinzel-example": "2.0.0"}, "plugins move on; only hz waits for its verdict"
+    assert _acceptance_events(caplog) == [("start", None, "9.9.9", None), ("end", "skipped", "9.9.9", "not accepted")]
+    saved = json.loads((tmp_path / "state" / "web" / "auto-update.json").read_text())
+    assert saved["core_held"] == "9.9.9"
+    advance(made, clock, 30)
+    assert calls["update"] == 1
+    assert made.applied[0]["core"] is None, "hz itself is never installed while unaccepted"
+
+
+def test_an_accepted_release_installs_and_clears_the_hold(make_kernel, tmp_path, caplog):
+    made, clock, calls, kernel = updater(make_kernel, tmp_path)
+    releases = Releases(accepted=False)
+    kernel.bind(ReleaseSource, releases)
+    made.plan.core_held = "9.9.9"
+    releases.is_accepted = True
+    with caplog.at_level("INFO", logger="heinzel.web.auto_update"):
+        advance(made, clock, 5 * 60)
+    status = made.status()
+    assert (status.core, status.core_held, status.phase) == ("9.9.9", None, "countdown")
+    assert _acceptance_events(caplog) == [("start", None, "9.9.9", None), ("end", "ok", "9.9.9", None)]
+    advance(made, clock, 30)
+    assert calls["update"] == 1
+    assert made.applied[0]["core"] == "9.9.9"
+
+
+def test_an_unreadable_verdict_is_a_failed_check_never_an_install(make_kernel, tmp_path, caplog):
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    kernel.bind(ReleaseSource, Releases(accepted=OSError("github down")))
+    with caplog.at_level("INFO", logger="heinzel.web.auto_update"):
+        advance(made, clock, 5 * 60)
+    status = made.status()
+    assert (status.core, status.core_checked) == (None, False)
+    [(_, failed)] = [(p, o) for p, o, _, _ in _acceptance_events(caplog) if p == "end"]
+    assert failed == "error"
+
+
+def test_a_young_release_is_not_asked_for_its_verdict(make_kernel, tmp_path):
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    kernel.bind(ReleaseSource, Releases(accepted=AssertionError("asked too early")))
+    kernel.bind(PluginReleases, Plugins(core_uploaded=START))
+    advance(made, clock, 5 * 60)
+    assert (made.status().core, made.status().core_held, made.status().core_checked) == (None, None, True)
+
+
+def test_the_hold_survives_a_restart_in_the_saved_plan():
+    plan = Plan(core_held="9.9.9")
+    assert Plan.from_json(plan.to_json(), fresh=True).core_held == "9.9.9"
+    assert Plan.from_json({}).core_held is None
