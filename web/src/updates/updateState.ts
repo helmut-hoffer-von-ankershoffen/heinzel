@@ -6,7 +6,7 @@ import type { State } from "@/components/FooterItem";
 import type { ProgressSegment } from "@/components/Progress";
 import { t } from "@/i18n";
 import type { AutoUpdateStatus, PluginHold } from "./autoUpdateApi";
-import type { UpdateStage, UpdateStatus } from "./controller";
+import type { UpdateStatus } from "./controller";
 
 /** A check older than this (four of the server's thirty-minute rounds) no longer confirms anything. */
 export const FRESH_MS = 2 * 60 * 60 * 1000;
@@ -52,14 +52,9 @@ export type View = {
 
 export type Part = { id: string; label: string };
 
-/**
- * One segment per part while it is being updated. The installer is a single call for core and plugins, so the head
- * reports no finer step: the parts run together, then count as installed once restart and checks begin. A failed
- * install marks every part it was changing; nothing here is a measured percentage.
- */
-export function partSegments(parts: Part[], stage: UpdateStage | null, failed: boolean): ProgressSegment[] {
-  const state = stage === "restart" || stage === "verify" ? "done" : failed ? "failed" : "running";
-  return parts.map((part) => ({ ...part, state }));
+/** The parts as segments when the server applies on its own and reports no steps: all running, never a percentage. */
+export function partSegments(parts: Part[]): ProgressSegment[] {
+  return parts.map((part) => ({ ...part, state: "running" as const }));
 }
 
 const parse = (value: string | null | undefined): Date | null => {

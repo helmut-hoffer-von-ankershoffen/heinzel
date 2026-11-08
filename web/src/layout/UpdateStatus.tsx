@@ -2,20 +2,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, LoaderCircle, RefreshCw, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FooterItem } from "@/components/FooterItem";
-import { Progress } from "@/components/Progress";
+import { Progress, type ProgressSegment } from "@/components/Progress";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { type Phase, trackOperation } from "@/lib/operationRun";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
 import { checkNow, KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
-import {
-  canVerifyUpdate,
-  finishUpdate,
-  pendingUpdate,
-  readUpdateStatus,
-  startUpdate,
-  type UpdateStage,
-} from "@/updates/controller";
-import { describe, type Part, partSegments } from "@/updates/updateState";
+import { canVerifyUpdate, finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
+import { describe, partSegments } from "@/updates/updateState";
+
+/** The update as the operation dialog shows it: the call the person confirmed with the update button. */
+const updateCall = () => ({
+  path: "/system/update",
+  method: "POST" as const,
+  query: {},
+  command: "hz system update",
+  summary: t("updates.dialogTitle"),
+  read_only: false,
+});
 
 function updateRecoveryState(): "none" | "inspect" | "verify" {
   const receipt = pendingUpdate();
@@ -37,9 +41,8 @@ export function UpdateStatus() {
   const mounted = useRef(true);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<string | null>(null);
-  // The parts this run changes and how far it got, kept after the plan stops listing them as news.
-  const [running, setRunning] = useState<{ parts: Part[]; stage: UpdateStage | null } | null>(null);
-  const partsNow = useRef<Part[]>([]);
+  // The steps the update reports as it runs (the same list the operation dialog shows), kept after a failure.
+  const [steps, setSteps] = useState<Phase[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<"none" | "inspect" | "verify">("none");
   const [message, setMessage] = useState<string | null>(null);
@@ -49,17 +52,25 @@ export function UpdateStatus() {
     active.current = controller;
     setBusy(true);
     setProblem(null);
-    setRunning(resume ? null : { parts: partsNow.current, stage: null });
+    setSteps([]);
     try {
       const answer = resume
         ? await finishUpdate(controller.signal)
-        : await startUpdate(controller.signal, (phase, stage) => {
-            if (!mounted.current) return;
-            setPhase(phase);
-            if (stage) setRunning((now) => (now ? { ...now, stage } : now));
-          });
+        : await trackOperation<string>(updateCall(), (report) =>
+            startUpdate(
+              controller.signal,
+              (phase) => {
+                if (mounted.current) setPhase(phase);
+              },
+              undefined,
+              (phases) => {
+                if (mounted.current) setSteps(phases);
+                report(phases);
+              },
+            ),
+          );
       if (mounted.current) {
-        setRunning(null);
+        setSteps([]);
         setMessage(answer);
         setRecovery(updateRecoveryState());
       }
@@ -110,13 +121,14 @@ export function UpdateStatus() {
     message,
     problem,
   });
-  partsNow.current = view.parts;
-  // A run of this window, or the server applying on its own: the same bar, drawn from the same parts.
-  const segments = running
-    ? partSegments(running.parts, running.stage, problem !== null)
-    : phase === null && plan?.phase === "applying"
-      ? partSegments(view.parts, null, false)
-      : [];
+  // The head's own steps while this window updates; while the server applies on its own it reports none, so the
+  // parts it is changing show as running together.
+  const segments: ProgressSegment[] =
+    steps.length > 0
+      ? steps.map(({ id, label, state }) => ({ id, label, state }))
+      : phase === null && plan?.phase === "applying"
+        ? partSegments(view.parts)
+        : [];
   const installed = status?.installed_at ? new Date(status.installed_at) : null;
   const installedDate =
     installed && !Number.isNaN(installed.getTime())

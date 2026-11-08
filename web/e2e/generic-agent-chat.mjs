@@ -37,7 +37,9 @@ if (latePage) {
   });
 }
 const trace = [];
+const began = Date.now();
 const watched = new Set([
+  "/api/heinzel/new-chat", // bead f67s: "Create a Heinzel and take this message" must show whether it answered
   "/api/heinzel/chat",
   "/api/heinzel/answer-chat",
   "/api/heinzel/chat-turn-state",
@@ -47,7 +49,11 @@ const watched = new Set([
 page.on("response", (response) => {
   const request = response.request();
   const path = new URL(response.url()).pathname;
-  if (watched.has(path)) trace.push(`${request.method()} ${path} ${response.status()}`);
+  if (watched.has(path)) trace.push(`+${Date.now() - began}ms ${request.method()} ${path} ${response.status()}`);
+});
+page.on("request", (request) => {
+  const path = new URL(request.url()).pathname;
+  if (watched.has(path)) trace.push(`+${Date.now() - began}ms ${request.method()} ${path} sent`);
 });
 page.on("requestfailed", (request) => {
   const path = new URL(request.url()).pathname;
@@ -63,6 +69,7 @@ try {
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
   const text = "Prepare a private draft and suggest an identity.";
   await page.getByLabel("Your message").fill(text);
+  trace.push(`+${Date.now() - began}ms create input=${(await page.getByLabel("Your message").inputValue()).length}`);
   await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();

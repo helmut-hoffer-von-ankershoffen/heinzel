@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
+import type { Phase, PhaseState } from "@/lib/operationRun";
 import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { KEY } from "@/updates/autoUpdateApi";
@@ -125,7 +126,13 @@ it("reports an installer failure and never retries installation without another 
   renderAt("/");
   await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
   await user.click(screen.getByRole("button", { name: "Update now" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Installer failed before changing hz.");
+  // The popover and the operation dialog that showed its steps both say why.
+  await waitFor(() =>
+    expect(screen.getAllByRole("alert").map((alert) => alert.textContent)).toEqual([
+      expect.stringContaining("Installer failed before changing hz."),
+      expect.stringContaining("Installer failed before changing hz."),
+    ]),
+  );
   expect(startUpdate).toHaveBeenCalledTimes(1);
 });
 
@@ -349,56 +356,51 @@ const planWith = {
 };
 const checked = { ...planWith, core_checked: true, plugins_checked: true, seconds_left: null, apply_at: null };
 
-async function openWhileUpdating(finish: (stage: (phase: string, stage: string) => void) => Promise<string>) {
+type Report = (phases: Phase[]) => void;
+const steps = (...states: PhaseState[]): Phase[] =>
+  ["Heinzel", "notes"].map((label, index) => ({ id: label, label, state: states[index] ?? "pending" }));
+
+async function openWhileUpdating(run: (report: Report) => Promise<string>) {
   mockApi({ ...shell, "/api/update-status": status, "/api/auto-update": checked });
-  let release: (answer: string) => void = () => {};
-  vi.mocked(startUpdate).mockImplementationOnce(async (_signal, onPhase) => {
-    onPhase("Updating core and plugins…", "install");
-    return new Promise<string>((resolve) => {
-      release = resolve;
-      void finish((phase, stage) => onPhase(phase, stage as "restart"));
-    });
-  });
+  vi.mocked(startUpdate).mockImplementationOnce(async (_signal, _onPhase, _transport, report) =>
+    run(report ?? (() => {})),
+  );
   const user = userEvent.setup();
   const view = renderAt("/");
   await user.click(await screen.findByRole("button", { name: /Updates available/ }));
   await screen.findByText("Heinzel 0.2.0 is available");
   await user.click(screen.getByRole("button", { name: /Update all/ }));
-  return { view, release: (answer: string) => release(answer) };
+  return view;
 }
 
-it("draws one running segment per part while core and plugins update, and passes axe", async () => {
-  const { view } = await openWhileUpdating(() => new Promise<string>(() => {}));
+it("draws the steps the head reports as segments while core and plugins update, and passes axe", async () => {
+  const view = await openWhileUpdating(async (report) => {
+    report(steps("done", "running"));
+    return new Promise<string>(() => {});
+  });
   const bar = await screen.findByRole("progressbar", { name: "Update progress" });
   expect(bar).toHaveAttribute("max", "2");
-  expect(bar).toHaveAttribute("value", "0");
-  expect(screen.getByText("Updating core and plugins…")).toBeInTheDocument();
-  expect(screen.getByText("Heinzel: in progress")).toBeInTheDocument();
+  expect(bar).toHaveAttribute("value", "1");
+  expect(screen.getByText("Heinzel: done")).toBeInTheDocument();
   expect(screen.getByText("notes: in progress")).toBeInTheDocument();
   await expectAccessible(view.container);
 });
 
-it("counts every part done once the installer has finished and the restart begins", async () => {
-  await openWhileUpdating(async (phase) => {
-    phase("Restarting and verifying hz…", "restart");
-    return new Promise<string>(() => {});
+it("shows a failed step as failed and keeps the bar next to the error", async () => {
+  await openWhileUpdating(async (report) => {
+    report(steps("done", "failed"));
+    throw new Error("Installer failed before changing hz.");
   });
-  const bar = await screen.findByRole("progressbar", { name: "Update progress" });
-  await waitFor(() => expect(bar).toHaveAttribute("value", "2"));
-  expect(screen.getByText("Heinzel: done")).toBeInTheDocument();
-  expect(screen.getByText("notes: done")).toBeInTheDocument();
+  expect((await screen.findAllByText("Installer failed before changing hz.")).length).toBeGreaterThan(0);
+  expect(await screen.findByRole("progressbar", { name: "Update progress" })).toHaveAttribute("value", "1");
+  expect(screen.getByText("notes: failed")).toBeInTheDocument();
 });
 
-it("marks the parts failed when the installer fails, and shows no bar when nothing is updating", async () => {
+it("shows no bar before an update runs", async () => {
   mockApi({ ...shell, "/api/update-status": status, "/api/auto-update": checked });
-  vi.mocked(startUpdate).mockRejectedValueOnce(new Error("Installer failed before changing hz."));
   const user = userEvent.setup();
   renderAt("/");
   await user.click(await screen.findByRole("button", { name: /Updates available/ }));
+  await screen.findByText("Heinzel 0.2.0 is available");
   expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-  await user.click(await screen.findByRole("button", { name: /Update all/ }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Installer failed");
-  expect(await screen.findByRole("progressbar", { name: "Update progress" })).toHaveAttribute("value", "0");
-  expect(screen.getByText("Heinzel: failed")).toBeInTheDocument();
-  expect(screen.getByText("notes: failed")).toBeInTheDocument();
 });
