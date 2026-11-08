@@ -182,3 +182,27 @@ def test_installation_date_uses_uv_core_marker_not_release_or_receipt(make_kerne
     assert _updates._installed_at(installation) is None
     marker.unlink()
     assert _updates._installed_at(installation) is None
+
+
+def test_update_status_follows_a_saved_setting_without_a_restart(make_kernel, tmp_path, monkeypatch):
+    """update_check and update_channel are saved live in Settings: the running server reads them again."""
+    from heinzel import Config
+    from heinzel.kernel import ConfigFile
+
+    monkeypatch.delenv("HZ_UPDATE_CHECK")  # the test isolation turns it off; the file is what is tested
+    path = tmp_path / "hz.toml"
+    path.write_text("[hz]\nupdate_check = true\n")
+    settings = Settings(cache_dir=tmp_path / "cache")
+    kernel = make_kernel(builtins=True, settings_=settings, config=Config._read((ConfigFile("user", path),)))
+    kernel.bind(Installation, Receipt(CorePin("release", "heinzel", ref="v0.1.0"), tmp_path))
+    ReleaseCache(settings.cache_dir).remember("99.0.0", checked_at=ANSWERED)
+    app = TestClient(
+        web.build(kernel, port=8000, token=TOKEN, static=None, restart=lambda: None),
+        base_url="http://127.0.0.1:8000",
+    )
+    assert app.get("/api/update-status", headers=AUTH).json()["latest"] == "99.0.0"
+    path.write_text("[hz]\nupdate_check = false\n")
+    off = app.get("/api/update-status", headers=AUTH).json()
+    assert (off["latest"], off["available"], off["checked_at"]) == (None, False, None)
+    path.write_text("[hz]\nupdate_check = true\n")
+    assert app.get("/api/update-status", headers=AUTH).json()["latest"] == "99.0.0"

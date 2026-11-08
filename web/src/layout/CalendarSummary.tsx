@@ -155,19 +155,22 @@ export function CalendarSummary({
 }
 
 /**
- * The pane's one action row: Join (when the meeting has a link), the write actions that stay disabled until the
- * connector grants write access, the consent link, and Open calendar, which closes the pane it sits in.
+ * The pane's one action row: Join (when the meeting has a link), Open calendar, which closes the pane it sits in,
+ * then either the write actions (Decline, Extend, running late) once the connector may change the calendar, or the
+ * consent link until then. No disabled placeholders for what the person cannot do yet.
  */
 export function calendarActions({
   active,
   upcoming,
   onOpen,
   full,
+  writable = false,
 }: {
   active: SummaryEvent | null;
   upcoming: SummaryEvent | null;
   onOpen: () => void;
   full: boolean;
+  writable?: boolean;
 }) {
   const meeting = active ?? upcoming;
   const join = full ? conferenceLink(meeting?.conference_url) : null;
@@ -182,26 +185,21 @@ export function calendarActions({
       <PaneAction key="open" icon={PanelRight} onClick={onOpen} leaves>
         Open calendar
       </PaneAction>
-      {full && (
+      {full && !writable && (
         <PaneAction key="allow" icon={ShieldCheck} to={`?settings=${CONNECTORS}`}>
           Allow your Heinzels to change your calendar
         </PaneAction>
       )}
       {full &&
+        writable &&
         (
           [
-            ["Decline", UserX],
-            ["Extend", TimerReset],
-            ["Tell the next meeting you are late", MessageSquareText],
+            ["decline", "Decline", UserX],
+            ["extend", "Extend", TimerReset],
+            ["late", "Tell the next meeting you are late", MessageSquareText],
           ] as const
-        ).map(([name, Icon]) => (
-          <PaneAction
-            key={name}
-            icon={Icon}
-            disabled
-            aria-label={`${name} (needs permission to change your calendar)`}
-            title="Needs permission to change your calendar"
-          >
+        ).map(([key, name, Icon]) => (
+          <PaneAction key={key} icon={Icon}>
             {name}
           </PaneAction>
         ))}

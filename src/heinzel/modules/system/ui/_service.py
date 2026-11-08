@@ -5,7 +5,7 @@ import json
 import shlex
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 
@@ -33,7 +33,8 @@ from heinzel import (
     WidgetLet,
     clean_text,
 )
-from heinzel.kernel import Badge, Effect, OperationCall, Widget, operation_path, public_parameters
+from heinzel.kernel import Badge, Effect, LayerLet, OperationCall, Widget, operation_path, public_parameters
+from heinzel.kernel._text import display_name
 from heinzel.modules.system.ui._models import (
     ActionEntry,
     ContributionInfo,
@@ -301,12 +302,14 @@ class UiService:
             if section in seen or any(section == prefix or section.startswith(f"{prefix}.") for prefix in claimed):
                 continue
             seen.add(section)
-            title = " ".join(clean_text(let.model.section_title or record.module.name.replace("-", " ")).split())
+            title = " ".join(
+                clean_text(let.model.section_title or display_name(record.module.name, record.module.summary)).split()
+            )
             fallback = NavLet(
                 name="settings",
                 title=(title or record.module.name)[:80],
                 icon="code",
-                settings=NavSettings(sections=(section,)),
+                settings=NavSettings(sections=(section,), group=_fallback_group(record)),
             )
             entries.append(self._navigation(record, fallback, declared=False))
         return sorted(entries, key=lambda entry: (entry.order, entry.id))
@@ -573,3 +576,8 @@ def _check_names(effect: RunOperation, parameters: Mapping[str, inspect.Paramete
     if missing := sorted(n for n, p in parameters.items() if p.default is inspect.Parameter.empty and n not in given):
         msg = f"`{effect.operation}` needs {', '.join(missing)}"
         raise Unusable(msg)
+
+
+def _fallback_group(record: ModuleRecord) -> Literal["preferences", "organisation"]:
+    """Where an undeclared Settings page goes: a layer is part of the organisation, the rest are preferences."""
+    return "organisation" if any(isinstance(let, LayerLet) for let in record.module.lets) else "preferences"

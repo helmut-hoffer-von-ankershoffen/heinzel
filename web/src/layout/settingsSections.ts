@@ -41,6 +41,7 @@ const BRANDS: Record<string, string> = {
 };
 /** Words written in capitals wherever they appear in a name: `ai access` → `AI access`, never `Ai access`. */
 const ACRONYMS: Record<string, string> = {
+  acme: "ACME",
   ai: "AI",
   api: "API",
   cli: "CLI",
@@ -63,21 +64,34 @@ export function inWords(name: string): string {
   return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
 }
 
-/** A plugin's name as its authors write it: the casing its summary uses (`GitHub`), else `Clock`; known names first. */
-export function displayName(name: string, summary = ""): string {
-  const words = name.replaceAll("-", " ").replaceAll("_", " ");
-  const escaped = words.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const found = summary.match(new RegExp(`\\b${escaped}\\b`, "i"))?.[0];
+/**
+ * A plugin's name as people write it, in Title Case: known acronyms and brands first (`ACME`, `AI`, `GitHub`), else the
+ * casing its summary gives the word, else the word capitalised; a `heinzel-` prefix is dropped (`heinzel-slack` is `Slack`).
+ */
+export function displayName(rawName: string, summary = ""): string {
+  const name = rawName.replace(/^heinzel-/, "");
   if (name.toLowerCase() in BRANDS) return BRANDS[name.toLowerCase()] as string;
-  if (found && found !== found.toLowerCase()) return found;
-  return inWords(words);
+  const words = name.split(/[-_ ]+/).filter(Boolean);
+  return words
+    .map((word) => {
+      const known = ACRONYMS[word.toLowerCase()];
+      if (known) return known;
+      const found = summary.match(new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"))?.[0];
+      if (found && found !== found.toLowerCase()) return found;
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
 }
 
 /** A plugin's summary without the "…: a Heinzelmännchen plugin." its template ends it with; the header says so. */
 export const plainSummary = (summary: string) =>
   summary.replace(/\s*[:;,–—-]\s*an? Heinzelmännchen plugin\.?\s*$/i, ".");
 
-export type SettingsEntry = { id: string; title: string; plugin?: SchemaPluginInfo };
+export type SettingsEntry = {
+  id: string;
+  title: string;
+  plugin?: SchemaPluginInfo;
+};
 
 export type Heading = "preferences" | "customize" | "organisation" | "computer";
 /** A page of Settings: its nav entry and the setting sections it owns (a prefix owns its sub-sections). */
@@ -92,6 +106,8 @@ export type Page = {
   plugin?: SchemaPluginInfo;
   module?: string;
   provider?: string | null;
+  /** The one status line of a layer page: "Site layer of Acme". */
+  status?: string;
 };
 
 export const PAGES: Page[] = [
@@ -119,8 +135,20 @@ export const PAGES: Page[] = [
     owns: ["ai", "system.runner"],
     keywords: "access subscription models budget chat tools claude codex",
   },
-  { id: CONNECTORS, title: "Connectors", icon: Plug, heading: "customize", owns: [] },
-  { id: PLUGINS, title: "Plugins", icon: Puzzle, heading: "customize", owns: [] },
+  {
+    id: CONNECTORS,
+    title: "Connectors",
+    icon: Plug,
+    heading: "customize",
+    owns: [],
+  },
+  {
+    id: PLUGINS,
+    title: "Plugins",
+    icon: Puzzle,
+    heading: "customize",
+    owns: [],
+  },
   {
     id: "skills",
     title: "Skills",
@@ -177,7 +205,13 @@ export const PAGES: Page[] = [
     owns: ["hz"],
     keywords: "folders data cache logs",
   },
-  { id: FROM_CLAUDE_PAGE, title: "From Claude", icon: Download, heading: "computer", owns: [] },
+  {
+    id: FROM_CLAUDE_PAGE,
+    title: "From Claude",
+    icon: Download,
+    heading: "computer",
+    owns: [],
+  },
   {
     id: "updates",
     title: "Updates",
@@ -193,11 +227,23 @@ export const PAGES: Page[] = [
     ],
     keywords: "release notes github token automatic updates",
   },
-  { id: "system", title: "System", icon: Cpu, heading: "computer", owns: ["system"], keywords: "directory" },
+  {
+    id: "system",
+    title: "System",
+    icon: Cpu,
+    heading: "computer",
+    owns: ["system"],
+    keywords: "directory",
+  },
 ];
 
 /** Old links by what they meant: `?settings=hz` was General, whose appearance and AI access now live elsewhere. */
-const ALIASES: Record<string, string> = { hz: "appearance", org: "you", heinzel: "team", runner: "ai" };
+const ALIASES: Record<string, string> = {
+  hz: "appearance",
+  org: "you",
+  heinzel: "team",
+  runner: "ai",
+};
 
 const owns = (page: Page, section: string) => page.owns.some((own) => section === own || section.startsWith(`${own}.`));
 
@@ -234,7 +280,10 @@ export type SettingsNav = {
   /** Every page, by heading order: the fixed ones, then a page for each plugin module hz doesn't know. */
   pages: Page[];
   /** Plugins that bring adapters, each with the setting groups of its modules. */
-  connectors: (SettingsEntry & { plugin: SchemaPluginInfo; groups: string[] })[];
+  connectors: (SettingsEntry & {
+    plugin: SchemaPluginInfo;
+    groups: string[];
+  })[];
 };
 
 /** A section id from a link (`?settings=`), as the page it opens: a page's id, a section it owns, or an old name. */
@@ -244,6 +293,26 @@ export function resolvePage(id: string | null | undefined, pages: Page[]): strin
   const alias = ALIASES[id];
   if (alias && pages.some((page) => page.id === alias)) return alias;
   return pageOf(id, pages)?.id;
+}
+
+/** The sidebar group a plugin's page sits under: the one place that decides it (today the group it declares). */
+function placement(entry: SchemaNavEntry, plugin: SchemaPluginInfo | undefined): Heading {
+  const group = entry.settings?.group ?? "preferences";
+  // A layer is part of the organisation; the server says so, and an older server's undeclared page lands there too.
+  return !entry.declared && group === "preferences" && plugin?.layers?.length ? "organisation" : group;
+}
+
+const COLLATOR = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
+/**
+ * Every sidebar group lists its entries alphabetically by display name (case-insensitive, numeric-aware), core and
+ * plugin pages together; no group pins an entry first. The single place that orders the sidebar. Stable.
+ */
+export function sortedWithinGroups<T extends { title: string; heading: Heading }>(pages: T[]): T[] {
+  const headings = [...new Set(pages.map((page) => page.heading))];
+  return headings.flatMap((heading) =>
+    pages.filter((page) => page.heading === heading).sort((a, b) => COLLATOR.compare(a.title, b.title)),
+  );
 }
 
 /** Sorts the setting groups into pages, Connectors by the plugin that provides each module. */
@@ -257,14 +326,16 @@ export function settingsNav(
   const connects = (plugin: SchemaPluginInfo | undefined) => (plugin?.capabilities ?? []).length > 0;
   const of = (plugin: SchemaPluginInfo) => groups.filter((name) => owner.get(name) === plugin);
   const byTitle = (a: SettingsEntry, b: SettingsEntry) => a.title.localeCompare(b.title);
+  const layers = plugins.flatMap((item) => item.layers ?? []);
   const extra: Page[] = navigation.flatMap((entry) => {
     if (!entry.settings || entry.problem) return [];
     const plugin = plugins.find((item) => item.distribution === entry.plugin || item.name === entry.plugin);
     if (plugin && (!plugin.enabled || plugin.error)) return [];
+    const layer = plugin?.layers?.[0];
     // Legacy provider metadata must not move host settings out of their existing conceptual pages.
     if (
       !entry.declared &&
-      ((connects(plugin) && !preferenceIcon(plugin)) ||
+      ((connects(plugin) && !preferenceIcon(plugin) && !layer) ||
         entry.settings.sections.every((section) => PAGES.some((page) => owns(page, section))))
     )
       return [];
@@ -272,8 +343,9 @@ export function settingsNav(
       {
         id: entry.id,
         title: entry.title,
-        icon: !entry.declared && entry.icon === "code" ? (preferenceIcon(plugin) ?? ICONS.code) : ICONS[entry.icon],
-        heading: entry.settings.group,
+        status: layer ? layerStatus(layer, layers) : undefined,
+        icon: !entry.declared && entry.icon === "code" ? (preferenceIcon(plugin) ?? Puzzle) : ICONS[entry.icon],
+        heading: placement(entry, plugin),
         owns: entry.settings.sections,
         plugin,
         module: entry.module,
@@ -281,7 +353,9 @@ export function settingsNav(
       },
     ];
   });
-  const pages = [...PAGES, ...extra].map((page) => ({ ...page, plugin: page.plugin ?? pluginOfPage(page, owner) }));
+  const pages = sortedWithinGroups(
+    [...PAGES, ...extra].map((page) => ({ ...page, plugin: page.plugin ?? pluginOfPage(page, owner) })),
+  );
   return {
     pages,
     connectors: plugins
@@ -294,6 +368,19 @@ export function settingsNav(
       }))
       .sort(byTitle),
   };
+}
+
+type Layer = NonNullable<SchemaPluginInfo["layers"]>[number];
+
+/** "Site layer of Acme": its label, the layer above it, and for a team the site it is at; at most 60 characters. */
+function layerStatus(layer: Layer, all: Layer[]): string {
+  const name = (module: string) => displayName(module).replace(/ [a-z]/g, (letters) => letters.toUpperCase());
+  const label = layer.label ? `${inWords(layer.label)} layer` : "Layer";
+  const above = layer.parent;
+  const site =
+    layer.label === "team" && layer.site && all.some((item) => item.module === layer.site) ? layer.site : null;
+  const text = `${label}${above ? ` of ${name(above)}` : ""}${site ? `, at ${name(site)}` : ""}`;
+  return text.length <= 60 ? text : `${text.slice(0, 59)}…`;
 }
 
 function pluginOfPage(page: Page, owner: Map<string, SchemaPluginInfo>): SchemaPluginInfo | undefined {
