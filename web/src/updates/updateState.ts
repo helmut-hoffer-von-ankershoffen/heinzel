@@ -3,6 +3,7 @@
 // only when a fresh check confirmed Heinzel and every plugin; anything unknown stays neutral, never green.
 
 import type { State } from "@/components/FooterItem";
+import type { ProgressSegment } from "@/components/Progress";
 import { t } from "@/i18n";
 import type { AutoUpdateStatus, PluginHold } from "./autoUpdateApi";
 import type { UpdateStatus } from "./controller";
@@ -45,7 +46,16 @@ export type View = {
   canRetry: boolean;
   /** True only when a fresh check confirmed Heinzel and all its plugins. */
   allCurrent: boolean;
+  /** The parts an update would change: Heinzel itself first, then each plugin. */
+  parts: Part[];
 };
+
+export type Part = { id: string; label: string };
+
+/** The parts as segments when the server applies on its own and reports no steps: all running, never a percentage. */
+export function partSegments(parts: Part[]): ProgressSegment[] {
+  return parts.map((part) => ({ ...part, state: "running" as const }));
+}
 
 const parse = (value: string | null | undefined): Date | null => {
   const date = value ? new Date(value) : null;
@@ -154,5 +164,9 @@ export function describe(input: Inputs): View {
   // Heinzel is confirmed current but something else is not: the Heinzel line keeps its own, honest colour.
   const tone: State = input.problem ? "bad" : count > 0 ? "warn" : allCurrent ? "ok" : "off";
   const unknownSomewhere = coreUnknown || pluginsUnknown || input.planFailed;
-  return { tone, available: count > 0, rows, count, canRetry: unknownSomewhere && !applying, allCurrent };
+  const parts: Part[] = [
+    ...(coreNews ? [{ id: "core", label: t("updates.part.core") }] : []),
+    ...plugins.map(([name]) => ({ id: `plugin:${name}`, label: name })),
+  ];
+  return { tone, available: count > 0, rows, count, canRetry: unknownSomewhere && !applying, allCurrent, parts };
 }
