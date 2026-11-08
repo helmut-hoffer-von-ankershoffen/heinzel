@@ -113,6 +113,9 @@ function firstSentence(message: string): [string, string] {
 
 type Gesture = "on" | "off" | "restart";
 
+/** How long "Turning on…" may last before it asks for Try again instead of waiting silently (progress rule). */
+export const PENDING_LIMIT_MS = 60_000;
+
 /** One control shared by provider Settings and status popovers; no plugin name or alternate restart path. */
 export function ContributionToggle({ control, refresh, applySettings, actions, details }: Props) {
   const labelId = useId();
@@ -121,6 +124,9 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
   const mounted = useRef(true);
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A failed gesture: its own short line and Try again; the server's words go to Details.
+  const [failure, setFailure] = useState<{ kind: Gesture; message: string } | null>(null);
+  const [stalled, setStalled] = useState(false);
   const [shareFailed, setShareFailed] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -142,6 +148,16 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
   const copied = control.checked && !!control.url && copiedUrl === control.url;
   const restartNeeded = unfinished && !control.problem && Object.keys(control.apply_settings ?? {}).length > 0;
   const [errorLine, errorRest] = error ? firstSentence(error) : ["", ""];
+  // Waiting with nothing to do (no problem, no restart, no gesture) gets a time limit, then Try again.
+  const waiting = unfinished && !pending && !control.problem && !restartNeeded && !failure;
+  useEffect(() => {
+    if (!waiting) {
+      setStalled(false);
+      return;
+    }
+    const timer = setTimeout(() => setStalled(true), PENDING_LIMIT_MS);
+    return () => clearTimeout(timer);
+  }, [waiting]);
 
   // Exactly one status line (design/README.md): the gesture in flight, then the provider's own words, then ours.
   const note = pending
@@ -150,19 +166,25 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
       : t("contrib.toggle.turningOn")
     : !actionable(operation)
       ? t("contrib.toggle.unavailable")
-      : control.problem
-        ? control.problem
-        : restartNeeded
-          ? t("contrib.toggle.restartHint")
-          : copied
-            ? t("copy.done")
-            : control.status
-              ? control.status
-              : unfinished
-                ? t("contrib.toggle.turningOn")
-                : null;
-  const attention = !pending && (!!control.problem || restartNeeded || (unfinished && !!error));
-  const explanation = [control.explanation, errorRest].filter(Boolean).join("\n");
+      : failure
+        ? failure.kind === "off"
+          ? t("contrib.toggle.notOff")
+          : t("contrib.toggle.notFinished")
+        : control.problem
+          ? control.problem
+          : stalled
+            ? t("contrib.toggle.notFinished")
+            : restartNeeded
+              ? t("contrib.toggle.restartHint")
+              : copied
+                ? t("copy.done")
+                : control.status
+                  ? control.status
+                  : unfinished
+                    ? t("contrib.toggle.turningOn")
+                    : null;
+  const attention = !pending && (!!failure || !!control.problem || restartNeeded || stalled);
+  const explanation = [control.explanation, failure?.message, errorRest].filter(Boolean).join("\n");
   const hasDetails = !!explanation || !!details;
 
   /** Run one host-built call, reread the provider, then finish any declared restart through the shared flow. */
@@ -176,6 +198,7 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
     );
     setGesture(kind);
     setError(null);
+    setFailure(null);
     let refreshAttempted = false;
     try {
       if (call) {
@@ -210,7 +233,8 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
         }
       }
     } catch (cause) {
-      if (mounted.current) setError(cause instanceof Error ? cause.message : t("contrib.toggle.failed"));
+      if (mounted.current)
+        setFailure({ kind, message: cause instanceof Error ? cause.message : t("contrib.toggle.failed") });
       if (!refreshAttempted && !controller.signal.aborted) await bounded(refresh, controller.signal).catch(() => null);
     } finally {
       clearTimeout(deadline);
@@ -220,11 +244,20 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
     }
   };
   const change = () => void run(chosen ? "off" : "on", operation ?? null);
-  // Try again repeats turning it on; it never runs a call the provider did not declare.
-  const retry = () => void run("on", control.enable.call ?? null);
+  // Try again repeats what failed (turning on by default); it never runs a call the provider did not declare.
+  const retry = () =>
+    failure?.kind === "off"
+      ? void run("off", control.disable.call ?? null)
+      : failure?.kind === "restart"
+        ? void run("restart", null)
+        : void run("on", control.enable.call ?? null);
   // Restart runs only the existing restart flow for the settings the provider declared; no new mutation.
   const restart = () => void run("restart", null);
-  const retryable = !pending && actionable(control.enable.call) && (!!control.problem || (!!error && chosen));
+  const retryable =
+    !pending &&
+    (failure?.kind === "off"
+      ? actionable(control.disable.call)
+      : actionable(control.enable.call) && (!!failure || !!control.problem || stalled));
 
   const share = async () => {
     const value = authenticatedUrl(control) ?? publicUrl(control.url);
@@ -292,7 +325,7 @@ export function ContributionToggle({ control, refresh, applySettings, actions, d
       </div>
       <p
         id={noteId}
-        role="status"
+        role={failure ? "alert" : "status"}
         title={control.explanation ?? undefined}
         className={cn("text-xs", attention ? "text-foreground" : "text-muted-foreground")}
       >

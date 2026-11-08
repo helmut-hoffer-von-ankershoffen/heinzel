@@ -137,6 +137,8 @@ const en = {
   "contrib.toggle.restart": "Restart hz",
   "contrib.toggle.restartHint": "Restart hz to finish turning it on.",
   "contrib.toggle.retry": "Try again",
+  "contrib.toggle.notFinished": "Could not finish turning it on. Try again.",
+  "contrib.toggle.notOff": "Could not turn it off. Try again.",
   "contrib.toggle.details": "Details",
   "contrib.toggle.copyUrl": "Copy link",
   "contrib.toggle.shareUrl": "Share",

@@ -4,7 +4,12 @@ import { ScrollText } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SchemaOperationCall } from "@/api/client";
 import { expectAccessible } from "@/test/render";
-import { type ApplySettings, ContributionToggle, type ContributionToggleControl } from "./ContributionToggle";
+import {
+  type ApplySettings,
+  ContributionToggle,
+  type ContributionToggleControl,
+  PENDING_LIMIT_MS,
+} from "./ContributionToggle";
 import { PaneAction } from "./PaneActions";
 
 const ORIGIN = "https://workstation.tail-example.ts.net";
@@ -33,8 +38,8 @@ function control(changes: Partial<ContributionToggleControl> = {}): Contribution
   };
 }
 
-function sentRequest(): Request {
-  const request = vi.mocked(fetch).mock.calls[0]?.[0];
+function sentRequest(index = 0): Request {
+  const request = vi.mocked(fetch).mock.calls[index]?.[0];
   if (!(request instanceof Request)) throw new Error("Expected an owned API request");
   return request;
 }
@@ -133,7 +138,8 @@ describe("generic provider toggle", () => {
     );
     const { refresh, applySettings } = show();
     await user.click(screen.getByRole("switch"));
-    expect(await screen.findByRole("alert")).toHaveTextContent("A conflicting owner changed the mapping.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^Could not finish turning it on\. Try again\.$/);
+    expect(screen.getByText("A conflicting owner changed the mapping.")).not.toBeVisible();
     await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
     expect(fetch).toHaveBeenCalledOnce();
     expect(applySettings).not.toHaveBeenCalled();
@@ -147,7 +153,8 @@ describe("generic provider toggle", () => {
     });
     render(<ContributionToggle control={control()} refresh={refresh} applySettings={applySettings} />);
     await user.click(screen.getByRole("switch"));
-    expect(await screen.findByRole("alert")).toHaveTextContent("different configuration");
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^Could not finish turning it on\. Try again\.$/);
+    expect(screen.getByText(/different configuration/)).not.toBeVisible();
     expect(fetch).toHaveBeenCalledOnce();
     expect(applySettings).toHaveBeenCalledOnce();
     expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
@@ -281,7 +288,7 @@ describe("generic provider toggle", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("shows only the first sentence of a failure; the rest is in Details", async () => {
+  it("shows one short failure line; the server's whole message is in Details", async () => {
     const user = userEvent.setup();
     vi.mocked(fetch).mockResolvedValue(
       Response.json(
@@ -291,15 +298,88 @@ describe("generic provider toggle", () => {
     );
     show();
     await user.click(screen.getByRole("switch"));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/^Tailscale did not answer\.$/);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^Could not finish turning it on\. Try again\.$/);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
     await user.click(screen.getByText("Details"));
-    expect(screen.getByText(/tailscale serve status/)).toBeVisible();
+    expect(screen.getByText(/Tailscale did not answer\. To see the current state/)).toBeVisible();
   });
 
   it("uses the provider's short status line and never a second one", () => {
     show(control({ requested: true, status: "Set up for another hz port." }));
     expect(screen.getAllByRole("status")).toHaveLength(1);
     expect(screen.getByRole("status")).toHaveTextContent(/^Set up for another hz port\.$/);
+  });
+
+  it("a failed turn-on falls back to Off with one line and Try again, which turns it on again", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: "The node is signed out." }, { status: 400 }));
+    const { refresh } = show();
+    await user.click(screen.getByRole("switch"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^Could not finish turning it on\. Try again\.$/);
+    await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-busy", "false");
+    expect(screen.getByText("Off")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(new URL(sentRequest(1).url).pathname).toBe("/api/example/enable");
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  it("a failed turn-off says so and Try again turns it off again", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: "Busy." }, { status: 409 }));
+    show(control({ checked: true, requested: true, url: ORIGIN }));
+    await user.click(screen.getByRole("switch"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^Could not turn it off\. Try again\.$/);
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(new URL(sentRequest(1).url).pathname).toBe("/api/example/disable");
+  });
+
+  it("Turning on… asks for Try again after the time limit instead of waiting forever", async () => {
+    vi.useFakeTimers();
+    try {
+      show(control({ requested: true }));
+      expect(screen.getByRole("status")).toHaveTextContent(/^Turning on…$/);
+      expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+      act(() => {
+        vi.advanceTimersByTime(PENDING_LIMIT_MS - 1);
+      });
+      expect(screen.getByRole("status")).toHaveTextContent(/^Turning on…$/);
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(screen.getByRole("status")).toHaveTextContent(/^Could not finish turning it on\. Try again\.$/);
+      expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
+      expect(screen.getByRole("button", { name: "Try again" })).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the time limit starts again when the provider reports progress or the feature is live", () => {
+    vi.useFakeTimers();
+    try {
+      const value = control({ requested: true });
+      const view = show(value);
+      act(() => {
+        vi.advanceTimersByTime(PENDING_LIMIT_MS);
+      });
+      expect(screen.getByRole("status")).toHaveTextContent(/^Could not finish/);
+      view.rerender(
+        <ContributionToggle
+          control={{ ...value, checked: true, url: ORIGIN }}
+          refresh={view.refresh}
+          applySettings={view.applySettings}
+        />,
+      );
+      expect(screen.getByRole("status")).not.toHaveTextContent(/Could not finish/);
+      expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("is accessible with pending status", async () => {
