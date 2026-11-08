@@ -451,7 +451,11 @@ def test_an_open_app_window_reconnects_when_the_daemon_restarts_on_the_same_port
 def test_an_installed_window_opened_while_hz_is_down_opens_the_app_by_itself_when_hz_returns(
     environment, tmp_path, engine
 ):
-    """A paired window reopened while `hz ui serve` is down shows the offline page, then the app, without a reload."""
+    """A paired phone window reopened while `hz ui serve` is down shows this build's offline page, then the app.
+
+    An older build's shell cache and remembered version are planted first: the worker named after this build must drop
+    them, so the offline page is never an older build's (an iPhone kept v0.7.27's).
+    """
     env, _ = environment
     port = _free_port()
     ui, link = _start_ui(env, port)
@@ -474,6 +478,11 @@ def test_an_installed_window_opened_while_hz_is_down_opens_the_app_by_itself_whe
         assert result == {
             "offlineShowed": True,
             "noVersionShown": True,
+            "noStaleOfflinePage": True,
+            "workerIsStamped": True,
+            "onlyThisBuildsCache": True,
+            "cachedOfflineIsCurrent": True,
+            "oldBuildCacheDropped": True,
             "iconLoaded": True,
             "openedByItself": True,
             "askedToSignIn": False,
