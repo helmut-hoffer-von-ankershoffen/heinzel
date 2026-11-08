@@ -705,29 +705,43 @@ function ActionButton({
   const Component = ICONS[current.icon];
   const badge = current.badge === 0 || current.badge == null ? null : String(current.badge);
   const effect = current.effect;
+  const hintId = `badge-hint-${entry.id}`;
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      disabled={!effect}
-      onClick={() => {
-        if (!effect) return;
-        run(effect);
-      }}
-      aria-label={badge ? `${current.label} (${badge})` : current.label}
-      title={current.problem ?? current.label}
-      className="relative"
-    >
-      <Component aria-hidden />
+    <span className="group/badge relative inline-flex">
+      <Button
+        variant="ghost"
+        size="icon"
+        disabled={!effect}
+        onClick={() => {
+          if (!effect) return;
+          run(effect);
+        }}
+        aria-label={badge ? `${current.label} (${badge})` : current.label}
+        aria-describedby={badge ? hintId : undefined}
+        title={badge ? undefined : (current.problem ?? current.label)}
+        className="relative"
+      >
+        <Component aria-hidden />
+        {badge && (
+          <span
+            aria-hidden
+            className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground"
+          >
+            {badge}
+          </span>
+        )}
+      </Button>
       {badge && (
         <span
-          aria-hidden
-          className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground"
+          id={hintId}
+          role="tooltip"
+          className="pointer-events-none absolute top-full right-0 z-50 mt-1 hidden w-56 rounded-lg border bg-popover p-2.5 text-left text-xs text-popover-foreground shadow-md group-focus-within/badge:block group-hover/badge:block"
         >
-          {badge}
+          <span className="block font-medium">{current.label}</span>
+          <span className="mt-0.5 block text-muted-foreground">{t("action.badgeHint", { badge })}</span>
         </span>
       )}
-    </Button>
+    </span>
   );
 }
 

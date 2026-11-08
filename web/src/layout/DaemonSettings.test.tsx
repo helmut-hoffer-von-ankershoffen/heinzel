@@ -130,6 +130,38 @@ describe("Daemon Settings", () => {
     }
   });
 
+  it("separates Service configuration from the daemon controls with a section gap", async () => {
+    mockApi({
+      ...shell,
+      "/api/system/daemon/status": running,
+      "/api/system/config/show": {
+        ...config,
+        settings: [
+          {
+            section: "system.daemon",
+            key: "unit_dir",
+            value: "/private/services",
+            default: "/private/services",
+            source: "default",
+            env: "HZ_SYSTEM_DAEMON__UNIT_DIR",
+            description: "Where the service files live",
+            json_schema: { type: "string", title: "Service folder" },
+          },
+        ],
+      },
+      "/api/system/expert": { expert: false },
+    });
+    render(
+      <Providers client={queryClient()}>
+        <SettingsDialog section="daemon" initialQuery="" onSection={vi.fn()} onClose={vi.fn()} />
+      </Providers>,
+    );
+    const controls = await screen.findByRole("region", { name: "Daemon status and controls" });
+    const heading = await screen.findByRole("heading", { name: "Service configuration" });
+    expect(controls.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heading.closest(".mt-8")).not.toBeNull();
+  });
+
   it("shows actual daemon version, job count and last tick without exposing service-folder configuration", async () => {
     const lastTick = "2026-10-27T08:00:00.000Z";
     const { container, calls } = show({ last_tick: lastTick });

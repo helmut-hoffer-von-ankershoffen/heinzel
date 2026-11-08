@@ -792,6 +792,7 @@ const en = {
   "notify.by.daemon": "the desktop notifier",
   "notify.waiting": "Waiting to pop up",
   "notify.saved": "Saved in Notifications",
+  "action.badgeHint": "Badge {badge}: the count this button currently shows. Open it for the details.",
   "notify.shownOnServer": "Shown on the hz server",
   "notify.unread": "Unread",
   "notify.test": "Send a test notification",
