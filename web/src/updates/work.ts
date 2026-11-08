@@ -7,7 +7,8 @@ export function registerUpdatePreparation(prepare: () => void): () => void {
 }
 
 export function preserveUpdateWork(): void {
-  if (document.querySelector('[role="dialog"],[role="alertdialog"],.xterm'))
+  // The dialog that shows this update's own steps is not open work.
+  if (document.querySelector('[role="dialog"],[role="alertdialog"]:not([data-tracked]),.xterm'))
     throw new Error("Close the terminal or editor before updating; its open work will stay here.");
   for (const prepare of owners) prepare();
 }

@@ -11,6 +11,7 @@ import { initializeDesktopIdentity } from "./identity.js";
 import { refreshAfterQuit, shouldRefresh, stopWithReport } from "./shutdown.js";
 import { installSignalQuit } from "./signal-quit.js";
 import { guardUiNavigation, openProductUi } from "./ui-navigation.js";
+import { windowOptions } from "./window-options.js";
 
 const identityReady = initializeDesktopIdentity(app, dialog);
 const windows = new WeakSet();
@@ -37,9 +38,7 @@ const instance = createInstanceLifecycle({
     lifecycle,
     cancelled: () => stopping || quitting,
     createWindow: () => new BrowserWindow({
-      width: 1100,
-      height: 760,
-      show: false,
+      ...windowOptions(process.platform),
       webPreferences: {
         preload: fileURLToPath(new URL("./preload.cjs", import.meta.url)),
         contextIsolation: true,
@@ -77,6 +76,9 @@ const instance = createInstanceLifecycle({
       window.webContents.on("render-process-gone", audio.revoke);
       window.webContents.on("destroyed", audio.revoke);
       window.on("blur", audio.revoke);
+      // Full screen hides the traffic lights; the web then gives their inset back to the title bar row.
+      window.on("enter-full-screen", () => window.webContents.send("hz:fullscreen", true));
+      window.on("leave-full-screen", () => window.webContents.send("hz:fullscreen", false));
       guardUiNavigation(window.webContents, connection);
       window.on("closed", () => { audio.revoke(); windowPermissions.revoke(); if (!quitting) app.quit(); });
     },

@@ -49,8 +49,34 @@ function remember(source: Source) {
   }
 }
 
-const UNSHARED = "Shared audio is not offered by this browser.";
-const tabSharing = () => Boolean(navigator.mediaDevices?.getDisplayMedia);
+const FELL_BACK = "Shared audio is not offered by this browser, so Heinzel listens with the microphone.";
+const UNSHARED_KEY = "hz.audio.unshared";
+
+/**
+ * Whether this browser can share a tab's audio: feature detection, never the user agent. Every iPhone and iPad browser
+ * (Safari, Chrome, Firefox) is WebKit without getDisplayMedia; a browser that has it but refused it as unsupported is
+ * remembered for the session, so the choice is not offered again.
+ */
+export function canShareAudio(): boolean {
+  if (typeof navigator.mediaDevices?.getDisplayMedia !== "function") return false;
+  try {
+    return sessionStorage.getItem(UNSHARED_KEY) !== "1";
+  } catch {
+    return true;
+  }
+}
+
+function markUnshared() {
+  try {
+    sessionStorage.setItem(UNSHARED_KEY, "1");
+  } catch {
+    // not remembered: the next try fails the same way and falls back again
+  }
+}
+
+/** The browser cannot share at all, as opposed to the person cancelling or refusing. */
+const unsupported = (error: unknown) =>
+  (error instanceof DOMException && error.name === "NotSupportedError") || error instanceof TypeError;
 
 function captureProblem(error: unknown) {
   if (error instanceof DOMException && error.name === "AbortError") return "Audio sharing was cancelled.";
@@ -72,6 +98,8 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const [session, setSession] = useState<CapturedAudio | null>(null);
   const [requesting, setRequesting] = useState<"mic" | "tab" | null>(null);
   const [problem, setProblem] = useState("");
+  const [sharing, setSharing] = useState(canShareAudio);
+  const [notice, setNotice] = useState("");
   const [hasSignal, setHasSignal] = useState(false);
   const current = useRef<CapturedAudio | null>(null);
   const request = useRef<AbortController | null>(null);
@@ -128,6 +156,14 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     } catch (error) {
       if (generation.current !== revision) return;
       setRequesting(null);
+      if (kind === "tab" && unsupported(error)) {
+        // Offered but not supported here: stop offering it and listen with the microphone instead, in one line.
+        markUnshared();
+        setSharing(false);
+        setNotice(FELL_BACK);
+        if (!current.current) void start("mic");
+        return;
+      }
       setProblem(captureProblem(error));
     }
   }, []);
@@ -140,10 +176,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         remember("off");
         return;
       }
-      if (source === "tab" && !tabSharing()) {
-        setProblem(UNSHARED);
+      if (source === "tab" && !canShareAudio()) {
+        setSharing(false);
+        setNotice("Shared audio is not offered by this browser.");
         return;
       }
+      setNotice("");
       void start(source);
     },
     [start, stop],
@@ -363,7 +401,9 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     triggerLabel = "Audio sharing active";
     controlWord = "On";
   } else if (framed) {
-    status = "Off. Music in a player frame shows once you pick Microphone or Shared audio.";
+    status = sharing
+      ? "Off. Music in a player frame shows once you pick Microphone or Shared audio."
+      : "Off. Music in a player frame shows once you pick Microphone.";
     state = "warn";
     controlWord = "Share";
   }
@@ -382,7 +422,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const sourceSegments: Segment<Source>[] = [
     { value: "off", label: "Off", icon: MicOff },
     { value: "mic", label: "Microphone", icon: Mic },
-    { value: "tab", label: sharedWord, icon: MonitorSpeaker, unavailable: tabSharing() ? undefined : UNSHARED },
+    ...(sharing ? [{ value: "tab" as const, label: sharedWord, icon: MonitorSpeaker }] : []),
   ];
   const mark = { ok: "text-ok", warn: "text-warn", bad: "text-bad", off: "text-muted-foreground" }[state] ?? "";
   return (
@@ -427,7 +467,10 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
               {status}
             </output>
           </p>
-          <p className="text-xs text-muted-foreground">{t("audio.visualizerHelp")}</p>
+          {notice && settings.master && <p className="text-xs text-foreground">{notice}</p>}
+          <p className="text-xs text-muted-foreground">
+            {t(sharing ? "audio.visualizerHelp" : "audio.visualizerHelpMicrophone")}
+          </p>
           <div className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground">
             <span id={masterId}>Audio visualisation</span>
             <Switch
@@ -461,7 +504,11 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           document.body,
         )}
       {settings.master && framed && !session && !requesting && remembered !== "off" && (
-        <SourcePrompt remembered={remembered} onTab={() => choose("tab")} onMic={() => choose("mic")} />
+        <SourcePrompt
+          remembered={remembered}
+          onTab={sharing ? () => choose("tab") : null}
+          onMic={() => choose("mic")}
+        />
       )}
     </div>
   );
@@ -470,7 +517,16 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
 /** The one compact question, once music plays in a frame: browsers require the person's own yes. On a phone or a short
  * landscape screen a floating card would cover the player it asks about, so there the question stays in the Audio
  * pane (its trigger reads "Share", with Share audio and Use microphone). */
-function SourcePrompt({ remembered, onTab, onMic }: { remembered: Remembered; onTab: () => void; onMic: () => void }) {
+function SourcePrompt({
+  remembered,
+  onTab,
+  onMic,
+}: {
+  remembered: Remembered;
+  /** Null where the browser cannot share a tab's audio (every iPhone browser): only the microphone is offered. */
+  onTab: (() => void) | null;
+  onMic: () => void;
+}) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
   return createPortal(
@@ -480,10 +536,12 @@ function SourcePrompt({ remembered, onTab, onMic }: { remembered: Remembered; on
     >
       <p className="mb-2 font-medium">Let Heinzel see the music?</p>
       <div className="flex gap-2">
-        <Button size="sm" variant={remembered === "mic" ? "outline" : "default"} onClick={onTab}>
-          Share this tab
-        </Button>
-        <Button size="sm" variant={remembered === "mic" ? "default" : "outline"} onClick={onMic}>
+        {onTab && (
+          <Button size="sm" variant={remembered === "mic" ? "outline" : "default"} onClick={onTab}>
+            Share this tab
+          </Button>
+        )}
+        <Button size="sm" variant={remembered === "mic" || !onTab ? "default" : "outline"} onClick={onMic}>
           Use microphone
         </Button>
         <Button size="sm" variant="ghost" aria-label="Not now" onClick={() => setDismissed(true)}>
