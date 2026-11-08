@@ -30,7 +30,9 @@ follows from it:
   the chat header when there are no tabs). The row drags the window; every control in it does not. The theme's
   lockup moves to the line below it and carries the name the window chrome no longer shows. Collapsed, the expand
   button stays after the lights and the main header starts after it; full screen gives the lights' inset back. A
-  dialog, menu or popover over the row is no-drag, so its top edge stays clickable. A
+  dialog, menu or popover over the row is no-drag, so its top edge stays clickable. A pane over the window
+  (Notifications) starts under the row (`--titlebar-height`, 0 in a browser), so its header never meets the lights
+  or the drag region; a standards test keeps every drag selector's controls no-drag. A
   browser or PWA has no bridge, so its layout is unchanged; Windows and Linux keep the native frame for now.
 - **Sidebar header (2026-11-07).** The header is the product lockup, not another navigation row: the swarm mark (the
   drawing `mark.svg` is made from, drawn inline) at 28 px, and the name as live text one pixel above the UI size
