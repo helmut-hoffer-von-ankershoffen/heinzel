@@ -163,7 +163,7 @@ def test_install_dry_run_and_uninstall_with_a_fake_service_manager(kernel, setti
     assert ["/usr/bin/systemctl", "--user", "enable", "hz-daemon.timer"] in manager.commands
     assert ["/usr/bin/systemctl", "--user", "restart", "hz-daemon.timer"] in manager.commands
     assert "Installed" in hz(kernel, "system", "daemon", "install").output
-    removed = json.loads(hz(kernel, "system", "daemon", "uninstall", "--json").output)
+    removed = json.loads(hz(kernel, "system", "daemon", "uninstall", "--json").stdout)
     assert len(removed["removed"]) == 2
 
 
