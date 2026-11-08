@@ -53,6 +53,13 @@ for (const [name, engine] of [
         end: new Date(now + 1800000).toISOString(),
         all_day: false,
       };
+      const past = (id, days) => ({
+        id,
+        title: `Earlier meeting ${id}`,
+        start: new Date(now - days * 86400000).toISOString(),
+        end: new Date(now - days * 86400000 + 1800000).toISOString(),
+        all_day: false,
+      });
       await page.route("**/api/org/agenda", (route) =>
         route.fulfill({ json: { current, next, problem: null, timezone: "UTC" } }),
       );
@@ -62,10 +69,10 @@ for (const [name, engine] of [
           served += 1;
           return route.fulfill({
             json: {
-              since: new Date(now).toISOString(),
-              until: new Date(now + 604800000).toISOString(),
+              since: new Date(now - 3 * 86400000).toISOString(),
+              until: new Date(now + 4 * 86400000).toISOString(),
               timezone: "UTC",
-              events: [current, next],
+              events: [past("two", 2), past("one", 1), current, next],
               problem: null,
               fix: null,
             },
@@ -133,6 +140,7 @@ for (const [name, engine] of [
       try {
         await panel
           .getByText("Review with a very long title that must not hide the starting time", { exact: true })
+          .first()
           .waitFor({ timeout: 10000 });
       } catch (error) {
         await page.screenshot({ path: join(shots, `${name}-${size}-panel-failed.png`) });
@@ -144,6 +152,32 @@ for (const [name, engine] of [
         await panel.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
         "calendar panel overflows",
       );
+      // Day-grouped agenda: two past days above Today, Today in view on open, headers sticky, and a band without controls.
+      const headings = panel.getByRole("heading", { level: 3 });
+      assert.ok((await headings.count()) >= 3, `${name}/${size}: expected two past days and Today`);
+      const todayHeader = panel.getByRole("heading", { name: /^Today/ });
+      const scroller = panel.locator("div.overflow-y-auto");
+      const inView = (header) =>
+        header.evaluate((element) => {
+          const own = element.getBoundingClientRect();
+          const box = element.closest("div.overflow-y-auto").getBoundingClientRect();
+          return own.top >= box.top - 1 && own.bottom <= box.bottom + 1;
+        });
+      for (let attempt = 0; attempt < 50 && !(await inView(todayHeader)); attempt++) await page.waitForTimeout(100);
+      assert.ok(await inView(todayHeader), `${name}/${size}: the Today header is not in view after opening`);
+      for (const heading of await headings.all()) {
+        assert.equal(await heading.evaluate((element) => getComputedStyle(element).position), "sticky");
+      }
+      await scroller.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      assert.ok(await inView(todayHeader), `${name}/${size}: the Today header left the view while scrolling`);
+      await scroller.evaluate((element) => {
+        element.scrollTop = 0;
+      });
+      const band = panel.getByText("Reminders need a background worker on this computer.", { exact: true });
+      await band.waitFor();
+      assert.equal(await band.locator("a, button").count(), 0, "the reminder band holds a control");
       await page.evaluate(axe.source);
       const violations = await panel.evaluate(async (element) =>
         (
@@ -154,7 +188,7 @@ for (const [name, engine] of [
       );
       assert.deepEqual(violations, []);
       await page.screenshot({ path: join(shots, `${name}-${size}.png`) });
-      await panel.getByRole("button", { name: /^Standup with an exceptionally long/ }).click();
+      await panel.getByRole("button", { name: /Standup with an exceptionally long/ }).click();
       const detail = panel.getByRole("article");
       await detail.getByRole("link", { name: "Join meeting", exact: true }).waitFor({ timeout: 10000 });
       assert.match(await detail.textContent(), /Organizer\s*Ada Lovelace/);
