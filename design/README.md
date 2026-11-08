@@ -30,7 +30,9 @@ follows from it:
   the chat header when there are no tabs). The row drags the window; every control in it does not. The theme's
   lockup moves to the line below it and carries the name the window chrome no longer shows. Collapsed, the expand
   button stays after the lights and the main header starts after it; full screen gives the lights' inset back. A
-  dialog, menu or popover over the row is no-drag, so its top edge stays clickable. A
+  dialog, menu or popover over the row is no-drag, so its top edge stays clickable. A pane over the window
+  (Notifications) starts under the row (`--titlebar-height`, 0 in a browser), so its header never meets the lights
+  or the drag region; a standards test keeps every drag selector's controls no-drag. A
   browser or PWA has no bridge, so its layout is unchanged; Windows and Linux keep the native frame for now.
 - **Sidebar header (2026-11-07).** The header is the product lockup, not another navigation row: the swarm mark (the
   drawing `mark.svg` is made from, drawn inline) at 28 px, and the name as live text one pixel above the UI size
@@ -61,6 +63,12 @@ follows from it:
   theme or its daypart variant changes; no colour is written in `web/src/audio` (`choices-standards.test.ts`). The
   Aurora is a full-window layer under the content, so the page colour is painted on `<html>` and `<body>` stays
   transparent; a painted `<body>` hides it.
+- **Switches show the person's choice (2026-11-08).** A provider switch (`ContributionToggle`) reads On as soon as the
+  person turns it on; whether it is live is its one status line: *Turning on…*, the URL, or one short cause with
+  **Try again** (or **Restart hz** when only a restart loads the change). The line is at most 60 characters in the
+  person's words; `ToggleControl.status` and `problem` refuse longer text and internal state words (requested,
+  applied, verified, owning, apply, intent, mapping, origin, handler, readiness). Longer text goes to the
+  provider's `explanation` and detail lines, shown only under the native **Details** disclosure, never as bullets.
 
 ## Content in focus, no screen space wasted
 

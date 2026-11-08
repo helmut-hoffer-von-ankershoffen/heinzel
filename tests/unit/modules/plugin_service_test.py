@@ -406,6 +406,87 @@ def test_search_lists_metadata_plugins_by_stars(make_kernel, tmp_path, github):
     assert result.warnings == []
 
 
+class Clock:
+    """A clock the test sets: the cache never sleeps."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def searching_service(make_kernel, tmp_path, github):
+    github.answer = {"items": [repository("heinzel-new", 2)]}
+    service = service_for(make_kernel, tmp_path)
+    service._clock = Clock()
+    return service
+
+
+def searches(github):
+    return [r for r in github.requests if "/search/repositories" in r[0]]
+
+
+def test_discover_is_kept_for_a_minute_then_asked_again(make_kernel, tmp_path, github):
+    service = searching_service(make_kernel, tmp_path, github)
+    first = service.search()
+    service._clock.now += 59.9
+    assert service.search().plugins == first.plugins
+    assert len(searches(github)) == 1
+    service._clock.now += 0.2
+    service.search()
+    assert len(searches(github)) == 2
+
+
+def test_discover_is_kept_per_words(make_kernel, tmp_path, github):
+    service = searching_service(make_kernel, tmp_path, github)
+    service.search()
+    service.search("new")
+    assert len(searches(github)) == 2
+
+
+def test_a_plugin_change_forgets_discover_and_refresh_bypasses_it(make_kernel, tmp_path, github):
+    service = searching_service(make_kernel, tmp_path, github)
+    service.search()
+    service.search(refresh=True)
+    assert len(searches(github)) == 2
+    with service._mutation():
+        pass
+    service.search()
+    assert len(searches(github)) == 3
+
+
+def test_a_kept_discover_shows_what_is_installed_now(make_kernel, tmp_path, github):
+    github.answer = {"items": [repository("heinzel-old", 2)]}
+    service = service_for(make_kernel, tmp_path)
+    service._clock = Clock()
+    assert [p.installed for p in service.search().plugins] == [True]
+    service.installed = lambda **_kw: []
+    assert [p.installed for p in service.search().plugins] == [False]
+    assert len(searches(github)) == 1
+
+
+def test_a_discover_with_warnings_is_not_kept(make_kernel, tmp_path, github):
+    github.answer = OSError("rate limited")
+    service = service_for(make_kernel, tmp_path)
+    service._clock = Clock()
+    assert service.search().warnings
+    service.search()
+    assert len(searches(github)) == 2
+
+
+def test_discover_cache_events_are_debug_hits_and_misses(make_kernel, tmp_path, github, caplog):
+    service = searching_service(make_kernel, tmp_path, github)
+    with caplog.at_level("DEBUG", logger="heinzel.plugin"):
+        service.search()
+        service.search()
+        service.search(refresh=True)
+    events = [
+        (r.event, r.outcome, r.levelname) for r in caplog.records if getattr(r, "event", "") == "plugin.search.cache"
+    ]
+    assert events == [("plugin.search.cache", o, "DEBUG") for o in ("miss", "hit", "refresh")]
+
+
 def test_search_tells_how_to_install_a_new_plugin(make_kernel, tmp_path, github):
     github.answer = {"items": [repository("heinzel-unforeseen", 3)]}
     [plugin] = service_for(make_kernel, tmp_path).search().plugins
@@ -1725,7 +1806,7 @@ def test_catalog_outage_keeps_last_successful_metadata(make_kernel, tmp_path, mo
     service = service_for(make_kernel, tmp_path)
     assert [p.name for p in service.search().plugins] == ["heinzel-unexpected"]
     fake.files.clear()
-    result = service.search()
+    result = service.search(refresh=True)
     assert [p.name for p in result.plugins] == ["heinzel-unexpected"]
     assert any("retaining" in message for message in result.warnings)
 
@@ -1757,7 +1838,7 @@ def test_partial_metadata_outage_retains_each_cached_project_across_processes(ma
     assert [entry.name for entry in result.plugins] == ["heinzel-new"]
     assert any("metadata for plugins/new" in warning for warning in result.warnings)
     fake.files["plugins/new/pyproject.toml"] = contents('[project]\nname="ordinary-library"\n')
-    assert service.search().plugins == []  # A successful removal of its entry point retires the project.
+    assert service.search(refresh=True).plugins == []  # A successful removal of its entry point retires the project.
 
 
 def test_installed_sdk_export_is_versioned_and_never_overwrites_files(make_kernel, tmp_path):
@@ -2073,6 +2154,11 @@ class FakeCompanyGitHub:
         return self.answers[path]
 
 
+def siblings(candidate):
+    """The plugins of its own repository a candidate installs in the same run."""
+    return [need for need in candidate.needs if need.with_it]
+
+
 def quote_path(path):
     return _sources.quote(path)
 
@@ -2105,12 +2191,12 @@ def company_service(make_kernel, tool_env, monkeypatch):
 def test_the_preview_names_the_sibling_plugins_a_plugin_needs_at_the_same_commit(make_kernel, tool_env, monkeypatch):
     service, runs = company_service(make_kernel, tool_env, monkeypatch)
     candidate = service.add(CHECKOUT).candidate
-    assert [(item.distribution, item.version) for item in candidate.also_installs] == [
+    assert [(item.distribution, item.version) for item in siblings(candidate)] == [
         ("heinzel-acme", "0.2.0"),
         ("heinzel-acme-payments", "0.2.0"),
     ]
     revision = FakeCompanyGitHub.REVISION
-    assert [item.requirement for item in candidate.also_installs] == [
+    assert [item.requirement for item in siblings(candidate)] == [
         f"heinzel-acme @ git+https://github.com/acme-example/heinzel-acme@{revision}",
         (
             f"heinzel-acme-payments @ git+https://github.com/acme-example/heinzel-acme@{revision}"
@@ -2173,7 +2259,7 @@ def test_a_plugin_without_sibling_dependencies_installs_as_before(make_kernel, t
     service, runs = installing(make_kernel, tool_env, monkeypatch)
     service.github_api = FakeGitHubApi()
     candidate = service.candidate("git+https://github.com/acme-example/heinzel-crm@main")
-    assert candidate.also_installs == []
+    assert siblings(candidate) == []
     assert service.add_command(candidate.requirement) == service.add_command(candidate.requirement, [])
     assert runs == []
 
@@ -2185,7 +2271,7 @@ def test_siblings_that_resolve_elsewhere_or_are_installed_are_left_to_uv(make_ke
         "installed",
         lambda **_: [PluginInfo(distribution="heinzel-acme", version="0.2.0", modules=[], name="acme")],
     )
-    names = [item.distribution for item in service.candidate(CHECKOUT).also_installs]
+    names = [item.distribution for item in siblings(service.candidate(CHECKOUT))]
     assert names == ["heinzel-acme-payments"]  # heinzel, httpx: not siblings; heinzel-acme: installed
 
 
@@ -2203,7 +2289,7 @@ def test_unreadable_siblings_leave_a_warning_and_the_plain_install(make_kernel, 
 
     service.github_api = offline_for_payments
     candidate = service.candidate(CHECKOUT)
-    assert candidate.also_installs == []
+    assert siblings(candidate) == []
     assert any("couldn't be read" in w for w in candidate.warnings)
 
 
@@ -2223,7 +2309,9 @@ def test_the_cli_preview_and_result_name_the_plugins_installed_with_it(make_kern
     done = service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
     console = Console(record=True, width=200)
     console.print(render_change(done))
-    assert "Also installed: heinzel-acme, heinzel-acme-payments." in console.export_text()
+    text = console.export_text()
+    assert "✓ Installed heinzel-acme 0.2.0, which heinzel-acme-checkout needs." in text
+    assert "✓ Installed heinzel-acme-payments 0.2.0, which heinzel-acme-checkout needs." in text
 
 
 def test_the_company_root_cannot_be_removed_while_a_plugin_installed_with_it_needs_it(

@@ -144,13 +144,31 @@ class PluginSearch(BaseModel):
     warnings: list[str] = Field(description="Sources that could not be searched, e.g. GitHub while offline.")
 
 
-class PluginDependency(BaseModel):
-    """A plugin of the same repository and commit that installing a plugin installs first."""
+NeedState = Literal["install", "update", "present", "offered", "installed", "updated", "failed", "not-reached"]
+"""How a plugin another needs stands: before the add (install, update, present; offered for a recommendation), and
+after it (installed, updated, present, failed, or not reached because an earlier one failed)."""
 
-    distribution: str = Field(description="Distribution name, e.g. heinzel-acme.")
-    version: str | None = Field(description="The version at that commit, when known.")
-    requirement: str = Field(description="What is installed: its git source pinned to the same commit.")
-    source: Source = Field(default="git", description="Where its code comes from; the same source as the plugin.")
+
+class PluginNeed(BaseModel):
+    """A plugin another plugin requires or recommends (`[tool.heinzel.plugin]`), and what the add does about it."""
+
+    distribution: str = Field(description="The plugin needed, e.g. `heinzel-github`.")
+    requirement: str = Field(description="What is needed, as declared: the plugin and an optional version range.")
+    required: bool = Field(description="Whether it is required (installed first) or only recommended (offered).")
+    needed_by: str = Field(description="The plugin that requires or recommends it.")
+    state: NeedState = Field(description="What the add does or did about it.")
+    installed_version: str | None = Field(default=None, description="The version installed before the add, if any.")
+    version: str | None = Field(default=None, description="The version the add installs or installed, when known.")
+    install: str = Field(description="What `hz system plugin add` takes for it, e.g. `github`.")
+    candidate: "PluginCandidate | None" = Field(
+        default=None, description="For a plugin the add installs or updates: exactly what, read from the same catalog."
+    )
+    detail: str = Field(default="", description="What went wrong, or what the person still does (e.g. sign in).")
+    with_it: bool = Field(
+        default=False,
+        description="A plugin of the same repository it depends on, installed in the same run and pinned to the "
+        "same commit; `requirement` is that pinned source.",
+    )
 
 
 class PluginCandidate(BaseModel):
@@ -177,14 +195,16 @@ class PluginCandidate(BaseModel):
     revision: str | None = Field(description="The git commit that would be installed, for a git source.")
     installed_version: str | None = Field(description="The version installed now, when this replaces it.")
     warnings: list[str] = Field(description="What could not be checked, e.g. metadata of a host other than GitHub.")
-    also_installs: list[PluginDependency] = Field(
-        default_factory=list[PluginDependency],
-        description="Plugins of the same repository it needs and that are not installed yet, in install order "
-        "(dependencies first), pinned to the same commit; they are installed in the same confirmed operation.",
+    needs: list[PluginNeed] = Field(
+        default_factory=list["PluginNeed"],
+        description="Plugins it requires (dependencies first, each once) and recommends, and what the add does.",
     )
     also: str = Field(
         default="", description="Said before it starts: which plugins it installs with this one, and which it offers."
     )
+
+
+PluginNeed.model_rebuild()
 
 
 class PluginPendingChange(BaseModel):
@@ -229,6 +249,18 @@ class PluginChange(BaseModel):
     operation_id: str | None = Field(
         default=None, description="Opaque server receipt for confirming or checking this add."
     )
+    needs: list[PluginNeed] = Field(
+        default_factory=list[PluginNeed],
+        description="For a confirmed add or a repair: each plugin it required or recommended, with its result.",
+    )
+
+
+class PluginRepair(BaseModel):
+    """What a repair of the installed plugins' requirements found and did, one entry per missing plugin."""
+
+    needs: list[PluginNeed] = Field(description="Each required plugin that was missing or too old, with its result.")
+    restart_required: bool = Field(description="Whether a running server must restart to load what was installed.")
+    message: str = Field(description="One line: what was repaired, or that nothing needed it.")
 
 
 CoreExtra = Literal["openai", "anthropic"]

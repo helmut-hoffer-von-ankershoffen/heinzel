@@ -3237,6 +3237,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/plugin/repair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
+         * @description Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
+         *
+         *     A plugin declares the plugins it can't work without in `[tool.heinzel.plugin] requires-plugins`; `add` installs them
+         *     first, and this repairs an installation that lacks them (one installed before they were declared). It never signs
+         *     in: `hz system doctor` still names each plugin's sign-in step. Running servers load them after a restart.
+         */
+        post: operations["system_plugin_repair"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/plugin/search": {
         parameters: {
             query?: never;
@@ -10429,11 +10453,6 @@ export interface components {
              */
             also: string;
             /**
-             * Also Installs
-             * @description Plugins of the same repository it needs and that are not installed yet, in install order (dependencies first), pinned to the same commit; they are installed in the same confirmed operation.
-             */
-            also_installs?: components["schemas"]["PluginDependency"][];
-            /**
              * Distribution
              * @description Distribution name, when it could be read before installing.
              */
@@ -10448,6 +10467,11 @@ export interface components {
              * @description The version installed now, when this replaces it.
              */
             installed_version: string | null;
+            /**
+             * Needs
+             * @description Plugins it requires (dependencies first, each once) and recommends, and what the add does.
+             */
+            needs?: components["schemas"]["PluginNeed"][];
             /**
              * Private
              * @description Whether the repository is private (read with your gh login); none when unknown.
@@ -10524,6 +10548,11 @@ export interface components {
              */
             done: boolean;
             /**
+             * Needs
+             * @description For a confirmed add or a repair: each plugin it required or recommended, with its result.
+             */
+            needs?: components["schemas"]["PluginNeed"][];
+            /**
              * Next
              * @description Commands to run next, e.g. the one that confirms.
              */
@@ -10549,34 +10578,6 @@ export interface components {
              * @description Whether a running `hz ui serve` or MCP server must restart to load the change; the web app restarts its server with `POST /api/restart`. Every new `hz` command sees it at once.
              */
             restart_required: boolean;
-        };
-        /**
-         * PluginDependency
-         * @description A plugin of the same repository and commit that installing a plugin installs first.
-         */
-        PluginDependency: {
-            /**
-             * Distribution
-             * @description Distribution name, e.g. heinzel-acme.
-             */
-            distribution: string;
-            /**
-             * Requirement
-             * @description What is installed: its git source pinned to the same commit.
-             */
-            requirement: string;
-            /**
-             * Source
-             * @description Where its code comes from; the same source as the plugin.
-             * @default git
-             * @enum {string}
-             */
-            source: "pypi" | "git" | "path" | "unknown";
-            /**
-             * Version
-             * @description The version at that commit, when known.
-             */
-            version: string | null;
         };
         /**
          * PluginEvent
@@ -10747,6 +10748,67 @@ export interface components {
             site: string | null;
         };
         /**
+         * PluginNeed
+         * @description A plugin another plugin requires or recommends (`[tool.heinzel.plugin]`), and what the add does about it.
+         */
+        PluginNeed: {
+            /** @description For a plugin the add installs or updates: exactly what, read from the same catalog. */
+            candidate?: components["schemas"]["PluginCandidate"] | null;
+            /**
+             * Detail
+             * @description What went wrong, or what the person still does (e.g. sign in).
+             * @default
+             */
+            detail: string;
+            /**
+             * Distribution
+             * @description The plugin needed, e.g. `heinzel-github`.
+             */
+            distribution: string;
+            /**
+             * Install
+             * @description What `hz system plugin add` takes for it, e.g. `github`.
+             */
+            install: string;
+            /**
+             * Installed Version
+             * @description The version installed before the add, if any.
+             */
+            installed_version?: string | null;
+            /**
+             * Needed By
+             * @description The plugin that requires or recommends it.
+             */
+            needed_by: string;
+            /**
+             * Required
+             * @description Whether it is required (installed first) or only recommended (offered).
+             */
+            required: boolean;
+            /**
+             * Requirement
+             * @description What is needed, as declared: the plugin and an optional version range.
+             */
+            requirement: string;
+            /**
+             * State
+             * @description What the add does or did about it.
+             * @enum {string}
+             */
+            state: "install" | "update" | "present" | "offered" | "installed" | "updated" | "failed" | "not-reached";
+            /**
+             * Version
+             * @description The version the add installs or installed, when known.
+             */
+            version?: string | null;
+            /**
+             * With It
+             * @description A plugin of the same repository it depends on, installed in the same run and pinned to the same commit; `requirement` is that pinned source.
+             * @default false
+             */
+            with_it: boolean;
+        };
+        /**
          * PluginOperation
          * @description Durable state of one plugin-add preview and its confirmation.
          */
@@ -10915,6 +10977,27 @@ export interface components {
              * @description The installed version, when it is still installed.
              */
             version?: string | null;
+        };
+        /**
+         * PluginRepair
+         * @description What a repair of the installed plugins' requirements found and did, one entry per missing plugin.
+         */
+        PluginRepair: {
+            /**
+             * Message
+             * @description One line: what was repaired, or that nothing needed it.
+             */
+            message: string;
+            /**
+             * Needs
+             * @description Each required plugin that was missing or too old, with its result.
+             */
+            needs: components["schemas"]["PluginNeed"][];
+            /**
+             * Restart Required
+             * @description Whether a running server must restart to load what was installed.
+             */
+            restart_required: boolean;
         };
         /**
          * PluginSearch
@@ -11831,6 +11914,11 @@ export interface components {
              * @description Holds once the hz installed on this machine (on disk, not the running process) is at least this.
              */
             installed_version_at_least?: string | null;
+            /**
+             * Plugins Installed
+             * @description Holds once every plugin distribution named is installed on this machine (on disk).
+             */
+            plugins_installed?: string[] | null;
         };
         /**
          * Restart
@@ -14958,13 +15046,23 @@ export interface components {
             /** @description The declaring module's operation that enables the feature. */
             enable: components["schemas"]["RunOperation"];
             /**
+             * Explanation
+             * @description The longer explanation, shown only on demand under Details.
+             */
+            explanation?: string | null;
+            /**
              * Label
              * @description The action the person enables or disables.
              */
             label: string;
             /**
+             * Problem
+             * @description One short cause the person can fix, e.g. `Sign in to Tailscale, then try again.`; its presence offers Try again.
+             */
+            problem?: string | null;
+            /**
              * Requested
-             * @description The requested state when it differs from verified readiness; never a success claim.
+             * @description The person's choice, which the switch shows; `checked` alone says whether it is live.
              */
             requested?: boolean | null;
             /**
@@ -14972,6 +15070,11 @@ export interface components {
              * @description Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and an active session or device credential.
              */
             sign_in_url?: string | null;
+            /**
+             * Status
+             * @description The provider's one short status line, e.g. `Turning on…`; the host shows its own when absent.
+             */
+            status?: string | null;
             /**
              * Url
              * @description Optional nonsecret link shown alongside the toggle.
@@ -16737,14 +16840,15 @@ export type SchemaPlaybookList = components['schemas']['PlaybookList'];
 export type SchemaPlaybookView = components['schemas']['PlaybookView'];
 export type SchemaPluginCandidate = components['schemas']['PluginCandidate'];
 export type SchemaPluginChange = components['schemas']['PluginChange'];
-export type SchemaPluginDependency = components['schemas']['PluginDependency'];
 export type SchemaPluginEvent = components['schemas']['PluginEvent'];
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
+export type SchemaPluginNeed = components['schemas']['PluginNeed'];
 export type SchemaPluginOperation = components['schemas']['PluginOperation'];
 export type SchemaPluginPage = components['schemas']['PluginPage'];
 export type SchemaPluginPending = components['schemas']['PluginPending'];
 export type SchemaPluginPendingChange = components['schemas']['PluginPendingChange'];
+export type SchemaPluginRepair = components['schemas']['PluginRepair'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaPrerequisiteCheck = components['schemas']['PrerequisiteCheck'];
@@ -21708,11 +21812,45 @@ export interface operations {
             };
         };
     };
+    system_plugin_repair: {
+        parameters: {
+            query?: {
+                /** @description As the automatic updater asks: try each missing plugin once per version of the plugin that requires it, so a failure isn't retried every half hour. */
+                automatic?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginRepair"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_plugin_search: {
         parameters: {
             query?: {
                 /** @description Words that name or describe the plugin, e.g. `calendar`; sent to GitHub's search. All plugins if omitted. */
                 text?: string;
+                /** @description Ask GitHub again instead of using the answer kept for the last minute. */
+                refresh?: boolean;
             };
             header?: never;
             path?: never;

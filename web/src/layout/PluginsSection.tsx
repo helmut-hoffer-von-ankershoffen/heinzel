@@ -14,6 +14,7 @@ import {
   Plus,
   Power,
   PowerOff,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -30,6 +31,7 @@ import {
   usePluginPreview,
   usePluginSearch,
   usePlugins,
+  useRefreshPluginSearch,
 } from "@/api/queries";
 import { Loaded } from "@/components/common";
 import { PaneAction } from "@/components/PaneActions";
@@ -280,7 +282,9 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
     ],
   ];
   if (candidate.installed_version) rows.push([t("plugins.field.replaces"), candidate.installed_version]);
-  const also = candidate.also_installs ?? [];
+  const coming = (candidate.needs ?? []).filter(
+    (need) => need.required && (need.state === "install" || need.state === "update"),
+  );
   return (
     <div className="mt-2 text-xs">
       {candidate.summary && <p className="mb-1 text-muted-foreground">{candidate.summary}</p>}
@@ -293,19 +297,19 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
           ...(candidate.installed_version ? [`${t("plugins.field.replaces")} ${candidate.installed_version}`] : []),
         ].join(" · ")}
       </p>
-      {also.length > 0 && (
-        <div className="mt-1" data-testid="plugin-also-installs">
+      {/* Said before it starts: the plugins it installs with this one, and those it only offers. */}
+      {candidate.also && (
+        <div className="mt-1" data-testid="plugin-also">
           <p className="font-medium">{candidate.also}</p>
-          <ul className="mt-0.5 list-none">
-            {also.map((item) => (
-              <li key={item.distribution} className="break-words">
-                {[
-                  item.version ? `${item.distribution} ${item.version}` : item.distribution,
-                  sourceLabel({ source_url: candidate.url }, candidate.private),
-                ].join(" · ")}
-              </li>
-            ))}
-          </ul>
+          {coming.length > 0 && (
+            <ul className="mt-0.5 list-none" data-testid="plugin-also-installs">
+              {coming.map((item) => (
+                <li key={item.distribution} className="break-words">
+                  {item.version ? `${item.distribution} ${item.version}` : item.distribution}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
       <details className="mt-1">
@@ -361,6 +365,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     window.history.replaceState(window.history.state, "", `${address.pathname}${address.search}${address.hash}`);
   };
   const [query, setQuery] = useState("");
+  const refresh = useRefreshPluginSearch(query);
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
@@ -670,6 +675,17 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
           className="ml-auto py-1"
           inputClassName="w-36 text-sm"
         />
+        {tab === "discover" && (
+          <PaneAction
+            ghost
+            icon={RefreshCw}
+            className={refresh.isPending ? "[&_svg]:motion-safe:animate-spin" : undefined}
+            disabled={frozen || refresh.isPending}
+            onClick={() => refresh.mutate()}
+          >
+            {t("plugins.refresh")}
+          </PaneAction>
+        )}
         <Button
           variant="outline"
           size="sm"
