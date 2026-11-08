@@ -124,7 +124,6 @@ const RAW: Record<string, number> = {
   "../components/FooterItem.tsx": 1,
   "../components/FooterLayout.tsx": 1,
   "../layout/AiAccessSetting.tsx": 1,
-  "../layout/BrowserPanel.tsx": 1,
   "../layout/CalendarPanel.tsx": 1,
   "../layout/ConnectorsSection.tsx": 1,
   "../layout/InfoDialog.tsx": 2,
