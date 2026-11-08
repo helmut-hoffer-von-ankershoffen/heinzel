@@ -152,11 +152,12 @@ class OwnedMcpEndpoint:
         Yields:
             The published lease for the original stream, now ready for protocol handoff.
         """
-        with ExitStack() as owned:
+        # Unwind the stream before the lease, even when an admission check fails.
+        with ExitStack() as leases, ExitStack() as streams:
             with step(log, "mcp.ipc.admit_peer", operation="ipc", step="admit_peer"):
                 self._verify_endpoint()
                 connection, _ = self._listener.accept()
-                owned.enter_context(connection)
+                streams.callback(_close_stream, connection)
                 require_owner_peer(connection, owner_uid=os.getuid())
                 self._verify_endpoint()
                 try:
@@ -170,11 +171,10 @@ class OwnedMcpEndpoint:
                 _require_waiting_peer(connection)
                 pending = PendingMcpPeer(self._generation, connection)
                 try:
-                    lease = owned.enter_context(publish(pending))
+                    lease = leases.enter_context(publish(pending))
                 except (HeinzelError, OSError, ValueError):
                     msg = "Local MCP admission lease was not published"
                     raise HeinzelError(msg) from None
-                owned.callback(_close_stream, connection)  # End the stream before releasing its tracked lease.
                 if not lease.id or lease.peer is not pending or lease.current_generation != self._generation:
                     msg = "Local MCP lease does not match the current generation and peer"
                     raise HeinzelError(msg)

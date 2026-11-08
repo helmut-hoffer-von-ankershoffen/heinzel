@@ -2,7 +2,7 @@
 
 import logging
 import socket
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 
 import pytest
 
@@ -82,22 +82,41 @@ def test_stale_or_swapped_locator_never_reaches_publisher(supervised, locator):
     assert bridge.recv(1) == b""
 
 
+def test_locator_failure_shuts_down_socket_with_open_reader(supervised):
+    endpoint, _, bridge = supervised
+    with ExitStack() as retained:
+
+        def refuse(connection):
+            retained.enter_context(connection.makefile("rb"))
+            msg = "Invalid locator"
+            raise ValueError(msg)
+
+        with (
+            pytest.raises(HeinzelError, match="could not read the bootstrap locator"),
+            endpoint.admit_next(refuse, no_publish),
+        ):
+            pytest.fail("MCP received a connection after locator failure")
+        assert bridge.recv(1) == b""
+
+
 def test_peer_and_locator_cannot_replace_reviewed_lease_publication(supervised, caplog):
     endpoint, _, bridge = supervised
     caplog.set_level(logging.INFO, logger="heinzel.mcp")
+    with ExitStack() as retained:
 
-    @contextmanager
-    def refuse(_):
-        msg = "Internal review details"
-        raise HeinzelError(msg)
-        yield  # pragma: no cover - publication refuses before handing off a lease
+        @contextmanager
+        def refuse(peer):
+            retained.enter_context(peer.connection.makefile("rb"))
+            msg = "Internal review details"
+            raise HeinzelError(msg)
+            yield  # pragma: no cover - publication refuses before handing off a lease
 
-    with (
-        pytest.raises(HeinzelError, match="lease was not published"),
-        endpoint.admit_next(lambda _: GENERATION, refuse),
-    ):
-        pytest.fail("MCP received an owner peer without an authorized lease")
-    assert bridge.recv(1) == b""
+        with (
+            pytest.raises(HeinzelError, match="lease was not published"),
+            endpoint.admit_next(lambda _: GENERATION, refuse),
+        ):
+            pytest.fail("MCP received an owner peer without an authorized lease")
+        assert bridge.recv(1) == b""
     records = [record for record in caplog.records if record.message == "mcp.ipc.admit_peer"]
     assert [record.phase for record in records] == ["start", "end"]
     assert records[-1].outcome == "error"
