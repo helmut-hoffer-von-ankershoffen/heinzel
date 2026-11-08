@@ -1,5 +1,7 @@
 """`hz system serve mcp-token` and the HTTP MCP head's start checks through the CLI (ADR 0142)."""
 
+import json
+
 import pytest
 from typer.testing import CliRunner
 
@@ -55,3 +57,22 @@ def test_serving_http_on_a_shared_interface_needs_expose(kernel):
     result = hz(kernel, "system", "serve", "mcp", "--transport", "streamable-http", "--host", "0.0.0.0")  # noqa: S104
     assert result.exit_code != 0
     assert "--expose" in result.output
+
+
+def test_token_commands_print_json_without_the_digest(kernel):
+    made = hz(kernel, "system", "serve", "mcp-token", "create", "--actor", "codex", "--json")
+    assert made.exit_code == 0, made.output
+    created = json.loads(made.stdout)
+    assert created["token"].startswith("hzmcp_")
+    assert (created["actor"], created["scope"]) == ("codex", "read")
+    assert "sha256" not in created
+
+    listed = json.loads(hz(kernel, "system", "serve", "mcp-token", "list", "--json").stdout)
+    assert [entry["id"] for entry in listed] == [created["id"]]
+    assert created["token"] not in json.dumps(listed)
+    assert "sha256" not in listed[0]
+
+    revoked = hz(kernel, "system", "serve", "mcp-token", "revoke", created["id"], "--json")
+    assert revoked.exit_code == 0, revoked.output
+    assert [entry["id"] for entry in json.loads(revoked.stdout)["revoked"]] == [created["id"]]
+    assert json.loads(hz(kernel, "system", "serve", "mcp-token", "list", "--json").stdout) == []

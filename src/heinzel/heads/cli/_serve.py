@@ -1,5 +1,6 @@
 """`hz system serve`: start the other heads from the CLI."""
 
+import json
 import os
 import webbrowser
 from collections.abc import Callable
@@ -17,7 +18,7 @@ from heinzel.heads.cli._render import message
 from heinzel.kernel import CurrentUser, HeinzelError, Kernel, PersistentWeb, parse_duration
 
 if TYPE_CHECKING:
-    from heinzel.heads._mcp_tokens import McpTokens
+    from heinzel.heads._mcp_tokens import McpToken, McpTokens
     from heinzel.heads.web._devices import Devices
 
 
@@ -324,6 +325,7 @@ def _mcp_token_group(group_cls: type[TyperGroup], footer: str | None, err_consol
         expires: Annotated[
             str, typer.Option(help="How long it works, e.g. 30d.", parser=_duration, metavar="DURATION")
         ] = "90d",
+        json_output: JsonOption = False,
     ) -> None:
         """Make a token for one agent and print it once; only its SHA-256 is kept.
 
@@ -335,6 +337,9 @@ def _mcp_token_group(group_cls: type[TyperGroup], footer: str | None, err_consol
         except HeinzelError as exc:
             err_console.print(message("Can't make the token:", str(exc)))
             raise typer.Exit(1) from None
+        if json_output:
+            typer.echo(json.dumps({**_public(record), "token": token}))
+            return
         err_console.print(
             message(
                 f"Token {record.id} for {record.actor} ({record.scope}), until {record.expires:%Y-%m-%d}:",
@@ -344,20 +349,15 @@ def _mcp_token_group(group_cls: type[TyperGroup], footer: str | None, err_consol
         typer.echo(token)
 
     @group.command(name="list", epilog=footer)
-    def list_tokens() -> None:
+    def list_tokens(json_output: JsonOption = False) -> None:
         """List the tokens: id, actor, scope, expiry and last use; never the tokens themselves."""
-        records = _tokens().tokens()
-        if not records:
-            typer.echo("No MCP tokens; `hz system serve mcp-token create --actor NAME` makes one.")
-            return
-        for record in records:
-            used = "never" if record.last_used is None else f"{record.last_used:%Y-%m-%d}"
-            typer.echo(
-                f"{record.id}  {record.actor}  {record.scope}  expires {record.expires:%Y-%m-%d}, last used {used}"
-            )
+        _print_tokens(_tokens().tokens(), json_output=json_output)
 
     @group.command(epilog=footer)
-    def revoke(which: Annotated[str, typer.Argument(help="A token id from `list`, or `all`.")]) -> None:
+    def revoke(
+        which: Annotated[str, typer.Argument(help="A token id from `list`, or `all`.")],
+        json_output: JsonOption = False,
+    ) -> None:
         """Revoke a token (or `all`); the agent's next request is refused.
 
         Raises:
@@ -367,10 +367,39 @@ def _mcp_token_group(group_cls: type[TyperGroup], footer: str | None, err_consol
         if not gone:
             err_console.print(message("No such token:", f"{which}; `hz system serve mcp-token list` lists them"))
             raise typer.Exit(1)
-        for record in gone:
-            typer.echo(f"Revoked {record.id} ({record.actor}).")
+        _print_revoked(gone, json_output=json_output)
 
     return group
+
+
+JsonOption = Annotated[bool, typer.Option("--json", help="Print JSON.")]
+
+
+def _public(record: "McpToken") -> dict[str, object]:
+    """A token's record as JSON without its digest."""
+    return record.model_dump(mode="json", exclude={"sha256"})
+
+
+def _print_tokens(records: "list[McpToken]", *, json_output: bool) -> None:
+    """`mcp-token list`: one line per token, or a JSON list; never a token or its digest."""
+    if json_output:
+        typer.echo(json.dumps([_public(record) for record in records]))
+        return
+    if not records:
+        typer.echo("No MCP tokens; `hz system serve mcp-token create --actor NAME` makes one.")
+        return
+    for record in records:
+        used = "never" if record.last_used is None else f"{record.last_used:%Y-%m-%d}"
+        typer.echo(f"{record.id}  {record.actor}  {record.scope}  expires {record.expires:%Y-%m-%d}, last used {used}")
+
+
+def _print_revoked(gone: "list[McpToken]", *, json_output: bool) -> None:
+    """`mcp-token revoke`: what was revoked, as lines or JSON."""
+    if json_output:
+        typer.echo(json.dumps({"revoked": [_public(record) for record in gone]}))
+        return
+    for record in gone:
+        typer.echo(f"Revoked {record.id} ({record.actor}).")
 
 
 def _tokens() -> "McpTokens":

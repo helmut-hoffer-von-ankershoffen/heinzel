@@ -111,12 +111,11 @@ def build(
 
     Over streamable HTTP the operations restricted to stdio (`mcp-stdio` in their `heads`, such as installing
     plugins) are left out, every request needs a bearer token from `tokens` (ADR 0142), and a tool that is not
-    read-only needs a token with the write scope; HTTP without `tokens` is refused. Over stdio, outside a chat,
-    skills are prompts and resources.
+    read-only needs a token with the write scope; HTTP without `tokens` refuses every request and every tool call.
+    Over stdio, outside a chat, skills are prompts and resources.
 
     Raises:
-        HeinzelError: If the personal check-in tool profile is requested for a chat without its durable context, or
-            HTTP is asked for without `tokens`.
+        HeinzelError: If the personal check-in tool profile is requested for a chat without its durable context.
     """
     _verify_chat(kernel, transport, chat)
     verifier = _verifier(transport, tokens)
@@ -187,14 +186,11 @@ def build(
 def _verifier(transport: Transport, tokens: McpTokens | None) -> TokenVerifier | None:
     """The bearer check HTTP requires; stdio has none, its client started hz as the person.
 
-    Raises:
-        HeinzelError: If HTTP is asked for without `tokens`.
+    HTTP always gets the SDK's auth middleware: without `tokens` it refuses every bearer, so an app built that way
+    (a test listing the HTTP tools, a plugin's contract check) is shut over the wire, not open.
     """
     if transport == "stdio":
         return None
-    if tokens is None:
-        msg = "MCP over HTTP needs its agents' tokens; serve it with `hz system serve mcp --transport streamable-http`"
-        raise HeinzelError(msg)
     return TokenVerifier(tokens)
 
 
@@ -262,8 +258,8 @@ def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., 
 class TokenVerifier:
     """The MCP SDK's bearer check against the owner's MCP tokens: every HTTP request, before any MCP message."""
 
-    def __init__(self, tokens: McpTokens) -> None:
-        """Check presented tokens against `tokens`."""
+    def __init__(self, tokens: McpTokens | None) -> None:
+        """Check presented tokens against `tokens`; with none, every token is refused."""
         self.tokens = tokens
 
     async def verify_token(self, token: str) -> AccessToken | None:
@@ -271,7 +267,7 @@ class TokenVerifier:
 
         A refusal is logged as `mcp.http.auth` with its reason; the token and its digest never are.
         """
-        record, reason = self.tokens.verify(token)
+        record, reason = (None, "no-tokens") if self.tokens is None else self.tokens.verify(token)
         if record is None:
             log_event(audit, "mcp.http.auth", level=logging.WARNING, outcome="refused", reason=reason)
             return None

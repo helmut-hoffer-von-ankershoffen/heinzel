@@ -3758,6 +3758,7 @@ $ hz system serve mcp-token create [OPTIONS]
 * `--actor <str>`: Which agent it is for, e.g. codex-desktop; logged with each call.  [required]
 * `--scope <read|write>`: read: read-only tools only; write: every tool the head serves.  [default: read]
 * `--expires DURATION`: How long it works, e.g. 30d.  [default: 90d]
+* `--json`: Print JSON.
 * `--help`: Show this message and exit.
 
 ##### `hz system serve mcp-token list`
@@ -3772,6 +3773,7 @@ $ hz system serve mcp-token list [OPTIONS]
 
 **Options**:
 
+* `--json`: Print JSON.
 * `--help`: Show this message and exit.
 
 ##### `hz system serve mcp-token revoke`
@@ -3793,6 +3795,7 @@ $ hz system serve mcp-token revoke [OPTIONS] {which}
 
 **Options**:
 
+* `--json`: Print JSON.
 * `--help`: Show this message and exit.
 
 ### `hz system skill`

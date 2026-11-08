@@ -212,9 +212,22 @@ def test_a_browser_page_on_another_origin_is_refused_even_with_a_token(kernel, t
     assert status(kernel, tokens, headers) == 403
 
 
-def test_http_is_never_built_without_tokens(kernel):
-    with pytest.raises(HeinzelError, match="tokens"):
-        mcp.build(kernel, "streamable-http")
+def test_http_built_without_tokens_refuses_every_bearer_and_logs_it(kernel, tokens, ran, audit):
+    _, token = tokens.create("codex", "write")
+    app = mcp.build(kernel, "streamable-http").streamable_http_app()
+
+    async def run() -> int:
+        async with app.router.lifespan_context(app):
+            client = httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url=BASE)
+            body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+            headers = {"Accept": "application/json, text/event-stream", "Authorization": f"Bearer {token}"}
+            return (await client.post("/mcp", json=body, headers=headers)).status_code
+
+    assert anyio.run(run) == 401
+    assert ran == []
+    events = [record_fields(r) for r in audit.records if r.getMessage() == "mcp.http.auth"]
+    assert [(e["outcome"], e["reason"]) for e in events] == [("refused", "no-tokens")]
+    assert token not in repr([r.__dict__ for r in audit.records])
 
 
 def test_an_http_tool_without_a_verified_token_does_not_run(kernel, ran):
