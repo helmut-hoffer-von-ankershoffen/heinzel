@@ -7,6 +7,7 @@ amends: 0037, 0055
 amends-0037: a playbook's recommended connector bindings are written at install; the install's confirmation is the yes
 amends-0055: a company's recommended binding is a source of bindings, below the person's and above the sole adapter
 related: 0012, 0032, 0040, 0047, 0056, 0136, 0138
+implemented-by: 672
 ---
 
 # 0144: Installing a company plugin sets it up
