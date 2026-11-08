@@ -2,6 +2,7 @@ import { AudioLines, BarChart3, Layers, Mic, MicOff, MonitorSpeaker, Sparkles, S
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FooterItem, type State } from "@/components/FooterItem";
+import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { type Segment, SegmentedControl } from "@/components/ui/segmented";
 import { t } from "@/i18n";
@@ -477,34 +478,37 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           state === "bad" ? "text-bad" : settings.master ? "text-foreground" : "text-muted-foreground"
         }`}
         popoverClassName="w-80 max-w-[calc(100vw-1rem)] p-3"
+        actions={
+          settings.master &&
+          systemOnly &&
+          !session && (
+            <PaneAction
+              key="system"
+              icon={Speaker}
+              primary
+              disabled={requesting !== null}
+              aria-busy={requesting !== null}
+              onClick={() => choose("system")}
+            >
+              {problem ? "Try again" : "Use system audio"}
+            </PaneAction>
+          )
+        }
       >
         <div className="space-y-3 px-1.5 pb-1">
           {settings.master && (
             <>
               <SegmentedControl legend="Show" segments={showSegments} value={shown} onSelect={setShown} selectOnArrow />
-              {systemOnly
-                ? // The one source here: no Listen to choice, only a way to ask (again) while it is not running.
-                  !session && (
-                    <Button
-                      size="sm"
-                      className="w-full"
-                      disabled={requesting !== null}
-                      aria-busy={requesting !== null}
-                      onClick={() => choose("system")}
-                    >
-                      <Speaker aria-hidden className="size-4" />
-                      {problem ? "Try again" : "Use system audio"}
-                    </Button>
-                  )
-                : system === false && (
-                    <SegmentedControl
-                      legend="Listen to"
-                      segments={sourceSegments}
-                      value={listening}
-                      busy={requesting}
-                      onSelect={choose}
-                    />
-                  )}
+              {/* With system audio the one source, there is no Listen to choice: the action row asks (again). */}
+              {!systemOnly && system === false && (
+                <SegmentedControl
+                  legend="Listen to"
+                  segments={sourceSegments}
+                  value={listening}
+                  busy={requesting}
+                  onSelect={choose}
+                />
+              )}
             </>
           )}
           <p className="flex items-start gap-1.5 text-sm">
