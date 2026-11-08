@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, get_args, get_origin
 
 from fastapi import Body, Depends, FastAPI, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 from pydantic import ConfigDict, create_model
@@ -150,6 +151,8 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
             response.headers["Cache-Control"] = "no-store"
         return response
 
+    app.exception_handler(RequestValidationError)(_invalid_request)
+
     @app.exception_handler(HeinzelError)
     async def heinzel_error(request: object, exc: HeinzelError) -> JSONResponse:  # noqa: ARG001 - FastAPI signature
         return _error_response(exc, private=head == "web" or selected == API_PRIVATE)
@@ -182,6 +185,15 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
                 include_in_schema=False,
             )
     return app
+
+
+async def _invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:  # noqa: ARG001 - FastAPI
+    """FastAPI's 422 without the refused `input` and `ctx`: a refused body may be a secret, e.g. an overlong API key."""
+    detail = [
+        {"type": str(error.get("type", "")), "loc": list(error.get("loc", ())), "msg": str(error.get("msg", ""))}
+        for error in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": detail})
 
 
 def _validate_auth(head: str, token: str | None, credentials: ApiBearer | None, audience: str | None) -> None:

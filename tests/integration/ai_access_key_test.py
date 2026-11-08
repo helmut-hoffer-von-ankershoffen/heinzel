@@ -63,6 +63,22 @@ def test_the_key_is_never_taken_from_a_query_or_by_an_unpaired_caller(web):
     assert backend.get("ai.access", "api-key") is None
 
 
+@pytest.mark.parametrize(
+    "body",
+    [{"value": SECRET * 200}, {"value": [SECRET]}, {"value": {"key": SECRET}}, {"value": SECRET, "extra": SECRET}],
+    ids=["too-long", "list", "object", "extra-field"],
+)
+def test_a_refused_body_never_echoes_the_key(web, caplog, body):
+    client, backend = web
+    with caplog.at_level(logging.DEBUG):
+        refused = client.post("/ai/access/set-key", headers=HEADERS, json=body)
+    assert refused.status_code == 422
+    assert refused.json()["detail"]
+    assert SECRET not in refused.text
+    assert SECRET not in "\n".join(f"{r.getMessage()} {r.__dict__}" for r in caplog.records)
+    assert backend.get("ai.access", "api-key") is None
+
+
 def test_a_backend_that_refuses_logs_the_failure_without_the_key(make_kernel, caplog):
     class Refusing(MemoryBackend):
         def set(self, service: str, name: str, value: str) -> None:
