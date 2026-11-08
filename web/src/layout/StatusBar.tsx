@@ -2,7 +2,6 @@
 // one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
-import { Calendar } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useChangelog, useInfo } from "@/api/queries";
 import { token } from "@/api/token";
@@ -14,26 +13,25 @@ import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
 import { zoneTime } from "@/lib/zoneTime";
 import { AutoUpdate } from "@/updates/AutoUpdate";
+import { CalendarGlyph } from "./CalendarGlyph";
+import { CalendarSummary } from "./CalendarSummary";
+import { type AgendaData, glyphModel } from "./calendarModel";
 import { DurableHeinzelStatus } from "./DurableHeinzelStatus";
 import { HealthStatus } from "./HealthStatus";
 import { PluginsPending } from "./PluginsPending";
 import { UpdateStatus } from "./UpdateStatus";
 
-type Meeting = { title: string; start: string; end: string; conference_url?: string | null };
-type Agenda = {
-  timezone?: string | null;
-  current: Meeting | null;
-  next: Meeting | null;
-  problem: string | null;
-  fix: string | null;
-};
+type Meeting = AgendaData["current"] & object;
+type Agenda = AgendaData;
 
 /** `GET /api/org/agenda`; answers 404 until the server has it, which shows as no meeting. */
 function useAgenda() {
   return useQuery({
     queryKey: ["org", "agenda"],
-    queryFn: async (): Promise<Agenda> => {
+    queryFn: async ({ signal }): Promise<Agenda> => {
       const request = new Request(new URL("/api/org/agenda", window.location.origin), {
+        signal,
+        cache: "no-store",
         headers: { Authorization: `Bearer ${token() ?? ""}` },
       });
       const response = await fetch(request);
@@ -109,132 +107,70 @@ function ReleaseNotes({ version }: { version: string }) {
   );
 }
 
-/** Two fixed half-rings preserve the icon footprint and distinguish elapsed time from the next start. */
-function MeetingIcon({ elapsed, approach }: { elapsed: number | null; approach: number | null }) {
-  return (
-    <span className="relative grid size-4 place-items-center" aria-hidden>
-      <Calendar className="size-3.5" />
-      <svg
-        aria-hidden
-        className="pointer-events-none absolute top-1/2 left-1/2 size-5 -translate-x-1/2 -translate-y-1/2"
-        viewBox="0 0 24 24"
-        fill="none"
-      >
-        {elapsed !== null && (
-          <>
-            <path d="M 2 12 A 10 10 0 0 1 22 12" stroke="currentColor" className="opacity-25" />
-            <path
-              d="M 2 12 A 10 10 0 0 1 22 12"
-              pathLength="100"
-              stroke="currentColor"
-              strokeDasharray={`${elapsed} 100`}
-              strokeWidth="1.5"
-              className="text-ok"
-            />
-          </>
-        )}
-        {approach !== null && (
-          <>
-            <path d="M 22 12 A 10 10 0 0 1 2 12" stroke="currentColor" className="opacity-25" />
-            <path
-              d="M 22 12 A 10 10 0 0 1 2 12"
-              pathLength="100"
-              stroke="currentColor"
-              strokeDasharray={`${approach} 100`}
-              strokeWidth="1.5"
-              className="text-primary"
-            />
-          </>
-        )}
-      </svg>
-    </span>
-  );
-}
-
-/** The current and upcoming meetings share one compact entry to the calendar panel. */
+/** The current and upcoming meetings share one compact entry: the Ledger glyph and a read-only pane. */
 function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
   const agenda = useAgenda();
   const meeting = useShown("org:meeting", "footer");
-  const current = agenda.data?.current;
-  const next = agenda.data?.next;
-  const running = [current, next].filter((event): event is Meeting =>
-    Boolean(event && new Date(event.start) <= now && now < new Date(event.end)),
-  );
-  const active = running.sort((a, b) => Date.parse(b.start) - Date.parse(a.start))[0];
-  const upcoming = next && new Date(next.start) > now ? next : null;
-  const boundary = [current?.end, next?.start]
+  const ms = now.getTime();
+  const boundary = [agenda.data?.current?.end, agenda.data?.next?.start]
     .filter((value): value is string => Boolean(value))
     .map(Date.parse)
-    .filter((value) => value > agenda.dataUpdatedAt && value <= now.getTime());
+    .filter((value) => value > agenda.dataUpdatedAt && value <= ms);
   useEffect(() => {
     if (boundary.length) void agenda.refetch();
   }, [agenda.refetch, boundary.length]);
   if (!meeting) return null;
-  const unavailable = agenda.isError || Boolean(agenda.data?.problem);
-  const elapsed = active
-    ? (100 * (now.getTime() - Date.parse(active.start))) / (Date.parse(active.end) - Date.parse(active.start))
-    : null;
-  const nextMinutes = upcoming ? Math.ceil((Date.parse(upcoming.start) - now.getTime()) / 60_000) : null;
-  const approach = nextMinutes === null ? null : Math.max(0, (100 * (60 - nextMinutes)) / 60);
-  const showProgress = !unavailable && (elapsed !== null || approach !== null);
+  const model = glyphModel({ agenda: agenda.data, failed: agenda.isError, pending: agenda.isPending, now: ms });
+  const zone = agenda.data?.timezone;
+  const events = [agenda.data?.current, agenda.data?.next].filter((e): e is Meeting => Boolean(e));
+  const active =
+    events
+      .filter((e) => Date.parse(e.start) <= ms && ms < Date.parse(e.end))
+      .sort((a, b) => Date.parse(b.start) - Date.parse(a.start))[0] ?? null;
+  const next = agenda.data?.next;
+  const upcoming = next && Date.parse(next.start) > ms ? next : null;
+  const unavailable = model.kind === "unknown";
   return (
+    // Opening the calendar closes this pane, so it never stays over the panel it opened.
     <FooterItem
       label="Calendar"
-      icon={showProgress ? undefined : Calendar}
-      content={showProgress ? <MeetingIcon elapsed={elapsed} approach={approach} /> : undefined}
+      triggerLabel={`Calendar: ${model.description}`}
       state={unavailable ? "bad" : "off"}
+      content={<CalendarGlyph model={model} />}
+      className="px-0"
       paneName="Calendar summary"
       hideHeading
+      popoverClassName="w-[min(24rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
     >
-      <div className="space-y-2 px-1.5 py-1">
-        <p className="font-medium">Calendar</p>
-        {agenda.isPending ? (
-          <p>Loading calendar…</p>
+      {(close) => {
+        const open = () => {
+          close();
+          onOpen();
+        };
+        return agenda.isPending ? (
+          <p className="p-3">Loading calendar…</p>
         ) : agenda.isError ? (
-          <p>Calendar unavailable. Try again later.</p>
+          <p className="p-3">Calendar unavailable. Try again later.</p>
         ) : agenda.data?.problem ? (
-          <p>{agenda.data.problem}</p>
+          <div className="space-y-2 p-3">
+            <p className="text-[17px] font-semibold">Calendar</p>
+            <p>{agenda.data.problem}</p>
+            <button type="button" className="min-h-11 text-primary underline" onClick={open} aria-label="Open calendar">
+              Open calendar
+            </button>
+          </div>
         ) : (
-          <>
-            {active ? (
-              <p className="break-words">
-                In {active.title} · {Math.max(1, Math.ceil((Date.parse(active.end) - now.getTime()) / 60_000))} min
-                remaining
-                {" · Ends at "}
-                <time className="inline-block" dateTime={active.end}>
-                  {time(new Date(active.end), agenda.data?.timezone)}
-                </time>
-              </p>
-            ) : (
-              <p>Not in a meeting</p>
-            )}
-            {upcoming ? (
-              <p className="break-words">
-                Next: {upcoming.title} ·{" "}
-                <time className="inline-block" dateTime={upcoming.start}>
-                  {new Intl.DateTimeFormat(undefined, {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    timeZone: agenda.data?.timezone ?? undefined,
-                  }).format(new Date(upcoming.start))}{" "}
-                  at {time(new Date(upcoming.start), agenda.data?.timezone)}
-                </time>
-                {" · in "}
-                {nextMinutes} min
-              </p>
-            ) : (
-              <p>None through tomorrow</p>
-            )}
-          </>
-        )}
-        {!unavailable && (elapsed !== null || approach !== null) && (
-          <p className="text-xs text-muted-foreground">Top arc: meeting elapsed. Bottom arc: starts within an hour.</p>
-        )}
-        <button type="button" className="min-h-10 text-primary underline" onClick={onOpen}>
-          Open calendar
-        </button>
-      </div>
+          <CalendarSummary
+            model={model}
+            active={active}
+            upcoming={upcoming}
+            now={ms}
+            zone={zone}
+            clock={(iso) => time(new Date(iso), zone)}
+            onOpen={open}
+          />
+        );
+      }}
     </FooterItem>
   );
 }

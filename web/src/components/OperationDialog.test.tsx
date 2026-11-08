@@ -3,8 +3,8 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { daemonStatusKey } from "@/api/daemon";
-import { DAEMON_INSTALL, DAEMON_UNINSTALL } from "@/lib/operationCalls";
-import { requestOperation } from "@/lib/operationRun";
+import { DAEMON_INSTALL, DAEMON_RESTART, DAEMON_UNINSTALL } from "@/lib/operationCalls";
+import { dismissOperation, requestOperation, trackOperation } from "@/lib/operationRun";
 import { expectAccessible } from "@/test/render";
 import { OperationDialog } from "./OperationDialog";
 
@@ -81,6 +81,20 @@ describe("OperationDialog", () => {
     await userEvent.setup().click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("restarts the daemon at once, without the exact call, and says plainly how it ended", async () => {
+    const live = liveStream();
+    mount();
+    act(() => requestOperation(DAEMON_RESTART));
+    expect(await screen.findByText("Restarting the daemon…", { selector: "output" })).toBeInTheDocument();
+    expect(live.fetchMock).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/This changes something/)).not.toBeInTheDocument();
+    expect(screen.queryByText("hz system daemon restart")).not.toBeInTheDocument();
+    await live.end("error", { error: "previous handover cannot be verified" });
+    const failed = await screen.findByRole("alert");
+    expect(failed).toHaveTextContent("The daemon could not restart. Try again in a moment.");
+    expect(failed).not.toHaveTextContent("handover");
   });
 
   it("shows the real steps as they happen, starts once however often it is clicked, and cannot be cancelled", async () => {
@@ -184,5 +198,51 @@ describe("OperationDialog", () => {
     act(() => requestOperation(DAEMON_INSTALL));
     act(() => requestOperation(DAEMON_UNINSTALL));
     expect(await screen.findByRole("alertdialog")).toHaveAttribute("data-operation", "/system/daemon/install");
+  });
+
+  it("shows a write the app drives with the steps it reports, and never retries it here", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    mount();
+    const call = {
+      path: "/system/update",
+      method: "POST" as const,
+      query: {},
+      command: "hz system update",
+      summary: "Updating",
+      read_only: false,
+    };
+    let report!: (phases: { id: string; label: string; state: "running" | "warn" | "done" }[]) => void;
+    let fail!: (error: Error) => void;
+    let run!: Promise<unknown>;
+    await act(async () => {
+      run = trackOperation(
+        call,
+        (tell) =>
+          new Promise<never>((_resolve, reject) => {
+            report = tell;
+            fail = reject;
+          }),
+      ).catch(() => undefined);
+    });
+    const dialog = await screen.findByRole("alertdialog", { name: "Updating" });
+    expect(dialog).toHaveAttribute("data-tracked");
+    act(() =>
+      report([
+        { id: "install", label: "Installing the update", state: "done" },
+        { id: "plugin:acme", label: "Plugin acme", state: "warn" },
+        { id: "restart", label: "Restarting hz", state: "running" },
+      ]),
+    );
+    expect(within(dialog).getByRole("progressbar")).toHaveAttribute("aria-valuetext", "Step 3 of 3");
+    expect(within(dialog).getByText("Plugin acme")).toBeInTheDocument();
+    await act(async () => {
+      fail(new Error("Restart failed."));
+      await run;
+    });
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Restart failed.");
+    expect(within(dialog).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    act(() => dismissOperation());
   });
 });
