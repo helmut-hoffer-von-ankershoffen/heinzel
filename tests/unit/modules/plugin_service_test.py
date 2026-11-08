@@ -2079,7 +2079,7 @@ def test_unreadable_siblings_leave_a_warning_and_the_plain_install(make_kernel, 
     service, _ = company_service(make_kernel, tool_env, monkeypatch)
     real = service.github_api
 
-    def flaky(path):
+    def offline_for_payments(path):
         if "heinzel-acme-payments" in path or path.endswith(
             "/contents/pyproject.toml?ref=" + FakeCompanyGitHub.REVISION
         ):
@@ -2087,7 +2087,7 @@ def test_unreadable_siblings_leave_a_warning_and_the_plain_install(make_kernel, 
             raise OSError(msg)
         return real(path)
 
-    service.github_api = flaky
+    service.github_api = offline_for_payments
     candidate = service.candidate(CHECKOUT)
     assert candidate.also_installs == []
     assert any("couldn't be read" in w for w in candidate.warnings)
