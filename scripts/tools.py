@@ -26,6 +26,7 @@ import http.client
 import io
 import os
 import platform
+import random
 import re
 import shutil
 import ssl
@@ -57,6 +58,9 @@ TIMEOUT = 120
 DOWNLOAD_ATTEMPTS = 3
 DOWNLOAD_ERROR_PATH_LIMIT = 256
 SHA256 = re.compile(r"[0-9a-f]{64}")
+RELEASE_ASSET = re.compile(
+    r"https://github\.com/(?P<repo>[\w.-]+/[\w.-]+)/releases/download/(?P<tag>[^/]+)/(?P<name>[^/?#]+)"
+)
 # CA bundles of common Linux distributions, for Pythons whose OpenSSL looks elsewhere.
 CA_BUNDLES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt")
 
@@ -235,7 +239,7 @@ def http_get(url: str) -> bytes:
             if isinstance(error, urllib.error.HTTPError):
                 error.close()
             attempt += 1
-            delay = 0.5 * attempt
+            delay = 0.5 * attempt * (0.5 + random.random())  # noqa: S311 - jitter spreads retries, not cryptography
             if (
                 not (transient_gateway or _interrupted_transport(error))
                 or attempt == DOWNLOAD_ATTEMPTS
@@ -289,10 +293,47 @@ def download_bytes(url: str, get: FetchBytes[str] = http_get) -> bytes:
         raise ToolError(msg) from error
 
 
-def fetch(download: Download, cache: Path = CACHE, get: FetchBytes[str] = http_get, *, cached_ok: bool = True) -> bytes:
+def gh_release_get(url: str) -> bytes:
+    """A GitHub release asset through `gh release download`, the authenticated route.
+
+    It keeps working while the anonymous download edge answers 504.
+
+    Raises:
+        ToolError: the URL is no GitHub release asset, gh is missing, or gh could not fetch it.
+    """
+    match = RELEASE_ASSET.fullmatch(url)
+    gh = on_path("gh")
+    if match is None or gh is None:
+        msg = "no authenticated route (needs a GitHub release asset and gh)"
+        raise ToolError(msg)
+    with tempfile.TemporaryDirectory(prefix="heinzel-dev-gh-") as directory:
+        # gh found on PATH or in .tools/bin; tag, repository and name come from the pinned manifest URL
+        result = subprocess.run(  # noqa: S603
+            [str(gh), "release", "download", match["tag"], "-R", match["repo"], "-p", match["name"], "-D", directory],
+            capture_output=True,
+            check=False,
+            timeout=TIMEOUT,
+        )
+        asset = Path(directory) / match["name"]
+        if result.returncode != 0 or not asset.is_file():
+            msg = f"gh release download failed (exit {result.returncode})"
+            raise ToolError(msg)
+        return asset.read_bytes()
+
+
+def fetch(
+    download: Download,
+    cache: Path = CACHE,
+    get: FetchBytes[str] = http_get,
+    *,
+    cached_ok: bool = True,
+    fallback: FetchBytes[str] = gh_release_get,
+) -> bytes:
     """A pinned file's bytes, from the cache or the network, refused unless they match the checksum.
 
     `cached_ok=False` always downloads (and refreshes the cache), to check the file is still published.
+    When the retried download fails, a GitHub release asset is fetched once more through `fallback` (gh); either
+    way the bytes are checked against the pin before they are cached or returned.
 
     Raises:
         ToolError: the download failed or doesn't match the checksum.
@@ -302,7 +343,14 @@ def fetch(download: Download, cache: Path = CACHE, get: FetchBytes[str] = http_g
         data = cached.read_bytes()
         if hashlib.sha256(data).hexdigest() == download.sha256:
             return data
-    data = download_bytes(download.url, get)
+    try:
+        data = download_bytes(download.url, get)
+    except ToolError as error:
+        try:
+            data = fallback(download.url)
+        except ToolError as alternative:
+            msg = f"{error}; fallback: {alternative}"
+            raise ToolError(msg) from error
     actual = hashlib.sha256(data).hexdigest()
     if actual != download.sha256:
         msg = f"checksum mismatch for {download.url}: expected {download.sha256}, got {actual}"
