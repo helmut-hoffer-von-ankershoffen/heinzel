@@ -661,11 +661,18 @@ describe("Where settings live", () => {
     const nav = settingsNav(
       [],
       [],
-      [entry("slack", "Slack"), entry("acme-lisbon", "ACME Lisbon"), entry("example", "Example"), entry("w", "World clock")],
+      [
+        entry("slack", "Slack"),
+        entry("acme-lisbon", "ACME Lisbon"),
+        entry("example", "Example"),
+        entry("w", "World clock"),
+      ],
     );
     for (const heading of ["preferences", "customize", "organisation", "computer"]) {
       const labels = nav.pages.filter((page) => page.heading === heading).map((page) => page.title);
-      expect(labels).toEqual([...labels].sort(new Intl.Collator(undefined, { sensitivity: "base", numeric: true }).compare));
+      expect(labels).toEqual(
+        [...labels].sort(new Intl.Collator(undefined, { sensitivity: "base", numeric: true }).compare),
+      );
     }
     expect(nav.pages.filter((page) => page.heading === "preferences").map((page) => page.title)).toEqual([
       "ACME Lisbon",
@@ -694,7 +701,9 @@ describe("Where settings live", () => {
         },
       ],
     );
-    expect(nav.pages.find((page) => page.id === "slack:@settings")?.icon).toBe(PAGES.find((p) => p.id === "plugins")?.icon);
+    expect(nav.pages.find((page) => page.id === "slack:@settings")?.icon).toBe(
+      PAGES.find((p) => p.id === "plugins")?.icon,
+    );
   });
 
   it("puts every module with settings under Preferences, General first, and connectors apart", () => {
