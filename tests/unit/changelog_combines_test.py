@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -113,15 +114,16 @@ def test_a_written_intro_is_kept_and_a_section_without_combines_is_untouched():
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
-def test_the_script_reads_commit_bodies_from_the_repository(tmp_path):
+def test_the_script_reads_commit_bodies_from_the_repository(tmp_path, monkeypatch):
+    # A git hook exports GIT_DIR and friends; they would point git at the repository the hook runs in.
+    for name in [n for n in os.environ if n.startswith("GIT_")]:
+        monkeypatch.delenv(name)
+    for name, value in {"GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@b", "GIT_COMMITTER_NAME": "a"}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("GIT_COMMITTER_EMAIL", "a@b")
+
     def git(*args: str) -> str:
-        env = {
-            "GIT_AUTHOR_NAME": "a",
-            "GIT_AUTHOR_EMAIL": "a@b",
-            "GIT_COMMITTER_NAME": "a",
-            "GIT_COMMITTER_EMAIL": "a@b",
-        }
-        done = subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True, text=True, env=env)
+        done = subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True, text=True)
         return done.stdout.strip()
 
     git("init", "-q")
