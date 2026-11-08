@@ -38,7 +38,6 @@ const ALLOW: Record<string, string> = {
   "durable.createFailed": "sweep backlog: durable and operation copy, rewrite when the pane is next touched",
   "daemon.mismatch": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
   "daemon.persistenceHint": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
-  "contrib.toggle.pending": "owned by the Tailscale pane rewrite (heinzel-management-7feb)",
   "lifecycle.action": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
   "lifecycle.targetAction": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
   "lifecycle.question": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
