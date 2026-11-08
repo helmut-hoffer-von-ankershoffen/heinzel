@@ -3545,6 +3545,7 @@ $ hz system plugin search [OPTIONS]
 **Options**:
 
 * `--text <str>`: Words that name or describe the plugin, e.g. `calendar`; sent to GitHub&#x27;s search. All plugins if omitted.
+* `--refresh / --no-refresh`: Ask GitHub again instead of using the answer kept for the last minute.  [default: no-refresh]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

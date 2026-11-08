@@ -9,14 +9,16 @@ import base64
 import contextlib
 import hashlib
 import json
+import logging
 import re
 import shlex
 import subprocess
 import tempfile
 import threading
+import time
 import tomllib
 import urllib.error
-from collections.abc import Collection, Generator, Mapping, Sequence
+from collections.abc import Callable, Collection, Generator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from http import HTTPStatus
@@ -48,7 +50,7 @@ from heinzel.kernel import (
     ThemeLet,
     subprocess_environment,
 )
-from heinzel.kernel._logging import get_logger, step
+from heinzel.kernel._logging import get_logger, log_event, step
 from heinzel.modules.system._github import GITHUB_API
 from heinzel.modules.system._phases import Phases
 from heinzel.modules.system.plugin._models import (
@@ -99,6 +101,8 @@ log = get_logger("plugin")
 TEMPLATE = "gh:helmut-hoffer-von-ankershoffen/heinzel"
 REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
 MAINTAINERS = "Heinzelmännchen maintainers"
+SEARCH_TTL_SECONDS = 60.0
+"""How long a complete Discover answer is kept before GitHub is asked again."""
 _CATALOG_CACHE: dict[str, list[tuple[str, str, str]]] = {}
 """Last successfully read source metadata; a transient source outage retains its catalog."""
 TOPIC = "heinzel-plugin"
@@ -168,6 +172,7 @@ class PluginService:
         settings: PluginSettings,
         *,
         lifecycle: DaemonInstallationLifecycle | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """Create the service; the kernel, the installation and the settings are injected."""
         self._kernel = kernel
@@ -181,6 +186,9 @@ class PluginService:
         self.pypi: JsonGetter = pypi_get
         """Reads PyPI's JSON API for `add`; tests replace it."""
         self._catalog_warnings: list[str] = []
+        self._clock = clock
+        self._searches: dict[tuple[str, tuple[str, ...]], tuple[float, PluginSearch]] = {}
+        """Discover answers by (words, catalogs): the time they stop counting and what they said."""
         self._pending_signature: tuple[tuple[str, str, str | None], ...] = ()
         self._pending_themes: dict[str, list[str]] = {}
         self._unreadable: set[str] = set()
@@ -1223,8 +1231,48 @@ class PluginService:
             raise HeinzelError(msg) from exc
         return sorted(written)
 
-    def search(self, text: str = "") -> PluginSearch:
-        """Discover projects from configured repository directories and repositories carrying the plugin topic."""
+    def search(self, text: str = "", *, refresh: bool = False) -> PluginSearch:
+        """Discover projects from configured repository directories and repositories carrying the plugin topic.
+
+        A complete answer counts for `SEARCH_TTL_SECONDS` (per words and configured catalogs); `refresh` asks again,
+        a plugin change forgets it, and an answer with warnings (a catalog that couldn't be read) is never kept.
+        """
+        key = (text, tuple(self._settings.catalog_sources))
+        kept = None if refresh else self._searches.get(key)
+        if kept is not None and self._clock() < kept[0]:
+            log_event(log, "plugin.search.cache", level=logging.DEBUG, outcome="hit", words=len(text.split()))
+            return self._with_installed_flags(kept[1])
+        log_event(
+            log,
+            "plugin.search.cache",
+            level=logging.DEBUG,
+            outcome="refresh" if refresh else "miss",
+            words=len(text.split()),
+        )
+        found = self._search(text)
+        if found.warnings:
+            self._searches.pop(key, None)
+        else:
+            self._searches[key] = (self._clock() + SEARCH_TTL_SECONDS, found)
+        return found
+
+    def forget_searches(self) -> None:
+        """Forget every kept Discover answer: a plugin was installed or removed, or a catalog changed."""
+        self._searches.clear()
+
+    def _with_installed_flags(self, found: PluginSearch) -> PluginSearch:
+        """A kept answer with what is installed now (a change from outside this process shows at once)."""
+        installed = {canonicalize_name(p.distribution) for p in self.installed()}
+        return found.model_copy(
+            update={
+                "plugins": [
+                    entry.model_copy(update={"installed": canonicalize_name(entry.name) in installed})
+                    for entry in found.plugins
+                ]
+            }
+        )
+
+    def _search(self, text: str) -> PluginSearch:
         installed = {canonicalize_name(p.distribution) for p in self.installed()}
         words = text.casefold().split()
         warnings: list[str] = []
@@ -1578,6 +1626,14 @@ class PluginService:
             HeinzelError: If lifecycle authority or the resulting generation is unavailable.
             OSError: If the continuity record cannot be written.
         """
+        try:
+            with self._mutation_scope() as mutation:
+                yield mutation
+        finally:
+            self.forget_searches()
+
+    @contextlib.contextmanager
+    def _mutation_scope(self) -> Generator[_PackageMutation | None]:
         if not self._installation.is_tool:
             yield None
             return
