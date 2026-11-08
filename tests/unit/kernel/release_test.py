@@ -22,11 +22,7 @@ def test_remembers_the_latest_release_and_when_it_was_seen(cache):
     seen = datetime(2026, 10, 24, 8, 0, tzinfo=UTC)
     cache.remember("0.2.0", seen)
     assert (cache.latest, cache.checked_at) == ("0.2.0", seen)
-    assert json.loads(cache.path.read_text(encoding="utf-8")) == {
-        "latest": "0.2.0",
-        "checked_at": seen.isoformat(),
-        "ok_at": seen.isoformat(),
-    }
+    assert json.loads(cache.path.read_text(encoding="utf-8")) == {"latest": "0.2.0", "checked_at": seen.isoformat()}
 
 
 def test_remember_stamps_the_time_by_default(cache):
@@ -126,14 +122,3 @@ def test_the_base_source_knows_nothing():
 def test_a_write_replaces_the_file_whole(cache):
     cache.remember("0.2.0")
     assert [path.name for path in cache.cache_dir.iterdir()] == ["release.json"]
-
-
-def test_a_failed_check_keeps_the_time_of_the_last_answer(tmp_path):
-    cache = ReleaseCache(tmp_path)
-    answered = datetime(2026, 11, 7, 10, 32, tzinfo=UTC)
-    cache.remember("1.2.3", answered)
-    cache.stamp(error="OSError: offline", checked_at=answered + timedelta(hours=1))
-    assert cache.ok_at == answered
-    assert cache.checked_at == answered + timedelta(hours=1)
-    assert cache.error is not None
-    assert ReleaseCache(tmp_path / "never").ok_at is None

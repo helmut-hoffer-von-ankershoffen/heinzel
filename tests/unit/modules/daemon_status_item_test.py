@@ -120,11 +120,11 @@ def test_other_platforms_are_unsupported():
 def test_a_tick_from_an_older_hz_warns_and_offers_a_restart():
     item = status_item(daemon(version="0.0.1", installed_version="0.0.1", version_mismatch=True), NOW)
     assert (item.text, item.tone, labels(item)) == (
-        "Daemon needs a restart",
+        "Daemon needs a restart · version mismatch",
         "warn",
         ["Restart daemon", "Logs", "Pause", "Uninstall"],
     )  # fmt: skip
-    assert f"The background service still runs hz 0.0.1; restart it to use {__version__}." in [
+    assert f"Installed for hz 0.0.1; the last check ran 0.0.1; this is {__version__}" in [
         line.text for line in item.detail
     ]
     restart = item.actions[0].effect
