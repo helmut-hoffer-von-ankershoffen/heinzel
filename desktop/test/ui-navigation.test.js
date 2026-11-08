@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import { authenticatedUiUrl, guardUiNavigation, isOwnedUiNavigation, openProductUi } from "../src/ui-navigation.js";
+import { authenticatedUiUrl, guardUiNavigation, isAllowedExternal, isOwnedUiNavigation, openProductUi } from "../src/ui-navigation.js";
 
 const connection = Object.freeze({ origin: "http://127.0.0.1:30123", token: "synthetic_native_ui_test_token_1234567890" });
 
@@ -44,6 +44,28 @@ test("the actual navigation handlers block cross-origin main-frame redirects and
   contents.emit("will-redirect", event("https://example.com/embed", false));
   assert.equal(blocked, 2);
   assert.deepEqual(open({ url: "https://example.com/" }), { action: "deny" });
+});
+
+test("a link with target=_blank opens only allow-listed meeting and calendar pages, in the system handler", () => {
+  const contents = new EventEmitter();
+  let open;
+  contents.setWindowOpenHandler = (handler) => { open = handler; };
+  const opened = [];
+  guardUiNavigation(contents, connection, (url) => opened.push(url));
+  const allowed = [
+    "https://zoom.us/j/12345678901", "https://acme.zoom.us/j/12345678901", "https://meet.google.com/abc-defg-hij",
+    "https://teams.microsoft.com/l/meetup-join/x", "https://acme.webex.com/meet/a",
+    "https://www.google.com/calendar/event?eid=abc", "https://calendar.google.com/calendar/event?eid=abc",
+  ];
+  const denied = [
+    "http://zoom.us/j/1", "https://evil.example/", "https://zoom.us.evil.example/j/1", "https://evilzoom.us/j/1",
+    "https://user:pass@zoom.us/j/1", "https://zoom.us:8443/j/1", "https://www.google.com/search?q=1",
+    "zoommtg://zoom.us/join", "javascript:alert(1)", "file:///etc/passwd", "not a URL", "http://127.0.0.1:30123/",
+  ];
+  for (const url of [...allowed, ...denied]) assert.deepEqual(open({ url }), { action: "deny" });
+  assert.deepEqual(opened, allowed);
+  for (const url of allowed) assert.equal(isAllowedExternal(url), true);
+  for (const url of denied) assert.equal(isAllowedExternal(url), false);
 });
 
 test("quit while lifecycle authentication is pending never constructs a window", async () => {
