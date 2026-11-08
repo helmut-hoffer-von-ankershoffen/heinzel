@@ -3641,6 +3641,7 @@ $ hz system serve [OPTIONS] COMMAND [ARGS]...
 * `api`: (expert) Serve every operation as a REST...
 * `daemon`: (expert) Run the daemon&#x27;s tick in the...
 * `mcp`: (expert) Serve every operation as an MCP...
+* `mcp-token`: Make, list and revoke the tokens agents...
 
 #### `hz system serve api`
 
@@ -3690,12 +3691,89 @@ $ hz system serve mcp [OPTIONS]
 
 **Options**:
 
-* `--transport <stdio|streamable-http>`: stdio for agents that start hz; streamable-http to share.  [default: stdio]
-* `--host <str>`: Interface for streamable-http.  [default: 127.0.0.1]
+* `--transport <stdio|streamable-http>`: stdio for agents that start hz; streamable-http to share, with a token per agent.  [default: stdio]
+* `--host <str>`: Interface for streamable-http; loopback unless --expose.  [default: 127.0.0.1]
 * `--port <int>`: Port for streamable-http.  [default: 8765]
+* `--expose`: Allow a --host other devices can reach; Tailscale Serve needs none.
+* `--allowed-host <str>`: Also accept this Host name, e.g. the machine&#x27;s Tailscale Serve name; repeatable.
 * `--chat SESSION`: Serve the tools of this chat session: reads run, everything else waits for your confirmation in the chat. Started by `hz chat` for its agent, over stdio only.
 * `--project <path>`: Read the configuration as if started in this directory (its hz.toml), as the chat does.
 * `--chat-tools <everyday|all|personal-check-in>`: With --chat: the everyday operations as tools (cheaper messages), or all of them.  [default: everyday]
+* `--help`: Show this message and exit.
+
+#### `hz system serve mcp-token`
+
+Make, list and revoke the tokens agents send to `hz system serve mcp --transport streamable-http`.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-token [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `create`: Make a token for one agent and print it...
+* `list`: List the tokens: id, actor, scope, expiry...
+* `revoke`: Revoke a token (or `all`); the agent&#x27;s...
+
+##### `hz system serve mcp-token create`
+
+Make a token for one agent and print it once; only its SHA-256 is kept.
+
+Raises:
+    typer.Exit: With 1 when the actor name is invalid or too many tokens exist.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-token create [OPTIONS]
+```
+
+**Options**:
+
+* `--actor <str>`: Which agent it is for, e.g. codex-desktop; logged with each call.  [required]
+* `--scope <read|write>`: read: read-only tools only; write: every tool the head serves.  [default: read]
+* `--expires DURATION`: How long it works, e.g. 30d.  [default: 90d]
+* `--help`: Show this message and exit.
+
+##### `hz system serve mcp-token list`
+
+List the tokens: id, actor, scope, expiry and last use; never the tokens themselves.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-token list [OPTIONS]
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+##### `hz system serve mcp-token revoke`
+
+Revoke a token (or `all`); the agent&#x27;s next request is refused.
+
+Raises:
+    typer.Exit: With 1 when no token has that id.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-token revoke [OPTIONS] {which}
+```
+
+**Arguments**:
+
+* `which`: A token id from `list`, or `all`.  [required]
+
+**Options**:
+
 * `--help`: Show this message and exit.
 
 ### `hz system skill`

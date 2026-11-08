@@ -30,8 +30,13 @@ from threading import Lock
 from typing import TYPE_CHECKING, Any, Literal
 
 from mcp.server import MCPServer
+from mcp.server.auth.middleware.auth_context import get_access_token
+from mcp.server.auth.provider import AccessToken
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
+from pydantic import AnyHttpUrl
 from pydantic_core import to_jsonable_python
 
 if TYPE_CHECKING:
@@ -39,6 +44,14 @@ if TYPE_CHECKING:
 
 from heinzel import __version__
 from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
+from heinzel.heads._mcp_tokens import (
+    READ,
+    SCOPES,
+    WRITE,
+    McpTokens,
+    require_reachable_only_as_asked,
+    tokens_for_user,
+)
 from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.heads.mcp._skills import add_skills
 from heinzel.kernel import (
@@ -52,9 +65,11 @@ from heinzel.kernel import (
     redact_emails,
 )
 from heinzel.kernel._approval import ApprovalIssuer
+from heinzel.kernel._logging import get_logger, step
 
 HEAD = "mcp"
 log = logging.getLogger(__name__)
+audit = get_logger("mcp.http")
 _SCHEDULE_APPROVAL_LOCK = Lock()
 _SCHEDULE_APPROVAL_TIMEOUT_SECONDS = 60
 _SCHEDULE_APPROVAL_INPUT_LIMIT = 256
@@ -78,26 +93,44 @@ Transport = Literal["stdio", "streamable-http"]
 ChatTools = Literal["everyday", "all", "personal-check-in"]
 
 
-def build(
-    kernel: Kernel, transport: Transport = "stdio", *, chat: str | None = None, chat_tools: ChatTools = "everyday"
+def build(  # noqa: PLR0913 - the transport's options
+    kernel: Kernel,
+    transport: Transport = "stdio",
+    *,
+    chat: str | None = None,
+    chat_tools: ChatTools = "everyday",
+    tokens: McpTokens | None = None,
+    url: str = "http://127.0.0.1:8765/mcp",
 ) -> MCPServer:
     """An MCP server with one tool per exposed operation; for one chat session's agent when `chat` is given.
 
     A chat's agent gets the everyday operations only (ADR 0041) unless `chat_tools` is `all`: every tool's schema is
     sent with every message, so 24 tools instead of 75 halve what a short message costs (ADR 0057).
 
-    Over streamable HTTP, which has no authentication, the operations restricted to stdio (`mcp-stdio` in their
-    `heads`, such as installing plugins) are left out. Over stdio, outside a chat, skills are prompts and resources.
+    Over streamable HTTP the operations restricted to stdio (`mcp-stdio` in their `heads`, such as installing
+    plugins) are left out, every request needs a bearer token from `tokens` (ADR 0142), and a tool that is not
+    read-only needs a token with the write scope; without `tokens` no HTTP tool runs. `url` is the address clients
+    use, named in a 401's resource metadata. Over stdio, outside a chat, skills are prompts and resources.
 
     Raises:
         HeinzelError: If the personal check-in tool profile is requested for a chat without its durable context.
     """
     _verify_chat(kernel, transport, chat)
+    verifier = TokenVerifier(tokens) if transport != "stdio" and tokens is not None else None
     server = MCPServer(
         name="heinzel",
         title="Heinzelmännchen",
         version=__version__,
         instructions=INSTRUCTIONS if chat is None else CHAT_INSTRUCTIONS,
+        token_verifier=verifier,
+        auth=None
+        if verifier is None
+        else AuthSettings(
+            issuer_url=AnyHttpUrl(url),
+            resource_server_url=AnyHttpUrl(url),
+            validate_token_resource=False,
+            required_scopes=[READ],
+        ),
     )
     items = exposed(kernel, HEAD if transport == "stdio" else MCP_HTTP)
     if chat is not None and chat_tools == "personal-check-in":
@@ -195,8 +228,10 @@ def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., 
     user = kernel.resolve(CurrentUser)
 
     def run(**kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
+        if not local:
+            return _authorized_http_call(kernel, item, kwargs)
         try:
-            with user.local("mcp-stdio") if local else user.using(None):
+            with user.local("mcp-stdio"):
                 mark_authenticated_presence(kernel, item.record.qualname)
                 if _is_schedule_approval(item, kwargs):
                     kwargs = _authorize_mcp_schedule(kernel, item, kwargs, local=local)
@@ -205,6 +240,60 @@ def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., 
             raise ToolError(str(exc)) from exc
 
     return _signed(run, item, item.returns)
+
+
+class TokenVerifier:
+    """The MCP SDK's bearer check against the owner's MCP tokens: every HTTP request, before any MCP message."""
+
+    def __init__(self, tokens: McpTokens) -> None:
+        """Check presented tokens against `tokens`."""
+        self.tokens = tokens
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        """The verified access of an unexpired token, or None, which the SDK answers with HTTP 401."""
+        record = self.tokens.check(token)
+        if record is None:
+            return None
+        return AccessToken(
+            token=token,
+            client_id=record.id,
+            subject=record.actor,
+            scopes=list(SCOPES[record.scope]),
+            expires_at=int(record.expires.timestamp()),
+        )
+
+
+def _authorized_http_call(kernel: Kernel, item: Exposed, arguments: dict[str, Any]) -> Any:  # noqa: ANN401
+    """Run one HTTP tool call for the token's actor if its scope allows it; one audited step per call.
+
+    Raises:
+        ToolError: If no verified token is present, a read token calls a tool that changes state, or it fails.
+    """
+    access = get_access_token()
+    if access is None:  # the SDK refuses unauthenticated requests; this keeps a server built without tokens shut
+        msg = "MCP over HTTP needs a bearer token; make one with `hz system serve mcp-token create`"
+        raise ToolError(msg)
+    read_only = item.operation.read_only
+    with step(
+        audit,
+        "mcp.http.call",
+        actor=access.subject,
+        key_id=access.client_id,
+        tool=item.name,
+        scope="write" if WRITE in access.scopes else "read",
+        read_only=read_only,
+    ):
+        if not read_only and WRITE not in access.scopes:
+            msg = f"`{item.name}` changes things and this token may only read; make a write token if this agent should"
+            raise ToolError(msg)
+        try:
+            with kernel.resolve(CurrentUser).using(None):
+                mark_authenticated_presence(kernel, item.record.qualname)
+                if _is_schedule_approval(item, arguments):
+                    arguments = _authorize_mcp_schedule(kernel, item, arguments, local=False)
+                return kernel.invoke(item.operation, **arguments)
+        except HeinzelError as exc:
+            raise ToolError(str(exc)) from exc
 
 
 def _is_schedule_approval(item: Exposed, arguments: dict[str, Any]) -> bool:
@@ -439,24 +528,64 @@ def _signed[F: Callable[..., Any]](run: F, item: Exposed, returns: object, *, na
     return run
 
 
-def serve(
+def serve(  # noqa: PLR0913 - one parameter per option of `hz system serve mcp`
     transport: Transport = "stdio",
     host: str = "127.0.0.1",
     port: int = 8765,
     *,
     chat: str | None = None,
     chat_tools: ChatTools = "everyday",
+    expose: bool = False,
+    allowed_hosts: tuple[str, ...] = (),
+    tokens: McpTokens | None = None,
 ) -> None:
     """Boot the kernel and serve its operations over `transport` until interrupted; for one chat over stdio only.
 
+    Over streamable HTTP it listens on loopback unless `expose`, needs at least one MCP token, and accepts the Host
+    names in `allowed_hosts` (a Tailscale Serve name) besides loopback, keeping DNS-rebinding protection on.
+
     Raises:
-        HeinzelError: If `chat` is given with another transport than stdio.
+        HeinzelError: If `chat` is given with another transport than stdio, the host is not loopback without
+            `expose`, or no MCP token exists.
     """
     if chat is not None and transport != "stdio":
         msg = "A chat's tools are served over stdio only, never on a port."
         raise HeinzelError(msg)
-    server = build(boot(), transport, chat=chat, chat_tools=chat_tools)
     if transport == "stdio":
-        server.run("stdio")
-    else:
-        server.run("streamable-http", host=host, port=port)
+        build(boot(), transport, chat=chat, chat_tools=chat_tools).run("stdio")
+        return
+    server, security = http_server(boot(), host, port, expose=expose, allowed_hosts=allowed_hosts, tokens=tokens)
+    server.run("streamable-http", host=host, port=port, transport_security=security)
+
+
+def http_server(  # noqa: PLR0913 - the HTTP head's options
+    kernel: Kernel,
+    host: str,
+    port: int,
+    *,
+    expose: bool = False,
+    allowed_hosts: tuple[str, ...] = (),
+    tokens: McpTokens | None = None,
+) -> tuple[MCPServer, TransportSecuritySettings]:
+    """The authenticated streamable-HTTP server and its Host/Origin checks, after the exposure and token checks.
+
+    Raises:
+        HeinzelError: If the host is not loopback without `expose`, or no unexpired MCP token exists.
+    """
+    require_reachable_only_as_asked(host, expose=expose)
+    tokens = tokens or tokens_for_user()
+    if not tokens.active():
+        msg = (
+            "MCP over HTTP needs a token for each agent first: "
+            "`hz system serve mcp-token create --actor NAME --scope read` (or write)"
+        )
+        raise HeinzelError(msg)
+    hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*", *allowed_hosts]
+    origins = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+    origins += [f"https://{name}" for name in allowed_hosts]
+    security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=True, allowed_hosts=hosts, allowed_origins=origins
+    )
+    shown = f"[{host}]" if ":" in host else host
+    server = build(kernel, "streamable-http", tokens=tokens, url=f"http://{shown}:{port}/mcp")
+    return server, security

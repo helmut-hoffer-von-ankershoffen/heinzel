@@ -4,6 +4,7 @@ import os
 import webbrowser
 from collections.abc import Callable
 from enum import StrEnum
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -16,6 +17,7 @@ from heinzel.heads.cli._render import message
 from heinzel.kernel import CurrentUser, HeinzelError, Kernel, PersistentWeb, parse_duration
 
 if TYPE_CHECKING:
+    from heinzel.heads._mcp_tokens import McpTokens
     from heinzel.heads.web._devices import Devices
 
 
@@ -49,10 +51,20 @@ def serve_group(
     @serve.command(epilog=footer)
     def mcp(  # noqa: PLR0913, PLR0917 - one parameter per command-line option
         transport: Annotated[
-            Transport, typer.Option(help="stdio for agents that start hz; streamable-http to share.")
+            Transport,
+            typer.Option(help="stdio for agents that start hz; streamable-http to share, with a token per agent."),
         ] = Transport.STDIO,
-        host: Annotated[str, typer.Option(help="Interface for streamable-http.")] = "127.0.0.1",
+        host: Annotated[
+            str, typer.Option(help="Interface for streamable-http; loopback unless --expose.")
+        ] = "127.0.0.1",
         port: Annotated[int, typer.Option(help="Port for streamable-http.")] = 8765,
+        expose: Annotated[
+            bool, typer.Option("--expose", help="Allow a --host other devices can reach; Tailscale Serve needs none.")
+        ] = False,
+        allowed_host: Annotated[
+            list[str] | None,
+            typer.Option(help="Also accept this Host name, e.g. the machine's Tailscale Serve name; repeatable."),
+        ] = None,
         chat: Annotated[
             str | None,
             typer.Option(
@@ -75,7 +87,7 @@ def serve_group(
         """Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`.
 
         Raises:
-            typer.Exit: With 2 when --chat is given with another transport than stdio.
+            typer.Exit: With 2 when --chat is given with another transport than stdio, 1 when serving is refused.
         """
         from heinzel.heads import mcp as head  # noqa: PLC0415 - heavy import, only when serving
 
@@ -84,7 +96,10 @@ def serve_group(
             raise typer.Exit(2)
         if project is not None:
             os.chdir(project)  # before the head boots its kernel, so it finds the same project file
-        head.serve(transport.value, host, port, chat=chat, chat_tools=chat_tools.value)
+        serving = partial(head.serve, transport.value, host, port, chat=chat, chat_tools=chat_tools.value)
+        _refused_or_served(lambda: serving(expose=expose, allowed_hosts=tuple(allowed_host or ())), err_console)
+
+    serve.add_typer(_mcp_token_group(group_cls, footer, err_console))
 
     @serve.command(epilog=footer)
     def api(
@@ -261,6 +276,100 @@ def _devices(paired: "Devices", revoke: str | None, err_console: Console) -> Non
         typer.echo(
             f"{device.id}  {device.name}  paired {device.created:%Y-%m-%d}, last used {device.last_used:%Y-%m-%d}"
         )
+
+
+class TokenScope(StrEnum):
+    """What an MCP token may do."""
+
+    READ = "read"
+    WRITE = "write"
+
+
+def _refused_or_served(serving: Callable[[], None], err_console: Console) -> None:
+    """Serve until stopped, or name why serving was refused (no token, a shared interface without --expose).
+
+    Raises:
+        typer.Exit: With 1 when serving is refused.
+    """
+    try:
+        serving()
+    except HeinzelError as exc:
+        err_console.print(message("Can't serve:", str(exc)))
+        raise typer.Exit(1) from None
+
+
+def _mcp_token_group(group_cls: type[TyperGroup], footer: str | None, err_console: Console) -> typer.Typer:
+    """`hz system serve mcp-token`: the agents' tokens for MCP over HTTP; never an MCP tool or REST endpoint."""
+    group = typer.Typer(
+        name="mcp-token",
+        help="Make, list and revoke the tokens agents send to `hz system serve mcp --transport streamable-http`.",
+        epilog=footer,
+        cls=group_cls,
+        no_args_is_help=True,
+    )
+
+    @group.command(epilog=footer)
+    def create(
+        actor: Annotated[str, typer.Option(help="Which agent it is for, e.g. codex-desktop; logged with each call.")],
+        scope: Annotated[
+            TokenScope, typer.Option(help="read: read-only tools only; write: every tool the head serves.")
+        ] = TokenScope.READ,
+        expires: Annotated[
+            str, typer.Option(help="How long it works, e.g. 30d.", parser=_duration, metavar="DURATION")
+        ] = "90d",
+    ) -> None:
+        """Make a token for one agent and print it once; only its SHA-256 is kept.
+
+        Raises:
+            typer.Exit: With 1 when the actor name is invalid or too many tokens exist.
+        """
+        try:
+            record, token = _tokens().create(actor, scope.value, parse_duration(expires))
+        except HeinzelError as exc:
+            err_console.print(message("Can't make the token:", str(exc)))
+            raise typer.Exit(1) from None
+        err_console.print(
+            message(
+                f"Token {record.id} for {record.actor} ({record.scope}), until {record.expires:%Y-%m-%d}:",
+                "shown this once; send it as `Authorization: Bearer <token>`.",
+            )
+        )
+        typer.echo(token)
+
+    @group.command(name="list", epilog=footer)
+    def list_tokens() -> None:
+        """List the tokens: id, actor, scope, expiry and last use; never the tokens themselves."""
+        records = _tokens().tokens()
+        if not records:
+            typer.echo("No MCP tokens; `hz system serve mcp-token create --actor NAME` makes one.")
+            return
+        for record in records:
+            used = "never" if record.last_used is None else f"{record.last_used:%Y-%m-%d}"
+            typer.echo(
+                f"{record.id}  {record.actor}  {record.scope}  expires {record.expires:%Y-%m-%d}, last used {used}"
+            )
+
+    @group.command(epilog=footer)
+    def revoke(which: Annotated[str, typer.Argument(help="A token id from `list`, or `all`.")]) -> None:
+        """Revoke a token (or `all`); the agent's next request is refused.
+
+        Raises:
+            typer.Exit: With 1 when no token has that id.
+        """
+        gone = _tokens().revoke(which)
+        if not gone:
+            err_console.print(message("No such token:", f"{which}; `hz system serve mcp-token list` lists them"))
+            raise typer.Exit(1)
+        for record in gone:
+            typer.echo(f"Revoked {record.id} ({record.actor}).")
+
+    return group
+
+
+def _tokens() -> "McpTokens":
+    from heinzel.heads._mcp_tokens import tokens_for_user  # noqa: PLC0415 - only when managing tokens
+
+    return tokens_for_user()
 
 
 def _duration(value: str) -> str:
