@@ -329,56 +329,45 @@ def test_the_auto_updater_repairs_when_nothing_else_is_due_and_restarts_to_load(
     assert restarts == [True]
 
 
-def events(caplog):
+FIELDS = ("event", "phase", "operation", "step", "plugin", "version", "dependency_of", "outcome", "state", "error")
+
+
+def events(caplog, name):
     return [
-        {
-            k: getattr(r, k, None)
-            for k in ("event", "operation", "step", "plugin", "version", "dependency_of", "outcome")
-        }
-        | {"timed": isinstance(getattr(r, "duration_ms", None), int), "error": getattr(r, "error", None)}
+        {k: getattr(r, k, None) for k in FIELDS} | {"timed": isinstance(getattr(r, "duration_ms", None), int)}
         for r in caplog.records
-        if getattr(r, "event", "").startswith("plugin.requires.")
+        if getattr(r, "event", None) == name
     ]
 
 
 def test_each_required_plugin_logs_a_start_and_an_outcome(make_kernel, tmp_path, monkeypatch, caplog):
-    caplog.set_level("INFO", logger="heinzel.modules.system.plugin._service")
+    caplog.set_level("INFO", logger="heinzel.plugin")
     world = acme_world(make_kernel, tmp_path, monkeypatch, {"heinzel-atlassian": "0.4.0"})
     world.service._add_confirmed(world.service.candidate("acme"), "acme")
-    common = {"operation": "add", "step": "requires:heinzel-github", "plugin": "heinzel-github"}
-    assert events(caplog) == [
-        {
-            "event": "plugin.requires.start",
-            **common,
-            "version": "0.5.0",
-            "dependency_of": "heinzel-acme",
-            "outcome": None,
-            "timed": False,
-            "error": None,
-        },
-        {
-            "event": "plugin.requires.outcome",
-            **common,
-            "version": "0.5.0",
-            "dependency_of": "heinzel-acme",
-            "outcome": "installed",
-            "timed": True,
-            "error": None,
-        },
+    common = {
+        "event": "plugin.add.requires",
+        "operation": "add",
+        "step": "requires:heinzel-github",
+        "plugin": "heinzel-github",
+        "version": "0.5.0",
+        "dependency_of": "heinzel-acme",
+        "error": None,
+    }
+    assert events(caplog, "plugin.add.requires") == [
+        {**common, "phase": "start", "outcome": None, "state": None, "timed": False},
+        {**common, "phase": "end", "outcome": "ok", "state": "installed", "timed": True},
     ]
 
 
 def test_a_failed_required_plugin_logs_its_outcome_and_error(make_kernel, tmp_path, monkeypatch, caplog):
-    caplog.set_level("INFO", logger="heinzel.modules.system.plugin._service")
+    caplog.set_level("INFO", logger="heinzel.plugin")
     world = acme_world(make_kernel, tmp_path, monkeypatch, {"heinzel-acme": "0.3.0"})
     world.fail = {"heinzel-github"}
     world.service.repair(automatic=True)
-    outcomes = [(e["plugin"], e["operation"], e["outcome"], e["error"]) for e in events(caplog) if e["timed"]]
-    assert outcomes == [
-        ("heinzel-github", "repair", "failed", "uv failed"),
-        ("heinzel-atlassian", "repair", "not-reached", None),
+    ends = [e for e in events(caplog, "plugin.repair.requires") if e["phase"] == "end"]
+    assert [(e["plugin"], e["outcome"], e["state"], e["error"]) for e in ends] == [
+        ("heinzel-github", "error", "failed", "uv failed"),
+        ("heinzel-atlassian", "skipped", "not-reached", None),
     ]
-    repaired = [r for r in caplog.records if getattr(r, "event", "") == "plugin.repair.outcome"]
-    assert [(r.outcome, r.failed, r.levelname) for r in repaired] == [
-        ("failed", ["heinzel-github", "heinzel-atlassian"], "WARNING")
-    ]
+    [run] = [r for r in caplog.records if getattr(r, "event", None) == "plugin.repair.run" and r.phase == "end"]
+    assert (run.outcome, run.failed) == ("error", ["heinzel-github", "heinzel-atlassian"])

@@ -164,6 +164,11 @@ class PluginNeed(BaseModel):
         default=None, description="For a plugin the add installs or updates: exactly what, read from the same catalog."
     )
     detail: str = Field(default="", description="What went wrong, or what the person still does (e.g. sign in).")
+    with_it: bool = Field(
+        default=False,
+        description="A plugin of the same repository it depends on, installed in the same run and pinned to the "
+        "same commit; `requirement` is that pinned source.",
+    )
 
 
 class PluginCandidate(BaseModel):

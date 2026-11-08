@@ -272,6 +272,46 @@ describe("PluginsSection", () => {
     expect(screen.getByText(also).closest("details")).toBeNull();
   });
 
+  it("lists the plugins it also installs, with versions, and nothing for a plugin alone", () => {
+    const need = { required: true, needed_by: "x", install: "acme", detail: "", with_it: true };
+    const needs = [
+      {
+        ...need,
+        distribution: "heinzel-acme",
+        requirement: "heinzel-acme @ git+x",
+        state: "install" as const,
+        version: "0.2.0",
+      },
+      {
+        ...need,
+        distribution: "heinzel-acme-payments",
+        requirement: "p @ git+x",
+        state: "install" as const,
+        version: null,
+      },
+      {
+        ...need,
+        distribution: "heinzel-google",
+        requirement: "heinzel-google",
+        state: "offered" as const,
+        required: false,
+      },
+    ];
+    const { unmount } = render(
+      <CandidateDetails
+        candidate={{ ...candidate, source: "git", needs, also: "x also needs heinzel-acme; installing it too." }}
+      />,
+    );
+    const list = screen.getByTestId("plugin-also-installs");
+    expect(screen.getByTestId("plugin-also")).toHaveTextContent("also needs heinzel-acme; installing it too.");
+    expect(list).toHaveTextContent("heinzel-acme 0.2.0");
+    expect(list).toHaveTextContent("heinzel-acme-payments");
+    expect(list).not.toHaveTextContent("heinzel-google");
+    unmount();
+    render(<CandidateDetails candidate={{ ...candidate, source: "git", needs: [] }} />);
+    expect(screen.queryByTestId("plugin-also")).toBeNull();
+  });
+
   it("does not call an uncompleted backend reply an installed plugin or restart the server", async () => {
     const calls = serve((url) =>
       url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add"
