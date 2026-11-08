@@ -273,3 +273,96 @@ def test_the_doctor_watcher_attaches_its_checks_as_the_condition(service, make_k
     assert watch(make_kernel(), service, {NoticeKind.DOCTOR}) == 1
     (notice,) = service.listing(50).notices
     assert notice.resolve_when == ResolveWhen(checks_up=["system.credential: weather/api-key"])
+
+
+def legacy_doctor(key: str) -> Notice:
+    """A doctor notice as the live store kept it on 2026-11-08: no `resolve_when`."""
+    return Notice.model_validate(
+        {
+            "id": "20261108T042026737329Z-fe646a",
+            "kind": "doctor",
+            "title": "Heinzelmännchen is degraded",
+            "body": "1 check(s) need you: system.daemon: jobs",
+            "route": "/doctor",
+            "command": "hz system doctor",
+            "key": key,
+            "urgent": False,
+            "at": "2026-11-08T04:20:26.737329Z",
+            "due": "2026-11-09T09:00:00+01:00",
+            "expires": None,
+            "popup": True,
+            "held": None,
+            "helper": None,
+            "delivered_by": None,
+            "delivered_at": None,
+            "resolve_when": None,
+            "resolved_at": None,
+            "resolved": None,
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("key", "checks"),
+    [
+        # The exact keys of the stale notices seen on Today on 2026-11-08.
+        (
+            "doctor:degraded:system.credential: credential weather/api-key",
+            ["system.credential: credential weather/api-key"],
+        ),
+        ("doctor:degraded:system.daemon: jobs", ["system.daemon: jobs"]),
+        ("doctor:down:org: calendar|system.daemon: jobs", ["org: calendar", "system.daemon: jobs"]),
+    ],
+)
+def test_a_legacy_doctor_key_implies_its_checks(key, checks):
+    notice = legacy_doctor(key)
+    assert _resolve.condition(notice) == ResolveWhen(checks_up=checks)
+
+
+@pytest.mark.parametrize("key", ["doctor:degraded:", "doctor:degraded", "doctor:degraded:no colon here"])
+def test_a_malformed_doctor_key_never_resolves(key):
+    notice = legacy_doctor(key)
+    assert _resolve.condition(notice) is None
+
+
+@pytest.mark.parametrize("status", ["up", "degraded"])
+def test_the_doctor_watcher_reports_nothing_without_a_failing_check(service, make_kernel, monkeypatch, status):
+    from heinzel import Status as Health
+
+    monkeypatch.setattr("heinzel.modules.system.notify._watch._report", lambda kernel: (Health(status), []))
+    assert watch(make_kernel(), service, {NoticeKind.DOCTOR}) == 0
+    assert service.listing(50).notices == []
+
+
+def test_resolving_a_doctor_notice_logs_one_structured_event(service, caplog):
+    failing: set[str] = {"system.daemon: jobs"}
+    service.problems = lambda: failing
+    notice = doctor(service, ["system.daemon: jobs"])
+    assert notice is not None
+    failing = set()
+    with caplog.at_level("INFO", logger="heinzel.system.notify"):
+        assert service.resolve() == 1
+        assert service.resolve() == 0  # already resolved: no second event
+    (event,) = [record for record in caplog.records if record.getMessage() == "notify.resolve.notice"]
+    assert event.operation == "system.notify:resolve"
+    assert event.outcome == "ok"
+    assert event.notice == notice.id
+    assert event.reason == "system.daemon: jobs is up again"
+
+
+def test_a_failing_doctor_probe_resolves_nothing_and_logs_the_error(service, make_kernel, monkeypatch, caplog):
+    from heinzel.modules.system.notify._watch import doctor_problems
+
+    def broken(kernel):
+        message = "doctor exploded"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr("heinzel.modules.system.notify._watch._report", broken)
+    with caplog.at_level("WARNING", logger="heinzel.system.notify"):
+        assert doctor_problems(make_kernel()) is None
+    (event,) = [record for record in caplog.records if record.getMessage() == "notify.resolve.doctor"]
+    assert event.operation == "system.notify:resolve"
+    assert event.step == "doctor"
+    assert event.outcome == "error"
+    assert event.error_type == "RuntimeError"
+    assert event.exc_info is not None

@@ -8,10 +8,11 @@ import logging
 
 from heinzel import HeinzelError, Kernel, NoticeKind, Notifications, OperationLet, ResolveWhen, Status
 from heinzel.kernel import ReleaseCache
+from heinzel.kernel._logging import get_logger, log_event
 from heinzel.modules.system.notify._channels import DaemonState
 from heinzel.modules.system.notify._resolve import DOCTOR_KEY, RELEASE_KEY, installed_version
 
-logger = logging.getLogger(__name__)
+logger = get_logger("system.notify")
 SHOWN_PROBLEMS = 3
 
 
@@ -81,8 +82,17 @@ def doctor_problems(kernel: Kernel) -> set[str] | None:
     """The checks that aren't up now, for a doctor notice's `checks_up`; None if doctor can't tell."""
     try:
         found = _report(kernel)
-    except Exception:
-        logger.warning("doctor failed while checking notices' conditions", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - any doctor failure resolves nothing; logged with its traceback
+        log_event(
+            logger,
+            "notify.resolve.doctor",
+            level=logging.WARNING,
+            exc_info=True,
+            operation="system.notify:resolve",
+            step="doctor",
+            outcome="error",
+            error_type=type(exc).__name__,
+        )
         return None
     return None if found is None else set(found[1])
 

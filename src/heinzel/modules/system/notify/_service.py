@@ -36,6 +36,7 @@ from heinzel import (
 )
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.kernel._calendar_reminders import agenda_plan
+from heinzel.kernel._logging import get_logger, log_event
 from heinzel.modules.system.notify import _policy as policy
 from heinzel.modules.system.notify import _resolve
 from heinzel.modules.system.notify._channels import (
@@ -62,6 +63,7 @@ from heinzel.modules.system.notify._store import INTEGRITY_LEGACY, Store, recove
 from heinzel.modules.system.notify._watch import daemon_state, doctor_problems, watch
 
 logger = logging.getLogger(__name__)
+_EVENTS = get_logger("system.notify")
 MODULE_SECTION = "system.notify"
 WATCHED_FOR = timedelta(seconds=30)
 """After a head last said it shows notices, the daemon holds back this long: the web app says so every few seconds."""
@@ -382,19 +384,31 @@ class NotifyService(Notifications):
             return 0
         now = self._clock()
 
+        marked: list[str] = []
+
         def mark(notices: list[Notice]) -> int:
-            count = 0
+            marked.clear()
             for index, notice in enumerate(notices):
                 if notice.id in found and notice.resolved_at is None:
                     notices[index] = notice.model_copy(update={"resolved_at": now, "resolved": found[notice.id]})
-                    count += 1
-            return count
+                    marked.append(notice.id)
+            return len(marked)
 
         try:
-            return self.store.change(now, mark)
+            resolved = self.store.change(now, mark)
         except OSError:
             logger.warning("can't resolve notices in %s", self.store.directory, exc_info=True)
             return 0
+        for notice_id in marked:
+            log_event(
+                _EVENTS,
+                "notify.resolve.notice",
+                operation="system.notify:resolve",
+                outcome="ok",
+                notice=notice_id,
+                reason=found[notice_id],
+            )
+        return resolved
 
     def due(self, now: datetime | None = None) -> list[Notice]:
         """Notices to pop up now, oldest first: not shown, their time come, not stale, within the hour's rate limit.
