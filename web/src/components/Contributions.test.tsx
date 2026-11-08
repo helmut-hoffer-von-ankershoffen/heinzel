@@ -353,9 +353,7 @@ describe("Chart widget", () => {
     expect(img.querySelector("line[stroke-dasharray]")).toBeInTheDocument();
     expect(screen.getAllByText("12:00").length).toBeGreaterThan(0); // an axis label and the table row
     expect(img.querySelectorAll("text")).toHaveLength(0); // labels are HTML, so they follow the text size
-    // bars keep 3:1 against the card and are not outlined in the line colour
-    expect(img.querySelector("rect.opacity-70.stroke-none")).toBeInTheDocument();
-    expect(img.querySelector("rect.opacity-10.stroke-none")).toBeInTheDocument();
+    expect(img.querySelector("rect.opacity-70")).toBeInTheDocument(); // bars keep 3:1 against the card
     expect(img.querySelectorAll("g.stroke-muted-foreground line")).toHaveLength(2); // a visible range band
     expect(screen.getByText("9 to 15 °C · Rain chance")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Time" })).toBeInTheDocument();

@@ -45,6 +45,16 @@ function commit(next: VizSettings) {
 export const setMaster = (master: boolean) => commit({ ...current, master });
 export const setStyle = (style: VizStyle, on: boolean) =>
   commit({ ...current, styles: { ...current.styles, [style]: on } });
+/** What shows, as one choice: the two styles map onto it, Both = both on. Null when neither is on (master still on). */
+export type VizShown = "spectrum" | "aurora" | "both";
+export function shownOf(settings: VizSettings): VizShown | null {
+  const { spectrum, aurora } = settings.styles;
+  if (spectrum && aurora) return "both";
+  if (spectrum) return "spectrum";
+  return aurora ? "aurora" : null;
+}
+export const setShown = (shown: VizShown) =>
+  commit({ ...current, styles: { spectrum: shown !== "aurora", aurora: shown !== "spectrum" } });
 /** For tests: reread the stored value. */
 export const reloadSettings = () => {
   current = load();

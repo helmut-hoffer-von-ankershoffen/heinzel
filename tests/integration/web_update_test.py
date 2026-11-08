@@ -1,7 +1,6 @@
 """Web update facts describe the running profile and frontend without checking the network or changing a pin."""
 
 import hashlib
-from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,7 +12,6 @@ from heinzel.kernel import CorePin, Installation, ReleaseCache
 
 pytestmark = pytest.mark.integration
 TOKEN = "t" * 43
-ANSWERED = datetime(2026, 1, 2, 12, tzinfo=UTC)
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
@@ -52,7 +50,7 @@ def client(make_kernel, tmp_path, **options):
     kernel.bind(
         Installation, Receipt(CorePin(kind, "heinzel", ref=ref) if kind else None, options.get("prefix", tmp_path))
     )
-    ReleaseCache(settings.cache_dir).remember("99.0.0", checked_at=ANSWERED)
+    ReleaseCache(settings.cache_dir).remember("99.0.0")
     return TestClient(
         web.build(kernel, port=8000, token=TOKEN, static=static, restart=(lambda: None) if restart else None),
         base_url="http://127.0.0.1:8000",
@@ -71,21 +69,8 @@ def test_update_facts_are_authenticated_cache_only_and_keep_source_intent(make_k
         "installed_at": None,
         "available": True,
         "supported": True,
-        "checked_at": "2026-01-02T12:00:00Z",
-        "last_ok_at": "2026-01-02T12:00:00Z",
-        "check_failed": False,
         "reason": None,
     }
-
-
-def test_a_failed_check_is_reported_and_keeps_the_last_answer(make_kernel, tmp_path):
-    app = client(make_kernel, tmp_path)
-    ReleaseCache(tmp_path / "cache").stamp(error="offline", checked_at=datetime(2026, 1, 3, 8, tzinfo=UTC))
-    status = app.get("/api/update-status", headers=AUTH).json()
-    assert status["check_failed"]
-    assert status["checked_at"] == "2026-01-03T08:00:00Z"
-    assert status["last_ok_at"] == "2026-01-02T12:00:00Z"
-    assert status["latest"] == "99.0.0"
 
 
 @pytest.mark.parametrize(
@@ -102,9 +87,6 @@ def test_deliberate_pins_and_development_installs_have_no_one_click_override(mak
 def test_check_opt_out_hides_the_hint_and_non_restartable_server_is_honest(make_kernel, tmp_path):
     result = client(make_kernel, tmp_path, checking=False, restart=False).get("/api/update-status", headers=AUTH).json()
     assert result["latest"] is None
-    assert result["checked_at"] is None
-    assert result["last_ok_at"] is None
-    assert not result["check_failed"]
     assert not result["available"]
     assert not result["supported"]
 
@@ -137,6 +119,7 @@ def test_unsafe_or_missing_frontend_cannot_enable_one_click(make_kernel, tmp_pat
 
 def test_installation_date_uses_uv_core_marker_not_release_or_receipt(make_kernel, tmp_path, monkeypatch):
     import os
+    from datetime import UTC, datetime
     from importlib.metadata import PackagePath
 
     prefix = tmp_path / "tool"

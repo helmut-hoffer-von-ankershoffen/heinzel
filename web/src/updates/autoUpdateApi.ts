@@ -22,18 +22,6 @@ export type AutoUpdateStatus = {
   held?: string | null;
   /** Installed plugins from git, a folder or a URL: automatic updates never touch them; a person updates them. */
   by_hand?: string[];
-  /** Every plugin automatic updates leave alone: held to one version, or installed from a source. */
-  holds?: PluginHold[];
-  /** When this server last looked for news, and whether hz and the plugins each answered; null before the first look. */
-  checked_at?: string | null;
-  core_checked?: boolean | null;
-  plugins_checked?: boolean | null;
-};
-export type PluginHold = {
-  name: string;
-  why: "pinned" | "source";
-  version?: string | null;
-  how?: "git" | "folder" | "link" | null;
 };
 
 export const KEY = ["web", "auto-update"] as const;
@@ -81,9 +69,6 @@ export async function call(method: "GET" | "POST", path: string, signal?: AbortS
     redundant.abort();
   }
 }
-
-/** Ask for news now (the pane's retry button); the server answers with its plan, and limits how often it asks. */
-export const checkNow = (signal?: AbortSignal) => call("POST", "/check", signal);
 
 /** The live server plan shared by the update pane and automatic countdown. Reads only cached facts. */
 export function useAutoUpdateStatus(poll = false) {

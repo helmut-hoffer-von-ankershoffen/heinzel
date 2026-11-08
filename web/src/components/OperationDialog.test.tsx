@@ -3,7 +3,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { daemonStatusKey } from "@/api/daemon";
-import { DAEMON_INSTALL, DAEMON_RESTART, DAEMON_UNINSTALL } from "@/lib/operationCalls";
+import { DAEMON_INSTALL, DAEMON_UNINSTALL } from "@/lib/operationCalls";
 import { requestOperation } from "@/lib/operationRun";
 import { expectAccessible } from "@/test/render";
 import { OperationDialog } from "./OperationDialog";
@@ -81,20 +81,6 @@ describe("OperationDialog", () => {
     await userEvent.setup().click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("restarts the daemon at once, without the exact call, and says plainly how it ended", async () => {
-    const live = liveStream();
-    mount();
-    act(() => requestOperation(DAEMON_RESTART));
-    expect(await screen.findByText("Restarting the daemon…", { selector: "output" })).toBeInTheDocument();
-    expect(live.fetchMock).toHaveBeenCalledOnce();
-    expect(screen.queryByText(/This changes something/)).not.toBeInTheDocument();
-    expect(screen.queryByText("hz system daemon restart")).not.toBeInTheDocument();
-    await live.end("error", { error: "previous handover cannot be verified" });
-    const failed = await screen.findByRole("alert");
-    expect(failed).toHaveTextContent("The daemon could not restart. Try again in a moment.");
-    expect(failed).not.toHaveTextContent("handover");
   });
 
   it("shows the real steps as they happen, starts once however often it is clicked, and cannot be cancelled", async () => {

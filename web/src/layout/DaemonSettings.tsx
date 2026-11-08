@@ -1,4 +1,3 @@
-import { RotateCw } from "lucide-react";
 import { useState } from "react";
 import { type DaemonAction, useChangeDaemon, useDaemonStatus } from "@/api/daemon";
 import { Loaded } from "@/components/common";
@@ -55,7 +54,7 @@ export function DaemonSettings() {
               </dl>
               {daemon.version_mismatch && <p className="text-warn">{t("daemon.mismatch")}</p>}
               {!supported && <p>{t("daemon.unsupported")}</p>}
-              <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+              <div className="flex flex-wrap gap-2">
                 {supported &&
                   (daemon.installed ? (
                     <>
@@ -68,18 +67,8 @@ export function DaemonSettings() {
                         {label(daemon.paused ? "resume" : "pause")}
                       </Button>
                       {(daemon.version_mismatch || !daemon.version || !daemon.loaded) && (
-                        <Button
-                          size="icon"
-                          variant="outline"
-                          disabled={change.isPending}
-                          aria-label={label("restart")}
-                          title={label("restart")}
-                          onClick={() => {
-                            change.reset();
-                            change.mutate("restart");
-                          }}
-                        >
-                          <RotateCw aria-hidden />
+                        <Button size="sm" variant="outline" disabled={change.isPending} onClick={() => ask("restart")}>
+                          {label("restart")}
                         </Button>
                       )}
                       <Button size="sm" variant="outline" disabled={change.isPending} onClick={() => ask("uninstall")}>
@@ -99,11 +88,9 @@ export function DaemonSettings() {
           );
         }}
       </Loaded>
-      {change.isPending && change.variables === "restart" && <p role="status">{t("daemon.restarting")}</p>}
-      {change.isSuccess && change.variables === "restart" && <p role="status">{t("daemon.restarted")}</p>}
       {change.error && (
         <p role="alert" className="text-bad">
-          {change.variables === "restart" ? t("daemon.restartFailed") : change.error.message}
+          {change.error.message}
         </p>
       )}
       {pending && (

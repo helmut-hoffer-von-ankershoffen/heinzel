@@ -306,11 +306,11 @@ def _read_metadata(path: Path) -> bytes | None:
         info = os.fstat(source.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_mode & 0o077:
             msg = _MSG_NOT_PRIVATE.format(path=path)
-            raise _conflict(msg)
+            raise _conflict(msg, say.untrusted_record(path))
         contents = source.read(_MAX_METADATA_BYTES + 1)
         if len(contents) > _MAX_METADATA_BYTES:
             msg = _MSG_TOO_LARGE.format(path=path)
-            raise _conflict(msg)
+            raise _conflict(msg, say.untrusted_record(path))
         return contents
 
 

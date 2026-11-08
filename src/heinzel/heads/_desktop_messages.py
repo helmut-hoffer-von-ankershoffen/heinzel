@@ -99,6 +99,14 @@ def interrupted(applications: Path, *, everyone: bool) -> Problem:
     )
 
 
+def untrusted_record(path: Path) -> Problem:
+    """A file hz keeps about its install has the wrong owner, permissions or size, so hz does not trust it."""
+    return Problem(
+        f"hz does not trust its install notes at {path}: wrong owner, permissions or size.",
+        "Move that file to the Trash, then run hz app install again.",
+    )
+
+
 def busy() -> Problem:
     """Another install holds the installer, or a leftover file name is taken."""
     return Problem("Another hz app install seems to be running.", "Wait for it, or run hz app install --details.")

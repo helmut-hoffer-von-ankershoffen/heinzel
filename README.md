@@ -71,7 +71,7 @@ can see what feeds the Friday report. [Explore the ACME team stack →](https://
 
 **Meet the Heinzelmännchen.** In the web app each one shows what it is up to: **working** on a draft, **thinking** it
 over, **waiting for you** to approve, **asleep** when there is nothing to do, **blocked** until you fix something,
-**done** with a happy smile. In `hz` a small one greets you, walks along during long work and marks a finished line.
+**done** with a happy smile. In `hz` the three of them greet you, walks along during long work and marks a finished line.
 They are garnish, never a replacement for words: `hz system config set hz.playful false` (or Settings → General) turns
 them all off, and they stay away from JSON, pipes, CI and `NO_COLOR` anyway.
 
@@ -181,9 +181,9 @@ Your configuration files stay; `hz system config show` lists them before you uni
 including expert commands and plugin commands. It runs no operation and leaves your expert-mode setting unchanged.
 The [CLI reference](docs/CLI_REFERENCE.md) is generated from the same executable command tree; CI checks for drift.
 
-<img src="docs/assets/terminal-art.png" alt="A terminal: the command hz prints a pixel-art Heinzelmännchen in a red hat beside the name, version and tagline; after adding the clock plugin, a small one marks the done line" width="560">
+<img src="docs/assets/terminal-art.png" alt="A terminal: the command hz prints the pixel-art swarm of three Heinzelmännchen above the name, version and tagline; after adding the clock plugin, a small one marks the done line" width="560">
 
-On a colour terminal `hz` greets you with a small Heinzelmännchen and a walking one keeps you company during long
+On a colour terminal `hz` greets you with the three Heinzels and a walking one keeps you company during long
 work. `hz system config set hz.playful false` (see [Configure](#configure)), `NO_COLOR`, CI, a pipe or `--json` keep
 the output plain.
 

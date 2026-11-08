@@ -61,7 +61,7 @@ export function FooterItem({
   /** A compact custom trigger; the button keeps its accessible label. */
   content?: ReactNode;
   /** The pane's body: detail lines, links, buttons. */
-  children?: ReactNode;
+  children?: ReactNode | ((close: () => void) => ReactNode);
   align?: "left" | "right";
   /** Extra trigger styling for a specific status, such as pulsing when an update is ready. */
   className?: string;
@@ -270,7 +270,7 @@ export function FooterItem({
                   <span className="min-w-0">{label}</span>
                 </p>
               )}
-              {children}
+              {typeof children === "function" ? children(close) : children}
             </section>
           </div>,
           document.body,

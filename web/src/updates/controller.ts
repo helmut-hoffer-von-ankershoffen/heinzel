@@ -16,11 +16,6 @@ export type UpdateStatus = {
   installed_at: string | null;
   available: boolean;
   supported: boolean;
-  /** When the release source was last asked, answered or not. Older servers do not send the three check facts. */
-  checked_at?: string | null;
-  /** When the release source last answered. */
-  last_ok_at?: string | null;
-  check_failed?: boolean;
   reason: string | null;
 };
 export type Frontend = { version: string; identity: string; entrypoints: string[]; files: Record<string, string> };

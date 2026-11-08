@@ -1,13 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, LoaderCircle, RefreshCw, RotateCcw } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Download, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FooterItem } from "@/components/FooterItem";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
-import { checkNow, KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
+import { useAutoUpdateStatus } from "@/updates/autoUpdateApi";
 import { canVerifyUpdate, finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
-import { describe } from "@/updates/updateState";
 
 function updateRecoveryState(): "none" | "inspect" | "verify" {
   const receipt = pendingUpdate();
@@ -22,9 +21,7 @@ export function UpdateStatus() {
     refetchInterval: 60_000,
     retry: false,
   });
-  const planQuery = useAutoUpdateStatus();
-  const plan = planQuery.data;
-  const queryClient = useQueryClient();
+  const plan = useAutoUpdateStatus().data;
   const active = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const [busy, setBusy] = useState(false);
@@ -85,80 +82,56 @@ export function UpdateStatus() {
     };
   }, [run]);
   const status = query.data;
-  const view = describe({
-    status,
-    statusFailed: query.isError,
-    plan,
-    planFailed: planQuery.isError,
-    now: new Date(),
-    phase,
-    message,
-    problem,
-  });
+  // The auto-update plan is age-filtered and can retain failed checks. These are known updates,
+  // never an exhaustive claim that every installed plugin has been checked or is current.
+  const core = status?.available ? status.latest : plan?.core;
+  const updates = [
+    ...(core ? [`hz ${core}`] : []),
+    ...Object.entries(plan?.plugins ?? {}).map(([name, version]) => `${name} ${version}`),
+  ];
+  const available = updates.length > 0;
   const installed = status?.installed_at ? new Date(status.installed_at) : null;
   const installedDate =
     installed && !Number.isNaN(installed.getTime())
       ? installed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
       : null;
   const canUpdate = status?.supported && !busy && recovery === "none";
-  const label = view.available ? t("updates.availableLabel") : t("updates.title");
-  const retry = useMutation({
-    mutationFn: async () => {
-      await checkNow();
-      await Promise.all([query.refetch(), queryClient.invalidateQueries({ queryKey: KEY })]);
-    },
-  });
+  const label = available ? t("updates.availableLabel") : t("updates.title");
+  const summary = phase ?? message ?? (available ? null : t("updates.unknown"));
   return (
     <FooterItem
       label={label}
-      state={view.tone}
+      state={problem ? "bad" : available ? "warn" : "off"}
       icon={busy ? LoaderCircle : Download}
-      className={view.available && !problem ? "animate-pulse text-bad" : view.allCurrent ? "text-ok" : undefined}
+      className={available && !problem ? "animate-pulse text-bad" : undefined}
       disabled={busy}
     >
       <div className="space-y-2 px-1.5 pb-1.5">
-        {view.rows.map((row) => (
-          <div key={row.id} className="flex items-start gap-2">
-            {row.busy && <LoaderCircle aria-hidden className="mt-0.5 size-3.5 shrink-0 animate-spin" />}
-            <div className="min-w-0">
-              <p role={row.alert ? "alert" : "status"} className={row.tone === "bad" ? "text-bad" : undefined}>
-                {row.text}
-              </p>
-              {row.detail && <p className="text-xs text-muted-foreground">{row.detail}</p>}
-            </div>
-          </div>
-        ))}
+        {summary && <p role="status">{summary}</p>}
+        {available && <p>{t("updates.known", { updates: updates.join(", ") })}</p>}
+        {status && <p>{t("updates.installedVersion", { version: status.current })}</p>}
         {status && (
           <p className="text-xs text-muted-foreground">
             {installedDate ? t("updates.installedDate", { date: installedDate }) : t("updates.installedDateUnknown")}
           </p>
         )}
         {status?.reason && <p className="text-xs text-muted-foreground">{status.reason}</p>}
+        {problem && (
+          <p role="alert" className="text-bad">
+            {problem}
+          </p>
+        )}
         <AutoUpdateToggle />
-        {/* The actions stay at the bottom, under a divider, when late facts grow this above-anchored pane. */}
-        {(recovery === "verify" || canUpdate || (view.canRetry && !busy)) && (
-          <div className="flex flex-wrap gap-2 border-t border-border/70 pt-2">
-            {recovery === "verify" && (
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(true)}>
-                <RotateCcw aria-hidden /> {t("updates.verify")}
-              </Button>
-            )}
-            {view.canRetry && !busy && (
-              <Button size="sm" variant="outline" disabled={retry.isPending} onClick={() => retry.mutate()}>
-                <RefreshCw aria-hidden className={retry.isPending ? "animate-spin" : undefined} /> {t("updates.retry")}
-              </Button>
-            )}
-            {canUpdate && (
-              <Button size="sm" variant="outline" onClick={() => void run(false)}>
-                <Download aria-hidden />{" "}
-                {view.count > 1
-                  ? t("updates.allAction")
-                  : view.count === 1
-                    ? t("updates.action")
-                    : t("updates.manualAction")}
-              </Button>
-            )}
-          </div>
+        {recovery === "verify" && (
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(true)}>
+            {t("updates.verify")}
+          </Button>
+        )}
+        {/* The primary action stays at the bottom when late automatic-update facts grow this above-anchored pane. */}
+        {canUpdate && (
+          <Button size="sm" variant="outline" onClick={() => void run(false)}>
+            {available ? t("updates.action") : t("updates.manualAction")}
+          </Button>
         )}
       </div>
     </FooterItem>

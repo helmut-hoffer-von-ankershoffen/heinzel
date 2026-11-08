@@ -41,14 +41,6 @@ LEGACY = {
     "The desktop installation metadata exceeds the allowed size.",
     "Quit Heinzelmännchen before checking the desktop app.",
     "Quit Heinzelmännchen before repairing the desktop app.",
-    (
-        "The desktop bundle or its metadata is present without a matching ownership receipt. {path} is not a "
-        "private file owned by this user."
-    ),
-    (
-        "The desktop bundle or its metadata is present without a matching ownership receipt. {path} is larger "
-        "than an install record can be."
-    ),
 }
 
 
