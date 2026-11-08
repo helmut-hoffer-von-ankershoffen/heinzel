@@ -189,17 +189,22 @@ test("system audio is never granted where unavailable, unowned, expired or revok
   }
 });
 
-test("each capture logs one start and one outcome with stable fields and no secrets", async () => {
+test("each capture logs one start and one outcome with ADR 0138 fields and no secrets", async () => {
   const f = fixture({ system: true });
   f.controller.choose(f.sender, "system");
   f.start(); await settled(); f.tick(25); f.reply(1); await settled();
   assert.deepEqual(f.events, [
-    { event: "desktop.audio.capture", operation: "audio_capture", step: "consent", source: "system", outcome: "started" },
-    { event: "desktop.audio.capture", operation: "audio_capture", step: "consent", source: "system", outcome: "allowed", duration_ms: 25 },
+    { event: "desktop.audio.source", operation: "audio_capture", step: "source", source: "system", outcome: "ok" },
+    { event: "desktop.audio.capture", operation: "audio_capture", step: "consent", phase: "start", source: "system" },
+    { event: "desktop.audio.capture", operation: "audio_capture", step: "consent", phase: "end", source: "system", outcome: "ok", duration_ms: 25 },
   ]);
-  const g = fixture(); g.start(); await settled(); g.reply(0); await settled();
-  assert.equal(g.events.at(-1).outcome, "denied");
+  const g = fixture({ system: true }); g.controller.choose(g.sender, "system");
+  g.start(); await settled(); g.tick(7); g.reply(0); await settled();
+  assert.deepEqual(g.events.at(-1), { event: "desktop.audio.capture", operation: "audio_capture", step: "consent", phase: "end",
+    source: "system", outcome: "skipped", reason: "declined", duration_ms: 7 });
+  assert.deepEqual(g.responses, [{}]);
   const h = fixture(); h.request.userGesture = false; h.start(); await settled();
-  assert.deepEqual(h.events, [{ event: "desktop.audio.capture", operation: "audio_capture", step: "request", source: "workspace", outcome: "refused" }]);
-  for (const e of [...f.events, ...g.events, ...h.events]) assert.doesNotMatch(JSON.stringify(e), /aaaa|127\.0\.0\.1/);
+  assert.deepEqual(h.events, [{ event: "desktop.audio.capture", operation: "audio_capture", step: "request", phase: "end",
+    source: "workspace", outcome: "skipped", reason: "unowned" }]);
+  for (const e of [...f.events, ...g.events, ...h.events]) assert.doesNotMatch(JSON.stringify(e), /aaaa|127\.0\.0\.1|token/);
 });

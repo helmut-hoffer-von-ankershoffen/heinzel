@@ -26,7 +26,7 @@ export function systemAudioAvailable(platform, release) {
   return Number.isInteger(major) && (major > 23 || (major === 23 && minor >= 2));
 }
 
-/** One JSON line per event: stable names and fields, never tokens or URLs. */
+/** One JSON line per event (ADR 0138 names and fields: phase, outcome ok|error|skipped), never tokens or URLs. */
 const stderrLog = (event, fields) => {
   try { process.stderr.write(`${JSON.stringify({ event, ...fields })}\n`); } catch { /* logging never breaks capture */ }
 };
@@ -90,6 +90,7 @@ export function createWorkspaceAudio({ windows, fromWebContents, fromFrame, conn
       const owned = snapshot(contents, frame, new URL(frame.url).origin);
       if (!owned) return false;
       armed = { contents, source, at: now() };
+      log("desktop.audio.source", { operation: "audio_capture", step: "source", source, outcome: "ok" });
       return true;
     } catch { return false; }
   };
@@ -105,18 +106,19 @@ export function createWorkspaceAudio({ windows, fromWebContents, fromFrame, conn
     const source = original && choice?.contents === original.contents && now() - choice.at <= ARMED_MS && system ?
       choice.source : "workspace";
     if (!original || pending) {
-      log("desktop.audio.capture", { operation: "audio_capture", step: "request", source, outcome: "refused" });
+      log("desktop.audio.capture", { operation: "audio_capture", step: "request", phase: "end", source,
+        outcome: "skipped", reason: pending ? "pending" : "unowned" });
       denyDisplay(callback); return;
     }
     let completed = false;
     const epoch = generation;
     const started = now();
-    log("desktop.audio.capture", { operation: "audio_capture", step: "consent", source, outcome: "started" });
+    log("desktop.audio.capture", { operation: "audio_capture", step: "consent", phase: "start", source });
     const finish = (allowed) => {
       if (completed) return;
       completed = true;
-      log("desktop.audio.capture", { operation: "audio_capture", step: "consent", source,
-        outcome: allowed ? "allowed" : "denied", duration_ms: now() - started });
+      log("desktop.audio.capture", { operation: "audio_capture", step: "consent", phase: "end", source,
+        outcome: allowed ? "ok" : "skipped", ...(allowed ? {} : { reason: "declined" }), duration_ms: now() - started });
       // Video is always the fixed requesting main frame (never a screen or picker). Audio is that frame's own
       // sound, or the system loopback the person chose and consented to; neither is ever a reusable grant.
       if (allowed && source === "system") callback({ video: request.frame, audio: "loopback" });

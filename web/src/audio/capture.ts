@@ -13,6 +13,11 @@ type DesktopAudio = {
 };
 const desktopAudio = () => (globalThis as { heinzelDesktop?: DesktopAudio }).heinzelDesktop;
 
+/** Whether this page runs in a desktop app that can answer `systemAudioAvailable` (the answer itself is async). */
+export function hasDesktopAudio(): boolean {
+  return typeof desktopAudio()?.systemAudio === "function";
+}
+
 /** Whether the desktop app offers system audio here; false in every browser and wherever Electron cannot loop back. */
 export async function systemAudioAvailable(): Promise<boolean> {
   try {
