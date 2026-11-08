@@ -287,7 +287,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                   settings={matching}
                   heading={current === "daemon" ? t("daemon.configuration") : page.title}
                   header={["appearance", "ai", "notifications", "daemon"].includes(current) ? undefined : header}
-                  summary={page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined}
+                  summary={page.status ?? (page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined)}
                 />
               </div>
             )}
@@ -418,7 +418,9 @@ function ExpertRow() {
         )}
         {change.error && (
           <p role="alert" className="mt-1 text-xs text-bad">
-            {t("settings.expertFailed", { problem: change.error.message })}
+            {t("settings.expertFailed", {
+              problem: change.error.message,
+            })}
           </p>
         )}
       </div>
