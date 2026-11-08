@@ -209,4 +209,18 @@ describe("Desktop menu actions", () => {
     act(() => requestMenuAction("changelog"));
     expect(await screen.findByRole("dialog", { name: "View changelog" })).toBeInTheDocument();
   });
+
+  it("answers the View, Go and Help menu actions", async () => {
+    mockApi({ ...answers, "/api/system/config/show": config });
+    renderAt("/doctor");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    expect(await screen.findByRole("heading", { name: /doctor/i })).toBeInTheDocument();
+    act(() => requestMenuAction("go:plugins"));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: /doctor/i })).not.toBeInTheDocument());
+    act(() => requestMenuAction("help"));
+    expect(await screen.findByRole("dialog", { name: /help/i })).toBeInTheDocument();
+    await userEvent.setup().keyboard("{Escape}");
+    act(() => requestMenuAction("search"));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
 });

@@ -1,7 +1,25 @@
 // The desktop app's menu and the footer ask the page to open things with one window event.
 export const MENU_EVENT = "hz:menu";
 
-export type MenuAction = "about" | "settings" | "updates" | "changelog" | "doctor" | "copy" | "daemon";
+export type MenuAction =
+  | "about"
+  | "settings"
+  | "updates"
+  | "changelog"
+  | "doctor"
+  | "copy"
+  | "daemon"
+  | "search"
+  | "sidebar"
+  | "terminal"
+  | "browser"
+  | "chat"
+  | "notifications"
+  | "help"
+  | "go:today"
+  | "go:heinzel"
+  | "go:team"
+  | "go:plugins";
 
 /** Ask the page to do what a menu item or footer button names. */
 export const requestMenuAction = (action: MenuAction) =>

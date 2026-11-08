@@ -6,6 +6,9 @@ const REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
 /** Pages the Help menu opens: the project site (mkdocs `site_url`) and the repository. Nothing else may open. */
 export const HELP_URLS = Object.freeze({
   help: `${SITE}/`,
+  tour: `${SITE}/guides/tour/`,
+  catalog: `${SITE}/CATALOG/`,
+  repository: REPOSITORY,
   start: `${SITE}/guides/install/`,
   support: `${REPOSITORY}/issues`,
   feedback: `${REPOSITORY}/issues/new`,
@@ -29,7 +32,7 @@ export function isAllowedHelpUrl(target) {
  * The macOS application menu, as data: About and Settings and Check for Updates open the web app's own screens
  * through `send(action)`; the rest are the standard roles. Pure, so a unit test can read it without Electron.
  */
-export function appMenuTemplate({ name, send, open }) {
+export function appMenuTemplate({ name, send, open, devTools = false }) {
   return [
     {
       label: name,
@@ -48,14 +51,54 @@ export function appMenuTemplate({ name, send, open }) {
         { role: "quit", label: `Quit ${name}` },
       ],
     },
+    {
+      label: "File",
+      submenu: [
+        { label: "New Chat", accelerator: "CommandOrControl+N", click: () => send("chat") },
+        { type: "separator" },
+        { role: "close" },
+      ],
+    },
     { role: "editMenu" },
-    { role: "viewMenu" },
+    {
+      label: "View",
+      submenu: [
+        { label: "Search\u2026", accelerator: "CommandOrControl+K", click: () => send("search") },
+        { label: "Toggle Sidebar", accelerator: "CommandOrControl+B", click: () => send("sidebar") },
+        { type: "separator" },
+        { label: "Show Terminal", accelerator: "CommandOrControl+J", click: () => send("terminal") },
+        { label: "Show Browser", accelerator: "CommandOrControl+Shift+B", click: () => send("browser") },
+        { label: "Show Side Chat", accelerator: "CommandOrControl+;", click: () => send("chat") },
+        { label: "Show Notifications", accelerator: "CommandOrControl+Shift+N", click: () => send("notifications") },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "reload" },
+        ...(devTools ? [{ role: "toggleDevTools" }] : []),
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    {
+      label: "Go",
+      submenu: [
+        { label: "Today", accelerator: "CommandOrControl+1", click: () => send("go:today") },
+        { label: `${name}`, accelerator: "CommandOrControl+2", click: () => send("go:heinzel") },
+        { label: "Team", accelerator: "CommandOrControl+3", click: () => send("go:team") },
+        { label: "Plugins", accelerator: "CommandOrControl+4", click: () => send("go:plugins") },
+      ],
+    },
     { role: "windowMenu" },
     {
       role: "help",
       submenu: [
         { label: `${name} Help`, click: () => open(HELP_URLS.help) },
         { label: "Getting Started", click: () => open(HELP_URLS.start) },
+        { label: "Product Tour", click: () => open(HELP_URLS.tour) },
+        { label: "In-App Help", click: () => send("help") },
+        { label: "Plugin Catalog", click: () => open(HELP_URLS.catalog) },
         { label: "View Release Notes", click: () => send("changelog") },
         {
           label: "Troubleshooting",
@@ -67,7 +110,8 @@ export function appMenuTemplate({ name, send, open }) {
         },
         { type: "separator" },
         { label: "Get Support", click: () => open(HELP_URLS.support) },
-        { label: "Send Feedback\u2026", click: () => open(HELP_URLS.feedback) },
+        { label: "Report an Issue\u2026", click: () => open(HELP_URLS.feedback) },
+        { label: `${name} on GitHub`, click: () => open(HELP_URLS.repository) },
         { type: "separator" },
         { label: "Privacy Policy", click: () => open(HELP_URLS.privacy) },
         { label: "Imprint", click: () => open(HELP_URLS.imprint) },
@@ -76,7 +120,11 @@ export function appMenuTemplate({ name, send, open }) {
   ];
 }
 
-const ACTIONS = ["about", "settings", "updates", "changelog", "doctor", "copy", "daemon"];
+export const ACTIONS = [
+  "about", "settings", "updates", "changelog", "doctor", "copy", "daemon",
+  "search", "sidebar", "terminal", "browser", "chat", "notifications", "help",
+  "go:today", "go:heinzel", "go:team", "go:plugins",
+];
 
 /** The script that tells the page which menu item was chosen; the action is one of a fixed few. */
 export function menuScript(action) {

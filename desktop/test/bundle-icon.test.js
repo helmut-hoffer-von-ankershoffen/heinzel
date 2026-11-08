@@ -33,4 +33,5 @@ test("rejects a bundle whose Resources lack the named icon", async (t) => {
 
 test("shows Heinzelmännchen as the display name", () => {
   assert.equal(EXTEND_INFO.CFBundleDisplayName, "Heinzelmännchen");
+  assert.equal(EXTEND_INFO.CFBundleName, "Heinzelmännchen");
 });

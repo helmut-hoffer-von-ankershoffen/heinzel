@@ -183,6 +183,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     // The page owns what About, Settings and Updates show; the menu only asks it to open them.
     if (process.platform === "darwin") Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate({
       name: app.name,
+      devTools: !app.isPackaged,
       open: (url) => {
         const allowed = isAllowedHelpUrl(url);
         console.info(helpLogLine(url, allowed));
