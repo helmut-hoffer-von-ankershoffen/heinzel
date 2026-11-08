@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createWorkspaceAudio } from "../src/workspace-audio.js";
+import { createWorkspaceAudio, systemAudioAvailable } from "../src/workspace-audio.js";
 
-function fixture() {
+function fixture({ system = false } = {}) {
   const origin = "http://127.0.0.1:8737";
   const connection = { origin, token: "a".repeat(32) };
   const frame = { url: `${origin}/`, processId: 7, frameToken: "owned-main", detached: false, isDestroyed: () => false };
@@ -11,7 +11,10 @@ function fixture() {
   const windows = new WeakSet([window]);
   const prompts = [];
   let resolve;
-  const controller = createWorkspaceAudio({ windows,
+  const events = [];
+  let clock = 1000;
+  const controller = createWorkspaceAudio({ windows, system, now: () => clock,
+    log: (event, fields) => events.push({ event, ...fields }),
     fromWebContents: (value) => value === contents ? window : null,
     fromFrame: (value) => value === frame ? contents : null,
     connection: () => connection,
@@ -22,6 +25,8 @@ function fixture() {
   return { controller, connection, contents, frame, window, windows, request, prompts, responses,
     start: () => controller.display(request, value => responses.push(value)),
     reply: (response) => resolve({ response }),
+    events, tick: (ms) => { clock += ms; },
+    sender: { sender: contents, senderFrame: frame },
     details: { isMainFrame: true, requestingUrl: frame.url, securityOrigin: origin }, origin };
 }
 const settled = () => new Promise(setImmediate);
@@ -132,4 +137,69 @@ test("other synchronous callback errors are not mistaken for a completed Electro
     assert.throws(() => f.controller.display(f.request, () => { callbacks++; throw error; }), value => value === error);
     assert.equal(callbacks, 1);
   }
+});
+
+test("system loopback is offered on Windows and macOS 14.2+ only", () => {
+  assert.equal(systemAudioAvailable("win32", "10.0.22631"), true);
+  for (const release of ["23.2.0", "23.6.0", "24.0.0", "25.1.0"]) assert.equal(systemAudioAvailable("darwin", release), true);
+  for (const release of ["23.1.0", "22.6.0", "21.0.0", "", "x"]) assert.equal(systemAudioAvailable("darwin", release), false);
+  assert.equal(systemAudioAvailable("linux", "6.8.0"), false);
+});
+
+test("a chosen system source loops back system audio with the own frame as video, no picker", async () => {
+  const f = fixture({ system: true });
+  assert.equal(f.controller.available(), true);
+  assert.equal(f.controller.choose(f.sender, "system"), true);
+  f.start(); await settled();
+  assert.equal(f.prompts[0].options.title, "Share system audio?");
+  assert.equal(f.prompts[0].options.defaultId, 0);
+  f.reply(1); await settled();
+  assert.deepEqual(f.responses, [{ video: f.frame, audio: "loopback" }]);
+  f.start(); await settled();
+  assert.equal(f.prompts[1].options.title, "Share workspace audio?", "a choice arms exactly one capture");
+  f.reply(1); await settled();
+  assert.deepEqual(f.responses[1], { video: f.frame, audio: f.frame, enableLocalEcho: true });
+});
+
+test("system audio is never granted where unavailable, unowned, expired or revoked", async () => {
+  const off = fixture();
+  assert.equal(off.controller.available(), false);
+  assert.equal(off.controller.choose(off.sender, "system"), false);
+  off.start(); await settled(); off.reply(1); await settled();
+  assert.deepEqual(off.responses, [{ video: off.frame, audio: off.frame, enableLocalEcho: true }]);
+  const cases = {
+    "unknown source": f => f.controller.choose(f.sender, "screen"),
+    "foreign sender": f => f.controller.choose({ sender: { ...f.contents }, senderFrame: f.frame }, "system"),
+    "subframe sender": f => f.controller.choose({ sender: f.contents, senderFrame: { ...f.frame, frameToken: "iframe" } }, "system"),
+    "background window": f => { f.window.isFocused = () => false; const armed = f.controller.choose(f.sender, "system"); f.window.isFocused = () => true; return armed; },
+  };
+  for (const [name, arm] of Object.entries(cases)) {
+    const f = fixture({ system: true });
+    assert.equal(arm(f), false, name);
+    f.start(); await settled(); f.reply(1); await settled();
+    assert.deepEqual(f.responses, [{ video: f.frame, audio: f.frame, enableLocalEcho: true }], name);
+  }
+  for (const cancel of [f => f.tick(10_001), f => f.controller.revoke(), f => f.controller.navigation({ isMainFrame: true })]) {
+    const f = fixture({ system: true });
+    assert.equal(f.controller.choose(f.sender, "system"), true);
+    cancel(f);
+    f.start(); await settled();
+    if (f.prompts.length) { f.reply(1); await settled(); }
+    assert.notDeepEqual(f.responses[0], { video: f.frame, audio: "loopback" });
+  }
+});
+
+test("each capture logs one start and one outcome with stable fields and no secrets", async () => {
+  const f = fixture({ system: true });
+  f.controller.choose(f.sender, "system");
+  f.start(); await settled(); f.tick(25); f.reply(1); await settled();
+  assert.deepEqual(f.events, [
+    { event: "desktop.audio.capture", operation: "audio_capture", step: "consent", source: "system", outcome: "started" },
+    { event: "desktop.audio.capture", operation: "audio_capture", step: "consent", source: "system", outcome: "allowed", duration_ms: 25 },
+  ]);
+  const g = fixture(); g.start(); await settled(); g.reply(0); await settled();
+  assert.equal(g.events.at(-1).outcome, "denied");
+  const h = fixture(); h.request.userGesture = false; h.start(); await settled();
+  assert.deepEqual(h.events, [{ event: "desktop.audio.capture", operation: "audio_capture", step: "request", source: "workspace", outcome: "refused" }]);
+  for (const e of [...f.events, ...g.events, ...h.events]) assert.doesNotMatch(JSON.stringify(e), /aaaa|127\.0\.0\.1/);
 });

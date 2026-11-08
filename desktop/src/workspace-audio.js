@@ -6,6 +6,30 @@ const CONSENT = Object.freeze({
   detail: "Only this workspace is shared, including its embedded player. No microphone or other app is captured. Audio stays in this window. Stop sharing in the visualizer to end capture.",
   buttons: Object.freeze(["Don't allow", "Share workspace audio"]), defaultId: 0, cancelId: 0, noLink: true,
 });
+const SYSTEM_CONSENT = Object.freeze({
+  type: "question", title: "Share system audio?",
+  message: "Allow the visualizer to analyse all sound this computer plays?",
+  detail: "This includes other apps. No picture and no microphone are captured. Audio stays in this window and is never recorded. Stop sharing in the visualizer to end capture.",
+  buttons: Object.freeze(["Don't allow", "Share system audio"]), defaultId: 0, cancelId: 0, noLink: true,
+});
+// An armed source choice is consumed by the next display request of the same window, or expires.
+const ARMED_MS = 10_000;
+
+/**
+ * Whether Electron can loop back system audio without a picker: Windows, and macOS 14.2 (Darwin 23.2) or later,
+ * where Chromium captures through a Core Audio tap (NSAudioCaptureUsageDescription). Elsewhere it is not offered.
+ */
+export function systemAudioAvailable(platform, release) {
+  if (platform === "win32") return true;
+  if (platform !== "darwin") return false;
+  const [major, minor] = String(release).split(".").map(Number);
+  return Number.isInteger(major) && (major > 23 || (major === 23 && minor >= 2));
+}
+
+/** One JSON line per event: stable names and fields, never tokens or URLs. */
+const stderrLog = (event, fields) => {
+  try { process.stderr.write(`${JSON.stringify({ event, ...fields })}\n`); } catch { /* logging never breaks capture */ }
+};
 
 function denyDisplay(callback) {
   try { callback({}); }
@@ -18,10 +42,12 @@ function denyDisplay(callback) {
 }
 
 /** One explicitly consented capture of the requesting workspace, never a reusable grant. */
-export function createWorkspaceAudio({ windows, fromWebContents, fromFrame, connection, prompt }) {
+export function createWorkspaceAudio({ windows, fromWebContents, fromFrame, connection, prompt,
+  system = false, log = stderrLog, now = Date.now }) {
   let pending = null;
+  let armed = null;
   let generation = 0;
-  const revoke = () => { generation++; pending?.finish(false); };
+  const revoke = () => { generation++; armed = null; pending?.finish(false); };
   const snapshot = (contents, frame, origin) => {
     try {
       const window = contents && !contents.isDestroyed() ? fromWebContents(contents) : null;
@@ -55,31 +81,57 @@ export function createWorkspaceAudio({ windows, fromWebContents, fromFrame, conn
   const request = (contents, permission, callback, details) => {
     callback(check(contents, permission, details?.securityOrigin ?? connection()?.origin, details));
   };
+  /** IPC: the owned, focused main document names the source of its next capture; "system" only where available. */
+  const choose = (event, source) => {
+    try {
+      const frame = event?.senderFrame;
+      const contents = event?.sender;
+      if (source !== "workspace" && (source !== "system" || !system) || !frame || contents?.mainFrame !== frame) return false;
+      const owned = snapshot(contents, frame, new URL(frame.url).origin);
+      if (!owned) return false;
+      armed = { contents, source, at: now() };
+      return true;
+    } catch { return false; }
+  };
+  const available = () => system;
   const display = (request, callback) => {
     let original;
     try {
       original = request?.userGesture === true && request.audioRequested === true && request.videoRequested === true &&
         snapshot(fromFrame(request.frame), request.frame, request.securityOrigin);
     } catch { original = null; }
-    if (!original || pending) { denyDisplay(callback); return; }
+    const choice = armed;
+    armed = null;
+    const source = original && choice?.contents === original.contents && now() - choice.at <= ARMED_MS && system ?
+      choice.source : "workspace";
+    if (!original || pending) {
+      log("desktop.audio.capture", { operation: "audio_capture", step: "request", source, outcome: "refused" });
+      denyDisplay(callback); return;
+    }
     let completed = false;
     const epoch = generation;
+    const started = now();
+    log("desktop.audio.capture", { operation: "audio_capture", step: "consent", source, outcome: "started" });
     const finish = (allowed) => {
       if (completed) return;
       completed = true;
-      // Frame is the fixed requesting main frame. No system-loopback or selectable source IDs exist here.
-      if (allowed) callback({ video: request.frame, audio: request.frame, enableLocalEcho: true });
+      log("desktop.audio.capture", { operation: "audio_capture", step: "consent", source,
+        outcome: allowed ? "allowed" : "denied", duration_ms: now() - started });
+      // Video is always the fixed requesting main frame (never a screen or picker). Audio is that frame's own
+      // sound, or the system loopback the person chose and consented to; neither is ever a reusable grant.
+      if (allowed && source === "system") callback({ video: request.frame, audio: "loopback" });
+      else if (allowed) callback({ video: request.frame, audio: request.frame, enableLocalEcho: true });
       else denyDisplay(callback);
     };
     pending = { finish };
     Promise.resolve().then(() => {
       if (completed || generation !== epoch || !same(request, original)) return null;
-      return prompt(original.window, CONSENT);
+      return prompt(original.window, source === "system" ? SYSTEM_CONSENT : CONSENT);
     }).then(
       (result) => finish(result?.response === 1 && generation === epoch && Boolean(same(request, original))),
       () => finish(false),
     ).finally(() => { if (pending?.finish === finish) pending = null; });
   };
   const navigation = (details) => { if (details?.isMainFrame === true) revoke(); };
-  return Object.freeze({ check, request, display, revoke, navigation });
+  return Object.freeze({ check, request, display, revoke, navigation, choose, available });
 }

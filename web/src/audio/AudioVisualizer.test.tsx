@@ -1,13 +1,14 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AudioVisualizer, spectrumLevel } from "./AudioVisualizer";
-import { captureAudio, captureMicrophone } from "./capture";
+import { captureAudio, captureMicrophone, systemAudioAvailable } from "./capture";
 import { publishOwnAudio } from "./own";
 import { reloadSettings, setMaster, setShown } from "./viz/settings";
 
 vi.mock("./capture", () => ({
   captureAudio: vi.fn(),
   captureMicrophone: vi.fn(() => new Promise(() => undefined)),
+  systemAudioAvailable: vi.fn(async () => false),
 }));
 
 const stop = vi.fn();
@@ -207,6 +208,25 @@ describe("AudioVisualizer", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("offers System audio only where the desktop app can loop it back, and captures it on choice", async () => {
+    render(<AudioVisualizer />);
+    open();
+    await waitFor(() => expect(systemAudioAvailable).toHaveBeenCalled());
+    expect(
+      within(screen.getByRole("radiogroup", { name: "Listen to" })).queryByRole("radio", { name: "System audio" }),
+    ).not.toBeInTheDocument();
+    cleanup();
+
+    vi.mocked(systemAudioAvailable).mockResolvedValueOnce(true);
+    vi.mocked(captureAudio).mockResolvedValueOnce({ ...captured, label: "System audio" });
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(await waitFor(() => source("System audio")));
+    await waitFor(() => expect(source("System audio")).toHaveAttribute("aria-checked", "true"));
+    expect(captureAudio).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal), true);
+    expect(localStorage.getItem("hz.audio.source")).toBe("system");
   });
 
   it("reports permission failures and cancels an in-flight picker when disabled", async () => {

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { release } from "node:os";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, ipcMain, webContents } from "electron";
 import { lifecycle } from "./connection.js";
@@ -6,7 +7,7 @@ import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
-import { createWorkspaceAudio } from "./workspace-audio.js";
+import { createWorkspaceAudio, systemAudioAvailable } from "./workspace-audio.js";
 import { initializeDesktopIdentity } from "./identity.js";
 import { refreshAfterQuit, shouldRefresh, stopWithReport } from "./shutdown.js";
 import { installSignalQuit } from "./signal-quit.js";
@@ -62,6 +63,7 @@ const instance = createInstanceLifecycle({
         fromFrame: (frame) => frame ? webContents.fromFrame(frame) : null,
         connection: () => (stopping || quitting ? null : instance.currentConnection()),
         prompt: (owner, options) => dialog.showMessageBox(owner, options),
+        system: systemAudioAvailable(process.platform, release()),
       });
       workspaceAudio = audio;
       window.webContents.session.setPermissionCheckHandler((contents, permission, origin, details) =>
@@ -94,6 +96,9 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     connection: () => instance.currentConnection(),
     lifecycle,
   }));
+  // The visualizer's desktop sources: whether system loopback exists here, and the next capture's source.
+  ipcMain.handle("hz:system-audio", () => workspaceAudio?.available() === true);
+  ipcMain.handle("hz:audio-source", (event, source) => workspaceAudio?.choose(event, source) === true);
   let serviceStarted = false;
   let unexpectedExitReported = false;
   void ownedCli.exited().then(() => {
