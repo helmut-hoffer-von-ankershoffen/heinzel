@@ -136,6 +136,7 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0138](0138-log-structured-events-with-stdlib-logging.md) Log structured events with stdlib logging | proposed · 7 Nov<br>partial |  |
 | [0140](0140-isolate-sidebar-browser-content-in-the-desktop.md) Isolate sidebar browsing from the workspace | proposed · 5 Nov<br>partial |  |
 | [0141](0141-task-tracking-is-a-capability-the-tracker-is-a-connector.md) Task tracking is a capability; the tracker behind it is a connector | proposed · 7 Nov<br>partial | [#572](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/572) |
+| [0142](0142-mcp-over-http-takes-per-agent-bearer-tokens-with-read-and-write-scopes.md) MCP over HTTP takes per-agent bearer tokens with read and write scopes | proposed · 8 Nov<br>built |  |
 
 </div>
 <!-- adr-index:end -->
