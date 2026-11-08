@@ -241,10 +241,13 @@ NOT_SETTINGS = {  # names or prefixes that aren't settings of Heinzelmännchen's
     "HZ_WORKFLOW__": "the heinzel module's old prefix, read for one minor release (ADR 0051)",
     "HZ_A_B__": "the variable prefix of a module named `a-b`, in a test of env_prefix",
     "HZ_SYSTEM_CHANGELOG__": "the variable prefix of a nested module, in a test of env_prefix",
-    "HZ_GATE_": "read by the host's heavy-check queue hz-gate (not in this repository); scoped_checks sets them",
     "HZ_DEV": "a development fact that keeps automatic updates off, checked by presence in a list (ADR 0116)",
     "HZ_TEST": "a development fact that keeps automatic updates off, checked by presence in a list (ADR 0116)",
 }
+
+
+# The optional host queue reads these exact variables outside this repository.
+HOST_GATE_ENV_READS = {"HZ_GATE_HELD", "HZ_GATE_LIGHT"}
 
 
 def env_names(text: str) -> set[str]:
@@ -276,6 +279,7 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
         for key in type(settings).model_fields
     }
     code = [path for path in repository_files() if path.endswith(CODE_SUFFIXES)]
+    known |= HOST_GATE_ENV_READS
     known |= {name for path in code for name in env_reads((REPO / path).read_text(encoding="utf-8"))}
     used = {
         (name, path)
