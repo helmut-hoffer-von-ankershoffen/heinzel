@@ -106,6 +106,7 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    "scripts/acme_setup_e2e.py": "proves the core plugin catalog installs a company plugin with its required plugins",
     "scripts/ci_node.py": "selects Node for core's Python unit lanes; independent plugins own their CI runtime setup",
     "scripts/build.py": "prepares the core web hook and controller build group; plugin builds have no core assets",
     "scripts/release_candidate.py": "verifies full Core release-candidate CI source and exact job inventory",
