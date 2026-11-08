@@ -15,7 +15,7 @@ pytestmark = pytest.mark.integration
 
 
 def test_search_pages_are_owner_and_query_bound_and_exclude_later_appends(make_kernel, tmp_path):
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
     with current.local("cli"):
@@ -85,7 +85,7 @@ def test_search_pages_are_owner_and_query_bound_and_exclude_later_appends(make_k
 def test_registered_private_http_search(make_kernel, tmp_path):
     from tests.integration.chat_test import AUTH, web_client
 
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
     with current.local("cli"):
@@ -112,7 +112,7 @@ def test_indexed_search_avoids_spine_reads_and_recovers_database(make_kernel, tm
 
     import heinzel.kernel._session_store as store
 
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "identity"))
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
@@ -150,7 +150,7 @@ def test_truncated_source_and_missing_indexed_event_fail_closed(make_kernel, tmp
     import sqlite3
     from contextlib import closing
 
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "identity"))
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
@@ -180,7 +180,7 @@ def test_truncated_source_and_missing_indexed_event_fail_closed(make_kernel, tmp
 
 def test_replaced_truncated_spine_is_not_adopted(make_kernel, tmp_path):
 
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "identity"))
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
@@ -242,7 +242,7 @@ def test_old_index_migrates_exact_digests_from_authoritative_spine(make_kernel, 
     import sqlite3
     from contextlib import closing
 
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "identity"))
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
@@ -268,7 +268,7 @@ def test_indexed_event_corruption_cannot_fabricate_message(make_kernel, tmp_path
     import sqlite3
     from contextlib import closing
 
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "identity"))
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
@@ -296,7 +296,7 @@ def test_changed_page_boundary_digest_is_rejected_before_return(make_kernel, tmp
     import sqlite3
     from contextlib import closing
 
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "identity"))
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
@@ -327,7 +327,7 @@ def test_old_search_jump_uses_owner_session_and_verified_prefix(make_kernel, tmp
 
     from heinzel.modules.heinzel._history_fts import indexed_search
 
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "identity"))
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
@@ -383,7 +383,7 @@ def test_old_search_jump_uses_owner_session_and_verified_prefix(make_kernel, tmp
 
 
 def test_recent_model_context_reads_only_tail_without_deleting_history(make_kernel, tmp_path, monkeypatch):
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "identity"))
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)

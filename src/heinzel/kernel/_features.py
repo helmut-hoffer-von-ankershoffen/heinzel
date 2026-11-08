@@ -9,7 +9,6 @@ from heinzel.kernel._settings import Settings
 FEATURES: dict[str, str] = {
     "connected_frontdoor": "Create a durable helper from its first prompt while the connected journey is completed.",
     "connected_channels": "Exact owner-reviewed channel delivery and host-verified human replies.",
-    "connected_history": "Owner-private bounded history search while connected helpers are being completed.",
     "captured_writes": "Exact human-reviewed conditional writes while provider integrations are being completed.",
     "durable_agents": "Durable agents that keep working between sessions, while they are being built.",
 }
