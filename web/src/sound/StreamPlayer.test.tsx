@@ -169,6 +169,18 @@ describe("stream recovery", () => {
   });
 });
 
+describe("open on YouTube", () => {
+  it("is one small icon in the card header with a tooltip, and no bottom row", () => {
+    toggle();
+    mount();
+    const link = screen.getByRole("link", { name: "Open on YouTube" });
+    expect(link.closest("header")).not.toBeNull();
+    expect(link).toHaveAttribute("title", "Open on YouTube");
+    expect(link.textContent?.trim()).toBe("");
+    expect(player().closest("section")?.lastElementChild).toBe(player().parentElement);
+  });
+});
+
 describe("playback help pane", () => {
   it("takes no line of the card: the help is only an icon button on the video until it is opened", () => {
     mount();
