@@ -8,6 +8,7 @@ from collections.abc import Callable, Generator
 from contextlib import AbstractContextManager, ExitStack, contextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Event
 
 from heinzel.heads.mcp._ipc_peer import require_owner_peer
 from heinzel.kernel import CurrentUser, HeinzelError
@@ -52,6 +53,7 @@ class PublishedMcpLease:
     current_generation: McpGeneration
     peer: PendingMcpPeer
     check_active: Callable[["PublishedMcpLease"], None] = field(repr=False, compare=False)
+    cancelled: Event = field(default_factory=Event, init=False, repr=False, compare=False)
 
     def require_active(self) -> None:
         """Check current authority synchronously before handoff and each subsequent dispatch."""

@@ -99,9 +99,18 @@ class HostMcpConnectionApprovals:
     Revoke this authority before replacing its registration generation, grant revision or reviewed terms.
     """
 
-    def __init__(self, plan: PrivateMcpPlan, *, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(
+        self,
+        plan: PrivateMcpPlan,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        on_revoke: Callable[[], object] | None = None,
+        on_lease_end: Callable[[str], object] | None = None,
+    ) -> None:
         self._plan = plan
         self._clock = clock
+        self._on_revoke = on_revoke
+        self._on_lease_end = on_lease_end
         self._changed = Condition()
         self._pending: dict[str, _PendingReview] = {}
         self._active: dict[str, _ActiveLease] = {}
@@ -141,29 +150,63 @@ class HostMcpConnectionApprovals:
     def revoke(self) -> None:
         """Fence this generation and grant, invalidate pending proofs and shut down its exact streams."""
         with step(log, "mcp.ipc.revoke_connections", operation="ipc", step="revoke_connections"), self._changed:
+            try:
+                if self._on_revoke is not None:
+                    self._on_revoke()
+            finally:
+                self.close()
+
+    def close(self) -> None:
+        """Retire this broker's leases without revoking the persisted grant."""
+        with self._changed:
             self._revoked = True
-            for pending in self._pending.values():
-                _shutdown_stream(pending.peer.connection)
-            self._pending.clear()
-            for active in self._active.values():
-                _shutdown_stream(active.lease.peer.connection)
-            self._active.clear()
-            self._changed.notify_all()
+            try:
+                if self._on_lease_end is not None:
+                    for lease_id in self._active:
+                        self._on_lease_end(lease_id)
+            finally:
+                for pending in self._pending.values():
+                    _shutdown_stream(pending.peer.connection)
+                self._pending.clear()
+                for active in self._active.values():
+                    active.lease.cancelled.set()
+                    _shutdown_stream(active.lease.peer.connection)
+                self._active.clear()
+                self._changed.notify_all()
+
+    @contextmanager
+    def fenced(self, lease: PublishedMcpLease) -> Generator[Callable[[], None]]:
+        """Serialize a short journal transition with lease retirement and grant revocation.
+
+        Acquire the invocation writer inside this registration fence. Never run external work under it.
+
+        Yields:
+            A deadline check safe to call while the invocation writer is held.
+        """
+        with self._changed:
+            self._require_active(lease)
+            yield lambda: self._require_active(lease, retire_expired=False)
 
     def _expire(self, lease_id: str) -> None:
         with self._changed:
             active = self._active.get(lease_id)
             if active is not None:
-                _shutdown_stream(active.lease.peer.connection)
-                del self._active[lease_id]
+                try:
+                    if self._on_lease_end is not None:
+                        self._on_lease_end(lease_id)
+                finally:
+                    active.lease.cancelled.set()
+                    _shutdown_stream(active.lease.peer.connection)
+                    del self._active[lease_id]
 
-    def _require_active(self, lease: PublishedMcpLease) -> None:
+    def _require_active(self, lease: PublishedMcpLease, *, retire_expired: bool = True) -> None:
         with self._changed:
             active = self._active.get(lease.id)
             if self._revoked or active is None or active.lease is not lease:
                 raise HeinzelError(_UNAVAILABLE)
             if self._clock() >= active.expires_at:
-                self._expire(lease.id)
+                if retire_expired:
+                    self._expire(lease.id)
                 raise HeinzelError(_UNAVAILABLE)
 
     def _admit(self, pending: _PendingReview) -> _ActiveLease:

@@ -1,11 +1,13 @@
 """Exercise the supervised MCP handoff with real, private Unix sockets."""
 
+import json
 import logging
 import socket
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
 from dataclasses import replace
+from queue import Queue
 from threading import Barrier, Event
 
 import pytest
@@ -14,6 +16,10 @@ from heinzel import HeinzelError
 from heinzel.heads.mcp import _ipc_approval
 from heinzel.heads.mcp._ipc_admission import McpGeneration, OwnedMcpEndpoint, PublishedMcpLease
 from heinzel.heads.mcp._ipc_approval import HostMcpConnectionApprovals, PrivateMcpPlan
+from heinzel.heads.mcp._ipc_host_review import host_review_channel
+from heinzel.heads.mcp._ipc_work import McpWorkJournal, McpWorkRequest, owned_private_dispatch
+from heinzel.kernel._approval import arguments_hash
+from heinzel.kernel._session_store import SessionStore
 
 pytestmark = pytest.mark.unit
 GENERATION = McpGeneration("reg-one", 3)
@@ -511,3 +517,161 @@ def test_expired_lease_refuses_authority_even_when_timer_callback_is_delayed(
     else:
         assert outcome.outcome == "error"
         assert refusal in outcome.error
+
+
+def test_host_review_requires_exact_answer_on_the_allocated_descriptor(supervised):
+    endpoint, _, bridge = supervised
+    authority = HostMcpConnectionApprovals(private_plan(time.monotonic() + 60))
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        try:
+            result, ready = start_private_connection(executor, endpoint, authority)
+            (review,) = pending_reviews(authority, 1)
+            with host_review_channel(authority, review.instance_id) as (host, serve):
+                host.settimeout(2)
+                refused = executor.submit(serve)
+                with host.makefile("rb") as control:
+                    offer = json.loads(control.readline())
+                assert offer["review"]["challenge"] == review.challenge
+                assert offer["review"]["terms"] == json.loads(review.plan.terms_json)
+                host.sendall(b"approve " + b"0" * 64 + b"\n")
+                with pytest.raises(HeinzelError, match="host review was declined or unavailable"):
+                    refused.result(timeout=2)
+            assert not ready.is_set()
+            with host_review_channel(authority, review.instance_id) as (host, serve):
+                host.settimeout(2)
+                accepted = executor.submit(serve)
+                with host.makefile("rb") as control:
+                    exact = json.loads(control.readline())
+                assert exact == offer
+                host.sendall(f"approve {exact['digest']}\n".encode())
+                accepted.result(timeout=2)
+            assert ready.wait(2)
+            bridge.sendall(b"initialize")
+            assert result.result(timeout=2) == b"initialize"
+        finally:
+            authority.revoke()
+
+
+def test_exact_host_answer_on_the_vendor_stream_does_not_approve(supervised):
+    endpoint, _, bridge = supervised
+    authority = HostMcpConnectionApprovals(private_plan(time.monotonic() + 60))
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        try:
+            result, ready = start_private_connection(executor, endpoint, authority)
+            (review,) = pending_reviews(authority, 1)
+            with host_review_channel(authority, review.instance_id) as (host, serve):
+                host.settimeout(2)
+                reviewed = executor.submit(serve)
+                with host.makefile("rb") as control:
+                    offer = json.loads(control.readline())
+                bridge.sendall(f"approve {offer['digest']}\n".encode())
+                with pytest.raises(HeinzelError, match="lease was not published"):
+                    result.result(timeout=2)
+                assert not ready.is_set()
+                host.shutdown(socket.SHUT_WR)
+                with pytest.raises(HeinzelError, match="host review was declined or unavailable"):
+                    reviewed.result(timeout=2)
+        finally:
+            authority.revoke()
+
+
+def work_plan():
+    return PrivateMcpPlan.capture(
+        GENERATION, "work-grant", 1, time.monotonic() + 60, {"dispatch": {"fixture": ["read-fixture"]}}
+    )
+
+
+def work_request(name):
+    return McpWorkRequest(target="fixture", operation="read-fixture", request_id=name, input_hash="a" * 64)
+
+
+@contextmanager
+def approved_work_connection(executor, endpoint, authority):
+    published = Queue()
+    release = Event()
+
+    def hold_lease():
+        with endpoint.admit_next(lambda _: GENERATION, authority.publish) as lease:
+            published.put(lease)
+            assert release.wait(2)
+
+    worker = executor.submit(hold_lease)
+    try:
+        (review,) = pending_reviews(authority, 1)
+        authority.approve(review)
+        yield published.get(timeout=2)
+    finally:
+        release.set()
+        worker.result(timeout=2)
+
+
+def test_revocation_wins_against_effect_intent_and_durably_classifies_work(supervised, tmp_path):
+    endpoint, _, bridge = supervised
+    root = tmp_path.resolve() / "dispatch"
+    plan = work_plan()
+    with (
+        owned_private_dispatch(root, plan) as (authority, dispatch),
+        ThreadPoolExecutor(max_workers=2) as executor,
+        approved_work_connection(executor, endpoint, authority) as lease,
+    ):
+        queued, running, done = (work_request(name) for name in ("queued", "running", "done"))
+        for request in (queued, running, done):
+            assert dispatch.record(lease, request, "reserve") == "queued"
+        for request in (running, done):
+            assert dispatch.record(lease, request, "start") == "running"
+        assert dispatch.record(lease, done, "complete") == "completed"
+        with pytest.raises(HeinzelError, match="work authority is invalid or unavailable"):
+            dispatch.record(lease, queued.model_copy(update={"target": "other"}), "reserve")
+        with authority._changed:
+            raced = executor.submit(dispatch.record, lease, queued, "start")
+            authority.revoke()
+        with pytest.raises(HeinzelError, match="approval is invalid or unavailable"):
+            raced.result(timeout=2)
+        assert lease.cancelled.is_set()
+        assert bridge.recv(1) == b""
+
+    journal = McpWorkJournal(SessionStore(root / "work"), plan)
+    revoked, receipts = journal._state()
+    assert revoked
+    assert {
+        name: receipts[arguments_hash(["fixture", name])].disposition for name in ("queued", "running", "done")
+    } == {
+        "queued": "cancelled",
+        "running": "uncertain",
+        "done": "completed",
+    }
+    with (
+        pytest.raises(HeinzelError, match="work authority is invalid or unavailable"),
+        owned_private_dispatch(root, replace(plan, grant_revision=2)),
+    ):
+        pytest.fail("Changed grant terms silently reused a fenced generation")
+
+
+def test_exclusive_recovery_retires_incomplete_work_without_replay(supervised, tmp_path):
+    endpoint, _, _ = supervised
+    root = tmp_path.resolve() / "dispatch"
+    root.mkdir(mode=0o700)
+    plan = work_plan()
+    store = SessionStore(root / "work")
+    journal = McpWorkJournal(store, plan)
+    journal.fence("recover")
+    queued, running = work_request("queued"), work_request("running")
+    with store.writer(journal._session) as writer:
+        for request in (queued, running):
+            key = arguments_hash([request.target, request.request_id])
+            digest = arguments_hash([request.operation, request.input_hash])
+            writer.append("mcp.reserve", key=key, data={"digest": digest, "lease": "lost-lease"})
+        writer.append("mcp.start", key=arguments_hash([running.target, running.request_id]))
+
+    with owned_private_dispatch(root, plan) as (authority, dispatch), ThreadPoolExecutor(max_workers=1) as executor:
+        with (
+            pytest.raises(HeinzelError, match="Another web integration change is in progress"),
+            owned_private_dispatch(root, plan),
+        ):
+            pytest.fail("Recovery was allowed under a live supervisor")
+        with approved_work_connection(executor, endpoint, authority) as lease:
+            assert dispatch.record(lease, queued, "reserve") == "cancelled"
+            assert dispatch.record(lease, running, "reserve") == "uncertain"
+            with pytest.raises(HeinzelError, match="work authority is invalid or unavailable"):
+                dispatch.record(lease, running, "start")
+    assert [event.kind for event in store.read(journal._session).events].count("mcp.start") == 1
