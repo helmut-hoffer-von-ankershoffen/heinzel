@@ -16,6 +16,12 @@ const connects = (connector: Connector) => [
   ...new Set((connector.plugin.capabilities ?? []).map((capability) => capability.split(":").at(-1) ?? capability)),
 ];
 
+const DIAGNOSTIC_STATUS = {
+  up: "connectors.diagnosticsUp",
+  degraded: "connectors.diagnosticsDegraded",
+  down: "connectors.diagnosticsDown",
+} as const;
+
 type Props = {
   connectors: Connector[];
   open: Connector | undefined;
@@ -83,6 +89,31 @@ export function ConnectorsSection({ connectors, open, settings, onOpen, renderSe
             </ul>
           )}
         </section>
+        <details className="mb-4 rounded-xl border border-border bg-card p-3 text-sm">
+          <summary className="cursor-pointer font-medium">{t("connectors.diagnostics")}</summary>
+          <p className="mt-2 text-muted-foreground">{t("connectors.diagnosticsHint")}</p>
+          {providers.flatMap((provider) => provider.checks).length === 0 ? (
+            <p className="mt-2 text-muted-foreground">{t("connectors.diagnosticsNone")}</p>
+          ) : (
+            <ul className="mt-2 space-y-2">
+              {providers.flatMap((provider) =>
+                provider.checks.map((check) => (
+                  <li key={`${provider.name}:${check.name}`}>
+                    <p>
+                      <span className="font-medium">{check.name}</span>
+                      {" · "}
+                      <span>{t(DIAGNOSTIC_STATUS[check.status])}</span>
+                    </p>
+                    {check.detail && <p className="text-muted-foreground">{check.detail}</p>}
+                    {check.fix && (
+                      <p className="text-muted-foreground">{t("connectors.diagnosticsFix", { fix: check.fix })}</p>
+                    )}
+                  </li>
+                )),
+              )}
+            </ul>
+          )}
+        </details>
         {own.length ? (
           renderSettings(own, open.title)
         ) : (

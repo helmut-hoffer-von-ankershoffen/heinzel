@@ -5,7 +5,7 @@ import { AnchoredPopover } from "@/components/AnchoredPopover";
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { Check, ChevronRight, Ellipsis, Maximize2, Minimize2, Plus, RotateCcw, X } from "lucide-react";
+import { Check, ChevronRight, Ellipsis, Maximize2, Minimize2, Pencil, Plus, RotateCcw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { token } from "@/api/token";
 import { Button } from "@/components/ui/button";
@@ -28,13 +28,33 @@ function loadOptions(): Options {
   }
 }
 
-type Tab = { id: number; title: string; agentTitle?: string; notice?: string; status?: string };
+type Tab = { id: number; title: string; custom?: string; agentTitle?: string; notice?: string; status?: string };
+/** The name a tab shows: the one the person gave it, else what the running program says, else the numbered default. */
+const tabName = (tab: Tab) => tab.custom || tab.agentTitle || tab.title;
+
+/** Phones and tablets: a touch screen is the primary pointer. A desktop with a keyboard has its own Esc, Tab and arrows. */
+function useTouchPrimary(): boolean {
+  const query = "(pointer: coarse)";
+  const read = () => typeof window.matchMedia === "function" && window.matchMedia(query).matches;
+  const [touch, setTouch] = useState(read);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const list = window.matchMedia(query);
+    const update = () => setTouch(list.matches);
+    update();
+    list.addEventListener?.("change", update);
+    return () => list.removeEventListener?.("change", update);
+  }, []);
+  return touch;
+}
+
 type Props = { onClose: () => void; full: boolean; onToggleFull: () => void; onActivate?: () => void };
 
 export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props) {
   const [tabs, setTabs] = useState<Tab[]>([{ id: 1, title: t("terminal.title") }]);
   const [active, setActive] = useState(1);
   const [options, setOptions] = useState<Options>(loadOptions);
+  const [renaming, setRenaming] = useState<number | null>(null);
   const nextId = useRef(2);
   const panelRef = useRef<HTMLElement>(null);
   const change = (patch: Partial<Options>) =>
@@ -80,32 +100,70 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
                 tab.id === active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60",
               )}
             >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={tab.id === active}
-                onClick={() => {
-                  setActive(tab.id);
-                  updateTab(tab.id, { notice: undefined });
-                }}
-                className="px-3.5 py-1"
-              >
-                {tab.agentTitle || tab.title}
-                {tab.status && <span className="ml-2 text-xs text-muted-foreground">{tab.status}</span>}
-                {tab.notice && (
-                  <span
-                    role="img"
-                    aria-label={t("terminal.attention")}
-                    title={tab.notice}
-                    className="ml-2 inline-block size-2 rounded-full bg-primary"
-                  />
-                )}
-              </button>
+              {renaming === tab.id ? (
+                <input
+                  // biome-ignore lint/a11y/noAutofocus: the field appears on request and takes the typing at once
+                  autoFocus
+                  aria-label={t("terminal.renameField")}
+                  defaultValue={tabName(tab)}
+                  maxLength={40}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.currentTarget.dataset.cancelled = "true";
+                      setRenaming(null);
+                    }
+                    if (event.key === "Enter") event.currentTarget.blur();
+                  }}
+                  onBlur={(event) => {
+                    // Empty brings back the automatic name; Escape has already closed the field without saving.
+                    if (!event.currentTarget.dataset.cancelled)
+                      updateTab(tab.id, { custom: event.currentTarget.value.trim() || undefined });
+                    setRenaming(null);
+                  }}
+                  className="mx-1 my-0.5 w-32 rounded-md border border-border bg-background px-2 py-0.5 text-sm"
+                />
+              ) : (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab.id === active}
+                  onClick={() => {
+                    setActive(tab.id);
+                    updateTab(tab.id, { notice: undefined });
+                  }}
+                  onDoubleClick={() => setRenaming(tab.id)}
+                  onKeyDown={(event) => event.key === "F2" && setRenaming(tab.id)}
+                  className="px-3.5 py-1"
+                >
+                  {tabName(tab)}
+                  {tab.status && <span className="ml-2 text-xs text-muted-foreground">{tab.status}</span>}
+                  {tab.notice && (
+                    <span
+                      role="img"
+                      aria-label={t("terminal.attention")}
+                      title={tab.notice}
+                      className="ml-2 inline-block size-2 rounded-full bg-primary"
+                    />
+                  )}
+                </button>
+              )}
+              {tab.id === active && renaming !== tab.id && (
+                <button
+                  type="button"
+                  onClick={() => setRenaming(tab.id)}
+                  aria-label={t("terminal.renameTab", { title: tabName(tab) })}
+                  title={t("terminal.rename")}
+                  className="mr-0.5 rounded p-0.5 opacity-60 hover:bg-background/40 hover:opacity-100"
+                >
+                  <Pencil aria-hidden className="size-3" />
+                </button>
+              )}
               {tabs.length > 1 && (
                 <button
                   type="button"
                   onClick={() => close(tab.id)}
-                  aria-label={t("terminal.closeTab", { title: tab.agentTitle || tab.title })}
+                  aria-label={t("terminal.closeTab", { title: tabName(tab) })}
                   className="mr-1 rounded p-0.5 opacity-60 hover:bg-background/40 hover:opacity-100"
                 >
                   <X aria-hidden className="size-3" />
@@ -164,7 +222,7 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
               const hidden = tab.id !== active || !document.hasFocus() || !!panelRef.current?.closest("[hidden]");
               if (hidden && desktopState() === "on") {
                 try {
-                  const notification = new Notification(tab.agentTitle || tab.title, { body: notice });
+                  const notification = new Notification(tabName(tab), { body: notice });
                   notification.onclick = () => {
                     window.focus();
                     onActivate?.();
@@ -222,6 +280,7 @@ function TerminalView({
   const senderRef = useRef<((text: string) => void) | null>(null);
   const copyOnSelect = useRef(options.copyOnSelect);
   const initial = useRef(options);
+  const touch = useTouchPrimary();
   const [state, setState] = useState<State>("connecting");
   // The shell has drawn its prompt: commands typed for the person wait until then, or the line is echoed twice and
   // the shell prints a stray `%` for output that had no newline.
@@ -463,44 +522,46 @@ function TerminalView({
         </div>
       )}
       <div ref={host} className="min-h-0 flex-1 px-3 pb-1" />
-      <fieldset
-        aria-label="Terminal keys"
-        className="m-0 flex min-w-0 shrink-0 gap-1 overflow-x-auto border-0 px-3 py-1 md:[@media(pointer:fine)]:hidden"
-      >
-        {(
-          [
-            ["Esc", "\x1b", "Escape"],
-            ["Tab", "\t", "Tab"],
-            ["Ctrl+C", "\x03", "Control+C"],
-            ["Ctrl+Z", "\x1a", "Control+Z"],
-            ["Ctrl+D", "\x04", "Control+D"],
-            ["←", "D", "Arrow left"],
-            ["↓", "B", "Arrow down"],
-            ["↑", "A", "Arrow up"],
-            ["→", "C", "Arrow right"],
-          ] as const
-        ).map(([label, key, accessibleName]) => (
-          <Button
-            key={label}
-            variant="outline"
-            size="sm"
-            className="min-h-11 min-w-11 shrink-0"
-            disabled={state !== "open"}
-            aria-label={accessibleName}
-            onClick={() => {
-              if (!active) return;
-              const arrows = ["←", "↓", "↑", "→"];
-              const sequence = arrows.includes(label)
-                ? `\x1b${terminalRef.current?.modes?.applicationCursorKeysMode ? "O" : "["}${key}`
-                : key;
-              senderRef.current?.(sequence);
-              terminalRef.current?.focus();
-            }}
-          >
-            {label}
-          </Button>
-        ))}
-      </fieldset>
+      {touch && (
+        <fieldset
+          aria-label="Terminal keys"
+          className="m-0 flex min-w-0 shrink-0 gap-1 overflow-x-auto border-0 px-3 py-1"
+        >
+          {(
+            [
+              ["Esc", "\x1b", "Escape"],
+              ["Tab", "\t", "Tab"],
+              ["Ctrl+C", "\x03", "Control+C"],
+              ["Ctrl+Z", "\x1a", "Control+Z"],
+              ["Ctrl+D", "\x04", "Control+D"],
+              ["←", "D", "Arrow left"],
+              ["↓", "B", "Arrow down"],
+              ["↑", "A", "Arrow up"],
+              ["→", "C", "Arrow right"],
+            ] as const
+          ).map(([label, key, accessibleName]) => (
+            <Button
+              key={label}
+              variant="outline"
+              size="sm"
+              className="min-h-11 min-w-11 shrink-0"
+              disabled={state !== "open"}
+              aria-label={accessibleName}
+              onClick={() => {
+                if (!active) return;
+                const arrows = ["←", "↓", "↑", "→"];
+                const sequence = arrows.includes(label)
+                  ? `\x1b${terminalRef.current?.modes?.applicationCursorKeysMode ? "O" : "["}${key}`
+                  : key;
+                senderRef.current?.(sequence);
+                terminalRef.current?.focus();
+              }}
+            >
+              {label}
+            </Button>
+          ))}
+        </fieldset>
+      )}
     </div>
   );
 }

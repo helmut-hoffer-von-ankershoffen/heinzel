@@ -83,7 +83,7 @@ These are the rules a reviewer applies to every setting. The mechanical ones are
 | `x-unit` | `json_schema_extra` | What a number counts: `seconds`, `minutes`, `hours`, `days`, `weeks`, `usd`, `per hour`; `hour-of-day` for hours of a day, shown in the viewer's 12- or 24-hour clock. |
 | `x-expert` | `json_schema_extra` | Listed only in expert mode. |
 | `x-hidden` | `json_schema_extra` | Never listed: another control edits it. |
-| `x-live` | `json_schema_extra` | Saved at once, with no Restart and apply: the running server reads it again itself. |
+| `x-live` | `json_schema_extra` | Saved at once, with no Restart and apply: the running server reads it again itself. Every setting is listed in [SETTINGS_RESTART](SETTINGS_RESTART.md) with why. |
 | `deprecated` | `json_schema_extra` | Never listed. |
 | `section_title` | ClassVar on the settings model | The section's heading. |
 
