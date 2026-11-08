@@ -348,7 +348,7 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | --- | --- | --- | --- | --- | --- | --- |
 | List installed plugins, enabled or not, with their source and the modules and adapters they bring. | `hz system plugin list` | `system_plugin_list` | `GET /system/plugin/list` | `GET /api/system/plugin/list` |  | expert |
 | Show what a plugin would install, then add it with `--confirm`; adding it again replaces it. | `hz system plugin add` | `system_plugin_add` | — | `POST /api/system/plugin/add` | yes | expert |
-| Add an optional client of hz itself, e.g. OpenAI's for the ChatGPT plan; not a plugin. A restart loads it. | `hz system plugin add-extra` | `system_plugin_add_extra` | — | `POST /api/system/plugin/add-extra` | yes | expert |
+| Add an optional client of hz itself, such as OpenAI's for the ChatGPT plan; a restart loads it. | `hz system plugin add-extra` | `system_plugin_add_extra` | — | `POST /api/system/plugin/add-extra` | yes | expert |
 | List plugins changed on this machine since this server started: what a restart would load. | `hz system plugin pending` | `system_plugin_pending` | — | `GET /api/system/plugin/pending` |  | expert |
 | Read the status and result of a plugin add without repeating it. | `hz system plugin operation` | `system_plugin_operation` | — | `GET /api/system/plugin/operation` |  | expert |
 | Add the plugin in a directory on this machine, to try a plugin you are writing. | `hz system plugin develop` | — | — | — | yes | expert |

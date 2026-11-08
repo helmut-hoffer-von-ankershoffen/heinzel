@@ -144,7 +144,7 @@ def add_extra(
         Field(description="The optional client of hz itself: `openai` (Model API, ChatGPT plan) or `anthropic`."),
     ],
 ) -> ExtraChange:
-    """Add an optional client of hz itself, e.g. OpenAI's for the ChatGPT plan; not a plugin. A restart loads it."""
+    """Add an optional client of hz itself, such as OpenAI's for the ChatGPT plan; a restart loads it."""
     return service.add_extra(extra)
 
 

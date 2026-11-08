@@ -3241,7 +3241,7 @@ $ hz system plugin add [OPTIONS] {spec}
 
 #### `hz system plugin add-extra`
 
-(expert) Add an optional client of hz itself, e.g. OpenAI&#x27;s for the ChatGPT plan; not a plugin. A restart loads it.
+(expert) Add an optional client of hz itself, such as OpenAI&#x27;s for the ChatGPT plan; a restart loads it.
 
 **Usage**:
 

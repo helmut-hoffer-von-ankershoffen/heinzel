@@ -79,8 +79,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Keep the Model API key you typed in your keychain, replacing one kept before; it is never shown again.
-         * @description Keep the Model API key you typed in your keychain, replacing one kept before; it is never shown again.
+         * Keep the Model API key you typed in your keychain, replacing any before; it is never shown again.
+         * @description Keep the Model API key you typed in your keychain, replacing any before; it is never shown again.
          *
          *     Raises:
          *         HeinzelError: If the key is empty or the keychain can't keep it; never with the key in the message.
@@ -3055,8 +3055,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Add an optional client of hz itself, e.g. OpenAI's for the ChatGPT plan; not a plugin. A restart loads it.
-         * @description Add an optional client of hz itself, e.g. OpenAI's for the ChatGPT plan; not a plugin. A restart loads it.
+         * Add an optional client of hz itself, such as OpenAI's for the ChatGPT plan; a restart loads it.
+         * @description Add an optional client of hz itself, such as OpenAI's for the ChatGPT plan; a restart loads it.
          */
         post: operations["system_plugin_add_extra"];
         delete?: never;

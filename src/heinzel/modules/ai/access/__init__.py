@@ -181,7 +181,7 @@ def set_key(
         SecretStr, Field(min_length=1, max_length=4096, description="The API key, as the vendor shows it.")
     ],
 ) -> KeyState:
-    """Keep the Model API key you typed in your keychain, replacing one kept before; it is never shown again.
+    """Keep the Model API key you typed in your keychain, replacing any before; it is never shown again.
 
     Raises:
         HeinzelError: If the key is empty or the keychain can't keep it; never with the key in the message.
