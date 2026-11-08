@@ -39,24 +39,26 @@ export function VisualizationSettings() {
         <input type="checkbox" checked={settings.master} onChange={(event) => setMaster(event.target.checked)} />
         Audio visualisation
       </label>
-      <div className="ml-6 border-l border-border/70 pl-3">
-        {ROWS.map(({ style, label, help, Icon }) => (
-          <label key={style} className="flex min-h-9 items-start gap-2 py-1 text-sm">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={settings.styles[style]}
-              disabled={!settings.master}
-              onChange={(event) => setStyle(style, event.target.checked)}
-            />
-            <Icon aria-hidden className="mt-0.5 size-4 shrink-0" />
-            <span>
-              {label}
-              <span className="block text-xs text-muted-foreground">{help}</span>
-            </span>
-          </label>
-        ))}
-      </div>
+      {/* With the master switch off no style can be chosen, so none is shown (never a greyed-out list). */}
+      {settings.master && (
+        <div className="ml-6 border-l border-border/70 pl-3">
+          {ROWS.map(({ style, label, help, Icon }) => (
+            <label key={style} className="flex min-h-9 items-start gap-2 py-1 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={settings.styles[style]}
+                onChange={(event) => setStyle(style, event.target.checked)}
+              />
+              <Icon aria-hidden className="mt-0.5 size-4 shrink-0" />
+              <span>
+                {label}
+                <span className="block text-xs text-muted-foreground">{help}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

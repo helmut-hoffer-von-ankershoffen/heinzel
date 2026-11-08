@@ -54,6 +54,22 @@ describe("choices", () => {
   });
 });
 
+describe("unavailable choices", () => {
+  it("are hidden, never greyed out, in the audio pane and the segmented control", () => {
+    // A choice this device or browser cannot take is not rendered (owner, 2026-11-08): no disabled, aria-disabled or
+    // "unavailable" option that stays on screen.
+    const files = [...sources(join(SRC, "audio"), /\.tsx?$/), join(SRC, "components", "ui", "segmented.tsx")];
+    const found = files.flatMap((path) =>
+      [
+        ...withoutComments(readFileSync(path, "utf8")).matchAll(
+          /\baria-disabled\b|\bdisabled=\{(?!false\})|\bunavailable\??:/g,
+        ),
+      ].map((match) => `${relative(SRC, path)}: ${match[0]}`),
+    );
+    expect(found).toEqual([]);
+  });
+});
+
 describe("visualizer colours", () => {
   it("writes no colour in the spectrum or aurora: every hue is a theme token", () => {
     const literal =

@@ -221,6 +221,9 @@ try {
     // Not offered any more: the choice leaves the group and one line says why.
     await pane.getByText("Shared audio is not offered by this browser.", { exact: true }).waitFor();
     assert.equal(await pane.getByRole("radio", { name: "Shared audio", exact: true }).count(), 0);
+    // The fixture offers no microphone either, so nothing is left to choose: no group, not a lone "Off".
+    assert.equal(await pane.getByRole("radiogroup", { name: "Listen to" }).count(), 0);
+    assert.equal(await pane.getByRole("radio", { name: "Microphone", exact: true }).count(), 0);
     assert.equal(await page.evaluate(() => window.audioFixture.requests), beforeUnsupported);
     const bounds = await pane.boundingBox();
     assert(

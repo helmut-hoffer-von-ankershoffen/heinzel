@@ -30,7 +30,10 @@ const listening = {
 } as unknown as Awaited<ReturnType<typeof captureMicrophone>>;
 
 const realMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+const realSecure = Object.getOwnPropertyDescriptor(globalThis, "isSecureContext");
 beforeEach(() => {
+  // A secure page (https or localhost), where browsers offer the microphone at all.
+  Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: true });
   // A browser that offers tab sharing; the capture itself is mocked above.
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
@@ -43,11 +46,14 @@ const source = (name: string) =>
   within(screen.getByRole("radiogroup", { name: "Listen to" })).getByRole("radio", { name });
 
 afterEach(() => {
+  if (realSecure) Object.defineProperty(globalThis, "isSecureContext", realSecure);
+  else delete (globalThis as { isSecureContext?: boolean }).isSecureContext;
   if (realMediaDevices) Object.defineProperty(navigator, "mediaDevices", realMediaDevices);
   else delete (navigator as { mediaDevices?: MediaDevices }).mediaDevices;
   vi.clearAllMocks();
   localStorage.clear();
   sessionStorage.clear();
+  act(() => setVizStage(null));
   reloadSettings();
   act(() => publishOwnAudio({ mode: "none" }));
 });
@@ -235,6 +241,7 @@ describe("AudioVisualizer", () => {
   });
 
   it("shows each style as its own checkbox chip, the on ones filled and checked, and the source as one choice", () => {
+    act(() => setVizStage({ element: document.createElement("div"), playful: true }));
     render(<AudioVisualizer />);
     open();
     const show = within(screen.getByRole("group", { name: "Show" }));
@@ -407,5 +414,67 @@ describe("AudioVisualizer", () => {
     await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
     expect(screen.queryByText(/Audio sharing is unavailable/)).not.toBeInTheDocument();
     expect(screen.queryByText("Retry")).not.toBeInTheDocument();
+  });
+
+  it("shows no microphone choice without getUserMedia or outside a secure context", () => {
+    Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: false });
+    render(<AudioVisualizer />);
+    open();
+    const group = within(screen.getByRole("radiogroup", { name: "Listen to" }));
+    expect(group.getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["Off", "Shared audio"]);
+    cleanup();
+    Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: true });
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getDisplayMedia: vi.fn() } });
+    render(<AudioVisualizer />);
+    open();
+    expect(
+      within(screen.getByRole("radiogroup", { name: "Listen to" }))
+        .getAllByRole("radio")
+        .map((radio) => radio.textContent),
+    ).toEqual(["Off", "Shared audio"]);
+  });
+
+  it("shows no Listen to group when this browser can take no source, and says so", () => {
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: {} });
+    render(<AudioVisualizer />);
+    act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+    expect(screen.queryByRole("complementary", { name: "Let Heinzel see the music" })).not.toBeInTheDocument();
+    open();
+    expect(screen.queryByRole("radiogroup", { name: "Listen to" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("cannot be seen in this browser");
+    expect(
+      screen.getByText("Nothing is recorded or uploaded. This browser shows Heinzel's own sound only."),
+    ).toBeVisible();
+  });
+
+  it("shows only the styles this page can draw: no Halo or Swarm without the sidebar stage, none without a canvas", () => {
+    render(<AudioVisualizer />);
+    open();
+    const names = () =>
+      within(screen.getByRole("group", { name: "Show" }))
+        .getAllByRole("checkbox")
+        .map((box) => box.closest("label")?.textContent);
+    // No sidebar stage here (or playful off): the Heinzel styles cannot stand anywhere.
+    expect(names()).toEqual(["Spectrum", "Aurora"]);
+    cleanup();
+    const element = document.createElement("div");
+    act(() => setVizStage({ element, playful: true }));
+    try {
+      render(<AudioVisualizer />);
+      open();
+      expect(names()).toEqual(["Spectrum", "Aurora", "Halo", "Swarm"]);
+    } finally {
+      act(() => setVizStage(null));
+    }
+    cleanup();
+    const getContext = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "getContext");
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", { configurable: true, value: undefined });
+    try {
+      render(<AudioVisualizer />);
+      open();
+      expect(screen.queryByRole("group", { name: "Show" })).not.toBeInTheDocument();
+    } finally {
+      if (getContext) Object.defineProperty(HTMLCanvasElement.prototype, "getContext", getContext);
+    }
   });
 });

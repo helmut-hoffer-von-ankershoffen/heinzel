@@ -52,9 +52,11 @@ follows from it:
   still radios. Independent sets are checkboxes: compact, a chip group (a native checkbox in a label, 2-up grid, gap,
   hairline when off, `color-primary` fill plus check mark when on); with room for a help sentence, a `role="switch"`
   row (Settings). `aria-pressed` is for a lone toolbar toggle (a top-bar panel button), never a member of a labelled
-  set, never in a loop or a `fieldset`; `choices-standards.test.ts` fails it. A choice the app cannot offer at all is
-  not shown (Shared audio on an iPhone); one it offers but cannot take now stays, dimmed and `aria-disabled`, with its
-  reason in the tooltip and the status line. Choosing while another option is live switches in one step: the new one
+  set, never in a loop or a `fieldset`; `choices-standards.test.ts` fails it. A choice this device or browser cannot take is
+  not shown at all, never greyed out (Shared audio without `getDisplayMedia`, Microphone without `getUserMedia` or a
+  secure context, a style without a canvas, the Halo and Swarm without the sidebar stage); a group left with nothing to
+  choose is not shown, and one line says what the browser can do. `choices-standards.test.ts` fails a disabled or
+  `aria-disabled` choice in the audio pane and the segmented control. Choosing while another option is live switches in one step: the new one
   is asked for first, the old one stopped only once the new one runs. Segmented controls, chips and switches are
   content, so a pane made of them has no action row. Example: the Audio pane is Show (Spectrum, Aurora, Halo, Swarm
   chips), Listen to (Off | Microphone | Shared audio segments), status line, privacy line, master switch.

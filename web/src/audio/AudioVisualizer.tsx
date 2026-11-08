@@ -71,6 +71,17 @@ const UNSHARED_KEY = "hz.audio.unshared";
  * (Safari, Chrome, Firefox) is WebKit without getDisplayMedia; a browser that has it but refused it as unsupported is
  * remembered for the session, so the choice is not offered again.
  */
+/** Whether this device can listen with a microphone: getUserMedia exists, and only in a secure context (https or
+ * localhost), where browsers offer it at all. */
+export function canListen(): boolean {
+  return Boolean(globalThis.isSecureContext) && typeof navigator.mediaDevices?.getUserMedia === "function";
+}
+
+/** Whether the page can draw a style at all: every style paints on a 2D canvas. */
+export function canDraw(): boolean {
+  return typeof HTMLCanvasElement !== "undefined" && typeof HTMLCanvasElement.prototype.getContext === "function";
+}
+
 export function canShareAudio(): boolean {
   if (typeof navigator.mediaDevices?.getDisplayMedia !== "function") return false;
   try {
@@ -113,6 +124,8 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const [requesting, setRequesting] = useState<"mic" | "tab" | null>(null);
   const [problem, setProblem] = useState("");
   const [sharing, setSharing] = useState(canShareAudio);
+  const [listenable] = useState(canListen);
+  const [drawable] = useState(canDraw);
   const [notice, setNotice] = useState("");
   const [hasSignal, setHasSignal] = useState(false);
   const current = useRef<CapturedAudio | null>(null);
@@ -125,6 +138,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const swarmCanvas = useRef<HTMLCanvasElement>(null);
   const swarmFigures = useRef<(HTMLDivElement | null)[]>([]);
   const masterId = useId();
+  const rootElement = useRef<HTMLDivElement>(null);
   const stop = useCallback(() => {
     generation.current += 1;
     request.current?.abort();
@@ -195,6 +209,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         return;
       }
       if (source === "tab" && !canShareAudio()) {
+        // The pressed choice leaves the pane; if its whole group goes with it, keep the keyboard on the trigger.
+        const root = rootElement.current;
+        requestAnimationFrame(() => {
+          if (!document.activeElement || document.activeElement === document.body)
+            root?.querySelector<HTMLButtonElement>("button")?.focus();
+        });
         setSharing(false);
         setNotice("Shared audio is not offered by this browser.");
         return;
@@ -218,7 +238,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   // Once per page: a stopped or ended microphone never restarts itself.
   const resumed = useRef(false);
   useEffect(() => {
-    if (!enabled || !framed || session || requesting || remembered !== "mic" || resumed.current) return;
+    if (!enabled || !framed || !listenable || session || requesting || remembered !== "mic" || resumed.current) return;
     let cancelled = false;
     void navigator.permissions
       ?.query({ name: "microphone" as PermissionName })
@@ -231,7 +251,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     return () => {
       cancelled = true;
     };
-  }, [enabled, framed, session, requesting, remembered, start]);
+  }, [enabled, framed, listenable, session, requesting, remembered, start]);
   const ownAnalyser = own.mode === "analysed" ? own.analyser : null;
   const analyser = session?.analyser ?? ownAnalyser;
   const microphone = session?.label === "Microphone";
@@ -442,7 +462,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   let state: State = "off";
   let triggerLabel = "Audio visualizer";
   let controlWord = "Audio";
-  const nothingShown = !STYLES.some((style) => settings.styles[style]);
+  // A choice this device cannot take is not shown at all (design/README.md, Choices): every style needs a canvas, the
+  // Halo and the Swarm also the sidebar stage (playful on); a source needs its browser API.
+  const offeredStyles = STYLES.filter(
+    (style) => drawable && ((style !== "halo" && style !== "swarm") || stageElement !== null),
+  );
+  const nothingShown = !offeredStyles.some((style) => settings.styles[style]);
   if (!settings.master) {
     status = "Audio visualisation is off.";
     controlWord = "Off";
@@ -467,9 +492,10 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     triggerLabel = "Audio sharing active";
     controlWord = "On";
   } else if (framed) {
-    status = sharing
-      ? "Off. Music in a player frame shows once you pick Microphone or Shared audio."
-      : "Off. Music in a player frame shows once you pick Microphone.";
+    const picks = [listenable && "Microphone", sharing && "Shared audio"].filter(Boolean).join(" or ");
+    status = picks
+      ? `Off. Music in a player frame shows once you pick ${picks}.`
+      : "Music in a player frame cannot be seen in this browser; Heinzel's own sound still shows.";
     state = "warn";
     controlWord = "Share";
   }
@@ -479,20 +505,22 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     triggerLabel = "Audio sharing problem";
     controlWord = "Retry";
   }
-  const styleToggles: { style: VizStyle; label: string; icon: typeof BarChart3 }[] = [
-    { style: "spectrum", label: "Spectrum", icon: BarChart3 },
-    { style: "aurora", label: "Aurora", icon: Sparkles },
-    { style: "halo", label: "Halo", icon: CircleDot },
-    { style: "swarm", label: "Swarm", icon: Users },
-  ];
+  const styleToggles = (
+    [
+      { style: "spectrum", label: "Spectrum", icon: BarChart3 },
+      { style: "aurora", label: "Aurora", icon: Sparkles },
+      { style: "halo", label: "Halo", icon: CircleDot },
+      { style: "swarm", label: "Swarm", icon: Users },
+    ] satisfies { style: VizStyle; label: string; icon: typeof BarChart3 }[]
+  ).filter(({ style }) => offeredStyles.includes(style));
   const sourceSegments: Segment<Source>[] = [
     { value: "off", label: "Off", icon: MicOff },
-    { value: "mic", label: "Microphone", icon: Mic },
+    ...(listenable ? [{ value: "mic" as const, label: "Microphone", icon: Mic }] : []),
     ...(sharing ? [{ value: "tab" as const, label: sharedWord, icon: MonitorSpeaker }] : []),
   ];
   const mark = { ok: "text-ok", warn: "text-warn", bad: "text-bad", off: "text-muted-foreground" }[state] ?? "";
   return (
-    <div className="flex h-full min-h-0 flex-col items-center text-muted-foreground">
+    <div ref={rootElement} className="flex h-full min-h-0 flex-col items-center text-muted-foreground">
       <FooterItem
         label="Audio visualizer"
         paneName="Audio visualizer controls"
@@ -514,43 +542,48 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             <>
               {/* Independent styles, any of them on (design/README.md, Choices): native checkboxes as chips, 2-up, no
                   shared track, so they read as pick-any beside the pick-one source below. */}
-              <fieldset className="m-0 min-w-0 border-0 p-0">
-                <legend className="mb-1 text-xs text-muted-foreground">Show</legend>
-                <div className="grid grid-cols-2 gap-2">
-                  {styleToggles.map(({ style, label, icon: Icon }) => {
-                    const on = settings.styles[style];
-                    return (
-                      <label
-                        key={style}
-                        className={cn(
-                          "flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-xs",
-                          "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring",
-                          on
-                            ? "border-transparent bg-primary font-medium text-primary-foreground"
-                            : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
-                        )}
-                      >
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={on}
-                          onChange={(event) => setStyle(style, event.target.checked)}
-                        />
-                        <Icon aria-hidden className="size-4 shrink-0" />
-                        <span className="min-w-0 flex-1 truncate">{label}</span>
-                        <Check aria-hidden className={cn("size-3.5 shrink-0", !on && "invisible")} />
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
-              <SegmentedControl
-                legend="Listen to"
-                segments={sourceSegments}
-                value={listening}
-                busy={requesting}
-                onSelect={choose}
-              />
+              {styleToggles.length > 0 && (
+                <fieldset className="m-0 min-w-0 border-0 p-0">
+                  <legend className="mb-1 text-xs text-muted-foreground">Show</legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    {styleToggles.map(({ style, label, icon: Icon }) => {
+                      const on = settings.styles[style];
+                      return (
+                        <label
+                          key={style}
+                          className={cn(
+                            "flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-xs",
+                            "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring",
+                            on
+                              ? "border-transparent bg-primary font-medium text-primary-foreground"
+                              : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={on}
+                            onChange={(event) => setStyle(style, event.target.checked)}
+                          />
+                          <Icon aria-hidden className="size-4 shrink-0" />
+                          <span className="min-w-0 flex-1 truncate">{label}</span>
+                          <Check aria-hidden className={cn("size-3.5 shrink-0", !on && "invisible")} />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              )}
+              {/* Off is always there; with no source this browser can take, there is nothing to choose. */}
+              {sourceSegments.length > 1 && (
+                <SegmentedControl
+                  legend="Listen to"
+                  segments={sourceSegments}
+                  value={listening}
+                  busy={requesting}
+                  onSelect={choose}
+                />
+              )}
             </>
           )}
           <p className="flex items-start gap-1.5 text-sm">
@@ -565,7 +598,13 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           </p>
           {notice && settings.master && <p className="text-xs text-foreground">{notice}</p>}
           <p className="text-xs text-muted-foreground">
-            {t(sharing ? "audio.visualizerHelp" : "audio.visualizerHelpMicrophone")}
+            {t(
+              sharing && listenable
+                ? "audio.visualizerHelp"
+                : listenable
+                  ? "audio.visualizerHelpMicrophone"
+                  : "audio.visualizerHelpOwn",
+            )}
           </p>
           <div className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground">
             <span id={masterId}>Audio visualisation</span>
@@ -636,11 +675,11 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           </div>,
           stageElement,
         )}
-      {settings.master && framed && !session && !requesting && remembered !== "off" && (
+      {settings.master && framed && (listenable || sharing) && !session && !requesting && remembered !== "off" && (
         <SourcePrompt
           remembered={remembered}
           onTab={sharing ? () => choose("tab") : null}
-          onMic={() => choose("mic")}
+          onMic={listenable ? () => choose("mic") : null}
         />
       )}
     </div>
@@ -656,9 +695,10 @@ function SourcePrompt({
   onMic,
 }: {
   remembered: Remembered;
-  /** Null where the browser cannot share a tab's audio (every iPhone browser): only the microphone is offered. */
+  /** Null where the browser cannot share a tab's audio (every iPhone browser): not offered. */
   onTab: (() => void) | null;
-  onMic: () => void;
+  /** Null without a microphone API or outside a secure context: not offered. */
+  onMic: (() => void) | null;
 }) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
@@ -674,9 +714,11 @@ function SourcePrompt({
             Share this tab
           </Button>
         )}
-        <Button size="sm" variant={remembered === "mic" || !onTab ? "default" : "outline"} onClick={onMic}>
-          Use microphone
-        </Button>
+        {onMic && (
+          <Button size="sm" variant={remembered === "mic" || !onTab ? "default" : "outline"} onClick={onMic}>
+            Use microphone
+          </Button>
+        )}
         <Button size="sm" variant="ghost" aria-label="Not now" onClick={() => setDismissed(true)}>
           Not now
         </Button>

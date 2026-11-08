@@ -253,6 +253,7 @@ const en = {
   "audio.visualizerHelp":
     "Nothing is recorded or uploaded. The microphone hears the room; sharing a tab shows your browser's sharing bar.",
   "audio.visualizerHelpMicrophone": "Nothing is recorded or uploaded. The microphone hears the room.",
+  "audio.visualizerHelpOwn": "Nothing is recorded or uploaded. This browser shows Heinzel's own sound only.",
   "proposal.intro":
     "You write these terms for later review. They do not start a Heinzel or give approval; limits are not enforced. This preview cannot yet describe MCP, shell, or CLI permissions.",
   "proposal.askRevise": "Ask your Heinzel in chat to revise these subscription terms.",
