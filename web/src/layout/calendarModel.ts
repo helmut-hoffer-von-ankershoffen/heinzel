@@ -13,6 +13,8 @@ export type AgendaData = {
   next: AgendaMeeting | null;
   problem: string | null;
   fix?: string | null;
+  /** Whether the bound connector may change the calendar; absent until the server reports it (read as false). */
+  writable?: boolean | null;
 };
 
 /** A gap between the end of the current meeting and the next start maps onto one turn of the ring over this span. */

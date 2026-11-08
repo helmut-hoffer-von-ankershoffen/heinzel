@@ -161,6 +161,12 @@
             "title": "Name",
             "type": "string"
           },
+          "needs": {
+            "default": "",
+            "description": "The one thing missing, in a few words, e.g. `Add a model and API key`; empty when nothing is.",
+            "title": "Needs",
+            "type": "string"
+          },
           "plugin": {
             "anyOf": [
               {
@@ -185,15 +191,33 @@
             "description": "The agent runner that serves its chat and coding uses.",
             "title": "Runner"
           },
+          "setup": {
+            "anyOf": [
+              {
+                "enum": [
+                  "model",
+                  "gateway",
+                  "sign-in",
+                  "client"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What setting it up takes: `model` (a model and API key), `gateway` (its commands), `sign-in` or `client` (an optional Python client hz installs); none when nothing is missing or hz can't tell.",
+            "title": "Setup"
+          },
           "status": {
-            "description": "`signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `not installed` when what it needs is missing.",
+            "description": "`signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `needs setup` when a setting, a sign-in or its optional client is missing: these options come with hz, they are never plugins to install.",
             "enum": [
               "signed in",
               "not signed in",
               "not tested",
               "tested",
               "test failed",
-              "not installed",
+              "needs setup",
               "error"
             ],
             "title": "Status",
@@ -10760,14 +10784,6 @@
             "title": "Also",
             "type": "string"
           },
-          "also_installs": {
-            "description": "Plugins of the same repository it needs and that are not installed yet, in install order (dependencies first), pinned to the same commit; they are installed in the same confirmed operation.",
-            "items": {
-              "$ref": "#/components/schemas/PluginDependency"
-            },
-            "title": "Also Installs",
-            "type": "array"
-          },
           "distribution": {
             "anyOf": [
               {
@@ -10796,6 +10812,14 @@
             ],
             "description": "The version installed now, when this replaces it.",
             "title": "Installed Version"
+          },
+          "needs": {
+            "description": "Plugins it requires (dependencies first, each once) and recommends, and what the add does.",
+            "items": {
+              "$ref": "#/components/schemas/PluginNeed"
+            },
+            "title": "Needs",
+            "type": "array"
           },
           "private": {
             "anyOf": [
@@ -10921,7 +10945,8 @@
           "candidate": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/PluginCandidate"
+                "$ref": "#/components/schemas/PluginCandidate",
+                "description": "The exact candidate shown before confirmation."
               },
               {
                 "type": "null"
@@ -10945,6 +10970,14 @@
             "description": "Whether it was carried out; false for `add` without `confirm`, which only shows.",
             "title": "Done",
             "type": "boolean"
+          },
+          "needs": {
+            "description": "For a confirmed add or a repair: each plugin it required or recommended, with its result.",
+            "items": {
+              "$ref": "#/components/schemas/PluginNeed"
+            },
+            "title": "Needs",
+            "type": "array"
           },
           "next": {
             "description": "Commands to run next, e.g. the one that confirms.",
@@ -10996,52 +11029,6 @@
           "next"
         ],
         "title": "PluginChange",
-        "type": "object"
-      },
-      "PluginDependency": {
-        "description": "A plugin of the same repository and commit that installing a plugin installs first.",
-        "properties": {
-          "distribution": {
-            "description": "Distribution name, e.g. heinzel-acme.",
-            "title": "Distribution",
-            "type": "string"
-          },
-          "requirement": {
-            "description": "What is installed: its git source pinned to the same commit.",
-            "title": "Requirement",
-            "type": "string"
-          },
-          "source": {
-            "default": "git",
-            "description": "Where its code comes from; the same source as the plugin.",
-            "enum": [
-              "pypi",
-              "git",
-              "path",
-              "unknown"
-            ],
-            "title": "Source",
-            "type": "string"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The version at that commit, when known.",
-            "title": "Version"
-          }
-        },
-        "required": [
-          "distribution",
-          "version",
-          "requirement"
-        ],
-        "title": "PluginDependency",
         "type": "object"
       },
       "PluginEvent": {
@@ -11336,6 +11323,24 @@
       "PluginLayer": {
         "description": "A layer a plugin's module declares.",
         "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "enum": [
+                  "company",
+                  "org",
+                  "site",
+                  "team"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it sits in its tree, derived from its position; none while the layer is left out of the tree (a missing parent, a cycle).",
+            "title": "Label"
+          },
           "module": {
             "description": "The layer's module name, e.g. `acme-payments`.",
             "title": "Module",
@@ -11372,6 +11377,108 @@
           "site"
         ],
         "title": "PluginLayer",
+        "type": "object"
+      },
+      "PluginNeed": {
+        "description": "A plugin another plugin requires or recommends (`[tool.heinzel.plugin]`), and what the add does about it.",
+        "properties": {
+          "candidate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PluginCandidate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a plugin the add installs or updates: exactly what, read from the same catalog."
+          },
+          "detail": {
+            "default": "",
+            "description": "What went wrong, or what the person still does (e.g. sign in).",
+            "title": "Detail",
+            "type": "string"
+          },
+          "distribution": {
+            "description": "The plugin needed, e.g. `heinzel-github`.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "install": {
+            "description": "What `hz system plugin add` takes for it, e.g. `github`.",
+            "title": "Install",
+            "type": "string"
+          },
+          "installed_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The version installed before the add, if any.",
+            "title": "Installed Version"
+          },
+          "needed_by": {
+            "description": "The plugin that requires or recommends it.",
+            "title": "Needed By",
+            "type": "string"
+          },
+          "required": {
+            "description": "Whether it is required (installed first) or only recommended (offered).",
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requirement": {
+            "description": "What is needed, as declared: the plugin and an optional version range.",
+            "title": "Requirement",
+            "type": "string"
+          },
+          "state": {
+            "description": "What the add does or did about it.",
+            "enum": [
+              "install",
+              "update",
+              "present",
+              "offered",
+              "installed",
+              "updated",
+              "failed",
+              "not-reached"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The version the add installs or installed, when known.",
+            "title": "Version"
+          },
+          "with_it": {
+            "default": false,
+            "description": "A plugin of the same repository it depends on, installed in the same run and pinned to the same commit; `requirement` is that pinned source.",
+            "title": "With It",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "distribution",
+          "requirement",
+          "required",
+          "needed_by",
+          "state",
+          "install"
+        ],
+        "title": "PluginNeed",
         "type": "object"
       },
       "PluginOperation": {
@@ -11667,6 +11774,36 @@
           "change"
         ],
         "title": "PluginPendingChange",
+        "type": "object"
+      },
+      "PluginRepair": {
+        "description": "What a repair of the installed plugins' requirements found and did, one entry per missing plugin.",
+        "properties": {
+          "message": {
+            "description": "One line: what was repaired, or that nothing needed it.",
+            "title": "Message",
+            "type": "string"
+          },
+          "needs": {
+            "description": "Each required plugin that was missing or too old, with its result.",
+            "items": {
+              "$ref": "#/components/schemas/PluginNeed"
+            },
+            "title": "Needs",
+            "type": "array"
+          },
+          "restart_required": {
+            "description": "Whether a running server must restart to load what was installed.",
+            "title": "Restart Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "needs",
+          "restart_required",
+          "message"
+        ],
+        "title": "PluginRepair",
         "type": "object"
       },
       "PluginSearch": {
@@ -13174,6 +13311,24 @@
             ],
             "description": "Holds once the hz installed on this machine (on disk, not the running process) is at least this.",
             "title": "Installed Version At Least"
+          },
+          "plugins_installed": {
+            "anyOf": [
+              {
+                "items": {
+                  "pattern": "^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$",
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Holds once every plugin distribution named is installed on this machine (on disk).",
+            "title": "Plugins Installed"
           }
         },
         "title": "ResolveWhen",
@@ -18429,12 +18584,40 @@
             "$ref": "#/components/schemas/RunOperation",
             "description": "The declaring module's operation that enables the feature."
           },
+          "explanation": {
+            "anyOf": [
+              {
+                "maxLength": 280,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The longer explanation, shown only on demand under Details.",
+            "title": "Explanation"
+          },
           "label": {
             "description": "The action the person enables or disables.",
             "maxLength": 80,
             "minLength": 1,
             "title": "Label",
             "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One short cause the person can fix, e.g. `Sign in to Tailscale, then try again.`; its presence offers Try again.",
+            "title": "Problem"
           },
           "requested": {
             "anyOf": [
@@ -18445,7 +18628,7 @@
                 "type": "null"
               }
             ],
-            "description": "The requested state when it differs from verified readiness; never a success claim.",
+            "description": "The person's choice, which the switch shows; `checked` alone says whether it is live.",
             "title": "Requested"
           },
           "sign_in_url": {
@@ -18459,6 +18642,20 @@
             ],
             "description": "Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and an active session or device credential.",
             "title": "Sign In Url"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The provider's one short status line, e.g. `Turning on…`; the host shows its own when absent.",
+            "title": "Status"
           },
           "url": {
             "anyOf": [
@@ -28245,6 +28442,52 @@
         ]
       }
     },
+    "/system/plugin/repair": {
+      "post": {
+        "description": "Install every plugin an installed plugin requires that is missing or too old, from the same catalog.\n\nA plugin declares the plugins it can't work without in `[tool.heinzel.plugin] requires-plugins`; `add` installs them\nfirst, and this repairs an installation that lacks them (one installed before they were declared). It never signs\nin: `hz system doctor` still names each plugin's sign-in step. Running servers load them after a restart.",
+        "operationId": "system_plugin_repair",
+        "parameters": [
+          {
+            "description": "As the automatic updater asks: try each missing plugin once per version of the plugin that requires it, so a failure isn't retried every half hour.",
+            "in": "query",
+            "name": "automatic",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "As the automatic updater asks: try each missing plugin once per version of the plugin that requires it, so a failure isn't retried every half hour.",
+              "title": "Automatic",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginRepair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Install every plugin an installed plugin requires that is missing or too old, from the same catalog.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/plugin/search": {
       "get": {
         "description": "Find plugins to install: first-party ones, and community ones by querying the GitHub API.\n\nConfigured repositories are scanned for plugin projects; topic heinzel-plugin discovers external repositories.\nYour GitHub login also reads private catalogs; authenticated heads only. GH_TOKEN or GITHUB_TOKEN raises the\nrate limit. Catalog outages retain last successfully read metadata.\nPyPI has no keyword search, so it is not queried. Community\nplugins are not reviewed by the Heinzelmännchen maintainers, and every plugin runs with your rights.",
@@ -28260,6 +28503,18 @@
               "description": "Words that name or describe the plugin, e.g. `calendar`; sent to GitHub's search. All plugins if omitted.",
               "title": "Text",
               "type": "string"
+            }
+          },
+          {
+            "description": "Ask GitHub again instead of using the answer kept for the last minute.",
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Ask GitHub again instead of using the answer kept for the last minute.",
+              "title": "Refresh",
+              "type": "boolean"
             }
           }
         ],

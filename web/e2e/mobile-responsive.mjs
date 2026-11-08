@@ -377,7 +377,7 @@ try {
       const opening = footerPane(page, entry.id, "Share probe");
       publishStatus.resolve();
       const pane = await opening;
-      const copy = pane.getByRole("button", { name: "Copy URL", exact: true });
+      const copy = pane.getByRole("button", { name: "Copy link", exact: true });
       await assertContained(page, pane, "phone: share pane");
       await page.screenshot({ path: join(shots, `mobile-${section}-${supported ? "supported" : "unsupported"}.png`) });
       if (supported) {
@@ -390,13 +390,13 @@ try {
         assert.equal(await pane.getByRole("alert").count(), 0, "Cancellation is silent");
         await copy.waitFor(); // AbortError can also mean that no share targets were available.
         await share.tap();
-        await pane.getByRole("alert").getByText("Could not share the link. You can copy it instead.").waitFor();
+        await pane.getByRole("alert").getByText("Could not share the link; copy it instead.").waitFor();
         assert.equal(await page.evaluate(() => window.shareProbe.url), `${fixtureUrl}/`);
       } else {
         assert.equal(await pane.getByRole("button", { name: "Share", exact: true }).count(), 0);
       }
-      await assertContained(page, copy, "phone: Copy URL");
-      await assertTouchTarget(copy, "Copy URL", "phone");
+      await assertContained(page, copy, "phone: Copy link");
+      await assertTouchTarget(copy, "Copy link", "phone");
       if (supported) await page.screenshot({ path: join(shots, `mobile-${section}-failed.png`) });
       await copy.tap();
       await page.waitForFunction((expected) => window.shareProbe.copied === expected, `${fixtureUrl}/`);
@@ -435,7 +435,9 @@ try {
         module: "ai.access",
         plugin: null,
         in_use: false,
-        status: "not installed",
+        status: "needs setup",
+        needs: "Add the AnExtremelyLongProviderNameThatMustWrapOnAPhone client",
+        setup: "client",
         detail: "",
         fix: "uv tool install an-extremely-long-provider-distribution-name-for-mobile-layout",
         models: [],

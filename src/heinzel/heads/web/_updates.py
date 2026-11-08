@@ -162,7 +162,9 @@ def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartabl
     def status(response: Response) -> UpdateStatus:
         response.headers["Cache-Control"] = "no-store"
         cache = ReleaseCache(kernel.settings.cache_dir)
-        enabled = kernel.settings.update_check
+        # Read now, not as booted: Settings saves these two without a restart.
+        current = kernel.fresh_settings()
+        enabled = current.update_check
         pin = installation.core_pin()
         source_allowed = pin is not None and (
             pin.kind in {"release", "default", "index"} or pin.is_edge or (pin.kind == "ref" and pin.ref == "main")
@@ -181,7 +183,7 @@ def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartabl
             current=__version__,
             latest=cache.latest if enabled else None,
             installed_at=installed_at,
-            available=enabled and cache.newer_than(__version__, kernel.settings.update_channel) is not None,
+            available=enabled and cache.newer_than(__version__, current.update_channel) is not None,
             supported=reason is None,
             checked_at=cache.checked_at if enabled else None,
             last_ok_at=cache.ok_at if enabled else None,

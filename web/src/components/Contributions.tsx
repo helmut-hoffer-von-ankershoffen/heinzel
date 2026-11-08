@@ -70,6 +70,7 @@ import { FooterItem, stateOf } from "@/components/FooterItem";
 import { FooterPart } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { HeinzelFace } from "@/components/HeinzelFace";
+import { HideToast, useWidgetVisibility } from "@/components/HiddenWidgets";
 import { OperationDialog } from "@/components/OperationDialog";
 import { PaneAction, PaneActions, PaneChrome } from "@/components/PaneActions";
 import { Progress } from "@/components/Progress";
@@ -332,6 +333,26 @@ function FooterStatus({
       ))}
     </>
   );
+  const lines = (
+    <ul>
+      {(item.detail ?? []).map((line) => (
+        <li key={line.text} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5">
+          <span aria-hidden className={cn("size-2 shrink-0 rounded-full", DOT[line.tone])} />
+          <span className="min-w-0 flex-1" title={line.tooltip ?? undefined}>
+            {line.text}
+            {line.badge && (
+              <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-foreground">
+                {line.badge}
+              </span>
+            )}
+            {line.secondary && <span className="block text-xs text-muted-foreground">{line.secondary}</span>}
+          </span>
+          <IconOf icon={line.icon} />
+          {line.live && <span className="font-mono tabular-nums">{liveText(line.live, now)}</span>}
+        </li>
+      ))}
+    </ul>
+  );
   const accessible = [
     label,
     ...(item.meters ?? []).map((meter) => `${meter.label}: ${meter.value == null ? "unavailable" : `${meter.value}%`}`),
@@ -375,28 +396,12 @@ function FooterStatus({
         ) : undefined
       }
     >
-      <ul>
-        {(item.detail ?? []).map((line) => (
-          <li key={line.text} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5">
-            <span aria-hidden className={cn("size-2 shrink-0 rounded-full", DOT[line.tone])} />
-            <span className="min-w-0 flex-1" title={line.tooltip ?? undefined}>
-              {line.text}
-              {line.badge && (
-                <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-foreground">
-                  {line.badge}
-                </span>
-              )}
-              {line.secondary && <span className="block text-xs text-muted-foreground">{line.secondary}</span>}
-            </span>
-            <IconOf icon={line.icon} />
-            {line.live && <span className="font-mono tabular-nums">{liveText(line.live, now)}</span>}
-          </li>
-        ))}
-      </ul>
+      {/* Under a switch the provider's lines are its longer explanation: on demand in Details, never bullets. */}
+      {!item.toggle && lines}
       {/* The switch and its URL sit at the end of the body; its Share and Open join the pane's own actions in one row. */}
       {item.toggle ? (
         <div className="px-1.5">
-          <StatusControl entry={current} actions={actions} />
+          <StatusControl entry={current} actions={actions} details={item.detail?.length ? lines : undefined} />
         </div>
       ) : (
         <PaneActions>{actions}</PaneActions>
@@ -405,7 +410,15 @@ function FooterStatus({
   );
 }
 
-function StatusControl({ entry, actions }: { entry: SchemaStatusEntry; actions?: ReactNode }) {
+function StatusControl({
+  entry,
+  actions,
+  details,
+}: {
+  entry: SchemaStatusEntry;
+  actions?: ReactNode;
+  details?: ReactNode;
+}) {
   const client = useQueryClient();
   const current = useEntry("status", entry, 0);
   const control = current.item?.toggle;
@@ -414,6 +427,7 @@ function StatusControl({ entry, actions }: { entry: SchemaStatusEntry; actions?:
     <ContributionToggle
       control={control}
       actions={actions}
+      details={details}
       refresh={async (signal) => {
         const entries = await unwrap(api.GET("/system/ui/status", { params: { query: { item: entry.id } }, signal }));
         const fresh = entries.find((candidate) => candidate.id === entry.id);
@@ -883,37 +897,22 @@ const DEFAULT_SIZE: Record<Widget["kind"], keyof typeof SIZES> = {
 };
 export const sizeOf = (widget: Widget): keyof typeof SIZES => widget.size ?? DEFAULT_SIZE[widget.kind];
 
-const DISMISSED = "hz.today.widgets.dismissed";
-
-function loadDismissed(): Set<string> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(DISMISSED) ?? "[]") as string[]);
-  } catch {
-    return new Set();
-  }
-}
-
-/** A widget's key while what it shows is the same, so a dismissed one comes back when it changes. */
-const widgetKey = (entry: SchemaWidgetEntry) => `${entry.id}:${JSON.stringify(entry.widget)}`;
-
 function WidgetCard({
   entry,
   updatedAt,
   run,
   onAsk,
-  dismissed,
-  onDismiss,
+  onHide,
 }: {
   entry: SchemaWidgetEntry;
   updatedAt: number;
   run: (effect: Effect) => void;
   onAsk?: (context: string, text: string) => void;
-  dismissed: Set<string>;
-  onDismiss: (key: string) => void;
+  onHide: (id: string, title: string) => void;
 }) {
   const current = useEntry("widgets", entry, updatedAt);
   const widget = current.widget;
-  if (!widget || dismissed.has(widgetKey(current))) return null;
+  if (!widget) return null;
   const tone = "tone" in widget ? widget.tone : "neutral";
   const title = "title" in widget ? widget.title : widget.label;
   const cardActions = widget.kind === "card" ? (widget.actions ?? []) : [];
@@ -928,8 +927,8 @@ function WidgetCard({
       data-size={sizeOf(widget)}
     >
       <PaneChrome>
-        <PaneAction ghost icon={X} onClick={() => onDismiss(widgetKey(current))}>
-          {t("today.dismiss", { title })}
+        <PaneAction ghost icon={X} onClick={() => onHide(current.id, title)}>
+          {t("today.hide", { title })}
         </PaneAction>
       </PaneChrome>
       <div className="min-w-0 pr-10">
@@ -971,34 +970,32 @@ function WidgetCard({
 export function TodayWidgets({ onAsk }: { onAsk?: (context: string, text: string) => void }) {
   const { entries, updatedAt } = useEntries("widgets", "today");
   const { run, dialog } = useEffectRunner();
-  const [dismissed, setDismissed] = useState(loadDismissed);
-  const dismiss = (key: string) => {
-    const next = new Set(dismissed).add(key);
-    setDismissed(next);
-    try {
-      localStorage.setItem(DISMISSED, JSON.stringify([...next].slice(-100)));
-    } catch {
-      // No storage: dismissed for this visit only.
-    }
+  const { hide, restore } = useWidgetVisibility();
+  const [undo, setUndo] = useState<string | null>(null);
+  const onHide = (id: string) => {
+    void hide(id).then(() => setUndo(id));
   };
   // One card per contribution id, whatever the list repeats.
   const unique = [...new Map(entries.map((entry) => [entry.id, entry])).values()];
-  if (!unique.length) return null;
+  if (!unique.length && !undo) return null;
   return (
     <>
       {unique.map((entry) => (
-        <WidgetCard
-          key={entry.id}
-          entry={entry}
-          updatedAt={updatedAt}
-          run={run}
-          onAsk={onAsk}
-          dismissed={dismissed}
-          onDismiss={dismiss}
-        />
+        <WidgetCard key={entry.id} entry={entry} updatedAt={updatedAt} run={run} onAsk={onAsk} onHide={onHide} />
       ))}
       {/* The confirmation and its live region are not list items: they go beside the grid, not in it. */}
       {createPortal(dialog, document.body)}
+      {undo &&
+        createPortal(
+          <HideToast
+            onUndo={() => {
+              void restore([undo]);
+              setUndo(null);
+            }}
+            onDone={() => setUndo(null)}
+          />,
+          document.body,
+        )}
     </>
   );
 }

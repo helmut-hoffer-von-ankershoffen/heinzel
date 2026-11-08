@@ -45,7 +45,9 @@ follows from it:
   the chat header when there are no tabs). The row drags the window; every control in it does not. The theme's
   lockup moves to the line below it and carries the name the window chrome no longer shows. Collapsed, the expand
   button stays after the lights and the main header starts after it; full screen gives the lights' inset back. A
-  dialog, menu or popover over the row is no-drag, so its top edge stays clickable. A
+  dialog, menu or popover over the row is no-drag, so its top edge stays clickable. A pane over the window
+  (Notifications) starts under the row (`--titlebar-height`, 0 in a browser), so its header never meets the lights
+  or the drag region; a standards test keeps every drag selector's controls no-drag. A
   browser or PWA has no bridge, so its layout is unchanged; Windows and Linux keep the native frame for now.
 - **Sidebar header (2026-11-07).** The header is the product lockup, not another navigation row: the swarm mark (the
   drawing `mark.svg` is made from, drawn inline) at 28 px, and the name as live text one pixel above the UI size
@@ -76,6 +78,12 @@ follows from it:
   theme or its daypart variant changes; no colour is written in `web/src/audio` (`choices-standards.test.ts`). The
   Aurora is a full-window layer under the content, so the page colour is painted on `<html>` and `<body>` stays
   transparent; a painted `<body>` hides it.
+- **Switches show the person's choice (2026-11-08).** A provider switch (`ContributionToggle`) reads On as soon as the
+  person turns it on; whether it is live is its one status line: *Turning on…*, the URL, or one short cause with
+  **Try again** (or **Restart hz** when only a restart loads the change). The line is at most 60 characters in the
+  person's words; `ToggleControl.status` and `problem` refuse longer text and internal state words (requested,
+  applied, verified, owning, apply, intent, mapping, origin, handler, readiness). Longer text goes to the
+  provider's `explanation` and detail lines, shown only under the native **Details** disclosure, never as bullets.
 
 ## Content in focus, no screen space wasted
 
@@ -117,8 +125,8 @@ card, a dialog, a panel, a page, a settings section, a toast) places its actions
 5. **One look.** Buttons are 32px high (44px on touch), icon-only buttons as wide as high, 16px icons, 6px apart.
    Content actions are outlined; the one `primary` per container is filled; chrome and list-row actions are ghost.
    A disabled action is the same button dimmed. Pages put at most two outlined icon+words actions in their header.
-6. **No links as actions.** A text link is only a reference inside prose (`data-prose-link` outside `Prose`). `to=`
-   navigates inside the app (a real link styled as a button), `href=` opens outside it in a new tab.
+6. **No links as actions.** A text link exists only inside running text (see Links below). `to=` navigates inside
+   the app (a real link styled as a button), `href=` opens outside it in a new tab.
 7. **Exception:** the version pane (about card and release notes are prose), marked `freeform` with its reason.
 
 ```text
@@ -136,7 +144,7 @@ card, a dialog, a panel, a page, a settings section, a toast) places its actions
 | Container | Good |
 |---|---|
 | Heinzelmännchen pane, empty | "No persisted Heinzels yet."; divider; [+ Create a personal Heinzel] (primary) [💬] |
-| Calendar pane | Now and next meeting; divider; [📅 Open calendar] |
+| Calendar pane | Now and next meeting; divider; [🎥 Join] [📅 Open calendar] [🛡 Allow changes] until the connector may write, then [Decline] [Extend] [Running late] instead of Allow |
 | System health pane | Check summary; divider; [🩺 Open Doctor] [⟳] |
 | Updates pane | Status lines, automatic-updates switch; divider; [⬇ Update now] [⟳] |
 | Daemon pane (plugin) | Status lines; divider; [⚡ Restart daemon] [📄] [⏱] [⚠] (red) |
@@ -146,8 +154,28 @@ card, a dialog, a panel, a page, a settings section, a toast) places its actions
 | Plugins list row | ghost [⏻] [🗑] (red); Remove opens a confirming dialog |
 | Version pane (exception) | About card with the release link, release notes as prose; no action row |
 
-Bad: an underlined "Open chat" line; two rows of buttons; a refresh button between two status lines; "Ask about it"
+Bad: an underlined "Open chat" line; an underlined "Allow ..." under the action row; two rows of buttons; a refresh button between two status lines; "Ask about it"
 top-right on one card and bottom-left on the next; a wizard that puts Next before Back; a Remove that just removes.
+
+### Links
+
+1. **No text links in chrome.** Navigation and actions are buttons: icon-only with tooltip and `aria-label` for simple
+   ones, icon and words for the lead; rows with a chevron for navigation in lists, tables and menus (the whole row is
+   the target, hover tints the row, marked `data-nav-row`); a card may be its own target. Never an underlined or
+   `text-primary` word.
+2. **Links live only in running text:** rendered Markdown (`Prose`), release notes, help and legal pages, long content
+   read top to bottom. There they are underlined `text-primary`, open outside the app in a new tab with
+   `rel="noopener noreferrer"`, and an external target shows the ExternalLink glyph after the words.
+3. **External URLs outside prose are icon buttons** (`PaneAction href`, ExternalLink or the provider's glyph); the
+   address is never shown as a link, at most as muted text beside the button.
+4. **App-like interaction:** no underline on any control; hover (`bg-accent`), focus-visible ring and pressed states on
+   every button and row; 32px controls and rows, 44px on touch (`pointer-coarse`), the hit area never smaller than the
+   visible control; no cursor-only affordances.
+5. **Settings deep links are actions** (`PaneAction to=`, Settings2 glyph, "... settings" as words) in the row of the
+   container that needs them, never inside its text. A link into Settings from a pane names one control and lands on
+   it (scrolled into view, highlighted, a banner saying what the person came to do and a way back). A permission a
+   feature needs is asked where the feature is, in a dialog that says exactly what will be allowed and what stays as
+   it is.
 
 ### How it is enforced
 
@@ -157,7 +185,10 @@ top-right on one card and bottom-left on the next; a wizard that puts Next befor
 - In development and tests, every open container is checked: a button or link outside the row, content after it, a
   second row, an action that is not a `PaneAction`, one without an icon or a name, words on more than the lead, and
   actions on more than one line fail loudly.
-- `web/src/lib/pane-actions-standards.test.ts` fails on a text link used as an action, a hand-drawn `border-t`
+- `web/src/test/links-standards.test.ts` fails on a link tag (`a`, `Link`, `NavLink`, `role="link"`) in a file that is
+  not listed, on any link look (`underline`, `text-primary`, `variant="link"`) on a control, and on `data-prose-link`
+  outside prose. Its list of files only shrinks; a row marked `CONVERT` leaves it with its conversion.
+- `web/src/lib/pane-actions-standards.test.ts` fails on a hand-drawn `border-t`
   row, a right-aligned button row outside `PaneActions`, an icon button without a name, a raw `<button>` outside the
   listed kinds (switch, tab, menu row, nav) and an unlisted `freeform` container.
 - The mobile browser sweep opens every footer pane, one dialog and one Today card at phone width on Chromium and

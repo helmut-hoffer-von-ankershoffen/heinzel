@@ -173,6 +173,54 @@ describe("Contributions", () => {
     },
   );
 
+  it("keeps a switch's longer lines in Details instead of bullets under it", async () => {
+    const call = (operation: string) => ({
+      method: "POST",
+      path: `/acme/${operation}`,
+      query: {},
+      body: {},
+      command: `hz acme ${operation}`,
+      summary: `${operation} sharing`,
+      read_only: false,
+    });
+    mockApi({
+      ...answers,
+      "/api/system/ui/status": [
+        {
+          ...entry,
+          id: "acme:share",
+          slots: { footer: true },
+          item: {
+            text: "Sharing",
+            icon: "link",
+            tone: "neutral",
+            detail: [{ text: "A longer explanation that belongs on demand only.", tone: "neutral" }],
+            toggle: {
+              label: "Share over Acme",
+              checked: false,
+              requested: true,
+              enable: { operation: "enable", arguments: {}, call: call("enable") },
+              disable: { operation: "disable", arguments: {}, call: call("disable") },
+              apply_settings: {},
+              status: null,
+              problem: null,
+            },
+          },
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await user.hover(await screen.findByRole("button", { name: /^Sharing/ }));
+    const control = await screen.findByRole("switch", { name: "Share over Acme" });
+    expect(control).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Turning on…");
+    expect(screen.getByText("A longer explanation that belongs on demand only.")).not.toBeVisible();
+    await user.click(screen.getByText("Details"));
+    expect(screen.getByText("Details").closest("details")).toHaveAttribute("open");
+    expect(screen.getByText("A longer explanation that belongs on demand only.")).toBeVisible();
+  });
+
   it("names a footer clock's pane by its zone, without a heading that repeats the time", async () => {
     mockApi({
       ...answers,
@@ -289,7 +337,6 @@ describe("Contributions", () => {
 
   it("puts widgets on Today, with Ask about it and dismiss", async () => {
     mockApi(answers);
-    const user = userEvent.setup();
     renderAt("/");
     const card = (await screen.findByText("2/3")).closest("li") as HTMLElement;
     expect(within(card).getByText("Zones at work now")).toBeInTheDocument();
@@ -298,11 +345,85 @@ describe("Contributions", () => {
     // A card with nothing else to offer leads with it: words in the bottom row; Dismiss is the corner's chrome.
     expect(ask).toHaveTextContent("Ask about it");
     expect(ask.closest("[data-pane-actions]")).not.toBeNull();
-    const dismiss = within(card).getByRole("button", { name: "Dismiss Zones at work now" });
+    const dismiss = within(card).getByRole("button", { name: "Hide Zones at work now" });
     expect(dismiss.closest("[data-pane-chrome]")).toHaveClass("absolute", "top-1.5", "right-1.5");
     assertActionStructure(card);
-    await user.click(dismiss);
-    expect(screen.queryByText("2/3")).not.toBeInTheDocument();
+  });
+
+  /** A server that remembers `hide` and `show` for the today slot, as the user file does. */
+  function stateful() {
+    const off = new Set<string>();
+    const widgetsNow = () => widgets.map((w) => ({ ...w, slots: { today: !off.has(w.id) } }));
+    const listNow = () =>
+      widgets.map((w) => ({
+        id: w.id,
+        module: w.module,
+        kind: "widget",
+        title: w.id === "acme:at-work" ? "Zones at work" : w.id,
+        slots: { today: !off.has(w.id) },
+        defaults: { today: true },
+      }));
+    const item = (request: Request) => new URL(request.url).searchParams.get("item") ?? "";
+    return mockApi({
+      ...answers,
+      "/api/system/ui/widgets": (request: Request) => {
+        const only = new URL(request.url).searchParams.get("item");
+        return widgetsNow().filter((w) => !only || w.id === only);
+      },
+      "/api/system/ui/list": () => listNow(),
+      "/api/system/ui/hide": (request: Request) => {
+        off.add(item(request));
+        return listNow();
+      },
+      "/api/system/ui/show": (request: Request) => {
+        off.delete(item(request));
+        return listNow();
+      },
+    });
+  }
+
+  it("hides a widget with Hide, says so with Undo, and Undo brings it back", async () => {
+    const { calls } = stateful();
+    const user = userEvent.setup();
+    renderAt("/");
+    const card = (await screen.findByText("2/3")).closest("li") as HTMLElement;
+    expect(screen.queryByRole("button", { name: /^Hidden widgets/ })).not.toBeInTheDocument();
+    await user.click(within(card).getByRole("button", { name: "Hide Zones at work now" }));
+    await waitFor(() => expect(screen.queryByText("2/3")).not.toBeInTheDocument());
+    const hide = calls.find((call) => new URL(call.url).pathname === "/api/system/ui/hide");
+    expect(hide?.method).toBe("POST");
+    expect(new URL(hide?.url ?? "http://x").searchParams.get("slot")).toBe("today");
+    const toast = await screen.findByRole("status", { name: "" });
+    expect(toast).toHaveTextContent("Hidden.");
+    await user.click(within(toast).getByRole("button", { name: "Undo" }));
+    expect(await screen.findByText("2/3")).toBeInTheDocument();
+  });
+
+  it("lists hidden widgets on Today with a count, restores one or all, and goes away when none is hidden", async () => {
+    stateful();
+    const user = userEvent.setup();
+    renderAt("/");
+    await screen.findByText("2/3");
+    for (const [id, name] of [
+      ["acme:at-work", "Zones at work now"],
+      ["acme:wide", "Roadmap"],
+    ]) {
+      const li = document.querySelector(`[data-widget="${id}"]`) as HTMLElement;
+      await user.click(within(li).getByRole("button", { name: `Hide ${name}` }));
+    }
+    const control = await screen.findByRole("button", { name: "Hidden widgets (2)" });
+    expect(control).toHaveTextContent("");
+    await user.click(control);
+    const dialog = await screen.findByRole("dialog", { name: "Hidden widgets" });
+    expect(within(dialog).getByText("Zones at work")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("acme")).toHaveLength(2);
+    assertActionStructure(dialog);
+    await user.click(within(dialog).getByRole("button", { name: "Restore Zones at work" }));
+    expect(await screen.findByText("2/3")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Hidden widgets (1)" })).toBeInTheDocument();
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Restore all" }));
+    await screen.findByText("Roadmap");
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^Hidden widgets/ })).not.toBeInTheDocument());
   });
 
   it("shows one card per contribution id, however often the list repeats it", async () => {
