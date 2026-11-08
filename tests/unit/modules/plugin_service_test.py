@@ -2244,3 +2244,23 @@ def test_the_company_root_cannot_be_removed_while_a_plugin_installed_with_it_nee
         HeinzelError, match=r"heinzel-acme can't be removed: .*heinzel-acme-checkout.*Nothing was changed"
     ):
         service.remove_command("heinzel-acme")
+
+
+def test_adding_a_core_extra_keeps_the_core_pin_and_every_plugin(make_kernel, tool_env):
+    assert service_for(make_kernel, tool_env).extra_command("openai") == [
+        "uv", "tool", "install", "--python", PYTHON,
+        "heinzel[openai] @ git+https://github.com/org/heinzel@v0.1.0",
+        "--with", "heinzel-old @ git+https://github.com/org/heinzel-old",
+    ]  # fmt: skip
+
+
+def test_a_core_extra_already_installed_needs_no_install(make_kernel, tool_env):
+    service = service_for(make_kernel, tool_env)
+    service._installation.requirements = lambda: ["heinzel[openai]==0.1.0"]
+    assert service.extra_command("openai") is None
+    assert service.add_extra("openai").model_dump() == {"extra": "openai", "done": False, "restart_required": False}
+
+
+def test_a_core_extra_outside_the_installed_tool_is_refused_with_why(make_kernel, tmp_path):
+    with pytest.raises(HeinzelError, match=r"development environment.*heinzel\[openai\]"):
+        service_for(make_kernel, tmp_path).extra_command("openai")

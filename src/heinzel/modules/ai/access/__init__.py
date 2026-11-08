@@ -5,14 +5,16 @@ An AI access option is an adapter of the `ai-access` capability: `claude-code` (
 is the one choice; `hz ai access use <name>` sets it, and binds the agent runner the option names so the chat follows.
 """
 
+import logging
 from typing import Annotated
 
-from pydantic import Field
+from pydantic import BaseModel, Field, SecretStr
 from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from heinzel import AccessStatus, Adapters, AiAccess, Check, ConfiguredApiAccess, Module, Progress
+from heinzel import AccessStatus, Adapters, AiAccess, Check, ConfiguredApiAccess, Credentials, Module, Progress
+from heinzel.kernel._logging import log_event
 from heinzel.modules.ai.access._chatgpt import CHATGPT_LOGIN, ChatGptAccess
 from heinzel.modules.ai.access._chatgpt import HOSTS as CHATGPT_HOSTS
 from heinzel.modules.ai.access._chatgpt import NAME as CHATGPT
@@ -30,6 +32,8 @@ from heinzel.modules.ai.access._models import (
 from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess, model_hosts
 from heinzel.modules.ai.access._pydantic import NAME as PYDANTIC_AI
 from heinzel.modules.ai.access._service import AccessService
+
+logger = logging.getLogger(__name__)
 
 module = Module(
     "access",
@@ -156,10 +160,70 @@ def login(access: ChatGptAccess, progress: Progress) -> AccessStatus:
     return access.login(progress)
 
 
+class KeyState(BaseModel):
+    """Whether the Model API's key is stored in the credentials store; never the key itself."""
+
+    stored: bool = Field(description="Whether a key is kept for the Model API (`ai.access api-key`).")
+
+
+@module.operation(heads={"cli", "web"})
+def key(credentials: Credentials) -> KeyState:
+    """Whether a Model API key is stored in your keychain; never shows it."""
+    return KeyState(stored=credentials.has(API_KEY))
+
+
+# The key arrives in a strict JSON body of the paired web app (private), never a query, a URL or a command line; it
+# goes only to the credentials store. The CLI keeps `hz system credential set api-key`, which reads a hidden prompt.
+@module.operation(private=True, read_only=False, heads={"web"})
+def set_key(
+    credentials: Credentials,
+    value: Annotated[
+        SecretStr, Field(min_length=1, max_length=4096, description="The API key, as the vendor shows it.")
+    ],
+) -> KeyState:
+    """Keep the Model API key you typed in your keychain, replacing any before; it is never shown again.
+
+    Raises:
+        HeinzelError: If the key is empty or the keychain can't keep it; never with the key in the message.
+    """
+    try:
+        credentials.set(API_KEY, value.get_secret_value().strip())
+    except Exception as exc:
+        log_event(logger, "ai.access.key.set", level=logging.WARNING, outcome="error", error_type=type(exc).__name__)
+        raise
+    log_event(logger, "ai.access.key.set", outcome="ok")
+    return KeyState(stored=True)
+
+
+@module.operation(private=True, read_only=False, heads={"web"})
+def remove_key(credentials: Credentials) -> KeyState:
+    """Remove the Model API key from your keychain.
+
+    Raises:
+        HeinzelError: If the keychain can't remove it.
+    """
+    try:
+        removed = credentials.delete(API_KEY)
+    except Exception as exc:
+        log_event(logger, "ai.access.key.remove", level=logging.WARNING, outcome="error", error_type=type(exc).__name__)
+        raise
+    log_event(logger, "ai.access.key.remove", outcome="ok" if removed else "skipped")
+    return KeyState(stored=False)
+
+
 @module.health
 def access(service: AccessService) -> list[Check]:
     """The AI access in use: installed and signed in, and the agent runner it names is the one bound."""
     return service.checks()
 
 
-__all__ = ["AccessList", "AccessOption", "AccessService", "AccessSettings", "AccessTestReport", "AccessUse", "module"]
+__all__ = [
+    "AccessList",
+    "AccessOption",
+    "AccessService",
+    "AccessSettings",
+    "AccessTestReport",
+    "AccessUse",
+    "KeyState",
+    "module",
+]

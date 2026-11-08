@@ -67,10 +67,27 @@ $ hz ai access [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `key`: (expert) Whether a Model API key is stored...
 * `list`: (expert) List the AI access options, the...
 * `login`: (expert) Sign in to ChatGPT in your...
 * `test`: (expert) Run one cheap live check of an AI...
 * `use`: (expert) Use an AI access option: sets...
+
+#### `hz ai access key`
+
+(expert) Whether a Model API key is stored in your keychain; never shows it.
+
+**Usage**:
+
+```console
+$ hz ai access key [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
 
 #### `hz ai access list`
 
@@ -3186,6 +3203,7 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `add`: (expert) Show what a plugin would install,...
+* `add-extra`: (expert) Add an optional client of hz...
 * `develop`: (expert) Add the plugin in a directory on...
 * `disable`: (expert) Switch a plugin off without...
 * `docs`: (expert) Document installed plugins: what...
@@ -3218,6 +3236,26 @@ $ hz system plugin add [OPTIONS] {spec}
 
 * `--confirm / --no-confirm`: Install it. Without it, nothing is installed: the answer shows the source, version and publisher to confirm first, because a plugin runs with your rights.  [default: no-confirm]
 * `--operation-id <str>`: Opaque receipt returned by a preview; confirms that exact candidate only once.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin add-extra`
+
+(expert) Add an optional client of hz itself, such as OpenAI&#x27;s for the ChatGPT plan; a restart loads it.
+
+**Usage**:
+
+```console
+$ hz system plugin add-extra [OPTIONS] {extra}:<openai|anthropic>
+```
+
+**Arguments**:
+
+* `extra:<openai|anthropic>`: The optional client of hz itself: `openai` (Model API, ChatGPT plan) or `anthropic`.  [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

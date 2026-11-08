@@ -10,6 +10,8 @@ from heinzel import CurrentUser, HeinzelError, Kernel, Module, Prompter
 from heinzel.kernel import DaemonInstallationLifecycle, Installation
 from heinzel.modules.system.plugin._models import (
     AvailablePlugin,
+    CoreExtra,
+    ExtraChange,
     PluginCandidate,
     PluginChange,
     PluginEvent,
@@ -160,6 +162,18 @@ def repair(
     in: `hz system doctor` still names each plugin's sign-in step. Running servers load them after a restart.
     """
     return service.repair(automatic=automatic)
+
+
+@module.operation(read_only=False, heads=CHANGES)
+def add_extra(
+    service: PluginService,
+    extra: Annotated[
+        CoreExtra,
+        Field(description="The optional client of hz itself: `openai` (Model API, ChatGPT plan) or `anthropic`."),
+    ],
+) -> ExtraChange:
+    """Add an optional client of hz itself, such as OpenAI's for the ChatGPT plan; a restart loads it."""
+    return service.add_extra(extra)
 
 
 @module.operation(heads=CHANGES)

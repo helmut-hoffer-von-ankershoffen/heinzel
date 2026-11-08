@@ -54,6 +54,8 @@ from heinzel.modules.system._phases import Phases
 from heinzel.modules.system.plugin._models import (
     Action,
     AvailablePlugin,
+    CoreExtra,
+    ExtraChange,
     PluginCandidate,
     PluginChange,
     PluginEvent,
@@ -998,6 +1000,65 @@ class PluginService:
         # needlessly revalidating every dependency against its index. Replacements still force a rebuild (develop
         # may name an unchanged directory whose contents have changed).
         return self._installation.tool_install_command(core, [*kept, *also, spec], reinstall=len(kept) != len(plugins))
+
+    # Optional clients of hz itself.
+
+    def extra_command(self, extra: CoreExtra) -> list[str] | None:
+        """The pinned reinstall that adds `heinzel[extra]` and keeps every plugin; None when it is there already.
+
+        The same uv tool command an update runs, from the requirement the receipt records: the core stays at its
+        version and source, only the extra is added. Never a command a person types.
+
+        Raises:
+            HeinzelError: If hz isn't installed as a uv tool, so there is no receipt to extend.
+        """
+        requirements = self._installation.requirements()
+        if requirements is None:
+            msg = (
+                f"hz runs from a development environment, not its installed tool, so it can't add the {extra} "
+                f"client itself; add the heinzel[{extra}] extra to that environment."
+            )
+            raise HeinzelError(msg)
+        core, *plugins = requirements
+        requirement = Requirement(core)
+        if extra in requirement.extras:
+            return None
+        requirement.extras = {*requirement.extras, extra}
+        return self._installation.tool_install_command(str(requirement), plugins, reinstall=False)
+
+    def add_extra(self, extra: CoreExtra) -> ExtraChange:
+        """Install the optional `extra` client of hz itself, telling each step (ADR 0056); a restart loads it.
+
+        Raises:
+            HeinzelError: If hz isn't an installed tool, installing fails, or the receipt doesn't name it after.
+        """
+        label = f"Adding the {extra} client"
+        phases = Phases(
+            self._kernel.resolve(Progress),
+            [("install", label), ("verify", "Checking that it is installed")],
+            operation="system.plugin.add_extra",
+        )
+        command = self.extra_command(extra)
+        if command is None:
+            phases.note("install", label, "skipped", "It is installed already.")
+            phases.note("verify", "Checking that it is installed", "skipped")
+            return ExtraChange(extra=extra, done=False, restart_required=False)
+        with self._mutation() as mutation, self._receipts.installing(), self._exclusive():
+            with phases.step("install", label):
+                generation = self._run_package_change(
+                    command,
+                    f"Failed to add the {extra} client.",
+                    label,
+                    self._git_environment(),  # reinstalling fetches the git plugins again, private ones too
+                    context=(mutation, ()),
+                )
+            with phases.step("verify", "Checking that it is installed"):
+                if self.extra_command(extra) is not None:
+                    msg = f"The installer finished, but hz's receipt doesn't name the {extra} client; nothing changed."
+                    raise HeinzelError(msg)
+                self._verify_candidate_generation(mutation)
+            self._remember_package_change(generation)
+        return ExtraChange(extra=extra, done=True, restart_required=True)
 
     # Removing, enabling, disabling.
 
