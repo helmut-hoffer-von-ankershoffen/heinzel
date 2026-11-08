@@ -1,6 +1,7 @@
 """Exercise the owned desktop transaction against an isolated home."""
 
 import inspect
+import io
 import json
 import os
 import platform
@@ -12,13 +13,16 @@ import sys
 from functools import partial
 
 import pytest
+import typer
+from rich.console import Console
 
 from heinzel.heads import _desktop_installation as desktop
+from heinzel.heads.cli import _app
 
 pytestmark = pytest.mark.unit
 
 
-def fetch(version, directory):
+def fetch(version, directory, reporter=None):
     archive = directory / "archive"
     archive.write_text(version)
     return archive
@@ -351,3 +355,72 @@ def test_native_quarantine_and_process_detection(tmp_path):
         finally:
             process.terminate()
     assert not desktop._in_use(bundle)
+
+
+def _cli(monkeypatch, local_installation, tmp_path):
+    executable, bundle, config = local_installation
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(_app, "desktop_executable", lambda _kernel: executable)
+    out, err = io.StringIO(), io.StringIO()
+    return (
+        bundle,
+        config,
+        Console(file=out, width=1000, force_terminal=False),
+        Console(file=err, width=1000, force_terminal=False),
+        out,
+        err,
+    )
+
+
+def test_install_and_uninstall_name_the_real_path_and_it_exists(monkeypatch, tmp_path, local_installation):
+    bundle, _config, output, error, out, err = _cli(monkeypatch, local_installation, tmp_path)
+    _app._install_app(None, output, error)
+    assert bundle.is_dir()
+    assert (
+        f"Installing Heinzelmännchen {_app.__version__} into {bundle.parent} (your Applications folder"
+        in err.getvalue()
+    )
+    assert f"ok Installed  {bundle}" in err.getvalue()
+    assert "ok Recorded   hz owns this copy" in err.getvalue()
+    assert f"Done. Open it from Launchpad, or run: open {bundle}" in out.getvalue()
+
+    _app._install_app(None, output, error)
+    assert f"is already installed at {bundle}. Nothing to do." in out.getvalue()
+
+    _app._uninstall(output, error)
+    assert not bundle.exists()
+    assert f"ok Removed {bundle}" in out.getvalue()
+    assert "Your Heinzel profile and settings are kept." in out.getvalue()
+
+
+def test_interrupt_leaves_no_half_installed_bundle(monkeypatch, tmp_path, local_installation):
+    bundle, config, output, error, _out, err = _cli(monkeypatch, local_installation, tmp_path)
+
+    def interrupted(_version, _directory, _reporter=None):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(desktop, "fetch_archive", interrupted)
+    with pytest.raises(typer.Exit) as stop:
+        _app._install_app(None, output, error)
+    assert stop.value.exit_code == 130
+    assert "Cancelled. Nothing was installed" in err.getvalue()
+    assert not bundle.exists()
+    assert not list(bundle.parent.glob(".heinzel-desktop-*"))
+    assert not list(config.glob(".heinzel-desktop-*"))
+
+
+def test_failed_verification_leaves_no_bundle_or_staging(monkeypatch, tmp_path, local_installation):
+    bundle, config, output, error, _out, err = _cli(monkeypatch, local_installation, tmp_path)
+
+    def refused(_version, _directory, _reporter=None):
+        msg = "The official desktop release provenance could not be verified."
+        raise desktop.HeinzelError(msg)
+
+    monkeypatch.setattr(desktop, "fetch_archive", refused)
+    with pytest.raises(typer.Exit) as stop:
+        _app._install_app(None, output, error)
+    assert stop.value.exit_code == 1
+    assert "could not be verified" in err.getvalue()
+    assert not bundle.exists()
+    assert not list(bundle.parent.glob(".heinzel-desktop-*"))
+    assert not list(config.glob(".heinzel-desktop-*"))

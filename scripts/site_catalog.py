@@ -26,7 +26,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote
 
-from packaging.requirements import Requirement
+from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import InvalidWheelFilename, canonicalize_name, parse_wheel_filename
 from packaging.version import Version
 
@@ -312,6 +312,7 @@ def project_record(source: Object, path: str, data: Object) -> Object | None:
         "included_version": "",
         "provides": strings(plugin.get("provides"), 24),
         "requires": strings(plugin.get("requires"), 24),
+        "sibling_plugins": [],
         "source": source,
         "directory": folder,
         "url": f"https://github.com/{source['repository']}/tree/{source['revision']}/{folder}",
@@ -427,7 +428,8 @@ def repository_records(api: GitHub, repo: str) -> tuple[Object, list[Object]]:
         msg = "Catalog source exceeds its project budget"
         raise ValueError(msg)
     reader = SourceBlobs(api)
-    records = []
+    records: list[Object] = []
+    dependencies: dict[str, list[str]] = {}
     for path in paths:
         entry = entries[path]
         data = tomllib.loads(reader.blob(repo, entry).decode())
@@ -438,7 +440,25 @@ def repository_records(api: GitHub, repo: str) -> tuple[Object, list[Object]]:
             if record["themes"]:
                 record["category"] = "themes"
             records.append(record)
+            dependencies[record["name"]] = project_dependencies(data)
+    # Plugins of one revision that depend on each other install together; names that resolve elsewhere stay uv's.
+    names = {record["name"] for record in records}
+    for record in records:
+        record["sibling_plugins"] = [n for n in dependencies[record["name"]] if n in names and n != record["name"]]
     return source, records
+
+
+def project_dependencies(data: Object) -> list[str]:
+    """Normalised distribution names in `[project].dependencies`, in declared order, without duplicates."""
+    found: list[str] = []
+    for text_value in strings(object_data(data.get("project")).get("dependencies"), 100):
+        try:
+            name = Requirement(text_value).name.lower().replace("_", "-")
+        except InvalidRequirement:
+            continue
+        if name not in found:
+            found.append(name)
+    return found
 
 
 def public_json(url: str) -> Object:
