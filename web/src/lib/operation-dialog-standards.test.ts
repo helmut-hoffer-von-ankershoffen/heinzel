@@ -7,7 +7,7 @@ import { expect, it } from "vitest";
 const read = (path: string) => readFileSync(join(__dirname, "..", path), "utf8");
 /** Every English message as [key, text], read from the catalogue's source. */
 const messages = [...read("i18n.ts").matchAll(/^\s+"([\w.]+)":\s*"((?:[^"\\]|\\.)*)"/gm)].map(
-  (match) => [match[1], match[2]] as const,
+  (match) => [match[1] ?? "", match[2] ?? ""] as const,
 );
 
 it("asks for a plugin change only in the operation dialog, never in an inline card or a second restart question", () => {
