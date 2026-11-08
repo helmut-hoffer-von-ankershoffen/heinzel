@@ -132,7 +132,7 @@ const RAW: Record<string, number> = {
   "../layout/SchemaValue.tsx": 1,
   "../layout/SettingControls.tsx": 1,
   "../layout/SettingsDialog.tsx": 2,
-  "../layout/Sidebar.tsx": 7,
+  "../layout/Sidebar.tsx": 9,
   "../layout/TerminalPanel.tsx": 8,
   "../layout/ThemePreviews.tsx": 2,
   "../layout/TimeZonePicker.tsx": 1,

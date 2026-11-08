@@ -1917,6 +1917,120 @@ def test_a_plugin_another_plugin_needs_is_not_removed_and_nothing_changes(make_k
         service_for(make_kernel, tool_env).remove_command("heinzel_old")
 
 
+class StepsProgress(Progress):
+    """A head that shows progress: keeps each `phase` event as (id, state, detail)."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str, str | None]] = []
+
+    def emitter(self):
+        def emit(kind, data):
+            if kind == "phase":
+                self.events.append((data["id"], data["state"], data.get("detail")))
+
+        return emit
+
+
+def test_a_confirmed_add_tells_its_steps_with_each_plugin_it_needs(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    progress = StepsProgress()
+    service._kernel.bind(Progress, progress)
+    plugins = [
+        PluginInfo(distribution="heinzel-base", version="2.0.0", modules=[], name="base"),
+        PluginInfo(distribution="heinzel-auth", version="1.0.0", modules=[], name="auth"),
+    ]
+
+    def host_list(**_kwargs):  # before uv ran only base 2.0.0; after it, crm and auth as well
+        crm = PluginInfo(distribution="heinzel-crm", version="1.1.0", modules=["crm"], name="crm", source_kind="pypi")
+        return [crm, *plugins] if runs else plugins[:1]
+
+    monkeypatch.setattr(service, "_host_list", host_list)
+
+    def distribution(name, *requires):
+        return types.SimpleNamespace(metadata={"Name": name}, requires=list(requires))
+
+    monkeypatch.setattr(
+        service,
+        "_host_distributions",
+        lambda: [
+            distribution("heinzel-crm", "heinzel-auth>=1", "heinzel>=0.1"),
+            distribution("heinzel-auth", "heinzel-base"),
+            distribution("heinzel-base"),
+        ],
+    )
+    service.add("heinzel-crm", confirm=True)
+    assert progress.events[:2] == [("install", "pending", None), ("verify", "pending", None)]
+    finished = [event for event in progress.events if event[1] != "running"][2:]
+    assert finished == [
+        ("install", "done", None),
+        ("verify", "done", None),
+        ("needs:heinzel-auth", "done", "Installed with it: 1.0.0"),
+        ("needs:heinzel-base", "done", "Already installed: 2.0.0"),
+        ("record", "done", None),
+    ]
+
+
+def test_a_failed_add_marks_the_install_step_failed(make_kernel, tmp_path, monkeypatch):
+    service, _ = installing(make_kernel, tmp_path, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    progress = StepsProgress()
+    service._kernel.bind(Progress, progress)
+
+    def failing(command, environment=None):
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="no such release")
+
+    service._installation._runner = failing
+    with pytest.raises(HeinzelError):
+        service.add("heinzel-crm", confirm=True)
+    states = {event[0]: event[1] for event in progress.events}
+    assert states == {"install": "failed", "verify": "pending"}
+
+
+def test_a_plugin_add_logs_each_step_and_each_needed_plugin(make_kernel, tool_env, monkeypatch, caplog):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    auth = PluginInfo(distribution="heinzel-auth", version="1.0.0", modules=[], name="auth")
+    crm = PluginInfo(distribution="heinzel-crm", version="1.1.0", modules=["crm"], name="crm", source_kind="pypi")
+    monkeypatch.setattr(service, "_host_list", lambda **_kwargs: [crm, auth] if runs else [])
+    monkeypatch.setattr(
+        service,
+        "_host_distributions",
+        lambda: [
+            types.SimpleNamespace(metadata={"Name": "heinzel-crm"}, requires=["heinzel-auth"]),
+            types.SimpleNamespace(metadata={"Name": "heinzel-auth"}, requires=[]),
+        ],
+    )
+    caplog.set_level("INFO", logger="heinzel.operation")
+    service.add("heinzel-crm", confirm=True)
+    events = [
+        (r.getMessage(), r.step, getattr(r, "outcome", None))
+        for r in caplog.records
+        if r.name == "heinzel.operation" and r.operation == "system.plugin.add"
+    ]
+    for step in ("install", "verify", "needs:heinzel-auth", "record"):
+        assert [(e[0], e[2]) for e in events if e[1] == step] == [
+            ("operation.step.start", None),
+            ("operation.step.outcome", "done"),
+        ]
+    [needed] = [r for r in caplog.records if getattr(r, "plugin", None) == "heinzel-auth" and hasattr(r, "outcome")]
+    assert needed.version == "1.0.0"
+
+
+def test_a_failed_plugin_add_logs_the_failed_install(make_kernel, tmp_path, monkeypatch, caplog):
+    service, _ = installing(make_kernel, tmp_path, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    service._installation._runner = lambda command, environment=None: subprocess.CompletedProcess(
+        command, 1, stdout="", stderr="no such release"
+    )
+    caplog.set_level("INFO", logger="heinzel.operation")
+    with pytest.raises(HeinzelError):
+        service.add("heinzel-crm", confirm=True)
+    [failed] = [r for r in caplog.records if getattr(r, "outcome", None) == "failed"]
+    assert (failed.operation, failed.step, failed.levelname) == ("system.plugin.add", "install", "WARNING")
+    assert failed.detail
+
+
 class FakeCompanyGitHub:
     """One repository holding a root plugin and two plugins under `plugins/`, one needing the other two."""
 

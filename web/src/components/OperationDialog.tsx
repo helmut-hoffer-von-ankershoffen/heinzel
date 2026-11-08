@@ -141,6 +141,7 @@ export function OperationDialog() {
       aria-modal="true"
       aria-labelledby={heading}
       data-operation={run.call.path}
+      data-tracked={run.stage !== "confirm" && run.tracked ? "" : undefined}
       onKeyDown={(event) => {
         // A dialog it covers (the setup wizard) must not close, or move the focus away, because of what is typed here.
         event.stopPropagation();
@@ -223,9 +224,12 @@ export function OperationDialog() {
             <PaneAction key="close" icon={X} onClick={dismissOperation}>
               {t("op.close")}
             </PaneAction>
-            <PaneAction key="retry" icon={RotateCw} primary onClick={go}>
-              {t("op.retry")}
-            </PaneAction>
+            {/* A tracked write is retried where it was asked, which checks what the failed attempt left. */}
+            {!run.tracked && (
+              <PaneAction key="retry" icon={RotateCw} primary onClick={go}>
+                {t("op.retry")}
+              </PaneAction>
+            )}
           </PaneActions>
         </>
       )}

@@ -492,3 +492,45 @@ body {
 .chat-panel-composer textarea {
   height: var(--workspace-input-height, auto);
 }
+
+/* The desktop app's integrated title bar (macOS, design 2026-11-07): no native bar; the top line of the sidebar,
+   the main header and the side panel's tabs (or its chat header when it has no tabs) form one 44 px row in the
+   sidebar colour. The row drags the window; its controls do not. A browser never sets data-desktop-titlebar. */
+html[data-desktop-titlebar] .workspace-topbar,
+html[data-desktop-titlebar] [data-placement="beside"] > .workspace-tabs,
+html[data-desktop-titlebar] [data-placement="beside"]:not(:has(> .workspace-tabs)) .chat-panel-header {
+  height: var(--titlebar-height);
+  background-color: var(--color-sidebar);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+html[data-desktop-titlebar] [data-titlebar] {
+  user-select: none;
+  -webkit-app-region: drag;
+}
+/* Collapsed, the expand button overhangs the main column. The top bar moves aside (margin, not padding) so its later,
+   draggable box never covers the button: Electron applies app regions in document order, so a later drag rect would
+   take the button's no-drag rect back. The rail's row reaches over the gap instead. */
+html[data-desktop-titlebar] .workspace-topbar {
+  margin-left: var(--titlebar-main-start, 0px);
+}
+html[data-desktop-titlebar] [data-placement="beside"] > .workspace-tabs {
+  align-items: center;
+  padding-block: 0;
+}
+html[data-desktop-titlebar]
+  :is(
+    [data-titlebar],
+    .workspace-topbar,
+    [data-placement="beside"] > .workspace-tabs,
+    [data-placement="beside"] .chat-panel-header
+  )
+  :is(a, button, input, select, textarea, [role="tab"], [role="menu"], [role="menuitem"], [tabindex]) {
+  -webkit-app-region: no-drag;
+}
+/* Electron applies drag regions over everything painted above them: a dialog, menu or popover that overlaps the row
+   claims its own box back, so its top edge stays clickable. */
+html[data-desktop-titlebar]
+  :is(dialog, [role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"], .viewport-popover) {
+  -webkit-app-region: no-drag;
+}

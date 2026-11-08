@@ -4,10 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FooterItem } from "@/components/FooterItem";
 import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
+import { trackOperation } from "@/lib/operationRun";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
 import { checkNow, KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
 import { canVerifyUpdate, finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
 import { describe } from "@/updates/updateState";
+
+/** The update as the operation dialog shows it: the call the person confirmed with the update button. */
+const updateCall = () => ({
+  path: "/system/update",
+  method: "POST" as const,
+  query: {},
+  command: "hz system update",
+  summary: t("updates.dialogTitle"),
+  read_only: false,
+});
 
 function updateRecoveryState(): "none" | "inspect" | "verify" {
   const receipt = pendingUpdate();
@@ -41,9 +52,16 @@ export function UpdateStatus() {
     try {
       const answer = resume
         ? await finishUpdate(controller.signal)
-        : await startUpdate(controller.signal, (phase) => {
-            if (mounted.current) setPhase(phase);
-          });
+        : await trackOperation<string>(updateCall(), (report) =>
+            startUpdate(
+              controller.signal,
+              (phase) => {
+                if (mounted.current) setPhase(phase);
+              },
+              undefined,
+              report,
+            ),
+          );
       if (mounted.current) {
         setMessage(answer);
         setRecovery(updateRecoveryState());

@@ -10,7 +10,11 @@ export type CapturedAudio = {
 export async function captureAudio(signal: AbortSignal): Promise<CapturedAudio> {
   if (signal.aborted) throw new DOMException("Capture cancelled", "AbortError");
   if (!navigator.mediaDevices?.getDisplayMedia || !globalThis.AudioContext)
-    throw new Error("Audio sharing is unavailable. Your browser or operating system may not support audio capture.");
+    // NotSupportedError, like a browser that has the call but cannot share: the pane then stops offering it.
+    throw new DOMException(
+      "Audio sharing is unavailable. Your browser or operating system may not support audio capture.",
+      "NotSupportedError",
+    );
   const context = new AudioContext();
   let stream: MediaStream | undefined;
   let source: MediaStreamAudioSourceNode | undefined;

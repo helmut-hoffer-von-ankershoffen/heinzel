@@ -466,10 +466,14 @@ try {
     });
     let updateAvailable = false;
     let updateRequests = 0;
-    await page.route("**/api/system/update", (route) => {
-      updateRequests += 1;
-      return route.abort();
-    });
+    // Plain or streamed: no viewport check may start an update.
+    await page.route(
+      (address) => ["/api/system/update", "/api/stream/system/update"].includes(address.pathname),
+      (route) => {
+        updateRequests += 1;
+        return route.abort();
+      },
+    );
     await page.route("**/api/update-status", (route) =>
       route.fulfill({
         json: {
