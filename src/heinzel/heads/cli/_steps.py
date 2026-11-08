@@ -131,11 +131,12 @@ class StepBoard:
 
     def bar(self) -> Text:
         """The segmented bar: one segment per step, coloured by how it stands, and how many have ended."""
+        steps = list(self._steps.values())  # a snapshot: the live display's thread draws while events arrive
         parts: list[tuple[str, str]] = []
-        for step in self._steps.values():
+        for step in steps:
             parts += [("━" * (SEGMENT - 1), STYLES.get(step.state, "")), (" ", "")]
-        ended = sum(step.state in ENDED for step in self._steps.values())
-        return Text.assemble(*parts, f"{ended}/{len(self._steps)}")
+        ended = sum(step.state in ENDED for step in steps)
+        return Text.assemble(*parts, f"{ended}/{len(steps)}")
 
     def _print(self, text: Text) -> None:
         self._console.print(TerminalSafe(text), highlight=False, soft_wrap=True)
@@ -159,15 +160,17 @@ class StepBoard:
         self._ensure_live().refresh()
 
     def _renderable(self) -> RenderableType:
-        running = next(((i, s) for i, s in enumerate(self._steps.values()) if s.state == "running"), None)
+        # Called from the live display's own thread: read snapshots, never the lock (refresh holds it).
+        steps, work = list(self._steps.values()), self._work
+        running = next(((i, s) for i, s in enumerate(steps) if s.state == "running"), None)
         rows: list[RenderableType] = [self.bar()]
         if running is not None:
             index, step = running
             grid = Table.grid(padding=(0, 1))
-            grid.add_row(Spinner("dots", style="cyan"), Text(f"[{index + 1}/{len(self._steps)}] {step.label}"))
+            grid.add_row(Spinner("dots", style="cyan"), Text(f"[{index + 1}/{len(steps)}] {step.label}"))
             rows.append(grid)
-            if self._work is not None:
-                description, total, done = self._work
+            if work is not None:
+                description, total, done = work
                 amount = f" {min(done, total) / total:.0%}" if total else ""
                 rows.append(Text(f"    {terminal_safe(description)}{amount}", style="bright_black"))
         return Group(*rows)
