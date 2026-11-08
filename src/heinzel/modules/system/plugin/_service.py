@@ -1237,7 +1237,9 @@ class PluginService:
         """
         if not self._installation.is_tool or command[1:3] != ["tool", "install"]:
             return ()
-        changing: set[str] = (distributions_in_spec(adding) if adding else set()) | alongside
+        changing: set[str] = set(alongside)
+        if adding:
+            changing |= distributions_in_spec(adding)
         names: list[str] = []
         for index, part in enumerate(command):
             if part == "--with":

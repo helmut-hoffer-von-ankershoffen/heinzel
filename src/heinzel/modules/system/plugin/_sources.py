@@ -349,8 +349,15 @@ def from_github(source: PluginSource, get: JsonGetter) -> Metadata:
         revision=revision,
         page=str(repo.get("html_url") or source.url),
         subdirectory=directory,
-        dependencies=tuple(str(item) for item in project.get("dependencies") or [] if isinstance(item, str)),
+        dependencies=_dependency_texts(project),
     )
+
+
+def _dependency_texts(project: dict[str, Any]) -> tuple[str, ...]:
+    """The strings of a project's `dependencies` list; anything else in it is ignored."""
+    declared: object = project.get("dependencies")
+    values = cast("list[object]", declared) if isinstance(declared, list) else []
+    return tuple(item for item in values if isinstance(item, str))
 
 
 MAX_SIBLINGS = 8
@@ -401,7 +408,7 @@ def siblings_from_github(
             if found is None:
                 continue
             project, directory = found
-            visit(str(item) for item in project.get("dependencies") or [] if isinstance(item, str))
+            visit(_dependency_texts(project))
             if len(ordered) >= MAX_SIBLINGS:
                 msg = f"This plugin needs more than {MAX_SIBLINGS} plugins of its repository; add them one by one."
                 raise HeinzelError(msg)
