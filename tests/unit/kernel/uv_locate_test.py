@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.kernel import _uv_locate
 from heinzel.kernel._uv_locate import find_uv, missing_uv_message, search_path, standard_directories, with_search_path
 
 pytestmark = pytest.mark.unit
@@ -37,6 +38,14 @@ def test_the_process_path_wins(tmp_path):
     assert find_uv({"PATH": str(chosen.parent), "HOME": str(tmp_path)}) == str(chosen)
 
 
+@pytest.fixture
+def private_system_dirs(monkeypatch):
+    """Treat the system prefixes as not world-writable: hosted runners make /usr/local/bin writable by everyone."""
+    real = _uv_locate._trusted
+    monkeypatch.setattr(_uv_locate, "_trusted", lambda entry: entry.startswith(("/opt/", "/usr/")) or real(entry))
+
+
+@pytest.mark.usefixtures("private_system_dirs")
 def test_standard_directories_cover_homebrew_cargo_and_the_installer(tmp_path):
     directories = standard_directories({"HOME": str(tmp_path)})
     assert directories == [
@@ -52,6 +61,7 @@ def test_relative_directories_are_ignored(tmp_path):
     assert all(Path(entry).is_absolute() for entry in directories)
 
 
+@pytest.mark.usefixtures("private_system_dirs")
 def test_search_path_keeps_order_without_duplicates(tmp_path):
     path = search_path({"PATH": f"/opt/homebrew/bin{os.pathsep}{MINIMAL}", "HOME": str(tmp_path)})
     entries = path.split(os.pathsep)
