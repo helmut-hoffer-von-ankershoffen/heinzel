@@ -9,9 +9,12 @@ import httpx2
 import pytest
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp_types.version import LATEST_PROTOCOL_VERSION
 
 from heinzel import HeinzelError, Module
 from heinzel.heads import mcp
+from heinzel.heads._exposure import MCP_HTTP, exposed
 from heinzel.heads._mcp_tokens import McpTokens, require_reachable_only_as_asked
 from heinzel.kernel._logging import record_fields
 
@@ -74,7 +77,7 @@ def audit():
 
 def call(kernel, tokens, token: str | None, tool: str, arguments: dict | None = None) -> tuple[bool, str]:
     """Call one tool through the real streamable-HTTP app in process: (is_error, text)."""
-    server, security = mcp.http_server(kernel, "127.0.0.1", 8765, tokens=tokens)
+    server, security = mcp.http_server(kernel, "127.0.0.1", tokens=tokens)
     app = server.streamable_http_app(transport_security=security)
     headers = {} if token is None else {"Authorization": f"Bearer {token}"}
 
@@ -92,20 +95,25 @@ def call(kernel, tokens, token: str | None, tool: str, arguments: dict | None = 
     return anyio.run(run)
 
 
-async def _status(kernel, tokens, headers: dict[str, str]) -> int:
-    server, security = mcp.http_server(kernel, "127.0.0.1", 8765, tokens=tokens)
+async def _status(kernel, tokens, headers: dict[str, str], **serving) -> int:
+    server, security = mcp.http_server(kernel, serving.pop("host", "127.0.0.1"), tokens=tokens, **serving)
     app = server.streamable_http_app(transport_security=security)
     async with app.router.lifespan_context(app):
         client = httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url=BASE)
-        body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        hello = {
+            "protocolVersion": LATEST_PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": "t", "version": "1"},
+        }
+        body = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": hello}
         response = await client.post(
             "/mcp", json=body, headers={"Accept": "application/json, text/event-stream", **headers}
         )
         return response.status_code
 
 
-def status(kernel, tokens, headers: dict[str, str]) -> int:
-    return anyio.run(_status, kernel, tokens, headers)
+def status(kernel, tokens, headers: dict[str, str], **serving) -> int:
+    return anyio.run(lambda: _status(kernel, tokens, headers, **serving))
 
 
 def test_a_request_without_a_token_or_with_a_wrong_one_is_refused_with_401(kernel, tokens):
@@ -179,28 +187,62 @@ def test_an_actor_name_must_be_plain(tokens):
 
 def test_serving_without_any_token_is_refused(kernel, tokens):
     with pytest.raises(HeinzelError, match="needs a token"):
-        mcp.http_server(kernel, "127.0.0.1", 8765, tokens=tokens)
+        mcp.http_server(kernel, "127.0.0.1", tokens=tokens)
 
 
 def test_a_non_loopback_interface_needs_an_explicit_expose(kernel, tokens):
     tokens.create("codex", "read")
     with pytest.raises(HeinzelError, match="--expose"):
-        mcp.http_server(kernel, "0.0.0.0", 8765, tokens=tokens)  # noqa: S104 - the refused case
-    require_reachable_only_as_asked("0.0.0.0", expose=True)  # noqa: S104 - asked for explicitly
+        mcp.http_server(kernel, "0.0.0.0", tokens=tokens)  # noqa: S104 - the refused case
+    require_reachable_only_as_asked("0.0.0.0", expose=True, allowed_hosts=("mini:*",))  # noqa: S104 - asked for
     require_reachable_only_as_asked("::1", expose=False)
 
 
 def test_a_tailscale_serve_name_is_accepted_only_when_allowed(kernel, tokens):
     tokens.create("codex", "read")
-    _, security = mcp.http_server(kernel, "127.0.0.1", 8765, tokens=tokens, allowed_hosts=("mini.tail1.ts.net",))
+    _, security = mcp.http_server(kernel, "127.0.0.1", tokens=tokens, allowed_hosts=("mini.tail1.ts.net",))
     assert security.enable_dns_rebinding_protection
-    assert "mini.tail1.ts.net" in security.allowed_hosts
-    assert "https://mini.tail1.ts.net" in security.allowed_origins
+    assert security.allowed_hosts == ["127.0.0.1:*", "localhost:*", "[::1]:*", "mini.tail1.ts.net"]
+    assert security.allowed_origins == ["https://mini.tail1.ts.net"]
 
 
-def test_a_server_built_without_tokens_runs_no_http_tool(kernel, ran):
-    server = mcp.build(kernel, "streamable-http")
-    tool = server._tool_manager.get_tool("notes_show")
-    with pytest.raises(mcp.ToolError, match="bearer token"):
-        tool.fn()
+def test_a_browser_page_on_another_origin_is_refused_even_with_a_token(kernel, tokens):
+    _, token = tokens.create("codex", "write")
+    headers = {"Authorization": f"Bearer {token}", "Origin": "http://localhost:3000"}
+    assert status(kernel, tokens, headers) == 403
+
+
+def test_http_is_never_built_without_tokens(kernel):
+    with pytest.raises(HeinzelError, match="tokens"):
+        mcp.build(kernel, "streamable-http")
+
+
+def test_an_http_tool_without_a_verified_token_does_not_run(kernel, ran):
+    [item] = [item for item in exposed(kernel, MCP_HTTP) if item.name == "notes_show"]
+    with pytest.raises(ToolError, match="bearer token"):
+        mcp.tool(kernel, item, local=False)()
     assert ran == []
+
+
+def test_expose_needs_the_names_other_devices_use(kernel, tokens):
+    _, token = tokens.create("codex", "read")
+    with pytest.raises(HeinzelError, match="--allowed-host"):
+        mcp.http_server(kernel, "0.0.0.0", tokens=tokens, expose=True)  # noqa: S104 - the refused case
+    lan = {"Authorization": f"Bearer {token}", "Host": "192.168.1.5:8765"}
+    assert status(kernel, tokens, lan, host="0.0.0.0", expose=True, allowed_hosts=("192.168.1.5:*",)) == 200  # noqa: S104
+    assert status(kernel, tokens, lan, host="0.0.0.0", expose=True, allowed_hosts=("10.0.0.2:*",)) == 421  # noqa: S104
+
+
+def test_a_refused_token_is_logged_with_its_reason_but_never_the_token(kernel, tokens, audit):
+    record, token = tokens.create("codex", "read", timedelta(days=1))
+    tokens.create("claude", "read")  # still valid later, so the server starts
+    wrong = "hzmcp_" + "x" * 43
+    assert status(kernel, tokens, {"Authorization": f"Bearer {wrong}"}) == 401
+    later = McpTokens(tokens.directory, clock=lambda: datetime.now(UTC) + timedelta(days=2))
+    assert status(kernel, later, {"Authorization": f"Bearer {token}"}) == 401
+    events = [record_fields(r) for r in audit.records if r.getMessage() == "mcp.http.auth"]
+    assert [(e["outcome"], e["reason"]) for e in events] == [("refused", "unknown"), ("refused", "expired")]
+    logged = repr([r.__dict__ for r in audit.records])
+    assert wrong not in logged
+    assert token not in logged
+    assert record.sha256 not in logged

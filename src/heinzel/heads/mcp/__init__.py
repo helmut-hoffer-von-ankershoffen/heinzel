@@ -65,7 +65,7 @@ from heinzel.kernel import (
     redact_emails,
 )
 from heinzel.kernel._approval import ApprovalIssuer
-from heinzel.kernel._logging import get_logger, step
+from heinzel.kernel._logging import get_logger, log_event, step
 
 HEAD = "mcp"
 log = logging.getLogger(__name__)
@@ -84,6 +84,9 @@ CHAT_INSTRUCTIONS = (
     "`hz system doctor`. Read-only tools run and return JSON. Any other tool does not run: it is proposed to the "
     "person, who confirms or declines it in the chat, and the call returns its action id."
 )
+NO_ISSUER = "http://127.0.0.1/"
+"""The SDK's `AuthSettings` require an issuer; it is never used or advertised, because hz runs no OAuth server and
+publishes no protected-resource metadata: agents send a token made with `hz system serve mcp-token create`."""
 RESULT_LIMIT = 20000
 """Characters of a tool result an agent in a chat gets; the rest is cut, so one call can't fill its context."""
 
@@ -93,14 +96,13 @@ Transport = Literal["stdio", "streamable-http"]
 ChatTools = Literal["everyday", "all", "personal-check-in"]
 
 
-def build(  # noqa: PLR0913 - the transport's options
+def build(
     kernel: Kernel,
     transport: Transport = "stdio",
     *,
     chat: str | None = None,
     chat_tools: ChatTools = "everyday",
     tokens: McpTokens | None = None,
-    url: str = "http://127.0.0.1:8765/mcp",
 ) -> MCPServer:
     """An MCP server with one tool per exposed operation; for one chat session's agent when `chat` is given.
 
@@ -109,14 +111,15 @@ def build(  # noqa: PLR0913 - the transport's options
 
     Over streamable HTTP the operations restricted to stdio (`mcp-stdio` in their `heads`, such as installing
     plugins) are left out, every request needs a bearer token from `tokens` (ADR 0142), and a tool that is not
-    read-only needs a token with the write scope; without `tokens` no HTTP tool runs. `url` is the address clients
-    use, named in a 401's resource metadata. Over stdio, outside a chat, skills are prompts and resources.
+    read-only needs a token with the write scope; HTTP without `tokens` is refused. Over stdio, outside a chat,
+    skills are prompts and resources.
 
     Raises:
-        HeinzelError: If the personal check-in tool profile is requested for a chat without its durable context.
+        HeinzelError: If the personal check-in tool profile is requested for a chat without its durable context, or
+            HTTP is asked for without `tokens`.
     """
     _verify_chat(kernel, transport, chat)
-    verifier = TokenVerifier(tokens) if transport != "stdio" and tokens is not None else None
+    verifier = _verifier(transport, tokens)
     server = MCPServer(
         name="heinzel",
         title="Heinzelmännchen",
@@ -126,8 +129,8 @@ def build(  # noqa: PLR0913 - the transport's options
         auth=None
         if verifier is None
         else AuthSettings(
-            issuer_url=AnyHttpUrl(url),
-            resource_server_url=AnyHttpUrl(url),
+            issuer_url=AnyHttpUrl(NO_ISSUER),
+            resource_server_url=None,
             validate_token_resource=False,
             required_scopes=[READ],
         ),
@@ -179,6 +182,20 @@ def build(  # noqa: PLR0913 - the transport's options
     if transport == "stdio" and chat is None:  # skills may be internal: only for a client that started hz as you
         add_skills(server, kernel)
     return server
+
+
+def _verifier(transport: Transport, tokens: McpTokens | None) -> TokenVerifier | None:
+    """The bearer check HTTP requires; stdio has none, its client started hz as the person.
+
+    Raises:
+        HeinzelError: If HTTP is asked for without `tokens`.
+    """
+    if transport == "stdio":
+        return None
+    if tokens is None:
+        msg = "MCP over HTTP needs its agents' tokens; serve it with `hz system serve mcp --transport streamable-http`"
+        raise HeinzelError(msg)
+    return TokenVerifier(tokens)
 
 
 def _mcp_item(item: Exposed) -> Exposed:
@@ -250,9 +267,13 @@ class TokenVerifier:
         self.tokens = tokens
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        """The verified access of an unexpired token, or None, which the SDK answers with HTTP 401."""
-        record = self.tokens.check(token)
+        """The verified access of an unexpired token, or None, which the SDK answers with HTTP 401.
+
+        A refusal is logged as `mcp.http.auth` with its reason; the token and its digest never are.
+        """
+        record, reason = self.tokens.verify(token)
         if record is None:
+            log_event(audit, "mcp.http.auth", level=logging.WARNING, outcome="refused", reason=reason)
             return None
         return AccessToken(
             token=token,
@@ -554,14 +575,13 @@ def serve(  # noqa: PLR0913 - one parameter per option of `hz system serve mcp`
     if transport == "stdio":
         build(boot(), transport, chat=chat, chat_tools=chat_tools).run("stdio")
         return
-    server, security = http_server(boot(), host, port, expose=expose, allowed_hosts=allowed_hosts, tokens=tokens)
+    server, security = http_server(boot(), host, expose=expose, allowed_hosts=allowed_hosts, tokens=tokens)
     server.run("streamable-http", host=host, port=port, transport_security=security)
 
 
-def http_server(  # noqa: PLR0913 - the HTTP head's options
+def http_server(
     kernel: Kernel,
     host: str,
-    port: int,
     *,
     expose: bool = False,
     allowed_hosts: tuple[str, ...] = (),
@@ -572,7 +592,7 @@ def http_server(  # noqa: PLR0913 - the HTTP head's options
     Raises:
         HeinzelError: If the host is not loopback without `expose`, or no unexpired MCP token exists.
     """
-    require_reachable_only_as_asked(host, expose=expose)
+    require_reachable_only_as_asked(host, expose=expose, allowed_hosts=allowed_hosts)
     tokens = tokens or tokens_for_user()
     if not tokens.active():
         msg = (
@@ -580,12 +600,11 @@ def http_server(  # noqa: PLR0913 - the HTTP head's options
             "`hz system serve mcp-token create --actor NAME --scope read` (or write)"
         )
         raise HeinzelError(msg)
-    hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*", *allowed_hosts]
-    origins = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
-    origins += [f"https://{name}" for name in allowed_hosts]
+    # MCP agents send no Origin; a browser page does, so only a Tailscale Serve name's own HTTPS origin is let in.
     security = TransportSecuritySettings(
-        enable_dns_rebinding_protection=True, allowed_hosts=hosts, allowed_origins=origins
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*", *allowed_hosts],
+        allowed_origins=[f"https://{name}" for name in allowed_hosts],
     )
-    shown = f"[{host}]" if ":" in host else host
-    server = build(kernel, "streamable-http", tokens=tokens, url=f"http://{shown}:{port}/mcp")
+    server = build(kernel, "streamable-http", tokens=tokens)
     return server, security

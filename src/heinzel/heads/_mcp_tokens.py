@@ -109,18 +109,25 @@ class McpTokens:
 
     def check(self, token: str) -> McpToken | None:
         """The unexpired record this token belongs to, or None; notes when it was used, to the hour."""
+        found, _ = self.verify(token)
+        return found
+
+    def verify(self, token: str) -> tuple[McpToken | None, Literal["ok", "unknown", "expired"]]:
+        """The unexpired record of this token and `ok`, or None and why: `unknown` (or revoked) or `expired`."""
         if not token.startswith(PREFIX):
-            return None
+            return None, "unknown"
         presented = digest(token)
         found = None
         for record in self.tokens():  # every digest is compared, so timing doesn't tell which one matched
             if hmac.compare_digest(record.sha256, presented):
                 found = record
-        if found is None or found.expires <= self._clock():
-            return None
+        if found is None:
+            return None, "unknown"
+        if found.expires <= self._clock():
+            return None, "expired"
         if found.last_used is None or self._clock() - found.last_used > TOUCH_EVERY:
             self._touch(found.id)
-        return found
+        return found, "ok"
 
     def revoke(self, which: str) -> list[McpToken]:
         """Remove the token `which` (an id), or every one with `all`; the ones removed."""
@@ -176,15 +183,21 @@ def tokens_for_user() -> McpTokens:
 LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
-def require_reachable_only_as_asked(host: str, *, expose: bool) -> None:
-    """Refuse an interface other than loopback unless the person asked for it with `--expose`.
+def require_reachable_only_as_asked(host: str, *, expose: bool, allowed_hosts: tuple[str, ...] = ()) -> None:
+    """Refuse an interface other than loopback unless asked for with `--expose` and the names it answers to.
 
     Raises:
-        HeinzelError: If `host` is not loopback and `expose` is false.
+        HeinzelError: If `host` is not loopback and `expose` is false, or `expose` names no `--allowed-host`.
     """
     if host not in LOOPBACK and not expose:
         msg = (
             f"MCP over HTTP listens on this machine only; {host} would reach other devices. Use Tailscale Serve "
             "to 127.0.0.1, or pass --expose if you mean it"
+        )
+        raise HeinzelError(msg)
+    if expose and not allowed_hosts:
+        msg = (
+            "--expose needs the names other devices use to reach it, or every request is refused: "
+            "--allowed-host name-or-ip:PORT (or name-or-ip:*)"
         )
         raise HeinzelError(msg)

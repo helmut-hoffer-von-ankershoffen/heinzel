@@ -99,8 +99,8 @@ Only the latest release receives security fixes while the project is on 0.x; upd
   request without a bearer token made by `hz system serve mcp-token create --actor NAME --scope read|write` (CLI
   only, shown once; only its SHA-256 is kept, 0700/0600, 90-day expiry by default). A `read` token runs read-only
   tools only; every call is logged with its actor, never the token. It listens on loopback; reach it from your
-  tailnet through Tailscale Serve (`--allowed-host` names the Serve host), and only `--expose` binds another
-  interface. `hz system serve mcp-token revoke ID` cuts one agent off at its next request.
+  tailnet through Tailscale Serve (`--allowed-host` names the Serve host); another interface needs `--expose`
+  with the `--allowed-host` names other devices use. Refused tokens are logged with their reason. `hz system serve mcp-token revoke ID` cuts one agent off at its next request.
 - Credentials that modules and plugins need are kept in your OS keychain (`hz system credential set NAME` reads
   the value from a hidden prompt or standard input) and are never shown, logged or returned; on Linux without a
   keychain they are read from `HZ_CREDENTIAL_<SERVICE>_<NAME>` variables, and `hz system doctor` warns about it.

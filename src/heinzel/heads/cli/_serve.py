@@ -59,11 +59,18 @@ def serve_group(
         ] = "127.0.0.1",
         port: Annotated[int, typer.Option(help="Port for streamable-http.")] = 8765,
         expose: Annotated[
-            bool, typer.Option("--expose", help="Allow a --host other devices can reach; Tailscale Serve needs none.")
+            bool,
+            typer.Option(
+                "--expose",
+                help="Allow a --host other devices reach, with --allowed-host; Tailscale Serve needs neither.",
+            ),
         ] = False,
         allowed_host: Annotated[
             list[str] | None,
-            typer.Option(help="Also accept this Host name, e.g. the machine's Tailscale Serve name; repeatable."),
+            typer.Option(
+                help="Also accept this Host: a Tailscale Serve name (port 443 implied), or name-or-ip:PORT or "
+                "name-or-ip:* with --expose; repeatable."
+            ),
         ] = None,
         chat: Annotated[
             str | None,

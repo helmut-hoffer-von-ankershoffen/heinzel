@@ -53,8 +53,10 @@ privilege with the SDK's own verifier hook and no new dependency.
   time.
 - Every tool call logs one start and one outcome event `mcp.http.call` with `actor`, `key_id`, `tool`, `scope`,
   `read_only`, `outcome` and `duration_ms`; the token and its digest are never logged.
-- The head binds to loopback by default. Any other interface needs `--expose`; Tailscale Serve proxies to loopback and
-  its host name is allowed with `--allowed-host`, keeping the SDK's DNS-rebinding protection on.
+- A refused token logs one `mcp.http.auth` event with `outcome` `refused` and `reason` (`unknown` or `expired`).
+- The head binds to loopback by default. Any other interface needs `--expose` together with the `--allowed-host`
+  names other devices use; Tailscale Serve proxies to loopback and its host name is allowed with `--allowed-host`.
+  The SDK's DNS-rebinding protection stays on, and no browser origin is accepted except a Serve name's HTTPS origin.
 - Over HTTP, stdio-only and private operations stay out, as before; a token never grants the owner's private scopes
   or approval proofs.
 

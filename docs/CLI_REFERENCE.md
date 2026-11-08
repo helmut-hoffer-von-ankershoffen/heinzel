@@ -3694,8 +3694,8 @@ $ hz system serve mcp [OPTIONS]
 * `--transport <stdio|streamable-http>`: stdio for agents that start hz; streamable-http to share, with a token per agent.  [default: stdio]
 * `--host <str>`: Interface for streamable-http; loopback unless --expose.  [default: 127.0.0.1]
 * `--port <int>`: Port for streamable-http.  [default: 8765]
-* `--expose`: Allow a --host other devices can reach; Tailscale Serve needs none.
-* `--allowed-host <str>`: Also accept this Host name, e.g. the machine&#x27;s Tailscale Serve name; repeatable.
+* `--expose`: Allow a --host other devices reach, with --allowed-host; Tailscale Serve needs neither.
+* `--allowed-host <str>`: Also accept this Host: a Tailscale Serve name (port 443 implied), or name-or-ip:PORT or name-or-ip:* with --expose; repeatable.
 * `--chat SESSION`: Serve the tools of this chat session: reads run, everything else waits for your confirmation in the chat. Started by `hz chat` for its agent, over stdio only.
 * `--project <path>`: Read the configuration as if started in this directory (its hz.toml), as the chat does.
 * `--chat-tools <everyday|all|personal-check-in>`: With --chat: the everyday operations as tools (cheaper messages), or all of them.  [default: everyday]
