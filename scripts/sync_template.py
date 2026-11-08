@@ -192,7 +192,7 @@ def _without_release_candidate(text: str) -> str:
     """Keep owner-Core candidate selection and source proof out of independent plugin CI."""
     # A plugin's suite fits one Linux cell; only the core outgrew it and shards by level.
     text = re.sub(
-        r"\n        # One shard per level on Linux too:.*?\n        levels: \[unit, integration\]",
+        r"\n {8}# One shard per level on Linux too:.*?\n {8}levels: \[unit, integration\]",
         "",
         text,
         flags=re.DOTALL,
@@ -202,7 +202,7 @@ def _without_release_candidate(text: str) -> str:
     )
     text = text.replace(" && needs.changes.outputs.full_release != 'true'", "")
     text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
-    return re.sub(r"\n  release-candidate-source:\n.*?(?=\n  ci-ok:)", "", text, flags=re.DOTALL)
+    return re.sub(r"\n {2}release-candidate-source:\n.*?(?=\n {2}ci-ok:)", "", text, flags=re.DOTALL)
 
 
 def _without_core_node_selection(text: str) -> str:

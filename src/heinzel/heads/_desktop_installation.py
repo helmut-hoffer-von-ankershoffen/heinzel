@@ -468,7 +468,7 @@ def _verify_bundle(bundle: Path, version: str) -> None:
             magic, cpu, _, kind, *_ = _MACH_HEADER.unpack(file.read(_MACH_HEADER.size))
         if (magic, cpu, kind) != (_MACH_64, _CPU_ARM64, _MACH_EXECUTE):
             raise DesktopInstallationError(problem)
-    except (OSError, ValueError, plistlib.InvalidFileException, ExpatError, struct.error) as exc:
+    except (OSError, ValueError, ExpatError, struct.error) as exc:
         raise DesktopInstallationError(problem) from exc
 
 

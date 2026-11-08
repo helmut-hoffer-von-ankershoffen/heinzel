@@ -73,7 +73,7 @@ def parse_marker(content: bytes) -> MutationOwner | None:
     """Accept only the exact indented forms written by `DaemonService._write_state`, else None."""
     try:
         parsed: object = json.loads(content)
-    except (ValueError, UnicodeError):
+    except ValueError:
         return None
     if not isinstance(parsed, dict) or content != (json.dumps(parsed, indent=2) + "\n").encode():
         return None
@@ -136,7 +136,7 @@ def host_boot(platform: str = sys.platform) -> tuple[str | None, int | None]:
             identity = _read(_LINUX_BOOT_ID).strip().lower()
             found = re.search(r"(?m)^btime (\d+)$", _read(_PROC_STAT))
             started = int(found[1]) * 1_000_000_000 if found else None
-    except (OSError, ValueError, UnicodeError, struct.error):
+    except (OSError, ValueError, struct.error):
         return None, None
     return (identity if identity and _BOOT.fullmatch(identity) else None), started
 
