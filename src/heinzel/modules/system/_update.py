@@ -59,7 +59,7 @@ from heinzel.modules.system._announced import (
 )
 from heinzel.modules.system._models import AnnouncedUpdate, PluginUpdate, UpdateResult
 from heinzel.modules.system._phases import Phases, State
-from heinzel.modules.system._render import standing
+from heinzel.modules.system._plugin_standing import standing
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
 from heinzel.modules.system.plugin._sources import dependents, git_credentials, required_by
 

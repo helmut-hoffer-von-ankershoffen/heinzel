@@ -10,9 +10,10 @@ from rich.table import Table
 from rich.text import Text
 
 from heinzel.modules.system._models import ChannelReport, ModuleInfo, ReleaseCheck, SystemInfo, UpdateResult
+from heinzel.modules.system._plugin_standing import standing
 
 if TYPE_CHECKING:  # read only through attributes: an hz updated in place renders with the old models (see below)
-    from heinzel.modules.system._models import AutomaticUpdates, PluginUpdate
+    from heinzel.modules.system._models import AutomaticUpdates
 
 
 def render_modules(modules: list[ModuleInfo]) -> RenderableType:
@@ -94,17 +95,6 @@ def render_update(result: UpdateResult) -> RenderableType:
     if result.updated and automatic is not None:
         lines.append(_automatic(automatic))
     return Text("\n".join(lines))
-
-
-def standing(update: "PluginUpdate") -> str:
-    """Where an `unchanged` plugin stands, saying only what is known: newest only when nothing pins it."""
-    version = update.after or "version unknown"
-    if not getattr(update, "checked", True):
-        return f"not updated ({version}): the plugin update stopped before it; newer releases not checked"
-    pinned = getattr(update, "pinned", None)
-    if pinned is not None:
-        return f"kept at {version} (pinned to {pinned}; newer releases not checked)"
-    return f"already newest ({version})"
 
 
 def _automatic(automatic: "AutomaticUpdates") -> str:
