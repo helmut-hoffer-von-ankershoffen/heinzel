@@ -4,12 +4,25 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.33](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.33) - 2026-11-08
 
-Combine of 5 system changes; Combine of 7 web changes.
+Install the plugins a plugin requires, and repair them; links standard, no text links in chrome; calendar pane write actions only when writable; keep the Discover list for a minute; and 8 more.
 
 ### ✨ Features
 
-- **system:** Combine of 5 system changes ([#677](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/677)) ([b2620a9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b2620a9e2c1968fa3eb63a8406f6ff084b21039a))
-- **web:** Combine of 7 web changes ([#679](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/679)) ([f31a181](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f31a181b450d517b41f9028b494981a39991f5e9))
+- **system:** Install the plugins a plugin requires, and repair them ([#642](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/642), via [#677](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/677)) ([b2620a9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b2620a9e2c1968fa3eb63a8406f6ff084b21039a))
+- **plugin:** Keep the Discover list for a minute ([#666](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/666), via [#677](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/677)) ([b2620a9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b2620a9e2c1968fa3eb63a8406f6ff084b21039a))
+- **system:** Name the daemon restart's steps in the operation log ([#667](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/667), via [#677](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/677)) ([b2620a9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b2620a9e2c1968fa3eb63a8406f6ff084b21039a))
+- **web:** Links standard, no text links in chrome ([#659](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/659), via [#679](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/679)) ([f31a181](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f31a181b450d517b41f9028b494981a39991f5e9))
+- **web:** Calendar pane write actions only when writable ([#662](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/662), via [#679](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/679)) ([f31a181](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f31a181b450d517b41f9028b494981a39991f5e9))
+- **web:** Resizable right sidebar with persisted width ([#663](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/663), via [#679](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/679)) ([f31a181](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f31a181b450d517b41f9028b494981a39991f5e9))
+- **web:** Layer plugins' settings pages go under Organisation ([#664](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/664), via [#679](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/679)) ([f31a181](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f31a181b450d517b41f9028b494981a39991f5e9))
+- **web:** Bring back Today widgets you hid ([#668](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/668), via [#679](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/679)) ([f31a181](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f31a181b450d517b41f9028b494981a39991f5e9))
+- **web:** Phone-only terminal keys, tab rename, live settings table ([#651](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/651), via [#679](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/679)) ([f31a181](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f31a181b450d517b41f9028b494981a39991f5e9))
+
+### 🐛 Bug fixes
+
+- **ai:** Apply a picked agent runner live; set up AI access in app ([#665](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/665), via [#677](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/677)) ([b2620a9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b2620a9e2c1968fa3eb63a8406f6ff084b21039a))
+- **web:** Switches show the choice, with one short status line ([#671](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/671), via [#677](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/677)) ([b2620a9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b2620a9e2c1968fa3eb63a8406f6ff084b21039a))
+- **web:** Name plugin settings pages properly, sort the sidebar ([#673](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/673), via [#679](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/679)) ([f31a181](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f31a181b450d517b41f9028b494981a39991f5e9))
 
 ## [0.9.32](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.32) - 2026-11-08
 

@@ -894,15 +894,18 @@ def test_the_release_keeps_changelog_introductions():
         )
     )
     assert save < regenerate < restore < commit < notes
+    expand = script.index(
+        'uv run --frozen --no-sync --no-build python scripts/changelog_combines.py CHANGELOG.md --version "$next"'
+    )
+    assert restore < expand < commit, "combine entries become their members' entries before the release commit"
     assert '--intro "${INTRO:-}"' in script
     release = yaml.safe_load((REPO / ".github" / "workflows" / "prepare-release.yml").read_text(encoding="utf-8"))
     assert "intro" in release[True]["workflow_dispatch"]["inputs"]  # YAML 1.1 reads the key `on` as True
     step = next(s for s in release["jobs"]["pull-request"]["steps"] if "release.sh" in s.get("run", ""))
     assert not any("gh pr merge" in s.get("run", "") for s in release["jobs"]["pull-request"]["steps"])
     assert step["env"]["INTRO"] == "${{ inputs.intro }}"
-    assert (
-        REPO / "template" / "scripts" / "changelog_intros.py.jinja"
-    ).resolve() == REPO / "scripts" / "changelog_intros.py"
+    for name in ("changelog_intros", "changelog_combines"):
+        assert (REPO / "template" / "scripts" / f"{name}.py.jinja").resolve() == REPO / "scripts" / f"{name}.py"
 
 
 def test_pushing_runs_check_fast_through_a_hook():
