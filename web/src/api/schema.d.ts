@@ -4253,6 +4253,12 @@ export interface components {
              */
             name: string;
             /**
+             * Needs
+             * @description The one thing missing, in a few words, e.g. `Add a model and API key`; empty when nothing is.
+             * @default
+             */
+            needs: string;
+            /**
              * Plugin
              * @description The plugin it comes with, e.g. `heinzel-acme`; none when built in.
              */
@@ -4263,11 +4269,16 @@ export interface components {
              */
             runner?: string | null;
             /**
+             * Setup
+             * @description What setting it up takes: `model` (a model and API key), `gateway` (its commands), `sign-in` or `client` (an optional Python client hz installs); none when nothing is missing or hz can't tell.
+             */
+            setup?: ("model" | "gateway" | "sign-in" | "client") | null;
+            /**
              * Status
-             * @description `signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `not installed` when what it needs is missing.
+             * @description `signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `needs setup` when a setting, a sign-in or its optional client is missing: these options come with hz, they are never plugins to install.
              * @enum {string}
              */
-            status: "signed in" | "not signed in" | "not tested" | "tested" | "test failed" | "not installed" | "error";
+            status: "signed in" | "not signed in" | "not tested" | "tested" | "test failed" | "needs setup" | "error";
             /**
              * Summary
              * @description One sentence on how it reaches AI.

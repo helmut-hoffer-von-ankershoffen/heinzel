@@ -161,6 +161,12 @@
             "title": "Name",
             "type": "string"
           },
+          "needs": {
+            "default": "",
+            "description": "The one thing missing, in a few words, e.g. `Add a model and API key`; empty when nothing is.",
+            "title": "Needs",
+            "type": "string"
+          },
           "plugin": {
             "anyOf": [
               {
@@ -185,15 +191,33 @@
             "description": "The agent runner that serves its chat and coding uses.",
             "title": "Runner"
           },
+          "setup": {
+            "anyOf": [
+              {
+                "enum": [
+                  "model",
+                  "gateway",
+                  "sign-in",
+                  "client"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What setting it up takes: `model` (a model and API key), `gateway` (its commands), `sign-in` or `client` (an optional Python client hz installs); none when nothing is missing or hz can't tell.",
+            "title": "Setup"
+          },
           "status": {
-            "description": "`signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `not installed` when what it needs is missing.",
+            "description": "`signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `needs setup` when a setting, a sign-in or its optional client is missing: these options come with hz, they are never plugins to install.",
             "enum": [
               "signed in",
               "not signed in",
               "not tested",
               "tested",
               "test failed",
-              "not installed",
+              "needs setup",
               "error"
             ],
             "title": "Status",
