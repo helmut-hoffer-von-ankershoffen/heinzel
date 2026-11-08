@@ -87,7 +87,7 @@ def test_a_checkout_is_named_after_the_repository_in_safe_characters(url, expect
 
 
 def test_a_missing_program_says_how_to_install_it(monkeypatch):
-    monkeypatch.setattr("shutil.which", lambda _name: None)
+    monkeypatch.setattr("shutil.which", lambda _name, **_: None)
     with pytest.raises(HeinzelError, match=r"cli\.github\.com"):
         Runner()(["gh", "api", "user"], None)
     with pytest.raises(HeinzelError, match=r"git-scm\.com"):
