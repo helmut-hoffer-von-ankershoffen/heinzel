@@ -999,12 +999,94 @@ jobs:
           path: reports/release-candidate.json
           if-no-files-found: error
 
+  # The quarantine lane (scripts/quarantine.py): tests/quarantine.toml takes a known flake out of every required job
+  # for at most 7 days. The registry check is required, so an entry past its `until` fails `CI OK`; the lane itself
+  # runs where the full suite runs (main, schedule, dispatch, release candidates), reports and is NOT in `CI OK`.
+  quarantine-registry:
+    permissions:
+      contents: read
+    needs: admission
+    if: github.event_name != 'push' || needs.admission.outputs.full != 'false'
+    name: Quarantine registry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - run: make quarantine-check
+
+  quarantine-plan:
+    permissions:
+      contents: read
+    name: Quarantine plan
+    needs: changes
+    if: (github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      selected: ${{ steps.plan.outputs.selected }}
+      browsers: ${{ steps.plan.outputs.browsers }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - id: plan
+        run: make --no-print-directory quarantine-plan >> "$GITHUB_OUTPUT"
+
+  quarantine:
+    permissions:
+      contents: read
+    name: Quarantine (${{ matrix.os }})
+    needs: [changes, quarantine-plan]
+    # Non-blocking by design: not in `CI OK`, and `make test-quarantine` exits 0 whatever the tests do.
+    if: (github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.quarantine-plan.outputs.selected == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # an end-to-end entry may clone this repository
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          save-cache: false # the required jobs own the cache
+      - name: Use Ubuntu's primary archive for browser dependencies
+        if: matrix.os == 'ubuntu-24.04' && needs.quarantine-plan.outputs.browsers == 'true'
+        run: sudo sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources
+      - name: Install browser runtimes and host dependencies
+        if: needs.quarantine-plan.outputs.browsers == 'true'
+        run: make test-browser-deps
+      - name: Run only the quarantined tests, retrying a failure up to 3 times, and report each result
+        run: make test-quarantine
+        env:
+          VERBOSE: "1"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # read-only; as in the e2e job, for an end-to-end entry
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quarantine-report-${{ matrix.os }}
+          path: reports/quarantine.json
+          retention-days: 14
+          if-no-files-found: warn
+
   ci-ok:
     permissions:
       contents: read
     name: CI OK
     if: always() && (github.event_name != 'push' || needs.admission.outputs.full != 'false')
-    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source]
+    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:

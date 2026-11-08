@@ -1,0 +1,12 @@
+# The quarantine lane (docs/CODING_STANDARDS.md#quarantine, scripts/quarantine.py): a known-flaky test listed here
+# leaves the required CI jobs and runs only in the non-blocking `Quarantine (<os>)` jobs, with retries, until its fix.
+# Every entry: test (one node id or parametrized prefix), bead, added, until (at most 7 days after added), reason.
+# At most 8 entries. Past `until` the test is back in the required jobs and the required `Quarantine registry` job
+# fails: fix the test (preferred) or remove the entry. Every change here needs an independent review.
+
+[[quarantine]]
+test = "tests/unit/steps_signal_test.py::test_interrupt_stops_only_owned_children_and_grandchildren"
+bead = "3qj"
+added = 2026-11-07
+until = 2026-11-10
+reason = "term-exit missing on a loaded runner: the helper's TERM handler must finish within STOP_GRACE 0.5 s"
