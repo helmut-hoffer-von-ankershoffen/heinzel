@@ -23,7 +23,7 @@ function historySearchConfig(...otherFeatures: string[]) {
       {
         section: "hz",
         key: "features",
-        value: ["connected_history", ...otherFeatures],
+        value: [...otherFeatures],
         description: "Preview features",
         env: "HZ_FEATURES",
       },
@@ -2143,7 +2143,7 @@ it("opens and highlights a search match beyond the loaded conversation page", as
   renderAt(`/heinzel?chat=${sessionId}`);
   const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
   await panel.findByText("Hello");
-  fireEvent.click(await panel.findByText("Search conversation"));
+  fireEvent.click(await panel.findByRole("button", { name: "Search conversations" }));
   const search = within(panel.getByRole("region", { name: "Search conversation" }));
   fireEvent.change(search.getByLabelText("Text"), { target: { value: "matching" } });
   fireEvent.click(search.getByRole("button", { name: "Search" }));
@@ -2192,7 +2192,7 @@ it("opens an owner-search match in its exact helper without confirming any actio
   );
   const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
   await panel.findByText("Hello");
-  fireEvent.click(await panel.findByText("Search all Heinzel conversations"));
+  fireEvent.click(await panel.findByRole("button", { name: "Search conversations" }));
   const search = within(panel.getByRole("region", { name: "Search all conversations" }));
   fireEvent.change(search.getByLabelText("Text"), { target: { value: "match" } });
   fireEvent.click(search.getByRole("button", { name: "Search" }));
@@ -2220,13 +2220,21 @@ it("opens an owner-search match in its exact helper without confirming any actio
   ]);
 });
 
-it("keeps search dark by default and ignores cursor text in the browser URL", async () => {
+it("keeps search closed until the header button is used and ignores cursor text in the browser URL", async () => {
   const { calls } = mockApi({ ...shell, "/api/heinzel/session": () => snapshot });
   renderAt(`/heinzel?chat=${sessionId}&history=unexpected-cursor`);
   const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
   await panel.findByText("Hello");
   expect(panel.queryByText("Search conversation")).not.toBeInTheDocument();
   expect(panel.queryByText("Search all Heinzel conversations")).not.toBeInTheDocument();
+  const toggle = panel.getByRole("button", { name: "Search conversations" });
+  expect(toggle).toHaveAttribute("title", "Search conversations");
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(toggle);
+  expect(await panel.findByText("Search conversation")).toBeInTheDocument();
+  expect(panel.getByText("Search all Heinzel conversations")).toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(panel.queryByText("Search conversation")).not.toBeInTheDocument();
   expect(
     calls.some((request) => {
       const url = new URL(request.url);
