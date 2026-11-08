@@ -252,6 +252,7 @@ const en = {
     "Optional and off by default. At most one attempt per turn. Content may appear on this device; queued does not mean shown. Item identities come from the provider and do not guarantee complete source history.",
   "audio.visualizerHelp":
     "Nothing is recorded or uploaded. The microphone hears the room; sharing a tab shows your browser's sharing bar.",
+  "audio.visualizerHelpMicrophone": "Nothing is recorded or uploaded. The microphone hears the room.",
   "proposal.intro":
     "You write these terms for later review. They do not start a Heinzel or give approval; limits are not enforced. This preview cannot yet describe MCP, shell, or CLI permissions.",
   "proposal.askRevise": "Ask your Heinzel in chat to revise these subscription terms.",
@@ -684,6 +685,7 @@ const en = {
   "plugins.addLabel":
     "A plugin's name, or `name @ git+https://…` for one from a git repository (private ones work with your GitHub sign-in).",
   "plugins.install": "Install",
+  "plugins.installing": "Installing {name}",
   "plugins.remove": "Remove",
   "plugins.removeName": "Remove {name}",
   "plugins.cancel": "Cancel",
@@ -1089,6 +1091,7 @@ const en = {
   "fromClaude.source.code-project": "Claude Code, project",
   "fromClaude.source.code-plugin": "Claude Code, plugin",
   "updates.action": "Update now",
+  "updates.dialogTitle": "Updating Heinzel and its plugins",
   "updates.manualAction": "Manually update…",
   "updates.allAction": "Update all",
   "updates.retry": "Check again",

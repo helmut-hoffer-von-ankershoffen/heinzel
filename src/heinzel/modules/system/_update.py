@@ -34,7 +34,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from heinzel import HeinzelError, __version__
+from heinzel import HeinzelError, Progress, __version__
 from heinzel.kernel import (
     CorePin,
     DaemonHandoverPlan,
@@ -58,6 +58,7 @@ from heinzel.modules.system._announced import (
     plugin_commit,
 )
 from heinzel.modules.system._models import AnnouncedUpdate, PluginUpdate, UpdateResult
+from heinzel.modules.system._phases import Phases, State
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
 from heinzel.modules.system.plugin._sources import dependents, git_credentials, required_by
 
@@ -141,8 +142,14 @@ class UpdateService:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         home: Path | None = None,
+        progress: Progress | None = None,
     ) -> None:
-        """Create the service with an optional trusted lifecycle boundary and the heads it refreshes afterwards."""
+        """Create the service with an optional trusted lifecycle boundary and the heads it refreshes afterwards.
+
+        `progress` hears the steps of `update` as they happen (`phase` events), so the app can show each one.
+        """
+        self._progress = progress or Progress()
+        self._steps: _Steps | None = None
         self._installation = installation
         self._releases = releases
         self._lifecycle = lifecycle
@@ -152,6 +159,11 @@ class UpdateService:
         self._home = home
         self._handover: tuple[DaemonHandoverPlan, DaemonHandoverRequest] | None = None
         """What the daemon was before the last completed mutation and the handover it requested, for the heads."""
+
+    def _start_step(self, id_: str) -> None:
+        """Tell the running `update` that its step `id_` started; nothing outside one."""
+        if self._steps is not None:
+            self._steps.start(id_)
 
     def _mutation(self) -> AbstractContextManager[DaemonMutationScope | None]:
         if self._lifecycle is not None:
@@ -574,11 +586,25 @@ class UpdateService:
                 asked for, or the install fails, naming the plugins that block it; Heinzelmännchen still works.
         """
         self._handover = None
-        result = self._update(source, current, channel)
-        if not getattr(result, "updated", False):  # nothing changed, so every head already runs what is installed
-            return result
-        heads = self._refresh_heads(result.after)
-        return result.model_copy(update={"heads": heads, "message": _with_heads(result.message, heads)})
+        pins = self._installation.plugin_pins()
+        steps = self._steps = _Steps(self._progress, [canonicalize_name(p.name) for p in pins])
+        try:
+            steps.start("check")
+            try:
+                result = self._update(source, current, channel)
+            except HeinzelError as exc:
+                steps.fail(str(exc).splitlines()[0])
+                raise
+            steps.installed(result)
+            if not result.updated:  # nothing changed, so every head already runs what is installed
+                steps.skip("heads", "Nothing changed, so nothing restarts.")
+                return result
+            steps.start("heads")
+            heads = self._refresh_heads(result.after)
+            steps.restarted(heads)
+            return result.model_copy(update={"heads": heads, "message": _with_heads(result.message, heads)})
+        finally:
+            self._steps = None
 
     def _update(self, source: str | None, current: str, channel: UpdateChannel) -> UpdateResult:
         pin, requirements = self._installation.core_pin(), self._installation.requirements()
@@ -903,6 +929,7 @@ class UpdateService:
         Raises:
             HeinzelError: If hz can't be installed even without its plugins, or doesn't start after it.
         """
+        self._start_step("install")
         before = self._plugin_versions()
         activity = f"Updating Heinzelmännchen{f' to {target}' if target else ''}"
         environment = git_credentials(subprocess_environment())
@@ -1016,6 +1043,7 @@ class UpdateService:
         generation: str | None,
     ) -> UpdateResult:
         scope, plan = lifecycle
+        self._start_step("install")
         environment = git_credentials(subprocess_environment())
         with self._installation.tool_transaction():
             self._verify_selection(pin, plugins, scope)
@@ -1521,6 +1549,82 @@ class UpdateService:
 
 HEAD_LABELS = {"daemon": "Daemon", "web": "Web server", "notifier": "Notifier", "desktop": "Desktop app"}
 PENDING_TICK = "\nThe daemon handover was requested; a fresh service tick is pending."
+
+
+class _Steps:
+    """The steps of one `update`, told as they happen (ADR 0056): what is asked, installed, each plugin, the restart.
+
+    Every step is real work or a real outcome: each plugin is reported once the install says what became of it.
+    """
+
+    def __init__(self, progress: Progress, plugins: Sequence[str]) -> None:
+        self._labels = {
+            "check": "Finding the newest version",
+            "install": "Installing the update",
+            **{f"plugin:{name}": f"Plugin {name}" for name in plugins},
+            "heads": "Moving the background services onto it",
+        }
+        self._phases = Phases(progress, list(self._labels.items()), operation="system.update")
+        self._running: str | None = None
+
+    def _note(self, id_: str, state: State, detail: str | None = None) -> None:
+        self._phases.note(id_, self._labels[id_], state, detail)
+
+    def start(self, id_: str) -> None:
+        """Run `id_`; the step that ran before it is done (a second start of a running step changes nothing)."""
+        if self._running == id_:
+            return
+        if self._running is not None:
+            self._note(self._running, "done")
+        self._running = id_
+        self._note(id_, "running")
+
+    def skip(self, id_: str, detail: str) -> None:
+        """Say that `id_` had nothing to do, and why."""
+        self._note(id_, "skipped", detail)
+
+    def fail(self, detail: str) -> None:
+        """The running step failed with `detail`; the ones after it never ran."""
+        if self._running is not None:
+            self._note(self._running, "failed", detail)
+            self._running = None
+
+    def installed(self, result: UpdateResult) -> None:
+        """Finish asking and installing, then tell what became of each plugin."""
+        if self._running == "check":
+            self._note("check", "done", result.message.splitlines()[0])
+            self.skip("install", "Nothing newer to install.")
+        elif self._running is not None:
+            self._note(self._running, "done", result.message.splitlines()[0])
+        self._running = None
+        told = {update.distribution: update for update in result.plugins}
+        for id_ in [key for key in self._labels if key.startswith("plugin:")]:
+            update = told.get(id_.removeprefix("plugin:"))
+            if update is None:
+                self.skip(id_, "Not asked: hz stays as it is.")
+                continue
+            state, detail = _plugin_step(update)
+            self._phases.note(id_, self._labels[id_], state, detail, version=update.after or update.before)
+
+    def restarted(self, heads: Sequence[HeadRefresh]) -> None:
+        """Finish the restart: a warning names the first service not verified on the new version."""
+        self._running = None
+        failed = next((head for head in heads if head.status == "failed"), None)
+        if failed is not None:
+            self._note("heads", "warn", failed.detail)
+        else:
+            self._note("heads", "done")
+
+
+def _plugin_step(update: PluginUpdate) -> tuple[State, str]:
+    """How one plugin's step ended: updated, already new, held back at its version or taken out."""
+    if update.status == "upgraded":
+        return "done", f"Updated {update.before or '?'} → {update.after or '?'}"
+    if update.status == "unchanged":
+        return "done", f"Already the newest it may be ({update.after or 'unknown version'})"
+    if update.disabled:
+        return "warn", "Taken out: it does not allow this hz yet"
+    return "warn", f"Held back at {update.before or 'its version'}: it does not allow the new hz yet"
 
 
 def _with_heads(message: str, heads: list[HeadRefresh]) -> str:

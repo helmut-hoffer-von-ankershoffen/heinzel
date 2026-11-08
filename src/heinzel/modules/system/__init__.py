@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 from rich.console import RenderableType
 
-from heinzel import Homebrew, Kernel, ManualInstall, Module
+from heinzel import Homebrew, Kernel, ManualInstall, Module, Progress
 from heinzel.kernel import (
     KERNEL_SECTION,
     CoreMetadataVerifier,
@@ -82,7 +82,9 @@ module.service(CoreMetadataVerifier, CoreMetadataIdentity)
 def _update_service(installation: Installation, releases: ReleaseSource, kernel: Kernel) -> UpdateService:
     lifecycle = kernel.resolve(DaemonInstallationLifecycle) if kernel.provides(DaemonInstallationLifecycle) else None
     web = kernel.resolve(WebHeadRefresh) if kernel.provides(WebHeadRefresh) else None
-    return UpdateService(installation, releases, lifecycle=lifecycle, require_lifecycle=True, web=web)
+    return UpdateService(
+        installation, releases, lifecycle=lifecycle, require_lifecycle=True, web=web, progress=kernel.resolve(Progress)
+    )
 
 
 module.service(UpdateService, _update_service)
