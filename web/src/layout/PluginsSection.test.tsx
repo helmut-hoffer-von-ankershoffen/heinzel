@@ -825,7 +825,7 @@ describe("PluginsSection", () => {
     expect(labels.some((text) => text?.includes("First-party"))).toBe(true);
     const row = (name: string) => screen.getByText(name, { exact: true }).closest("li") as HTMLElement;
     expect(within(row("Reference")).getByText("Custom")).toBeInTheDocument();
-    expect(within(row("Private tools")).getByText("Private")).toBeInTheDocument();
+    expect(within(row("Private Tools")).getByText("Private")).toBeInTheDocument();
     expect(within(row("Unknown")).getByText("source not reported yet")).toBeInTheDocument();
     const adds = () =>
       calls.filter((request) => {
