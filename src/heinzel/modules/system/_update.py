@@ -1344,6 +1344,7 @@ class UpdateService:
                             status="upgraded" if changed else "unchanged",
                             before=old_version,
                             after=new_version,
+                            pinned=_pinned(plugin),
                         )
                     )
         return updates
@@ -1358,6 +1359,8 @@ class UpdateService:
             before=version,
             after=version,
             reason=failure,
+            pinned=_pinned(plugin),
+            checked=False,
         )
 
     def _plugin_versions(self, *, strict: bool = False) -> dict[str, Installed]:
@@ -1616,12 +1619,24 @@ class _Steps:
             self._note("heads", "done")
 
 
+def _sentence(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+def _pinned(plugin: CorePin) -> str | None:
+    """What `plugin`'s install spec pins it to, so an update reinstalls the same; None if it follows newer ones."""
+    ref = plugin.ref or ""
+    if plugin.kind in {"release", "commit", "url", "local"} or (plugin.kind == "index" and ref.startswith("==")):
+        return ref or plugin.requirement
+    return None
+
+
 def _plugin_step(update: PluginUpdate) -> tuple[State, str]:
     """How one plugin's step ended: updated, already new, held back at its version or taken out."""
     if update.status == "upgraded":
         return "done", f"Updated {update.before or '?'} → {update.after or '?'}"
     if update.status == "unchanged":
-        return "done", f"Already newest ({update.after or 'unknown version'})"
+        return ("done" if update.checked else "warn"), _sentence(update.standing())
     if update.disabled:
         return "warn", "Taken out: it does not allow this hz yet"
     return "warn", f"Held back at {update.before or 'its version'}: it does not allow the new hz yet"

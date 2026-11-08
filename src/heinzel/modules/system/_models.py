@@ -79,6 +79,24 @@ class PluginUpdate(BaseModel):
     )
     reason: str | None = Field(default=None, description="Why it failed, and what became of it.")
     next: list[str] = Field(default_factory=list, description="Commands that bring a failed plugin back.")
+    pinned: str | None = Field(
+        default=None,
+        description="The tag, commit, file or exact version its install spec pins it to, so an update cannot move "
+        "it; none if it follows a branch or the package index.",
+    )
+    checked: bool = Field(
+        default=True,
+        description="Whether the update asked for its newest version; false when the plugin update stopped before it.",
+    )
+
+    def standing(self) -> str:
+        """Where an `unchanged` plugin stands, saying only what is known: newest only when nothing pins it."""
+        version = self.after or "version unknown"
+        if not self.checked:
+            return f"not updated ({version}): the plugin update stopped before it; newer releases not checked"
+        if self.pinned is not None:
+            return f"kept at {version} (pinned to {self.pinned}; newer releases not checked)"
+        return f"already newest ({version})"
 
 
 class ChannelReport(BaseModel):

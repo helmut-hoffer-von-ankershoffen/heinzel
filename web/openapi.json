@@ -11887,6 +11887,12 @@
             "description": "Version installed before; none if it couldn't be told.",
             "title": "Before"
           },
+          "checked": {
+            "default": true,
+            "description": "Whether the update asked for its newest version; false when the plugin update stopped before it.",
+            "title": "Checked",
+            "type": "boolean"
+          },
           "disabled": {
             "default": false,
             "description": "Whether the plugin does not work with the new hz at all and was taken out of the installation: it is not loaded until a release that allows the new hz is added (`next`).",
@@ -11905,6 +11911,18 @@
             },
             "title": "Next",
             "type": "array"
+          },
+          "pinned": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The tag, commit, file or exact version its install spec pins it to, so an update cannot move it; none if it follows a branch or the package index.",
+            "title": "Pinned"
           },
           "reason": {
             "anyOf": [
@@ -30727,7 +30745,7 @@
     },
     "/system/update": {
       "post": {
-        "description": "Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.\n\nInstalled from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases\nonly if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`\nmakes. With `--channel main` (or the setting\n`update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,\nit changes nothing and says which `--source` moves it. It never moves or suggests a release older than the\ninstalled version.\n\nPlugins are updated in the same run, each from the install spec it was added with (a git spec pinned to `@main`\ngets its newest commit). A plugin that doesn't allow the new hz never blocks it: it is kept at its version if that\nstill works, else taken out with the command that brings it back. The result reports each plugin.\nFollowing a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new\nversion, the error names it and the previous version stays installed.\n\nWhy it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)\ninstall only accepted releases, ones old enough (`auto_update_min_age_hours` for hz,\n`auto_update_plugin_min_age_hours` for plugins) that a broken one could be withdrawn first; this command installs\nthe newest release now, accepted or not. The desktop app is not part of the tool: it updates itself at the web\nserver's next automatic update check, or now with `hz app install`. The output says which applies.\n\nRaises:\n    HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.",
+        "description": "Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.\n\nInstalled from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases\nonly if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`\nmakes. With `--channel main` (or the setting\n`update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,\nit changes nothing and says which `--source` moves it. It never moves or suggests a release older than the\ninstalled version.\n\nPlugins are updated in the same run, each from the install spec it was added with (a git spec pinned to `@main`\ngets its newest commit). A plugin that doesn't allow the new hz never blocks it: it is kept at its version if that\nstill works, else taken out with the command that brings it back. The result reports each plugin.\nFollowing a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new\nversion, the error names it and the previous version stays installed.\n\nWhy it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)\ninstall only accepted releases, ones old enough (`auto_update_min_age_hours` for hz,\n`auto_update_plugin_min_age_hours` for plugins) that a broken one could be withdrawn first; this command installs\nthe newest release now, accepted or not. The desktop app is not part of the tool: it updates itself at the web\nserver's next automatic update check, or now with `hz app install`. The output says which applies.\n\nEach step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds\nonly the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so\nthe output still parses.\n\nRaises:\n    HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.",
         "operationId": "system_update",
         "parameters": [
           {

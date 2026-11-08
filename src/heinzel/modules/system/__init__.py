@@ -182,6 +182,10 @@ def update(
     the newest release now, accepted or not. The desktop app is not part of the tool: it updates itself at the web
     server's next automatic update check, or now with `hz app install`. The output says which applies.
 
+    Each step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds
+    only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so
+    the output still parses.
+
     Raises:
         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
     """

@@ -4123,6 +4123,10 @@ export interface paths {
          *     the newest release now, accepted or not. The desktop app is not part of the tool: it updates itself at the web
          *     server's next automatic update check, or now with `hz app install`. The output says which applies.
          *
+         *     Each step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds
+         *     only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so
+         *     the output still parses.
+         *
          *     Raises:
          *         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
          */
@@ -10939,6 +10943,12 @@ export interface components {
              */
             before: string | null;
             /**
+             * Checked
+             * @description Whether the update asked for its newest version; false when the plugin update stopped before it.
+             * @default true
+             */
+            checked: boolean;
+            /**
              * Disabled
              * @description Whether the plugin does not work with the new hz at all and was taken out of the installation: it is not loaded until a release that allows the new hz is added (`next`).
              * @default false
@@ -10954,6 +10964,11 @@ export interface components {
              * @description Commands that bring a failed plugin back.
              */
             next?: string[];
+            /**
+             * Pinned
+             * @description The tag, commit, file or exact version its install spec pins it to, so an update cannot move it; none if it follows a branch or the package index.
+             */
+            pinned?: string | null;
             /**
              * Reason
              * @description Why it failed, and what became of it.

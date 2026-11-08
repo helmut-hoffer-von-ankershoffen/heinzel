@@ -19,6 +19,7 @@ from heinzel.modules.system import _github
 pytestmark = pytest.mark.integration
 
 runner = CliRunner()
+KEPT = "kept at 1.0.0 (pinned to v1.0.0; newer releases not checked)"
 AUTOMATIC = (
     "Automatic updates: on. Automatic updates install only accepted releases: hz 6 h and plugins 24 h after release, "
     "so a broken one can be withdrawn first. This command installs the newest release now, accepted or not."
@@ -177,7 +178,7 @@ def test_a_tag_pinned_install_updates_to_the_latest_release_and_keeps_plugins(ap
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == (
-        f"Updated hz {__version__} → 99.0.0.\nPlugins:\n  heinzel-acme: already newest (1.0.0)\n{AUTOMATIC}"
+        f"Updated hz {__version__} → 99.0.0.\nPlugins:\n  heinzel-acme: {KEPT}\n{AUTOMATIC}"
     )
     # Not a terminal: one line when each step starts and ends, on stderr, the same steps the web dialog shows.
     assert result.stderr.splitlines() == [
@@ -185,7 +186,7 @@ def test_a_tag_pinned_install_updates_to_the_latest_release_and_keeps_plugins(ap
         "[1/4] Finding the newest version: done",
         "[2/4] Installing the update ...",
         f"[2/4] Installing the update: done (Updated hz {__version__} → 99.0.0.)",
-        "[3/4] Plugin heinzel-acme: done (Already newest (1.0.0))",
+        "[3/4] Plugin heinzel-acme: done (Kept at 1.0.0 (pinned to v1.0.0; newer releases not checked))",
         "[4/4] Moving the background services onto it ...",
         "[4/4] Moving the background services onto it: done",
     ]
@@ -230,7 +231,7 @@ def test_a_main_pin_is_updated_in_place_to_the_newest_commit(app, env, monkeypat
     result = runner.invoke(app, ["system", "update", "--channel", "main"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == (
-        f"Updated hz {__version__} \u2192 99.0.0.dev7.\nPlugins:\n  heinzel-acme: already newest (1.0.0)\n{AUTOMATIC}"
+        f"Updated hz {__version__} \u2192 99.0.0.dev7.\nPlugins:\n  heinzel-acme: {KEPT}\n{AUTOMATIC}"
     )
     [command] = uv_log(env)
     assert command.endswith(f"heinzel @ git+{REPO}@main --with {PLUGIN}")

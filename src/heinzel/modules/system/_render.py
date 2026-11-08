@@ -88,7 +88,7 @@ def render_update(result: UpdateResult) -> RenderableType:
     unchanged = [p for p in result.plugins if p.status == "unchanged"]
     if unchanged:
         lines.append("Plugins:")
-        lines += [f"  {p.distribution}: already newest ({p.after or 'version unknown'})" for p in unchanged]
+        lines += [f"  {p.distribution}: {p.standing()}" for p in unchanged]
     if result.updated and result.automatic is not None:
         lines.append(_automatic(result.automatic))
     return Text("\n".join(lines))

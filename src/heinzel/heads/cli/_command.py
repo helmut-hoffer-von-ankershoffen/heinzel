@@ -52,7 +52,8 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
 
     The command's signature is the operation's, minus injected parameters, plus `--format` and its shorthand `--json`.
     Parameters without a default become arguments, the others options; `Field(description=...)` becomes their help
-    text. Progress goes to stderr and is silent for JSON output, so stdout always holds just the result.
+    text. Progress goes to stderr, so stdout always holds just the result. With JSON output an operation's named
+    steps go to stderr as one JSON object per `phase` event, and are left out when stderr is stdout (`2>&1`).
     `prologue` runs before text output, with the result, and `epilogue` after it; neither runs for JSON.
     """
     parameters = [
