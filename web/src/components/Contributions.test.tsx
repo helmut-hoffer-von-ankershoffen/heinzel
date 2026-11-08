@@ -211,7 +211,7 @@ describe("Contributions", () => {
     renderAt("/doctor");
     await user.hover(await screen.findByRole("button", { name: /^3 reviews/ }));
     await user.click(await screen.findByRole("button", { name: "Sync" }));
-    const dialog = await screen.findByRole("alertdialog", { name: "Sync the reviews." });
+    const dialog = await screen.findByRole("dialog", { name: "Sync the reviews." });
     expect(within(dialog).getByText("hz acme sync --dry-run true")).toBeInTheDocument();
     expect(calls.some((call) => new URL(call.url).pathname === "/api/stream/acme/sync")).toBe(false);
     await user.click(within(dialog).getByRole("button", { name: "Run it" }));
@@ -275,7 +275,7 @@ describe("Contributions", () => {
     renderAt("/doctor");
     await user.hover(await screen.findByRole("button", { name: /Edit personal helper/ }));
     await user.click(await screen.findByRole("button", { name: "Run" }));
-    const dialog = await screen.findByRole("alertdialog", { name: "Save the helper." });
+    const dialog = await screen.findByRole("dialog", { name: "Save the helper." });
     expect(calls.some((call) => new URL(call.url).pathname === "/api/stream/harbor/profile")).toBe(false);
     await user.click(within(dialog).getByRole("button", { name: "Run it" }));
     await waitFor(() =>

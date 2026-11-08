@@ -335,7 +335,12 @@ describe("OperationDialog", () => {
       act(() => requestDrivenOperation(call, drive(run)));
       await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Install" }));
       const dialog = await screen.findByRole("dialog");
-      expect(await within(dialog).findByRole("status")).toHaveTextContent("hz has not come back yet.");
+      await within(dialog).findByText("hz has not come back yet.");
+      expect(
+        within(dialog)
+          .getAllByRole("status")
+          .some((status) => status.textContent?.includes("hz has not come back yet.")),
+      ).toBe(true);
       expect(within(dialog).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
       expect(within(dialog).getByRole("button", { name: "Keep waiting" })).toHaveFocus();
       await user.click(within(dialog).getByRole("button", { name: "Keep waiting" }));

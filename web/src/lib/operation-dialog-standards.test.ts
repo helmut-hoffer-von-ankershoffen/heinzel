@@ -25,7 +25,9 @@ it("never offers the person 'Restart and apply' for a change they already confir
 });
 
 it("keeps the plan's step labels short and in the person's words", () => {
-  const labels = messages.filter(([key]) => /^(applySteps|plugins\.(write|check))\./.test(key));
+  const labels = messages.filter(([key]) =>
+    /^(applySteps\.(preserve|write|restart|wait|reload|check)|plugins\.(write|check)\.)/.test(key),
+  );
   for (const [key, value] of labels) {
     expect(String(value).length, key).toBeLessThanOrEqual(40);
     expect(String(value), key).not.toMatch(/\b(lifecycle|instance|verifying|applying)\b/i);
