@@ -19,6 +19,7 @@ from pydantic import BaseModel, SecretStr
 
 from heinzel import InfoLet, Kernel, __version__
 from heinzel.kernel import EDGE_WHEEL_PREFIX, EdgeRelease, Installation, ReleaseCache, ReleaseFacts, ReleaseSource
+from heinzel.kernel._logging import log_event
 from heinzel.modules.system import _github
 from heinzel.modules.system._models import InstalledPlugin, ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
 
@@ -377,7 +378,7 @@ class SystemService:
         """Versions, interpreter, settings, modules and the sections modules contribute."""
         modules = self.modules()
         plugins = self._plugins()
-        logger.info("event=system.info.read outcome=ok modules=%d plugins=%d", len(modules), len(plugins))
+        log_event(logger, "system.info.read", outcome="ok", modules=len(modules), plugins=len(plugins))
         return SystemInfo(
             version=__version__,
             repository=next((r.origin.url for r in self._kernel.modules if r.origin.builtin), None),

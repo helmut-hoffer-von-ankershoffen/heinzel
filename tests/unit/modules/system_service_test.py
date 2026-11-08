@@ -378,8 +378,8 @@ def test_info_names_the_installation_kind_and_modules_their_source(make_kernel, 
 def test_info_logs_one_structured_event_with_counts_and_no_paths(make_kernel, caplog):
     with caplog.at_level("INFO", logger="heinzel.modules.system._service"):
         SystemService(make_kernel()).info()
-    lines = [record.getMessage() for record in caplog.records if "event=system.info.read" in record.getMessage()]
-    assert len(lines) == 1
-    assert "outcome=ok" in lines[0]
-    assert "plugins=" in lines[0]
-    assert "/" not in lines[0]
+    records = [record for record in caplog.records if getattr(record, "event", "") == "system.info.read"]
+    assert len(records) == 1
+    assert records[0].outcome == "ok"
+    assert isinstance(records[0].plugins, int)
+    assert "/" not in records[0].getMessage()
