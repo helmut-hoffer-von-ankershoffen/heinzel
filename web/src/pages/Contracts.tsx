@@ -158,6 +158,7 @@ export function Contracts() {
               return (
                 <li key={qualified} className="flex flex-wrap items-center gap-2">
                   <Link
+                    data-prose-link
                     to={contractPath(qualified)}
                     className="font-medium text-primary underline-offset-2 hover:underline"
                   >

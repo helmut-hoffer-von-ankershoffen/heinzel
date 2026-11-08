@@ -254,7 +254,45 @@ async function footerPane(page, id, label, ready) {
   // can become obsolete when an independent provider changes footer capacity before Playwright sends the tap.
   await direct.or(more).first().tap();
   if ((await trigger.getAttribute("aria-expanded")) !== "true") await direct.tap();
-  return page.getByRole("region", { name: label, exact: true }).locator("..");
+  const pane = page.getByRole("region", { name: label, exact: true });
+  await pane.waitFor();
+  await assertOneActionRow(pane, `${id} pane`);
+  return pane.locator("..");
+}
+
+/**
+ * A pane's actions (design/README.md, "Actions"): one row that never wraps, the first with its words (or the row's
+ * declared `data-words="none"` fallback), the rest named icons, and every target at least 44px on this touch screen.
+ */
+async function assertOneActionRow(pane, name) {
+  const facts = await pane.evaluate((element) => {
+    const row = element.querySelector("[data-pane-actions]");
+    const actions = row ? [...row.querySelectorAll("[data-pane-action]")] : [];
+    return {
+      words: row?.getAttribute("data-words") ?? null,
+      actions: actions.map((action) => {
+        const box = action.getBoundingClientRect();
+        return {
+          top: Math.round(box.top),
+          width: box.width,
+          height: box.height,
+          kind: action.getAttribute("data-pane-action"),
+          text: action.textContent.trim(),
+          label: action.getAttribute("aria-label"),
+        };
+      }),
+    };
+  });
+  if (!facts.actions.length) return;
+  assert.equal(new Set(facts.actions.map((action) => action.top)).size, 1, `${name}: its actions wrap`);
+  const [lead, ...rest] = facts.actions;
+  if (facts.words === "lead") assert.ok(lead.kind === "text" && lead.text, `${name}: the lead shows its words`);
+  else if (facts.words === "none") assert.ok(lead.kind === "icon" && lead.label, `${name}: the lead's fallback icon`);
+  if (facts.words !== "all")
+    for (const action of rest)
+      assert.ok(action.kind === "icon" && action.label, `${name}: ${action.text} is a named icon`);
+  for (const action of facts.actions)
+    assert.ok(action.height >= 44 && action.width >= 44, `${name}: ${action.label ?? action.text} is under 44px`);
 }
 
 try {
@@ -1441,7 +1479,7 @@ try {
     await playbackHelp.tap();
     const [youtubePage] = await Promise.all([
       soundPage.waitForEvent("popup"),
-      player.getByRole("link", { name: "Play on YouTube" }).tap(),
+      player.getByRole("link", { name: "Open on YouTube" }).tap(),
     ]);
     await youtubePage.waitForURL("https://www.youtube.com/watch**");
     assert.equal(new URL(youtubePage.url()).searchParams.get("v"), sound.stream.video);

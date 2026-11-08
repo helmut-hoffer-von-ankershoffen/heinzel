@@ -1,13 +1,13 @@
 // Test notifications on the device running this browser. Only desktop loopback pages also offer the server's native
 // notifier and daemon repairs; a remote phone must never mistake a Mac's notification settings for its own.
-import { BellRing, Check, RotateCcw, X } from "lucide-react";
+import { BellRing, Check, Download, Play, Power, RotateCcw, Settings, X } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { api, type SchemaChannel } from "@/api/client";
 import { useOpenNotificationSettings, useTestNotice } from "@/api/queries";
 import { runCommand } from "@/components/CommandActions";
 import { OperationDialog } from "@/components/OperationDialog";
-import { Button } from "@/components/ui/button";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { type MessageKey, t } from "@/i18n";
 import { isLocalServer } from "@/lib/browser";
 import { appCallFor } from "@/lib/operationCalls";
@@ -37,10 +37,13 @@ export function NotificationTest({
   className,
   label,
   onTerminal,
+  children,
 }: {
   className?: string;
   label?: string;
   onTerminal?: () => void;
+  /** More `PaneAction`s for the row, after the test (the notification center's "Mark all read"). */
+  children?: React.ReactNode;
 }) {
   const test = useTestNotice();
   const settings = useOpenNotificationSettings();
@@ -71,25 +74,29 @@ export function NotificationTest({
   const channelAction = (channel: SchemaChannel) => {
     if (channel.fix === "open-settings") {
       return (
-        <Button size="sm" variant="outline" onClick={fix(() => settings.mutate())} disabled={settings.isPending}>
+        <PaneAction ghost icon={Settings} onClick={fix(() => settings.mutate())} disabled={settings.isPending}>
           {t("notify.fix.openSettings")}
-        </Button>
+        </PaneAction>
       );
     }
     const here = channel.command ? appCallFor(channel.command) : undefined;
     if (here) {
       return (
-        <Button size="sm" variant="outline" onClick={fix(() => requestOperation(here))}>
+        <PaneAction ghost icon={Power} onClick={fix(() => requestOperation(here))}>
           {t(channel.fix === "install-daemon" ? "notify.fix.installDaemon" : "notify.fix.turnOn")}
-        </Button>
+        </PaneAction>
       );
     }
     if (channel.command) {
       const label = channel.fix === "install-notifier" ? t("notify.fix.installNotifier") : t("notify.fix.turnOn");
       return (
-        <Button size="sm" variant="outline" onClick={() => setConfirm(channel.command ?? null)}>
+        <PaneAction
+          ghost
+          icon={channel.fix === "install-notifier" ? Download : Power}
+          onClick={() => setConfirm(channel.command ?? null)}
+        >
           {label}
-        </Button>
+        </PaneAction>
       );
     }
     return null;
@@ -111,9 +118,9 @@ export function NotificationTest({
           detail: t(delivery === "failed" ? "notify.browser.failed" : BROWSER[browser]),
           action:
             browser === "off" ? (
-              <Button size="sm" variant="outline" onClick={fix(() => void setDesktop(true))}>
+              <PaneAction ghost icon={Power} onClick={fix(() => void setDesktop(true))}>
                 {t("notify.fix.allowBrowser")}
-              </Button>
+              </PaneAction>
             ) : null,
         },
       ]
@@ -122,13 +129,7 @@ export function NotificationTest({
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       <OperationDialog />
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" onClick={again} disabled={test.isPending || delivery === "showing"}>
-          {result ? <RotateCcw aria-hidden /> : <BellRing aria-hidden />}
-          {result ? t("notify.tryAgain") : (label ?? t("notify.test"))}
-        </Button>
-        {fixed && <span className="text-xs text-muted-foreground">{t("notify.afterFix")}</span>}
-      </div>
+      {fixed && <p className="text-xs text-muted-foreground">{t("notify.afterFix")}</p>}
       {test.error && (
         <p role="alert" className="text-xs text-bad">
           {test.error.message}
@@ -167,9 +168,14 @@ export function NotificationTest({
         >
           <p>{t("notify.confirmRun")}</p>
           <code className="mt-1 block font-mono text-xs">{confirm}</code>
-          <div className="mt-2 flex gap-2">
-            <Button
-              size="sm"
+          <PaneActions align="end" words="all">
+            <PaneAction key="cancel" icon={X} onClick={() => setConfirm(null)}>
+              {t("plugins.cancel")}
+            </PaneAction>
+            <PaneAction
+              key="run"
+              primary
+              icon={Play}
               onClick={() => {
                 runCommand(confirm);
                 setConfirm(null);
@@ -178,13 +184,21 @@ export function NotificationTest({
               }}
             >
               {t("notify.runIt")}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setConfirm(null)}>
-              {t("plugins.cancel")}
-            </Button>
-          </div>
+            </PaneAction>
+          </PaneActions>
         </div>
       )}
+      <PaneActions>
+        <PaneAction
+          key="test"
+          icon={result ? RotateCcw : BellRing}
+          onClick={again}
+          disabled={test.isPending || delivery === "showing"}
+        >
+          {result ? t("notify.tryAgain") : (label ?? t("notify.test"))}
+        </PaneAction>
+        {children}
+      </PaneActions>
     </div>
   );
 }

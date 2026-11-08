@@ -21,6 +21,7 @@ import { useNoticeStream } from "@/notifications/useNoticeStream";
 import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { InstalledView, useViews, ViewSlot } from "@/plugins/Views";
 import { SoundEngine } from "@/sound/SoundEngine";
+import { BrowserPanel } from "./BrowserPanel";
 import { CalendarPanel } from "./CalendarPanel";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
@@ -100,6 +101,9 @@ function Layout() {
     [titlebar.bar, titlebar.fullscreen, navOpen],
   );
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
+  const features = config.data?.settings.find((row) => row.section === "hz" && row.key === "features")?.value;
+  const browserEnabled = Array.isArray(features) && features.includes("sidebar_browser");
+  const [browserOpen, setBrowserOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [terminalFull, setTerminalFull] = useState(false);
@@ -209,23 +213,25 @@ function Layout() {
   }, [requestedId]);
   const selectedPanel =
     requestedId ??
-    (activePanel === "page" && !beside
-      ? "page"
-      : activePanel === "chat" && chatOpen
-        ? "chat"
-        : activePanel === "calendar" && calendarOpen
-          ? "calendar"
-          : activePanel === "terminal" && terminalOpen
-            ? "terminal"
-            : retainedViews.includes(activePanel) && panelViews.some((view) => view.id === activePanel)
-              ? activePanel
-              : chatOpen
-                ? "chat"
-                : terminalOpen
-                  ? "terminal"
-                  : !beside
-                    ? "page"
-                    : "chat");
+    (activePanel === "browser" && browserOpen && browserEnabled
+      ? "browser"
+      : activePanel === "page" && !beside
+        ? "page"
+        : activePanel === "chat" && chatOpen
+          ? "chat"
+          : activePanel === "calendar" && calendarOpen
+            ? "calendar"
+            : activePanel === "terminal" && terminalOpen
+              ? "terminal"
+              : retainedViews.includes(activePanel) && panelViews.some((view) => view.id === activePanel)
+                ? activePanel
+                : chatOpen
+                  ? "chat"
+                  : terminalOpen
+                    ? "terminal"
+                    : !beside
+                      ? "page"
+                      : "chat");
   // Panel and full-screen changes can reveal the same footer at a new capacity without a viewport resize.
   // biome-ignore lint/correctness/useExhaustiveDependencies: each layout change requires a fresh footer measurement
   useLayoutEffect(() => {
@@ -242,6 +248,7 @@ function Layout() {
   const workspaceShown =
     chatOpen ||
     terminalOpen ||
+    (browserEnabled && browserOpen) ||
     calendarOpen ||
     viewOpen ||
     retainedViews.some((id) => panelViews.some((view) => view.id === id));
@@ -531,6 +538,17 @@ function Layout() {
                         },
                       ]
                     : []),
+                  ...(browserEnabled && browserOpen
+                    ? [
+                        {
+                          id: "browser",
+                          title: t("browser.title"),
+                          content: (
+                            <BrowserPanel active={selectedPanel === "browser"} onClose={() => setBrowserOpen(false)} />
+                          ),
+                        },
+                      ]
+                    : []),
                   ...(calendarOpen
                     ? [
                         {
@@ -590,6 +608,18 @@ function Layout() {
                 selectPanel("chat");
               }
             }}
+            browserOpen={browserOpen && selectedPanel === "browser"}
+            onToggleBrowser={
+              browserEnabled
+                ? () => {
+                    if (beside && browserOpen && selectedPanel === "browser") setBrowserOpen(false);
+                    else {
+                      setBrowserOpen(true);
+                      selectPanel("browser");
+                    }
+                  }
+                : undefined
+            }
             terminalOpen={terminalOpen && selectedPanel === "terminal"}
             onToggleTerminal={() => {
               if (beside && terminalOpen && selectedPanel === "terminal") {

@@ -63,6 +63,7 @@ function quitHarness(result, rejects = false) {
     ipcMain: { handle() {} }, lifecycle: {},
     initializeDesktopIdentity: () => true,
     createInstanceLifecycle: () => ({ acquire: () => true }),
+    createMiniBrowser: () => ({ handle() {}, closeAll() {} }),
     createLifecycleHandler: () => () => {}, createOwnedCli: () => owned,
     stopWithReport, shouldRefresh,
     installSignalQuit: (options) => installSignalQuit({ ...options, setTimer: () => ({ unref() {} }) }),
