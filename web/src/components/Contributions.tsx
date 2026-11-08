@@ -332,6 +332,26 @@ function FooterStatus({
       ))}
     </>
   );
+  const lines = (
+    <ul>
+      {(item.detail ?? []).map((line) => (
+        <li key={line.text} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5">
+          <span aria-hidden className={cn("size-2 shrink-0 rounded-full", DOT[line.tone])} />
+          <span className="min-w-0 flex-1" title={line.tooltip ?? undefined}>
+            {line.text}
+            {line.badge && (
+              <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-foreground">
+                {line.badge}
+              </span>
+            )}
+            {line.secondary && <span className="block text-xs text-muted-foreground">{line.secondary}</span>}
+          </span>
+          <IconOf icon={line.icon} />
+          {line.live && <span className="font-mono tabular-nums">{liveText(line.live, now)}</span>}
+        </li>
+      ))}
+    </ul>
+  );
   const accessible = [
     label,
     ...(item.meters ?? []).map((meter) => `${meter.label}: ${meter.value == null ? "unavailable" : `${meter.value}%`}`),
@@ -375,28 +395,12 @@ function FooterStatus({
         ) : undefined
       }
     >
-      <ul>
-        {(item.detail ?? []).map((line) => (
-          <li key={line.text} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5">
-            <span aria-hidden className={cn("size-2 shrink-0 rounded-full", DOT[line.tone])} />
-            <span className="min-w-0 flex-1" title={line.tooltip ?? undefined}>
-              {line.text}
-              {line.badge && (
-                <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-foreground">
-                  {line.badge}
-                </span>
-              )}
-              {line.secondary && <span className="block text-xs text-muted-foreground">{line.secondary}</span>}
-            </span>
-            <IconOf icon={line.icon} />
-            {line.live && <span className="font-mono tabular-nums">{liveText(line.live, now)}</span>}
-          </li>
-        ))}
-      </ul>
+      {/* Under a switch the provider's lines are its longer explanation: on demand in Details, never bullets. */}
+      {!item.toggle && lines}
       {/* The switch and its URL sit at the end of the body; its Share and Open join the pane's own actions in one row. */}
       {item.toggle ? (
         <div className="px-1.5">
-          <StatusControl entry={current} actions={actions} />
+          <StatusControl entry={current} actions={actions} details={item.detail?.length ? lines : undefined} />
         </div>
       ) : (
         <PaneActions>{actions}</PaneActions>
@@ -405,7 +409,15 @@ function FooterStatus({
   );
 }
 
-function StatusControl({ entry, actions }: { entry: SchemaStatusEntry; actions?: ReactNode }) {
+function StatusControl({
+  entry,
+  actions,
+  details,
+}: {
+  entry: SchemaStatusEntry;
+  actions?: ReactNode;
+  details?: ReactNode;
+}) {
   const client = useQueryClient();
   const current = useEntry("status", entry, 0);
   const control = current.item?.toggle;
@@ -414,6 +426,7 @@ function StatusControl({ entry, actions }: { entry: SchemaStatusEntry; actions?:
     <ContributionToggle
       control={control}
       actions={actions}
+      details={details}
       refresh={async (signal) => {
         const entries = await unwrap(api.GET("/system/ui/status", { params: { query: { item: entry.id } }, signal }));
         const fresh = entries.find((candidate) => candidate.id === entry.id);

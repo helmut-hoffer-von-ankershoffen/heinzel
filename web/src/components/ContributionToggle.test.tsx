@@ -59,8 +59,8 @@ afterEach(() => {
 });
 
 describe("generic provider toggle", () => {
-  it.each([true, false])("shows the verified switch state as visible text (%s)", (checked) => {
-    show(control({ checked }));
+  it.each([true, false])("shows the live switch state as visible text (%s)", (checked) => {
+    show(control({ checked, requested: checked }));
     expect(screen.getByRole("switch", { name: "Share this service" })).toHaveAttribute("aria-checked", String(checked));
     expect(screen.getByText(checked ? "On" : "Off")).toBeVisible();
   });
@@ -90,11 +90,13 @@ describe("generic provider toggle", () => {
     expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
   });
 
-  it("pending requested ON can be switched OFF while verified state remains unchecked", async () => {
+  it("shows the person's choice: switched on but not live yet reads On and Turning on…", async () => {
     const user = userEvent.setup();
     const { refresh } = show(control({ requested: true }));
-    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
-    expect(screen.getByRole("status")).toHaveTextContent("Switch off to cancel");
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText("On")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent(/^Turning on…$/);
+    expect(screen.queryByText(/requested|not ready|cancel/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole("switch"));
     await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
     expect(new URL(sentRequest().url).pathname).toBe("/api/example/disable");
@@ -121,7 +123,7 @@ describe("generic provider toggle", () => {
     await waitFor(() => expect(steps).toEqual(["post", "refresh", "apply", "refresh"]));
     expect(applySettings).toHaveBeenCalledWith(expected, expect.any(AbortSignal));
     expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
-    expect(screen.queryByRole("button", { name: "Copy URL" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy link" })).not.toBeInTheDocument();
   });
 
   it("does not replay a refused mutation or start a restart after it", async () => {
@@ -149,6 +151,7 @@ describe("generic provider toggle", () => {
     expect(fetch).toHaveBeenCalledOnce();
     expect(applySettings).toHaveBeenCalledOnce();
     expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByText("On")).not.toBeInTheDocument();
   });
 
   it("suppresses repeated gestures while the first request is unresolved", async () => {
@@ -225,6 +228,80 @@ describe("generic provider toggle", () => {
     },
   );
 
+  it("says Turning on… while the gesture runs, then the provider's short line", async () => {
+    let complete: ((response: Response) => void) | undefined;
+    vi.mocked(fetch).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    show();
+    fireEvent.click(screen.getByRole("switch"));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/^Turning on…$/));
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByText("Off")).not.toBeInTheDocument();
+    await act(async () => complete?.(Response.json({})));
+  });
+
+  it("says Turning off… while switching a live feature off", async () => {
+    vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
+    show(control({ checked: true, requested: true, url: ORIGIN }));
+    fireEvent.click(screen.getByRole("switch"));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/^Turning off…$/));
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+    expect(new URL(sentRequest().url).pathname).toBe("/api/example/disable");
+  });
+
+  it("shows one short problem line with Try again, the long text only in Details", async () => {
+    const user = userEvent.setup();
+    const long = "Tailscale is signed out on this computer.\nOpen Tailscale and sign in.";
+    const { refresh } = show(
+      control({ requested: true, problem: "Sign in to Tailscale, then try again.", explanation: long }),
+    );
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("status")).toHaveTextContent(/^Sign in to Tailscale, then try again\.$/);
+    expect(screen.getByText(/signed out on this computer/)).not.toBeVisible();
+    await user.click(screen.getByText("Details"));
+    expect(screen.getByText(/signed out on this computer/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
+    expect(new URL(sentRequest().url).pathname).toBe("/api/example/enable");
+  });
+
+  it("offers Restart hz when the provider declares settings only a restart loads", async () => {
+    const user = userEvent.setup();
+    const expected = { "clock.zone": "Europe/Berlin" };
+    const value = control({ requested: true, apply_settings: expected });
+    const { applySettings } = show(value);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Restart hz to finish turning it on\.$/);
+    await user.click(screen.getByRole("button", { name: "Restart hz" }));
+    await waitFor(() => expect(applySettings).toHaveBeenCalledWith(expected, expect.any(AbortSignal)));
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("shows only the first sentence of a failure; the rest is in Details", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockResolvedValue(
+      Response.json(
+        { error: "Tailscale did not answer. To see the current state, run: tailscale serve status." },
+        { status: 400 },
+      ),
+    );
+    show();
+    await user.click(screen.getByRole("switch"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^Tailscale did not answer\.$/);
+    await user.click(screen.getByText("Details"));
+    expect(screen.getByText(/tailscale serve status/)).toBeVisible();
+  });
+
+  it("uses the provider's short status line and never a second one", () => {
+    show(control({ requested: true, status: "Set up for another hz port." }));
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Set up for another hz port\.$/);
+  });
+
   it("is accessible with pending status", async () => {
     const { container } = show(control({ requested: true }));
     await expectAccessible(container);
@@ -238,7 +315,7 @@ describe("authenticated URL copy", () => {
     const clipboard = vi.spyOn(navigator.clipboard, "writeText");
     show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
     expect(screen.queryByRole("button", { name: "Share" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Copy URL" }));
+    await user.click(screen.getByRole("button", { name: "Copy link" }));
     expect(clipboard).toHaveBeenCalledWith(`${ORIGIN}/#token=session-for-tests`);
   });
 
@@ -247,7 +324,7 @@ describe("authenticated URL copy", () => {
     vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { share }));
     const user = userEvent.setup();
     show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
-    expect(screen.queryByRole("button", { name: "Copy URL" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy link" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Share" }));
     expect(share).toHaveBeenCalledWith({ url: `${ORIGIN}/#token=session-for-tests` });
     expect(fetch).not.toHaveBeenCalled();
@@ -273,13 +350,13 @@ describe("authenticated URL copy", () => {
     show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
     await user.click(screen.getByRole("button", { name: "Share" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copy URL" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Share" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Could not share the link. You can copy it instead.");
-    expect(screen.getByRole("button", { name: "Copy URL" })).toBeVisible();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not share the link; copy it instead.");
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Share" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copy URL" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeVisible();
   });
 
   it("shows and copies the usable session URL, including its fragment token", async () => {
@@ -289,7 +366,7 @@ describe("authenticated URL copy", () => {
     const { container } = show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
     expect(clipboard).not.toHaveBeenCalled();
     expect(container).toHaveTextContent(`${ORIGIN}/#token=session-for-tests`);
-    await user.click(screen.getByRole("button", { name: "Copy URL" }));
+    await user.click(screen.getByRole("button", { name: "Copy link" }));
     expect(clipboard).toHaveBeenLastCalledWith(`${ORIGIN}/#token=session-for-tests`);
     expect(screen.queryByRole("button", { name: "Copy sign-in link" })).not.toBeInTheDocument();
     const link = screen.getByRole("link", { name: "Open" });
@@ -298,7 +375,7 @@ describe("authenticated URL copy", () => {
     // The URL is body text; Copy and Open close the pane in one bottom row under the divider, after it.
     const row = link.closest("[data-pane-actions]");
     expect(row).toHaveClass("border-t");
-    expect(screen.getByRole("button", { name: "Copy URL" }).closest("[data-pane-actions]")).toBe(row);
+    expect(screen.getByRole("button", { name: "Copy link" }).closest("[data-pane-actions]")).toBe(row);
     const url = screen.getByText(`${ORIGIN}/#token=session-for-tests`);
     expect(url.compareDocumentPosition(row as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(fetch).not.toHaveBeenCalled();
@@ -343,7 +420,7 @@ describe("authenticated URL copy", () => {
     const expected = `${ORIGIN}/#token=hzd_device-fixture`;
     expect(container).toHaveTextContent(expected);
     expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", expected);
-    await user.click(screen.getByRole("button", { name: "Copy URL" }));
+    await user.click(screen.getByRole("button", { name: "Copy link" }));
     expect(clipboard).toHaveBeenLastCalledWith(expected);
   });
 
@@ -368,7 +445,7 @@ describe("authenticated URL copy", () => {
     const user = userEvent.setup();
     vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("session-for-tests"));
     const { container } = show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
-    await user.click(screen.getByRole("button", { name: "Copy URL" }));
+    await user.click(screen.getByRole("button", { name: "Copy link" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not copy the link.");
     expect(container).toHaveTextContent(`${ORIGIN}/#token=session-for-tests`);
     expect(screen.getByRole("status")).not.toHaveTextContent("Copied");

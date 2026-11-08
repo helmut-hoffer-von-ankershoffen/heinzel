@@ -1,5 +1,6 @@
 // A deliberate toggle gesture authorizes one host-projected call; readiness remains a server fact.
-import { Check, Copy, ExternalLink, Share2 } from "lucide-react";
+// The switch shows the person's choice; one status line says whether it is live (design/README.md, pane microcopy).
+import { Check, ChevronRight, Copy, ExternalLink, RefreshCw, RotateCw, Share2 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { problem, type SchemaOperationCall } from "@/api/client";
 import { token } from "@/api/token";
@@ -19,10 +20,15 @@ export type ContributionToggleControl = {
   url?: string | null;
   sign_in_url?: string | null;
   apply_settings?: ApplySettings;
+  status?: string | null;
+  problem?: string | null;
+  explanation?: string | null;
 };
 
 type Props = {
   control: ContributionToggleControl;
+  /** Longer provider text for the Details disclosure, e.g. a status item's detail lines; never shown inline. */
+  details?: ReactNode;
   /** The surrounding pane's own actions, joined to the URL's Share and Open in its one bottom row. */
   actions?: ReactNode;
   refresh: (signal: AbortSignal) => Promise<ContributionToggleControl | null>;
@@ -99,13 +105,21 @@ function expectations(control: ContributionToggleControl): ApplySettings {
   return value;
 }
 
+/** The first sentence of a message for the status line; the rest belongs in Details. */
+function firstSentence(message: string): [string, string] {
+  const match = /^(.+?[.!?])\s+(\S[\s\S]*)$/.exec(message.trim());
+  return match ? [match[1] ?? message, match[2] ?? ""] : [message.trim(), ""];
+}
+
+type Gesture = "on" | "off" | "restart";
+
 /** One control shared by provider Settings and status popovers; no plugin name or alternate restart path. */
-export function ContributionToggle({ control, refresh, applySettings, actions }: Props) {
+export function ContributionToggle({ control, refresh, applySettings, actions, details }: Props) {
   const labelId = useId();
   const noteId = useId();
   const active = useRef<AbortController | null>(null);
   const mounted = useRef(true);
-  const [pending, setPending] = useState(false);
+  const [gesture, setGesture] = useState<Gesture | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [shareFailed, setShareFailed] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
@@ -117,43 +131,73 @@ export function ContributionToggle({ control, refresh, applySettings, actions }:
     };
   }, []);
 
-  const requested = !control.checked && control.requested === true;
-  const operation = (control.checked || requested ? control.disable : control.enable).call;
+  const pending = gesture !== null;
+  // The person's choice: what they switched on stays on while hz finishes it; a live feature is on until it stops.
+  const chosen = control.checked || control.requested === true;
+  const unfinished = !control.checked && control.requested === true;
+  const operation = (chosen ? control.disable : control.enable).call;
+  const shown = gesture === "on" ? true : gesture === "off" ? false : chosen;
   const url = control.checked && !pending ? publicUrl(control.url) : null;
   const displayUrl = url ? (authenticatedUrl(control) ?? url) : null;
   const copied = control.checked && !!control.url && copiedUrl === control.url;
+  const restartNeeded = unfinished && !control.problem && Object.keys(control.apply_settings ?? {}).length > 0;
+  const [errorLine, errorRest] = error ? firstSentence(error) : ["", ""];
 
-  const change = async () => {
-    if (active.current || !actionable(operation)) return;
+  // Exactly one status line (design/README.md): the gesture in flight, then the provider's own words, then ours.
+  const note = pending
+    ? gesture === "off"
+      ? t("contrib.toggle.turningOff")
+      : t("contrib.toggle.turningOn")
+    : !actionable(operation)
+      ? t("contrib.toggle.unavailable")
+      : control.problem
+        ? control.problem
+        : restartNeeded
+          ? t("contrib.toggle.restartHint")
+          : copied
+            ? t("copy.done")
+            : control.status
+              ? control.status
+              : unfinished
+                ? t("contrib.toggle.turningOn")
+                : null;
+  const attention = !pending && (!!control.problem || restartNeeded || (unfinished && !!error));
+  const explanation = [control.explanation, errorRest].filter(Boolean).join("\n");
+  const hasDetails = !!explanation || !!details;
+
+  /** Run one host-built call, reread the provider, then finish any declared restart through the shared flow. */
+  const run = async (kind: Gesture, call: SchemaOperationCall | null) => {
+    if (active.current || (call && !actionable(call))) return;
     const controller = new AbortController();
     active.current = controller;
     const deadline = setTimeout(
       () => controller.abort(new DOMException(t("lifecycle.requestTimeout"), "TimeoutError")),
       90_000,
     );
-    setPending(true);
+    setGesture(kind);
     setError(null);
     let refreshAttempted = false;
     try {
-      const address = new URL(`/api${operation.path}`, window.location.origin);
-      const json = operation.body !== null && operation.body !== undefined;
-      if (!json)
-        for (const [key, value] of Object.entries(operation.query)) address.searchParams.set(key, String(value));
-      await bounded(async (signal) => {
-        const response = await fetch(
-          new Request(address, {
-            method: operation.method,
-            signal,
-            headers: {
-              Authorization: `Bearer ${token() ?? ""}`,
-              ...(json ? { "Content-Type": "application/json" } : {}),
-            },
-            ...(json ? { body: JSON.stringify(operation.body) } : {}),
-          }),
-        );
-        if (!response.ok) throw problem(response.status, await response.json().catch(() => null));
-      }, controller.signal);
-      controller.signal.throwIfAborted();
+      if (call) {
+        const address = new URL(`/api${call.path}`, window.location.origin);
+        const json = call.body !== null && call.body !== undefined;
+        if (!json) for (const [key, value] of Object.entries(call.query)) address.searchParams.set(key, String(value));
+        await bounded(async (signal) => {
+          const response = await fetch(
+            new Request(address, {
+              method: call.method,
+              signal,
+              headers: {
+                Authorization: `Bearer ${token() ?? ""}`,
+                ...(json ? { "Content-Type": "application/json" } : {}),
+              },
+              ...(json ? { body: JSON.stringify(call.body) } : {}),
+            }),
+          );
+          if (!response.ok) throw problem(response.status, await response.json().catch(() => null));
+        }, controller.signal);
+        controller.signal.throwIfAborted();
+      }
       refreshAttempted = true;
       const current = await bounded(refresh, controller.signal);
       controller.signal.throwIfAborted();
@@ -172,9 +216,15 @@ export function ContributionToggle({ control, refresh, applySettings, actions }:
       clearTimeout(deadline);
       controller.abort();
       active.current = null;
-      if (mounted.current) setPending(false);
+      if (mounted.current) setGesture(null);
     }
   };
+  const change = () => void run(chosen ? "off" : "on", operation ?? null);
+  // Try again repeats turning it on; it never runs a call the provider did not declare.
+  const retry = () => void run("on", control.enable.call ?? null);
+  // Restart runs only the existing restart flow for the settings the provider declared; no new mutation.
+  const restart = () => void run("restart", null);
+  const retryable = !pending && actionable(control.enable.call) && (!!control.problem || (!!error && chosen));
 
   const share = async () => {
     const value = authenticatedUrl(control) ?? publicUrl(control.url);
@@ -215,47 +265,57 @@ export function ContributionToggle({ control, refresh, applySettings, actions }:
           {control.label}
         </span>
         <span className="ml-auto text-xs text-muted-foreground">
-          {control.checked ? t("contrib.toggle.on") : t("contrib.toggle.off")}
+          {pending ? null : shown ? t("contrib.toggle.on") : t("contrib.toggle.off")}
         </span>
         <button
           type="button"
           role="switch"
           aria-labelledby={labelId}
           aria-describedby={noteId}
-          aria-checked={control.checked}
+          aria-checked={shown}
           aria-busy={pending}
           disabled={pending || !actionable(operation)}
-          onClick={() => void change()}
+          onClick={change}
           className={cn(
             "relative h-7 w-12 shrink-0 rounded-full border-2 border-foreground/40 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50",
-            control.checked ? "bg-switch border-switch" : requested ? "bg-warn/30" : "bg-muted-foreground/30",
+            shown ? (attention ? "bg-warn border-warn" : "bg-switch border-switch") : "bg-muted-foreground/30",
           )}
         >
           <span
             aria-hidden
             className={cn(
               "absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform",
-              control.checked ? "translate-x-5" : requested && "translate-x-2",
+              shown && "translate-x-5",
             )}
           />
         </button>
       </div>
-      <p id={noteId} role="status" className="text-xs text-muted-foreground">
-        {pending
-          ? t("contrib.toggle.working")
-          : requested
-            ? t("contrib.toggle.pending")
-            : !actionable(operation)
-              ? t("contrib.toggle.unavailable")
-              : copied
-                ? t("copy.done")
-                : null}
+      <p
+        id={noteId}
+        role="status"
+        title={control.explanation ?? undefined}
+        className={cn("text-xs", attention ? "text-foreground" : "text-muted-foreground")}
+      >
+        {note}
       </p>
       {url && <p className="break-all font-mono text-xs">{displayUrl}</p>}
       {error && (
         <p role="alert" className="text-xs text-bad">
-          {error}
+          {errorLine}
         </p>
+      )}
+      {hasDetails && (
+        // A native disclosure: content on demand, not an action, so the pane keeps its one action row.
+        <details className="group text-xs">
+          <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-2 [&::-webkit-details-marker]:hidden">
+            <ChevronRight aria-hidden className="size-3.5 transition-transform group-open:rotate-90" />
+            {t("contrib.toggle.details")}
+          </summary>
+          <div className="mt-1 space-y-1">
+            {explanation && <p className="whitespace-pre-line break-words text-muted-foreground">{explanation}</p>}
+            {details}
+          </div>
+        </details>
       )}
       <PaneActions className="px-0">
         {url && typeof navigator.share === "function" && (
@@ -271,6 +331,16 @@ export function ContributionToggle({ control, refresh, applySettings, actions }:
         {url && (
           <PaneAction icon={ExternalLink} href={displayUrl ?? url}>
             {t("status.open")}
+          </PaneAction>
+        )}
+        {retryable && (
+          <PaneAction icon={RefreshCw} onClick={retry}>
+            {t("contrib.toggle.retry")}
+          </PaneAction>
+        )}
+        {restartNeeded && !pending && !retryable && (
+          <PaneAction icon={RotateCw} onClick={restart}>
+            {t("contrib.toggle.restart")}
           </PaneAction>
         )}
         {actions}
