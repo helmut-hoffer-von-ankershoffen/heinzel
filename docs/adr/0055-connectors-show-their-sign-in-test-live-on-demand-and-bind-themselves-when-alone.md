@@ -7,7 +7,7 @@ amends: 0028
 amends-0028: a sole installed adapter serves its capability automatically
 related: 0015, 0030, 0032, 0035, 0039, 0048
 implemented-by: 84, 91
-amended-by: 0136, 0144
+amended-by: 0136, 0145
 ---
 
 # 0055: Connectors show their sign-in, test live on demand, and bind themselves when they are alone

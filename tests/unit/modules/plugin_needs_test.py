@@ -447,6 +447,7 @@ def test_the_add_sets_the_recommended_bindings_in_a_fresh_hz_for_what_it_install
     assert plugins == ["heinzel-acme", "heinzel-github", "heinzel-atlassian", "heinzel-google"]
     assert args[-2:] == ("--operation-id", "op-7")
     assert "--decline" not in args
+    assert "--automatic" in args  # an install binds only for layer plugins, and never what the person undid
     assert [(b.capability, b.state) for b in change.bindings] == [("code-host", "written"), ("tracker", "kept")]
     assert ("bind", "done", "code-host → github; kept tracker (yours)") in world.progress.events
     text = _plain(render_change(change))

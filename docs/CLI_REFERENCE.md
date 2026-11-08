@@ -3246,6 +3246,7 @@ $ hz system plugin bind [OPTIONS]
 * `--once / --no-once`: Consider each playbook once per version of its plugin, as an automatic repair does.  [default: no-once]
 * `--decline / --no-decline`: Write nothing; remember the playbooks as considered, so a repair leaves them.  [default: no-decline]
 * `--dry-run / --no-dry-run`: Say what it would write; write nothing.  [default: no-dry-run]
+* `--automatic / --no-automatic`: As an install or a repair asks: only company, org, site or team plugins bind, and never a binding you undid.  [default: no-automatic]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

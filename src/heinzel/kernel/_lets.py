@@ -234,7 +234,7 @@ a plugin, open its settings, or check again."""
 
 
 class CheckAction(BaseModel):
-    """The one thing to do about a check, as data a head turns into its own button (ADR 0144).
+    """The one thing to do about a check, as data a head turns into its own button (ADR 0145).
 
     A web head never shows `command`: it is the same action for a terminal, where `hz system doctor` prints it.
     """

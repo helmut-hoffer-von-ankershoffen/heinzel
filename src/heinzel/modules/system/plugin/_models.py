@@ -178,7 +178,7 @@ BindingState = Literal["written", "kept", "skipped", "conflict"]
 
 
 class PluginBinding(BaseModel):
-    """A connector binding an installed playbook recommends, and what the add did about it (ADR 0144)."""
+    """A connector binding an installed playbook recommends, and what the add did about it (ADR 0145)."""
 
     capability: str = Field(description="The capability, e.g. `tracker`.")
     adapter: str | None = Field(description="The connector recommended; none for a conflict between layers.")

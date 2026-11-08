@@ -1121,7 +1121,7 @@ class HeinzelService:
         disagree on is offered by neither until your team decides; each is said, so nothing is left out silently.
         """
         offered = self._layer_offered(qualname, playbook, prompter)
-        # A binding already set to what it recommends (installing the plugin set it, ADR 0144) isn't asked again.
+        # A binding already set to what it recommends (installing the plugin set it, ADR 0145) isn't asked again.
         view = self._kernel.resolve(CapabilityView)
         already: list[str] = []
         for key, value in list(offered.items()):

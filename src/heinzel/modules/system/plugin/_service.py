@@ -107,6 +107,11 @@ MAX_CATALOG_BYTES = 512 * 1024
 CATALOG_ROW_FIELDS = 3
 TIMEOUT = 10
 BIND_LABEL = "Set up which connector serves what"
+BIND_NOTE = (
+    "A company plugin among them then sets which connector serves what, as its playbook recommends; a connector you "
+    "chose stays yours, and the result lists each binding."
+)
+"""Said before an add: what the bind step may write. The bindings themselves are known only once it is installed."""
 KEPT_NEEDS = frozenset({"installed", "updated", "present"})
 """States of a needed plugin that is installed after the add: its playbook's bindings are set too."""
 """Seconds to wait for GitHub before searching without it."""
@@ -348,7 +353,7 @@ class PluginService:
 
         It also says which plugins it requires that aren't installed (or are too old), each read from the same catalog
         and installed first, and which it recommends: installed with it too, unless `with_recommended` is False,
-        then only offered (ADR 0144).
+        then only offered (ADR 0145).
 
         Raises:
             HeinzelError: If the source isn't one `add` takes, names a package, repository or ref that doesn't exist, or
@@ -656,7 +661,7 @@ class PluginService:
     ) -> PluginChange:
         """Install what `candidate` needs, then it, then set the connector bindings its playbooks recommend.
 
-        One step per plugin it requires or recommends, its own steps, and `bind` (ADR 0144): a fresh `hz` (which
+        One step per plugin it requires or recommends, its own steps, and `bind` (ADR 0145): a fresh `hz` (which
         loads what was just installed) writes the recommended bindings, keeping any the person set; with `bind`
         False it writes none and remembers that, so a repair doesn't either.
 
@@ -700,7 +705,7 @@ class PluginService:
         Returns:
             The bindings it reports, and what went wrong if it couldn't run (the install stands: it is a next step).
         """
-        args = ["system", "plugin", "bind", "--json"]
+        args = ["system", "plugin", "bind", "--json", "--automatic"]
         for plugin in dict.fromkeys(plugins):
             args += ["--plugin", plugin]
         if decline:
@@ -813,7 +818,7 @@ class PluginService:
         return PluginRepair(needs=results, restart_required=installed_any, bindings=bindings, message=message)
 
     def _repair_bindings(self, memory: "_NeedsMemory", *, automatic: bool, installed_any: bool) -> list[PluginBinding]:
-        """Set the bindings of installed playbooks that recommend connectors and were never considered (ADR 0144).
+        """Set the bindings of installed playbooks that recommend connectors and were never considered (ADR 0145).
 
         A plugin installed before installs set bindings, or added with `--no-bind` (remembered as considered), is
         asked about once per version: the automatic updater tries once, asked by hand it asks the fresh `hz` again,
@@ -894,7 +899,7 @@ class PluginService:
         """Show what `spec` installs; with `confirm`, install exactly that, record it and list the plugins after.
 
         The plugins it recommends come with it unless `with_recommended` is False; after the install, the connector
-        bindings its playbooks recommend are set unless `bind` is False (ADR 0144). A binding you set is kept.
+        bindings its playbooks recommend are set unless `bind` is False (ADR 0145). A binding you set is kept.
 
         Raises:
             HeinzelError: If the source is refused, unknown, or installing fails.
@@ -926,6 +931,8 @@ class PluginService:
                 raise HeinzelError(msg)
             return self._confirm_receipt(operation_id, candidate, bind=bind)
         candidate = self.candidate(spec, with_recommended=with_recommended)
+        if bind:
+            candidate = candidate.model_copy(update={"also": f"{candidate.also} {BIND_NOTE}".strip()})
         if not confirm:
             handle = candidate.spec if candidate.first_party else candidate.requirement
             receipt = self._receipts.create(candidate)

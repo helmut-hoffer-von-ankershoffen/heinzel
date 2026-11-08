@@ -135,7 +135,7 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0137](0137-tagged-git-plugins-update-automatically-with-what-they-need.md) Tagged git plugins update automatically, with what they need | proposed · 7 Nov<br>built |  |
 | [0138](0138-log-structured-events-with-stdlib-logging.md) Log structured events with stdlib logging | proposed · 7 Nov<br>partial |  |
 | [0141](0141-task-tracking-is-a-capability-the-tracker-is-a-connector.md) Task tracking is a capability; the tracker behind it is a connector | proposed · 7 Nov<br>partial | [#572](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/572) |
-| [0144](0144-installing-a-company-plugin-sets-it-up.md) Installing a company plugin sets it up | proposed · 8 Nov<br>built | [#672](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/672) |
+| [0145](0145-installing-a-company-plugin-sets-it-up.md) Installing a company plugin sets it up | proposed · 8 Nov<br>built | [#672](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/672) |
 
 </div>
 <!-- adr-index:end -->

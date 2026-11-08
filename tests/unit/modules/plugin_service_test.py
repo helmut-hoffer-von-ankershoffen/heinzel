@@ -546,7 +546,7 @@ def installing(make_kernel, prefix, monkeypatch, gh=None, identity=("1.1.0", Non
                 ]
             )
             if args[:3] == ("system", "plugin", "list")
-            # The fresh `hz` of the bind step (ADR 0144): no playbook recommends a connector here.
+            # The fresh `hz` of the bind step (ADR 0145): no playbook recommends a connector here.
             else json.dumps({"bindings": [], "message": ""})
             if args[:3] == ("system", "plugin", "bind")
             else "[]"

@@ -6231,7 +6231,7 @@ export interface components {
         };
         /**
          * CheckAction
-         * @description The one thing to do about a check, as data a head turns into its own button (ADR 0144).
+         * @description The one thing to do about a check, as data a head turns into its own button (ADR 0145).
          *
          *     A web head never shows `command`: it is the same action for a terminal, where `hz system doctor` prints it.
          */
@@ -10528,7 +10528,7 @@ export interface components {
         };
         /**
          * PluginBinding
-         * @description A connector binding an installed playbook recommends, and what the add did about it (ADR 0144).
+         * @description A connector binding an installed playbook recommends, and what the add did about it (ADR 0145).
          */
         PluginBinding: {
             /**
@@ -13150,6 +13150,12 @@ export interface components {
          * @description One step of `system plugin setup`, as it ended.
          */
         SetupStep: {
+            /**
+             * Command
+             * @description For `needs-cli`: the command a terminal runs; never shown by a web head.
+             * @default
+             */
+            command: string;
             /**
              * Detail
              * @description What it did or why not.
@@ -21674,6 +21680,8 @@ export interface operations {
                 decline?: boolean;
                 /** @description Say what it would write; write nothing. */
                 dry_run?: boolean;
+                /** @description As an install or a repair asks: only company, org, site or team plugins bind, and never a binding you undid. */
+                automatic?: boolean;
             };
             header?: never;
             path?: never;

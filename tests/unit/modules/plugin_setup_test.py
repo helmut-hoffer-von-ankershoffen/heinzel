@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from heinzel import Check, ConfigEditor, HeinzelError, Login, Module, Progress, Status
-from heinzel.kernel import CAPABILITIES, CapabilityView, Config
+from heinzel.kernel import CAPABILITIES, CapabilityView, Config, Kernel, ModuleRecord, Origin
 from heinzel.modules.system.plugin._setup import STATE_FILE, SetupService
 
 pytestmark = pytest.mark.unit
@@ -37,11 +37,13 @@ class Editor(ConfigEditor):
 class Steps(Progress):
     def __init__(self) -> None:
         self.events: list[tuple[str, str]] = []
+        self.details: list[tuple[str, str, str | None]] = []
 
     def emitter(self):
         def emit(kind, data):
             if kind == "phase":
                 self.events.append((data["id"], data["state"]))
+                self.details.append((data["id"], data["state"], data.get("detail")))
 
         return emit
 
@@ -64,8 +66,10 @@ def connector(name, *capabilities, checks=()):
     return module
 
 
-def company(name="acme", defaults=None, **extra):
+def company(name="acme", defaults=None, *, layer=False, **extra):
     module = Module(name, "A made-up company.")
+    if layer:
+        module.layer()
     module.playbook(
         "How the company reaches its tools.",
         defaults=defaults
@@ -90,7 +94,7 @@ SIGNED_OUT = Check(
 )
 
 
-def world(make_kernel, bindings=None, **modules):
+def world(make_kernel, bindings=None, version=None, **modules):
     modules = {
         "acme": company(),
         "jira": connector("jira", "tracker", checks=[SIGNED_OUT]),
@@ -98,7 +102,12 @@ def world(make_kernel, bindings=None, **modules):
         "drive": connector("drive", "documents", "mail"),
         **modules,
     }
-    kernel = make_kernel(config=Config(files=(), data={"capabilities": bindings or {}}), **modules)
+    config = Config(files=(), data={"capabilities": bindings or {}})
+    kernel = make_kernel(config=config, **modules)
+    if version is not None:  # the same plugins, updated: every module comes from another version of the plugin
+        origin = Origin(distribution="heinzel-test", version=version, builtin=False)
+        records = [ModuleRecord(qualname=r.qualname, module=r.module, origin=origin) for r in kernel.modules]
+        kernel = Kernel(kernel.settings, records, config=config)
     steps = Steps()
     kernel.bind(Progress, steps)
     editor = Editor()
@@ -301,3 +310,52 @@ def test_answers_are_key_value_pairs_read_as_json_or_text():
     }
     with pytest.raises(HeinzelError, match="key=value"):
         parse_answers(["nokey"])
+
+
+def test_an_install_binds_only_for_a_layer_plugin_never_a_plugin_that_names_itself(make_kernel):
+    rogue = company("rogue", defaults={"capabilities.mail": "drive"})
+    service, editor, _ = world(make_kernel, rogue=rogue, acme=company(defaults={"capabilities.tracker": "jira"}))
+    assert service.bind(plugins=["heinzel-test"], automatic=True).bindings == []
+    assert editor.written == {}
+    layered, editor, _ = world(
+        make_kernel, rogue=rogue, acme=company(defaults={"capabilities.tracker": "jira"}, layer=True)
+    )
+    result = layered.bind(plugins=["heinzel-test"], automatic=True)
+    assert states(result) == {"tracker": ("written", "jira", "")}
+    assert editor.written == {"capabilities.tracker": "jira"}  # the rogue playbook's mail binding: not applied
+    # Asked by the person, any playbook applies: the rogue's mail too.
+    assert states(layered.bind(module="rogue"))["mail"][0] == "written"
+
+
+def test_an_undone_binding_stays_undone_through_an_update_and_a_repair(make_kernel):
+    acme = company(defaults={"capabilities.tracker": "jira", "capabilities.documents": "drive"}, layer=True)
+    service, _, _ = world(make_kernel, acme=acme)
+    assert len(service.bind(plugins=["heinzel-test"], automatic=True, once=True).bindings) == 2
+    on_disk = {"tracker": "jira", "documents": "drive"}
+    later, _, _ = world(make_kernel, bindings=on_disk, acme=acme)
+    assert {b.state for b in later.unbind("acme").bindings} == {"removed"}
+    # ACME is updated; the automatic repair considers the new version once, and leaves what the person undid.
+    updated, updated_editor, _ = world(make_kernel, acme=acme, version="10.0.0")
+    result = updated.bind(automatic=True, once=True)
+    assert states(result) == {
+        "tracker": ("skipped", "jira", "you undid it"),
+        "documents": ("skipped", "drive", "you undid it"),
+    }
+    assert updated_editor.written == {}
+    # The person asking binds again, and it is no longer remembered as undone.
+    assert states(updated.bind(module="acme"))["tracker"][0] == "written"
+    assert json.loads(updated._path.read_text())["undone"] == {}
+
+
+def test_setup_says_what_needs_the_terminal_in_words_and_keeps_the_command_apart(make_kernel):
+    acme = company(defaults={"capabilities.tracker": "jira", "acme.region": "lisbon"})
+    service, _, steps = world(make_kernel, acme=acme)
+    settings = next(s for s in service.run("acme").steps if s.name == "settings")
+    assert (settings.state, settings.detail, settings.command) == ("needs-cli", "1 setting to accept", "hz setup acme")
+    assert not any("hz " in (detail or "") for _, _, detail in steps.details)
+
+
+def test_a_checklist_for_an_unknown_module_is_refused(make_kernel):
+    service, _, _ = world(make_kernel)
+    with pytest.raises(HeinzelError, match="No installed module"):
+        service.checklist("nobody")

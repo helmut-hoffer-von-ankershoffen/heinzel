@@ -662,7 +662,7 @@ class SetupCommands:
         )
 
     def _bind_first(self, name: str, prompter: Prompter) -> list[dict[str, object]] | None:
-        """Offer the connector bindings `name`'s playbook recommends at once, through `system plugin bind` (ADR 0144).
+        """Offer the connector bindings `name`'s playbook recommends at once, through `system plugin bind` (ADR 0145).
 
         The same service an install uses writes them, so the CLI and the web app write through one path; a binding
         the person set is kept. Declined, the wizard asks about each as before.

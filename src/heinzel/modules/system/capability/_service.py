@@ -138,7 +138,7 @@ class CapabilityService:
     def _serve(self, capability: str, cause: str | None = None) -> tuple[str, str, CheckAction]:
         """The fix, cause and one action of a check whose capability nobody serves: by cause, never a command.
 
-        The command stays in the action, for a terminal; a web head shows its own button (ADR 0144).
+        The command stays in the action, for a terminal; a web head shows its own button (ADR 0145).
         """
         installed = self.capabilities.installed(capability)
         if not installed:

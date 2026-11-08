@@ -1,7 +1,9 @@
-"""Setup of the plugin module: a playbook's recommended bindings, set at install, and its checklist (ADR 0144).
+"""Setup of the plugin module: a playbook's recommended bindings, set at install, and its checklist (ADR 0145).
 
 A playbook's `capabilities.*` defaults are what a company (a layer, ADR 0040) recommends serves each capability. This
-writes them through the same `ConfigEditor` as `hz system config set` and `hz setup`, by four rules, in order:
+writes them through the same `ConfigEditor` as `hz system config set` and `hz setup`. By itself (an install or a
+repair, `automatic`) only a layer plugin's playbook binds; any other plugin's only when the person asks. The rules,
+in order:
 
 1. A binding the person configured (any value, `none` included) is never changed: it is `kept`.
 2. A recommendation is written only for a connector that is installed; otherwise it is `skipped`, and the checklist
@@ -10,6 +12,7 @@ writes them through the same `ConfigEditor` as `hz system config set` and `hz se
    installed later doesn't unbind it.
 4. Layers that disagree (`ORG_SITE_PRECEDENCE`) or two playbooks that recommend different connectors bind nothing:
    a `conflict`, for the person to choose.
+5. A binding the person undid (`unbind`) is never written again by itself: `skipped: you undid it`.
 
 Every write is remembered with the module that recommended it and the operation, so `unbind <module>` undoes
 exactly those that still hold what setup wrote.
@@ -108,12 +111,20 @@ class SetupService:
                 found.append((record, let))
         return found
 
-    def _recommendations(self, playbooks: Sequence[tuple[ModuleRecord, PlaybookLet]]) -> list[_Recommendation]:
+    def _recommendations(
+        self, playbooks: Sequence[tuple[ModuleRecord, PlaybookLet]], *, layers_only: bool = False
+    ) -> list[_Recommendation]:
         """Each capability the playbooks recommend a connector for, once, the stack's precedence applied.
 
         A layer's recommendation is the one its stack offers (the most specific layer's value wins, ADR 0040); a
         playbook outside the stack offers its own. Different connectors for one capability are a conflict.
+        `layers_only` (an install or a repair binding by itself) leaves out every playbook whose module isn't a layer:
+        only a company, org, site or team plugin the person chose to install binds without being asked; any other
+        plugin's playbook is applied only by an explicit `bind` or `setup`.
         """
+        if layers_only:
+            declared = {layer.module for layer in self._kernel.layers().layers}
+            playbooks = [(record, let) for record, let in playbooks if record.qualname in declared]
         stack = self._kernel.layer_stack()
         layers = {layer.module: layer for layer in stack.layers}
         module_of = {layer.name: layer.module for layer in stack.layers}
@@ -161,12 +172,15 @@ class SetupService:
         once: bool = False,
         decline: bool = False,
         dry_run: bool = False,
+        automatic: bool = False,
     ) -> SetupBind:
-        """Write the recommended bindings of the playbooks asked for, by the rules of this module (ADR 0144).
+        """Write the recommended bindings of the playbooks asked for, by the rules of this module (ADR 0145).
 
         `once` (an automatic repair) considers each playbook once per version of its plugin; `decline` (an install
         with `--no-bind`) only remembers the playbooks as considered, so a repair doesn't bind them later; `dry_run`
-        says what it would do and writes nothing.
+        says what it would do and writes nothing. `automatic` (an install or a repair, not the person asking) binds
+        only for layer plugins and never a binding the person undid (`unbind`); asked explicitly, a binding written
+        again is no longer remembered as undone.
         """
         playbooks = self._playbooks(module, plugins)
         state = self._state()
@@ -183,10 +197,22 @@ class SetupService:
             dry_run=dry_run,
             declined=decline,
         ) as running:
+            undone = cast("dict[str, str]", state.setdefault("undone", {}))
             results = [
-                self._bind_one(recommendation, state, operation_id, decline=decline, dry_run=dry_run)
-                for recommendation in self._recommendations(playbooks)
+                self._bind_one(
+                    recommendation,
+                    state,
+                    operation_id,
+                    decline=decline,
+                    dry_run=dry_run,
+                    undone=recommendation.key in undone and automatic,
+                )
+                for recommendation in self._recommendations(playbooks, layers_only=automatic)
             ]
+            if not dry_run:
+                for result in results:
+                    if result.state == "written":
+                        undone.pop(f"{SECTION}.{result.capability.replace('-', '_')}", None)
             if not dry_run:
                 state["considered"] = sorted(considered | {_version_key(r) for r, _ in playbooks})
                 self._save(state)
@@ -199,7 +225,7 @@ class SetupService:
                 running.skip("nothing recommended")
         return SetupBind(bindings=results, message=_message(results, dry_run=dry_run))
 
-    def _bind_one(
+    def _bind_one(  # noqa: PLR0913 - one recommendation and how to apply it, by keyword
         self,
         recommendation: _Recommendation,
         state: dict[str, Any],
@@ -207,6 +233,7 @@ class SetupService:
         *,
         decline: bool,
         dry_run: bool,
+        undone: bool = False,
     ) -> BindingResult:
         """Apply one recommendation by the rules, logged as `setup.bind.binding` (ADR 0138)."""
         capability, adapter = recommendation.capability, recommendation.adapter
@@ -219,7 +246,7 @@ class SetupService:
             capability=capability,
             adapter=adapter,
         ) as running:
-            result = self._decide(recommendation, decline=decline)
+            result = self._decide(recommendation, decline=decline, undone=undone)
             if result.state == "written" and not dry_run:
                 try:
                     self._editor.write(recommendation.key, adapter)
@@ -240,7 +267,7 @@ class SetupService:
                 running.skip(result.state)
         return result
 
-    def _decide(self, recommendation: _Recommendation, *, decline: bool) -> BindingResult:
+    def _decide(self, recommendation: _Recommendation, *, decline: bool, undone: bool = False) -> BindingResult:
         capability, adapter, by = recommendation.capability, recommendation.adapter, recommendation.by
         if adapter is None:
             return BindingResult(
@@ -252,14 +279,21 @@ class SetupService:
             return BindingResult(capability=capability, adapter=adapter, state="kept", reason=reason, by=by)
         if adapter not in self._view.installed(capability):
             return BindingResult(capability=capability, adapter=adapter, state="skipped", reason="not installed", by=by)
+        if undone:
+            return BindingResult(capability=capability, adapter=adapter, state="skipped", reason="you undid it", by=by)
         if decline:
             return BindingResult(capability=capability, adapter=adapter, state="skipped", reason="declined", by=by)
         return BindingResult(capability=capability, adapter=adapter, state="written", by=by)
 
     def unbind(self, by: str) -> SetupBind:
-        """Remove the bindings setup wrote for `by`'s playbook; one the person changed since stays theirs."""
+        """Remove the bindings setup wrote for `by`'s playbook; one the person changed since stays theirs.
+
+        Each is remembered as undone, so no install, update or repair writes it again by itself; only the person
+        asking (`bind`, `setup`, `hz setup`) does.
+        """
         state = self._state()
         written = cast("dict[str, dict[str, Any]]", state.get("written", {}))
+        undone = cast("dict[str, str]", state.setdefault("undone", {}))
         results: list[BindingResult] = []
         with step(log, "plugin.unbind.run", operation="unbind", step="unbind", plugin=by) as running:
             for key, entry in list(written.items()):
@@ -277,6 +311,7 @@ class SetupService:
                         )
                     )
                 del written[key]
+                undone[key] = by
             self._save(state)
             running.note(removed=[r.capability for r in results if r.state == "removed"])
             if not results:
@@ -325,9 +360,9 @@ class SetupService:
         steps.append(SetupStep(name="bind", state="done", detail=bound.message))
         steps.append(self._settings_step(phases, module, playbook, answers or {}))
         if playbook.templates or playbook.assets:
-            detail = f"hz setup {module} asks which assets are yours and writes its templates"
+            detail = "Assets and templates need the setup wizard in a terminal"
             phases.note("templates", "Templates and assets", "skipped", detail)
-            steps.append(SetupStep(name="templates", state="needs-cli", detail=detail))
+            steps.append(SetupStep(name="templates", state="needs-cli", detail=detail, command=f"hz setup {module}"))
         else:
             phases.note("templates", "Templates and assets", "skipped", "none")
             steps.append(SetupStep(name="templates", state="skipped", detail="none"))
@@ -347,9 +382,9 @@ class SetupService:
             phases.note("settings", label, "skipped", "none")
             return SetupStep(name="settings", state="skipped", detail="none")
         if not answers:
-            detail = f"{len(own)} to accept: hz setup {module}, or answers"
+            detail = f"{len(own)} setting{'s' * (len(own) != 1)} to accept"
             phases.note("settings", label, "skipped", detail)
-            return SetupStep(name="settings", state="needs-cli", detail=detail)
+            return SetupStep(name="settings", state="needs-cli", detail=detail, command=f"hz setup {module}")
         with phases.step("settings", label):
             for key, value in answers.items():
                 self._editor.write(key, value)

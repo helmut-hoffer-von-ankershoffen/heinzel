@@ -10,7 +10,7 @@ related: 0012, 0032, 0040, 0047, 0056, 0136, 0138
 implemented-by: 672
 ---
 
-# 0144: Installing a company plugin sets it up
+# 0145: Installing a company plugin sets it up
 
 ## Context and Problem Statement
 
@@ -51,8 +51,11 @@ by default (`with_recommended`, true for every head; off, they are offered as be
 offered.
 
 **The bind step.** After the plugins are installed, the add runs a step `bind` in a fresh `hz` (which loads what was
-installed): `hz system plugin bind --plugin <each installed distribution>`. For each `capabilities.*` key the playbooks
-of those plugins recommend (the layer stack's precedence applied, ADR 0040), in order:
+installed): `hz system plugin bind --automatic --plugin <each installed distribution>`. Only plugins that declare a
+layer (a company, org, site or team, ADR 0040) bind by themselves: any other plugin's playbook, a connector's
+included, is applied only when the person asks (`hz system plugin bind`, `setup`, `hz setup`), so no plugin makes
+itself the mail handler at its own install. For each `capabilities.*` key those playbooks recommend (the layer stack's
+precedence applied), in order:
 
 1. **A binding the person configured is never changed** (any value, `none` included): `kept`.
 2. A recommendation is written only for a connector that is installed; otherwise it is `skipped`, and the checklist
@@ -61,6 +64,8 @@ of those plugins recommend (the layer stack's precedence applied, ADR 0040), in 
    unbind it.
 4. Layers that disagree, or two playbooks that recommend different connectors, bind nothing: a `conflict` the person
    resolves.
+5. A binding the person undid (`hz system plugin unbind <module>`) is remembered as undone: no install, update or
+   repair writes it again by itself (`skipped: you undid it`); only the person asking again does.
 
 Writes go through `ConfigEditor` into the user configuration. Each is remembered (state file
 `setup-bindings.json`: the module that recommended it, the operation id, when) so Settings can say "set by ACME" and
@@ -91,8 +96,12 @@ doctor` prints it, a web head shows a button.
 - Good: installing ACME binds code host, tracker, documents, calendar, mail and meetings; what is left are the person's
   sign-ins and site, which the checklist lists.
 - Good: a person's binding always wins, and undo removes only what setup wrote.
-- Bad: an install now also writes configuration. It is listed before (the preview's plugins and the playbook's
-  bindings) and after (the result's `bindings`), and `--no-bind` keeps the old behaviour.
+- Bad: an install now also writes configuration. The preview says so before (the plugins that come with it, and that a
+  company plugin among them sets its connectors; the bindings themselves are known only once its code is installed),
+  the result lists each binding after, and `--no-bind` keeps the old behaviour.
+- Neutral: setup is part of `system.plugin` (`setup`, `checklist`, `bind`, `unbind`), not a module of its own: one
+  more built-in module puts the chat tool `system:modules` over its 16 KB result limit (bead qakq). It moves to its own
+  module once that limit is solved; `hz setup <module>` and `hz system plugin setup <module>` share one service.
 - Neutral: "nothing in a playbook is applied without a yes" (ADR 0037) stands; the install's confirmation is the yes
   for the bindings, the wizard's questions remain for its other settings, assets and templates.
 

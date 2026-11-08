@@ -109,8 +109,9 @@ them). `hz system plugin repair`, which the automatic updater runs once per plug
 an installation lacks. Neither signs in: your `hz system doctor` checks keep naming the sign-in step.
 
 A company plugin's playbook `defaults` that recommend connectors (`{"capabilities.tracker": "atlassian"}`) are written
-when it is installed (ADR 0144): the add's last step, `bind`, sets each recommended binding whose connector is
-installed and keeps every binding the person set; layers that disagree bind nothing. `--no-bind` skips it,
+when it is installed (ADR 0145), if the plugin declares a layer (`module.layer(...)`): the add's last step, `bind`,
+sets each recommended binding whose connector is installed and keeps every binding the person set, or undid; layers
+that disagree bind nothing. Any other plugin's playbook binds only when the person asks (`hz system plugin bind`). `--no-bind` skips it,
 `hz system plugin unbind <module>` undoes it, `hz system plugin setup <module>` sets up a plugin installed
 earlier without a terminal, and `hz system plugin checklist --module <module>` lists what is left: one row per
 connector with its one next action, mostly the person's own sign-ins.

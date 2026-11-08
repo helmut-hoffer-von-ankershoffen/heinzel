@@ -292,7 +292,7 @@ def search(
     return service.search(text)
 
 
-# Setting up what a plugin's playbook recommends (ADR 0144).
+# Setting up what a plugin's playbook recommends (ADR 0145).
 
 
 def render_bind(result: SetupBind) -> RenderableType:
@@ -390,6 +390,13 @@ def bind(  # noqa: PLR0913, PLR0917 - one parameter per option of the operation
         bool, Field(description="Write nothing; remember the playbooks as considered, so a repair leaves them.")
     ] = False,
     dry_run: Annotated[bool, Field(description="Say what it would write; write nothing.")] = False,
+    automatic: Annotated[
+        bool,
+        Field(
+            description="As an install or a repair asks: only company, org, site or team plugins bind, and never a "
+            "binding you undid."
+        ),
+    ] = False,
 ) -> SetupBind:
     """Write the connector bindings installed playbooks recommend; a binding you set is always kept.
 
@@ -397,7 +404,13 @@ def bind(  # noqa: PLR0913, PLR0917 - one parameter per option of the operation
     and layers that disagree bind nothing until you choose.
     """
     return service.bind(
-        module=module, plugins=plugin or (), operation_id=operation_id, once=once, decline=decline, dry_run=dry_run
+        module=module,
+        plugins=plugin or (),
+        operation_id=operation_id,
+        once=once,
+        decline=decline,
+        dry_run=dry_run,
+        automatic=automatic,
     )
 
 

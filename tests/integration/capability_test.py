@@ -204,7 +204,7 @@ def test_doctor_reports_unmet_requirements_and_unknown_bindings(make_kernel):
     checks = {check["name"]: check for check in report["checks"]["system.capability"]}
     assert checks["tracker:read for announcer"]["status"] == "degraded"
     assert checks["tracker:read for announcer"]["detail"] == "tracker:read: no adapter bound"
-    # By cause, with the one action as data: the command is the action's, for a terminal only (ADR 0144).
+    # By cause, with the one action as data: the command is the action's, for a terminal only (ADR 0145).
     assert checks["tracker:read for announcer"]["fix"] == "Install a connector that serves tracker"
     assert checks["tracker:read for announcer"]["cause"] == "No connector serves tracker"
     assert checks["tracker:read for announcer"]["action"] == {

@@ -213,7 +213,7 @@ def test_setup_asks_for_each_setting_and_writes_only_what_is_accepted(make, tmp_
     editor = Editor()
     prompter = ScriptedPrompter(["y", "1", "21", "", "Bad Name", "team-report"])
     service.setup(the_playbook(service), prompter, editor)
-    # documents is bound to docs already, as it recommends (an install sets it, ADR 0144): not asked again.
+    # documents is bound to docs already, as it recommends (an install sets it, ADR 0145): not asked again.
     assert editor.written == {"teamwork.region": "eu"}
     text = (tmp_path / "team-report.prose.md").read_text()
     assert 'args: {ref: "doc-1"}' in text

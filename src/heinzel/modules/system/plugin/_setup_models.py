@@ -68,6 +68,9 @@ class SetupStep(BaseModel):
     name: str = Field(description="The step: `bind`, `settings`, `templates` or `check`.")
     state: StepState = Field(description="done, skipped, needs-cli (the wizard `hz setup` asks it) or failed.")
     detail: str = Field(default="", description="What it did or why not.")
+    command: str = Field(
+        default="", description="For `needs-cli`: the command a terminal runs; never shown by a web head."
+    )
 
 
 class SetupResult(BaseModel):

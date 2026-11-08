@@ -12,7 +12,7 @@ Needs an `hz` whose core carries plugin dependency installs and a catalog `acme`
 and its daemon are never read or touched. It signs in nowhere: `gh auth login` and `acli jira auth login --web` are
 the owner's steps, which the script prints at the end.
 
-`--with-bindings` (ADR 0144) also proves "install ACME and everything is set up": fake `gh`, `acli` and `gws`
+`--with-bindings` (ADR 0145) also proves "install ACME and everything is set up": fake `gh`, `acli` and `gws`
 (tests/fixtures/connectors/fake_clis) go first on PATH; the add installs the recommended connectors too and writes
 ACME's six bindings; the checklist then holds only the person's own sign-in rows; after the fake sign-ins and the
 Jira site it is done. A second throwaway profile proves that a binding the person set before stays theirs.
@@ -207,7 +207,7 @@ def prove_bindings(hz: str, env: dict[str, str]) -> None:
     """Install ACME with its recommended connectors: bindings set, only sign-ins left, then green after them.
 
     Raises:
-        SetupError: when a binding, a checklist row or the sign-in result is not what ADR 0144 promises.
+        SetupError: when a binding, a checklist row or the sign-in result is not what ADR 0145 promises.
     """
     change = run_object(hz, env, "system", "plugin", "add", "acme", "--confirm")
     absent = missing(run_hz(hz, env, "system", "plugin", "list"), EXPECTED_WITH_RECOMMENDED)
@@ -250,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hz", required=True, help="path to the hz executable under test")
     parser.add_argument("--keep", action="store_true", help="keep the throwaway profile for inspection")
     parser.add_argument(
-        "--with-bindings", action="store_true", help="also prove bindings, the checklist and fake sign-ins (ADR 0144)"
+        "--with-bindings", action="store_true", help="also prove bindings, the checklist and fake sign-ins (ADR 0145)"
     )
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
