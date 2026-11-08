@@ -141,11 +141,14 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
     "calendar",
   ];
   return (
+    // A pane over the window, so in the desktop app it starts under the title bar row (0 in a browser): its header
+    // never meets the traffic lights or the row's drag region, and it claims no-drag (data-pane, index.css).
     <section
       aria-label={t("notify.title")}
+      data-pane
       onKeyDown={(event) => event.key === "Escape" && onClose()}
       className={cn(
-        "absolute top-[var(--hz-safe-area-top,env(safe-area-inset-top,0px))] bottom-[var(--hz-safe-area-bottom,env(safe-area-inset-bottom,0px))] z-(--layer-popover) flex w-[min(26rem,calc(100%-3.5rem))] flex-col border-r border-border bg-popover shadow-2xl",
+        "absolute top-[calc(var(--hz-safe-area-top,env(safe-area-inset-top,0px))+var(--titlebar-height,0px))] bottom-[var(--hz-safe-area-bottom,env(safe-area-inset-bottom,0px))] z-(--layer-popover) flex w-[min(26rem,calc(100%-3.5rem))] flex-col border-r border-border bg-popover shadow-2xl",
         navOpen ? "left-14 sm:left-64 sm:max-w-[calc(100%-16rem)]" : "left-14",
       )}
     >
