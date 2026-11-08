@@ -1,2 +1,3 @@
 Installed hz 0.0.0 at <tmp>/tool/bin/hz. Nothing started.
-Next: hz start (asks), or hz start --yes.
+Next: uvx heinzel@latest (asks), or uvx heinzel@latest --yes.
+[exit 0]

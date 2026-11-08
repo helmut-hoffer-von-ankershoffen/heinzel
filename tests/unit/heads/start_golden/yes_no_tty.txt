@@ -5,4 +5,5 @@
 Daemon installed and loaded.
 Web server installed and loaded.
 Notifier available; its test was handed to the system. Check the actual notification on this computer.
-Heinzelmännchen is running. Run hz start to open it.
+Heinzelmännchen is running. Run hz ui open to open it.
+[exit 0]

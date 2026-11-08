@@ -20,7 +20,7 @@ def test_every_start_failure_is_two_short_lines_that_end_with_a_command(message)
     assert all(len(line) <= words.MAX_LINE for line in lines)
     assert not any(word in message.lower() for word in words.BANNED_WORDS)
     if len(lines) == 2:
-        assert " hz " in f" {lines[1]}"
+        assert " hz " in f" {lines[1]}" or "uvx heinzel@latest" in lines[1]
 
 
 def test_start_flags_are_split_from_delegated_arguments():
@@ -111,10 +111,10 @@ def test_non_interactive_start_installs_and_ends_with_a_status(monkeypatch, caps
     monkeypatch.setattr(bootstrap, "_interactive_launch", lambda _args: False)
     monkeypatch.setattr(bootstrap, "_ensure_app", lambda **_k: executable)
     monkeypatch.setattr(bootstrap.os, "execve", lambda *_a: pytest.fail("A script must never get a foreground server"))
-    bootstrap.main()
+    bootstrap.main()  # returns normally: exit 0, never SystemExit
     out = capsys.readouterr().out
     assert "Nothing started." in out
-    assert "hz start --yes" in out
+    assert "uvx heinzel@latest --yes" in out
 
 
 def test_yes_installs_services_and_app_but_does_not_open_without_a_terminal(monkeypatch, capsys, tmp_path):

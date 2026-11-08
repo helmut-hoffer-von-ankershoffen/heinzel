@@ -8,5 +8,6 @@
 Daemon installed and loaded.
 Web server installed and loaded.
 Notifier available; its test was handed to the system. Check the actual notification on this computer.
-Heinzelmännchen is running: the desktop app is open. Say hello in the chat; hz start opens it again.
+Heinzelmännchen is running: the desktop app is open. Say hello in the chat; hz app open opens it again.
 [exec hz app open]
+[exit 0]

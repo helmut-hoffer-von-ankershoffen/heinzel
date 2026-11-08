@@ -284,9 +284,15 @@ def launch_documented_app(command, env, tmp_path, deadline, *, bootstrap_wheels)
     # Select the candidate only for uvx's bootstrap resolution. An inherited UV_FIND_LINKS would also become
     # persistent resolver policy in the managed tool, unlike an ordinary user's standard installation.
     program, *arguments = shlex.split(command)
-    # Without a terminal the bare quick start installs and prints a status instead of serving (the start
-    # contract), so the documented command is followed by the foreground web command a person would run next.
-    selected = [program, "--find-links", str(bootstrap_wheels), *arguments, "ui", "open"]
+    selected = [program, "--find-links", str(bootstrap_wheels), *arguments]
+    # Without a terminal the bare quick start installs and prints the next step; it starts nothing and exits 0.
+    bare = run_documented_command(selected, env=env, cwd=tmp_path, deadline=deadline)
+    assert bare.returncode == 0, safe_diagnostics(f"{bare.stdout}\n{bare.stderr}")
+    assert "Nothing started." in bare.stdout, safe_diagnostics(bare.stdout)
+    assert "uvx heinzel@latest" in bare.stdout, safe_diagnostics(bare.stdout)
+    assert (tmp_path / "data/standard-app.json").is_file()
+    # The next command a person runs serves the app in the foreground.
+    selected = [str(tmp_path / "tools/heinzel/bin/hz"), "ui", "open"]
     log = tmp_path / "launch.log"
     process = GuardedCommand(selected, env=env, cwd=tmp_path)
     try:

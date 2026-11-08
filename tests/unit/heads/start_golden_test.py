@@ -99,10 +99,21 @@ def _play(monkeypatch, tmp_path, capsys, options):
     monkeypatch.setattr(
         _desktop_installation, "desktop_location", lambda: Path("/Applications/App.app") if installed_app else None
     )
-    bootstrap.main()
+    code = 0
+    try:
+        bootstrap.main()
+    except SystemExit as stopped:
+        code = stopped.code if isinstance(stopped.code, int) else 1
     captured = capsys.readouterr()
     text = "\n".join(
-        [*script.asked, *fake.transcript, *captured.err.splitlines(), *captured.out.splitlines(), *launched]
+        [
+            *script.asked,
+            *fake.transcript,
+            *captured.err.splitlines(),
+            *captured.out.splitlines(),
+            *launched,
+            f"[exit {code}]",
+        ]
     )
     return re.sub(re.escape(str(tmp_path)), "<tmp>", text) + "\n"
 

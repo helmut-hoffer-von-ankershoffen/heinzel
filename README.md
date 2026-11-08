@@ -123,8 +123,10 @@ It reuses uv when available, otherwise runs [Astral's official installer](https:
 It then runs the same app launcher. No administrator access or separate Python installation is needed.
 You can [inspect the script](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/install.sh) first.
 
-The first run installs the verified standard app with its default plugins and opens the workspace. Later runs open
-the installed app. Ctrl-C stops the foreground session; background operation stays optional.
+In a terminal, the first run installs the verified standard app with its default plugins, asks which background
+services (and, on Apple silicon Macs, the desktop app) to install, and opens Heinzelmännchen. Without a terminal it
+installs only and prints the next step, `uvx heinzel@latest` in a terminal (it asks) or with `--yes`. Later runs open
+the installed app. `hz ui serve` runs the web server in the foreground; **Ctrl-C** stops it.
 
 <details>
 <summary>Install details, updates and recovery</summary>
@@ -266,11 +268,12 @@ installing on its port. After an interrupted update, startup may refuse until su
 status does not call that ready. The service retains the selected configuration files and storage roots. Put
 behavior settings in those files; installation refuses process-only `HZ_*` overrides. Reinstall to change profiles.
 
-In an interactive terminal, bare `uvx heinzel@latest` offers three independent choices: the scheduled daemon,
-web server after login and native notifier. Each defaults to **Yes** and runs only after the persistent standard app
+In an interactive terminal, bare `uvx heinzel@latest` offers independent choices: the desktop app (Apple silicon Macs only), the
+scheduled daemon, web server after login and native notifier. Each defaults to **Yes** and runs only after the persistent standard app
 has been verified. First interactive setup asks for missing name, team name and genuinely required profile fields
 through normal configuration, preserving existing values. Setup is complete only when system health is green. Answer **No** to leave that choice unchanged. Help, explicit commands, machine-readable calls
-and noninteractive use never prompt or select services automatically. Native notification support and OS permission
+and noninteractive use never prompt or select services automatically; without a terminal nothing starts, so run
+`uvx heinzel@latest` in a terminal or add `--yes`. Native notification support and OS permission
 are reported separately; an installed notifier does not prove a visible notification.
 
 Built in today:
