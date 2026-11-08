@@ -27,6 +27,7 @@ from heinzel.heads import _desktop_messages as say
 from heinzel.heads._desktop_archive import BUNDLE_NAME, extract_bundle
 from heinzel.heads._desktop_log import step
 from heinzel.heads._desktop_release import VERSION, fetch_archive
+from heinzel.heads._desktop_report import SILENT, Reporter
 from heinzel.heads._desktop_seal import (
     SealReport,
     clear_our_quarantine,
@@ -67,6 +68,9 @@ _CPU_ARM64 = 0x0100000C
 _MACH_EXECUTE = 2
 _BUNDLE_ID = "org.heinzelmaennchen.desktop"
 _BUNDLE_EXECUTABLE = "Heinzelmaennchen"
+LOCK_WAIT = 120.0
+"""Seconds to wait for another install, update or removal before giving up."""
+_LOCK_NOTE_AFTER = 1.0
 SYSTEM_APPLICATIONS = Path("/Applications")
 """Where Finder, Launchpad and Spotlight expect apps; used whenever this user may write there without a password."""
 type DesktopInstallStatus = Literal["installed", "updated", "current", "deferred", "absent"]
@@ -234,14 +238,51 @@ def _open_lock(path: Path) -> Generator[int]:
         os.close(fd)
 
 
+def _lock_exclusive(fd: int, reporter: Reporter) -> None:
+    started = time.monotonic()
+    noted = False
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            waited = time.monotonic() - started
+            if waited >= LOCK_WAIT:
+                msg = (
+                    f"Another Heinzelmännchen install, update or removal has held the desktop lock for "
+                    f"{LOCK_WAIT:.0f} seconds. Wait for it to finish or quit it (look for `hz app` in `ps aux`), "
+                    "then run the command again."
+                )
+                raise DesktopInstallationError(msg, say.busy()) from None
+            if not noted and waited >= _LOCK_NOTE_AFTER:
+                reporter.note(say.WAIT_FOR_LOCK)
+                noted = True
+            time.sleep(0.1)
+        else:
+            return
+
+
 @contextmanager
-def _locked_config(home: Path) -> Generator[Path]:
+def _locked_config(home: Path, reporter: Reporter = SILENT) -> Generator[Path]:
     config = home / ".config" / "heinzel"
     _owned_directory(config.parent)
     _owned_directory(config)
     with _open_lock(config / "desktop-installation.lock") as fd:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        _lock_exclusive(fd, reporter)
         yield config
+
+
+def _confirm_installed(bundle: Path, config: Path, reporter: Reporter) -> None:
+    """Check on disk that the receipt-owned bundle is really where we report it.
+
+    Raises:
+        DesktopInstallationError: If the bundle is missing, not owned or not the expected app.
+    """
+    with reporter.phase(say.VERIFY_INSTALLED):
+        record = _owned_installation(bundle, config)
+        if record is None:
+            msg = f"The desktop app is not at {bundle} after installation."
+            raise DesktopInstallationError(msg)
+        _verify_bundle(bundle, record.release)
 
 
 @contextmanager
@@ -265,11 +306,11 @@ def _read_metadata(path: Path) -> bytes | None:
         info = os.fstat(source.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_mode & 0o077:
             msg = _MSG_NOT_PRIVATE.format(path=path)
-            raise _conflict(msg)
+            raise _conflict(msg, say.untrusted_record(path))
         contents = source.read(_MAX_METADATA_BYTES + 1)
         if len(contents) > _MAX_METADATA_BYTES:
             msg = _MSG_TOO_LARGE.format(path=path)
-            raise _conflict(msg)
+            raise _conflict(msg, say.untrusted_record(path))
         return contents
 
 
@@ -668,15 +709,21 @@ def _migrate(bundle: Path, config: Path) -> Path:
     return target
 
 
-def desktop_location(home: Path | None = None) -> Path | None:
-    """Where the owned desktop app is installed now, or None when it is not installed."""
+def desktop_installed(home: Path | None = None) -> tuple[Path, str] | None:
+    """Where the owned desktop app is installed now and its release, or None when it is not installed."""
     home = (home or Path.home()).resolve(strict=True)
     config = home / ".config" / "heinzel"
     try:
         bundle, record = _locate(home, config)
     except DesktopInstallationError:
         return None
-    return bundle if record is not None and bundle.is_dir() else None
+    return (bundle, record.release) if record is not None and bundle.is_dir() else None
+
+
+def desktop_location(home: Path | None = None) -> Path | None:
+    """Where the owned desktop app is installed now, or None when it is not installed."""
+    installed = desktop_installed(home)
+    return None if installed is None else installed[0]
 
 
 def install_desktop(  # noqa: PLR0913 - keyword-only options of one CLI command
@@ -685,6 +732,7 @@ def install_desktop(  # noqa: PLR0913 - keyword-only options of one CLI command
     *,
     update_only: bool = False,
     home: Path | None = None,
+    reporter: Reporter = SILENT,
     keep_quarantine: bool = False,
     replace: bool = False,
     forget: bool = False,
@@ -700,13 +748,14 @@ def install_desktop(  # noqa: PLR0913 - keyword-only options of one CLI command
     home = (home or Path.home()).resolve(strict=True)
     notes = [] if notes is None else notes
     options = {"version": version, "update_only": update_only, "replace": replace, "forget": forget}
-    with step("install", "run", **options) as result, _locked_config(home) as config:
+    with step("install", "run", **options) as result, _locked_config(home, reporter) as config:
         state = _install_steps(
             version,
             executable,
             home,
             config,
             notes,
+            reporter,
             update_only=update_only,
             replace=replace,
             forget=forget,
@@ -716,12 +765,13 @@ def install_desktop(  # noqa: PLR0913 - keyword-only options of one CLI command
         return state
 
 
-def _install_steps(  # noqa: PLR0913 - the options of install_desktop, passed through
+def _install_steps(  # noqa: PLR0913, PLR0917 - the options of install_desktop, passed through
     version: str,
     executable: Path,
     home: Path,
     config: Path,
     notes: list[str],
+    reporter: Reporter,
     *,
     update_only: bool,
     replace: bool,
@@ -730,7 +780,7 @@ def _install_steps(  # noqa: PLR0913 - the options of install_desktop, passed th
 ) -> DesktopInstallStatus:
     if os.path.lexists(home / "Applications"):
         _owned_directory(home / "Applications")
-    with step("install", "recover") as result:
+    with step("install", "recover") as result, reporter.phase(say.CHECK_RUNNING):
         ready = _recover_before_use(home, config)
         result["outcome"] = "ok" if ready else "deferred"
     if not ready:
@@ -759,8 +809,12 @@ def _install_steps(  # noqa: PLR0913 - the options of install_desktop, passed th
             result["path"] = str(bundle)
     _applications_directory(bundle.parent, home)
     with step("install", "release", path=str(bundle), version=version) as result:
-        state = _install_release(version, executable, bundle, config, existing, keep_quarantine=keep_quarantine)
+        state = _install_release(
+            version, executable, bundle, config, existing, reporter, keep_quarantine=keep_quarantine
+        )
         result["outcome"] = state
+    if state != "deferred":
+        _confirm_installed(bundle, config, reporter)
     return state
 
 
@@ -774,8 +828,15 @@ def _write_private(path: Path, data: bytes) -> None:
         file.write(data)
 
 
-def _install_release(  # noqa: PLR0913 - the transaction needs each of these
-    version: str, executable: Path, bundle: Path, config: Path, existing: _Receipt | None, *, keep_quarantine: bool
+def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of these
+    version: str,
+    executable: Path,
+    bundle: Path,
+    config: Path,
+    existing: _Receipt | None,
+    reporter: Reporter = SILENT,
+    *,
+    keep_quarantine: bool,
 ) -> DesktopInstallStatus:
     if (
         not VERSION.fullmatch(version)
@@ -790,31 +851,35 @@ def _install_release(  # noqa: PLR0913 - the transaction needs each of these
     if existing and _in_use(bundle):
         return "deferred"
     with _staging(bundle.parent, config) as (staging, files):
-        archive = fetch_archive(version, staging)
+        archive = fetch_archive(version, staging, reporter)
         expanded = staging / "expanded"
         expanded.mkdir(mode=0o700)
-        candidate = extract_bundle(archive, expanded)
-        _verify_bundle(candidate, version)
-        _prepare_for_gatekeeper(candidate, keep_quarantine=keep_quarantine)
+        with reporter.phase(say.EXTRACT):
+            candidate = extract_bundle(archive, expanded)
+        with reporter.phase(say.CHECK_BUNDLE):
+            _verify_bundle(candidate, version)
+        with reporter.phase(say.CHECK_SEAL):
+            _prepare_for_gatekeeper(candidate, keep_quarantine=keep_quarantine)
         candidate.rename(staging / BUNDLE_NAME)
-        info = (staging / BUNDLE_NAME).lstat()
-        record = _Receipt(
-            release=version,
-            device=info.st_dev,
-            inode=info.st_ino,
-            birth_time=getattr(info, "st_birthtime_ns", None),
-            executable=str(executable),
-        )
-        metadata = record.model_dump_json().encode()
-        binding = record.binding()
-        if max(len(metadata), len(binding)) > _MAX_METADATA_BYTES:
-            msg = "The desktop installation metadata exceeds the allowed size."
-            raise DesktopInstallationError(msg)
-        _write_private(files / _RECEIPT, metadata)
-        _write_private(files / _BINDING, binding)
-        _sync_tree(staging / BUNDLE_NAME)
-        _sync_tree(files)
-        with _desktop_use(config) as locked:
+        with reporter.phase(say.WRITE_RECEIPT):
+            info = (staging / BUNDLE_NAME).lstat()
+            record = _Receipt(
+                release=version,
+                device=info.st_dev,
+                inode=info.st_ino,
+                birth_time=getattr(info, "st_birthtime_ns", None),
+                executable=str(executable),
+            )
+            metadata = record.model_dump_json().encode()
+            binding = record.binding()
+            if max(len(metadata), len(binding)) > _MAX_METADATA_BYTES:
+                msg = "The desktop installation metadata exceeds the allowed size."
+                raise DesktopInstallationError(msg)
+            _write_private(files / _RECEIPT, metadata)
+            _write_private(files / _BINDING, binding)
+            _sync_tree(staging / BUNDLE_NAME)
+            _sync_tree(files)
+        with _desktop_use(config) as locked, reporter.phase(say.install_into(bundle.parent)):
             if not locked or (existing and _in_use(bundle)):
                 return "deferred"
             if _owned_installation(bundle, config) != existing:
@@ -823,7 +888,9 @@ def _install_release(  # noqa: PLR0913 - the transaction needs each of these
     return "updated" if existing else "installed"
 
 
-def uninstall_desktop(*, home: Path | None = None, notes: list[str] | None = None) -> Path | None:
+def uninstall_desktop(
+    *, home: Path | None = None, notes: list[str] | None = None, reporter: Reporter = SILENT
+) -> Path | None:
     """Remove an owned, stopped desktop bundle and its binding from whichever Applications folder holds it.
 
     A record whose app is already gone is set aside instead (noted in `notes`), so uninstall always finishes.
@@ -837,13 +904,13 @@ def uninstall_desktop(*, home: Path | None = None, notes: list[str] | None = Non
     _check_platform()
     home = (home or Path.home()).resolve(strict=True)
     notes = [] if notes is None else notes
-    with step("uninstall", "run") as result, _locked_config(home) as config:
-        removed = _uninstall_steps(home, config, notes)
+    with step("uninstall", "run") as result, _locked_config(home, reporter) as config:
+        removed = _uninstall_steps(home, config, notes, reporter)
         result.update({"outcome": "removed" if removed else "absent", "path": str(removed) if removed else None})
         return removed
 
 
-def _uninstall_steps(home: Path, config: Path, notes: list[str]) -> Path | None:
+def _uninstall_steps(home: Path, config: Path, notes: list[str], reporter: Reporter) -> Path | None:
     if os.path.lexists(home / "Applications"):
         _owned_directory(home / "Applications")
     running = "Quit Heinzelmännchen before uninstalling the desktop app."
@@ -863,7 +930,7 @@ def _uninstall_steps(home: Path, config: Path, notes: list[str]) -> Path | None:
             raise DesktopInstallationError(running, say.app_running(applications, command="uninstall"))
         if _owned_installation(bundle, config) != existing:
             raise DesktopInstallationError(_CONFLICT)
-        with _staging(applications, config) as (staging, files):
+        with _staging(applications, config) as (staging, files), reporter.phase(say.remove(bundle)):
             _commit(bundle, config, staging, files, "uninstall")
     return bundle
 

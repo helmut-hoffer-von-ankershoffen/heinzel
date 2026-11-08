@@ -121,7 +121,20 @@ def _run_rounds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str, ro
     monkeypatch.setattr(focused_job, "_START", focused_job.time.monotonic())
     monkeypatch.chdir(tmp_path)
     failures = _Failures()
-    args = ["-q", "-p", "no:cacheprovider", "-p", "no:xdist", "-c", str(tmp_path / "pytest.ini"), "rounds_case_test.py"]
+    # Its own --basetemp: without one the nested session cleans the machine-wide pytest-of-$USER root at start-up,
+    # deleting other sessions' garbage directories inside this test's 5 s budget while those sessions may be
+    # scanning them (bead l8fr: a timeout in shutil.rmtree there, and an unclosed scandir iterator).
+    args = [
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "no:xdist",
+        "-c",
+        str(tmp_path / "pytest.ini"),
+        f"--basetemp={tmp_path / 'basetemp'}",
+        "rounds_case_test.py",
+    ]
     pytest.main(args, plugins=[focused_job, failures])
     return failures.nodeids
 
@@ -152,6 +165,22 @@ def test_the_round_plugin_repeats_in_one_process_and_tallies(tmp_path, monkeypat
     assert failed == ["rounds_case_test.py::test_second_run_fails[round2]", "rounds_case_test.py::test_case[round3-a]"]
     # round 1 green, rounds 2 and 3 red; booking test_case[round3-a] to another round changes the count
     assert json.loads((tmp_path / "out" / "tally.json").read_text()) == {"rounds": 3, "green": 1, "asked": 3}
+
+
+def test_the_nested_session_never_cleans_the_shared_pytest_temp_root(tmp_path, monkeypatch):
+    """Bead l8fr: another session's garbage under the machine-wide pytest temp root is not this test's to delete."""
+    import getpass
+
+    shared = tmp_path / "shared-root" / f"pytest-of-{getpass.getuser()}"
+    garbage = shared / "garbage-from-another-session"
+    garbage.mkdir(parents=True)
+    (garbage / "kept").write_text("x", encoding="utf-8")
+    monkeypatch.setenv("PYTEST_DEBUG_TEMPROOT", str(tmp_path / "shared-root"))
+    case = tmp_path / "case"
+    case.mkdir()
+    failed = _run_rounds(case, monkeypatch, "def test_uses_tmp(tmp_path):\n    assert tmp_path.is_dir()\n", rounds=1)
+    assert failed == []
+    assert (garbage / "kept").is_file()
 
 
 @pytest.mark.parametrize(

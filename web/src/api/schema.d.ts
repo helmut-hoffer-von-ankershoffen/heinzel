@@ -10288,6 +10288,17 @@ export interface components {
          */
         PluginCandidate: {
             /**
+             * Also
+             * @description Said before it starts: which plugins it installs with this one, and which it offers.
+             * @default
+             */
+            also: string;
+            /**
+             * Also Installs
+             * @description Plugins of the same repository it needs and that are not installed yet, in install order (dependencies first), pinned to the same commit; they are installed in the same confirmed operation.
+             */
+            also_installs?: components["schemas"]["PluginDependency"][];
+            /**
              * Distribution
              * @description Distribution name, when it could be read before installing.
              */
@@ -10403,6 +10414,34 @@ export interface components {
              * @description Whether a running `hz ui serve` or MCP server must restart to load the change; the web app restarts its server with `POST /api/restart`. Every new `hz` command sees it at once.
              */
             restart_required: boolean;
+        };
+        /**
+         * PluginDependency
+         * @description A plugin of the same repository and commit that installing a plugin installs first.
+         */
+        PluginDependency: {
+            /**
+             * Distribution
+             * @description Distribution name, e.g. heinzel-acme.
+             */
+            distribution: string;
+            /**
+             * Requirement
+             * @description What is installed: its git source pinned to the same commit.
+             */
+            requirement: string;
+            /**
+             * Source
+             * @description Where its code comes from; the same source as the plugin.
+             * @default git
+             * @enum {string}
+             */
+            source: "pypi" | "git" | "path" | "unknown";
+            /**
+             * Version
+             * @description The version at that commit, when known.
+             */
+            version: string | null;
         };
         /**
          * PluginEvent
@@ -16550,6 +16589,7 @@ export type SchemaPlaybookList = components['schemas']['PlaybookList'];
 export type SchemaPlaybookView = components['schemas']['PlaybookView'];
 export type SchemaPluginCandidate = components['schemas']['PluginCandidate'];
 export type SchemaPluginChange = components['schemas']['PluginChange'];
+export type SchemaPluginDependency = components['schemas']['PluginDependency'];
 export type SchemaPluginEvent = components['schemas']['PluginEvent'];
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
