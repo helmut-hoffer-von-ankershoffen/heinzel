@@ -6,6 +6,7 @@ import { Check, CircleAlert, Loader2, TriangleAlert, X } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { daemonStatusKey } from "@/api/daemon";
+import { Progress } from "@/components/Progress";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import {
@@ -48,31 +49,16 @@ function Steps({ phases, active }: Readonly<{ phases: Phase[]; active: boolean }
   const running = phases.some((phase) => phase.state === "running");
   return (
     <div className="mt-3 space-y-2">
-      <progress
-        className="sr-only"
-        aria-label={t("op.steps")}
-        max={phases.length}
-        value={finished}
-        aria-valuetext={t("op.step", {
+      <Progress
+        label={t("op.steps")}
+        names={false}
+        pulse={active}
+        segments={phases.map((phase) => ({ id: phase.id, label: phase.label, state: phase.state }))}
+        valueText={t("op.step", {
           done: Math.min(finished + (running ? 1 : 0), phases.length),
           total: phases.length,
         })}
       />
-      <div aria-hidden className="flex gap-1">
-        {phases.map((phase) => (
-          <span
-            key={phase.id}
-            aria-hidden
-            className={cn(
-              "h-1.5 flex-1 rounded-full bg-muted",
-              phase.state === "done" && "bg-ok",
-              phase.state === "warn" && "bg-warn",
-              phase.state === "failed" && "bg-bad",
-              phase.state === "running" && active && "animate-pulse bg-primary",
-            )}
-          />
-        ))}
-      </div>
       <ol aria-label={t("op.steps")} className="space-y-1.5">
         {phases.map((phase) => {
           const Icon = ICON[phase.state];
