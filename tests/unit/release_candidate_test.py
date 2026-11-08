@@ -479,8 +479,9 @@ def _lane(*names_and_conclusions):
 )
 def test_the_quarantine_lane_never_refuses_a_candidate_but_its_registry_check_must_pass(lane):
     value = evidence()
+    required = len(value["jobs"])
     value["jobs"] += _lane(*lane)
-    assert validate(value)["job_count"] == 64
+    assert validate(value)["job_count"] == required
 
 
 @pytest.mark.parametrize("defect", ["registry-failed", "missing-os", "rerun", "idle-ran", "duplicate"])
