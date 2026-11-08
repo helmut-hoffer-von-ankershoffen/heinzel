@@ -1457,8 +1457,8 @@ class UpdateService:
                 HeadRefresh(
                     head="desktop",
                     status="pending",
-                    detail="Not verified by this update: the desktop app updates itself at the web server's next "
-                    "automatic update check, if automatic updates are on; otherwise run the installer again.",
+                    detail="Not updated by this command: the desktop app updates itself at the web server's next "
+                    "automatic update check, if automatic updates are on. Update it now with `hz app install`.",
                 )
             )
         return heads
@@ -1621,7 +1621,7 @@ def _plugin_step(update: PluginUpdate) -> tuple[State, str]:
     if update.status == "upgraded":
         return "done", f"Updated {update.before or '?'} → {update.after or '?'}"
     if update.status == "unchanged":
-        return "done", f"Already the newest it may be ({update.after or 'unknown version'})"
+        return "done", f"Already newest ({update.after or 'unknown version'})"
     if update.disabled:
         return "warn", "Taken out: it does not allow this hz yet"
     return "warn", f"Held back at {update.before or 'its version'}: it does not allow the new hz yet"

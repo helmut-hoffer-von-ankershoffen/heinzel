@@ -23,6 +23,7 @@ from heinzel.modules.system._announced import Announcement, ToolSnapshot, trial_
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._models import (
     AnnouncedUpdate,
+    AutomaticUpdates,
     ChannelReport,
     ModuleInfo,
     PluginUpdate,
@@ -175,10 +176,23 @@ def update(
     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
     version, the error names it and the previous version stays installed.
 
+    Why it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)
+    install only accepted releases, ones old enough (`auto_update_min_age_hours` for hz,
+    `auto_update_plugin_min_age_hours` for plugins) that a broken one could be withdrawn first; this command installs
+    the newest release now, accepted or not. The desktop app is not part of the tool: it updates itself at the web
+    server's next automatic update check, or now with `hz app install`. The output says which applies.
+
     Raises:
         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
     """
-    return service.update(source, channel=channel or kernel.settings.update_channel)
+    settings = kernel.settings
+    automatic = AutomaticUpdates(
+        enabled=settings.auto_update,
+        core_min_age_hours=settings.auto_update_min_age_hours,
+        plugin_min_age_hours=settings.auto_update_plugin_min_age_hours,
+    )
+    result = service.update(source, channel=channel or settings.update_channel)
+    return result.model_copy(update={"automatic": automatic})
 
 
 @module.operation(read_only=False, heads={"cli"}, audience="everyday")

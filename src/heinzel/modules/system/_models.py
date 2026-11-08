@@ -89,6 +89,14 @@ class ChannelReport(BaseModel):
     statement: str = Field(description="What the switch changes; said before anything happens.")
 
 
+class AutomaticUpdates(BaseModel):
+    """The automatic-updates setting, as an update run by hand reports it."""
+
+    enabled: bool = Field(description="The setting `auto_update`: whether hz updates itself and its plugins.")
+    core_min_age_hours: int = Field(description="How old a release of hz must be before it is accepted.")
+    plugin_min_age_hours: int = Field(description="How old a plugin's release must be before it is accepted.")
+
+
 class UpdateResult(BaseModel):
     """What `hz system update` did, or why it left the installation as it was."""
 
@@ -109,6 +117,10 @@ class UpdateResult(BaseModel):
         default_factory=list[PluginUpdate],
         description="What happened to each installed plugin: upgraded together with hz, unchanged or failed. A plugin "
         "that doesn't allow the new hz never blocks it.",
+    )
+    automatic: AutomaticUpdates | None = Field(
+        default=None,
+        description="Whether automatic updates are on and what they install, so a run by hand says why it was needed.",
     )
     heads: list[HeadRefresh] = Field(
         default_factory=list[HeadRefresh],

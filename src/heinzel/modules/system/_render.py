@@ -9,7 +9,14 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from heinzel.modules.system._models import ChannelReport, ModuleInfo, ReleaseCheck, SystemInfo, UpdateResult
+from heinzel.modules.system._models import (
+    AutomaticUpdates,
+    ChannelReport,
+    ModuleInfo,
+    ReleaseCheck,
+    SystemInfo,
+    UpdateResult,
+)
 
 
 def render_modules(modules: list[ModuleInfo]) -> RenderableType:
@@ -77,5 +84,23 @@ def render_channel(report: ChannelReport) -> RenderableType:
 
 def render_update(result: UpdateResult) -> RenderableType:
     """What the update did, or what the installation is pinned to and the command that moves it."""
-    unchanged = [p.distribution for p in result.plugins if p.status == "unchanged"]
-    return Text("\n".join([result.message, *([f"Plugins unchanged: {', '.join(unchanged)}."] if unchanged else [])]))
+    lines = [result.message]
+    unchanged = [p for p in result.plugins if p.status == "unchanged"]
+    if unchanged:
+        lines.append("Plugins:")
+        lines += [f"  {p.distribution}: already newest ({p.after or 'version unknown'})" for p in unchanged]
+    if result.updated and result.automatic is not None:
+        lines.append(_automatic(result.automatic))
+    return Text("\n".join(lines))
+
+
+def _automatic(automatic: AutomaticUpdates) -> str:
+    """Why this ran by hand: what automatic updates install, whether they are on, and how to turn them on."""
+    accepted = (
+        f"Automatic updates install only accepted releases: hz {automatic.core_min_age_hours} h and plugins "
+        f"{automatic.plugin_min_age_hours} h after release, so a broken one can be withdrawn first. "
+        "This command installs the newest release now, accepted or not."
+    )
+    if automatic.enabled:
+        return f"Automatic updates: on. {accepted}"
+    return f"Automatic updates: off. Turn them on with `hz system config set auto_update true`. {accepted}"
