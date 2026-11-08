@@ -108,7 +108,7 @@ export async function verifyNavigation(page, url, shots) {
     .getByRole("navigation", { name: "Main", exact: true })
     .getByRole("button", { name: "Local conditions" })
     .click();
-  const confirmation = page.getByRole("alertdialog", { name: "Save the helper profile." });
+  const confirmation = page.getByRole("dialog", { name: "Save the helper profile." });
   await confirmation.waitFor();
   if (sent) throw new Error("A private mutation ran before confirmation");
   const answer = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/stream/heinzel/profile");
