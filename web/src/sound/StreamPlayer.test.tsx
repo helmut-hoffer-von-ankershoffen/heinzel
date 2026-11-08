@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaSoundscapeView } from "@/api/client";
+import { expectPaneStructure } from "@/test/pane";
 import { StreamPlayer } from "./StreamPlayer";
 import { resetSound, soundState, toggle } from "./store";
 import { rememberYouTubeAccount } from "./stream";
@@ -190,6 +191,8 @@ describe("playback help pane", () => {
     const pane = screen.getByRole("region", { name: "Playback or sign-in trouble?" });
     expect(pane).toHaveTextContent("Try the regular player");
     expect(screen.getByRole("link", { name: "Play on YouTube" }).parentElement).toHaveClass("border-t");
+    // The shared action row: the first action leads with its words, the rest are named icons.
+    expectPaneStructure(pane);
     fireEvent.keyDown(info(), { key: "Escape" });
     expect(screen.queryByRole("region", { name: "Playback or sign-in trouble?" })).toBeNull();
     fireEvent.focus(info());

@@ -1,8 +1,8 @@
 // The side panel for the selected node: what it is, how it connects, and the hz commands for it.
-import { ExternalLink, X } from "lucide-react";
+import { ExternalLink, FileText, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { Link } from "react-router";
 import { CopyCommand } from "@/components/common";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/card";
 import { t } from "@/i18n";
@@ -114,14 +114,11 @@ function Details({ node }: { node: WorkflowNode }) {
             <code className="font-mono text-xs">{node.candidate.hint}</code>
           </Field>
           {node.candidate.url && (
-            <a
-              href={node.candidate.url}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="inline-flex items-center gap-1 text-sm text-primary underline-offset-2 hover:underline"
-            >
-              {t("workflow.panel.open")} <ExternalLink aria-hidden className="size-3.5" />
-            </a>
+            <PaneActions>
+              <PaneAction key="open" icon={ExternalLink} href={node.candidate.url}>
+                {t("workflow.panel.open")}
+              </PaneAction>
+            </PaneActions>
           )}
         </>
       );
@@ -153,12 +150,11 @@ function Details({ node }: { node: WorkflowNode }) {
               <Badge tone="bad">{node.errors} ✖</Badge>
             </Field>
           )}
-          <Link
-            to={contractPath(node.qualified)}
-            className="text-sm font-medium text-primary underline-offset-2 hover:underline"
-          >
-            {t("workflow.panel.openContract")}
-          </Link>
+          <PaneActions>
+            <PaneAction key="open" icon={FileText} to={contractPath(node.qualified)}>
+              {t("workflow.panel.openContract")}
+            </PaneAction>
+          </PaneActions>
         </>
       );
     case "output":
@@ -202,7 +198,14 @@ export function NodePanel({ node, graph, onClose }: { node: WorkflowNode; graph:
             {node.label}
           </h2>
         </div>
-        <Button variant="ghost" size="icon" className="size-7" onClick={onClose} aria-label={t("workflow.panel.close")}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          onClick={onClose}
+          aria-label={t("workflow.panel.close")}
+          title={t("workflow.panel.close")}
+        >
           <X aria-hidden />
         </Button>
       </header>
