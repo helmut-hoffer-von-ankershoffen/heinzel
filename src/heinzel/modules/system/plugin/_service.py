@@ -271,6 +271,7 @@ class PluginService:
                 enabled.setdefault(distribution_name, False)
         distributions = self._plugin_distributions()
         errors = self._errors_by_distribution()
+        tree = self._kernel.layers()
         plugins: list[PluginInfo] = []
         # What the kernel loaded, blocked or failed to load; with `[hz] plugins_enabled` off, that is nothing.
         for plugin_name in sorted(set(records) | set(errors)):
@@ -306,7 +307,12 @@ class PluginService:
                     enabled=enabled.get(plugin_name, False) and self._kernel.settings.plugins_enabled,
                     error=errors.get(plugin_name),
                     layers=[
-                        PluginLayer(module=let.name, parent=let.parent, site=let.site)
+                        PluginLayer(
+                            module=let.name,
+                            parent=let.parent,
+                            site=let.site,
+                            label=found.label.value if (found := tree.get(let.name)) else None,
+                        )
                         for record in mine
                         for let in record.module.lets
                         if isinstance(let, LayerLet)

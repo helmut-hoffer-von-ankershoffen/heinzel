@@ -87,7 +87,11 @@ export function displayName(rawName: string, summary = ""): string {
 export const plainSummary = (summary: string) =>
   summary.replace(/\s*[:;,–—-]\s*an? Heinzelmännchen plugin\.?\s*$/i, ".");
 
-export type SettingsEntry = { id: string; title: string; plugin?: SchemaPluginInfo };
+export type SettingsEntry = {
+  id: string;
+  title: string;
+  plugin?: SchemaPluginInfo;
+};
 
 export type Heading = "preferences" | "customize" | "organisation" | "computer";
 /** A page of Settings: its nav entry and the setting sections it owns (a prefix owns its sub-sections). */
@@ -102,6 +106,8 @@ export type Page = {
   plugin?: SchemaPluginInfo;
   module?: string;
   provider?: string | null;
+  /** The one status line of a layer page: "Site layer of Acme". */
+  status?: string;
 };
 
 export const PAGES: Page[] = [
@@ -129,8 +135,20 @@ export const PAGES: Page[] = [
     owns: ["ai", "system.runner"],
     keywords: "access subscription models budget chat tools claude codex",
   },
-  { id: CONNECTORS, title: "Connectors", icon: Plug, heading: "customize", owns: [] },
-  { id: PLUGINS, title: "Plugins", icon: Puzzle, heading: "customize", owns: [] },
+  {
+    id: CONNECTORS,
+    title: "Connectors",
+    icon: Plug,
+    heading: "customize",
+    owns: [],
+  },
+  {
+    id: PLUGINS,
+    title: "Plugins",
+    icon: Puzzle,
+    heading: "customize",
+    owns: [],
+  },
   {
     id: "skills",
     title: "Skills",
@@ -187,7 +205,13 @@ export const PAGES: Page[] = [
     owns: ["hz"],
     keywords: "folders data cache logs",
   },
-  { id: FROM_CLAUDE_PAGE, title: "From Claude", icon: Download, heading: "computer", owns: [] },
+  {
+    id: FROM_CLAUDE_PAGE,
+    title: "From Claude",
+    icon: Download,
+    heading: "computer",
+    owns: [],
+  },
   {
     id: "updates",
     title: "Updates",
@@ -203,11 +227,23 @@ export const PAGES: Page[] = [
     ],
     keywords: "release notes github token automatic updates",
   },
-  { id: "system", title: "System", icon: Cpu, heading: "computer", owns: ["system"], keywords: "directory" },
+  {
+    id: "system",
+    title: "System",
+    icon: Cpu,
+    heading: "computer",
+    owns: ["system"],
+    keywords: "directory",
+  },
 ];
 
 /** Old links by what they meant: `?settings=hz` was General, whose appearance and AI access now live elsewhere. */
-const ALIASES: Record<string, string> = { hz: "appearance", org: "you", heinzel: "team", runner: "ai" };
+const ALIASES: Record<string, string> = {
+  hz: "appearance",
+  org: "you",
+  heinzel: "team",
+  runner: "ai",
+};
 
 const owns = (page: Page, section: string) => page.owns.some((own) => section === own || section.startsWith(`${own}.`));
 
@@ -244,7 +280,10 @@ export type SettingsNav = {
   /** Every page, by heading order: the fixed ones, then a page for each plugin module hz doesn't know. */
   pages: Page[];
   /** Plugins that bring adapters, each with the setting groups of its modules. */
-  connectors: (SettingsEntry & { plugin: SchemaPluginInfo; groups: string[] })[];
+  connectors: (SettingsEntry & {
+    plugin: SchemaPluginInfo;
+    groups: string[];
+  })[];
 };
 
 /** A section id from a link (`?settings=`), as the page it opens: a page's id, a section it owns, or an old name. */
@@ -257,8 +296,10 @@ export function resolvePage(id: string | null | undefined, pages: Page[]): strin
 }
 
 /** The sidebar group a plugin's page sits under: the one place that decides it (today the group it declares). */
-function placement(entry: SchemaNavEntry, _plugin: SchemaPluginInfo | undefined): Heading {
-  return entry.settings?.group ?? "preferences";
+function placement(entry: SchemaNavEntry, plugin: SchemaPluginInfo | undefined): Heading {
+  const group = entry.settings?.group ?? "preferences";
+  // A layer is part of the organisation; the server says so, and an older server's undeclared page lands there too.
+  return !entry.declared && group === "preferences" && plugin?.layers?.length ? "organisation" : group;
 }
 
 const COLLATOR = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
@@ -285,14 +326,16 @@ export function settingsNav(
   const connects = (plugin: SchemaPluginInfo | undefined) => (plugin?.capabilities ?? []).length > 0;
   const of = (plugin: SchemaPluginInfo) => groups.filter((name) => owner.get(name) === plugin);
   const byTitle = (a: SettingsEntry, b: SettingsEntry) => a.title.localeCompare(b.title);
+  const layers = plugins.flatMap((item) => item.layers ?? []);
   const extra: Page[] = navigation.flatMap((entry) => {
     if (!entry.settings || entry.problem) return [];
     const plugin = plugins.find((item) => item.distribution === entry.plugin || item.name === entry.plugin);
     if (plugin && (!plugin.enabled || plugin.error)) return [];
+    const layer = plugin?.layers?.[0];
     // Legacy provider metadata must not move host settings out of their existing conceptual pages.
     if (
       !entry.declared &&
-      ((connects(plugin) && !preferenceIcon(plugin)) ||
+      ((connects(plugin) && !preferenceIcon(plugin) && !layer) ||
         entry.settings.sections.every((section) => PAGES.some((page) => owns(page, section))))
     )
       return [];
@@ -300,6 +343,7 @@ export function settingsNav(
       {
         id: entry.id,
         title: entry.title,
+        status: layer ? layerStatus(layer, layers) : undefined,
         icon: !entry.declared && entry.icon === "code" ? (preferenceIcon(plugin) ?? Puzzle) : ICONS[entry.icon],
         heading: placement(entry, plugin),
         owns: entry.settings.sections,
@@ -324,6 +368,19 @@ export function settingsNav(
       }))
       .sort(byTitle),
   };
+}
+
+type Layer = NonNullable<SchemaPluginInfo["layers"]>[number];
+
+/** "Site layer of Acme": its label, the layer above it, and for a team the site it is at; at most 60 characters. */
+function layerStatus(layer: Layer, all: Layer[]): string {
+  const name = (module: string) => displayName(module).replace(/ [a-z]/g, (letters) => letters.toUpperCase());
+  const label = layer.label ? `${inWords(layer.label)} layer` : "Layer";
+  const above = layer.parent;
+  const site =
+    layer.label === "team" && layer.site && all.some((item) => item.module === layer.site) ? layer.site : null;
+  const text = `${label}${above ? ` of ${name(above)}` : ""}${site ? `, at ${name(site)}` : ""}`;
+  return text.length <= 60 ? text : `${text.slice(0, 59)}…`;
 }
 
 function pluginOfPage(page: Page, owner: Map<string, SchemaPluginInfo>): SchemaPluginInfo | undefined {
