@@ -1,7 +1,8 @@
-import { AudioLines, BarChart3, Layers, Mic, MicOff, MonitorSpeaker, Sparkles } from "lucide-react";
+import { AudioLines, BarChart3, Layers, Mic, MicOff, MonitorSpeaker, Sparkles, Speaker } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FooterItem, type State } from "@/components/FooterItem";
+import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { type Segment, SegmentedControl } from "@/components/ui/segmented";
 import { t } from "@/i18n";
@@ -17,7 +18,7 @@ import {
   readPalette,
   stepState,
 } from "./aurora";
-import { type CapturedAudio, captureAudio, captureMicrophone } from "./capture";
+import { type CapturedAudio, captureAudio, captureMicrophone, hasDesktopAudio, systemAudioAvailable } from "./capture";
 import { useOwnAudio } from "./own";
 import { Analysis, bandRanges } from "./viz/analysis";
 import { watchTheme } from "./viz/color";
@@ -27,15 +28,19 @@ import { readVizTheme } from "./viz/theme";
 
 export { spectrumLevel } from "./aurora";
 
-/** What the person last chose to listen to; "off" is remembered too, so nothing resumes until they pick a source. */
-type Source = "off" | "mic" | "tab";
+/**
+ * What the person last chose to listen to; "off" is remembered too, so nothing resumes until they pick a source.
+ * "system" exists only in the desktop app where Electron can loop back the computer's sound.
+ */
+type Source = "off" | "mic" | "tab" | "system";
+type Listening = Exclude<Source, "off">;
 type Remembered = Source | null;
 const SOURCE_KEY = "hz.audio.source";
 
 function readSource(): Remembered {
   try {
     const saved = localStorage.getItem(SOURCE_KEY);
-    return saved === "tab" || saved === "mic" || saved === "off" ? saved : null;
+    return saved === "tab" || saved === "mic" || saved === "off" || saved === "system" ? saved : null;
   } catch {
     return null;
   }
@@ -78,6 +83,13 @@ function markUnshared() {
 const unsupported = (error: unknown) =>
   (error instanceof DOMException && error.name === "NotSupportedError") || error instanceof TypeError;
 
+/** A declined or failed system audio request: one plain line; the pane and the prompt offer Try again. */
+function systemProblem(error: unknown) {
+  if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "AbortError"))
+    return "System audio was not allowed. Choose Try again to be asked once more.";
+  return error instanceof Error ? error.message : "System audio is unavailable.";
+}
+
 function captureProblem(error: unknown) {
   if (error instanceof DOMException && error.name === "AbortError") return "Audio sharing was cancelled.";
   if (error instanceof DOMException && error.name === "NotAllowedError")
@@ -96,9 +108,15 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const settings = useVizSettings();
   const [remembered, setRemembered] = useState<Remembered>(readSource);
   const [session, setSession] = useState<CapturedAudio | null>(null);
-  const [requesting, setRequesting] = useState<"mic" | "tab" | null>(null);
+  const [requesting, setRequesting] = useState<Listening | null>(null);
   const [problem, setProblem] = useState("");
   const [sharing, setSharing] = useState(canShareAudio);
+  /**
+   * Whether the desktop app loops back system audio here: null while it is asked. Where it does, system audio is the
+   * only source (the owner's default) and no other Listen to choice exists; a stored older choice never overrides it.
+   */
+  const [system, setSystem] = useState<boolean | null>(() => (hasDesktopAudio() ? null : false));
+  const systemOnly = system === true;
   const [notice, setNotice] = useState("");
   const [hasSignal, setHasSignal] = useState(false);
   const current = useRef<CapturedAudio | null>(null);
@@ -132,7 +150,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
    * Listen to `kind`, switching live: the new source is asked for first, and the one running is stopped only once the
    * new one is granted, so a cancelled or refused prompt leaves the old source playing.
    */
-  const start = useCallback(async (kind: "mic" | "tab") => {
+  const start = useCallback(async (kind: Listening) => {
     const revision = ++generation.current;
     request.current?.abort();
     const controller = new AbortController();
@@ -140,7 +158,9 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     setRequesting(kind);
     setProblem("");
     try {
-      const captured = await (kind === "mic" ? captureMicrophone : captureAudio)(controller.signal);
+      const captured = await (kind === "mic"
+        ? captureMicrophone(controller.signal)
+        : captureAudio(controller.signal, kind === "system"));
       if (generation.current !== revision || controller.signal.aborted) {
         captured.stop();
         return;
@@ -164,7 +184,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         if (!current.current) void start("mic");
         return;
       }
-      setProblem(captureProblem(error));
+      setProblem(kind === "system" ? systemProblem(error) : captureProblem(error));
     }
   }, []);
   const choose = useCallback(
@@ -176,6 +196,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         remember("off");
         return;
       }
+      if (source === "system" ? !systemOnly : systemOnly) return;
       if (source === "tab" && !canShareAudio()) {
         setSharing(false);
         setNotice("Shared audio is not offered by this browser.");
@@ -184,8 +205,18 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       setNotice("");
       void start(source);
     },
-    [start, stop],
+    [start, stop, systemOnly],
   );
+  useEffect(() => {
+    if (!hasDesktopAudio()) return;
+    let live = true;
+    void systemAudioAvailable().then((available) => {
+      if (live) setSystem(available);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
   useEffect(() => {
     if (!session) return;
     const tracks = session.stream.getTracks();
@@ -200,7 +231,9 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   // Once per page: a stopped or ended microphone never restarts itself.
   const resumed = useRef(false);
   useEffect(() => {
-    if (!enabled || !framed || session || requesting || remembered !== "mic" || resumed.current) return;
+    // Not before the desktop app answered: where system audio exists, a stored microphone never starts.
+    if (!enabled || !framed || session || requesting || remembered !== "mic" || system !== false || resumed.current)
+      return;
     let cancelled = false;
     void navigator.permissions
       ?.query({ name: "microphone" as PermissionName })
@@ -213,7 +246,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     return () => {
       cancelled = true;
     };
-  }, [enabled, framed, session, requesting, remembered, start]);
+  }, [enabled, framed, session, requesting, remembered, system, start]);
   const ownAnalyser = own.mode === "analysed" ? own.analyser : null;
   const analyser = session?.analyser ?? ownAnalyser;
   const microphone = session?.label === "Microphone";
@@ -375,7 +408,8 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const workspaceAudio =
     (window as Window & { heinzelDesktop?: { workspaceAudio?: boolean } }).heinzelDesktop?.workspaceAudio === true;
   const sharedWord = workspaceAudio ? "Workspace audio" : "Shared audio";
-  const listening: Source = session ? (microphone ? "mic" : "tab") : "off";
+  const looped = session?.label === "System audio";
+  const listening: Source = session ? (microphone ? "mic" : looped ? "system" : "tab") : "off";
   let status = "Off. Heinzel's own sound still shows.";
   let state: State = "off";
   let triggerLabel = "Audio visualizer";
@@ -388,7 +422,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     triggerLabel = "Audio request";
     controlWord = "Wait";
   } else if (session) {
-    const what = microphone ? "the microphone" : sharedWord.toLowerCase();
+    const what = microphone ? "the microphone" : looped ? "system audio" : sharedWord.toLowerCase();
     status = hasSignal ? `Visualizing ${what}` : `Listening to ${what}. Waiting for sound.`;
     state = hasSignal ? "ok" : "warn";
     triggerLabel = "Audio sharing active";
@@ -401,9 +435,11 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     triggerLabel = "Audio sharing active";
     controlWord = "On";
   } else if (framed) {
-    status = sharing
-      ? "Off. Music in a player frame shows once you pick Microphone or Shared audio."
-      : "Off. Music in a player frame shows once you pick Microphone.";
+    status = systemOnly
+      ? "Off. Music in a player frame shows once you allow system audio."
+      : sharing
+        ? "Off. Music in a player frame shows once you pick Microphone or Shared audio."
+        : "Off. Music in a player frame shows once you pick Microphone.";
     state = "warn";
     controlWord = "Share";
   }
@@ -442,18 +478,37 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           state === "bad" ? "text-bad" : settings.master ? "text-foreground" : "text-muted-foreground"
         }`}
         popoverClassName="w-80 max-w-[calc(100vw-1rem)] p-3"
+        actions={
+          settings.master &&
+          systemOnly &&
+          !session && (
+            <PaneAction
+              key="system"
+              icon={Speaker}
+              primary
+              disabled={requesting !== null}
+              aria-busy={requesting !== null}
+              onClick={() => choose("system")}
+            >
+              {problem ? "Try again" : "Use system audio"}
+            </PaneAction>
+          )
+        }
       >
         <div className="space-y-3 px-1.5 pb-1">
           {settings.master && (
             <>
               <SegmentedControl legend="Show" segments={showSegments} value={shown} onSelect={setShown} selectOnArrow />
-              <SegmentedControl
-                legend="Listen to"
-                segments={sourceSegments}
-                value={listening}
-                busy={requesting}
-                onSelect={choose}
-              />
+              {/* With system audio the one source, there is no Listen to choice: the action row asks (again). */}
+              {!systemOnly && system === false && (
+                <SegmentedControl
+                  legend="Listen to"
+                  segments={sourceSegments}
+                  value={listening}
+                  busy={requesting}
+                  onSelect={choose}
+                />
+              )}
             </>
           )}
           <p className="flex items-start gap-1.5 text-sm">
@@ -469,7 +524,13 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           </p>
           {notice && settings.master && <p className="text-xs text-foreground">{notice}</p>}
           <p className="text-xs text-muted-foreground">
-            {t(sharing ? "audio.visualizerHelp" : "audio.visualizerHelpMicrophone")}
+            {t(
+              systemOnly
+                ? "audio.visualizerHelpSystem"
+                : sharing
+                  ? "audio.visualizerHelp"
+                  : "audio.visualizerHelpMicrophone",
+            )}
           </p>
           <div className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground">
             <span id={masterId}>Audio visualisation</span>
@@ -503,10 +564,21 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           />,
           document.body,
         )}
-      {settings.master && framed && !session && !requesting && remembered !== "off" && (
+      {settings.master && framed && !session && !requesting && systemOnly && (
+        <SourcePrompt
+          remembered="system"
+          retry={Boolean(problem)}
+          onTab={null}
+          onSystem={() => choose("system")}
+          onMic={null}
+        />
+      )}
+      {settings.master && framed && !session && !requesting && system === false && remembered !== "off" && (
         <SourcePrompt
           remembered={remembered}
+          retry={false}
           onTab={sharing ? () => choose("tab") : null}
+          onSystem={null}
           onMic={() => choose("mic")}
         />
       )}
@@ -519,13 +591,20 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
  * pane (its trigger reads "Share", with Share audio and Use microphone). */
 function SourcePrompt({
   remembered,
+  retry,
   onTab,
+  onSystem,
   onMic,
 }: {
   remembered: Remembered;
+  /** The last request was declined: the same one button asks again. */
+  retry: boolean;
   /** Null where the browser cannot share a tab's audio (every iPhone browser): only the microphone is offered. */
   onTab: (() => void) | null;
-  onMic: () => void;
+  /** The desktop app's exact system sound: where it exists it is the only source offered. */
+  onSystem: (() => void) | null;
+  /** Null where system audio is the only source. */
+  onMic: (() => void) | null;
 }) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
@@ -536,14 +615,26 @@ function SourcePrompt({
     >
       <p className="mb-2 font-medium">Let Heinzel see the music?</p>
       <div className="flex gap-2">
-        {onTab && (
-          <Button size="sm" variant={remembered === "mic" ? "outline" : "default"} onClick={onTab}>
-            Share this tab
+        {onSystem ? (
+          <Button size="sm" variant={remembered === "mic" ? "outline" : "default"} onClick={onSystem}>
+            {retry ? "Try again" : "Use system audio"}
+          </Button>
+        ) : (
+          onTab && (
+            <Button size="sm" variant={remembered === "mic" ? "outline" : "default"} onClick={onTab}>
+              Share this tab
+            </Button>
+          )
+        )}
+        {onMic && (
+          <Button
+            size="sm"
+            variant={remembered === "mic" || !(onSystem ?? onTab) ? "default" : "outline"}
+            onClick={onMic}
+          >
+            Use microphone
           </Button>
         )}
-        <Button size="sm" variant={remembered === "mic" || !onTab ? "default" : "outline"} onClick={onMic}>
-          Use microphone
-        </Button>
         <Button size="sm" variant="ghost" aria-label="Not now" onClick={() => setDismissed(true)}>
           Not now
         </Button>
