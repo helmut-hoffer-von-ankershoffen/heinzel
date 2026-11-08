@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { CodeInput } from "@/components/ui/code-input";
 import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
+import { mergePhase, type Phase, trackOperation } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
 import type { RestartObservation } from "@/lifecycle/controller";
 import { RestartAndApply } from "@/lifecycle/RestartAndApply";
@@ -50,6 +51,16 @@ import {
   validRestartObservation,
 } from "./pluginActivation";
 import { displayName } from "./settingsSections";
+
+/** A confirmed plugin install as the operation dialog shows it: the call the person confirmed on the card. */
+const installCall = (candidate: SchemaPluginCandidate) => ({
+  path: "/system/plugin/add",
+  method: "POST" as const,
+  query: {},
+  command: `hz system plugin add ${candidate.requirement} --confirm`,
+  summary: t("plugins.installing", { name: candidate.distribution ?? candidate.spec }),
+  read_only: false,
+});
 
 type PluginKind = NonNullable<SchemaPluginInfo["kinds"]>[number];
 
@@ -273,6 +284,7 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
     ],
   ];
   if (candidate.installed_version) rows.push([t("plugins.field.replaces"), candidate.installed_version]);
+  const also = candidate.also_installs ?? [];
   return (
     <div className="mt-2 text-xs">
       {candidate.summary && <p className="mb-1 text-muted-foreground">{candidate.summary}</p>}
@@ -285,6 +297,21 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
           ...(candidate.installed_version ? [`${t("plugins.field.replaces")} ${candidate.installed_version}`] : []),
         ].join(" · ")}
       </p>
+      {also.length > 0 && (
+        <div className="mt-1" data-testid="plugin-also-installs">
+          <p className="font-medium">{candidate.also}</p>
+          <ul className="mt-0.5 list-none">
+            {also.map((item) => (
+              <li key={item.distribution} className="break-words">
+                {[
+                  item.version ? `${item.distribution} ${item.version}` : item.distribution,
+                  sourceLabel({ source_url: candidate.url }, candidate.private),
+                ].join(" · ")}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <details className="mt-1">
         <summary className="cursor-pointer text-muted-foreground">{t("plugins.sourceDetails")}</summary>
         <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
@@ -450,7 +477,22 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     }
     // A lost removal response is also uncertain. Require a fresh, explicit choice after status reconciliation.
     if ("remove" in operation) attempted.current = true;
-    const answer = await change.mutateAsync({ ...operation, signal, onProgress: setPluginProgress });
+    // An install shows its real steps in the operation dialog: installing, checking, each plugin it needs, recording.
+    const answer =
+      "add" in operation && pending.action === "add"
+        ? await trackOperation(installCall(pending.candidate), (report) => {
+            let phases: Phase[] = [];
+            return change.mutateAsync({
+              ...operation,
+              signal,
+              onProgress: setPluginProgress,
+              onPhase: (phase) => {
+                phases = mergePhase(phases, phase);
+                report(phases);
+              },
+            });
+          })
+        : await change.mutateAsync({ ...operation, signal, onProgress: setPluginProgress });
     if (!answer.done) throw new Error(t("plugins.notCompleted"));
     completed.current = answer;
     pluginRestartRequired.current = answer.restart_required;

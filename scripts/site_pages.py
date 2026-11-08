@@ -113,7 +113,8 @@ def validate_presentation(project: Object) -> None:
     source = project["source"]
     for key in ("version", "core"):
         text(project[key], 500)
-    for key in ("highlights", "provides", "requires"):
+    project.setdefault("sibling_plugins", [])  # additive field: a snapshot from before it has none
+    for key in ("highlights", "provides", "requires", "sibling_plugins"):
         if len(project[key]) > MAX_DECLARATIONS:
             msg = "Catalog declarations must be bounded"
             raise ValueError(msg)

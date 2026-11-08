@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
+import { getRun } from "@/lib/operationRun";
 import { expectAccessible } from "@/test/render";
 import { CandidateDetails, ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
 
@@ -26,6 +27,7 @@ const installed = {
 };
 
 const candidate = {
+  also: "",
   spec: "git+https://github.com/acme-example/heinzel-crm@v1.2.0",
   requirement: PINNED,
   distribution: "heinzel-crm",
@@ -43,6 +45,7 @@ const candidate = {
 let receiptCount = 0;
 let confirmedStreamDelay = 0;
 let restartDelay = 0;
+let phaseEvents = "";
 
 describe("plugin source labels", () => {
   it.each([
@@ -206,7 +209,7 @@ function serve(answer: Answer) {
             { status: found.status ?? 200, headers: { "Content-Type": "text/event-stream" } },
           );
         }
-        const events = [task, result].join("");
+        const events = [task, url.searchParams.get("confirm") === "true" ? phaseEvents : "", result].join("");
         return new Response(events, { status: found.status ?? 200, headers: { "Content-Type": "text/event-stream" } });
       }
       return Response.json(found.body, { status: found.status ?? 200 });
@@ -250,6 +253,7 @@ beforeEach(() => {
   receiptCount = 0;
   confirmedStreamDelay = 0;
   restartDelay = 0;
+  phaseEvents = "";
   lifecycleReads = 0;
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -259,6 +263,30 @@ describe("PluginsSection", () => {
     render(<CandidateDetails candidate={{ ...candidate, source: "git", installed_version: "0.9.3" }} />);
     const line = screen.getByText(/Replaces 0\.9\.3/);
     expect(line.closest("details")).toBeNull();
+  });
+
+  it("names the plugins it also installs before anything is confirmed, and shows nothing for a plugin alone", () => {
+    const also = [
+      { distribution: "heinzel-acme", version: "0.2.0", requirement: "heinzel-acme @ git+x", source: "git" as const },
+      { distribution: "heinzel-acme-payments", version: null, requirement: "p @ git+x", source: "git" as const },
+    ];
+    const { unmount } = render(
+      <CandidateDetails
+        candidate={{
+          ...candidate,
+          source: "git",
+          also_installs: also,
+          also: "x also needs heinzel-acme; installing it too.",
+        }}
+      />,
+    );
+    const list = screen.getByTestId("plugin-also-installs");
+    expect(list).toHaveTextContent("also needs heinzel-acme; installing it too.");
+    expect(list).toHaveTextContent("heinzel-acme 0.2.0");
+    expect(list).toHaveTextContent("heinzel-acme-payments");
+    unmount();
+    render(<CandidateDetails candidate={{ ...candidate, source: "git", also_installs: [] }} />);
+    expect(screen.queryByTestId("plugin-also-installs")).toBeNull();
   });
 
   it("does not call an uncompleted backend reply an installed plugin or restart the server", async () => {
@@ -381,6 +409,48 @@ describe("PluginsSection", () => {
     expect(inventory.every((call) => new URL(call.url).searchParams.get("fresh") === "true")).toBe(true);
     expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(0);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("shows a confirmed install's real steps, each plugin it needs among them, in the operation dialog", async () => {
+    const phase = (id: string, label: string, state: string, detail?: string) =>
+      `event: phase\ndata: ${JSON.stringify({ id, label, state, ...(detail ? { detail } : {}) })}\n\n`;
+    phaseEvents = [
+      phase("install", "Installing heinzel-crm", "pending"),
+      phase("install", "Installing heinzel-crm", "done"),
+      phase("verify", "Checking that exactly it is installed", "done"),
+      phase("needs:heinzel-auth", "Plugin heinzel-auth, which heinzel-crm needs", "done", "Installed with it: 1.0.0"),
+      phase("record", "Recording the add", "done"),
+    ].join("");
+    let done = false;
+    serve((url) => {
+      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
+        done = url.searchParams.get("confirm") === "true";
+        return { body: change("add", done, { plugins: [installed], restart_required: false }) };
+      }
+      return base(url);
+    });
+    const user = userEvent.setup();
+    show();
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
+    await user.click(screen.getByRole("button", { name: "Install" }));
+    await user.click(
+      within(await screen.findByRole("group", { name: /Install this plugin/ })).getByRole("button", {
+        name: "Restart and apply",
+      }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await waitFor(() => expect(getRun().stage).toBe("done"));
+    const run = getRun();
+    if (run.stage !== "done") throw new Error("not done");
+    expect(run.call.path).toBe("/system/plugin/add");
+    expect(run.phases.map(({ id, state }) => [id, state])).toEqual([
+      ["install", "done"],
+      ["verify", "done"],
+      ["needs:heinzel-auth", "done"],
+      ["record", "done"],
+    ]);
+    expect(run.phases[2]?.detail).toBe("Installed with it: 1.0.0");
   });
 
   it("restarts once and reloads after a Discover install whose row leaves the list", async () => {

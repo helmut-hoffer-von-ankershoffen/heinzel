@@ -43,17 +43,21 @@ from heinzel.kernel import (
     ModuleRecord,
     OperationLet,
     PlaybookLet,
+    Progress,
     ProviderLet,
     SignalLet,
     ThemeLet,
     subprocess_environment,
 )
+from heinzel.kernel._logging import get_logger, step
 from heinzel.modules.system._github import GITHUB_API
+from heinzel.modules.system._phases import Phases
 from heinzel.modules.system.plugin._models import (
     Action,
     AvailablePlugin,
     PluginCandidate,
     PluginChange,
+    PluginDependency,
     PluginEvent,
     PluginInfo,
     PluginKind,
@@ -71,6 +75,7 @@ from heinzel.modules.system.plugin._sources import (
     JsonGetter,
     Metadata,
     PluginSource,
+    Sibling,
     browser_url,
     dependents,
     from_github,
@@ -82,7 +87,10 @@ from heinzel.modules.system.plugin._sources import (
     pypi_get,
     repository_url,
     required_by,
+    siblings_from_github,
 )
+
+log = get_logger("plugin")
 
 TEMPLATE = "gh:helmut-hoffer-von-ankershoffen/heinzel"
 REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
@@ -369,6 +377,7 @@ class PluginService:
             raise HeinzelError(msg)
         distribution = metadata.name or source.name
         _refuse_core_distribution(distribution)
+        siblings = self._siblings(source, metadata, warnings)
         _require_git_distribution(source.kind, distribution)
         page: str | None
         if source.kind == "pypi" and source.requirement is not None:
@@ -394,7 +403,32 @@ class PluginService:
             revision=metadata.revision,
             installed_version=installed,
             warnings=warnings,
+            also_installs=[
+                PluginDependency(distribution=item.name, version=item.version, requirement=item.requirement)
+                for item in siblings
+            ],
+            also=_also_sentence(distribution or spec, [item.name for item in siblings]),
         )
+
+    def _siblings(self, source: PluginSource, metadata: Metadata, warnings: list[str]) -> list[Sibling]:
+        """The not yet installed sibling plugins a GitHub plugin needs, or none with a warning when unreadable.
+
+        Raises:
+            HeinzelError: If the sibling closure is larger than one install takes.
+        """
+        if source.github is None or not metadata.dependencies:
+            return []
+        installed = {canonicalize_name(p.distribution) for p in self.installed()}
+        try:
+            with step(
+                log, "plugin.add.closure", plugin=metadata.name, revision=metadata.revision, operation="add"
+            ) as running:
+                found = siblings_from_github(source, self.github_api, metadata, skip=installed)
+                running.note(siblings=[item.name for item in found])
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            warnings.append(f"The plugins it needs couldn't be read ({exc}); uv resolves them while installing.")
+            return []
+        return found
 
     def add(self, spec: str, *, confirm: bool = False, operation_id: str | None = None) -> PluginChange:
         """Show what `spec` installs; with `confirm`, install exactly that, record it and list the plugins after.
@@ -444,30 +478,129 @@ class PluginService:
                 operation_id=receipt.operation_id,
             )
         with self._mutation() as mutation, self._receipts.installing(), self._exclusive():
-            before = self._host_list() if _requires_change(candidate) else []
-            generation = self._run_package_change(
-                self.add_command(candidate.requirement),
+            return self._install_candidate(candidate, spec, mutation)
+
+    def _install_candidate(
+        self, candidate: PluginCandidate, spec: str, mutation: _PackageMutation | None
+    ) -> PluginChange:
+        """Install the confirmed `candidate`, check and record it, telling each step (ADR 0056) as it happens.
+
+        The steps are the install (with the sibling plugins it needs), the check that exactly it is installed, then
+        each plugin it needs, as the installed metadata names them (installed with it, updated, or there already),
+        and the record of the add.
+
+        Raises:
+            HeinzelError: If installing or any check fails; the failed step says why.
+        """
+        name = candidate.distribution or spec
+        phases = Phases(
+            self._kernel.resolve(Progress),
+            [("install", f"Installing {name}"), ("verify", "Checking that exactly it is installed")],
+            operation="system.plugin.add",
+        )
+        before = self._host_list() if _requires_change(candidate) else []
+        versions = self._plugin_versions_or_none()
+        with phases.step("install", f"Installing {name}"):
+            generation = self._run_candidate_install(candidate, spec, mutation)
+        with phases.step("verify", "Checking that exactly it is installed"):
+            installed = self._verify_added(candidate, before)
+            self._verify_candidate_generation(mutation)
+        self._tell_dependencies(phases, installed.distribution, versions)
+        with phases.step("record", "Recording the add"):
+            change = self._changed("add", installed.distribution, candidate)
+            self._verify_candidate_generation(mutation)
+            self._record_add(candidate, installed.distribution)
+            self._remember_package_change(generation)
+        return change
+
+    def _plugin_versions_or_none(self) -> dict[str, str] | None:
+        """The installed plugins' versions by canonical name; None if they can't be read (nothing is compared then)."""
+        try:
+            return {item.distribution: item.version or "" for item in self._host_list()}
+        except HeinzelError:
+            return None
+
+    def _tell_dependencies(self, phases: Phases, distribution: str, before: dict[str, str] | None) -> None:
+        """One step per plugin `distribution` needs, directly or through another, as its installed metadata says.
+
+        Read without running anything; a dependency list that can't be read tells no steps rather than failing an add
+        that is already installed and checked.
+        """
+        try:
+            after = {item.distribution: item.version or "" for item in self._host_list()}
+            graph = required_by(self._host_distributions())
+        except (HeinzelError, OSError, ValueError, TypeError, KeyError):
+            return
+        needed: list[str] = []
+        todo: list[str] = [canonicalize_name(distribution)]
+        while todo:
+            requirer = todo.pop()
+            for dependency in sorted(dep for dep, requirers in graph.items() if requirer in requirers):
+                if dependency in after and dependency not in needed and dependency != canonicalize_name(distribution):
+                    needed.append(dependency)
+                    todo.append(dependency)
+        for dependency in needed:
+            label = f"Plugin {dependency}, which {distribution} needs"
+            version = after[dependency]
+            if before is None:
+                detail = f"Installed: {version}"
+            elif dependency not in before:
+                detail = f"Installed with it: {version}"
+            elif before[dependency] != version:
+                detail = f"Updated {before[dependency]} → {version}"
+            else:
+                detail = f"Already installed: {version}"
+            phases.note(f"needs:{dependency}", label, "done", detail, version=version)
+
+    def _run_candidate_install(
+        self, candidate: PluginCandidate, spec: str, mutation: _PackageMutation | None
+    ) -> str | None:
+        """Install the candidate and the sibling plugins it needs in one package change, as one logged step.
+
+        Returns:
+            The tool generation to remember, when the change is managed.
+        """
+        also = [item.requirement for item in candidate.also_installs]
+        with step(
+            log,
+            "plugin.add.install",
+            operation="add",
+            plugin=candidate.distribution,
+            version=candidate.version,
+            revision=candidate.revision,
+            also=[item.distribution for item in candidate.also_installs],
+        ):
+            return self._run_package_change(
+                self.add_command(candidate.requirement, also),
                 f"Failed to add plugin {spec!r}.",
                 f"Adding plugin {candidate.distribution or spec}",
                 self._git_environment(),
                 context=(mutation, ()),
                 adding=candidate.requirement,
+                alongside=frozenset(canonicalize_name(item.distribution) for item in candidate.also_installs),
             )
-            installed = self._verify_added(candidate, before)
-            self._verify_candidate_generation(mutation)
-            change = self._changed("add", installed.distribution, candidate)
-            self._verify_candidate_generation(mutation)
+
+    def _record_add(self, candidate: PluginCandidate, distribution: str | None) -> None:
+        """Record the added plugin, preceded by the sibling plugins installed with it."""
+        for item in candidate.also_installs:
             self._record(
                 "add",
-                installed.distribution,
-                requirement=candidate.requirement,
-                source=candidate.source,
-                version=candidate.version,
+                canonicalize_name(item.distribution),
+                requirement=item.requirement,
+                source=item.source,
+                version=item.version,
                 publisher=candidate.publisher,
                 private_repository=candidate.private,
             )
-            self._remember_package_change(generation)
-            return change
+        self._record(
+            "add",
+            distribution,
+            requirement=candidate.requirement,
+            source=candidate.source,
+            version=candidate.version,
+            publisher=candidate.publisher,
+            private_repository=candidate.private,
+        )
 
     def operation(self, operation_id: str) -> PluginOperation:
         """Read the durable status of a preview receipt without repeating its mutation."""
@@ -484,29 +617,7 @@ class PluginService:
                     _raise_not_replayable(receipt.status)
                 claimed = True
                 with self._mutation() as mutation:
-                    before = self._host_list() if _requires_change(candidate) else []
-                    generation = self._run_package_change(
-                        self.add_command(candidate.requirement),
-                        f"Failed to add plugin {candidate.spec!r}.",
-                        f"Adding plugin {candidate.distribution or candidate.spec}",
-                        self._git_environment(),
-                        context=(mutation, ()),
-                        adding=candidate.requirement,
-                    )
-                    installed = self._verify_added(candidate, before)
-                    self._verify_candidate_generation(mutation)
-                    result = self._changed("add", installed.distribution, candidate)
-                    self._verify_candidate_generation(mutation)
-                    self._record(
-                        "add",
-                        installed.distribution,
-                        requirement=candidate.requirement,
-                        source=candidate.source,
-                        version=candidate.version,
-                        publisher=candidate.publisher,
-                        private_repository=candidate.private,
-                    )
-                    self._remember_package_change(generation)
+                    result = self._install_candidate(candidate, candidate.spec, mutation)
                 completed = self._receipts.complete(operation_id, result)
                 if completed.result is None:
                     _raise_missing_result()
@@ -550,18 +661,22 @@ class PluginService:
             self._remember_package_change(generation)
             return change
 
-    def add_command(self, spec: str) -> list[str]:
-        """The command that installs the plugin `spec`: a requirement, a git URL or a path, as given."""
+    def add_command(self, spec: str, also: Sequence[str] = ()) -> list[str]:
+        """The command that installs the plugin `spec`: a requirement, a git URL or a path, as given.
+
+        `also` are the plugins it needs from the same repository, installed in the same run, dependencies first.
+        """
         requirements = self._installation.requirements()
         if requirements is None:
-            return self._installation.pip_command("install", spec)
+            command = self._installation.pip_command("install", spec)
+            return [*command[:-1], *also, spec]
         core, *plugins = requirements
-        replaced = distributions_in_spec(spec)
+        replaced = distributions_in_spec(spec) | {canonicalize_name(Requirement(item).name) for item in also}
         kept = [r for r in plugins if canonicalize_name(Requirement(r).name) not in replaced]
         # Changing --with already makes uv resolve and install the new plugin. --reinstall also implies --refresh,
         # needlessly revalidating every dependency against its index. Replacements still force a rebuild (develop
         # may name an unchanged directory whose contents have changed).
-        return self._installation.tool_install_command(core, [*kept, spec], reinstall=len(kept) != len(plugins))
+        return self._installation.tool_install_command(core, [*kept, *also, spec], reinstall=len(kept) != len(plugins))
 
     # Removing, enabling, disabling.
 
@@ -1119,6 +1234,7 @@ class PluginService:
         *,
         context: tuple[_PackageMutation | None, tuple[str, ...]] = (None, ()),
         adding: str | None = None,
+        alongside: frozenset[str] = frozenset(),
     ) -> str | None:
         """Capture the changed tool before independently checking its installed identity and runtime.
 
@@ -1128,7 +1244,7 @@ class PluginService:
         # A genuine SDK tool is not necessarily the standard app. Only its verified installer may seed continuity.
         mutation, forbidden = context
         managed = self._installation.is_tool and self._installation.startup_state_matches()
-        holds = self._holds(command, adding)
+        holds = self._holds(command, adding, alongside)
         if mutation is None:
             if not holds:
                 self._installation.run(command, failure, activity, environment)
@@ -1147,7 +1263,7 @@ class PluginService:
             command[python + 2],
             *(command[index + 1] for index, part in enumerate(command) if part == "--with"),
         ]
-        changing = distributions_in_spec(adding) if adding else set(forbidden)
+        changing = (distributions_in_spec(adding) if adding else set(forbidden)) | alongside
         unchanged = [item for item in selected if canonicalize_name(Requirement(item).name) not in changing]
         sources = self._installation.preserved_tool_wheel_constraints(unchanged)
         transient = (guard, *holds, *sources)
@@ -1169,7 +1285,9 @@ class PluginService:
         )
         return None
 
-    def _holds(self, command: list[str], adding: str | None) -> tuple[str, ...]:
+    def _holds(
+        self, command: list[str], adding: str | None, alongside: frozenset[str] = frozenset()
+    ) -> tuple[str, ...]:
         """Keep the other index plugins at their installed versions while one plugin changes.
 
         The receipt names them without a version, so a reinstall would upgrade each to the newest release as a side
@@ -1178,7 +1296,9 @@ class PluginService:
         """
         if not self._installation.is_tool or command[1:3] != ["tool", "install"]:
             return ()
-        changing: set[str] = distributions_in_spec(adding) if adding else set()
+        changing: set[str] = set(alongside)
+        if adding:
+            changing |= distributions_in_spec(adding)
         names: list[str] = []
         for index, part in enumerate(command):
             if part == "--with":
@@ -1323,6 +1443,17 @@ class PluginService:
             PluginInfo.model_validate(item)
             for item in json.loads(self._installation.hz("system", "plugin", "list", "--json"))
         ]
+
+
+def _names(items: Sequence[str]) -> str:
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def _also_sentence(name: str, coming: Sequence[str]) -> str:
+    """The sentence shown before an add starts (one wording with the required-plugin install)."""
+    if not coming:
+        return ""
+    return f"{name} also needs {_names(coming)}; installing {'it' if len(coming) == 1 else 'them'} too."
 
 
 def _raise_not_replayable(status: str) -> None:

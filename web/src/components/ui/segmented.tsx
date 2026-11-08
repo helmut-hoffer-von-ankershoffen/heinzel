@@ -4,7 +4,7 @@
 // arrows move between segments.
 import type { LucideIcon } from "lucide-react";
 import { Loader2 } from "lucide-react";
-import { type KeyboardEvent, useId, useRef } from "react";
+import { type KeyboardEvent, useId, useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 export type Segment<T extends string> = {
@@ -36,11 +36,19 @@ export function SegmentedControl<T extends string>({
 }: Props<T>) {
   const legendId = useId();
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  const focused = useRef(false);
   const shown = busy ?? value;
   const focusable = Math.max(
     0,
     segments.findIndex((segment) => segment.value === shown),
   );
+  // A segment the app stops offering can leave while it has focus; keep the focus in the group, on the chosen one.
+  const offered = segments.map((segment) => segment.value).join();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the offered segments change
+  useLayoutEffect(() => {
+    if (focused.current && (document.activeElement === document.body || document.activeElement === null))
+      buttons.current[focusable]?.focus();
+  }, [offered]);
   const move = (event: KeyboardEvent, index: number) => {
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
     if (!step) return;
@@ -59,6 +67,12 @@ export function SegmentedControl<T extends string>({
         role="radiogroup"
         aria-labelledby={legendId}
         aria-busy={busy ? true : undefined}
+        onFocus={() => {
+          focused.current = true;
+        }}
+        onBlur={(event) => {
+          focused.current = event.currentTarget.contains(event.relatedTarget as Node | null);
+        }}
         className="flex gap-0.5 rounded-lg border border-border bg-muted p-0.5"
       >
         {segments.map((segment, index) => {

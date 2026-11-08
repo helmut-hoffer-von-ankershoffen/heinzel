@@ -24,6 +24,7 @@ def managed_workspace(monkeypatch):
     monkeypatch.setattr(bootstrap, "_verify_setup", lambda *_args: None)
     monkeypatch.setattr(bootstrap, "_require_profile", lambda *_args: None)
     monkeypatch.setattr(bootstrap, "_configure_ai", lambda *_args: None)
+    monkeypatch.setattr(bootstrap, "_app_choice", lambda *_args, **_kwargs: False)
 
 
 @pytest.mark.parametrize("already_installed", [False, True])
@@ -31,7 +32,8 @@ def test_first_use_installs_defaults_and_later_use_opens_without_installing(monk
     executable = tmp_path / "tools/heinzel/bin/hz"
     sequence = [] if already_installed else [None]
     installed, launched = [], []
-    monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
+    monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel", "--yes"])
+    monkeypatch.setattr(bootstrap.sys.stdout, "isatty", lambda: True)
     monkeypatch.setattr(bootstrap, "_interactive_launch", lambda _args: False)
     monkeypatch.setattr(install, "latest_profile", lambda: pytest.fail("Noninteractive reuse must stay offline"))
     monkeypatch.setattr(bootstrap, "installed_app", lambda: sequence.pop(0) if sequence else executable)

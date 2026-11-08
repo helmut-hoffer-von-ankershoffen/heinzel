@@ -1,5 +1,5 @@
 // The shared SDK hosts installed factories; provider identities and routes remain declarations (ADR 0094).
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import * as ReactDOM from "react-dom";
 import * as router from "react-router";
@@ -9,6 +9,7 @@ import { token } from "@/api/token";
 import { type Effect, useEffectRunner } from "@/components/Contributions";
 import { SettingsShortcut } from "@/components/SettingsShortcut";
 import { Button } from "@/components/ui/button";
+import { confirmOperation } from "@/lib/operationRun";
 import { NotFound } from "@/pages/Profile";
 
 export type ViewEntry = {
@@ -36,7 +37,31 @@ export type ViewProps = {
   flowing: boolean;
   compact: boolean;
   run: (action: string) => void;
+  /** Send what the person typed to a declared action's inputs; the app asks first and settles with the result. */
+  submit: (action: string, values: Record<string, FormValue>) => Promise<unknown>;
 };
+export type FormValue = string | number | boolean;
+
+const quoted = (value: FormValue) =>
+  typeof value === "string" ? `'${value.replaceAll("'", `'"'"'`)}'` : JSON.stringify(value);
+
+/** The call a view's form makes: only a private mutation's declared inputs, shown in the dialog as they will run. */
+export function formCall(effect: Effect | undefined, values: Record<string, FormValue>) {
+  if (effect?.kind !== "operation" || !effect.call?.body) throw new Error("This view has no form for that");
+  const inputs = new Set(effect.inputs ?? []);
+  const typed = Object.entries(values);
+  for (const [name, value] of typed) {
+    if (!inputs.has(name)) throw new Error(`This form takes no ${name}`);
+    const plain = typeof value === "string" || typeof value === "boolean" || Number.isFinite(value);
+    if (!plain) throw new Error(`${name} must be text, a number or yes/no`);
+  }
+  const words = typed.map(([name, value]) => `--${name.replaceAll("_", "-")} ${quoted(value)}`);
+  return {
+    ...effect.call,
+    body: { ...effect.call.body, ...values },
+    command: [effect.call.command, ...words].join(" "),
+  };
+}
 export const viewSDK = { abi: 1, React, ReactDOM, router, Button, SettingsShortcut };
 Reflect.set(globalThis, Symbol.for("heinzel.plugin-sdk.1"), viewSDK);
 export type ViewSDK = typeof viewSDK;
@@ -105,6 +130,7 @@ export function InstalledView({
   visible?: boolean;
 }) {
   const effects = useEffectRunner();
+  const queries = useQueryClient();
   const component = useQuery({
     queryKey: ["view-factory", entry.id, entry.bundle],
     queryFn: () => loadView(entry),
@@ -143,6 +169,11 @@ export function InstalledView({
         run={(name) => {
           const effect = entry.actions?.[name];
           if (effect) effects.run(effect);
+        }}
+        submit={async (name, values) => {
+          const result = await confirmOperation(formCall(entry.actions?.[name], values));
+          void queries.invalidateQueries({ queryKey: ["view-data", entry.id] });
+          return result;
         }}
       />
       {effects.dialog}

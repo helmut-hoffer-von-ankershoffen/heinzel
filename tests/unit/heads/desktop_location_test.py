@@ -17,7 +17,7 @@ from heinzel.heads import _desktop_installation as desktop
 pytestmark = pytest.mark.unit
 
 
-def _fetch(version: str, directory: Path) -> Path:
+def _fetch(version: str, directory: Path, _reporter: object = None) -> Path:
     archive = directory / "archive"
     archive.write_text(version)
     return archive
@@ -191,33 +191,52 @@ def test_an_unowned_app_in_system_applications_gets_a_clear_message(mac):
         desktop.install_desktop("1.0.0", executable, home=home)
 
 
-_REASONS = {"moved": "could not be moved", "admin": "administrator password"}
-
-
 @pytest.mark.parametrize(
-    ("folder", "usable", "reason"),
-    [("system", True, None), ("home", True, "moved"), ("home", False, "admin")],
+    ("folder", "admin", "reason"),
+    [
+        ("system", True, "(for everyone on this Mac; you are an administrator)"),
+        ("home", False, "(your Applications folder; this account is not an administrator, so {system} would need"),
+        ("system", False, "(for everyone on this Mac)"),
+    ],
 )
-def test_the_install_message_gives_the_true_reason_the_app_is_not_in_applications(
-    monkeypatch, tmp_path, folder, usable, reason
-):
+def test_the_first_install_line_names_the_folder_and_the_true_reason(tmp_path, folder, admin, reason):
+    from heinzel.heads import _desktop_messages as copy
+
+    system = tmp_path / "system-applications"
+    where = system if folder == "system" else tmp_path / "home" / "Applications"
+    line = copy.installing("1.0.0", None, where, system, admin=admin)
+    assert line.startswith(f"Installing Heinzelmännchen 1.0.0 into {where} (")
+    assert reason.format(system=system) in line
+
+
+def test_install_reports_one_row_per_step_group_when_not_a_terminal(mac):
+    """Redirected or without a TTY: a header, then one line per row, no escape codes, never silent."""
     import io
 
     from rich.console import Console
 
-    from heinzel.heads.cli import _app
+    from heinzel.heads import _desktop_messages as copy
+    from heinzel.heads.cli._progress import StepReporter
 
-    system = tmp_path / "system-applications"
-    where = system if folder == "system" else tmp_path / "home" / "Applications"
-    monkeypatch.setattr(desktop, "SYSTEM_APPLICATIONS", system)
-    monkeypatch.setattr(desktop, "desktop_location", lambda: where / desktop.BUNDLE_NAME)
-    monkeypatch.setattr(desktop, "system_applications_usable", lambda: usable)
-    out = io.StringIO()
-    _app._print_location(Console(file=out, width=400), Console(file=io.StringIO(), width=400))
-    text = out.getvalue()
-    assert f"installed at {where / desktop.BUNDLE_NAME}" in text
-    for key, words in _REASONS.items():
-        assert (words in text) is (key == reason)
+    home, system, executable = mac
+    stream = io.StringIO()
+    reporter = StepReporter(
+        Console(file=stream, force_terminal=False, width=400),
+        header="Installing",
+        rows=copy.install_rows(keep_quarantine=False),
+    )
+    assert desktop.install_desktop("1.0.0", executable, home=home, reporter=reporter) == "installed"
+    reporter.close(complete=True)
+    text = stream.getvalue()
+    assert "\x1b" not in text
+    assert [line.split()[:2] for line in text.splitlines()] == [
+        ["Installing"],
+        ["ok", "Verified"],
+        ["ok", "Sealed"],
+        ["ok", "Installed"],
+        ["ok", "Recorded"],
+    ]
+    assert f"ok Installed  {system / desktop.BUNDLE_NAME}" in text
 
 
 def _record(home: Path) -> tuple[Path, Path]:

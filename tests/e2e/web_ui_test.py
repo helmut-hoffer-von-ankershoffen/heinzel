@@ -935,6 +935,16 @@ def test_calendar_panel_on_phone_and_desktop_in_both_browsers(environment, tmp_p
 
 
 @pytest.mark.timeout(600)
+def test_desktop_title_bar_row_in_mounted_chromium_and_unchanged_browser(environment, tmp_path):
+    """The macOS desktop bridge makes one draggable 44 px row with clickable controls; a browser keeps 48 px."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "titlebar.mjs")
+    assert result["browser"] == {"topbar": 48}
+    assert result["desktop"]["order"][1:] == ["Collapse navigation", "Today", "Notifications", "Search"]
+    assert result["collapsed"]["expandX"] >= 80
+
+
+@pytest.mark.timeout(600)
 def test_settings_search_font_floor_precedes_focus_for_phone_input_modes(environment, tmp_path):
     """The real search field retains its minimum and enlarged theme size before any autofocus."""
     env, _recorded = environment
@@ -943,3 +953,14 @@ def test_settings_search_font_floor_precedes_focus_for_phone_input_modes(environ
     result = drive_ui_script(env, tmp_path, "search-field-font.mjs")
     assert len(result["cases"]) == 8
     assert all(case["fontSize"] >= max(16, case["themeSize"]) for case in result["cases"])
+
+
+@pytest.mark.timeout(600)
+def test_phone_pages_never_pan_sideways(environment, tmp_path):
+    """On 375 and 390 px touch viewports no main page, panel or dialog scrolls or pans horizontally."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "no-horizontal-pan.mjs")
+    pages = ("today", "forecast", "notifications", "calendar", "heinzels", "settings", "terminal")
+    assert result["cases"] == [
+        {"viewport": viewport, "page": page} for viewport in ("iphone-375", "iphone-390") for page in pages
+    ]

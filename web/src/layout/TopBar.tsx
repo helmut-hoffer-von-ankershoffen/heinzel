@@ -91,8 +91,12 @@ export function TopBar({
   // Reload refetches every query the screen shows, without a page reload that would drop open panels and drafts.
   const fetching = useIsFetching() > 0;
   const refresh = () => {
-    void queries.invalidateQueries();
     setMenu(false);
+    // Abort reads still in flight first, so an older response can never land after the refetch and overwrite it.
+    void Promise.all([
+      queries.cancelQueries({ queryKey: ["org", "calendar"] }),
+      queries.cancelQueries({ queryKey: ["org", "agenda"], exact: true }),
+    ]).then(() => queries.invalidateQueries());
   };
   return (
     // The sidebar's top line has the same height and hairline, so both run across the window as one.

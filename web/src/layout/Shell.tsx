@@ -33,6 +33,7 @@ import { StatusBar } from "./StatusBar";
 import { TerminalPanel } from "./TerminalPanel";
 import { ThemeTokens } from "./ThemeTokens";
 import { TopBar } from "./TopBar";
+import { applyTitlebar, useTitlebar } from "./titlebar";
 import { WorkspacePanels } from "./WorkspacePanels";
 
 /** A pane's open state, remembered in this browser; without storage it starts from `initial` each time. */
@@ -93,6 +94,12 @@ function Layout() {
   const showAudioVisualizer = (audioVisualizer?.value ?? audioVisualizer?.default) === true;
   // Narrow windows start with the navigation as a rail, so the screen keeps its room.
   const [navOpen, setNavOpen] = useRemembered("hz.nav.open", () => window.innerWidth >= 1024);
+  // The desktop app's integrated title bar (macOS): its insets become CSS variables; a browser gets 0.
+  const titlebar = useTitlebar();
+  useLayoutEffect(
+    () => applyTitlebar(document.documentElement, titlebar.bar, titlebar.fullscreen, navOpen),
+    [titlebar.bar, titlebar.fullscreen, navOpen],
+  );
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
   const features = config.data?.settings.find((row) => row.section === "hz" && row.key === "features")?.value;
   const browserEnabled = Array.isArray(features) && features.includes("sidebar_browser");
@@ -427,6 +434,7 @@ function Layout() {
       >
         <Sidebar
           collapsed={!navOpen}
+          titlebar={titlebar.bar !== null}
           onToggle={() => setNavOpen((open) => !open)}
           onSearch={() => setSearchOpen(true)}
           onNotifications={() =>
@@ -444,7 +452,8 @@ function Layout() {
         <div
           ref={scroller}
           className={cn(
-            "workspace-scroll relative flex min-h-0 min-w-0 flex-1",
+            // Vertical only: a child wider than the column must never let the whole workspace pan sideways on a phone.
+            "workspace-scroll relative flex min-h-0 min-w-0 flex-1 overflow-x-clip",
             beside ? "flex-row" : flowingWorkspace ? "flex-col overflow-y-auto" : "flex-col",
           )}
         >
@@ -464,7 +473,7 @@ function Layout() {
               // as a stray outline. Real controls inside keep their focus-visible ring.
               data-focus-ring="parent"
               className={cn(
-                "flex-1 outline-none bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]",
+                "min-w-0 flex-1 overflow-x-clip outline-none bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]",
                 !flowingWorkspace && "min-h-0 overflow-y-auto",
               )}
             >

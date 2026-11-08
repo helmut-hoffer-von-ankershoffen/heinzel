@@ -1,5 +1,5 @@
 ---
-description: Join your team's Heinzelmännchen setup: run the line your manager shared, answer what it asks and see your team's first draft.
+description: "Join your team's Heinzelmännchen setup: run the line your manager shared, answer what it asks and see your team's first draft."
 ---
 
 # Join your team
