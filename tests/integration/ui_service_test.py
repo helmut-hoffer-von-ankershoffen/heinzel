@@ -417,7 +417,7 @@ def test_foreground_ui_with_no_owned_integration_does_not_require_uv(make_kernel
     from heinzel.heads import web
     from heinzel.modules.ui import _service
 
-    monkeypatch.setattr(_service.shutil, "which", lambda _: None)
+    monkeypatch.setattr(_service.shutil, "which", lambda _, path=None: None)
     opened = []
     monkeypatch.setattr(web, "serve", lambda kernel, **kwargs: opened.append(kwargs))
     result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ui", "serve", "--no-browser"])
@@ -503,7 +503,7 @@ def test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loadi
     service.executable.unlink()
     service.executable.symlink_to(expected)
     monkeypatch.setenv("HZ_STATE_DIR", str(service.directory.parent))
-    monkeypatch.setattr(_service.shutil, "which", lambda name: "/poison/uv" if name == "uv" else None)
+    monkeypatch.setattr(_service.shutil, "which", lambda name, path=None: "/poison/uv" if name == "uv" else None)
     monkeypatch.setattr(_service, "_run", lambda _: pytest.fail("No ambient subprocess"))
     verified = []
     monkeypatch.setattr(
@@ -814,7 +814,7 @@ def test_real_user_factory_binds_profile_and_refuses_process_behavior_before_man
     selected.executable.unlink()
     selected.executable.symlink_to(expected)
     custom_uv = selected.home / "uv/uv"
-    monkeypatch.setattr(_service.shutil, "which", lambda name: str(custom_uv) if name == "uv" else None)
+    monkeypatch.setattr(_service.shutil, "which", lambda name, path=None: str(custom_uv) if name == "uv" else None)
     monkeypatch.setattr(
         _service, "_run", lambda args: subprocess.CompletedProcess(args, 0, str(selected.executable.parent), "")
     )
