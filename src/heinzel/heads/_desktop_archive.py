@@ -1,5 +1,6 @@
 """Validate the complete member graph before extracting an attested desktop bundle."""
 
+import os
 import posixpath
 import tarfile
 import unicodedata
@@ -64,6 +65,12 @@ def _validate_parents(entries: dict[str, tarfile.TarInfo], problem: str) -> None
                 raise HeinzelError(problem)
 
 
+def _has_entries(directory: Path) -> bool:
+    """Whether `directory` holds anything; the scan is closed at once, not left for the garbage collector."""
+    with os.scandir(directory) as entries:
+        return any(True for _ in entries)
+
+
 def extract_bundle(archive_path: Path, staging: Path) -> Path:
     """Extract a validated archive into an empty, private directory controlled by the caller.
 
@@ -71,7 +78,7 @@ def extract_bundle(archive_path: Path, staging: Path) -> Path:
         HeinzelError: If archive members are unsafe or the bundle cannot be extracted.
     """
     try:
-        if archive_path.stat().st_size > MAX_ARCHIVE_BYTES or any(staging.iterdir()):
+        if archive_path.stat().st_size > MAX_ARCHIVE_BYTES or _has_entries(staging):
             msg = "The desktop archive or its staging directory exceeds the extraction policy."
             raise HeinzelError(msg)
         with tarfile.open(archive_path, "r:gz") as archive:

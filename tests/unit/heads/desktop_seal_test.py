@@ -210,10 +210,11 @@ def test_hz_app_doctor_json_reports_the_same_facts(mac, owned, monkeypatch, seal
 
 
 @pytest.mark.parametrize(("keep", "words"), [(False, "double-click"), (True, "Open Anyway")])
-def test_the_install_note_is_honest_about_trust(keep, words):
-    from heinzel.heads.cli import _app
+def test_the_sealed_row_is_honest_about_trust(keep, words):
+    from heinzel.heads import _desktop_messages as copy
 
-    note = _app._trust_note(keep_quarantine=keep)
-    assert "not notarized" in note
-    assert "sha256" in note
-    assert words in note
+    row = copy.install_rows(keep_quarantine=keep)(copy.CHECK_SEAL)
+    assert row is not None
+    assert row.label == "Sealed"
+    assert row.detail.startswith("local code seal; ")
+    assert words in row.detail

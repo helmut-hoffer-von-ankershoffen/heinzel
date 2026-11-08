@@ -15,6 +15,7 @@ from rich.console import Console
 from heinzel import HeinzelError, Settings, __version__
 from heinzel.heads import _desktop_messages as say
 from heinzel.heads._desktop_log import problem_fields, step
+from heinzel.heads.cli._progress import StepReporter
 from heinzel.heads.cli._render import message
 from heinzel.kernel import KERNEL_SECTION, Installation, Kernel
 
@@ -57,59 +58,25 @@ def _refresh_after_exit(kernel: Kernel) -> None:
         time.sleep(0.25)
 
 
-def _print_location(output: Console, error: Console) -> None:
-    """Print where the app really is, checked on disk, and why it is not in /Applications when it is not.
+def _located(error: Console) -> Path:
+    """Where the app really is after an install, checked on disk.
 
     Raises:
         typer.Exit: If the installed app cannot be found where the receipt says.
     """
-    from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
-        SYSTEM_APPLICATIONS,
-        desktop_location,
-        system_applications_usable,
-    )
+    from heinzel.heads._desktop_installation import desktop_location  # noqa: PLC0415 - native install only
 
     location = desktop_location()
     if location is None:
-        error.print("The desktop app was installed but cannot be found. Run hz app doctor.")
+        error.print(say.LOST)
         raise typer.Exit(1)
-    output.print(f"Heinzel is installed at {location}.", markup=False)
-    if location.parent == SYSTEM_APPLICATIONS:
-        return
-    if system_applications_usable():
-        output.print(
-            f"It could not be moved to {SYSTEM_APPLICATIONS} this time: Heinzelmännchen was running, another "
-            f"{location.name} is already there, or your home folder is on another volume. Quit the app, move the "
-            "other copy to the Trash, then run hz app install again: it moves the app for you.",
-            markup=False,
-        )
-    else:
-        output.print(
-            f"It is in your own Applications folder because this user cannot write to {SYSTEM_APPLICATIONS} "
-            "without an administrator password; Finder, Launchpad and Spotlight find it there too. To have it in "
-            f"{SYSTEM_APPLICATIONS}, make this account an administrator and run hz app install again: it moves "
-            "the app for you.",
-            markup=False,
-        )
+    return location
 
 
-def _print_notes(output: Console, notes: list[str]) -> None:
-    """Say what the installer set aside or moved before it did its main work."""
+def _print_notes(steps: StepReporter, notes: list[str]) -> None:
+    """Say what the installer set aside or moved before it did its main work, as check-marked rows."""
     for note in notes:
-        output.print(note, markup=False)
-
-
-def _trust_note(*, keep_quarantine: bool) -> str:
-    """Say honestly what was checked and how macOS will treat the first open."""
-    opening = (
-        "; it is marked as downloaded, so open it once via System Settings, Privacy & Security, Open Anyway."
-        if keep_quarantine
-        else ", so it opens with a double-click."
-    )
-    return (
-        "It is an unsigned app from this project, not notarized by Apple. Heinzel verified the download's "
-        f"sha256, its build provenance and its code seal{opening}"
-    )
+        steps.row(note)
 
 
 def _doctor(output: Console, error: Console, *, fix: bool, as_json: bool = False) -> None:
@@ -125,19 +92,22 @@ def _doctor(output: Console, error: Console, *, fix: bool, as_json: bool = False
     except (HeinzelError, OSError, SubprocessError) as exc:
         if as_json:
             output.print_json(data={"installed": None, "error": str(exc)})
-        error.print(message("Desktop check failed.", str(exc)))
+        error.print(message(say.CHECK_FAILED, str(exc)))
         raise typer.Exit(1) from exc
     if as_json:
         state = {"installed": False} if report is None else {"installed": True, **report.as_dict()}
         output.print_json(data={**state, "repairs": repairs})
     if report is None:
-        error.print("The Heinzel desktop app is not installed. Run hz app install.")
+        error.print(say.NOT_INSTALLED_FOR_DOCTOR)
         raise typer.Exit(1)
     if not as_json:
-        for line in [*repairs, *report.lines()]:
+        from heinzel.heads._desktop_installation import SYSTEM_APPLICATIONS  # noqa: PLC0415 - native check only
+
+        seal_lines = report.lines()[1:]  # its "App: ..." line gives way to the copy module's, which names the folder
+        for line in [*repairs, say.doctor_app(report.bundle, SYSTEM_APPLICATIONS), *seal_lines]:
             output.print(line, markup=False)
     if not report.opens:
-        error.print("Run hz app doctor --fix to repair it.")
+        error.print(say.DOCTOR_FIX)
         raise typer.Exit(1)
 
 
@@ -180,6 +150,32 @@ def _confirm_forget(error: Console, exc: HeinzelError) -> bool:
     return True
 
 
+def _plan(error: Console, *, keep_quarantine: bool) -> tuple[StepReporter, Path]:
+    """The install's rows and the folder the installer will pick, named in the first line with the reason.
+
+    The installer picks the system folder for an administrator, else the one the app is in, else the user's own.
+    """
+    from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
+        SYSTEM_APPLICATIONS,
+        desktop_installed,
+        system_applications_usable,
+    )
+
+    admin = system_applications_usable()
+    installed = desktop_installed()
+    previous = None if installed is None else installed[1]
+    if admin or (installed is not None and installed[0].parent == SYSTEM_APPLICATIONS):
+        folder = SYSTEM_APPLICATIONS
+    else:
+        folder = Path.home().resolve() / "Applications"
+    steps = StepReporter(
+        error,
+        header=say.installing(__version__, previous, folder, SYSTEM_APPLICATIONS, admin=admin),
+        rows=say.install_rows(keep_quarantine=keep_quarantine),
+    )
+    return steps, folder
+
+
 def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with hz app open
     kernel: Kernel,
     output: Console,
@@ -196,16 +192,19 @@ def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with 
         typer.Exit: If the app cannot be installed now.
     """
     from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
+        SYSTEM_APPLICATIONS,
         LeftoverInstallError,
         install_desktop,
     )
 
     notes: list[str] = []
+    steps, folder = _plan(error, keep_quarantine=keep_quarantine)
 
     def run(*, forget: bool) -> str:
         return install_desktop(
             __version__,
             desktop_executable(kernel),
+            reporter=steps,
             keep_quarantine=keep_quarantine,
             replace=replace,
             forget=forget,
@@ -216,21 +215,32 @@ def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with 
         try:
             state = run(forget=yes)
         except LeftoverInstallError as exc:
+            steps.close(complete=False)
             if not _confirm_forget(error, exc):
-                _print_notes(output, notes)
-                _fail(error, exc, "Desktop installation failed.", details=details)
+                _print_notes(steps, notes)
+                _fail(error, exc, say.INSTALL_FAILED, details=details)
             state = run(forget=True)
+    except KeyboardInterrupt as exc:
+        steps.close(complete=False)
+        error.print(say.CANCELLED_INSTALL)
+        raise typer.Exit(130) from exc
     except (HeinzelError, OSError, SubprocessError) as exc:
-        _print_notes(output, notes)
-        _fail(error, exc, "Desktop installation failed.", details=details)
-    _print_notes(output, notes)
+        steps.close(complete=False)
+        _print_notes(steps, notes)
+        _fail(error, exc, say.INSTALL_FAILED, details=details)
+    steps.close(complete=state in {"installed", "updated"})
+    _print_notes(steps, notes)
     if state == "deferred":
         for line in say.app_running(_where_installed()).lines():
             error.print(line, markup=False)
         raise typer.Exit(1)
-    _print_location(output, error)
-    if state != "current":
-        output.print(_trust_note(keep_quarantine=keep_quarantine))
+    location = _located(error)
+    if state == "current":
+        output.print(say.current(__version__, location), markup=False, soft_wrap=True)
+        return
+    if location.parent != folder:
+        error.print(say.not_moved(location, SYSTEM_APPLICATIONS), markup=False, soft_wrap=True)
+    output.print(say.done(location), markup=False, soft_wrap=True)
 
 
 def _where_installed() -> Path:
@@ -260,12 +270,12 @@ def _open_app(kernel: Kernel, output: Console, error: Console, *, details: bool 
 
     location = desktop_location()
     if location is None:
-        output.print("Not installed yet, installing…")
+        output.print(say.INSTALLING_FIRST)
         with step("open", "install"):
             _install_app(kernel, output, error, details=details)
         location = desktop_location()
         if location is None:
-            _say(error, say.Problem(f"{say.APP} was installed but cannot be found.", "Run hz app doctor."))
+            _say(error, say.lost())
     with step("open", "check", path=str(location)) as checked:
         report = inspect_bundle(location)
         checked.update({"quarantine": report.quarantine, "outcome": "ok" if report.opens else "would_not_open"})
@@ -284,8 +294,34 @@ def _open_app(kernel: Kernel, output: Console, error: Console, *, details: bool 
             launched.update({"outcome": "failed", "returncode": result.returncode, **failed})
     if result.returncode:
         _say(error, say.open_failed(location))
-    output.print(f"Opened {location}", markup=False)
+    output.print(say.opened(location), markup=False, soft_wrap=True)
     return location
+
+
+def _uninstall(output: Console, error: Console, *, details: bool = False) -> None:
+    """Remove the app hz manages; a record whose app is gone is set aside instead.
+
+    Raises:
+        typer.Exit: If the app cannot be removed safely.
+    """
+    from heinzel.heads._desktop_installation import uninstall_desktop  # noqa: PLC0415 - native removal only
+
+    notes: list[str] = []
+    steps = StepReporter(error)
+    try:
+        removed = uninstall_desktop(notes=notes, reporter=steps)
+    except KeyboardInterrupt as exc:
+        error.print(say.CANCELLED_UNINSTALL)
+        raise typer.Exit(130) from exc
+    except (HeinzelError, OSError, SubprocessError) as exc:
+        _print_notes(steps, notes)
+        _fail(error, exc, say.UNINSTALL_FAILED, details=details)
+    _print_notes(steps, notes)
+    if removed is None:
+        output.print(say.NOT_INSTALLED, markup=False, soft_wrap=True)
+        return
+    StepReporter(output).check(say.removed(removed))
+    output.print(say.PROFILE_KEPT, markup=False, soft_wrap=True)
 
 
 def _say(error: Console, problem: say.Problem) -> NoReturn:
@@ -373,19 +409,7 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         Raises:
             typer.Exit: If the app cannot be removed safely.
         """
-        from heinzel.heads._desktop_installation import uninstall_desktop  # noqa: PLC0415 - native removal only
-
-        notes: list[str] = []
-        try:
-            removed = uninstall_desktop(notes=notes)
-        except (HeinzelError, OSError, SubprocessError) as exc:
-            _print_notes(output, notes)
-            _fail(error, exc, "Desktop uninstall failed.", details=details)
-        _print_notes(output, notes)
-        output.print(
-            f"Heinzel desktop app removed from {removed}." if removed else "The Heinzel desktop app is not installed.",
-            markup=False,
-        )
+        _uninstall(output, error, details=details)
 
     @app.command("refresh", hidden=True)
     def refresh() -> None:
@@ -393,6 +417,6 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         try:
             _refresh_after_exit(kernel)
         except (HeinzelError, OSError, SubprocessError) as exc:
-            error.print(message("Desktop update failed.", str(exc)))
+            error.print(message(say.UPDATE_FAILED, str(exc)))
 
     return app
