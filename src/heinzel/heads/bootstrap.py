@@ -675,11 +675,9 @@ def _start(arguments: list[str], flags: set[str]) -> None:
     unattended = not arguments and "--yes" in flags
     want_app = _app_choice(arguments, flags, interactive=interactive)
     choices = [("system", "daemon"), ("ui",), ("system", "notify")] if unattended else _service_choices(arguments)
+    # Without a terminal and without --yes the desktop app is neither asked about nor installed (as --no-app), and
+    # the foreground app starts exactly as before: `curl | sh` and scripts reach a running app.
     executable = _ensure_app(interactive=interactive)
-    if not arguments and not interactive and not unattended:
-        _event("start.outcome", outcome="installed_only", version=__version__, path=str(executable))
-        sys.stdout.write(words.NOT_STARTED.format(version=__version__, path=executable) + "\n")
-        return
     environment = _app_environment(executable)
     app_ready = want_app and _install_app(executable, environment)
     workspace = arguments or _workspace_command(executable, environment, choices, app_ready)

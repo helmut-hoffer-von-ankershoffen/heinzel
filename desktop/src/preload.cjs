@@ -4,10 +4,12 @@ const { contextBridge, ipcRenderer } = require("electron");
 const mac = /^Mac/.test(globalThis.navigator?.platform ?? "");
 const titlebar = mac ? Object.freeze({ height: 44, left: 80, right: 0 }) : null;
 
-// The bridge exposes a fixed read operation, a capability label, the title bar insets and a full-screen listener.
+// The bridge exposes fixed product operations, a capability label, the title bar insets and a full-screen listener;
+// no raw IPC or credential material reaches the page.
 contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
   workspaceAudio: true,
   titlebar,
+  browser: (request) => ipcRenderer.invoke("hz:browser", request),
   lifecycle: () => ipcRenderer.invoke("hz:lifecycle"),
   onFullscreen: (callback) => {
     const listener = (_event, full) => callback(full === true);

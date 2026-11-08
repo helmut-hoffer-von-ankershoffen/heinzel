@@ -263,6 +263,9 @@ def search(
             "All plugins if omitted."
         ),
     ] = "",
+    refresh: Annotated[
+        bool, Field(description="Ask GitHub again instead of using the answer kept for the last minute.")
+    ] = False,
 ) -> PluginSearch:
     """Find plugins to install: first-party ones, and community ones by querying the GitHub API.
 
@@ -272,7 +275,7 @@ def search(
     PyPI has no keyword search, so it is not queried. Community
     plugins are not reviewed by the Heinzelmännchen maintainers, and every plugin runs with your rights.
     """
-    return service.search(text)
+    return service.search(text, refresh=refresh)
 
 
 __all__ = [

@@ -2,8 +2,10 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
+import type { Phase, PhaseState } from "@/lib/operationRun";
 import { shell } from "@/test/fixtures";
-import { mockApi, renderAt } from "@/test/render";
+import { expectPane } from "@/test/pane";
+import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { KEY } from "@/updates/autoUpdateApi";
 import { startUpdate } from "@/updates/controller";
 import { preserveUpdateWork } from "@/updates/work";
@@ -35,6 +37,7 @@ it("opens the update details without installing until the button is chosen", asy
   expect(startUpdate).not.toHaveBeenCalled();
   expect(await screen.findByText(/^Last installed:/)).toBeInTheDocument();
   expect(screen.getByText("Heinzel 0.2.0 is available")).toBeInTheDocument();
+  await expectPane(screen.getByRole("region", { name: "Updates available" }));
   await user.click(screen.getByRole("button", { name: "Update now" }));
   expect(startUpdate).toHaveBeenCalledTimes(1);
 });
@@ -316,7 +319,10 @@ it.each([plan, { ...plan, phase: "off", enabled: false }, { status: 503, body: {
     await userEvent.setup().click(await screen.findByRole("button", { name: "Updates, off" }));
     expect(screen.queryByText(/up to date/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Manually update…" })).toBeInTheDocument();
+    const manual = screen.getByRole("button", { name: "Manually update…" });
+    // Switches stay in the body; the action sits in the bottom row under the divider (design/README.md).
+    expect(manual.closest("[data-pane-actions]")).toHaveClass("border-t");
+    for (const toggle of screen.queryAllByRole("switch")) expect(toggle.closest("[data-pane-actions]")).toBeNull();
     expect(startUpdate).not.toHaveBeenCalled();
   },
 );
@@ -343,4 +349,63 @@ it("observes the live plan instead of the indefinitely cached installation facts
   expect(await screen.findByText("heinzel-example 2.0.0 is available")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Update now" })).toBeInTheDocument();
   expect(startUpdate).not.toHaveBeenCalled();
+});
+
+const planWith = {
+  enabled: true,
+  reason: null,
+  phase: "idle",
+  version: "0.1.0",
+  core: null,
+  plugins: { notes: "1.2.0" },
+};
+const checked = { ...planWith, core_checked: true, plugins_checked: true, seconds_left: null, apply_at: null };
+
+type Report = (phases: Phase[]) => void;
+const steps = (...states: PhaseState[]): Phase[] =>
+  ["Heinzel", "notes"].map((label, index) => ({ id: label, label, state: states[index] ?? "pending" }));
+
+async function openWhileUpdating(run: (report: Report) => Promise<string>) {
+  mockApi({ ...shell, "/api/update-status": status, "/api/auto-update": checked });
+  vi.mocked(startUpdate).mockImplementationOnce(async (_signal, _onPhase, _transport, report) =>
+    run(report ?? (() => {})),
+  );
+  const user = userEvent.setup();
+  const view = renderAt("/");
+  await user.click(await screen.findByRole("button", { name: /Updates available/ }));
+  await screen.findByText("Heinzel 0.2.0 is available");
+  await user.click(screen.getByRole("button", { name: /Update all/ }));
+  return view;
+}
+
+it("draws the steps the head reports as segments while core and plugins update, and passes axe", async () => {
+  const view = await openWhileUpdating(async (report) => {
+    report(steps("done", "running"));
+    return new Promise<string>(() => {});
+  });
+  const bar = await screen.findByRole("progressbar", { name: "Update progress" });
+  expect(bar).toHaveAttribute("max", "2");
+  expect(bar).toHaveAttribute("value", "1");
+  expect(screen.getByText("Heinzel: done")).toBeInTheDocument();
+  expect(screen.getByText("notes: in progress")).toBeInTheDocument();
+  await expectAccessible(view.container);
+});
+
+it("shows a failed step as failed and keeps the bar next to the error", async () => {
+  await openWhileUpdating(async (report) => {
+    report(steps("done", "failed"));
+    throw new Error("Installer failed before changing hz.");
+  });
+  expect((await screen.findAllByText("Installer failed before changing hz.")).length).toBeGreaterThan(0);
+  expect(await screen.findByRole("progressbar", { name: "Update progress" })).toHaveAttribute("value", "1");
+  expect(screen.getByText("notes: failed")).toBeInTheDocument();
+});
+
+it("shows no bar before an update runs", async () => {
+  mockApi({ ...shell, "/api/update-status": status, "/api/auto-update": checked });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: /Updates available/ }));
+  await screen.findByText("Heinzel 0.2.0 is available");
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
 });

@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   AlarmClock,
+  ArrowRight,
   Bell,
   BriefcaseBusiness,
   Calendar,
@@ -69,7 +70,10 @@ import { FooterItem, stateOf } from "@/components/FooterItem";
 import { FooterPart } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { HeinzelFace } from "@/components/HeinzelFace";
+import { HideToast, useWidgetVisibility } from "@/components/HiddenWidgets";
 import { OperationDialog } from "@/components/OperationDialog";
+import { PaneAction, PaneActions, PaneChrome } from "@/components/PaneActions";
+import { Progress } from "@/components/Progress";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { contributionPath } from "@/lib/navigation";
@@ -270,6 +274,28 @@ function effectLabel(effect: Effect): string {
   return effect.kind === "open" || effect.kind === "navigate" ? t("status.open") : t("status.runIt");
 }
 
+/** Every bottom-row action carries an icon: an arrow for going somewhere, play for running something. */
+function effectIcon(effect: Effect): LucideIcon {
+  return effect.kind === "open" || effect.kind === "navigate" ? ArrowRight : Play;
+}
+
+/**
+ * Whether an action destroys something (uninstall, remove, delete): drawn red and last, behind the operation's own
+ * confirming dialog (design/README.md, "Actions"). The contribution contract has no flag for it yet.
+ */
+function destroys(effect: Effect): boolean {
+  const operation = "operation" in effect ? String(effect.operation ?? "") : "";
+  return /^(uninstall|remove|delete)\b/.test(operation);
+}
+
+/** A contribution's actions in the order of every row: as declared, destructive last. */
+function ordered<T extends { effect: Effect }>(actions: readonly T[]): T[] {
+  return [
+    ...actions.filter((action) => !destroys(action.effect)),
+    ...actions.filter((action) => destroys(action.effect)),
+  ];
+}
+
 /** A footer status item: only its icon, in the colour and shape of its declared tone; text, detail and buttons in a pane. */
 function FooterStatus({
   entry,
@@ -288,6 +314,45 @@ function FooterStatus({
   }
   const label = [item.text, item.live ? liveText(item.live, now) : ""].filter(Boolean).join(" ");
   const effect = item.effect;
+  const actions = (
+    <>
+      {effect && (
+        <PaneAction icon={effectIcon(effect)} onClick={() => run(effect)}>
+          {effectLabel(effect)}
+        </PaneAction>
+      )}
+      {ordered(item.actions ?? []).map((action) => (
+        <PaneAction
+          key={action.label}
+          icon={action.icon ? ICONS[action.icon] : effectIcon(action.effect)}
+          destructive={destroys(action.effect)}
+          onClick={() => run(action.effect)}
+        >
+          {action.label}
+        </PaneAction>
+      ))}
+    </>
+  );
+  const lines = (
+    <ul>
+      {(item.detail ?? []).map((line) => (
+        <li key={line.text} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5">
+          <span aria-hidden className={cn("size-2 shrink-0 rounded-full", DOT[line.tone])} />
+          <span className="min-w-0 flex-1" title={line.tooltip ?? undefined}>
+            {line.text}
+            {line.badge && (
+              <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-foreground">
+                {line.badge}
+              </span>
+            )}
+            {line.secondary && <span className="block text-xs text-muted-foreground">{line.secondary}</span>}
+          </span>
+          <IconOf icon={line.icon} />
+          {line.live && <span className="font-mono tabular-nums">{liveText(line.live, now)}</span>}
+        </li>
+      ))}
+    </ul>
+  );
   const accessible = [
     label,
     ...(item.meters ?? []).map((meter) => `${meter.label}: ${meter.value == null ? "unavailable" : `${meter.value}%`}`),
@@ -331,45 +396,29 @@ function FooterStatus({
         ) : undefined
       }
     >
-      {item.toggle && <StatusControl entry={current} />}
-      <ul>
-        {(item.detail ?? []).map((line) => (
-          <li key={line.text} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5">
-            <span aria-hidden className={cn("size-2 shrink-0 rounded-full", DOT[line.tone])} />
-            <span className="min-w-0 flex-1" title={line.tooltip ?? undefined}>
-              {line.text}
-              {line.badge && (
-                <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-foreground">
-                  {line.badge}
-                </span>
-              )}
-              {line.secondary && <span className="block text-xs text-muted-foreground">{line.secondary}</span>}
-            </span>
-            <IconOf icon={line.icon} />
-            {line.live && <span className="font-mono tabular-nums">{liveText(line.live, now)}</span>}
-          </li>
-        ))}
-      </ul>
-      {((item.actions ?? []).length > 0 || effect) && (
-        <div className="mt-1 flex flex-wrap gap-1.5 border-t border-border px-1.5 pt-2 pb-1">
-          {effect && (
-            <Button size="sm" variant="outline" onClick={() => run(effect)}>
-              {effectLabel(effect)}
-            </Button>
-          )}
-          {(item.actions ?? []).map((action) => (
-            <Button key={action.label} size="sm" variant="outline" onClick={() => run(action.effect)}>
-              <IconOf icon={action.icon} />
-              {action.label}
-            </Button>
-          ))}
+      {/* Under a switch the provider's lines are its longer explanation: on demand in Details, never bullets. */}
+      {!item.toggle && lines}
+      {/* The switch and its URL sit at the end of the body; its Share and Open join the pane's own actions in one row. */}
+      {item.toggle ? (
+        <div className="px-1.5">
+          <StatusControl entry={current} actions={actions} details={item.detail?.length ? lines : undefined} />
         </div>
+      ) : (
+        <PaneActions>{actions}</PaneActions>
       )}
     </FooterItem>
   );
 }
 
-function StatusControl({ entry }: { entry: SchemaStatusEntry }) {
+function StatusControl({
+  entry,
+  actions,
+  details,
+}: {
+  entry: SchemaStatusEntry;
+  actions?: ReactNode;
+  details?: ReactNode;
+}) {
   const client = useQueryClient();
   const current = useEntry("status", entry, 0);
   const control = current.item?.toggle;
@@ -377,6 +426,8 @@ function StatusControl({ entry }: { entry: SchemaStatusEntry }) {
   return (
     <ContributionToggle
       control={control}
+      actions={actions}
+      details={details}
       refresh={async (signal) => {
         const entries = await unwrap(api.GET("/system/ui/status", { params: { query: { item: entry.id } }, signal }));
         const fresh = entries.find((candidate) => candidate.id === entry.id);
@@ -561,16 +612,18 @@ function SidebarStatusItem({
               </li>
             ))}
           </ul>
-          {actions.length > 0 && (
-            <div className="mt-1 flex flex-wrap gap-1.5 border-t border-border px-1.5 pt-2 pb-1">
-              {actions.map((action) => (
-                <Button key={action.label} size="sm" variant="outline" onClick={() => run(action.effect)}>
-                  <IconOf icon={action.icon} />
-                  {action.label}
-                </Button>
-              ))}
-            </div>
-          )}
+          <PaneActions>
+            {ordered(actions).map((action) => (
+              <PaneAction
+                key={action.label}
+                icon={action.icon ? ICONS[action.icon] : effectIcon(action.effect)}
+                destructive={destroys(action.effect)}
+                onClick={() => run(action.effect)}
+              >
+                {action.label}
+              </PaneAction>
+            ))}
+          </PaneActions>
         </div>
       )}
     </span>
@@ -666,29 +719,43 @@ function ActionButton({
   const Component = ICONS[current.icon];
   const badge = current.badge === 0 || current.badge == null ? null : String(current.badge);
   const effect = current.effect;
+  const hintId = `badge-hint-${entry.id}`;
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      disabled={!effect}
-      onClick={() => {
-        if (!effect) return;
-        run(effect);
-      }}
-      aria-label={badge ? `${current.label} (${badge})` : current.label}
-      title={current.problem ?? current.label}
-      className="relative"
-    >
-      <Component aria-hidden />
+    <span className="group/badge relative inline-flex">
+      <Button
+        variant="ghost"
+        size="icon"
+        disabled={!effect}
+        onClick={() => {
+          if (!effect) return;
+          run(effect);
+        }}
+        aria-label={badge ? `${current.label} (${badge})` : current.label}
+        aria-describedby={badge ? hintId : undefined}
+        title={badge ? undefined : (current.problem ?? current.label)}
+        className="relative"
+      >
+        <Component aria-hidden />
+        {badge && (
+          <span
+            aria-hidden
+            className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground"
+          >
+            {badge}
+          </span>
+        )}
+      </Button>
       {badge && (
         <span
-          aria-hidden
-          className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground"
+          id={hintId}
+          role="tooltip"
+          className="pointer-events-none absolute top-full right-0 z-50 mt-1 hidden w-56 rounded-lg border bg-popover p-2.5 text-left text-xs text-popover-foreground shadow-md group-focus-within/badge:block group-hover/badge:block"
         >
-          {badge}
+          <span className="block font-medium">{current.label}</span>
+          <span className="mt-0.5 block text-muted-foreground">{t("action.badgeHint", { badge })}</span>
         </span>
       )}
-    </Button>
+    </span>
   );
 }
 
@@ -737,16 +804,6 @@ function WidgetBody({ widget, run }: { widget: Widget; run: (effect: Effect) => 
           {widget.body && (
             <p className="line-clamp-3 text-xs whitespace-pre-line text-muted-foreground">{widget.body}</p>
           )}
-          {(widget.actions ?? []).length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {(widget.actions ?? []).map((action) => (
-                <Button key={action.label} size="sm" variant="outline" onClick={() => run(action.effect)}>
-                  <IconOf icon={action.icon} />
-                  {action.label}
-                </Button>
-              ))}
-            </div>
-          )}
         </>
       );
     case "list":
@@ -765,7 +822,11 @@ function WidgetBody({ widget, run }: { widget: Widget; run: (effect: Effect) => 
               return (
                 <li key={item.text}>
                   {effect ? (
-                    <button type="button" onClick={() => run(effect)} className="w-full text-left hover:underline">
+                    <button
+                      type="button"
+                      onClick={() => run(effect)}
+                      className="w-full rounded px-1 text-left hover:bg-accent/60"
+                    >
                       {text}
                     </button>
                   ) : (
@@ -789,12 +850,7 @@ function WidgetBody({ widget, run }: { widget: Widget; run: (effect: Effect) => 
       return (
         <>
           <h3 className="text-xs text-muted-foreground">{widget.label}</h3>
-          <progress
-            className="h-2 w-full accent-primary"
-            max={widget.total}
-            value={widget.done}
-            aria-label={widget.label}
-          />
+          <Progress label={widget.label} value={widget.done} max={widget.total} />
           <p className="text-xs tabular-nums">{t("contrib.progress", { done: widget.done, total: widget.total })}</p>
         </>
       );
@@ -841,39 +897,25 @@ const DEFAULT_SIZE: Record<Widget["kind"], keyof typeof SIZES> = {
 };
 export const sizeOf = (widget: Widget): keyof typeof SIZES => widget.size ?? DEFAULT_SIZE[widget.kind];
 
-const DISMISSED = "hz.today.widgets.dismissed";
-
-function loadDismissed(): Set<string> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(DISMISSED) ?? "[]") as string[]);
-  } catch {
-    return new Set();
-  }
-}
-
-/** A widget's key while what it shows is the same, so a dismissed one comes back when it changes. */
-const widgetKey = (entry: SchemaWidgetEntry) => `${entry.id}:${JSON.stringify(entry.widget)}`;
-
 function WidgetCard({
   entry,
   updatedAt,
   run,
   onAsk,
-  dismissed,
-  onDismiss,
+  onHide,
 }: {
   entry: SchemaWidgetEntry;
   updatedAt: number;
   run: (effect: Effect) => void;
   onAsk?: (context: string, text: string) => void;
-  dismissed: Set<string>;
-  onDismiss: (key: string) => void;
+  onHide: (id: string, title: string) => void;
 }) {
   const current = useEntry("widgets", entry, updatedAt);
   const widget = current.widget;
-  if (!widget || dismissed.has(widgetKey(current))) return null;
+  if (!widget) return null;
   const tone = "tone" in widget ? widget.tone : "neutral";
   const title = "title" in widget ? widget.title : widget.label;
+  const cardActions = widget.kind === "card" ? (widget.actions ?? []) : [];
   return (
     <li
       className={cn(
@@ -884,41 +926,42 @@ function WidgetCard({
       data-widget={current.id}
       data-size={sizeOf(widget)}
     >
-      <div className="min-w-0 pr-16">
+      <PaneChrome>
+        <PaneAction ghost icon={X} onClick={() => onHide(current.id, title)}>
+          {t("today.hide", { title })}
+        </PaneAction>
+      </PaneChrome>
+      <div className="min-w-0 pr-10">
         <WidgetBody widget={widget} run={run} />
       </div>
-      <div className="absolute top-1.5 right-1.5 flex items-center">
-        {onAsk && (
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-8"
-            onClick={() =>
-              onAsk(
-                `text:what module ${current.module} shows`,
-                t("contrib.says", {
-                  module: current.module,
-                  text: widgetText(widget),
-                }),
-              )
-            }
-            aria-label={t("today.ask")}
-            title={t("today.ask")}
-          >
-            <MessageSquare aria-hidden />
-          </Button>
-        )}
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-8"
-          onClick={() => onDismiss(widgetKey(current))}
-          aria-label={t("today.dismiss", { title })}
-          title={t("today.dismiss", { title })}
-        >
-          <X aria-hidden />
-        </Button>
-      </div>
+      {(cardActions.length > 0 || onAsk) && (
+        <PaneActions className="mt-auto">
+          {ordered(cardActions).map((action) => (
+            <PaneAction
+              key={action.label}
+              icon={action.icon ? ICONS[action.icon] : effectIcon(action.effect)}
+              destructive={destroys(action.effect)}
+              onClick={() => run(action.effect)}
+            >
+              {action.label}
+            </PaneAction>
+          ))}
+          {onAsk && (
+            <PaneAction
+              key="ask"
+              icon={MessageSquare}
+              onClick={() =>
+                onAsk(
+                  `text:what module ${current.module} shows`,
+                  t("contrib.says", { module: current.module, text: widgetText(widget) }),
+                )
+              }
+            >
+              {t("today.ask")}
+            </PaneAction>
+          )}
+        </PaneActions>
+      )}
     </li>
   );
 }
@@ -927,34 +970,32 @@ function WidgetCard({
 export function TodayWidgets({ onAsk }: { onAsk?: (context: string, text: string) => void }) {
   const { entries, updatedAt } = useEntries("widgets", "today");
   const { run, dialog } = useEffectRunner();
-  const [dismissed, setDismissed] = useState(loadDismissed);
-  const dismiss = (key: string) => {
-    const next = new Set(dismissed).add(key);
-    setDismissed(next);
-    try {
-      localStorage.setItem(DISMISSED, JSON.stringify([...next].slice(-100)));
-    } catch {
-      // No storage: dismissed for this visit only.
-    }
+  const { hide, restore } = useWidgetVisibility();
+  const [undo, setUndo] = useState<string | null>(null);
+  const onHide = (id: string) => {
+    void hide(id).then(() => setUndo(id));
   };
   // One card per contribution id, whatever the list repeats.
   const unique = [...new Map(entries.map((entry) => [entry.id, entry])).values()];
-  if (!unique.length) return null;
+  if (!unique.length && !undo) return null;
   return (
     <>
       {unique.map((entry) => (
-        <WidgetCard
-          key={entry.id}
-          entry={entry}
-          updatedAt={updatedAt}
-          run={run}
-          onAsk={onAsk}
-          dismissed={dismissed}
-          onDismiss={dismiss}
-        />
+        <WidgetCard key={entry.id} entry={entry} updatedAt={updatedAt} run={run} onAsk={onAsk} onHide={onHide} />
       ))}
       {/* The confirmation and its live region are not list items: they go beside the grid, not in it. */}
       {createPortal(dialog, document.body)}
+      {undo &&
+        createPortal(
+          <HideToast
+            onUndo={() => {
+              void restore([undo]);
+              setUndo(null);
+            }}
+            onDone={() => setUndo(null)}
+          />,
+          document.body,
+        )}
     </>
   );
 }

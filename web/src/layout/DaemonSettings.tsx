@@ -1,8 +1,8 @@
-import { RotateCw } from "lucide-react";
+import { Check, Download, Pause, Play, RefreshCw, RotateCw, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { type DaemonAction, useChangeDaemon, useDaemonStatus } from "@/api/daemon";
 import { Loaded } from "@/components/common";
-import { Button } from "@/components/ui/button";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
 
 type Action = DaemonAction;
@@ -55,46 +55,60 @@ export function DaemonSettings() {
               </dl>
               {daemon.version_mismatch && <p className="text-warn">{t("daemon.mismatch")}</p>}
               {!supported && <p>{t("daemon.unsupported")}</p>}
-              <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+              <PaneActions>
                 {supported &&
                   (daemon.installed ? (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={change.isPending}
-                        onClick={() => ask(daemon.paused ? "resume" : "pause")}
-                      >
-                        {label(daemon.paused ? "resume" : "pause")}
-                      </Button>
-                      {(daemon.version_mismatch || !daemon.version || !daemon.loaded) && (
-                        <Button
-                          size="icon"
-                          variant="outline"
-                          disabled={change.isPending}
-                          aria-label={label("restart")}
-                          title={label("restart")}
-                          onClick={() => {
-                            change.reset();
-                            change.mutate("restart");
-                          }}
-                        >
-                          <RotateCw aria-hidden />
-                        </Button>
-                      )}
-                      <Button size="sm" variant="outline" disabled={change.isPending} onClick={() => ask("uninstall")}>
-                        {label("uninstall")}
-                      </Button>
-                    </>
+                    <PaneAction
+                      key="pause"
+                      icon={daemon.paused ? Play : Pause}
+                      disabled={change.isPending}
+                      onClick={() => ask(daemon.paused ? "resume" : "pause")}
+                    >
+                      {label(daemon.paused ? "resume" : "pause")}
+                    </PaneAction>
                   ) : (
-                    <Button size="sm" variant="outline" disabled={change.isPending} onClick={() => ask("install")}>
+                    <PaneAction
+                      key="install"
+                      icon={Download}
+                      disabled={change.isPending}
+                      onClick={() => ask("install")}
+                    >
                       {label("install")}
-                    </Button>
+                    </PaneAction>
                   ))}
-                <Button size="sm" variant="ghost" disabled={status.isFetching} onClick={() => void status.refetch()}>
+                {supported && daemon.installed && (daemon.version_mismatch || !daemon.version || !daemon.loaded) && (
+                  <PaneAction
+                    key="restart"
+                    icon={RotateCw}
+                    disabled={change.isPending}
+                    onClick={() => {
+                      change.reset();
+                      change.mutate("restart");
+                    }}
+                  >
+                    {label("restart")}
+                  </PaneAction>
+                )}
+                <PaneAction
+                  key="refresh"
+                  icon={RefreshCw}
+                  disabled={status.isFetching}
+                  onClick={() => void status.refetch()}
+                >
                   {t("daemon.refresh")}
-                </Button>
-              </div>
+                </PaneAction>
+                {supported && daemon.installed && (
+                  <PaneAction
+                    key="uninstall"
+                    icon={Trash2}
+                    destructive
+                    disabled={change.isPending}
+                    onClick={() => ask("uninstall")}
+                  >
+                    {label("uninstall")}
+                  </PaneAction>
+                )}
+              </PaneActions>
             </>
           );
         }}
@@ -121,14 +135,21 @@ export function DaemonSettings() {
           <p>{t("daemon.confirm", { action: label(pending) })}</p>
           <code className="block break-all">hz system daemon {pending}</code>
           {(pending === "install" || pending === "uninstall") && <p>{t("daemon.persistenceHint")}</p>}
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" autoFocus onClick={() => setPending(null)}>
+          <PaneActions align="end" words="all">
+            <PaneAction key="cancel" icon={X} autoFocus onClick={() => setPending(null)}>
               {t("contrib.cancel")}
-            </Button>
-            <Button size="sm" disabled={change.isPending} onClick={confirm}>
+            </PaneAction>
+            <PaneAction
+              key="confirm"
+              icon={Check}
+              primary
+              destructive={pending === "uninstall"}
+              disabled={change.isPending}
+              onClick={confirm}
+            >
               {label(pending)}
-            </Button>
-          </div>
+            </PaneAction>
+          </PaneActions>
         </div>
       )}
     </section>

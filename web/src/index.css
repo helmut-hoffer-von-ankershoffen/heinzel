@@ -140,6 +140,14 @@ body,
   height: 100%;
 }
 
+/* The app never pans sideways on a phone: a touch drag or rubber band must not slide the layout and show a gap.
+   Wide content scrolls in its own overflow-x container (tables, code, tab rows). */
+html,
+body {
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
 /* The page colour belongs to <html>, and <body> stays transparent. index.html gives <html> the splash colour, so a
    painted <body> would cover everything below the content layer: the audio aurora (fixed, -z-10) drew but was never
    seen. */
@@ -523,14 +531,30 @@ html[data-desktop-titlebar]
     [data-titlebar],
     .workspace-topbar,
     [data-placement="beside"] > .workspace-tabs,
-    [data-placement="beside"] .chat-panel-header
+    [data-placement="beside"]:not(:has(> .workspace-tabs)) .chat-panel-header
   )
   :is(a, button, input, select, textarea, [role="tab"], [role="menu"], [role="menuitem"], [tabindex]) {
   -webkit-app-region: no-drag;
 }
-/* Electron applies drag regions over everything painted above them: a dialog, menu or popover that overlaps the row
-   claims its own box back, so its top edge stays clickable. */
+/* Electron applies drag regions over everything painted above them: a dialog, menu, popover or pane (data-pane: a
+   full-height overlay such as Notifications, which also starts under the row) claims its own box back, so its edge
+   stays clickable. */
 html[data-desktop-titlebar]
-  :is(dialog, [role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"], .viewport-popover) {
+  :is(dialog, [role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"], .viewport-popover, [data-pane]) {
   -webkit-app-region: no-drag;
+}
+
+/* The right sidebar's resize handle reaches into the title bar row: it is a control, not a drag area. */
+html[data-desktop-titlebar] [data-sidebar-resizer] {
+  -webkit-app-region: no-drag;
+}
+
+/* While the right sidebar is dragged: no text selection, no pointer events lost to frames or the terminal canvas. */
+html[data-sidebar-resizing] {
+  cursor: col-resize;
+  user-select: none;
+  -webkit-user-select: none;
+}
+html[data-sidebar-resizing] :is(iframe, canvas, .xterm) {
+  pointer-events: none;
 }
