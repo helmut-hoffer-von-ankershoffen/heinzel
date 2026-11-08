@@ -121,7 +121,7 @@ card, a dialog, a panel, a page, a settings section, a toast) places its actions
 | Container | Good |
 |---|---|
 | Heinzelmännchen pane, empty | "No persisted Heinzels yet."; divider; [+ Create a personal Heinzel] (primary) [💬] |
-| Calendar pane | Now and next meeting; divider; [📅 Open calendar] |
+| Calendar pane | Now and next meeting; divider; [🎥 Join] [📅 Open calendar] [🛡 Allow changes] until the connector may write, then [Decline] [Extend] [Running late] instead of Allow |
 | System health pane | Check summary; divider; [🩺 Open Doctor] [⟳] |
 | Updates pane | Status lines, automatic-updates switch; divider; [⬇ Update now] [⟳] |
 | Daemon pane (plugin) | Status lines; divider; [⚡ Restart daemon] [📄] [⏱] [⚠] (red) |
