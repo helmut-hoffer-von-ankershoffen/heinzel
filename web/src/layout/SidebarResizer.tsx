@@ -86,7 +86,7 @@ export function SidebarResizer({
       onPointerUp={(event) => end(event, true)}
       onPointerCancel={(event) => end(event, false)}
       onLostPointerCapture={(event) => end(event, true)}
-      className="group absolute inset-y-0 -left-1.5 z-20 w-3 cursor-col-resize touch-none outline-none [-webkit-app-region:no-drag]"
+      className="group absolute inset-y-0 -left-1.5 z-20 w-3 cursor-col-resize touch-none outline-none"
     >
       <span
         aria-hidden="true"

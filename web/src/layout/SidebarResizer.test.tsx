@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
@@ -34,7 +36,10 @@ describe("SidebarResizer", () => {
     expect(handle).toHaveAttribute("aria-valuenow", "400");
     expect(handle).toHaveAttribute("aria-valuemin", "320");
     expect(handle).toHaveAttribute("aria-valuemax", "800");
-    expect(handle.className).toContain("no-drag");
+    // The no-drag rule lives in index.css (titlebar standard): the handle carries the hook it targets.
+    expect(handle).toHaveAttribute("data-sidebar-resizer");
+    const css = readFileSync(join(__dirname, "..", "index.css"), "utf8");
+    expect(css).toMatch(/\[data-sidebar-resizer\]\s*\{\s*-webkit-app-region:\s*no-drag;/);
   });
 
   it("resizes by keys, Shift, Home and End, and resets on double click", async () => {

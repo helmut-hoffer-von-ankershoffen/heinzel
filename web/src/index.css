@@ -544,6 +544,11 @@ html[data-desktop-titlebar]
   -webkit-app-region: no-drag;
 }
 
+/* The right sidebar's resize handle reaches into the title bar row: it is a control, not a drag area. */
+html[data-desktop-titlebar] [data-sidebar-resizer] {
+  -webkit-app-region: no-drag;
+}
+
 /* While the right sidebar is dragged: no text selection, no pointer events lost to frames or the terminal canvas. */
 html[data-sidebar-resizing] {
   cursor: col-resize;
