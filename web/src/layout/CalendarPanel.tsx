@@ -314,7 +314,7 @@ function DayGroup({
         aria-labelledby={id}
         aria-current={isToday ? "date" : undefined}
         ref={isToday ? showToday : undefined}
-        className={cn(day.tense === "past" && "opacity-60")}
+        className={cn(day.tense === "past" && "text-muted-foreground")}
       >
         <h3
           id={id}
@@ -372,31 +372,18 @@ function EventRow({
   const state = rowState(event, now);
   const running = state.state === "running";
   const title = event.title || t("calendar.noTitle");
-  const when = times.allDay
-    ? t("calendar.allDay")
-    : edge === "start"
-      ? t("calendar.fromTime", { time: clock(event.start, tz) })
-      : edge === "end"
-        ? t("calendar.untilTime", { time: clock(event.end, tz) })
-        : t("calendar.timeRange", { start: times.top ?? "", end: times.bottom ?? "" });
   const left = t("calendar.left", { span: spanText(state.minutesLeft) });
   const startsIn = t("calendar.startsIn", { span: spanText(state.startsIn) });
-  const name = running
-    ? t("calendar.rowNow", { title, when, span: spanText(state.minutesLeft) })
-    : next
-      ? t("calendar.rowNext", { title, when, startsIn })
-      : t("calendar.rowName", { title, when });
   return (
     <li
       className={cn(
         "flex items-start gap-1 border-l-2 border-transparent",
         running && "border-primary",
-        dim && "opacity-60",
+        dim && "text-muted-foreground",
       )}
     >
       <button
         type="button"
-        aria-label={name}
         className="flex min-h-11 min-w-0 flex-1 gap-3 rounded-md p-2 text-left hover:bg-accent"
         onClick={() => onOpen(event)}
       >

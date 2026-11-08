@@ -1187,12 +1187,6 @@ const en = {
   "calendar.statusNothing": "nothing",
   "calendar.statusLeft": "{title}, {left}",
   "calendar.statusNext": "{title} {startsIn}",
-  "calendar.fromTime": "from {time}",
-  "calendar.untilTime": "until {time}",
-  "calendar.timeRange": "{start} to {end}",
-  "calendar.rowName": "{title}, {when}",
-  "calendar.rowNow": "{title}, {when}, now, {span} left",
-  "calendar.rowNext": "{title}, {when}, {startsIn}",
   "calendar.installSummary":
     "Install a calendar reminder worker for this profile at every login? Calendar reads require separate consent in Notification settings.",
   "calendar.removeSummary": "Remove this profile's calendar reminder worker from login?",

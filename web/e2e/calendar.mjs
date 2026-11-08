@@ -188,7 +188,7 @@ for (const [name, engine] of [
       );
       assert.deepEqual(violations, []);
       await page.screenshot({ path: join(shots, `${name}-${size}.png`) });
-      await panel.getByRole("button", { name: /^Standup with an exceptionally long/ }).click();
+      await panel.getByRole("button", { name: /Standup with an exceptionally long/ }).click();
       const detail = panel.getByRole("article");
       await detail.getByRole("link", { name: "Join meeting", exact: true }).waitFor({ timeout: 10000 });
       assert.match(await detail.textContent(), /Organizer\s*Ada Lovelace/);

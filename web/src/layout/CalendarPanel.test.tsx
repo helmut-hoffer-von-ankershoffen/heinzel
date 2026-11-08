@@ -266,13 +266,13 @@ it("shows a multi-day meeting under each day with arrows, and All day for whole 
   agenda();
   await screen.findByText("Standup");
   const section = (name: RegExp) => screen.getByRole("heading", { name }).closest("section") as HTMLElement;
-  expect(within(section(/Fri 6 Nov/)).getByRole("button", { name: /Offsite, from 18:00/ })).toHaveTextContent(
+  expect(within(section(/Fri 6 Nov/)).getByRole("button", { name: /18:00.*Offsite/ })).toHaveTextContent(
     "18:00 \u2192",
   );
   const saturday = section(/Sat 7 Nov/);
-  expect(within(saturday).getByRole("button", { name: /Offsite, until 10:00/ })).toHaveTextContent("\u2192 10:00");
-  expect(within(saturday).getByRole("button", { name: /Test2, 09:00 to 09:45/ })).toHaveTextContent("09:0009:45");
-  expect(within(section(/Today/)).getByRole("button", { name: "Woltersdorf market, All day" })).toHaveTextContent(
+  expect(within(saturday).getByRole("button", { name: /10:00.*Offsite/ })).toHaveTextContent("\u2192 10:00");
+  expect(within(saturday).getByRole("button", { name: /09:00\s*09:45\s*Test2/ })).toHaveTextContent("09:0009:45");
+  expect(within(section(/Today/)).getByRole("button", { name: /All day\s*Woltersdorf market/ })).toHaveTextContent(
     "All day",
   );
 });
@@ -281,57 +281,57 @@ it("marks the running meeting, the now line and the next meeting, and moves them
   const { container } = agenda();
   const today = (await screen.findByRole("heading", { name: /Today/ })).closest("section") as HTMLElement;
   expect(today).toHaveAttribute("aria-current", "date");
-  const standup = within(today).getByRole("button", { name: "Standup, 08:00 to 08:30, now, 12 min left" });
+  const standup = within(today).getByRole("button", { name: /08:00\s*08:30\s*Standup\s*Now\s*12 min left/ });
   expect(standup).toHaveTextContent("Now");
   expect(standup).toHaveTextContent("12 min left");
   expect(standup.closest("li")).toHaveClass("border-primary");
   expect(standup.querySelector("[data-progress]")).toHaveStyle({ width: "60%" });
   const separator = within(today).getByRole("separator", { name: "Now, 08:18" });
   expect(standup.compareDocumentPosition(separator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  const review = within(today).getByRole("button", { name: /^Review with Anna/ });
+  const review = within(today).getByRole("button", { name: /Review with Anna/ });
   expect(review.compareDocumentPosition(separator) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   expect(review).toHaveTextContent("in 1 h 42 min");
-  const dentist = within(today).getByRole("button", { name: /^Dentist/ });
+  const dentist = within(today).getByRole("button", { name: /Dentist/ });
   expect(dentist).not.toHaveTextContent(/in \d|Now|left/);
   expect(container.querySelectorAll("[data-progress]")).toHaveLength(1);
 
   act(() => vi.advanceTimersByTime(15 * 60_000));
   expect(within(today).getByRole("separator", { name: "Now, 08:33" })).toBeInTheDocument();
   expect(container.querySelector("[data-progress]")).toBeNull();
-  expect(within(today).getByRole("button", { name: /^Standup/ })).not.toHaveTextContent("Now");
+  expect(within(today).getByRole("button", { name: /Standup/ })).not.toHaveTextContent("Now");
   expect(
     within(today)
-      .getByRole("button", { name: /^Standup/ })
+      .getByRole("button", { name: /Standup/ })
       .closest("li"),
-  ).toHaveClass("opacity-60");
+  ).toHaveClass("text-muted-foreground");
 
   act(() => vi.advanceTimersByTime(105 * 60_000));
   const moved = within(today).getByRole("separator", { name: "Now, 10:18" });
-  const reviewAgain = within(today).getByRole("button", { name: /^Review with Anna/ });
+  const reviewAgain = within(today).getByRole("button", { name: /Review with Anna/ });
   expect(reviewAgain.compareDocumentPosition(moved) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(within(today).getByRole("button", { name: /^Dentist/ })).toHaveTextContent("in 3 h 42 min");
+  expect(within(today).getByRole("button", { name: /Dentist/ })).toHaveTextContent("in 3 h 42 min");
 });
 
 it("mutes past days and finished rows, and the header says the day so colour is never the only signal", async () => {
   agenda();
   await screen.findByText("Standup");
   const yesterday = screen.getByRole("heading", { name: /Yesterday/ }).closest("section") as HTMLElement;
-  expect(yesterday).toHaveClass("opacity-60");
+  expect(yesterday).toHaveClass("text-muted-foreground");
   expect(yesterday).toHaveTextContent("Yesterday");
   const today = screen.getByRole("heading", { name: /Today/ }).closest("section") as HTMLElement;
-  expect(today).not.toHaveClass("opacity-60");
+  expect(today).not.toHaveClass("text-muted-foreground");
   expect(listed(today)).toHaveLength(4);
   act(() => vi.advanceTimersByTime(60 * 60_000));
   expect(
     within(today)
-      .getByRole("button", { name: /^Standup/ })
+      .getByRole("button", { name: /Standup/ })
       .closest("li"),
-  ).toHaveClass("opacity-60");
+  ).toHaveClass("text-muted-foreground");
   expect(
     within(today)
-      .getByRole("button", { name: /^Review/ })
+      .getByRole("button", { name: /Review/ })
       .closest("li"),
-  ).not.toHaveClass("opacity-60");
+  ).not.toHaveClass("text-muted-foreground");
 });
 
 it("keeps Today dimmed on this week, enables it after Next week, and scrolls Today to the top when pressed", async () => {
@@ -434,20 +434,20 @@ it("opens the join and calendar links outside the app and draws no button for a 
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  const row = (await screen.findByRole("button", { name: /^Test2/ })).closest("li") as HTMLElement;
+  const row = (await screen.findByRole("button", { name: /Test2/ })).closest("li") as HTMLElement;
   const join = within(row).getByRole("link", { name: "Join Zoom meeting" });
   expect(join).toHaveAttribute("href", "https://zoom.us/j/12345678901");
   expect(join).toHaveAttribute("target", "_blank");
   expect(join).toHaveAttribute("rel", "noopener noreferrer");
-  const plain = (await screen.findByRole("button", { name: /^Plain/ })).closest("li") as HTMLElement;
+  const plain = (await screen.findByRole("button", { name: /Plain/ })).closest("li") as HTMLElement;
   expect(within(plain).queryByRole("link")).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: /^Test2/ }));
+  await user.click(screen.getByRole("button", { name: /Test2/ }));
   const detail = screen.getByRole("article", { name: "Test2" });
   const source = within(detail).getByRole("link", { name: "Open in calendar" });
   expect(source).toHaveAttribute("href", "https://www.google.com/calendar/event?eid=abc");
   expect(source).toHaveAttribute("target", "_blank");
   await user.click(screen.getByRole("button", { name: "Back to the week" }));
-  await user.click(screen.getByRole("button", { name: /^Plain/ }));
+  await user.click(screen.getByRole("button", { name: /Plain/ }));
   const bare = screen.getByRole("article", { name: "Plain" });
   expect(within(bare).queryByRole("link")).not.toBeInTheDocument();
   expect(within(bare).queryByRole("button", { name: /Join|Open in calendar/ })).not.toBeInTheDocument();
