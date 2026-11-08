@@ -43,8 +43,13 @@ export function handleExternalActions(contents, connection, openExternal) {
         !isOwnedUiNavigation(frame.url, connection())) return false;
     const url = externalActionUrl(action, target);
     if (!url) return false;
-    await openExternal(url);
-    return true;
+    try {
+      await openExternal(url);
+      return true;
+    } catch {
+      // An OS error may contain the meeting URL. Keep it out of Electron's IPC error logs.
+      return false;
+    }
   });
 }
 

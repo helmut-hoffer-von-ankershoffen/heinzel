@@ -92,8 +92,12 @@ test("popup requests have no opener side effect and IPC denies foreign, subframe
   });
   const opened = [];
   let current = connection;
+  let rejectHandoff = false;
   guardUiNavigation(contents, connection);
-  handleExternalActions(contents, () => current, async (url) => opened.push(url));
+  handleExternalActions(contents, () => current, async (url) => {
+    if (rejectHandoff) throw new Error("System browser unavailable");
+    opened.push(url);
+  });
   const url = "https://meet.google.com/abc-defg-hij";
   assert.deepEqual(popup({ url, postBody: {}, referrer: { url: "https://other.example/" } }), { action: "deny" });
   assert.deepEqual(popup({ url }), { action: "deny" });
@@ -104,6 +108,8 @@ test("popup requests have no opener side effect and IPC denies foreign, subframe
   assert.equal(await invoke({ sender: contents, senderFrame: main }, "watch-video", url), false);
   assert.deepEqual(opened, []);
   assert.equal(await invoke({ sender: contents, senderFrame: main }, "join-meeting", url), true);
+  rejectHandoff = true;
+  assert.equal(await invoke({ sender: contents, senderFrame: main }, "join-meeting", url), false);
   current = null;
   assert.equal(await invoke({ sender: contents, senderFrame: main }, "join-meeting", url), false);
   assert.deepEqual(opened, [url]);
