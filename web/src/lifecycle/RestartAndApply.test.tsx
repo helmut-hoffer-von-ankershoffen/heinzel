@@ -60,9 +60,9 @@ it("keeps failed verification actionable and Check again only observes the repla
   );
   fireEvent.click(screen.getByRole("button", { name: "Restart and apply" }));
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Restart and apply Clock" })));
-  expect(screen.getByRole("status")).toHaveTextContent("Waiting for the replacement server");
+  expect(screen.getByRole("status")).toHaveTextContent("Waiting for hz to come back");
   await act(async () => vi.advanceTimersByTimeAsync(50));
-  expect(screen.getByRole("alert")).toHaveTextContent("has not answered");
+  expect(screen.getByRole("alert")).toHaveTextContent("has not come back yet");
   expect(screen.queryByText("Applied")).toBeNull();
   expect(screen.queryByRole("button", { name: "Restart and apply" })).toBeNull();
   expect(onApplied).not.toHaveBeenCalled();
@@ -96,7 +96,7 @@ it("does not replay a restart when its acknowledgement is lost; Check again only
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Restart and apply Clock" })));
   await act(async () => vi.advanceTimersByTimeAsync(50));
 
-  expect(screen.getByRole("alert")).toHaveTextContent("has not answered");
+  expect(screen.getByRole("alert")).toHaveTextContent("has not come back yet");
   expect(screen.getByRole("button", { name: "Check again" })).toBeVisible();
   expect(screen.queryByRole("button", { name: "Restart and apply" })).toBeNull();
   transport.read.mockResolvedValue(after);
@@ -125,5 +125,45 @@ it("cancels owned polling on unmount without claiming that the server mutation w
   await act(async () => vi.runAllTimersAsync());
   expect(transport.restart).toHaveBeenCalledOnce();
   expect(onApplied).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("offers Apply again, not a futile Check again, when the server never restarted", async () => {
+  const transport = server();
+  transport.read.mockResolvedValue(before);
+  const onNotRestarted = vi.fn();
+  render(
+    <RestartAndApply
+      target="Clock"
+      changes={["Primary time zone"]}
+      onNotRestarted={onNotRestarted}
+      options={{ transport, interval: 100, staleAfter: 1_000 }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Restart and apply" }));
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Restart and apply Clock" })));
+  await act(async () => vi.advanceTimersByTimeAsync(1_100));
+  expect(screen.getByRole("alert")).toHaveTextContent("hz did not restart");
+  expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Stop checking" })).toBeNull();
+  expect(onNotRestarted).toHaveBeenCalledOnce();
+  transport.read.mockResolvedValueOnce(before).mockResolvedValue(after);
+  fireEvent.click(screen.getByRole("button", { name: "Restart and apply" }));
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Restart and apply Clock" })));
+  expect(screen.getByRole("status")).toHaveTextContent("Applied");
+  expect(transport.restart).toHaveBeenCalledTimes(2);
+});
+
+it("stops checking at once and leaves no waiting status behind", async () => {
+  const transport = server();
+  transport.read.mockResolvedValueOnce(before).mockImplementation(() => new Promise(() => {}));
+  render(<RestartAndApply target="Clock" changes={["Primary time zone"]} options={{ transport }} />);
+  fireEvent.click(screen.getByRole("button", { name: "Restart and apply" }));
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Restart and apply Clock" })));
+  expect(screen.getByRole("status")).toHaveTextContent("Waiting for hz to come back");
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Stop checking" })));
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.getByRole("alert")).toHaveTextContent("Stopped checking");
+  expect(screen.getByRole("button", { name: "Check again" })).toBeVisible();
   expect(vi.getTimerCount()).toBe(0);
 });

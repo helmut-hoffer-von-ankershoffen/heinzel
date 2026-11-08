@@ -1,4 +1,4 @@
-"""The tracker capability's write contract through the heads (ADR 0136): an issue's life round-trips through an adapter.
+"""The tracker capability's write contract through the heads (ADR 0141): an issue's life round-trips through an adapter.
 
 The adapter is test-only and in memory, as the acme fixture tracker: core ships no tracker adapter (ADR 0094).
 """

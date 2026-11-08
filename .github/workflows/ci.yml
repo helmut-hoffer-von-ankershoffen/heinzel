@@ -12,10 +12,11 @@ on:
 permissions: {}
 
 # Every commit on main gets its own group, so a later push never replaces a queued run or cancels a running one and
-# each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs.
+# each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs, except a
+# release PR (head release/*): its full-suite run is release evidence and is never cancelled.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }}
 
 env:
   UV_FROZEN: "1"
@@ -333,6 +334,9 @@ jobs:
         os: [ubuntu-24.04]
         # Linux: oldest and newest Python on a pull request, every supported one on main, schedule and dispatch.
         python: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '["3.12","3.15"]' || '["3.12","3.13","3.14","3.15"]') }}
+        # One shard per level on Linux too: the whole suite ran 4m42-6m50 against the 420 s cap on 4 vCPU and hit it
+        # under runner contention with every test passing (#585). Each shard keeps that same cap.
+        levels: [unit, integration]
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
         # under that same cap. PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.
         include:
@@ -362,7 +366,7 @@ jobs:
         if: matrix.levels != 'integration'
         run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - name: Inspect the Linux user manager without starting services
-        if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.12' # a cell every pull request runs
+        if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.12' && matrix.levels == 'unit' # a cell every pull request runs
         env:
           UV_NO_SYNC: "1"
           PROBE_PREFIX: heinzel-probe-${{ github.run_id }}
@@ -813,7 +817,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: helmut-hoffer-von-ankershoffen/heinzel-plugins
-          ref: c64ccd4d203ac1f5d4ad3d1455b8ef6f3b5122cc # candidate dependency locks + ADR 0136 Issue fields; restore main after SDK publication
+          ref: c64ccd4d203ac1f5d4ad3d1455b8ef6f3b5122cc # candidate dependency locks + ADR 0141 Issue fields; restore main after SDK publication
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -850,7 +854,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: helmut-hoffer-von-ankershoffen/heinzel-plugins
-          ref: c64ccd4d203ac1f5d4ad3d1455b8ef6f3b5122cc # candidate dependency locks + ADR 0136 Issue fields; restore main after SDK publication
+          ref: c64ccd4d203ac1f5d4ad3d1455b8ef6f3b5122cc # candidate dependency locks + ADR 0141 Issue fields; restore main after SDK publication
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

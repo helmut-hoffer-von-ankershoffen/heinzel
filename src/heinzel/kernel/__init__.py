@@ -76,6 +76,9 @@ from heinzel.kernel._contributions import (
     Avatar,
     Badge,
     CardWidget,
+    ChartPoint,
+    ChartRange,
+    ChartWidget,
     ContributionLet,
     DetailLine,
     Effect,
@@ -164,6 +167,7 @@ from heinzel.kernel._git import (
     check_repository_url,
     git_command,
 )
+from heinzel.kernel._head_refresh import HeadRefresh, WebHeadRefresh
 from heinzel.kernel._host_maintenance import (
     HostIntegration,
     HostIntegrationScope,
@@ -222,7 +226,15 @@ from heinzel.kernel._local_overview import CachedOverviewLet, DaemonOverview, Lo
 from heinzel.kernel._local_web import LocalWebRuntime, PersistentWeb
 from heinzel.kernel._metadata_verifier import CoreMetadataVerifier
 from heinzel.kernel._module import Module
-from heinzel.kernel._notifications import Delivery, Notice, NoticeHelper, NoticeKind, Notifications
+from heinzel.kernel._notifications import (
+    CapabilityState,
+    Delivery,
+    Notice,
+    NoticeHelper,
+    NoticeKind,
+    Notifications,
+    ResolveWhen,
+)
 from heinzel.kernel._offline_uninstall import OfflineUninstall, UninstallResult
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
 from heinzel.kernel._paths import collapses, operation_path, owns_path, public_parameters
@@ -302,6 +314,7 @@ from heinzel.kernel._protocols import (
 )
 from heinzel.kernel._release import (
     EdgeRelease,
+    PluginNews,
     PluginRelease,
     PluginReleases,
     ReleaseCache,
@@ -313,6 +326,19 @@ from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
 from heinzel.kernel._session_store import SessionStore, SessionWriter
 from heinzel.kernel._settings import Settings
+from heinzel.kernel._sign_in import (
+    FLOW_ENDED,
+    FinishOn,
+    FlowState,
+    Grant,
+    GrantState,
+    GrantStatus,
+    SignInLet,
+    SignInOutcome,
+    SignInProgress,
+    SignInProvider,
+    SignInStatus,
+)
 from heinzel.kernel._signals import SIGNALS, Signal
 from heinzel.kernel._skills import (
     MAX_LOAD as MAX_SKILL_LOAD,
@@ -403,6 +429,7 @@ __all__ = [
     "EDGE_WHEEL_PREFIX",
     "ENTRY_POINT_GROUP",
     "FILENAME",
+    "FLOW_ENDED",
     "FONT_ROUTE",
     "GIT_HARDENING",
     "HEINZEL_ID",
@@ -453,6 +480,7 @@ __all__ = [
     "CallIdentity",
     "Capability",
     "CapabilitySettings",
+    "CapabilityState",
     "CapabilityView",
     "CapturedWriteAcknowledgement",
     "CapturedWriteDraft",
@@ -469,6 +497,9 @@ __all__ = [
     "ChannelReplyConsumer",
     "ChannelReplySource",
     "ChannelTarget",
+    "ChartPoint",
+    "ChartRange",
+    "ChartWidget",
     "Chat",
     "ChatDraftTemplate",
     "Check",
@@ -539,9 +570,15 @@ __all__ = [
     "EventChange",
     "EventDraft",
     "Exposed",
+    "FinishOn",
+    "FlowState",
     "FreeBusy",
     "GitRunner",
+    "Grant",
+    "GrantState",
+    "GrantStatus",
     "GraphicWidget",
+    "HeadRefresh",
     "HealthLet",
     "HeinzelError",
     "Homebrew",
@@ -618,6 +655,7 @@ __all__ = [
     "Person",
     "PlaybookLet",
     "PlaybookSetup",
+    "PluginNews",
     "PluginRelease",
     "PluginReleases",
     "PostedMessage",
@@ -655,6 +693,7 @@ __all__ = [
     "Requester",
     "Requirement",
     "RequirementLet",
+    "ResolveWhen",
     "ReviewedLinkChannel",
     "RunCommand",
     "RunGitCommand",
@@ -678,6 +717,11 @@ __all__ = [
     "SettingsLet",
     "SetupLet",
     "SetupPhase",
+    "SignInLet",
+    "SignInOutcome",
+    "SignInProgress",
+    "SignInProvider",
+    "SignInStatus",
     "Signal",
     "SignalLet",
     "Skill",
@@ -737,6 +781,7 @@ __all__ = [
     "ViewLet",
     "ViewSlot",
     "Weather",
+    "WebHeadRefresh",
     "WebOverview",
     "Widget",
     "WidgetAction",

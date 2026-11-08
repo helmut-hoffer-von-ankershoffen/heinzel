@@ -228,6 +228,7 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
             "pyproject.toml",
             "uv.lock",
             "tests/_e2e_lanes.py",
+            "tests/_e2e_schedule.py",
             "tests/conftest.py",
             "scripts/scoped_checks.py",
         }

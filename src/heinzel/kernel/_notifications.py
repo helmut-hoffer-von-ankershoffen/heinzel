@@ -5,6 +5,10 @@ doctor found a problem, a release is out. The `system.notify` module provides th
 (which kinds, quiet mode, the profile's working hours, de-duplication, a rate limit) and the local store. Heads only
 show what the policy lets through: the web app while it is open, the daemon as a native notification when it isn't.
 Nothing leaves the machine.
+
+A notice may carry a declarative condition (`ResolveWhen`) that the service evaluates on reads and ticks: once it
+holds, the notice is resolved and disappears from the list, Today and the unread count, with the reason kept in its
+history. Resolution never marks anything read: only the person does that (ADR 0043, amendment 2026-11-07).
 """
 
 from collections.abc import Sequence
@@ -12,7 +16,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 
 class NoticeKind(StrEnum):
@@ -59,6 +63,57 @@ class NoticeHelper(BaseModel):
     reason: str = Field(max_length=120, description="Why the Heinzel speaks now, such as scheduled check-in.")
 
 
+VERSION = r"^[0-9]+(\.[0-9]+){1,3}([.-]?(a|b|rc|dev|post)[0-9]*)?$"
+"""A release version a condition may name: PEP 440 shaped, no local part."""
+OPERATION = r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*:[a-z][a-z0-9_-]*$"
+"""`<module qualname>:<operation name>`, such as `system.daemon:status`."""
+FIELD = r"^[a-z][a-z0-9_]*$"
+
+
+class CapabilityState(BaseModel):
+    """A capability's reported state, read through a read-only operation of the module that owns it (ADR 0094).
+
+    The core never imports a plugin: it finds the operation among the kernel's lets by name and compares one top-level
+    field of its result. An operation that is missing, unavailable, not read-only or failing never resolves a notice.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    operation: str = Field(
+        pattern=OPERATION, max_length=120, description="`<module>:<operation>`, read-only, e.g. `system.daemon:status`."
+    )
+    field: str = Field(pattern=FIELD, max_length=64, description="A top-level field of its result, e.g. `loaded`.")
+    equals: str | bool | int = Field(description="The value that field must have for the condition to hold.")
+
+
+class ResolveWhen(BaseModel):
+    """When a notice stops deserving attention; every condition given must hold.
+
+    The service evaluates it, never a head, so a stale browser or process can't keep a notice alive.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    installed_version_at_least: str | None = Field(
+        default=None,
+        pattern=VERSION,
+        description="Holds once the hz installed on this machine (on disk, not the running process) is at least this.",
+    )
+    capability: CapabilityState | None = Field(default=None, description="Holds once a capability reports a state.")
+
+    @model_validator(mode="after")
+    def _not_empty(self) -> "ResolveWhen":
+        """Refuse an empty condition.
+
+        Raises:
+            ValueError: If no condition is given.
+        """
+        if self.installed_version_at_least is None and self.capability is None:
+            msg = "A resolve condition needs installed_version_at_least or capability"
+            raise ValueError(msg)
+        return self
+
+
 class Notice(BaseModel):
     """One thing that deserves attention, as recorded: what it is, where to look, and whether it was shown."""
 
@@ -78,6 +133,13 @@ class Notice(BaseModel):
     helper: NoticeHelper | None = Field(default=None, description="The personal Heinzel behind this notice, if any.")
     delivered_by: Delivery | None = Field(default=None, description="Who showed it; none while it waits.")
     delivered_at: AwareDatetime | None = Field(default=None, description="When it was shown; none while it waits.")
+    resolve_when: ResolveWhen | None = Field(
+        default=None, description="When it resolves by itself and disappears; none: it stays until it ages out."
+    )
+    resolved_at: AwareDatetime | None = Field(
+        default=None, description="When its condition held and it disappeared; none while it is shown."
+    )
+    resolved: str | None = Field(default=None, description="Why it disappeared, in words; none while it is shown.")
 
 
 class Notifications:
@@ -102,10 +164,13 @@ class Notifications:
         key: str,
         urgent: bool = False,
         helper: NoticeHelper | None = None,
+        resolve_when: ResolveWhen | None = None,
     ) -> Notice | None:
         """Record a notice under the policy; the recorded one (or the earlier one it repeats), None if its kind is off.
 
-        Never raises for a full or unwritable store: a lost notice must not fail the job that reported it.
+        With `resolve_when`, a notice whose condition already holds is not recorded (None), and one that is recorded
+        disappears once it holds. Never raises for a full or unwritable store: a lost notice must not fail the job
+        that reported it.
         """
         raise NotImplementedError
 
@@ -138,6 +203,10 @@ class Notifications:
 
     def has_once(self, key: str) -> bool | None:
         """Check a durable key; None means the store could not answer safely."""
+        raise NotImplementedError
+
+    def resolve(self) -> int:
+        """Resolve the shown notices whose condition now holds, so they disappear; how many were resolved."""
         raise NotImplementedError
 
     def recent(self, limit: int = 50) -> list[Notice]:

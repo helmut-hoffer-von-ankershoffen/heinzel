@@ -18,7 +18,8 @@ def test_owned_lanes_preserve_cases_fixtures_and_errors(tmp_path, full, invalid)
     for level in ("unit", "integration", "e2e"):
         (tests / level).mkdir(parents=True)
     unit, integration = tests / "unit", tests / "integration"
-    shutil.copyfile(Path(__file__).resolve().parents[1] / "conftest.py", tests / "conftest.py")
+    for harness in ("conftest.py", "_e2e_schedule.py"):  # the root conftest imports its E2E scheduling hooks
+        shutil.copyfile(Path(__file__).resolve().parents[1] / harness, tests / harness)
     (tmp_path / "pytest.ini").write_text(
         "[pytest]\ntestpaths = tests\nmarkers =\n    unit: unit\n    integration: integration\n    e2e: e2e\n"
     )

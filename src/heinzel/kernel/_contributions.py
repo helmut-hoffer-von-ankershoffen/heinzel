@@ -93,6 +93,7 @@ SLOTS: dict[str, tuple[Slot, ...]] = {"status": ("footer", "sidebar"), "action":
 """The slots each kind of contribution may appear in."""
 MAX_TEXT = 80
 MAX_BODY = 280
+MAX_CHART_POINTS = 48
 MAX_VALUE = 16
 MAX_BADGE = 4
 MAX_DETAIL = 8
@@ -288,6 +289,12 @@ class RunOperation(_Data):
         default_factory=dict[str, JsonArgument],
         max_length=32,
         description="Fixed JSON arguments by parameter name; structured values require a private mutation.",
+    )
+    inputs: tuple[Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_]*$")], ...] = Field(
+        default=(),
+        max_length=8,
+        description="Parameters the person fills in, in a view's form, e.g. `text`; only for a private mutation, "
+        "and still confirmed before it runs.",
     )
     call: OperationCall | None = Field(
         default=None, description="Filled in by `system.ui`; whatever a plugin sets here is replaced."
@@ -539,6 +546,61 @@ class ProgressWidget(_Data):
         return self
 
 
+class ChartPoint(_Data):
+    """One point of a chart: where on the axis, and its value."""
+
+    at: Text = Field(
+        description="Where on the axis: an ISO 8601 timestamp such as `2026-11-07T14:00` or a plain label."
+    )
+    value: float = Field(allow_inf_nan=False, description="The value at that point, in the chart's unit.")
+
+
+class ChartRange(_Data):
+    """A band across the chart, e.g. the day's lowest and highest value."""
+
+    low: float = Field(allow_inf_nan=False, description="Bottom of the band, in the chart's unit.")
+    high: float = Field(allow_inf_nan=False, description="Top of the band, at least `low`.")
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Self:
+        if self.high < self.low:
+            msg = f"high ({self.high}) can't be below low ({self.low})"
+            raise ValueError(msg)
+        return self
+
+
+class ChartWidget(_Data):
+    """A line over time, with optional bars, a range band and a now marker; `summary` is its text alternative."""
+
+    kind: Literal["chart"] = Field(default="chart", description="Chart.")
+    title: Text = Field(description="What the chart shows, e.g. `Temperature today`; also its accessible name.")
+    summary: Body = Field(description="The chart in words for people who can't see it, e.g. `Warms to 18° by 15:00`.")
+    unit: Text | None = Field(default=None, description="The unit of `series` values, e.g. `°C`.")
+    series: list[ChartPoint] = Field(min_length=2, max_length=MAX_CHART_POINTS, description="The line, left to right.")
+    bars: list[Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]] | None = Field(
+        default=None, description="A second series drawn as bars from 0 to 1, one per point, e.g. chance of rain."
+    )
+    bars_label: Text | None = Field(default=None, description="What the bars are, e.g. `Rain chance`.")
+    range: ChartRange | None = Field(default=None, description="A band across the chart, e.g. the day's low and high.")
+    now: Text | None = Field(default=None, description="The `at` of the point to mark as now.")
+    tone: Tone = Field(default="neutral", description="How the line reads: neutral, ok, warn or bad.")
+    size: Size | None = Field(default=None, description="Room in the Today grid; each kind has a default.")
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        ats = [point.at for point in self.series]
+        if len(set(ats)) != len(ats):
+            msg = "series needs a distinct `at` for every point"
+            raise ValueError(msg)
+        if self.bars is not None and len(self.bars) != len(self.series):
+            msg = f"bars needs one value per point: {len(self.bars)} for {len(self.series)} points"
+            raise ValueError(msg)
+        if self.now is not None and self.now not in {point.at for point in self.series}:
+            msg = f"now ({self.now!r}) must be the `at` of one of the points"
+            raise ValueError(msg)
+        return self
+
+
 class Avatar(_Data):
     """A Heinzelmännchen drawn in a widget, dressed by data only."""
 
@@ -562,8 +624,10 @@ class GraphicWidget(_Data):
     size: Size | None = Field(default=None, description="Room in the Today grid; each kind has a default.")
 
 
-Widget = Annotated[CardWidget | ListWidget | MetricWidget | ProgressWidget | GraphicWidget, Field(discriminator="kind")]
-"""What a widget shows: a card, a list, a metric, progress or a graphic."""
+Widget = Annotated[
+    CardWidget | ListWidget | MetricWidget | ProgressWidget | GraphicWidget | ChartWidget, Field(discriminator="kind")
+]
+"""What a widget shows: a card, a list, a metric, progress, a graphic or a chart."""
 View = Callable[[Any], Any]
 """A pure function of the source operation's result."""
 

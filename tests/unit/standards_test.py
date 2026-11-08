@@ -70,6 +70,25 @@ def test_every_subprocess_call_has_a_timeout(path):
     assert calls_without_timeout(python_source(path)) == [], f"add timeout= or `# {EXEMPT}`"
 
 
+SYSTEM_BINARY = re.compile(r"""\bcopy(?:file|2|)\(\s*["'](?:/usr)?/s?bin/""")
+"""A test that copies a macOS system binary to run it: launch constraints kill the copy and macOS shows a "damaged
+app" dialog on the person's screen. Link to it instead; the binary then runs where it lives."""
+
+
+def test_finds_copied_system_binaries():
+    assert SYSTEM_BINARY.search('shutil.copyfile("/bin/sleep", target)')
+    assert SYSTEM_BINARY.search("shutil.copy2('/usr/bin/true', target)")
+    assert not SYSTEM_BINARY.search('target.symlink_to("/bin/sleep")')
+
+
+@pytest.mark.parametrize("path", sorted(REPO.glob("tests/**/*.py")), ids=lambda p: str(p.relative_to(REPO)))
+def test_tests_never_copy_a_system_binary(path):
+    """Copies of platform binaries are killed by macOS with a dialog on the desktop; link to the original."""
+    if path == Path(__file__).resolve():
+        return
+    assert not SYSTEM_BINARY.search(path.read_text(encoding="utf-8")), "link to the system binary instead of copying it"
+
+
 def repository_files() -> list[str]:
     """Paths of the files git tracks or would track (not ignored ones), relative to the repository."""
     listed = subprocess.run(
@@ -140,6 +159,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/acceptance/README.md": "documents the core's public installer acceptance harness",
     "scripts/acceptance/run_acceptance.py": "public installer acceptance of the published core; plugins have none",
     "scripts/prepare_release_ui.py": "checks the Core app CLI for its acceptance harness; plugins have neither",
+    ".github/workflows/focused-job.yml": "dispatched diagnostic of one core test selection on one hosted runner",
+    "scripts/focused_job.py": "validates and runs the core focused-job workflow's selection; plugins have none",
     ".github/workflows/acceptance-sharded.yml": "manual hosted-VM acceptance study, separate from release acceptance",
     "scripts/acceptance/reduce.py": "fails closed on incomplete or mixed acceptance study shards",
     "scripts/acceptance/summary.py": "summarizes the acceptance harness's result.json for a job summary",

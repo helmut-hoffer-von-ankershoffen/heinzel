@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { doctorCards, eventCards, jobCards, type TodayCard } from "@/chat/today";
@@ -20,9 +20,41 @@ describe("Home", () => {
     expect(await screen.findByRole("heading", { name: "Today" })).toBeInTheDocument();
     expect(screen.getByLabelText("Your message")).toHaveFocus();
     expect(screen.queryByRole("complementary", { name: "Ask" })).not.toBeInTheDocument();
-    expect(await screen.findByText(/at most \$0\.25 per message/)).toBeInTheDocument();
+    const info = await screen.findByRole("button", { name: "What this chat may cost" });
+    await waitFor(() => expect(info).toHaveAccessibleDescription(/at most \$0\.25 per message/));
     await screen.findByRole("heading", { name: "Doctor: 2 checks need attention" });
     await expectAccessible(container);
+  });
+
+  it("keeps Today's heading for screen readers only, since the header already says Today", async () => {
+    mockApi(base);
+    renderAt("/");
+    const heading = await screen.findByRole("heading", { level: 1, name: "Today" });
+    expect(heading).toHaveClass("sr-only");
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("region", { name: "Today" })).toBeInTheDocument();
+  });
+
+  it("gives the main region no focus ring of its own, leaving controls their ring", async () => {
+    mockApi(base);
+    renderAt("/");
+    const main = await screen.findByRole("main");
+    expect(main).toHaveAttribute("data-focus-ring", "parent");
+    expect(main).toHaveClass("outline-none");
+    expect(await screen.findByRole("link", { name: "Open" })).not.toHaveAttribute("data-focus-ring");
+  });
+
+  it("asks about a card with an icon-only button, next to Open and dismiss", async () => {
+    mockApi(base);
+    renderAt("/");
+    const card = (await screen.findByRole("heading", { name: "Doctor: 2 checks need attention" })).closest(
+      "li",
+    ) as HTMLElement;
+    const ask = within(card).getByRole("button", { name: "Ask about it" });
+    expect(ask).toHaveAttribute("title", "Ask about it");
+    expect(ask).toHaveTextContent("");
+    expect(ask.parentElement).toBe(within(card).getByRole("link", { name: "Open" }).parentElement);
+    expect(within(card).getByRole("button", { name: /^Dismiss/ }).parentElement).toBe(ask.parentElement);
   });
 
   it("shows what needs you as cards that open their screen", async () => {
@@ -57,10 +89,10 @@ describe("Home", () => {
     const card = (await screen.findByRole("heading", { name: /^Notifications.*unread$/ })).closest("li") as HTMLElement;
     expect(within(card).getByText("4 unread")).toBeInTheDocument();
     expect(within(card).getAllByRole("link", { name: /^Run \d failed/ })).toHaveLength(3);
-    expect(within(card).getByRole("link", { name: "All notifications" })).toHaveAttribute(
-      "href",
-      "/?panel=notifications",
-    );
+    const all = within(card).getByRole("button", { name: "All notifications" });
+    expect(all).toHaveAttribute("title", "All notifications");
+    expect(all).toHaveTextContent("");
+    expect(within(card).queryByRole("link", { name: "All notifications" })).not.toBeInTheDocument();
     await expectAccessible(container);
   });
 

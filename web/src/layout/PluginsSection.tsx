@@ -42,6 +42,7 @@ import {
   acknowledgePluginRestart,
   acquirePluginChange,
   completePluginRestart,
+  forgetPluginRestart,
   pluginActivationBlocksChanges,
   RECEIPT_STORAGE_KEY,
   retainPluginRestart,
@@ -517,6 +518,18 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
                   preserve={confirm}
                   acquire={acquirePluginChange}
                   initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
+                  onNotRestarted={() => {
+                    if (pending.action !== "add") {
+                      forgetPluginRestart();
+                      return;
+                    }
+                    try {
+                      window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
+                    } catch {
+                      // A kept observation only offers Check again after a reload; Apply stays available here.
+                    }
+                    setRestartObservation(null);
+                  }}
                   onApplied={() => {
                     if (pending.action === "add") {
                       try {
@@ -855,24 +868,33 @@ function KindBadges({ plugin }: { plugin: SchemaPluginInfo }) {
 
 /** All, or only the plugins of one kind. */
 function KindFilter({ kind, onKind }: { kind: PluginKind | null; onKind: (kind: PluginKind | null) => void }) {
+  // One exclusive choice (design/README.md, Choices): radios, the chosen one filled primary, never the hover fill alone.
   const chip = (active: boolean) =>
     cn(
-      "flex items-center gap-1.5 rounded-lg border px-2 py-1 text-ui-sm transition-colors [&_svg]:size-3.5 [&_svg]:text-icon",
+      "flex items-center gap-1.5 rounded-lg border px-2 py-1 text-ui-sm transition-colors [&_svg]:size-3.5",
       active
-        ? "border-transparent bg-accent text-accent-foreground"
-        : "border-border text-muted-foreground hover:bg-accent/60",
+        ? "border-transparent bg-primary font-medium text-primary-foreground"
+        : "border-border text-muted-foreground hover:bg-accent/60 [&_svg]:text-icon",
     );
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a row of toggle buttons, not a form's fieldset
-    <div role="group" aria-label={t("plugins.kind.filter")} className="mb-2 flex flex-wrap gap-1.5">
-      <button type="button" aria-pressed={kind === null} onClick={() => onKind(null)} className={chip(kind === null)}>
+    <div role="radiogroup" aria-label={t("plugins.kind.filter")} className="mb-2 flex flex-wrap gap-1.5">
+      {/* biome-ignore lint/a11y/useSemanticElements: chips announced as the radios of their group */}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={kind === null}
+        onClick={() => onKind(null)}
+        className={chip(kind === null)}
+      >
         {t("plugins.kind.all")}
       </button>
       {KINDS.map(({ kind: value, icon: Icon, label }) => (
+        // biome-ignore lint/a11y/useSemanticElements: chips announced as the radios of their group
         <button
           key={value}
           type="button"
-          aria-pressed={kind === value}
+          role="radio"
+          aria-checked={kind === value}
           onClick={() => onKind(kind === value ? null : value)}
           className={chip(kind === value)}
         >
@@ -903,8 +925,12 @@ function Discover({
         const installedNames = installed.data
           ? new Set(installed.data.map((plugin) => pluginIdentity(plugin.distribution)))
           : null;
-        const available = result.plugins.filter((plugin) =>
-          installedNames ? !installedNames.has(pluginIdentity(plugin.name)) : !plugin.installed,
+        // The row being installed holds the confirmation, whose restart is cancelled if it unmounts. It stays until
+        // the change is applied, although the plugin is installed now (as Installed keeps a row being removed).
+        const available = result.plugins.filter(
+          (plugin) =>
+            slot?.key === `discover:${plugin.name}` ||
+            (installedNames ? !installedNames.has(pluginIdentity(plugin.name)) : !plugin.installed),
         );
         return available.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">

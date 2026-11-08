@@ -110,7 +110,7 @@ class CodeHost(Protocol):
 
 
 class Tracker(Protocol):
-    """An issue tracker (capability `tracker`, ADR 0136).
+    """An issue tracker (capability `tracker`, ADR 0141).
 
     Writes change a shared board: only publish operations (`read_only=False`) that declared `tracker:write` get a
     handle on which they work (ADR 0028). Every write names its `actor`, the person, Heinzelmännchen or client it is

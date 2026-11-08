@@ -1,6 +1,49 @@
 {
   "components": {
     "schemas": {
+      "Access": {
+        "description": "A connector's sign-in as its own provider sees it: account, grants, and what can be done (ADR 0136).",
+        "properties": {
+          "flow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignInFlow"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its sign-in running now or ended last; none."
+          },
+          "message": {
+            "default": "",
+            "description": "What the request did, such as signing out; empty if nothing.",
+            "title": "Message",
+            "type": "string"
+          },
+          "name": {
+            "description": "Qualified name of the module, as `hz system connector list` names it.",
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SignInStatus",
+            "description": "Who is signed in, which grants hold, and whether the tool can run."
+          },
+          "title": {
+            "description": "Its name for people, e.g. `Google`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "status"
+        ],
+        "title": "Access",
+        "type": "object"
+      },
       "AccessList": {
         "description": "Every installed AI access option, the one in use, and what each use of AI runs.",
         "properties": {
@@ -1682,6 +1725,48 @@
         "title": "CapabilityReport",
         "type": "object"
       },
+      "CapabilityState": {
+        "additionalProperties": false,
+        "description": "A capability's reported state, read through a read-only operation of the module that owns it (ADR 0094).\n\nThe core never imports a plugin: it finds the operation among the kernel's lets by name and compares one top-level\nfield of its result. An operation that is missing, unavailable, not read-only or failing never resolves a notice.",
+        "properties": {
+          "equals": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "description": "The value that field must have for the condition to hold.",
+            "title": "Equals"
+          },
+          "field": {
+            "description": "A top-level field of its result, e.g. `loaded`.",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Field",
+            "type": "string"
+          },
+          "operation": {
+            "description": "`<module>:<operation>`, read-only, e.g. `system.daemon:status`.",
+            "maxLength": 120,
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*:[a-z][a-z0-9_-]*$",
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "field",
+          "equals"
+        ],
+        "title": "CapabilityState",
+        "type": "object"
+      },
       "CapabilityUse": {
         "description": "One row of the matrix: who needs which capability in which modes, through which adapter and hosts.",
         "properties": {
@@ -2572,6 +2657,195 @@
           "scope"
         ],
         "title": "ChannelTarget",
+        "type": "object"
+      },
+      "ChartPoint": {
+        "additionalProperties": false,
+        "description": "One point of a chart: where on the axis, and its value.",
+        "properties": {
+          "at": {
+            "description": "Where on the axis: an ISO 8601 timestamp such as `2026-11-07T14:00` or a plain label.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "At",
+            "type": "string"
+          },
+          "value": {
+            "description": "The value at that point, in the chart's unit.",
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "at",
+          "value"
+        ],
+        "title": "ChartPoint",
+        "type": "object"
+      },
+      "ChartRange": {
+        "additionalProperties": false,
+        "description": "A band across the chart, e.g. the day's lowest and highest value.",
+        "properties": {
+          "high": {
+            "description": "Top of the band, at least `low`.",
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "description": "Bottom of the band, in the chart's unit.",
+            "title": "Low",
+            "type": "number"
+          }
+        },
+        "required": [
+          "low",
+          "high"
+        ],
+        "title": "ChartRange",
+        "type": "object"
+      },
+      "ChartWidget": {
+        "additionalProperties": false,
+        "description": "A line over time, with optional bars, a range band and a now marker; `summary` is its text alternative.",
+        "properties": {
+          "bars": {
+            "anyOf": [
+              {
+                "items": {
+                  "maximum": 1.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A second series drawn as bars from 0 to 1, one per point, e.g. chance of rain.",
+            "title": "Bars"
+          },
+          "bars_label": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the bars are, e.g. `Rain chance`.",
+            "title": "Bars Label"
+          },
+          "kind": {
+            "const": "chart",
+            "default": "chart",
+            "description": "Chart.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "now": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The `at` of the point to mark as now.",
+            "title": "Now"
+          },
+          "range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChartRange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A band across the chart, e.g. the day's low and high."
+          },
+          "series": {
+            "description": "The line, left to right.",
+            "items": {
+              "$ref": "#/components/schemas/ChartPoint"
+            },
+            "maxItems": 48,
+            "minItems": 2,
+            "title": "Series",
+            "type": "array"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "medium",
+                  "wide"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Room in the Today grid; each kind has a default.",
+            "title": "Size"
+          },
+          "summary": {
+            "description": "The chart in words for people who can't see it, e.g. `Warms to 18° by 15:00`.",
+            "maxLength": 280,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "description": "What the chart shows, e.g. `Temperature today`; also its accessible name.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How the line reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The unit of `series` values, e.g. `°C`.",
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "title",
+          "summary",
+          "series"
+        ],
+        "title": "ChartWidget",
         "type": "object"
       },
       "ChatAction": {
@@ -4170,6 +4444,12 @@
             "description": "Qualified name of the module, e.g. `github`; `hz system connector test` takes it.",
             "title": "Name",
             "type": "string"
+          },
+          "sign_in": {
+            "default": false,
+            "description": "Whether hz runs its sign-in itself (`hz system connector connect`), no terminal.",
+            "title": "Sign In",
+            "type": "boolean"
           },
           "state": {
             "description": "Connected, not signed in, not bound, needs attention, or unknown until tested.",
@@ -6398,6 +6678,102 @@
         "title": "FoundSkill",
         "type": "object"
       },
+      "Grant": {
+        "description": "Something a connector's sign-in can be allowed to do, in plain words, with the vendor scopes it takes.\n\nA connector asks for its `default` grants on a first sign-in and for any other only when the person allows it,\nusually when a feature that needs it is first used: the minimum, and nothing silently (ADR 0136).",
+        "properties": {
+          "capability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The capability it serves, e.g. `calendar`; none.",
+            "title": "Capability"
+          },
+          "default": {
+            "default": false,
+            "description": "Whether a first sign-in asks for it.",
+            "title": "Default",
+            "type": "boolean"
+          },
+          "explanation": {
+            "description": "What it permits, in a sentence a person decides on.",
+            "title": "Explanation",
+            "type": "string"
+          },
+          "id": {
+            "description": "Its name, lowercase words joined by dashes, e.g. `calendar-write`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "modes": {
+            "description": "The capability's modes it allows: read, write.",
+            "items": {
+              "enum": [
+                "read",
+                "write"
+              ],
+              "type": "string"
+            },
+            "title": "Modes",
+            "type": "array"
+          },
+          "scopes": {
+            "description": "The vendor's names for it, shown, never secret.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "title": {
+            "description": "A short label for people, e.g. `Change your calendar`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "explanation"
+        ],
+        "title": "Grant",
+        "type": "object"
+      },
+      "GrantStatus": {
+        "description": "One declared grant and whether the vendor confirms it.",
+        "properties": {
+          "grant": {
+            "$ref": "#/components/schemas/Grant",
+            "description": "The grant, as the connector declares it."
+          },
+          "needed": {
+            "description": "Whether what the person uses now needs it, e.g. a bound capability's reads.",
+            "title": "Needed",
+            "type": "boolean"
+          },
+          "state": {
+            "description": "Granted, missing, or unknown when nothing says.",
+            "enum": [
+              "granted",
+              "missing",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "grant",
+          "state",
+          "needed"
+        ],
+        "title": "GrantStatus",
+        "type": "object"
+      },
       "Graph": {
         "additionalProperties": false,
         "description": "A JGF v2 graph of profile `hz-team`.",
@@ -6740,6 +7116,58 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HeadRefresh": {
+        "description": "What one installed head runs after an update; only `verified` is evidence of the target version.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "description": "What happened, and the command that checks or finishes it.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "head": {
+            "description": "The installed head: daemon, web, notifier or desktop.",
+            "enum": [
+              "daemon",
+              "web",
+              "notifier",
+              "desktop"
+            ],
+            "title": "Head",
+            "type": "string"
+          },
+          "status": {
+            "description": "verified: its live process reported the target version; pending: requested, not yet observed; failed: it reported another version or could not restart; not-installed: nothing to refresh; self: the process that ran the update hosts this head and restarts itself afterwards.",
+            "enum": [
+              "verified",
+              "pending",
+              "failed",
+              "not-installed",
+              "self"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The version its live process reported, when observed.",
+            "title": "Version"
+          }
+        },
+        "required": [
+          "head",
+          "status"
+        ],
+        "title": "HeadRefresh",
         "type": "object"
       },
       "HealthReport": {
@@ -9383,6 +9811,42 @@
             "description": "Whether it is shown as a desktop notification at all; false: in the list only.",
             "title": "Popup",
             "type": "boolean"
+          },
+          "resolve_when": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResolveWhen"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it resolves by itself and disappears; none: it stays until it ages out."
+          },
+          "resolved": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it disappeared, in words; none while it is shown.",
+            "title": "Resolved"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When its condition held and it disappeared; none while it is shown.",
+            "title": "Resolved At"
           },
           "route": {
             "description": "Where the web app shows it, a path such as `/doctor`.",
@@ -12623,6 +13087,38 @@
         "title": "RequirementStatus",
         "type": "object"
       },
+      "ResolveWhen": {
+        "additionalProperties": false,
+        "description": "When a notice stops deserving attention; every condition given must hold.\n\nThe service evaluates it, never a head, so a stale browser or process can't keep a notice alive.",
+        "properties": {
+          "capability": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapabilityState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Holds once a capability reports a state."
+          },
+          "installed_version_at_least": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]+(\\.[0-9]+){1,3}([.-]?(a|b|rc|dev|post)[0-9]*)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Holds once the hz installed on this machine (on disk, not the running process) is at least this.",
+            "title": "Installed Version At Least"
+          }
+        },
+        "title": "ResolveWhen",
+        "type": "object"
+      },
       "Restart": {
         "description": "The retiring server's acknowledgement; a replacement instance must still be verified.",
         "properties": {
@@ -12922,6 +13418,17 @@
               }
             ],
             "description": "Filled in by `system.ui`; whatever a plugin sets here is replaced."
+          },
+          "inputs": {
+            "default": [],
+            "description": "Parameters the person fills in, in a view's form, e.g. `text`; only for a private mutation, and still confirmed before it runs.",
+            "items": {
+              "pattern": "^[a-z_][a-z0-9_]*$",
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Inputs",
+            "type": "array"
           },
           "kind": {
             "const": "operation",
@@ -14252,6 +14759,189 @@
           "command"
         ],
         "title": "SetupDoc",
+        "type": "object"
+      },
+      "SignInFlow": {
+        "description": "A sign-in hz runs for the person through the vendor's tool; the consent click on the vendor's page is theirs.",
+        "properties": {
+          "account": {
+            "default": "",
+            "description": "Who is signed in, once it succeeded and the tool says.",
+            "title": "Account",
+            "type": "string"
+          },
+          "connector": {
+            "description": "Qualified name of the connector signing in.",
+            "title": "Connector",
+            "type": "string"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it ended; none while it runs.",
+            "title": "Ended At"
+          },
+          "grants": {
+            "description": "Every grant asked for: what the sign-in holds once it succeeds.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Grants",
+            "type": "array"
+          },
+          "id": {
+            "description": "What `hz system connector flow`, `cancel` and `open` take.",
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "description": "What happened, in plain words; what to do if it failed.",
+            "title": "Message",
+            "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignInProgress"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The vendor's consent page, once its tool gave it; where it must be opened."
+          },
+          "started_at": {
+            "description": "When it started.",
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "state": {
+            "description": "starting, waiting (for consent), succeeded, failed, cancelled, timed-out.",
+            "enum": [
+              "starting",
+              "waiting",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "timed-out"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "connector",
+          "state",
+          "grants",
+          "started_at"
+        ],
+        "title": "SignInFlow",
+        "type": "object"
+      },
+      "SignInProgress": {
+        "description": "What a running sign-in can tell the person: the vendor's consent page, and a device code if it has one.",
+        "properties": {
+          "code": {
+            "default": "",
+            "description": "A code to type on that page, for a device sign-in; empty if none.",
+            "title": "Code",
+            "type": "string"
+          },
+          "finish_on": {
+            "description": "`host` when the page must be opened on the machine hz runs on.",
+            "enum": [
+              "host",
+              "anywhere"
+            ],
+            "title": "Finish On",
+            "type": "string"
+          },
+          "url": {
+            "description": "The vendor's consent page, an https address.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "finish_on"
+        ],
+        "title": "SignInProgress",
+        "type": "object"
+      },
+      "SignInStatus": {
+        "description": "Who a connector's tool is signed in as and what it was granted, from the evidence its provider has.",
+        "properties": {
+          "account": {
+            "default": "",
+            "description": "Who, as the tool names them; never a secret. Empty if unsaid.",
+            "title": "Account",
+            "type": "string"
+          },
+          "grants": {
+            "description": "Every declared grant and its state.",
+            "items": {
+              "$ref": "#/components/schemas/GrantStatus"
+            },
+            "title": "Grants",
+            "type": "array"
+          },
+          "install": {
+            "default": "",
+            "description": "How to install the tool through its supported path, if missing.",
+            "title": "Install",
+            "type": "string"
+          },
+          "live": {
+            "default": false,
+            "description": "Whether the vendor was asked; else it is local evidence only.",
+            "title": "Live",
+            "type": "boolean"
+          },
+          "problem": {
+            "default": "",
+            "description": "What needs a new sign-in, such as an expired or revoked one; empty if nothing.",
+            "title": "Problem",
+            "type": "string"
+          },
+          "signed_in": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether there is a sign-in; none when only the vendor could say.",
+            "title": "Signed In"
+          },
+          "tool": {
+            "default": "ready",
+            "description": "Whether the vendor's tool can run a sign-in.",
+            "enum": [
+              "ready",
+              "missing",
+              "unsupported"
+            ],
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signed_in"
+        ],
+        "title": "SignInStatus",
         "type": "object"
       },
       "Skill": {
@@ -17974,6 +18664,14 @@
             "title": "Before",
             "type": "string"
           },
+          "heads": {
+            "description": "What each installed long-running head runs after the update, as its live process reported it.",
+            "items": {
+              "$ref": "#/components/schemas/HeadRefresh"
+            },
+            "title": "Heads",
+            "type": "array"
+          },
           "latest": {
             "anyOf": [
               {
@@ -18917,6 +19615,7 @@
                 "discriminator": {
                   "mapping": {
                     "card": "#/components/schemas/CardWidget",
+                    "chart": "#/components/schemas/ChartWidget",
                     "graphic": "#/components/schemas/GraphicWidget",
                     "list": "#/components/schemas/ListWidget",
                     "metric": "#/components/schemas/MetricWidget",
@@ -18939,6 +19638,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/GraphicWidget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ChartWidget"
                   }
                 ]
               },
@@ -20491,6 +21193,87 @@
           "prompt"
         ],
         "title": "heinzel_start_helper_Input",
+        "type": "object"
+      },
+      "system_connector_cancel_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "flow": {
+            "description": "The sign-in, by the id `connect` returned.",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow"
+        ],
+        "title": "system_connector_cancel_Input",
+        "type": "object"
+      },
+      "system_connector_connect_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "allow": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A grant to add, such as `calendar-write`, as `access` lists them; repeat for each.",
+            "title": "Allow"
+          },
+          "name": {
+            "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "wait": {
+            "default": true,
+            "description": "Wait here until it ends, opening the consent page in this machine's browser; only where a person is told (the terminal). Elsewhere it returns at once: poll `flow`, open the page with `open`.",
+            "title": "Wait",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "system_connector_connect_Input",
+        "type": "object"
+      },
+      "system_connector_disconnect_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "system_connector_disconnect_Input",
+        "type": "object"
+      },
+      "system_connector_open_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "flow": {
+            "description": "The sign-in, by the id `connect` returned.",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow"
+        ],
+        "title": "system_connector_open_Input",
         "type": "object"
       },
       "system_runner_chat_propose_release_draft_share_Input": {
@@ -25934,6 +26717,234 @@
         ]
       }
     },
+    "/system/connector/access": {
+      "get": {
+        "description": "Show who a connector is signed in as, which of its grants hold, and its latest sign-in here.",
+        "operationId": "system_connector_access",
+        "parameters": [
+          {
+            "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Ask the vendor too: confirms the account and which grants hold.",
+            "in": "query",
+            "name": "live",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Ask the vendor too: confirms the account and which grants hold.",
+              "title": "Live",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Access"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show who a connector is signed in as, which of its grants hold, and its latest sign-in here.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/cancel": {
+      "post": {
+        "description": "Stop a sign-in that is waiting for consent; nothing changes in your account.",
+        "operationId": "system_connector_cancel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_connector_cancel_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInFlow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop a sign-in that is waiting for consent; nothing changes in your account.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/connect": {
+      "post": {
+        "description": "Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow.",
+        "operationId": "system_connector_connect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_connector_connect_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInFlow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/disconnect": {
+      "post": {
+        "description": "Sign a connector's tool out through its own command; reading and writing through it stop.",
+        "operationId": "system_connector_disconnect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_connector_disconnect_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Access"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign a connector's tool out through its own command; reading and writing through it stop.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/flow": {
+      "get": {
+        "description": "Show where a sign-in started here is: waiting for your consent, or how it ended.",
+        "operationId": "system_connector_flow",
+        "parameters": [
+          {
+            "description": "The sign-in, by the id `connect` returned.",
+            "in": "query",
+            "name": "flow",
+            "required": true,
+            "schema": {
+              "description": "The sign-in, by the id `connect` returned.",
+              "title": "Flow",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInFlow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show where a sign-in started here is: waiting for your consent, or how it ended.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/connector/list": {
       "get": {
         "description": "List connectors with their sign-in, what they serve and their tools; offline.",
@@ -25951,6 +26962,48 @@
           }
         },
         "summary": "List connectors with their sign-in, what they serve and their tools; offline.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/open": {
+      "post": {
+        "description": "Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to.",
+        "operationId": "system_connector_open",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_connector_open_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInFlow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to.",
         "tags": [
           "system"
         ]
@@ -26581,6 +27634,18 @@
               ],
               "description": "Only notices older than this id, for the next page.",
               "title": "Before"
+            }
+          },
+          {
+            "description": "Include notices that resolved by themselves and disappeared, for their history.",
+            "in": "query",
+            "name": "resolved",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include notices that resolved by themselves and disappeared, for their history.",
+              "title": "Resolved",
+              "type": "boolean"
             }
           }
         ],

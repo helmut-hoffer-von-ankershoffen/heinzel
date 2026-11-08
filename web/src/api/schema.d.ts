@@ -2359,6 +2359,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/connector/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show who a connector is signed in as, which of its grants hold, and its latest sign-in here.
+         * @description Show who a connector is signed in as, which of its grants hold, and its latest sign-in here.
+         */
+        get: operations["system_connector_access"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop a sign-in that is waiting for consent; nothing changes in your account.
+         * @description Stop a sign-in that is waiting for consent; nothing changes in your account.
+         */
+        post: operations["system_connector_cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow.
+         * @description Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow.
+         */
+        post: operations["system_connector_connect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign a connector's tool out through its own command; reading and writing through it stop.
+         * @description Sign a connector's tool out through its own command; reading and writing through it stop.
+         */
+        post: operations["system_connector_disconnect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/flow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show where a sign-in started here is: waiting for your consent, or how it ended.
+         * @description Show where a sign-in started here is: waiting for your consent, or how it ended.
+         */
+        get: operations["system_connector_flow"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/connector/list": {
         parameters: {
             query?: never;
@@ -2373,6 +2473,26 @@ export interface paths {
         get: operations["system_connector_list"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to.
+         * @description Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to.
+         */
+        post: operations["system_connector_open"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4008,6 +4128,32 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * Access
+         * @description A connector's sign-in as its own provider sees it: account, grants, and what can be done (ADR 0136).
+         */
+        Access: {
+            /** @description Its sign-in running now or ended last; none. */
+            flow?: components["schemas"]["SignInFlow"] | null;
+            /**
+             * Message
+             * @description What the request did, such as signing out; empty if nothing.
+             * @default
+             */
+            message: string;
+            /**
+             * Name
+             * @description Qualified name of the module, as `hz system connector list` names it.
+             */
+            name: string;
+            /** @description Who is signed in, which grants hold, and whether the tool can run. */
+            status: components["schemas"]["SignInStatus"];
+            /**
+             * Title
+             * @description Its name for people, e.g. `Google`.
+             */
+            title: string;
+        };
+        /**
          * AccessList
          * @description Every installed AI access option, the one in use, and what each use of AI runs.
          */
@@ -4965,6 +5111,30 @@ export interface components {
             uses: components["schemas"]["CapabilityUse"][];
         };
         /**
+         * CapabilityState
+         * @description A capability's reported state, read through a read-only operation of the module that owns it (ADR 0094).
+         *
+         *     The core never imports a plugin: it finds the operation among the kernel's lets by name and compares one top-level
+         *     field of its result. An operation that is missing, unavailable, not read-only or failing never resolves a notice.
+         */
+        CapabilityState: {
+            /**
+             * Equals
+             * @description The value that field must have for the condition to hold.
+             */
+            equals: string | boolean | number;
+            /**
+             * Field
+             * @description A top-level field of its result, e.g. `loaded`.
+             */
+            field: string;
+            /**
+             * Operation
+             * @description `<module>:<operation>`, read-only, e.g. `system.daemon:status`.
+             */
+            operation: string;
+        };
+        /**
          * CapabilityUse
          * @description One row of the matrix: who needs which capability in which modes, through which adapter and hosts.
          */
@@ -5437,6 +5607,98 @@ export interface components {
              * @description The exact selected posting authority scope.
              */
             scope: string;
+        };
+        /**
+         * ChartPoint
+         * @description One point of a chart: where on the axis, and its value.
+         */
+        ChartPoint: {
+            /**
+             * At
+             * @description Where on the axis: an ISO 8601 timestamp such as `2026-11-07T14:00` or a plain label.
+             */
+            at: string;
+            /**
+             * Value
+             * @description The value at that point, in the chart's unit.
+             */
+            value: number;
+        };
+        /**
+         * ChartRange
+         * @description A band across the chart, e.g. the day's lowest and highest value.
+         */
+        ChartRange: {
+            /**
+             * High
+             * @description Top of the band, at least `low`.
+             */
+            high: number;
+            /**
+             * Low
+             * @description Bottom of the band, in the chart's unit.
+             */
+            low: number;
+        };
+        /**
+         * ChartWidget
+         * @description A line over time, with optional bars, a range band and a now marker; `summary` is its text alternative.
+         */
+        ChartWidget: {
+            /**
+             * Bars
+             * @description A second series drawn as bars from 0 to 1, one per point, e.g. chance of rain.
+             */
+            bars?: number[] | null;
+            /**
+             * Bars Label
+             * @description What the bars are, e.g. `Rain chance`.
+             */
+            bars_label?: string | null;
+            /**
+             * @description Chart. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "chart";
+            /**
+             * Now
+             * @description The `at` of the point to mark as now.
+             */
+            now?: string | null;
+            /** @description A band across the chart, e.g. the day's low and high. */
+            range?: components["schemas"]["ChartRange"] | null;
+            /**
+             * Series
+             * @description The line, left to right.
+             */
+            series: components["schemas"]["ChartPoint"][];
+            /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
+            /**
+             * Summary
+             * @description The chart in words for people who can't see it, e.g. `Warms to 18° by 15:00`.
+             */
+            summary: string;
+            /**
+             * Title
+             * @description What the chart shows, e.g. `Temperature today`; also its accessible name.
+             */
+            title: string;
+            /**
+             * Tone
+             * @description How the line reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Unit
+             * @description The unit of `series` values, e.g. `°C`.
+             */
+            unit?: string | null;
         };
         /**
          * ChatAction
@@ -6383,6 +6645,12 @@ export interface components {
              * @description Qualified name of the module, e.g. `github`; `hz system connector test` takes it.
              */
             name: string;
+            /**
+             * Sign In
+             * @description Whether hz runs its sign-in itself (`hz system connector connect`), no terminal.
+             * @default false
+             */
+            sign_in: boolean;
             /**
              * State
              * @description Connected, not signed in, not bound, needs attention, or unknown until tested.
@@ -7653,6 +7921,70 @@ export interface components {
             source: "code-user" | "code-project" | "code-plugin";
         };
         /**
+         * Grant
+         * @description Something a connector's sign-in can be allowed to do, in plain words, with the vendor scopes it takes.
+         *
+         *     A connector asks for its `default` grants on a first sign-in and for any other only when the person allows it,
+         *     usually when a feature that needs it is first used: the minimum, and nothing silently (ADR 0136).
+         */
+        Grant: {
+            /**
+             * Capability
+             * @description The capability it serves, e.g. `calendar`; none.
+             */
+            capability?: string | null;
+            /**
+             * Default
+             * @description Whether a first sign-in asks for it.
+             * @default false
+             */
+            default: boolean;
+            /**
+             * Explanation
+             * @description What it permits, in a sentence a person decides on.
+             */
+            explanation: string;
+            /**
+             * Id
+             * @description Its name, lowercase words joined by dashes, e.g. `calendar-write`.
+             */
+            id: string;
+            /**
+             * Modes
+             * @description The capability's modes it allows: read, write.
+             */
+            modes?: ("read" | "write")[];
+            /**
+             * Scopes
+             * @description The vendor's names for it, shown, never secret.
+             */
+            scopes?: string[];
+            /**
+             * Title
+             * @description A short label for people, e.g. `Change your calendar`.
+             */
+            title: string;
+        };
+        /**
+         * GrantStatus
+         * @description One declared grant and whether the vendor confirms it.
+         */
+        GrantStatus: {
+            /** @description The grant, as the connector declares it. */
+            grant: components["schemas"]["Grant"];
+            /**
+             * Needed
+             * @description Whether what the person uses now needs it, e.g. a bound capability's reads.
+             */
+            needed: boolean;
+            /**
+             * State
+             * @description Granted, missing, or unknown when nothing says.
+             * @enum {string}
+             */
+            state: "granted" | "missing" | "unknown";
+        };
+        /**
          * Graph
          * @description A JGF v2 graph of profile `hz-team`.
          */
@@ -7830,6 +8162,35 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HeadRefresh
+         * @description What one installed head runs after an update; only `verified` is evidence of the target version.
+         */
+        HeadRefresh: {
+            /**
+             * Detail
+             * @description What happened, and the command that checks or finishes it.
+             * @default
+             */
+            detail: string;
+            /**
+             * Head
+             * @description The installed head: daemon, web, notifier or desktop.
+             * @enum {string}
+             */
+            head: "daemon" | "web" | "notifier" | "desktop";
+            /**
+             * Status
+             * @description verified: its live process reported the target version; pending: requested, not yet observed; failed: it reported another version or could not restart; not-installed: nothing to refresh; self: the process that ran the update hosts this head and restarts itself afterwards.
+             * @enum {string}
+             */
+            status: "verified" | "pending" | "failed" | "not-installed" | "self";
+            /**
+             * Version
+             * @description The version its live process reported, when observed.
+             */
+            version?: string | null;
         };
         /**
          * HealthReport
@@ -9334,6 +9695,18 @@ export interface components {
              * @description Whether it is shown as a desktop notification at all; false: in the list only.
              */
             popup: boolean;
+            /** @description When it resolves by itself and disappears; none: it stays until it ages out. */
+            resolve_when?: components["schemas"]["ResolveWhen"] | null;
+            /**
+             * Resolved
+             * @description Why it disappeared, in words; none while it is shown.
+             */
+            resolved?: string | null;
+            /**
+             * Resolved At
+             * @description When its condition held and it disappeared; none while it is shown.
+             */
+            resolved_at?: string | null;
             /**
              * Route
              * @description Where the web app shows it, a path such as `/doctor`.
@@ -11271,6 +11644,21 @@ export interface components {
             requirement: string;
         };
         /**
+         * ResolveWhen
+         * @description When a notice stops deserving attention; every condition given must hold.
+         *
+         *     The service evaluates it, never a head, so a stale browser or process can't keep a notice alive.
+         */
+        ResolveWhen: {
+            /** @description Holds once a capability reports a state. */
+            capability?: components["schemas"]["CapabilityState"] | null;
+            /**
+             * Installed Version At Least
+             * @description Holds once the hz installed on this machine (on disk, not the running process) is at least this.
+             */
+            installed_version_at_least?: string | null;
+        };
+        /**
          * Restart
          * @description The retiring server's acknowledgement; a replacement instance must still be verified.
          */
@@ -11460,6 +11848,12 @@ export interface components {
             };
             /** @description Filled in by `system.ui`; whatever a plugin sets here is replaced. */
             call?: components["schemas"]["OperationCall"] | null;
+            /**
+             * Inputs
+             * @description Parameters the person fills in, in a view's form, e.g. `text`; only for a private mutation, and still confirmed before it runs.
+             * @default []
+             */
+            inputs: string[];
             /**
              * @description Run an operation of the module. (enum property replaced by openapi-typescript)
              * @enum {string}
@@ -12293,6 +12687,128 @@ export interface components {
              * @description What it asks.
              */
             summary: string;
+        };
+        /**
+         * SignInFlow
+         * @description A sign-in hz runs for the person through the vendor's tool; the consent click on the vendor's page is theirs.
+         */
+        SignInFlow: {
+            /**
+             * Account
+             * @description Who is signed in, once it succeeded and the tool says.
+             * @default
+             */
+            account: string;
+            /**
+             * Connector
+             * @description Qualified name of the connector signing in.
+             */
+            connector: string;
+            /**
+             * Ended At
+             * @description When it ended; none while it runs.
+             */
+            ended_at?: string | null;
+            /**
+             * Grants
+             * @description Every grant asked for: what the sign-in holds once it succeeds.
+             */
+            grants: string[];
+            /**
+             * Id
+             * @description What `hz system connector flow`, `cancel` and `open` take.
+             */
+            id: string;
+            /**
+             * Message
+             * @description What happened, in plain words; what to do if it failed.
+             * @default
+             */
+            message: string;
+            /** @description The vendor's consent page, once its tool gave it; where it must be opened. */
+            progress?: components["schemas"]["SignInProgress"] | null;
+            /**
+             * Started At
+             * Format: date-time
+             * @description When it started.
+             */
+            started_at: string;
+            /**
+             * State
+             * @description starting, waiting (for consent), succeeded, failed, cancelled, timed-out.
+             * @enum {string}
+             */
+            state: "starting" | "waiting" | "succeeded" | "failed" | "cancelled" | "timed-out";
+        };
+        /**
+         * SignInProgress
+         * @description What a running sign-in can tell the person: the vendor's consent page, and a device code if it has one.
+         */
+        SignInProgress: {
+            /**
+             * Code
+             * @description A code to type on that page, for a device sign-in; empty if none.
+             * @default
+             */
+            code: string;
+            /**
+             * Finish On
+             * @description `host` when the page must be opened on the machine hz runs on.
+             * @enum {string}
+             */
+            finish_on: "host" | "anywhere";
+            /**
+             * Url
+             * @description The vendor's consent page, an https address.
+             */
+            url: string;
+        };
+        /**
+         * SignInStatus
+         * @description Who a connector's tool is signed in as and what it was granted, from the evidence its provider has.
+         */
+        SignInStatus: {
+            /**
+             * Account
+             * @description Who, as the tool names them; never a secret. Empty if unsaid.
+             * @default
+             */
+            account: string;
+            /**
+             * Grants
+             * @description Every declared grant and its state.
+             */
+            grants?: components["schemas"]["GrantStatus"][];
+            /**
+             * Install
+             * @description How to install the tool through its supported path, if missing.
+             * @default
+             */
+            install: string;
+            /**
+             * Live
+             * @description Whether the vendor was asked; else it is local evidence only.
+             * @default false
+             */
+            live: boolean;
+            /**
+             * Problem
+             * @description What needs a new sign-in, such as an expired or revoked one; empty if nothing.
+             * @default
+             */
+            problem: string;
+            /**
+             * Signed In
+             * @description Whether there is a sign-in; none when only the vendor could say.
+             */
+            signed_in: boolean | null;
+            /**
+             * Tool
+             * @description Whether the vendor's tool can run a sign-in.
+             * @default ready
+             * @enum {string}
+             */
+            tool: "ready" | "missing" | "unsupported";
         };
         /**
          * Skill
@@ -14448,6 +14964,11 @@ export interface components {
              */
             before: string;
             /**
+             * Heads
+             * @description What each installed long-running head runs after the update, as its live process reported it.
+             */
+            heads?: components["schemas"]["HeadRefresh"][];
+            /**
              * Latest
              * @description Highest published release in SemVer order, when it was asked for: for an installation pinned to a release tag, a branch, a commit or a local source; none otherwise or if it couldn't be asked.
              */
@@ -14960,7 +15481,7 @@ export interface components {
              * Widget
              * @description What to show; none when there is nothing to show.
              */
-            widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"]) | null;
+            widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"] | components["schemas"]["ChartWidget"]) | null;
         };
         /** heinzel_abandon_chat_turn_Input */
         heinzel_abandon_chat_turn_Input: {
@@ -15783,6 +16304,49 @@ export interface components {
              */
             request_id: string;
         };
+        /** system_connector_cancel_Input */
+        system_connector_cancel_Input: {
+            /**
+             * Flow
+             * @description The sign-in, by the id `connect` returned.
+             */
+            flow: string;
+        };
+        /** system_connector_connect_Input */
+        system_connector_connect_Input: {
+            /**
+             * Allow
+             * @description A grant to add, such as `calendar-write`, as `access` lists them; repeat for each.
+             */
+            allow?: string[] | null;
+            /**
+             * Name
+             * @description The connector, as `hz system connector list` names it, e.g. `github`.
+             */
+            name: string;
+            /**
+             * Wait
+             * @description Wait here until it ends, opening the consent page in this machine's browser; only where a person is told (the terminal). Elsewhere it returns at once: poll `flow`, open the page with `open`.
+             * @default true
+             */
+            wait: boolean;
+        };
+        /** system_connector_disconnect_Input */
+        system_connector_disconnect_Input: {
+            /**
+             * Name
+             * @description The connector, as `hz system connector list` names it, e.g. `github`.
+             */
+            name: string;
+        };
+        /** system_connector_open_Input */
+        system_connector_open_Input: {
+            /**
+             * Flow
+             * @description The sign-in, by the id `connect` returned.
+             */
+            flow: string;
+        };
         /** system_runner_chat_propose_release_draft_share_Input */
         system_runner_chat_propose_release_draft_share_Input: {
             /**
@@ -15807,6 +16371,7 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaAccess = components['schemas']['Access'];
 export type SchemaAccessList = components['schemas']['AccessList'];
 export type SchemaAccessOption = components['schemas']['AccessOption'];
 export type SchemaAccessTestReport = components['schemas']['AccessTestReport'];
@@ -15832,6 +16397,7 @@ export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
+export type SchemaCapabilityState = components['schemas']['CapabilityState'];
 export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
 export type SchemaCapturedWriteActivityItem = components['schemas']['CapturedWriteActivityItem'];
 export type SchemaCapturedWriteActivityPage = components['schemas']['CapturedWriteActivityPage'];
@@ -15846,6 +16412,9 @@ export type SchemaChannelDeliveryTerms = components['schemas']['ChannelDeliveryT
 export type SchemaChannelNotice = components['schemas']['ChannelNotice'];
 export type SchemaChannelReport = components['schemas']['ChannelReport'];
 export type SchemaChannelTarget = components['schemas']['ChannelTarget'];
+export type SchemaChartPoint = components['schemas']['ChartPoint'];
+export type SchemaChartRange = components['schemas']['ChartRange'];
+export type SchemaChartWidget = components['schemas']['ChartWidget'];
 export type SchemaChatAction = components['schemas']['ChatAction'];
 export type SchemaChatContext = components['schemas']['ChatContext'];
 export type SchemaChatCosts = components['schemas']['ChatCosts'];
@@ -15902,12 +16471,15 @@ export type SchemaExpertMode = components['schemas']['ExpertMode'];
 export type SchemaFilters = components['schemas']['Filters'];
 export type SchemaFoundServer = components['schemas']['FoundServer'];
 export type SchemaFoundSkill = components['schemas']['FoundSkill'];
+export type SchemaGrant = components['schemas']['Grant'];
+export type SchemaGrantStatus = components['schemas']['GrantStatus'];
 export type SchemaGraph = components['schemas']['Graph'];
 export type SchemaGraphEdge = components['schemas']['GraphEdge'];
 export type SchemaGraphMetadata = components['schemas']['GraphMetadata'];
 export type SchemaGraphNode = components['schemas']['GraphNode'];
 export type SchemaGraphicWidget = components['schemas']['GraphicWidget'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
+export type SchemaHeadRefresh = components['schemas']['HeadRefresh'];
 export type SchemaHealthReport = components['schemas']['HealthReport'];
 export type SchemaHeinzelAppearance = components['schemas']['HeinzelAppearance'];
 export type SchemaHeinzelList = components['schemas']['HeinzelList'];
@@ -16012,6 +16584,7 @@ export type SchemaReleaseFeedIdentity = components['schemas']['ReleaseFeedIdenti
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRendererBlock = components['schemas']['RendererBlock'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
+export type SchemaResolveWhen = components['schemas']['ResolveWhen'];
 export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRestarted = components['schemas']['Restarted'];
 export type SchemaRollingConnectedGrantProposal = components['schemas']['RollingConnectedGrantProposal'];
@@ -16039,6 +16612,9 @@ export type SchemaSettingDoc = components['schemas']['SettingDoc'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaSettingRevealed = components['schemas']['SettingRevealed'];
 export type SchemaSetupDoc = components['schemas']['SetupDoc'];
+export type SchemaSignInFlow = components['schemas']['SignInFlow'];
+export type SchemaSignInProgress = components['schemas']['SignInProgress'];
+export type SchemaSignInStatus = components['schemas']['SignInStatus'];
 export type SchemaSkill = components['schemas']['Skill'];
 export type SchemaSkillDetail = components['schemas']['SkillDetail'];
 export type SchemaSkillDraft = components['schemas']['SkillDraft'];
@@ -16154,6 +16730,10 @@ export type SchemaHeinzelSearchAgentConversationsInput = components['schemas']['
 export type SchemaHeinzelSearchConversationInput = components['schemas']['heinzel_search_conversation_Input'];
 export type SchemaHeinzelShareDraftLinkInput = components['schemas']['heinzel_share_draft_link_Input'];
 export type SchemaHeinzelStartHelperInput = components['schemas']['heinzel_start_helper_Input'];
+export type SchemaSystemConnectorCancelInput = components['schemas']['system_connector_cancel_Input'];
+export type SchemaSystemConnectorConnectInput = components['schemas']['system_connector_connect_Input'];
+export type SchemaSystemConnectorDisconnectInput = components['schemas']['system_connector_disconnect_Input'];
+export type SchemaSystemConnectorOpenInput = components['schemas']['system_connector_open_Input'];
 export type SchemaSystemRunnerChatProposeReleaseDraftShareInput = components['schemas']['system_runner_chat_propose_release_draft_share_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
@@ -19780,6 +20360,171 @@ export interface operations {
             };
         };
     };
+    system_connector_access: {
+        parameters: {
+            query: {
+                /** @description The connector, as `hz system connector list` names it, e.g. `github`. */
+                name: string;
+                /** @description Ask the vendor too: confirms the account and which grants hold. */
+                live?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Access"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_connector_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_connector_cancel_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInFlow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_connector_connect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_connector_connect_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInFlow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_connector_disconnect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_connector_disconnect_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Access"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_connector_flow: {
+        parameters: {
+            query: {
+                /** @description The sign-in, by the id `connect` returned. */
+                flow: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInFlow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_connector_list: {
         parameters: {
             query?: never;
@@ -19796,6 +20541,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConnectorReport"];
+                };
+            };
+        };
+    };
+    system_connector_open: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_connector_open_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInFlow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -20260,6 +21038,8 @@ export interface operations {
                 limit?: number;
                 /** @description Only notices older than this id, for the next page. */
                 before?: string | null;
+                /** @description Include notices that resolved by themselves and disappeared, for their history. */
+                resolved?: boolean;
             };
             header?: never;
             path?: never;

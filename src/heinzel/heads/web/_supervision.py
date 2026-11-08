@@ -5,6 +5,8 @@ import logging
 import os
 import re
 import secrets
+import stat
+import sys
 import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -16,6 +18,7 @@ from heinzel.kernel import (
     HeinzelError,
     PrivateControl,
     installation_mutation_pending,
+    private_directory,
     private_read,
     private_socket_directory,
     private_write,
@@ -23,6 +26,42 @@ from heinzel.kernel import (
 
 logger = logging.getLogger(__name__)
 _MAX_ERRNO = 4095
+SUPERVISED_LOG = "web.err.log"
+"""Where an OS-supervised web server's stderr goes, in `hz.log_dir`: the service manager discards it otherwise."""
+SUPERVISED_LOG_LIMIT = 1024 * 1024
+"""Past this size the log moves to `web.err.log.1` when the server starts, so a crash loop can't fill the disk."""
+
+
+def redirect_supervised_stderr(log_dir: Path) -> Path | None:
+    """Send this process's stderr (fd 2) to an owner-only log file; None, leaving stderr as it was, if unsafe.
+
+    A supervised server never announces its session URL (`WebPublication`), so stderr holds only warnings, startup
+    failures and tracebacks: what diagnosing a service that keeps exiting needs. The service manager itself still
+    discards both streams, so no output reaches an unrotated OS log.
+    """
+    path = log_dir / SUPERVISED_LOG
+    try:
+        private_directory(log_dir)
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            if stat.S_ISREG(info.st_mode) and info.st_size > SUPERVISED_LOG_LIMIT:
+                path.replace(path.with_name(f"{SUPERVISED_LOG}.1"))
+        descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        try:
+            info = os.fstat(descriptor)
+            owned = stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid() and info.st_nlink == 1
+            if not owned or info.st_mode & 0o077:
+                return None
+            sys.stderr.flush()
+            os.dup2(descriptor, 2)
+        finally:
+            os.close(descriptor)
+    except (OSError, HeinzelError):
+        return None
+    return path
 
 
 class SupervisedWeb:

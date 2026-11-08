@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from heinzel import Config, HeinzelError, Kernel, Settings
 from heinzel.kernel import (
+    HeadRefresh,
     HostServiceManager,
     Installation,
     MaintenanceLocks,
@@ -52,9 +53,14 @@ from heinzel.modules.ui._profile import (
 
 LABEL = "io.github.helmut-hoffer-von-ankershoffen.heinzel.web"
 UNIT = "hz-web.service"
+STARTUP_PENDING = ".heinzel-startup-pending"
+"""The continuity marker an installation change keeps while its outcome is uncertain (ADR 0108)."""
 MAX_PORT = 65535
 STOP_SECONDS = 5.0
 STOP_POLL_SECONDS = 0.05
+READY_SECONDS = 12.0
+"""How long a restarted supervised web server may take to report ready: the owner's readiness bound (11-04)."""
+READY_POLL_SECONDS = 0.1
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 
@@ -134,8 +140,14 @@ class WebService:
         unsupported: tuple[str, ...] = (),
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        repair: Callable[[], bool] | None = None,
     ) -> None:
-        """Keep the stable shim path unresolved, because uv replaces its destination during updates."""
+        """Keep the stable shim path unresolved, because uv replaces its destination during updates.
+
+        `repair` removes a continuity marker an unfinished change left once the tool matches its record again
+        (`Installation.clear_stale_startup_pending`), so a restart isn't refused for it.
+        """
+        self.repair = repair
         self.directory = state / "ui"
         self.home = home
         self.executable = executable
@@ -188,6 +200,7 @@ class WebService:
                 config, settings, Path.home(), installation.prefix.resolve(strict=True), binary / "hz"
             ),
             unsupported=installation_overrides(config),
+            repair=installation.clear_stale_startup_pending,
             verify=lambda: (
                 installation.is_tool
                 and installation.startup_state_matches()
@@ -476,7 +489,9 @@ class WebService:
         if record is None or pid is None:
             if installation_mutation_pending(self.prefix, self.directory.parent):
                 result.problem = (
-                    "An installation change requires completion or recovery before this web service can start."
+                    "An installation change requires completion or recovery before this web service can start. "
+                    "`hz system daemon restart` recovers one whose process provably ended, for example after a "
+                    "restart of the computer; the service then starts by itself."
                 )
             return result
         try:
@@ -815,8 +830,11 @@ class WebService:
         if record is None or not loaded or pid is None:
             msg = "No owned running web service can restart. Inspect `hz ui status`."
             raise HeinzelError(msg)
-        if installation_mutation_pending(self.prefix, self.directory.parent):
-            msg = "An installation change requires completion or recovery before restarting the web service."
+        if installation_mutation_pending(self.prefix, self.directory.parent) and not self._repaired():
+            msg = (
+                "An installation change requires completion or recovery before restarting the web service. Run "
+                "`hz system update` to finish it (or `hz system doctor` to see what holds it), then `hz ui restart`."
+            )
             raise HeinzelError(msg)
         response = self._control(record, pid, "restart")
         return WebRestart(
@@ -824,6 +842,71 @@ class WebService:
             retiring_instance=str(response["instance"]),
             message="Restart requested. Use `hz ui status` to verify a different ready instance.",
         )
+
+    def _repaired(self) -> bool:
+        """Whether the only gate was a continuity marker an unfinished change left, now removed (`repair`)."""
+        others = [
+            path
+            for path in installation_mutation_paths(self.prefix, self.directory.parent)
+            if path.name != STARTUP_PENDING and os.path.lexists(path)
+        ]
+        if others or self.repair is None:
+            return False
+        try:
+            self.repair()
+        except (OSError, HeinzelError):
+            return False
+        return not installation_mutation_pending(self.prefix, self.directory.parent)
+
+    def refresh(self, target: str) -> HeadRefresh:
+        """After an update: restart the owned web server, then observe its successor.
+
+        It restarts even when it reports `target` already: a plugin-only update leaves the core version as it was, and
+        the old process still runs the plugins it imported. Only a different ready instance reporting exactly `target`
+        within `READY_SECONDS` counts as verified. The server that is itself running this update restarts itself
+        afterwards, so it is reported, never restarted.
+        Never raises: ownership, readiness and restart problems are outcomes.
+        """
+        before = self.status()
+        if not before.installed:
+            return HeadRefresh(head="web", status="not-installed")
+        if before.ready and before.pid == os.getpid():
+            return HeadRefresh(
+                head="web", status="self", version=before.version, detail="This web server restarts itself next."
+            )
+        try:
+            retiring = self.restart().retiring_instance
+        except (OSError, ValueError, HeinzelError, subprocess.SubprocessError) as exc:
+            return HeadRefresh(
+                head="web",
+                status="failed",
+                version=before.version,
+                detail=f"The web server couldn't restart ({exc}). Finish it with `hz ui restart`, then `hz ui status`.",
+            )
+        deadline = self._clock() + READY_SECONDS
+        while True:
+            now = self.status()
+            if now.ready and now.instance not in {None, retiring}:
+                if now.version == target:
+                    return HeadRefresh(
+                        head="web", status="verified", version=target, detail="The web server restarted into it."
+                    )
+                return HeadRefresh(
+                    head="web",
+                    status="failed",
+                    version=now.version,
+                    detail=f"The web server restarted but runs hz {now.version}, not {target}. Run `hz ui restart`.",
+                )
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                return HeadRefresh(
+                    head="web",
+                    status="pending",
+                    version=before.version,
+                    detail=f"No restarted web server reported ready within {READY_SECONDS:g} seconds. Check "
+                    "`hz ui status`; if it still shows the old version, run `hz ui restart`.",
+                )
+            self._sleep(min(READY_POLL_SECONDS, remaining))
 
     @contextmanager
     def removal_guard(self, *, locks: MaintenanceLocks | None = None) -> Generator[WebRemoval, None, None]:

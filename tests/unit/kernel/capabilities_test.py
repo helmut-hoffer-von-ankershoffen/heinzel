@@ -62,7 +62,7 @@ def test_only_calendar_chat_documents_mail_and_the_tracker_can_write():
 
 
 def test_the_tracker_reads_what_changed_and_writes_every_step_of_an_issue_naming_its_actor():
-    """ADR 0136: create, claim, transition, note, attach and close are writes; each says who does it."""
+    """ADR 0141: create, claim, transition, note, attach and close are writes; each says who does it."""
     assert CAPABILITIES["tracker"].methods == {
         "issues_updated": "read",
         "create": "write",

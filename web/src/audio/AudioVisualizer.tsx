@@ -1,20 +1,56 @@
-import { AudioLines } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { AudioLines, BarChart3, Layers, Mic, MicOff, MonitorSpeaker, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FooterItem, type State } from "@/components/FooterItem";
 import { Button } from "@/components/ui/button";
+import { type Segment, SegmentedControl } from "@/components/ui/segmented";
 import { t } from "@/i18n";
-import { type CapturedAudio, captureAudio } from "./capture";
+import { Switch } from "@/layout/SettingControls";
+import {
+  BANDS,
+  bandEdges,
+  canvasSize,
+  createState,
+  drawAurora,
+  FRAME_MS,
+  isSettled,
+  readPalette,
+  stepState,
+} from "./aurora";
+import { type CapturedAudio, captureAudio, captureMicrophone } from "./capture";
+import { useOwnAudio } from "./own";
+import { Analysis, bandRanges } from "./viz/analysis";
+import { watchTheme } from "./viz/color";
+import { drawRail } from "./viz/rail";
+import { setMaster, setShown, shownOf, styleOn, useVizSettings, type VizShown } from "./viz/settings";
+import { readVizTheme } from "./viz/theme";
 
-export function spectrumGeometry(width: number, height: number) {
-  const columns = Math.max(1, Math.min(16, Math.floor(width / 3)));
-  const gap = width >= columns * 2 ? 1 : 0;
-  const columnWidth = Math.max(1, (width - gap * (columns - 1)) / columns);
-  return { columns, gap, columnWidth, maxBarHeight: Math.max(1, height / 3) };
+export { spectrumLevel } from "./aurora";
+
+/** What the person last chose to listen to; "off" is remembered too, so nothing resumes until they pick a source. */
+type Source = "off" | "mic" | "tab";
+type Remembered = Source | null;
+const SOURCE_KEY = "hz.audio.source";
+
+function readSource(): Remembered {
+  try {
+    const saved = localStorage.getItem(SOURCE_KEY);
+    return saved === "tab" || saved === "mic" || saved === "off" ? saved : null;
+  } catch {
+    return null;
+  }
 }
 
-export function spectrumLevel(value: number) {
-  return Math.sqrt(Math.max(0, Math.min(255, value)) / 255);
+function remember(source: Source) {
+  try {
+    localStorage.setItem(SOURCE_KEY, source);
+  } catch {
+    // the choice just isn't remembered
+  }
 }
+
+const UNSHARED = "Shared audio is not offered by this browser.";
+const tabSharing = () => Boolean(navigator.mediaDevices?.getDisplayMedia);
 
 function captureProblem(error: unknown) {
   if (error instanceof DOMException && error.name === "AbortError") return "Audio sharing was cancelled.";
@@ -23,16 +59,26 @@ function captureProblem(error: unknown) {
   return error instanceof Error ? error.message : "Audio sharing is unavailable.";
 }
 
-/** A real spectrum at the right edge. Showing the control never starts capture; the person clicks to share. */
+/**
+ * The audio visualizations: one analyser and one render loop feed every style that is switched on. Heinzel's own sound
+ * is analysed in the page with no prompt; music in a host's frame (YouTube) needs the person's consent, asked once,
+ * inline, as a tab share or the microphone. Nothing is captured before a click (a microphone already allowed may be
+ * resumed), and nothing is scheduled while the sound is silent, the page hidden or every style off.
+ */
 export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean }) {
+  const own = useOwnAudio();
+  const settings = useVizSettings();
+  const [remembered, setRemembered] = useState<Remembered>(readSource);
   const [session, setSession] = useState<CapturedAudio | null>(null);
-  const [requesting, setRequesting] = useState(false);
+  const [requesting, setRequesting] = useState<"mic" | "tab" | null>(null);
   const [problem, setProblem] = useState("");
   const [hasSignal, setHasSignal] = useState(false);
   const current = useRef<CapturedAudio | null>(null);
   const request = useRef<AbortController | null>(null);
   const generation = useRef(0);
-  const canvas = useRef<HTMLCanvasElement>(null);
+  const auroraCanvas = useRef<HTMLCanvasElement>(null);
+  const railCanvas = useRef<HTMLCanvasElement>(null);
+  const masterId = useId();
   const stop = useCallback(() => {
     generation.current += 1;
     request.current?.abort();
@@ -41,11 +87,11 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     current.current = null;
     setSession(null);
     setHasSignal(false);
-    setRequesting(false);
+    setRequesting(null);
   }, []);
   useEffect(() => {
-    if (!enabled) stop();
-  }, [enabled, stop]);
+    if (!enabled || !settings.master) stop();
+  }, [enabled, settings.master, stop]);
   useEffect(
     () => () => {
       generation.current += 1;
@@ -54,27 +100,54 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     },
     [],
   );
-  const start = async () => {
+  /**
+   * Listen to `kind`, switching live: the new source is asked for first, and the one running is stopped only once the
+   * new one is granted, so a cancelled or refused prompt leaves the old source playing.
+   */
+  const start = useCallback(async (kind: "mic" | "tab") => {
     const revision = ++generation.current;
+    request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
-    setRequesting(true);
+    setRequesting(kind);
     setProblem("");
     try {
-      const captured = await captureAudio(controller.signal);
+      const captured = await (kind === "mic" ? captureMicrophone : captureAudio)(controller.signal);
       if (generation.current !== revision || controller.signal.aborted) {
         captured.stop();
         return;
       }
+      const previous = current.current;
       current.current = captured;
       setSession(captured);
-      setRequesting(false);
+      setHasSignal(false);
+      previous?.stop();
+      setRequesting(null);
+      setRemembered(kind);
+      remember(kind);
     } catch (error) {
       if (generation.current !== revision) return;
-      setRequesting(false);
+      setRequesting(null);
       setProblem(captureProblem(error));
     }
-  };
+  }, []);
+  const choose = useCallback(
+    (source: Source) => {
+      if (source === "off") {
+        stop();
+        setProblem("");
+        setRemembered("off");
+        remember("off");
+        return;
+      }
+      if (source === "tab" && !tabSharing()) {
+        setProblem(UNSHARED);
+        return;
+      }
+      void start(source);
+    },
+    [start, stop],
+  );
   useEffect(() => {
     if (!session) return;
     const tracks = session.stream.getTracks();
@@ -84,97 +157,234 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       for (const track of tracks) track.removeEventListener("ended", stop);
     };
   }, [session, stop]);
+  // A microphone the person already allowed and chose before listens again without another question.
+  const framed = own.mode === "frame";
+  // Once per page: a stopped or ended microphone never restarts itself.
+  const resumed = useRef(false);
   useEffect(() => {
-    const element = canvas.current;
-    const drawing = element?.getContext("2d");
-    if (!element || !drawing) return;
-    if (!session) {
-      drawing.clearRect(0, 0, element.width, element.height);
-      return;
-    }
-    const data = new Uint8Array(session.analyser.frequencyBinCount);
+    if (!enabled || !framed || session || requesting || remembered !== "mic" || resumed.current) return;
+    let cancelled = false;
+    void navigator.permissions
+      ?.query({ name: "microphone" as PermissionName })
+      .then((status) => {
+        if (cancelled || status.state !== "granted") return;
+        resumed.current = true;
+        void start("mic");
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, framed, session, requesting, remembered, start]);
+  const ownAnalyser = own.mode === "analysed" ? own.analyser : null;
+  const analyser = session?.analyser ?? ownAnalyser;
+  const microphone = session?.label === "Microphone";
+  const railOn = styleOn(settings, "spectrum");
+  const auroraOn = styleOn(settings, "aurora");
+  const drawing = Boolean(analyser) && (railOn || auroraOn);
+  useEffect(() => {
+    if (!analyser || (!railOn && !auroraOn)) return;
+    const rail = railOn ? railCanvas.current : null;
+    const sky = auroraOn ? auroraCanvas.current : null;
+    const railContext = rail?.getContext("2d") ?? null;
+    const skyContext = sky?.getContext("2d") ?? null;
+    if (!railContext && !skyContext) return;
+    const freq = new Uint8Array(analyser.frequencyBinCount);
+    const time = typeof analyser.getByteTimeDomainData === "function" ? new Uint8Array(analyser.fftSize || 2048) : null;
+    const sampleRate = analyser.context?.sampleRate ?? 48000;
+    const analysis = new Analysis(bandRanges(sampleRate, freq.length * 2, freq.length));
+    const edges = bandEdges(freq.length, BANDS);
+    const aurora = createState(Date.now() | 0);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let palette = readPalette();
+    let theme = readVizTheme();
     let frame = 0;
-    let last = -Infinity;
+    let timer = 0;
+    let last = 0;
     let lastSound = -Infinity;
     let audible = false;
-    const paint = (now: number) => {
-      if (document.visibilityState === "hidden") return;
-      frame = requestAnimationFrame(paint);
-      if (now - last < (reduced.matches ? 250 : 1000 / 30)) return;
-      last = now;
+    let railSize = { width: 0, height: 0 };
+    let skySize = { width: 0, height: 0 };
+    let resting = false;
+    const sizeOf = (element: HTMLCanvasElement, context: CanvasRenderingContext2D) => {
       const width = Math.max(1, element.clientWidth);
       const height = Math.max(1, element.clientHeight);
-      const ratio = Math.min(2, window.devicePixelRatio || 1);
-      if (element.width !== Math.round(width * ratio) || element.height !== Math.round(height * ratio)) {
-        element.width = Math.round(width * ratio);
-        element.height = Math.round(height * ratio);
+      const next = canvasSize(width, height, window.devicePixelRatio);
+      if (element.width !== next.width || element.height !== next.height) {
+        element.width = next.width;
+        element.height = next.height;
       }
-      drawing.setTransform(ratio, 0, 0, ratio, 0, 0);
-      drawing.clearRect(0, 0, width, height);
-      drawing.fillStyle = getComputedStyle(element).color;
-      session.analyser.getByteFrequencyData(data);
-      if (data.some((value) => value > 0)) lastSound = now;
+      context.setTransform(next.width / width, 0, 0, next.height / height, 0, 0);
+      return { width, height };
+    };
+    // The measured spectrum position, on the drawing's own element: the browser test asserts the real signal path
+    // with it, and its failure log can tell a dead analyser from a drawing problem.
+    const probe = rail ?? sky;
+    if (probe) probe.dataset.vizSampleRate = String(sampleRate);
+    const publish = () => {
+      if (!probe) return;
+      const centre = analysis.centroid().toFixed(3);
+      if (probe.dataset.vizCentroid !== centre) probe.dataset.vizCentroid = centre;
+    };
+    const sample = (now: number, dt: number) => {
+      analyser.getByteFrequencyData(freq);
+      if (time) analyser.getByteTimeDomainData(time);
+      let sound = false;
+      for (const value of freq) {
+        if (value > 0) {
+          sound = true;
+          break;
+        }
+      }
+      if (sound) lastSound = now;
       const detected = now - lastSound < 2000;
       if (detected !== audible) {
         audible = detected;
         setHasSignal(detected);
       }
-      const { columns, gap, columnWidth, maxBarHeight } = spectrumGeometry(width, height);
-      for (let column = 0; column < columns; column += 1) {
-        const from = Math.floor((column * data.length) / columns);
-        const to = Math.max(from + 1, Math.floor(((column + 1) * data.length) / columns));
-        let peak = 0;
-        for (let index = from; index < to; index += 1) peak = Math.max(peak, data[index] ?? 0);
-        const level = spectrumLevel(peak);
-        const bar = level * maxBarHeight;
-        if (bar <= 0) continue;
-        drawing.globalAlpha = 0.2 + level * 0.8;
-        drawing.fillRect(column * (columnWidth + gap), height - bar, columnWidth, bar);
+      analysis.step(freq, time, now, dt);
+      publish();
+      return sound;
+    };
+    const sleep = () => {
+      // After two quiet seconds the aurora clears and the rail rests as a dim, still ladder; the loop stops.
+      // The loop can settle before sample()'s detection window ends, so report the silence here: otherwise the
+      // status would keep saying "Visualizing" while nothing is drawn.
+      if (audible) {
+        audible = false;
+        setHasSignal(false);
       }
-      drawing.globalAlpha = 1;
+      resting = true;
+      analysis.rest();
+      publish();
+      if (rail && railContext) {
+        railSize = sizeOf(rail, railContext);
+        drawRail(railContext, analysis, theme, railSize.width, railSize.height, true);
+      }
+      if (sky && skyContext) {
+        skyContext.setTransform(1, 0, 0, 1, 0, 0);
+        skyContext.clearRect(0, 0, sky.width, sky.height);
+      }
+      const poll = () => {
+        timer = 0;
+        if (document.visibilityState === "hidden") return;
+        analyser.getByteFrequencyData(freq);
+        if (freq.some((value) => value > 0)) {
+          last = 0;
+          lastSound = performance.now();
+          frame = requestAnimationFrame(paint);
+        } else timer = window.setTimeout(poll, 300);
+      };
+      timer = window.setTimeout(poll, 300);
+    };
+    const paint = (now: number) => {
+      frame = 0;
+      if (document.visibilityState === "hidden") return;
+      const slow = reduced.matches;
+      if (now - last < (slow ? 250 : FRAME_MS - 1)) {
+        frame = requestAnimationFrame(paint);
+        return;
+      }
+      const dt = last ? Math.min(0.1, (now - last) / 1000) : 1 / 60;
+      last = now;
+      resting = false;
+      sample(now, dt);
+      if (rail && railContext) {
+        if (railSize.width !== Math.max(1, rail.clientWidth) || railSize.height !== Math.max(1, rail.clientHeight))
+          railSize = sizeOf(rail, railContext);
+        drawRail(railContext, analysis, theme, railSize.width, railSize.height, slow);
+      }
+      if (sky && skyContext) {
+        if (skySize.width !== Math.max(1, sky.clientWidth) || skySize.height !== Math.max(1, sky.clientHeight))
+          skySize = sizeOf(sky, skyContext);
+        stepState(aurora, freq, edges, dt, now, {
+          reduced: slow,
+          floor: microphone,
+          width: skySize.width,
+          height: skySize.height,
+        });
+        drawAurora(skyContext, aurora, palette, skySize.width, skySize.height);
+      }
+      const settled = !sky || isSettled(aurora);
+      if (settled && analysis.quiet && now - lastSound > 1500) sleep();
+      else frame = requestAnimationFrame(paint);
     };
     const visibility = () => {
       cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+      frame = 0;
+      timer = 0;
+      last = 0;
       if (document.visibilityState !== "hidden") frame = requestAnimationFrame(paint);
     };
+    // Colours follow the theme live: light/dark, a plugin theme or its daypart variant re-colour the next frame, and
+    // the resting rail is redrawn at once.
+    const unwatch = watchTheme(() => {
+      palette = readPalette();
+      theme = readVizTheme();
+      if (resting && rail && railContext) drawRail(railContext, analysis, theme, railSize.width, railSize.height, true);
+    });
     document.addEventListener("visibilitychange", visibility);
     visibility();
     return () => {
+      unwatch();
       cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, [session]);
+  }, [analyser, microphone, railOn, auroraOn]);
   if (!enabled) return null;
   const workspaceAudio =
     (window as Window & { heinzelDesktop?: { workspaceAudio?: boolean } }).heinzelDesktop?.workspaceAudio === true;
-  let status = "Audio is not being shared.";
+  const sharedWord = workspaceAudio ? "Workspace audio" : "Shared audio";
+  const listening: Source = session ? (microphone ? "mic" : "tab") : "off";
+  let status = "Off. Heinzel's own sound still shows.";
   let state: State = "off";
   let triggerLabel = "Audio visualizer";
   let controlWord = "Audio";
-  let action = workspaceAudio ? "Share workspace audio" : "Share audio";
-  if (requesting) {
-    status = workspaceAudio
-      ? "Confirm audio sharing in the desktop dialog."
-      : "Choose a source and turn on Share audio in the browser picker.";
-    triggerLabel = "Audio sharing request";
+  if (!settings.master) {
+    status = "Audio visualisation is off.";
+    controlWord = "Off";
+  } else if (requesting) {
+    status = "Waiting for the browser to allow audio.";
+    triggerLabel = "Audio request";
     controlWord = "Wait";
-    action = "Cancel audio request";
   } else if (session) {
-    status = hasSignal
-      ? `Visualizing ${session.label}`
-      : `Audio shared from ${session.label}. Waiting for sound: play audio in that source.`;
+    const what = microphone ? "the microphone" : sharedWord.toLowerCase();
+    status = hasSignal ? `Visualizing ${what}` : `Listening to ${what}. Waiting for sound.`;
     state = hasSignal ? "ok" : "warn";
     triggerLabel = "Audio sharing active";
     controlWord = "On";
-    action = "Stop sharing audio";
+  } else if (ownAnalyser) {
+    status = hasSignal
+      ? `Visualizing ${own.mode === "analysed" ? own.label : "Heinzel's sound"}`
+      : "Heinzel's sound is playing quietly.";
+    state = hasSignal ? "ok" : "warn";
+    triggerLabel = "Audio sharing active";
+    controlWord = "On";
+  } else if (framed) {
+    status = "Off. Music in a player frame shows once you pick Microphone or Shared audio.";
+    state = "warn";
+    controlWord = "Share";
   }
-  if (problem) {
+  if (problem && settings.master) {
     status = problem;
     state = "bad";
     triggerLabel = "Audio sharing problem";
     controlWord = "Retry";
   }
+  const shown: VizShown | null = shownOf(settings);
+  const showSegments: Segment<VizShown>[] = [
+    { value: "spectrum", label: "Spectrum", icon: BarChart3 },
+    { value: "aurora", label: "Aurora", icon: Sparkles },
+    { value: "both", label: "Both", icon: Layers },
+  ];
+  const sourceSegments: Segment<Source>[] = [
+    { value: "off", label: "Off", icon: MicOff },
+    { value: "mic", label: "Microphone", icon: Mic },
+    { value: "tab", label: sharedWord, icon: MonitorSpeaker, unavailable: tabSharing() ? undefined : UNSHARED },
+  ];
+  const mark = { ok: "text-ok", warn: "text-warn", bad: "text-bad", off: "text-muted-foreground" }[state] ?? "";
   return (
     <div className="flex h-full min-h-0 flex-col items-center text-muted-foreground">
       <FooterItem
@@ -188,33 +398,99 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             <span className="text-[10px]">{controlWord}</span>
           </>
         }
-        className={`h-12 min-w-11 flex-col gap-0.5 px-1 ${state === "bad" ? "text-bad" : "text-foreground"}`}
+        className={`h-12 min-w-11 flex-col gap-0.5 px-1 ${
+          state === "bad" ? "text-bad" : settings.master ? "text-foreground" : "text-muted-foreground"
+        }`}
         popoverClassName="w-80 max-w-[calc(100vw-1rem)] p-3"
       >
         <div className="space-y-3 px-1.5 pb-1">
-          <output className={problem ? "block break-words text-bad" : "block break-words text-foreground"}>
-            {status}
-          </output>
-          {!session && !requesting && (
-            <p className="text-xs text-muted-foreground">
-              {workspaceAudio
-                ? "Play audio in this workspace, then share workspace audio to visualize it."
-                : "Play audio, then share the tab playing it. For the embedded player, choose this app’s tab and turn on Share tab audio."}
-            </p>
+          {settings.master && (
+            <>
+              <SegmentedControl legend="Show" segments={showSegments} value={shown} onSelect={setShown} selectOnArrow />
+              <SegmentedControl
+                legend="Listen to"
+                segments={sourceSegments}
+                value={listening}
+                busy={requesting}
+                onSelect={choose}
+              />
+            </>
           )}
-          <Button className="min-h-11 w-full" onClick={() => (session || requesting ? stop() : void start())}>
-            {action}
-          </Button>
+          <p className="flex items-start gap-1.5 text-sm">
+            <span aria-hidden className={mark}>
+              ●
+            </span>
+            <output
+              aria-live="polite"
+              className={state === "bad" ? "break-words text-bad" : "break-words text-foreground"}
+            >
+              {status}
+            </output>
+          </p>
           <p className="text-xs text-muted-foreground">{t("audio.visualizerHelp")}</p>
-          {!workspaceAudio && (
-            <p className="text-xs text-muted-foreground">
-              No audio option? Open hz in a Chrome browser tab and try tab sharing. Audio availability depends on your
-              browser and operating system.
-            </p>
-          )}
+          <div className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground">
+            <span id={masterId}>Audio visualisation</span>
+            <Switch
+              labelledBy={masterId}
+              on={settings.master}
+              disabled={false}
+              onToggle={() => setMaster(!settings.master)}
+            />
+          </div>
         </div>
       </FooterItem>
-      <canvas ref={canvas} role="img" aria-label="Shared audio spectrum" className="min-h-0 w-full flex-1 px-1" />
+      {railOn && analyser ? (
+        <canvas
+          ref={railCanvas}
+          role="img"
+          aria-label="Shared audio spectrum"
+          className="pointer-events-none min-h-0 w-full flex-1 px-0.5 pb-1"
+        />
+      ) : (
+        <div className="min-h-0 flex-1" aria-hidden />
+      )}
+      {drawing &&
+        auroraOn &&
+        createPortal(
+          <canvas
+            ref={auroraCanvas}
+            aria-hidden
+            data-testid="audio-aurora"
+            className="pointer-events-none fixed inset-0 -z-10 size-full"
+          />,
+          document.body,
+        )}
+      {settings.master && framed && !session && !requesting && remembered !== "off" && (
+        <SourcePrompt remembered={remembered} onTab={() => choose("tab")} onMic={() => choose("mic")} />
+      )}
     </div>
+  );
+}
+
+/** The one compact question, once music plays in a frame: browsers require the person's own yes. On a phone or a short
+ * landscape screen a floating card would cover the player it asks about, so there the question stays in the Audio
+ * pane (its trigger reads "Share", with Share audio and Use microphone). */
+function SourcePrompt({ remembered, onTab, onMic }: { remembered: Remembered; onTab: () => void; onMic: () => void }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return createPortal(
+    <aside
+      aria-label="Let Heinzel see the music"
+      className="fixed right-12 bottom-14 z-(--layer-popover) w-64 max-sm:hidden [@media(max-height:40rem)]:hidden rounded-xl border border-border bg-popover p-3 text-xs text-foreground shadow-lg"
+    >
+      <p className="mb-2 font-medium">Let Heinzel see the music?</p>
+      <div className="flex gap-2">
+        <Button size="sm" variant={remembered === "mic" ? "outline" : "default"} onClick={onTab}>
+          Share this tab
+        </Button>
+        <Button size="sm" variant={remembered === "mic" ? "default" : "outline"} onClick={onMic}>
+          Use microphone
+        </Button>
+        <Button size="sm" variant="ghost" aria-label="Not now" onClick={() => setDismissed(true)}>
+          Not now
+        </Button>
+      </div>
+    </aside>,
+    document.body,
   );
 }

@@ -41,6 +41,42 @@ Each rule has a reason. If a rule gets in your way, change the rule in a pull re
 - **Docstrings and comments:** see [Comments and docstrings](#comments-and-docstrings).
 - **Formatting and lint:** `ruff format` and `ruff check` with `select = ["ALL"]`. Ignored rules are listed with a
   reason in `pyproject.toml`. Line length 120.
+- **Logging:** structured events, see [Structured logging](#structured-logging).
+
+## Structured logging
+
+Logs are events with fields, not sentences
+([ADR 0138](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0138-log-structured-events-with-stdlib-logging.md)).
+The helper is `heinzel.kernel._logging`, on top of stdlib `logging`.
+
+- The message is a stable event name, `area.operation.step` in lower case. Everything that varies is a field:
+  `operation`, `step`, `plugin`, `version`, `path`, `outcome` (`ok` | `error` | `skipped`), `duration_ms`,
+  `error_type`, `error`, `reason`. Never an f-string, `%`, `+` or `.format` in a logger call.
+- Every step of an install, update, plugin install, app open or recovery and first run is wrapped in `step`: one
+  start event, one outcome event with its duration. An error carries the same facts as the two-line message the
+  person sees.
+- One operation, one `correlation_id`: wrap it in `correlate()`; the outermost `step` starts one if none is set.
+- No secrets: keys naming a token, secret, password, API key, authorization, cookie, credential or email are
+  redacted whatever their value; still, don't log them.
+- Levels: `DEBUG` developer detail, `INFO` steps and their ok or skipped outcomes, `WARNING` recovered degradation,
+  `ERROR` a failed step. Log files use `JsonFormatter` (one JSON object per line), terminals `TextFormatter`.
+- Test the events for the success and the failure case: attach a handler and compare `record_fields(record)`.
+
+```python
+from heinzel.kernel._logging import correlate, get_logger, log_event, step
+
+log = get_logger("desktop")
+
+with correlate():
+    with step(log, "desktop.install.download", version=version, path=str(target)) as running:
+        size = download(url, target)
+        running.note(bytes=size)
+    if installed == version:
+        log_event(log, "desktop.install.copy", outcome="skipped", reason="already installed", version=version)
+```
+
+`tests/unit/logging_standards_test.py` fails on a formatted logger call under `src/heinzel` outside its allowlist of
+older files, and the allowlist may only shrink.
 
 ## Comments and docstrings
 
@@ -154,6 +190,9 @@ inside its pane. Settings rows wrap to the available pane width; native selector
 including long provider labels. Exercise advanced settings as well as basic settings in the mobile sweep.
 An expanded menu must not hide its own trigger or dismiss control. A pointer press inside the workspace stops its active
 programmatic scroll, so that reveal animation cannot carry the pressed control away before release.
+
+Scrollbars are styled once in `web/src/index.css`: thin, transparent track, thumb shown only on hover or focus inside the
+scroll container. Do not add per-component scrollbar styles or hide scrolling with `overflow: hidden`.
 
 `mobile-standards.test.ts` rejects layout-viewport heights and independent absolute dropdowns. The mobile browser
 sweep discovers static router paths and settings sections automatically; add interactive flows there when introducing a

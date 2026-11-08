@@ -65,6 +65,7 @@ from heinzel.kernel import (
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
 from heinzel.modules.system.daemon import _process_birth
 from heinzel.modules.system.daemon import _schedule as schedule
+from heinzel.modules.system.daemon._abandoned_mutation import host_boot, marker_token_matches, mutation_record
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
@@ -593,6 +594,7 @@ class DaemonService:
         notifier_installed: Callable[[], bool] = notifier_in_applications,
         continuity_fingerprint: Callable[[], str | None] | None = None,
         boot_identity: Callable[[], str | None] | None = None,
+        host_boot_evidence: Callable[[], tuple[str | None, int | None]] | None = None,
         birth_fence: Callable[[], dict[str, int] | None] | None = None,
         process_birth: Callable[[], dict[str, int] | None] | None = None,
         quiescence_probe: Callable[[list[str]], ProcessOutcome] | None = None,
@@ -618,6 +620,8 @@ class DaemonService:
             notifier_installed: Whether Heinzel Notifier.app is in ~/Applications, for the Login Items hint.
             continuity_fingerprint: Local installed-file observation, or None when unavailable.
             boot_identity: Same-boot identity, or None when unavailable.
+            host_boot_evidence: The current boot's identity and wall-clock start in nanoseconds, each None when
+                unknown, read without a subprocess; it binds and proves the end of a mutation marker's owner.
             birth_fence: Same-boot process-birth ordering fence, or None when unavailable.
             process_birth: Current process's operating-system birth evidence, or None when unavailable.
             quiescence_probe: Bounded read-only service-manager query, replaceable in tests.
@@ -639,6 +643,7 @@ class DaemonService:
         self._linux_manager_identity = linux_manager_identity or _linux_user_manager_identity
         self._continuity_fingerprint = continuity_fingerprint
         self._boot_identity = boot_identity or (lambda: _platform_boot_identity(self._platform, self._runner))
+        self._host_boot = host_boot_evidence or (lambda: host_boot(self._platform))
         self._birth_fence = birth_fence or (lambda: _process_birth.request_fence(self._platform))
         self._process_birth = process_birth or (lambda: _process_birth.current_birth(self._platform))
         self._kernel = kernel
@@ -694,6 +699,7 @@ class DaemonService:
         self._unit_paths()
         if dry_run:
             return self._install_locked(interval, dry_run=True, notifier=notifier)
+        self._recover_abandoned_mutation()
         if self._handover_pending():
             msg = "The daemon lifecycle requires recovery; inspect it before installing."
             raise HeinzelError(msg)
@@ -999,6 +1005,7 @@ class DaemonService:
         Raises:
             HeinzelError: If loading fails.
         """
+        self._recover_abandoned_mutation()
         if self._handover_pending():
             msg = "The daemon lifecycle requires recovery; inspect it before restarting."
             raise HeinzelError(msg)
@@ -1058,7 +1065,7 @@ class DaemonService:
             HeinzelError: If another mutation or an unresolved transaction exists.
         """
         with lock(self.state_dir / "lifecycle.lock") as acquired:
-            if not acquired or self._handover_pending():
+            if not acquired or not self._clear_after_recovery_locked():
                 msg = "The daemon lifecycle is changing or requires recovery."
                 raise HeinzelError(msg)
             fingerprint = self._continuity_fingerprint
@@ -1075,7 +1082,9 @@ class DaemonService:
                 msg = "The existing installation checkpoint cannot be verified; explicit recovery is required."
                 raise HeinzelError(msg)
             token = secrets.token_hex(32)
-            self._write_state("mutation-pending.json", {"token": token})
+            self._write_state(
+                "mutation-pending.json", mutation_record(token, os.getpid(), self._host_boot_evidence()[0])
+            )
             authority = _MutationAuthority(
                 self.state_dir / "mutation-pending.json",
                 self._mutation_token_matches,
@@ -1102,6 +1111,8 @@ class DaemonService:
                 if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
                     return False
                 raw = handle.read(256)
+                if name == "mutation-pending.json":
+                    return marker_token_matches(raw, token)
                 return raw == (json.dumps({"token": token}, indent=2) + "\n").encode()
         except (OSError, HeinzelError):
             return False
@@ -1993,6 +2004,45 @@ class DaemonService:
             version_mismatch=version_mismatch,
         )
 
+    def _clear_after_recovery_locked(self) -> bool:
+        """Whether no lifecycle gate remains once an abandoned mutation, if any, was recovered under the held lock."""
+        self._recover_abandoned_mutation_locked()
+        return not self._handover_pending()
+
+    def _recover_abandoned_mutation(self) -> Path | None:
+        """Take the lifecycle lock without waiting, then recover an abandoned mutation as the locked variant does."""
+        if _safely_absent(self.state_dir / "mutation-pending.json"):
+            return None
+        with lock(self.state_dir / "lifecycle.lock") as acquired:
+            return self._recover_abandoned_mutation_locked() if acquired else None
+
+    def _recover_abandoned_mutation_locked(self) -> Path | None:
+        """Archive a mutation marker whose owner provably ended, with a receipt; the lifecycle lock must be held.
+
+        Holding the lock proves no live mutation scope owns the marker; the recorded boot or process proves its owner
+        ended, and the startup checkpoint proves the installed tool is a verified generation (ADR 0117).
+        """
+        if self._quiescence_installation is None or _safely_absent(self.state_dir / "mutation-pending.json"):
+            return None
+        from heinzel.modules.system.daemon._abandoned_mutation import (  # noqa: PLC0415 - recovery only
+            Evidence,
+            recover_abandoned_mutation,
+        )
+
+        def evidence() -> Evidence:
+            return Evidence(*self._host_boot_evidence())
+
+        with lock(self.state_dir / "tick.lock") as acquired:
+            if not acquired:
+                return None
+            try:
+                return recover_abandoned_mutation(
+                    self.state_dir.parent, self._quiescence_installation, evidence, self._clock
+                )
+            except (OSError, HeinzelError):
+                logger.warning("An abandoned installation mutation could not be archived; it stays pending.")
+                return None
+
     def _handover_pending(self) -> bool:
         if self._quiescence_installation is not None and not _safely_absent(
             host_maintenance_gate(self._quiescence_installation.prefix)
@@ -2179,7 +2229,7 @@ class DaemonService:
         with lock_until_finished(
             self.state_dir / "lifecycle.lock", lambda: list(self._abandoned.values())
         ) as lifecycle:
-            if not lifecycle or self._handover_pending():
+            if not lifecycle or not self._clear_after_recovery_locked():
                 return TickReport(at=now, dry_run=False, paused=self.paused, locked=True, runs=[])
             with lock(self.state_dir / "tick.lock") as acquired:
                 if not acquired:
@@ -2208,7 +2258,7 @@ class DaemonService:
                         heartbeat["interval_minutes"] = interval
                     if manager_bound:
                         heartbeat["version"] = __version__
-                        self._finish_handover_locked(handover, now)
+                        self._settle_handover_locked(handover, now)
                     self._write_state("heartbeat.json", heartbeat)
                     self._post_notices(log)
                     log.write(logging.INFO, f"tick done: {len(runs)} run(s)")
@@ -2243,6 +2293,65 @@ class DaemonService:
         if not isinstance(fingerprint, str) or not re.fullmatch(r"[a-f0-9]{64}", fingerprint):
             return None
         return request_id, fingerprint, birth
+
+    def _settle_handover_locked(self, observed: tuple[str, str, dict[str, int]] | None, now: datetime) -> None:
+        """In a manager-bound tick: complete the bound handover, or re-arm one no later tick could complete."""
+        if observed is None:
+            self._rearm_handover_locked()
+        else:
+            self._finish_handover_locked(observed, now)
+
+    def _rearm_handover_locked(self) -> None:
+        """Self-heal a registration record that no later tick could correct, once per version and boot.
+
+        Runs in a manager-bound tick under the lifecycle lock, after it could not complete a handover. When the install
+        marker doesn't record the version this tick runs (or its handover can't be verified), and no later tick could
+        complete the current request (none, another boot's, a changed unit or no ordering fence), it writes a fresh
+        request. Nothing is restarted: the next scheduled tick is a new process born after it and commits the marker
+        through the ordinary observation, with every check that path has. `handover-rearm.json` keeps it to one try.
+        """
+        try:
+            boot = self._current_boot_identity()
+            marker = self._read_state("install.json")
+            if (
+                not boot
+                or not marker
+                or self.paused
+                or self._continuity_fingerprint is None
+                or self._handover_pending()
+                or (marker.get("version") == __version__ and self._handover_marker_valid(marker))
+                or self._request_completable(self._read_state("handover-request.json"), boot)
+                or self._read_state("handover-rearm.json") == {"version": __version__, "boot": boot}
+            ):
+                return
+            fence = self._current_birth_fence()
+            signature = self._handover_signature()
+            if fence is None:
+                return
+            self._write_state("handover-rearm.json", {"version": __version__, "boot": boot})
+            data: dict[str, str | int] = {
+                "request_id": secrets.token_hex(32),
+                "boot": boot,
+                "unit_signature": signature,
+            }
+            data.update({f"birth_{key}": value for key, value in fence.items()})
+            self._write_state("handover-request.json", data)
+            logger.info(
+                "The daemon's registration record names another version; the next tick records %s.", __version__
+            )
+        except Exception:  # noqa: BLE001 - self-healing never fails a tick; the mismatch stays visible in status
+            logger.warning("The daemon's registration record could not be re-armed; status shows the mismatch.")
+
+    def _request_completable(self, request: dict[str, str | int], boot: str) -> bool:
+        """Whether a later manager-bound tick of this boot could still complete `request`."""
+        request_id = request.get("request_id")
+        return (
+            isinstance(request_id, str)
+            and re.fullmatch(r"[a-f0-9]{64}", request_id) is not None
+            and request.get("boot") == boot
+            and self._request_birth_fence(request) is not None
+            and self._request_unit_matches(request)
+        )
 
     def _finish_handover_observation(self, observed: tuple[str, str, dict[str, int]] | None, now: datetime) -> None:
         """Commit a fresh observation under the lifecycle writer lock."""
@@ -2346,6 +2455,17 @@ class DaemonService:
         except Exception:  # noqa: BLE001 - unavailable evidence must not interrupt service operation
             return None
         return value if isinstance(value, str) and 0 < len(value) <= MAX_BOOT_IDENTITY else None
+
+    def _host_boot_evidence(self) -> tuple[str | None, int | None]:
+        """The current boot's identity and start; unavailable evidence proves nothing."""
+        try:
+            identity, started = self._host_boot()
+        except Exception:  # noqa: BLE001 - unavailable evidence must not interrupt service operation
+            return None, None
+        return (
+            identity if isinstance(identity, str) and 0 < len(identity) <= MAX_BOOT_IDENTITY else None,
+            started if type(started) is int and started > 0 else None,
+        )
 
     def _current_birth_fence(self) -> dict[str, int] | None:
         try:

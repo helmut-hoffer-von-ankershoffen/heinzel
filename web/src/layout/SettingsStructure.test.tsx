@@ -581,7 +581,7 @@ describe("The time zones editor (a list of tables by its schema)", () => {
     await waitFor(() => expect(calls.some((call) => call.url.includes("/system/config/set"))).toBe(true));
     expect(
       await screen.findByText(
-        "Saved Zones. This server cannot restart hz ui. Run `hz ui` in a terminal to apply this setting.",
+        "Saved Zones. This server cannot restart hz ui. Run `hz ui serve` in a terminal to apply this setting.",
       ),
     ).toHaveAttribute("role", "status");
     expect(lastSet(calls)).toBe('[{ name = "Europe/Berlin", hours = [9, 17] }, { name = "America/New_York" }]');
@@ -612,7 +612,9 @@ describe("Installed plugins by kind", () => {
     expect(within(acmeRow).getByTitle("Theme: acme")).toBeInTheDocument();
     expect(within(acmeRow).getByTitle("Playbook: engineering-team")).toBeInTheDocument();
     await expectAccessible(container);
-    await user.click(screen.getByRole("button", { name: "Theme", pressed: false }));
+    // An exclusive filter is a radiogroup (design/README.md, Choices).
+    await user.click(screen.getByRole("radio", { name: "Theme", checked: false }));
+    expect(screen.getByRole("radio", { name: "Theme" })).toHaveAttribute("aria-checked", "true");
     expect(screen.queryByTitle("Connector: code-host, tracker")).not.toBeInTheDocument();
     expect(screen.getByTitle("Theme: acme")).toBeInTheDocument();
   });

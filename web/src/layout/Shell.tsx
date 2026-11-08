@@ -453,8 +453,11 @@ function Layout() {
               inert={!beside && selectedPanel !== "page" && !flowingWorkspace}
               aria-hidden={!beside && selectedPanel !== "page" && !flowingWorkspace ? true : undefined}
               tabIndex={-1}
+              // Focused by script (skip link, route change), never a control: no ring, which a click or hover left
+              // as a stray outline. Real controls inside keep their focus-visible ring.
+              data-focus-ring="parent"
               className={cn(
-                "flex-1 bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]",
+                "flex-1 outline-none bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]",
                 !flowingWorkspace && "min-h-0 overflow-y-auto",
               )}
             >
