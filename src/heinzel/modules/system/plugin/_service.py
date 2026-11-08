@@ -1020,6 +1020,13 @@ class PluginService:
         Raises:
             HeinzelError: If hz isn't installed as a uv tool, so there is no receipt to extend.
         """
+        requirement, plugins = self._extra_requirements(extra)
+        if extra in requirement.extras:
+            return None
+        requirement.extras = {*requirement.extras, extra}
+        return self._installation.tool_install_command(str(requirement), plugins, reinstall=False)
+
+    def _extra_requirements(self, extra: CoreExtra) -> tuple[Requirement, list[str]]:
         requirements = self._installation.requirements()
         if requirements is None:
             msg = (
@@ -1028,11 +1035,7 @@ class PluginService:
             )
             raise HeinzelError(msg)
         core, *plugins = requirements
-        requirement = Requirement(core)
-        if extra in requirement.extras:
-            return None
-        requirement.extras = {*requirement.extras, extra}
-        return self._installation.tool_install_command(str(requirement), plugins, reinstall=False)
+        return Requirement(core), plugins
 
     def add_extra(self, extra: CoreExtra) -> ExtraChange:
         """Install the optional `extra` client of hz itself, telling each step (ADR 0056); a restart loads it.
@@ -1046,12 +1049,17 @@ class PluginService:
             [("install", label), ("verify", "Checking that it is installed")],
             operation="system.plugin.add_extra",
         )
-        command = self.extra_command(extra)
-        if command is None:
+        requirement, _ = self._extra_requirements(extra)
+        if extra in requirement.extras:
             phases.note("install", label, "skipped", "It is installed already.")
             phases.note("verify", "Checking that it is installed", "skipped")
             return ExtraChange(extra=extra, done=False, restart_required=False)
         with self._mutation() as mutation, self._receipts.installing(), self._exclusive():
+            # The first read only decides whether this is a no-op. Build from the protected receipt.
+            command = self.extra_command(extra)
+            if command is None:
+                msg = f"Another installation added the {extra} client; check its status and try again."
+                raise HeinzelError(msg)
             with phases.step("install", label):
                 generation = self._run_package_change(
                     command,

@@ -2342,6 +2342,42 @@ def test_a_core_extra_already_installed_needs_no_install(make_kernel, tool_env):
     assert service.add_extra("openai").model_dump() == {"extra": "openai", "done": False, "restart_required": False}
 
 
+def test_adding_a_core_extra_keeps_requirements_changed_before_mutation(make_kernel, tool_env, monkeypatch):
+    receipt = tool_env / "uv-receipt.toml"
+    updated = (
+        receipt.read_text(encoding="utf-8")
+        .replace('{ name = "heinzel",', '{ name = "heinzel", extras = ["anthropic"],')
+        .replace("\n]\n", '\n    { name = "heinzel-new", specifier = "==2.0.0" },\n]\n')
+    )
+    commands = []
+
+    def runner(command, _environment):
+        commands.append(command[: command.index("--constraints")])
+        receipt.write_text(updated.replace('["anthropic"]', '["anthropic", "openai"]'), encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    service = service_for(make_kernel, tool_env, runner)
+    monkeypatch.setattr(service, "_git_environment", dict)
+    original_mutation = service._lifecycle.mutation
+
+    @contextmanager
+    def mutation(checkpoint, identity):
+        # Another installation completes before this request acquires lifecycle authority.
+        receipt.write_text(updated, encoding="utf-8")
+        with original_mutation(checkpoint, identity) as scope:
+            yield scope
+
+    monkeypatch.setattr(service._lifecycle, "mutation", mutation)
+
+    assert service.add_extra("openai").model_dump() == {"extra": "openai", "done": True, "restart_required": True}
+    assert commands == [[
+        "uv", "tool", "install", "--python", PYTHON,
+        "heinzel[anthropic,openai] @ git+https://github.com/org/heinzel@v0.1.0",
+        "--with", "heinzel-old @ git+https://github.com/org/heinzel-old",
+        "--with", "heinzel-new==2.0.0",
+    ]]  # fmt: skip
+
+
 def test_a_core_extra_outside_the_installed_tool_is_refused_with_why(make_kernel, tmp_path):
     with pytest.raises(HeinzelError, match=r"development environment.*heinzel\[openai\]"):
         service_for(make_kernel, tmp_path).extra_command("openai")
