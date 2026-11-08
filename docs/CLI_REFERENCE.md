@@ -3681,7 +3681,7 @@ $ hz system serve daemon [OPTIONS]
 (expert) Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`.
 
 Raises:
-    typer.Exit: With 2 when --chat is given with another transport than stdio.
+    typer.Exit: With 2 when --chat is given with another transport than stdio, 1 when serving is refused.
 
 **Usage**:
 
