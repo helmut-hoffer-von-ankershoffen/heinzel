@@ -261,10 +261,7 @@ def start_private_connection(executor, endpoint, authority):
             connection = lease.peer.connection
             connection.settimeout(2)
             ready.set()
-            try:
-                return connection.recv(16)
-            except OSError:
-                return b""  # Revocation may close the server's descriptor before its reader observes EOF.
+            return connection.recv(16)
 
     return executor.submit(initialize), ready
 
@@ -377,6 +374,40 @@ def test_revoke_shuts_down_an_admitted_socket_and_fences_late_connections(superv
                     pytest.fail("A new connection reopened the revoked grant")
                 assert late.recv(1) == b""
         finally:
+            authority.revoke()
+
+
+def test_revocation_leaves_descriptor_owned_by_server_until_it_exits(supervised):
+    endpoint, _, bridge = supervised
+    authority = HostMcpConnectionApprovals(private_plan(time.monotonic() + 60))
+    ready = Event()
+    revoked = Event()
+
+    def initialize():
+        with endpoint.admit_next(lambda _: GENERATION, authority.publish) as lease:
+            connection = lease.peer.connection
+            connection.settimeout(2)
+            descriptor = connection.fileno()
+            ready.set()
+            assert revoked.wait(2)
+            with pytest.raises(HeinzelError, match="approval is invalid or unavailable"):
+                lease.require_active()
+            assert connection.fileno() == descriptor
+            assert connection.recv(16) == b""
+        assert connection.fileno() == -1
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        try:
+            result = executor.submit(initialize)
+            (review,) = pending_reviews(authority, 1)
+            authority.approve(review)
+            assert ready.wait(2)
+            authority.revoke()
+            assert bridge.recv(1) == b""
+            revoked.set()
+            result.result(timeout=2)
+        finally:
+            revoked.set()
             authority.revoke()
 
 

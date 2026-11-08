@@ -16,8 +16,8 @@ from heinzel.heads.mcp._ipc_admission import (
     McpGeneration,
     PendingMcpPeer,
     PublishedMcpLease,
-    _close_stream,
     _require_waiting_peer,
+    _shutdown_stream,
 )
 from heinzel.heads.mcp._ipc_peer import require_owner_peer
 from heinzel.kernel import HeinzelError
@@ -143,18 +143,19 @@ class HostMcpConnectionApprovals:
         with step(log, "mcp.ipc.revoke_connections", operation="ipc", step="revoke_connections"), self._changed:
             self._revoked = True
             for pending in self._pending.values():
-                _close_stream(pending.peer.connection)
+                _shutdown_stream(pending.peer.connection)
             self._pending.clear()
             for active in self._active.values():
-                _close_stream(active.lease.peer.connection)
+                _shutdown_stream(active.lease.peer.connection)
             self._active.clear()
             self._changed.notify_all()
 
     def _expire(self, lease_id: str) -> None:
         with self._changed:
-            active = self._active.pop(lease_id, None)
+            active = self._active.get(lease_id)
             if active is not None:
-                _close_stream(active.lease.peer.connection)
+                _shutdown_stream(active.lease.peer.connection)
+                del self._active[lease_id]
 
     def _require_active(self, lease: PublishedMcpLease) -> None:
         with self._changed:

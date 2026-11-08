@@ -95,10 +95,14 @@ def _require_waiting_peer(connection: socket.socket) -> None:
     raise HeinzelError(msg)
 
 
-def _close_stream(connection: socket.socket) -> None:
-    # Shutdown ends the stream even if protocol code still holds a buffered reader or writer.
+def _shutdown_stream(connection: socket.socket) -> None:
+    # Wake both ends without invalidating a descriptor the owning thread may still be polling.
     with suppress(OSError):
         connection.shutdown(socket.SHUT_RDWR)
+
+
+def _close_stream(connection: socket.socket) -> None:
+    _shutdown_stream(connection)  # Buffered wrappers can defer descriptor close but cannot keep the stream alive.
     connection.close()
 
 
@@ -148,8 +152,8 @@ class OwnedMcpEndpoint:
         The bounded bootstrap reader reads only the locator. The trusted publisher checks the current
         generation, review/grant and lifecycle fences, and publishes and tracks the lease before yielding it.
         Its lock order is SDK maintenance, profile authority, then registration lifecycle. It releases those
-        locks before protocol handoff. Revocation must shut down the tracked stream. The publisher's context
-        releases the lease on refusal or protocol exit.
+        locks before protocol handoff. Revocation must shut down the tracked stream; this handoff owns the
+        descriptor and closes it on exit. The publisher's context releases the lease on refusal or protocol exit.
 
         Raises:
             HeinzelError: If the physical endpoint, peer, locator or published lease fails verification.
