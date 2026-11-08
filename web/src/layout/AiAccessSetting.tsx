@@ -81,7 +81,9 @@ type OptionProps = {
 
 /** The one status line: the state first, the one missing thing after it; never a command. */
 export function statusLine(option: SchemaAccessOption): string {
-  const word = t(WORD[option.status]);
+  // A head older or newer than this page may send a state it doesn't know: show it as it came.
+  const key = WORD[option.status] as MessageKey | undefined;
+  const word = key ? t(key) : option.status;
   return option.needs ? t("aiAccess.needs", { state: word, needs: option.needs }) : word;
 }
 
