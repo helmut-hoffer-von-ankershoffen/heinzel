@@ -7,6 +7,7 @@ Register a flag here when the work starts, and delete it with its checks when th
 from heinzel.kernel._settings import Settings
 
 FEATURES: dict[str, str] = {
+    "sidebar_browser": "Isolated desktop sidebar browsing while native containment is being qualified.",
     "connected_frontdoor": "Create a durable helper from its first prompt while the connected journey is completed.",
     "connected_channels": "Exact owner-reviewed channel delivery and host-verified human replies.",
     "connected_history": "Owner-private bounded history search while connected helpers are being completed.",
