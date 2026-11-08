@@ -16,7 +16,8 @@ import {
 } from "./controller";
 
 export type ApplyStepId = "preserve" | "write" | "restart" | "wait" | "reload" | "check";
-const PLAN: ApplyStepId[] = ["preserve", "write", "restart", "wait", "reload", "check"];
+/** The full plan of a change that restarts hz; a kind without its own write leaves `write` out. */
+export const FULL_PLAN: ApplyStepId[] = ["preserve", "write", "restart", "wait", "reload", "check"];
 /** How long hz may be away before waiting needs the person's attention. */
 export const WAIT_LIMIT_MS = 60_000;
 
@@ -26,6 +27,7 @@ export type TimedPhase = Phase & { startedAt?: number; endedAt?: number };
 /** The fixed plan of a change that restarts hz, each step told when it really starts and ends (design 3). */
 export class ApplySteps {
   private steps: Record<ApplyStepId, TimedPhase>;
+  private readonly plan: ApplyStepId[];
   private notes: string[] = [];
   private ticker: ReturnType<typeof setInterval> | null = null;
   constructor(
@@ -33,18 +35,20 @@ export class ApplySteps {
     labels: Partial<Record<ApplyStepId, string>>,
     restored?: Phase[],
     private readonly now: () => number = Date.now,
+    plan: ApplyStepId[] = FULL_PLAN,
   ) {
+    this.plan = plan;
     const step = (id: ApplyStepId): TimedPhase => ({
       id,
       label: labels[id] ?? t(`applySteps.${id}` as MessageKey),
       state: "pending",
     });
-    this.steps = Object.fromEntries(PLAN.map((id) => [id, step(id)])) as Record<ApplyStepId, TimedPhase>;
+    this.steps = Object.fromEntries(FULL_PLAN.map((id) => [id, step(id)])) as Record<ApplyStepId, TimedPhase>;
     for (const phase of restored ?? []) if (phase.id in this.steps) this.steps[phase.id as ApplyStepId] = phase;
   }
   /** Every step in plan order, as the dialog shows them. */
   list(): TimedPhase[] {
-    return PLAN.map((id) => this.steps[id]);
+    return this.plan.map((id) => this.steps[id]);
   }
   state(id: ApplyStepId): PhaseState {
     return this.steps[id].state;
@@ -93,7 +97,7 @@ export class ApplySteps {
   }
   /** While a step runs the dialog re-reads the list once a second, so its live time moves. */
   private watch() {
-    const running = PLAN.some((id) => this.steps[id].state === "running");
+    const running = this.plan.some((id) => this.steps[id].state === "running");
     if (running && !this.ticker) this.ticker = setInterval(() => this.tell(), 1000);
     if (!running && this.ticker) {
       clearInterval(this.ticker);
@@ -114,7 +118,7 @@ export class ApplySteps {
   /** The running step failed with `error`; a wait that ran out needs attention instead (design 2). */
   failed(error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    const running = PLAN.find((id) => this.steps[id].state === "running");
+    const running = this.plan.find((id) => this.steps[id].state === "running");
     if (!running) return;
     const attention = error instanceof RestartApplyError && (error.kind === "timeout" || error.kind === "aborted");
     this.mark(running, attention ? "warn" : "failed", attention ? t("applySteps.attention") : message);
