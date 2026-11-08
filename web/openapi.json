@@ -10754,6 +10754,20 @@
       "PluginCandidate": {
         "description": "What `hz system plugin add` would install: the code, where it comes from and who publishes it.",
         "properties": {
+          "also": {
+            "default": "",
+            "description": "Said before it starts: which plugins it installs with this one, and which it offers.",
+            "title": "Also",
+            "type": "string"
+          },
+          "also_installs": {
+            "description": "Plugins of the same repository it needs and that are not installed yet, in install order (dependencies first), pinned to the same commit; they are installed in the same confirmed operation.",
+            "items": {
+              "$ref": "#/components/schemas/PluginDependency"
+            },
+            "title": "Also Installs",
+            "type": "array"
+          },
           "distribution": {
             "anyOf": [
               {
@@ -10982,6 +10996,52 @@
           "next"
         ],
         "title": "PluginChange",
+        "type": "object"
+      },
+      "PluginDependency": {
+        "description": "A plugin of the same repository and commit that installing a plugin installs first.",
+        "properties": {
+          "distribution": {
+            "description": "Distribution name, e.g. heinzel-acme.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "requirement": {
+            "description": "What is installed: its git source pinned to the same commit.",
+            "title": "Requirement",
+            "type": "string"
+          },
+          "source": {
+            "default": "git",
+            "description": "Where its code comes from; the same source as the plugin.",
+            "enum": [
+              "pypi",
+              "git",
+              "path",
+              "unknown"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The version at that commit, when known.",
+            "title": "Version"
+          }
+        },
+        "required": [
+          "distribution",
+          "version",
+          "requirement"
+        ],
+        "title": "PluginDependency",
         "type": "object"
       },
       "PluginEvent": {

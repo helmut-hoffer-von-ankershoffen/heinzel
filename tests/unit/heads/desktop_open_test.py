@@ -50,7 +50,7 @@ def installer(monkeypatch):
 
     monkeypatch.setattr(desktop, "install_desktop", install)
     monkeypatch.setattr(_app, "desktop_executable", lambda _kernel: Path("/usr/local/bin/hz"))
-    monkeypatch.setattr(_app, "_print_location", lambda _output, _error: None)
+    monkeypatch.setattr(_app, "_located", lambda _error: APP)
     monkeypatch.delenv("HZ_DEBUG", raising=False)
     return calls
 
@@ -81,11 +81,11 @@ def test_in_a_terminal_it_asks_once_and_continues(installer, monkeypatch):
     monkeypatch.setattr(_app, "_interactive", lambda: True)
     asked: list[str] = []
     monkeypatch.setattr(typer, "confirm", lambda text, default: asked.append(text) or default)
-    output, error, out, _err = _consoles()
+    output, error, _out, err = _consoles()
     assert _exit_code(lambda: _app._install_app(None, output, error)) == 0
     assert asked == [say.FORGET_PROMPT]
     assert [call.get("forget") for call in installer] == [False, True]
-    assert "Set aside" in out.getvalue()
+    assert "ok Set aside  old install record (backup)" in err.getvalue()
 
 
 def test_answering_no_changes_nothing(installer, monkeypatch):
