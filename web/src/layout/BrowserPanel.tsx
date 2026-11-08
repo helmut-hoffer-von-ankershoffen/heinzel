@@ -188,14 +188,16 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
           </Button>
         ) : (
           external && (
-            <Button asChild variant="ghost" size="icon">
-              <a
-                href={external}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={t("browser.openExternal")}
-                title={t("browser.openExternal")}
-              >
+            // The name and tooltip on the Button, which passes them to the link (asChild): where the actions rule
+            // looks for them on every icon-only action.
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              aria-label={t("browser.openExternal")}
+              title={t("browser.openExternal")}
+            >
+              <a href={external} target="_blank" rel="noopener noreferrer">
                 <ExternalLink aria-hidden />
               </a>
             </Button>
