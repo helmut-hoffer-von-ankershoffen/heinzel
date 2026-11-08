@@ -20,9 +20,33 @@ export function isOwnedUiNavigation(target, connection) {
   }
 }
 
-/** Embedded third-party frames keep the web head's CSP; only top-level documents use this guard. */
-export function guardUiNavigation(contents, connection) {
-  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+// Where a link with target=_blank may go: the meeting tools and calendar pages the calendar pane offers (Join, Open in
+// calendar). Anything else stays denied. Always https, no credentials, no port.
+const EXTERNAL_HOSTS = new Set(["zoom.us", "meet.google.com", "teams.microsoft.com", "teams.live.com", "calendar.google.com"]);
+const EXTERNAL_SUFFIXES = [".zoom.us", ".webex.com"];
+
+/** True for an https link the app may hand to the system's default handler. */
+export function isAllowedExternal(target) {
+  try {
+    const url = new URL(target);
+    if (url.protocol !== "https:" || url.username || url.password || url.port) return false;
+    const host = url.hostname.toLowerCase();
+    if (host === "www.google.com") return url.pathname.startsWith("/calendar/");
+    return EXTERNAL_HOSTS.has(host) || EXTERNAL_SUFFIXES.some((suffix) => host.endsWith(suffix));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Embedded third-party frames keep the web head's CSP; only top-level documents use this guard. A new window is never
+ * created: an allow-listed link (Join, Open in calendar) goes to the system handler through `openExternal`.
+ */
+export function guardUiNavigation(contents, connection, openExternal = () => {}) {
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedExternal(url)) openExternal(url);
+    return { action: "deny" };
+  });
   contents.on("will-navigate", (event) => {
     if (!isOwnedUiNavigation(event.url, connection)) event.preventDefault();
   });

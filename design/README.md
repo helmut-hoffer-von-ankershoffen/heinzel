@@ -79,6 +79,7 @@ checked in review like the brand rules:
    chrome that stays when it has nothing to say.
 6. **Scrollbars overlay and hide** when not scrolling.
 7. **Toasts and banners are dismissible and never stack**; a newer one replaces the older one of the same kind.
+8. **A date is said once:** group headers carry dates, rows carry times.
 
 The audit in [research/design-action-audit.md](../research/design-action-audit.md) measures, per screen, how much of
 the viewport is content at 1440x900 and 390x844.
@@ -122,6 +123,7 @@ card, a dialog, a panel, a page, a settings section, a toast) places its actions
 |---|---|
 | Heinzelmännchen pane, empty | "No persisted Heinzels yet."; divider; [+ Create a personal Heinzel] (primary) [💬] |
 | Calendar pane | Now and next meeting; divider; [📅 Open calendar] |
+| Calendar side pane | Day-grouped agenda, dates in sticky day headers, times in rows; divider; [📅 Today] [‹] [›] [🔧] |
 | System health pane | Check summary; divider; [🩺 Open Doctor] [⟳] |
 | Updates pane | Status lines, automatic-updates switch; divider; [⬇ Update now] [⟳] |
 | Daemon pane (plugin) | Status lines; divider; [⚡ Restart daemon] [📄] [⏱] [⚠] (red) |
