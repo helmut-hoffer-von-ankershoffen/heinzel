@@ -77,8 +77,8 @@ it("gives no control the look of a link", () => {
   const found: string[] = [];
   for (const [file, source] of sources) {
     if (file.endsWith("/Prose.tsx")) continue; // rendered Markdown: links in running text are underlined text-primary
+    // A tag still marked data-prose-link is on the PROSE_MARKERS list and leaves with its conversion.
     for (const name of ["a", "Link", "NavLink", "button", "Button"])
-      // A tag still marked data-prose-link is on the PROSE_MARKERS list and leaves with its conversion.
       for (const tag of openingTags(source, name))
         if ((look.test(tag) && !tag.includes("data-prose-link")) || /variant="link"/.test(tag))
           found.push(`${file}: ${tag.slice(0, 60).replace(/\s+/g, " ")}`);
