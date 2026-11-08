@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_cdf182854338177b__guess_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-11-08 00:57 +0000
+            created at 2026-11-08 02:32 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -148,8 +148,8 @@
     <p class="run"><span class="n"><a id="t64" href="#t64">64</a></span><span class="t">        <span class="nam">detail</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t65" href="#t65">65</a></span><span class="t">            <span class="nam">DetailLine</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t66" href="#t66">66</a></span><span class="t">                <span class="nam">text</span><span class="op">=</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t67" href="#t67">67</a></span><span class="t">                    <span class="fst">f&quot;</span><span class="fst">Installed for hz </span><span class="op">{</span><span class="nam">status</span><span class="op">.</span><span class="nam">installed_version</span> <span class="key">or</span> <span class="str">&#x27;unknown&#x27;</span><span class="op">}</span><span class="fst">; the last check ran </span><span class="fst">&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t68" href="#t68">68</a></span><span class="t">                    <span class="fst">f&quot;</span><span class="op">{</span><span class="nam">status</span><span class="op">.</span><span class="nam">version</span> <span class="key">or</span> <span class="str">&#x27;unknown&#x27;</span><span class="op">}</span><span class="fst">; this is </span><span class="op">{</span><span class="nam">__version__</span><span class="op">}</span><span class="fst">&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t67" href="#t67">67</a></span><span class="t">                    <span class="fst">f&quot;</span><span class="fst">The background service still runs hz </span><span class="op">{</span><span class="nam">status</span><span class="op">.</span><span class="nam">version</span> <span class="key">or</span> <span class="nam">status</span><span class="op">.</span><span class="nam">installed_version</span> <span class="key">or</span> <span class="str">&#x27;unknown&#x27;</span><span class="op">}</span><span class="fst">; </span><span class="fst">&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t68" href="#t68">68</a></span><span class="t">                    <span class="fst">f&quot;</span><span class="fst">restart it to use </span><span class="op">{</span><span class="nam">__version__</span><span class="op">}</span><span class="fst">.</span><span class="fst">&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t69" href="#t69">69</a></span><span class="t">                <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t70" href="#t70">70</a></span><span class="t">                <span class="nam">tone</span><span class="op">=</span><span class="str">&quot;bad&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t71" href="#t71">71</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -180,7 +180,7 @@
     <p class="run run2"><span class="n"><a id="t96" href="#t96">96</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t97" href="#t97">97</a></span><span class="t">    <span class="nam">upcoming</span> <span class="op">=</span> <span class="nam">last</span> <span class="op">+</span> <span class="nam">interval</span> <span class="key">if</span> <span class="nam">interval</span> <span class="key">else</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t98" href="#t98">98</a></span><span class="t">    <span class="key">return</span> <span class="nam">StatusItem</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t99" href="#t99">99</a></span><span class="t">        <span class="nam">text</span><span class="op">=</span><span class="str">&quot;Daemon needs a restart &#183; version mismatch&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t99" href="#t99">99</a></span><span class="t">        <span class="nam">text</span><span class="op">=</span><span class="str">&quot;Daemon needs a restart&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t100" href="#t100">100</a></span><span class="t">        <span class="key">if</span> <span class="nam">status</span><span class="op">.</span><span class="nam">version_mismatch</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t101" href="#t101">101</a></span><span class="t">        <span class="key">else</span> <span class="str">&quot;Daemon running &#183; next check&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t102" href="#t102">102</a></span><span class="t">        <span class="key">if</span> <span class="nam">upcoming</span>&nbsp;</span><span class="r"></span></p>
@@ -200,7 +200,7 @@
             <a class="nav" href="z_cdf182854338177b__guess_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-11-08 00:57 +0000
+            created at 2026-11-08 02:32 +0000
         </p>
     </div>
 </footer>
