@@ -1,48 +1,14 @@
-// Keep actions in panes on the shared primitives (design/README.md, "Actions"): no text links used as
-// actions, and no hand-made action rows or buttons inside footer panes, which draw them with PaneActions.
+// Keep actions in panes on the shared primitives (design/README.md, "Actions"): no hand-made action rows or buttons inside footer panes, which draw them with PaneActions.
 import { expect, it } from "vitest";
+import { openingTags } from "../test/source-tags";
 
 const screens = import.meta.glob<string>("../**/*.tsx", { query: "?raw", import: "default", eager: true });
 const sources = Object.entries(screens).filter(([file]) => !file.endsWith(".test.tsx"));
 
-/** Every opening tag of `name` in `source`, up to its closing `>` outside braces (so `=>` in props is skipped). */
-function openingTags(source: string, name: string): string[] {
-  const tags: string[] = [];
-  const start = new RegExp(`<${name}(?=[\\s>])`, "g");
-  for (let match = start.exec(source); match; match = start.exec(source)) {
-    let depth = 0;
-    let end = match.index;
-    for (; end < source.length; end++) {
-      const char = source[end];
-      if (char === "{") depth++;
-      else if (char === "}") depth--;
-      else if (char === ">" && depth === 0 && source[end - 1] !== "=") break;
-    }
-    tags.push(source.slice(match.index, end + 1));
-  }
-  return tags;
-}
-
 const underlined = (tag: string) => /className=(?:"[^"]*|\{[^}]*)\bunderline\b/.test(tag);
 
-// Text links still used as actions, to be converted by the rollout in research/design-action-audit.md. This list
-// only shrinks: a fixed file must leave it, and no new file may join it. Inline prose links take `data-prose-link`.
-const PENDING: Record<string, number> = {};
-
-it("uses buttons, not underlined text links, for actions", () => {
-  const found: Record<string, number> = {};
-  for (const [file, source] of sources) {
-    if (file.endsWith("/Prose.tsx")) continue; // rendered Markdown: links inside prose are the right control
-    const count = ["button", "Link", "a"]
-      .flatMap((name) => openingTags(source, name))
-      .filter((tag) => underlined(tag) && !tag.includes("data-prose-link")).length;
-    if (count) found[file] = count;
-  }
-  expect(found).toEqual(PENDING);
-});
-
 // Raw buttons in files that also draw footer panes: Contributions.tsx holds the sidebar, ticker and Today widget
-// controls beside FooterStatus. Like PENDING, this only shrinks.
+// controls beside FooterStatus. This only shrinks.
 const RAW_BUTTONS: Record<string, number> = {
   "../components/Contributions.tsx": 4,
 };
@@ -170,20 +136,4 @@ it("keeps every action on the shared components: no new hand-drawn divider, end 
   expect(counts.end).toEqual(JUSTIFY_END);
   expect(counts.unnamed).toEqual(UNNAMED_ICONS);
   expect(counts.raw).toEqual(RAW);
-});
-
-// Files that mark a link `data-prose-link` (a reference, not an action); only listed files may, and it only shrinks.
-const PROSE_LINKS: Record<string, string> = {
-  "../layout/PluginsSection.tsx": "the repository in a plugin row is a reference to where its code lives",
-  "../pages/Contracts.tsx": "a contract's title in the list is a reference to its page",
-  "../notifications/TodayNotifications.tsx": "a notice's title in the Today tease is a reference to the notice",
-  "../pages/Heinzelmaennchen.tsx": "a Heinzel's name in the table is a reference to its contract",
-};
-
-it("lets only listed files mark a link as a prose reference", () => {
-  const found = sources
-    .filter(([file, source]) => !file.endsWith("/PaneActions.tsx") && source.includes("data-prose-link"))
-    .map(([file]) => file)
-    .sort();
-  expect(found).toEqual(Object.keys(PROSE_LINKS).sort());
 });
