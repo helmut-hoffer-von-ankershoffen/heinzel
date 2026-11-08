@@ -820,8 +820,8 @@ class AutoUpdater:
             log.info("automatic update check of the plugins failed: %s", exc)
             news = None
             plugins_ok = False
-        plugins = dict(self.plan.plugins) if news is None else {n: r.version for n, r in news.releases.items()}
         self._looked = (now, core_ok, plugins_ok)
+        plugins = dict(self.plan.plugins) if news is None else {n: r.version for n, r in news.releases.items()}
         with self._editing() as plan:
             before = (plan.core, dict(plan.plugins))
             found(plan, core, plugins, now)

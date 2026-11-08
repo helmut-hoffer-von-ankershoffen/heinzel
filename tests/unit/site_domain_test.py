@@ -5,6 +5,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import yaml
 
 pytestmark = pytest.mark.unit
 
@@ -65,7 +66,25 @@ def test_link_previews_use_an_existing_image_and_the_landing_pages_describe_them
     assert (REPO / "docs/assets/pypi-hero.png").is_file()
     for name in ("og:title", "og:description", "og:image", "twitter:card"):
         assert name in template
+    docs = REPO / "docs"
+    descriptions = {}
+    for path in sorted(docs.rglob("*.md")):
+        source = path.read_text(encoding="utf-8")
+        if not source.startswith("---\n"):
+            continue
+        front, separator, _ = source[4:].partition("\n---\n")
+        if not any(line.startswith("description:") for line in front.splitlines()):
+            continue
+        page = path.relative_to(docs).as_posix()
+        assert separator, f"{page} is missing its closing metadata delimiter"
+        try:
+            metadata = yaml.safe_load(front)
+        except yaml.YAMLError as error:
+            pytest.fail(f"{page} has invalid YAML front matter: {error}")
+        assert isinstance(metadata, dict), page
+        description = metadata.get("description")
+        assert isinstance(description, str), page
+        assert description.strip(), page
+        descriptions[page] = description.strip()
     for page in ("README", "CATALOG", "guides/install", "guides/tour", "guides/manager", "guides/joining"):
-        front = (REPO / f"docs/{page}.md").read_text(encoding="utf-8").split("---")[1]
-        description = next(line for line in front.splitlines() if line.startswith("description:")).split(":", 1)[1]
-        assert 50 <= len(description.strip()) <= 170, page
+        assert 50 <= len(descriptions.get(f"{page}.md", "")) <= 170, page

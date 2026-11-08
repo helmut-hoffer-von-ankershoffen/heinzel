@@ -255,6 +255,43 @@ def test_operation_arguments_must_fit_the_operation(make_kernel):
     assert extra.problem == "`act` takes no argument x"
 
 
+def test_a_view_form_types_only_a_private_mutation_s_declared_inputs(make_kernel):
+    def forms(name: str, first: RunOperation, second: RunOperation) -> Module:
+        module = Module(name, "Forms.")
+
+        @module.operation(read_only=False, private=True)
+        def send(text: Annotated[str, Field(description="What to send.")], urgent: bool = False) -> str:
+            """Send something."""
+            return text
+
+        @module.operation(read_only=False)
+        def public(text: Annotated[str, Field(description="Text.")]) -> str:
+            """Public."""
+            return text
+
+        module.action("first", label="x", icon="zap", effect=first)
+        module.action("second", label="x", icon="zap", effect=second)
+        return module
+
+    ok = RunOperation(operation="send", inputs=("text",))
+    query = RunOperation(operation="public", inputs=("text",))
+    twice = RunOperation(operation="send", arguments={"text": "a"}, inputs=("text",))
+    unknown = RunOperation(operation="send", inputs=("text", "other"))
+    kernel = make_kernel(builtins=True, epsilon=forms("epsilon", ok, query), zeta=forms("zeta", twice, unknown))
+    entries = {e.id: e for e in kernel.resolve(UiService).actions()}
+    good = entries["epsilon:first"]
+    assert good.problem is None
+    assert isinstance(good.effect, RunOperation)
+    assert good.effect.inputs == ("text",)
+    assert good.effect.call is not None
+    assert (good.effect.call.method, good.effect.call.body, good.effect.call.command) == ("POST", {}, "hz epsilon send")
+    assert entries["epsilon:second"].problem == (
+        "`public` takes what a person types only as a private mutation with a JSON body"
+    )
+    assert entries["zeta:first"].problem == "`send` argument text is both fixed and typed"
+    assert entries["zeta:second"].problem == "`send` takes no argument other"
+
+
 def test_show_and_hide_write_the_person_s_choice_per_slot(service):
     shown = {i.id: i.slots for i in service.show("acme:down", "sidebar", shown=True)}
     assert shown["acme:down"] == {"footer": True, "sidebar": True}

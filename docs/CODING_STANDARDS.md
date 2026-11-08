@@ -41,6 +41,42 @@ Each rule has a reason. If a rule gets in your way, change the rule in a pull re
 - **Docstrings and comments:** see [Comments and docstrings](#comments-and-docstrings).
 - **Formatting and lint:** `ruff format` and `ruff check` with `select = ["ALL"]`. Ignored rules are listed with a
   reason in `pyproject.toml`. Line length 120.
+- **Logging:** structured events, see [Structured logging](#structured-logging).
+
+## Structured logging
+
+Logs are events with fields, not sentences
+([ADR 0138](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0138-log-structured-events-with-stdlib-logging.md)).
+The helper is `heinzel.kernel._logging`, on top of stdlib `logging`.
+
+- The message is a stable event name, `area.operation.step` in lower case. Everything that varies is a field:
+  `operation`, `step`, `plugin`, `version`, `path`, `outcome` (`ok` | `error` | `skipped`), `duration_ms`,
+  `error_type`, `error`, `reason`. Never an f-string, `%`, `+` or `.format` in a logger call.
+- Every step of an install, update, plugin install, app open or recovery and first run is wrapped in `step`: one
+  start event, one outcome event with its duration. An error carries the same facts as the two-line message the
+  person sees.
+- One operation, one `correlation_id`: wrap it in `correlate()`; the outermost `step` starts one if none is set.
+- No secrets: keys naming a token, secret, password, API key, authorization, cookie, credential or email are
+  redacted whatever their value; still, don't log them.
+- Levels: `DEBUG` developer detail, `INFO` steps and their ok or skipped outcomes, `WARNING` recovered degradation,
+  `ERROR` a failed step. Log files use `JsonFormatter` (one JSON object per line), terminals `TextFormatter`.
+- Test the events for the success and the failure case: attach a handler and compare `record_fields(record)`.
+
+```python
+from heinzel.kernel._logging import correlate, get_logger, log_event, step
+
+log = get_logger("desktop")
+
+with correlate():
+    with step(log, "desktop.install.download", version=version, path=str(target)) as running:
+        size = download(url, target)
+        running.note(bytes=size)
+    if installed == version:
+        log_event(log, "desktop.install.copy", outcome="skipped", reason="already installed", version=version)
+```
+
+`tests/unit/logging_standards_test.py` fails on a formatted logger call under `src/heinzel` outside its allowlist of
+older files, and the allowlist may only shrink.
 
 ## Comments and docstrings
 
@@ -139,6 +175,17 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
 - Every significant decision is an [ADR](adr/README.md) in MADR format, numbered, never rewritten once accepted — superseded.
 - README explains how to use Heinzelmännchen; AGENTS.md how to work on it; this file how to write code for it.
 - Docs are part of the change: a pull request that changes behaviour updates the docs in the same commit.
+
+## CLI progress and prompts
+
+Typer renders with Rich, so long commands use the shared helpers in `heinzel.heads.cli._progress` and never print nothing for more than a second.
+
+- Progress and prompts go to stderr; stdout carries only the result. A redirected stderr gets no ANSI codes and no spinner.
+- `StepReporter(err_console, header=..., rows=...)` folds the steps of a long operation into labelled rows: one download row with a bar, size and elapsed time, then check-marked rows with a 10-character past-tense label and one fact each. Redirected, with `NO_COLOR` or under `CI` it prints the same words without art, bar or colour (`Downloading 48.2 MB ... done (7 s)`, `ok` for the check mark). Pass it to code that must stay UI-free as a `Reporter` (`heinzel.heads._desktop_report`); background callers use `SILENT`. `hz app`'s words all live in `heinzel.heads._desktop_messages`.
+- `ConsoleProgress.task(...)` is the kernel's `Progress` for operations (a spinner or a bar for `rich.progress.track`-style loops). Use `track(items, description=...)` or `typer.progressbar(..., length=...)` for a loop over known work.
+- Prompts are the exception: every answer has a flag (`--yes`, `--no-launch`) that works without a terminal. `confirm(console, question, yes=flag, flag="--yes")` asks only on a terminal and otherwise raises an error naming the flag, never blocking on stdin.
+- Network steps have timeouts and retry with a visible note; errors say what happened and what to do next.
+- An error the person sees is two lines: what happened, in the words of the person (app, folder, download, open), and the one command or action that fixes it. Internal names (receipt, bundle, metadata, journal, seal, lock) and exception text go under `--details` only. Every folder is a full path with its plain name. Progress that can take over two seconds shows a bar or a step line; a command never leaves the cursor blank. `tests/unit/heads/desktop_error_copy_test.py` enforces it on every `DesktopInstallationError` message.
 
 ## Mobile UI
 
