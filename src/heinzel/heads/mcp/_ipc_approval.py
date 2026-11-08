@@ -1,0 +1,212 @@
+"""One-use private MCP connection approvals delivered directly to the broker."""
+
+import json
+import math
+import os
+import secrets
+import time
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from threading import Condition, Timer
+
+from pydantic import JsonValue
+
+from heinzel.heads.mcp._ipc_admission import (
+    McpGeneration,
+    PendingMcpPeer,
+    PublishedMcpLease,
+    _close_stream,
+    _require_waiting_peer,
+)
+from heinzel.heads.mcp._ipc_peer import require_owner_peer
+from heinzel.kernel import HeinzelError
+from heinzel.kernel._approval import arguments_hash
+from heinzel.kernel._logging import get_logger, step
+
+log = get_logger("mcp")
+_REVIEW_SECONDS = 60.0
+_PROOF_SECONDS = 60.0
+_LEASE_SECONDS = 15 * 60.0
+_PEER_POLL_SECONDS = 0.05
+_UNAVAILABLE = "Local MCP connection approval is invalid or unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class PrivateMcpPlan:
+    """Immutable snapshot of one authoritative grant and the exact terms for host review."""
+
+    generation: McpGeneration
+    grant_id: str
+    grant_revision: int
+    valid_until: float  # Monotonic deadline derived by the supervisor from the authoritative grant expiry.
+    terms_json: str = field(repr=False)
+    terms_hash: str = field(repr=False)
+
+    @classmethod
+    def capture(
+        cls, generation: McpGeneration, grant_id: str, grant_revision: int, valid_until: float, terms: JsonValue
+    ) -> "PrivateMcpPlan":
+        """Snapshot the grant and exact terms supplied by the trusted registration authority.
+
+        Raises:
+            ValueError: If the grant identity, deadline or reviewed terms are invalid.
+        """
+        if not grant_id or type(grant_revision) is not int or grant_revision < 0 or not math.isfinite(valid_until):
+            msg = "Invalid local MCP grant terms"
+            raise ValueError(msg)
+        digest = arguments_hash(terms)
+        encoded = json.dumps(terms, ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        return cls(generation, grant_id, grant_revision, valid_until, encoded, digest)
+
+
+@dataclass(frozen=True, slots=True)
+class McpConnectionReview:
+    """Host-only review of one retained connection and its full grant terms."""
+
+    instance_id: str
+    challenge: str = field(repr=False)
+    peer_uid: int
+    plan: PrivateMcpPlan = field(repr=False)
+    expires_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class _HostProof:
+    review: McpConnectionReview
+    expires_at: float
+
+
+@dataclass(slots=True)
+class _PendingReview:
+    peer: PendingMcpPeer
+    review: McpConnectionReview
+    proof: _HostProof | None = None
+
+
+class HostMcpConnectionApprovals:
+    """Process-local host control and broker for a single immutable private grant.
+
+    The supervisor keeps this object on the trusted management side. Only the bound `publish` callback
+    is supplied to the socket handoff. Call `approve` only after the native or explicit local CLI reviewer
+    accepted the exact snapshot. Nothing here takes web/CLI identity, a caller-supplied grant or a wire proof.
+    Revoke this authority before replacing its registration generation, grant revision or reviewed terms.
+    """
+
+    def __init__(self, plan: PrivateMcpPlan, *, clock: Callable[[], float] = time.monotonic) -> None:
+        self._plan = plan
+        self._clock = clock
+        self._changed = Condition()
+        self._pending: dict[str, _PendingReview] = {}
+        self._active: dict[str, PendingMcpPeer] = {}
+        self._revoked = False
+
+    def pending_reviews(self) -> tuple[McpConnectionReview, ...]:
+        """Return host-only snapshots of pending peers that have no issued decision."""
+        with self._changed:
+            now = self._clock()
+            return tuple(
+                pending.review
+                for pending in self._pending.values()
+                if pending.proof is None and now < pending.review.expires_at
+            )
+
+    def approve(self, review: McpConnectionReview) -> None:
+        """Deliver a one-use proof directly to the broker after trusted review of this exact snapshot.
+
+        Raises:
+            HeinzelError: If the reviewed instance, peer, plan or generation is stale or already decided.
+        """
+        with step(log, "mcp.ipc.approve_connection", operation="ipc", step="approve_connection"), self._changed:
+            pending = self._pending.get(review.instance_id)
+            now = self._clock()
+            if (
+                self._revoked
+                or pending is None
+                or pending.review != review
+                or pending.proof is not None
+                or now >= review.expires_at
+            ):
+                raise HeinzelError(_UNAVAILABLE)
+            _require_waiting_peer(pending.peer.connection)
+            pending.proof = _HostProof(pending.review, min(now + _PROOF_SECONDS, review.expires_at))
+            self._changed.notify_all()
+
+    def revoke(self) -> None:
+        """Fence this generation and grant, invalidate pending proofs and shut down its exact streams."""
+        with step(log, "mcp.ipc.revoke_connections", operation="ipc", step="revoke_connections"), self._changed:
+            self._revoked = True
+            for pending in self._pending.values():
+                _close_stream(pending.peer.connection)
+            self._pending.clear()
+            for peer in self._active.values():
+                _close_stream(peer.connection)
+            self._active.clear()
+            self._changed.notify_all()
+
+    def _expire(self, lease_id: str) -> None:
+        with self._changed:
+            peer = self._active.pop(lease_id, None)
+            if peer is not None:
+                _close_stream(peer.connection)
+
+    def _admit(self, pending: _PendingReview) -> tuple[PublishedMcpLease, float]:
+        """Wait for a proof and publish exactly one lease while holding the broker condition.
+
+        Raises:
+            HeinzelError: If the proof or the retained connection loses authority.
+        """
+        review = pending.review
+        while True:
+            now = self._clock()
+            if self._revoked or now >= review.expires_at:
+                raise HeinzelError(_UNAVAILABLE)
+            _require_waiting_peer(pending.peer.connection)
+            proof = pending.proof
+            if proof is not None:
+                require_owner_peer(pending.peer.connection, owner_uid=review.peer_uid)
+                now = self._clock()
+                if proof.review != review or now >= proof.expires_at:
+                    raise HeinzelError(_UNAVAILABLE)
+                pending.proof = None
+                lease = PublishedMcpLease(secrets.token_urlsafe(32), review.plan.generation, pending.peer)
+                self._active[lease.id] = pending.peer
+                return lease, min(now + _LEASE_SECONDS, review.plan.valid_until)
+            self._changed.wait(min(review.expires_at - now, _PEER_POLL_SECONDS))
+
+    @contextmanager
+    def publish(self, peer: PendingMcpPeer) -> Generator[PublishedMcpLease]:
+        """Offer the retained verified stream for host review, then consume its proof before handoff.
+
+        Raises:
+            HeinzelError: If the generation, live stream or explicit review does not authorize admission.
+
+        Yields:
+            The lease for this exact connection, with expiry and revocation managed by this broker.
+        """
+        with self._changed:
+            now = self._clock()
+            deadline = min(now + _REVIEW_SECONDS, self._plan.valid_until)
+            if self._revoked or peer.generation != self._plan.generation or now >= deadline:
+                raise HeinzelError(_UNAVAILABLE)
+            owner_uid = os.getuid()
+            require_owner_peer(peer.connection, owner_uid=owner_uid)
+            review = McpConnectionReview(
+                secrets.token_urlsafe(24), secrets.token_urlsafe(32), owner_uid, self._plan, deadline
+            )
+            pending = _PendingReview(peer, review)
+            self._pending[review.instance_id] = pending
+            self._changed.notify_all()
+            try:
+                lease, expires = self._admit(pending)
+            finally:
+                self._pending.pop(review.instance_id, None)
+                self._changed.notify_all()
+        expiry = Timer(max(0, expires - self._clock()), self._expire, args=(lease.id,))
+        expiry.daemon = True
+        try:
+            expiry.start()
+            yield lease
+        finally:
+            expiry.cancel()
+            self._expire(lease.id)
