@@ -1,5 +1,6 @@
 import { ArrowLeft, ArrowRight, CornerDownLeft, ExternalLink, RefreshCw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { viewportBounds } from "@/lib/viewport";
@@ -188,17 +189,9 @@ export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; on
           </Button>
         ) : (
           external && (
-            <Button
-              asChild
-              variant="ghost"
-              size="icon"
-              aria-label={t("browser.openExternal")}
-              title={t("browser.openExternal")}
-            >
-              <a href={external} target="_blank" rel="noopener noreferrer">
-                <ExternalLink aria-hidden />
-              </a>
-            </Button>
+            <PaneAction ghost icon={ExternalLink} href={external}>
+              {t("browser.openExternal")}
+            </PaneAction>
           )
         )}
         <Button
