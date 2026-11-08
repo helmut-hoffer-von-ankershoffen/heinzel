@@ -172,9 +172,11 @@ def key(credentials: Credentials) -> KeyState:
     return KeyState(stored=credentials.has(API_KEY))
 
 
-# The key arrives in a strict JSON body of the paired web app (private), never a query, a URL or a command line; it
-# goes only to the credentials store. The CLI keeps `hz system credential set api-key`, which reads a hidden prompt.
-@module.operation(private=True, read_only=False, heads={"web"})
+# Web only by design: the key arrives in a strict JSON body of the paired web app (private), never a query, a URL, a
+# command line or an MCP payload an agent sees; it goes only to the credentials store. The CLI's command for the same
+# is `hz system credential set api-key` (hidden prompt or stdin) and `... remove api-key`. Everyday, like the other
+# web-only operations: the Settings page sets the key for everyone, and no CLI command is hidden behind it.
+@module.operation(private=True, read_only=False, heads={"web"}, audience="everyday")
 def set_key(
     credentials: Credentials,
     value: Annotated[
@@ -195,7 +197,8 @@ def set_key(
     return KeyState(stored=True)
 
 
-@module.operation(private=True, read_only=False, heads={"web"})
+# Web only by design, like `set_key`; the CLI removes it with `hz system credential remove api-key`.
+@module.operation(private=True, read_only=False, heads={"web"}, audience="everyday")
 def remove_key(credentials: Credentials) -> KeyState:
     """Remove the Model API key from your keychain.
 
