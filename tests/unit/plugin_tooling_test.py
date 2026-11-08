@@ -1,16 +1,18 @@
 """Plugin tooling executes commands only after verified wheel installation succeeds."""
 
 import hashlib
-import http.server
 import importlib.util
 import io
 import subprocess
 import threading
 import urllib.request
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.unit
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts/plugin_tooling.py"
@@ -180,7 +182,7 @@ class FakeRelease:
         self.statuses, self.body, self.hits = list(statuses), body, 0
         release = self
 
-        class Handler(http.server.BaseHTTPRequestHandler):
+        class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 release.hits += 1
                 status = release.statuses.pop(0) if len(release.statuses) > 1 else release.statuses[0]
@@ -192,7 +194,7 @@ class FakeRelease:
             def log_message(self, *args):
                 pass
 
-        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server = LoopbackThreadingHTTPServer(("127.0.0.1", 0), Handler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.url = f"http://127.0.0.1:{self.server.server_address[1]}/heinzel_plugin_tools-0.2.1-py3-none-any.whl"
 
@@ -317,3 +319,33 @@ def test_api_redirect_to_storage_drops_the_token():
     assert redirected is not None
     assert not redirected.has_header("Authorization")
     assert redirected.full_url == "https://storage.example.test/asset"
+
+
+def test_cache_entries_are_written_privately_then_published(release, tmp_path):
+    server = release([200])
+    cache = tmp_path / "cache"
+    wheel = fetch_verified(server.url, DIGEST, cache=cache, fallback=unreachable, sleep=lambda _: None)
+    assert cache.stat().st_mode & 0o777 == 0o700
+    assert wheel.stat().st_mode & 0o777 == 0o644
+    assert [path.name for path in cache.iterdir()] == [f"{DIGEST}.whl"], "no partial file is left behind"
+
+
+@pytest.mark.parametrize("failure", [subprocess.TimeoutExpired("gh", 120), PermissionError("not executable")])
+def test_hanging_or_unexecutable_gh_leaves_the_token_route(monkeypatch, failure):
+    monkeypatch.setattr(tooling.shutil, "which", lambda _: "/fictional/gh")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    def gh(*args, **kwargs):
+        raise failure
+
+    monkeypatch.setattr(tooling.subprocess, "run", gh)
+    url = tooling.TOOLKIT.split(" @ ")[1].split("#")[0]
+    with pytest.raises(OSError, match="needs gh or GH_TOKEN"):
+        tooling.authenticated_get(url)
+
+
+def test_option_shaped_release_tag_never_reaches_gh(monkeypatch):
+    monkeypatch.setattr(tooling.subprocess, "run", lambda *_, **__: pytest.fail("an option-shaped tag reached gh"))
+    with pytest.raises(OSError, match="not a GitHub release asset"):
+        tooling.authenticated_get("https://github.com/o/r/releases/download/--repo=x/t-1-py3-none-any.whl")

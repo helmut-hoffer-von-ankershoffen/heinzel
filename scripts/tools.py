@@ -26,8 +26,8 @@ import http.client
 import io
 import os
 import platform
-import random
 import re
+import secrets
 import shutil
 import ssl
 import subprocess
@@ -59,7 +59,7 @@ DOWNLOAD_ATTEMPTS = 3
 DOWNLOAD_ERROR_PATH_LIMIT = 256
 SHA256 = re.compile(r"[0-9a-f]{64}")
 RELEASE_ASSET = re.compile(
-    r"https://github\.com/(?P<repo>[\w.-]+/[\w.-]+)/releases/download/(?P<tag>[^/]+)/(?P<name>[^/?#]+)"
+    r"https://github\.com/(?P<repo>[\w.-]+/[\w.-]+)/releases/download/(?P<tag>[^/-][^/]*)/(?P<name>[^/?#-][^/?#]*)"
 )
 # CA bundles of common Linux distributions, for Pythons whose OpenSSL looks elsewhere.
 CA_BUNDLES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt")
@@ -239,7 +239,7 @@ def http_get(url: str) -> bytes:
             if isinstance(error, urllib.error.HTTPError):
                 error.close()
             attempt += 1
-            delay = 0.5 * attempt * (0.5 + random.random())  # noqa: S311 - jitter spreads retries, not cryptography
+            delay = 0.5 * attempt * (0.5 + secrets.randbelow(1001) / 1000)  # jitter spreads the retries
             if (
                 not (transient_gateway or _interrupted_transport(error))
                 or attempt == DOWNLOAD_ATTEMPTS
@@ -308,12 +308,30 @@ def gh_release_get(url: str) -> bytes:
         raise ToolError(msg)
     with tempfile.TemporaryDirectory(prefix="heinzel-dev-gh-") as directory:
         # gh found on PATH or in .tools/bin; tag, repository and name come from the pinned manifest URL
-        result = subprocess.run(  # noqa: S603
-            [str(gh), "release", "download", match["tag"], "-R", match["repo"], "-p", match["name"], "-D", directory],
-            capture_output=True,
-            check=False,
-            timeout=TIMEOUT,
-        )
+        try:
+            result = subprocess.run(  # noqa: S603
+                [
+                    str(gh),
+                    "release",
+                    "download",
+                    match["tag"],
+                    "-R",
+                    match["repo"],
+                    "-p",
+                    match["name"],
+                    "-D",
+                    directory,
+                ],
+                capture_output=True,
+                check=False,
+                timeout=TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            msg = f"gh release download timed out after {TIMEOUT} s"
+            raise ToolError(msg) from None
+        except OSError as error:
+            msg = f"gh release download could not start ({type(error).__name__})"
+            raise ToolError(msg) from None
         asset = Path(directory) / match["name"]
         if result.returncode != 0 or not asset.is_file():
             msg = f"gh release download failed (exit {result.returncode})"

@@ -9,8 +9,8 @@ import hashlib
 import http.client
 import json
 import os
-import random
 import re
+import secrets
 import shutil
 import ssl
 import subprocess
@@ -35,7 +35,9 @@ CACHE = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "hz" 
 ATTEMPTS = 3
 LIMIT = 128 * 1024 * 1024
 TRANSIENT = frozenset({429, 500, 502, 503, 504})
-RELEASE_ASSET = re.compile(r"/(?P<repo>[\w.-]+/[\w.-]+)/releases/download/(?P<tag>[^/]+)/(?P<name>[^/]+\.whl)")
+RELEASE_ASSET = re.compile(
+    r"/(?P<repo>[\w.-]+/[\w.-]+)/releases/download/(?P<tag>[^/-][^/]*)/(?P<name>[^/-][^/]*\.whl)"
+)
 
 # Split callable argument lists to avoid the shared template's variable delimiter.
 type Fetch = Callable[
@@ -59,7 +61,7 @@ type FetchWheel = Callable[
 def anonymous_get(url: str) -> bytes:
     """One HTTPS GET of a public release asset, bounded in size."""
     request = urllib.request.Request(url, headers={"User-Agent": "heinzel-plugin-tooling"})  # noqa: S310 - https only
-    with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310 - https only, digest checked by caller
+    with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310 - https only; digest checked by caller
         return bytes(response.read(LIMIT + 1))
 
 
@@ -82,7 +84,7 @@ def retried(get: Fetch, url: str, sleep: Sleep = time.sleep) -> bytes:
         except (OSError, http.client.HTTPException) as error:
             if attempt == ATTEMPTS or isinstance(error, ssl.SSLCertVerificationError):
                 raise
-        sleep(2 ** (attempt - 1) * (0.5 + random.random()))  # noqa: S311 - jitter, not cryptography
+        sleep(2 ** (attempt - 1) * (0.5 + secrets.randbelow(1001) / 1000))  # jitter spreads the retries
         attempt += 1
 
 
@@ -109,8 +111,11 @@ def _token() -> str | None:
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     gh = shutil.which("gh")
     if not token and gh:
-        # Resolved gh, fixed arguments; the token stays in this process
-        result = subprocess.run([gh, "auth", "token"], capture_output=True, text=True, check=False, timeout=30)  # noqa: S603
+        try:
+            # Resolved gh, fixed arguments; the token stays in this process
+            result = subprocess.run([gh, "auth", "token"], capture_output=True, text=True, check=False, timeout=30)  # noqa: S603
+        except (OSError, subprocess.TimeoutExpired):
+            return None
         token = result.stdout.strip() if result.returncode == 0 else None
     return token or None
 
@@ -131,15 +136,18 @@ def authenticated_get(url: str) -> bytes:
     gh = shutil.which("gh")
     if gh:
         with tempfile.TemporaryDirectory(prefix="hz-plugin-toolkit-gh-") as directory:
-            # Resolved gh, arguments parsed from the pinned URL
-            result = subprocess.run(  # noqa: S603
-                [gh, "release", "download", tag, "-R", repo, "-p", name, "-D", directory],
-                capture_output=True,
-                check=False,
-                timeout=120,
-            )
+            try:
+                # Resolved gh, arguments parsed from the pinned URL (no capture starts with "-")
+                result = subprocess.run(  # noqa: S603
+                    [gh, "release", "download", tag, "-R", repo, "-p", name, "-D", directory],
+                    capture_output=True,
+                    check=False,
+                    timeout=120,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                result = None  # an unexecutable or hanging gh leaves the token route
             wheel = Path(directory) / name
-            if result.returncode == 0 and wheel.is_file() and wheel.stat().st_size <= LIMIT:
+            if result and result.returncode == 0 and wheel.is_file() and wheel.stat().st_size <= LIMIT:
                 return wheel.read_bytes()
     token = _token()
     if token is None:
@@ -197,10 +205,12 @@ def fetch_verified(  # noqa: PLR0913 - every source injectable for tests
             failures.append(f"{route}: {reason}")
             continue
         if len(content) <= LIMIT and hashlib.sha256(content).hexdigest() == digest:
-            cache.mkdir(parents=True, exist_ok=True)
-            partial = cache / f".{digest}.{os.getpid()}.part"
-            partial.write_bytes(content)
-            partial.replace(cached)
+            cache.mkdir(mode=0o700, parents=True, exist_ok=True)
+            # O_EXCL and 0600 until complete: never follows a planted symlink or exposes a partial file
+            with tempfile.NamedTemporaryFile(dir=cache, prefix=f".{digest}.", delete=False) as partial:
+                partial.write(content)
+            Path(partial.name).chmod(0o644)
+            Path(partial.name).replace(cached)
             return cached
         failures.append(f"{route}: integrity check failed")
     msg = f"Candidate toolkit wheel failed its integrity check or download ({'; '.join(failures)})"

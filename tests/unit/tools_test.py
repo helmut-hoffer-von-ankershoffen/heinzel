@@ -6,6 +6,7 @@ import importlib.util
 import io
 import re
 import ssl
+import subprocess
 import tarfile
 import urllib.error
 import zipfile
@@ -166,7 +167,7 @@ def transport(monkeypatch):
     now = [0.0]
     monkeypatch.setattr(tools.time, "monotonic", lambda: now[0])
     monkeypatch.setattr(tools.time, "sleep", lambda delay: now.__setitem__(0, now[0] + delay))
-    monkeypatch.setattr(tools.random, "random", lambda: 0.5)  # jitter factor 1.0
+    monkeypatch.setattr(tools.secrets, "randbelow", lambda _: 500)  # jitter factor 1.0
     monkeypatch.setattr(tools, "ssl_context", lambda: None)
     return now
 
@@ -766,10 +767,11 @@ def test_failed_fallback_reports_both_routes(tmp_path):
         msg = "gh release download failed (exit 1)"
         raise tools.ToolError(msg)
 
+    download = tools.Download(RELEASE, ZERO)
     with pytest.raises(
         tools.ToolError, match=r"download failed \(gateway timeout.*fallback: gh release download failed"
     ):
-        tools.fetch(tools.Download(RELEASE, ZERO), tmp_path, _gateway_timeout, fallback=unavailable)
+        tools.fetch(download, tmp_path, _gateway_timeout, fallback=unavailable)
 
 
 def test_gh_route_downloads_the_pinned_release_asset(monkeypatch):
@@ -799,3 +801,21 @@ def test_gh_route_refuses_other_hosts_without_running_anything(monkeypatch):
     monkeypatch.setattr(tools.subprocess, "run", lambda *_, **__: pytest.fail("gh ran for a non-release URL"))
     with pytest.raises(tools.ToolError, match="no authenticated route"):
         tools.gh_release_get("https://example.com/releases/download/v1/tool.tar.gz")
+
+
+@pytest.mark.parametrize("failure", [subprocess.TimeoutExpired("gh", 120), PermissionError("not executable")])
+def test_hanging_or_unexecutable_gh_is_a_route_failure(monkeypatch, failure):
+    monkeypatch.setattr(tools, "on_path", lambda name, *_: Path("/fictional/gh"))
+
+    def gh(*args, **kwargs):
+        raise failure
+
+    monkeypatch.setattr(tools.subprocess, "run", gh)
+    with pytest.raises(tools.ToolError, match="gh release download"):
+        tools.gh_release_get(RELEASE)
+
+
+def test_option_shaped_release_tag_never_reaches_gh(monkeypatch):
+    monkeypatch.setattr(tools.subprocess, "run", lambda *_, **__: pytest.fail("an option-shaped tag reached gh"))
+    with pytest.raises(tools.ToolError, match="no authenticated route"):
+        tools.gh_release_get("https://github.com/o/r/releases/download/--repo=x/tool.tar.gz")
