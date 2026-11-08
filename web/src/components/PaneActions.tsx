@@ -153,7 +153,8 @@ export function PaneAction({
     size: "sm" as const,
     variant: primary ? ("default" as const) : ghost ? ("ghost" as const) : ("outline" as const),
     className: cn(
-      "shrink-0 pointer-coarse:h-11",
+      // Theme spacing can be smaller than 4px; touch targets must still have a 44px floor.
+      "shrink-0 pointer-coarse:h-11 pointer-coarse:min-h-[44px] pointer-coarse:min-w-[44px]",
       !words && "w-8 px-0 pointer-coarse:w-11",
       // Red: the outlined icon in place, or the filled committing button of a dialog that destroys something.
       destructive && (primary ? "bg-bad text-white" : "text-bad"),

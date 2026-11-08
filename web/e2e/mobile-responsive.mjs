@@ -707,6 +707,15 @@ try {
     await assertContained(page, updatePane, `${spec.name}: update pane`);
     await updatePane.getByText(/^Heinzel 0\.7\.30 is up to date · checked /).waitFor();
     await updatePane.getByRole("button", { name: "Manually update…", exact: true }).waitFor();
+    // A theme may reduce its spacing token. The real update action must keep its touch target regardless.
+    const updateActions = updatePane.locator("[data-pane-actions]");
+    await updateActions.evaluate((row) => row.style.setProperty("--spacing", "3px"));
+    await assertTouchTarget(
+      updatePane.getByRole("button", { name: "Manually update…", exact: true }),
+      "manual update action with compact spacing",
+      spec.name,
+    );
+    await updateActions.evaluate((row) => row.style.removeProperty("--spacing"));
     await updatePane.getByText(/^Last installed:/).waitFor();
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
     await dismissFooterPane(page);
