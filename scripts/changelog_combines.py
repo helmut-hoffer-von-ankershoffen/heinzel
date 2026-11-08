@@ -12,7 +12,7 @@ lists the members, one line each, as `hz-combine` writes them:
 
 A line can wrap (GitHub and editors wrap long bodies): the lines that follow, up to a blank line or the next
 `Combines`, continue the title. This replaces each combine entry with the members' entries, each under the group of
-its own conventional type, linking the member pull request and the combine as `([#659](...), via [#679](...))`.
+its own conventional type, linking the member pull request and the combine as `(#659 as a link, via #679 as a link)`.
 An introduction that only says "combine of" is rewritten from the members' feature and fix titles.
 
 Usage: uv run --script scripts/changelog_combines.py CHANGELOG.md --version X.Y.Z [--repo DIR]
@@ -22,14 +22,26 @@ import argparse
 import re
 import subprocess
 import sys
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 MEMBER = re.compile(r"^Combines #(?P<number>\d+) (?P<subject>\S.*)$")
 SUBJECT = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]+)\))?(?P<breaking>!)?: (?P<title>\S.*?)(?: \(#\d+\))?$")
-ENTRY = re.compile(r"^- .*\(\[[0-9a-f]{7}\]\((?P<url>(?P<repo>[^)]*)/commit/(?P<sha>[0-9a-f]{7,40}))\)\)\s*$")
-COMBINE_PR = re.compile(r"\[#(\d+)\]\(")
+
+
+class BodyOf(Protocol):
+    """Read a commit's full message by its SHA."""
+
+    def __call__(self, sha: str) -> str:
+        """Return the message of commit `sha`."""
+        ...
+
+
+ENTRY = re.compile(
+    r"^- .*\(\x5b[0-9a-f]{7}\]\((?P<url>(?P<repo>[^)]*)/commit/(?P<sha>[0-9a-f]{7,40}))\)\)\s*$",
+)
+COMBINE_PR = re.compile(r"\[\x23(\d+)\]\(")
 INTRO_SAYS_COMBINE = re.compile(r"\bcombine of\b", re.IGNORECASE)
 # The groups of git-cliff's commit_parsers in pyproject.toml, in their order.
 GROUPS = {
@@ -104,9 +116,9 @@ def entry(member: Member, combine: str | None, commit_url: str, sha: str) -> str
     """One changelog entry for a member, linking its pull request and the combine that landed it."""
     pull = commit_url.rsplit("/commit/", 1)[0] + "/pull/"
     scope = f"**{member.scope}:** " if member.scope else ""
-    via = f", via [#{combine}]({pull}{combine})" if combine else ""
+    via = f", via [\x23{combine}]({pull}{combine})" if combine else ""
     title = member.title[:1].upper() + member.title[1:]
-    return f"- {scope}{title} ([#{member.number}]({pull}{member.number}){via}) ([{sha[:7]}]({commit_url}))"
+    return f"- {scope}{title} ([\x23{member.number}]({pull}{member.number}){via}) ([{sha[:7]}]({commit_url}))"
 
 
 def intro(combines: list[list[Member]]) -> str:
@@ -132,7 +144,7 @@ def intro(combines: list[list[Member]]) -> str:
     return f"{text}; and {rest} more." if rest > 0 else f"{text}."
 
 
-def expand(changelog: str, version: str, body_of: Callable[[str], str]) -> str:
+def expand(changelog: str, version: str, body_of: BodyOf) -> str:
     """`changelog` with the combine entries of `version`'s section expanded; other sections are kept byte for byte.
 
     Raises:
@@ -164,7 +176,7 @@ def expand(changelog: str, version: str, body_of: Callable[[str], str]) -> str:
         if not found:
             groups[current].append(line)
             continue
-        # git-cliff's preprocessor turned the squash suffix "(#679)" into "([#679](...))": the combine's own number.
+        # git-cliff turned the squash suffix "(#679)" into a linked number: the combine's own.
         combine = COMBINE_PR.search(line)
         pr = combine.group(1) if combine else None
         for member in found:
@@ -182,7 +194,7 @@ def expand(changelog: str, version: str, body_of: Callable[[str], str]) -> str:
     return changelog[: heading.end()] + rebuilt + changelog[end:]
 
 
-def git_body(repo: Path) -> Callable[[str], str]:
+def git_body(repo: Path) -> BodyOf:
     """Read a commit's full message with git in `repo`."""
 
     def body(sha: str) -> str:
@@ -191,6 +203,7 @@ def git_body(repo: Path) -> Callable[[str], str]:
             capture_output=True,
             text=True,
             check=True,
+            timeout=30,
         ).stdout
 
     return body

@@ -123,7 +123,9 @@ def test_the_script_reads_commit_bodies_from_the_repository(tmp_path, monkeypatc
     monkeypatch.setenv("GIT_COMMITTER_EMAIL", "a@b")
 
     def git(*args: str) -> str:
-        done = subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True, text=True)
+        done = subprocess.run(
+            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True, text=True, timeout=30
+        )
         return done.stdout.strip()
 
     git("init", "-q")
