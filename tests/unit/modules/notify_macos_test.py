@@ -136,10 +136,25 @@ def build_script():
 
 
 @pytest.mark.parametrize("architecture", ["arm64", "x86_64"])
-def test_native_face_proof_compiles_a_production_slice_with_the_original_budgets(architecture, monkeypatch, tmp_path):
+def test_make_notifier_compiles_the_face_proof_and_the_timed_test_only_runs_it(architecture, monkeypatch, tmp_path):
+    """Bead 4mgv: the production-slice compile moved out of the timed e2e test into `make notifier`."""
     from tests.e2e import notifier_face_test as proof
 
     script = build_script()
+    compiled = []
+    monkeypatch.setattr(script.platform, "machine", lambda: architecture)
+    monkeypatch.setattr(script, "_run", lambda *command: compiled.append(command))
+    monkeypatch.setattr(script, "PROOF", tmp_path / "proof")
+    script.render_proof()
+    assert len(compiled) == 1
+    compiler = list(compiled[0])
+    assert compiler[:4] == ["swiftc", "-O", "-target", f"{architecture}-apple-macos13"]
+    assert compiler[3] in script.TARGETS
+    assert "-Ounchecked" not in compiler
+    digest = hashlib.sha256(script.proof_source().encode()).hexdigest()
+    assert (tmp_path / "proof" / "source.sha256").read_text().strip() == digest
+    assert (tmp_path / "proof" / "RenderingProof.app" / "Contents" / "Resources" / "face.svg").is_file()
+
     commands = []
 
     def run(command, **options):
@@ -148,16 +163,25 @@ def test_native_face_proof_compiles_a_production_slice_with_the_original_budgets
             command, 0, "rendered bundled blue face; private directory removed; no notification posted"
         )
 
-    monkeypatch.setattr(proof.platform, "machine", lambda: architecture)
-    monkeypatch.setattr(proof.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(
+        proof.runpy, "run_path", lambda *a, **k: {"PROOF": script.PROOF, "proof_source": script.proof_source}
+    )
     monkeypatch.setattr(proof.subprocess, "run", run)
     proof.test_bundled_face_renders_in_an_owned_private_directory_without_posting(tmp_path)
-    compiler, compiler_options = commands[0]
-    assert compiler[:4] == ["/usr/bin/swiftc", "-O", "-target", f"{architecture}-apple-macos13"]
-    assert compiler[3] in script.TARGETS
-    assert compiler_options["timeout"] == 10
-    assert commands[1][1]["timeout"] == 3
-    assert "-Ounchecked" not in compiler
+    assert len(commands) == 1  # the timed test compiles nothing
+    assert commands[0][0][0].endswith("RenderingProof.app/Contents/MacOS/render")
+    assert commands[0][1]["timeout"] == 3
+
+
+def test_a_stale_face_proof_is_refused(monkeypatch, tmp_path):
+    from tests.e2e import notifier_face_test as proof
+
+    (tmp_path / "source.sha256").write_text("0" * 64 + "\n")
+    monkeypatch.setattr(
+        proof.runpy, "run_path", lambda *a, **k: {"PROOF": tmp_path, "proof_source": lambda: "new source"}
+    )
+    with pytest.raises(AssertionError, match=r"older than main\.swift"):
+        proof.test_bundled_face_renders_in_an_owned_private_directory_without_posting(tmp_path)
 
 
 def test_the_build_script_and_the_runtime_agree_on_the_version():
