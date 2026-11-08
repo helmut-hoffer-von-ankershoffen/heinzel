@@ -1567,7 +1567,9 @@ def test_a_pull_request_runs_one_small_macos_job_and_main_runs_the_full_macos_su
     include = jobs["test"]["strategy"]["matrix"]["include"]
     assert "github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '[]'" in include
     assert on_pull_request == {"macos-smoke"}
-    assert on_main == {"setup", "e2e", "notifier", "macos-specific", "electron"}  # and the test matrix's macOS shards
+    # and the test matrix's macOS shards; `quarantine` is the non-blocking lane, run when tests/quarantine.toml asks
+    assert on_main == {"setup", "e2e", "notifier", "macos-specific", "electron", "quarantine"}
+    assert "quarantine" not in jobs["ci-ok"]["needs"]
     assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], "push") == [
         "ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest",
     ]  # fmt: skip
