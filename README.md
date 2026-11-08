@@ -247,7 +247,7 @@ alongside its CPU, memory and load readings.
 
 Every module is a set of operations, and every operation is a `hz` command, an MCP tool (`hz system serve mcp`)
 and a REST endpoint (`hz system serve api`) at once. Coding agents use whichever suits them: the CLI with `--json`,
-or the MCP tools. People who'd rather click run `hz ui open`: a web app on localhost with a
+or the MCP tools (over HTTP with a read or write token per agent, `hz system serve mcp-token create`). People who'd rather click run `hz ui open`: a web app on localhost with a
 navigation tree of settings, contracts, your team, inventory and the doctor's fixes, and a chat with your agent runner
 that says what it may cost before it runs. Modules can also advertise jobs that
 `hz system daemon install` runs in the background on a schedule, under launchd or systemd, with your
