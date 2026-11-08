@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """ACME setup end to end on an ISOLATED profile: add `acme` from the catalog, assert GitHub and Atlassian come too.
 
 Usage: scripts/acme_setup_e2e.py --hz /path/to/hz [--keep]
