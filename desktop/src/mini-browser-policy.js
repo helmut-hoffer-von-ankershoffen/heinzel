@@ -28,9 +28,15 @@ export function browserOwner(event, { windows, fromWebContents, connection }) {
   return window;
 }
 
+/** True when an object has exactly these own keys, in any order; no sort, so no locale or code-unit ordering question. */
+export function hasExactKeys(value, expected) {
+  const keys = Object.keys(value);
+  return keys.length === expected.length && expected.every((key) => Object.hasOwn(value, key));
+}
+
 /** Reject rather than clamp off-window rectangles; DOM geometry is not permission to cover other windows. */
 export function browserBounds(value, size) {
-  if (!value || typeof value !== "object" || Object.keys(value).sort().join() !== "height,width,x,y" ||
+  if (!value || typeof value !== "object" || !hasExactKeys(value, ["height", "width", "x", "y"]) ||
       ![value.x, value.y, value.width, value.height].every(Number.isSafeInteger) ||
       value.x < 0 || value.y < 0 || value.width < 1 || value.height < 1 ||
       value.x + value.width > size[0] || value.y + value.height > size[1])

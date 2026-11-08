@@ -52,7 +52,10 @@ async function resolvePublic(host) {
   try {
     const answers = await Promise.all([resolver.resolve4(host), resolver.resolve6(host)].map(async (query) => {
       try { return await query; }
-      catch (error) { if (error.code === "ENODATA" || error.code === "ENOTFOUND") return []; throw error; }
+      catch (error) {
+        if (error.code === "ENODATA" || error.code === "ENOTFOUND") return [];
+        throw error;
+      }
     }));
     return selectPublicAddress(answers.flat());
   } finally { clearTimeout(timer); }
@@ -61,7 +64,8 @@ async function resolvePublic(host) {
 /** Guest-only CONNECT broker. It never sees TLS plaintext or any product credentials. */
 export async function createGuestNetwork() {
   const username = "guest", password = randomBytes(32).toString("hex");
-  const authorization = Buffer.from(`Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`);
+  const credentials = Buffer.from(`${username}:${password}`).toString("base64");
+  const authorization = Buffer.from(`Basic ${credentials}`);
   const sockets = new Set();
   let closed = false;
   const server = createServer({ maxHeaderSize: 8192, headersTimeout: 5000, requestTimeout: 5000 },

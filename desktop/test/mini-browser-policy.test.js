@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { browserBounds, browserOwner, browserUrl } from "../src/mini-browser-policy.js";
+import { browserBounds, browserOwner, browserUrl, hasExactKeys } from "../src/mini-browser-policy.js";
 
 const origin = "http://127.0.0.1:8737";
 test("public HTTPS URL preserves site-specific path and rejects local or credential routes", () => {
@@ -45,4 +45,9 @@ test("only the owned authenticated UI main frame is a browser controller", () =>
     { ...frame, url: "https://example.com" }, { ...frame, detached: true }, null])
     assert.throws(() => browserOwner({ sender, senderFrame: bad }, dependencies));
   assert.throws(() => browserOwner({ sender, senderFrame: frame }, { ...dependencies, windows: new WeakSet() }));
+});
+test("exact key sets ignore order and refuse missing, extra and inherited keys", () => {
+  assert.equal(hasExactKeys({ y: 1, x: 2 }, ["x", "y"]), true);
+  for (const value of [{ x: 1 }, { x: 1, y: 2, z: 3 }, { x: 1, z: 2 }, Object.assign(Object.create({ y: 1 }), { x: 1 })])
+    assert.equal(hasExactKeys(value, ["x", "y"]), false);
 });

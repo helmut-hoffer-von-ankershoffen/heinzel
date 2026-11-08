@@ -23,7 +23,7 @@ export function externalBrowserUrl(value: string): string | null {
  * The web view offers an external link; only the desktop owns an isolated native browsing surface.
  * Switching panel tabs only hides the surface, so the page and its state stay; closing the panel discards the session.
  */
-export function BrowserPanel({ active, onClose }: { active: boolean; onClose: () => void }) {
+export function BrowserPanel({ active, onClose }: Readonly<{ active: boolean; onClose: () => void }>) {
   const [address, setAddress] = useState("https://heinzel.team");
   const [state, setState] = useState<BrowserState>({ status: "empty" });
   const surface = useRef<HTMLDivElement>(null);

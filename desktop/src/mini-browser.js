@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createGuestNetwork } from "./mini-browser-network.js";
-import { browserBounds, browserOwner, browserUrl } from "./mini-browser-policy.js";
+import { browserBounds, browserOwner, browserUrl, hasExactKeys } from "./mini-browser-policy.js";
 
 /** A guest has no product preload, session, headers, cookies or native permissions. */
 export function createMiniBrowser({ windows, fromWebContents, connection, createSession, createView, enabled, createNetwork = createGuestNetwork }) {
@@ -137,9 +137,9 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       const window = browserOwner(event, { windows, fromWebContents, connection });
       if (!request || typeof request !== "object" || typeof request.action !== "string")
         throw new Error("Invalid browser command.");
-      const fields = { navigate: "action,url", layout: "action,bounds", hide: "action", close: "action",
-        state: "action", back: "action", forward: "action", reload: "action" };
-      if (!Object.hasOwn(fields, request.action) || Object.keys(request).sort().join() !== fields[request.action])
+      const fields = { navigate: ["action", "url"], layout: ["action", "bounds"], hide: ["action"], close: ["action"],
+        state: ["action"], back: ["action"], forward: ["action"], reload: ["action"] };
+      if (!Object.hasOwn(fields, request.action) || !hasExactKeys(request, fields[request.action]))
         throw new Error("Invalid browser command.");
       if (request.action === "close") { close(window); return { status: "closed" }; }
       let guest = guests.get(window);
