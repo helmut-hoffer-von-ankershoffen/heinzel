@@ -39,6 +39,7 @@ const en = {
   "personal.saveBeforeSchedule": "Save the name and look before continuing to schedule setup.",
   "durable.title": "Personal conversation",
   "durable.close": "Back to chat",
+  "durable.search": "Search conversations",
   "durable.unavailable": "This personal conversation could not be loaded.",
   "durable.queued": "Messages and replies stay in this conversation.",
   "durable.message": "Message your Heinzel",

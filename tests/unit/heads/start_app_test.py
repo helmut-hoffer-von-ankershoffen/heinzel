@@ -105,16 +105,28 @@ def test_a_failing_app_installer_never_stops_the_start(monkeypatch, capsys, tmp_
     assert "Run hz app install later" in capsys.readouterr().err
 
 
-def test_non_interactive_start_installs_and_ends_with_a_status(monkeypatch, capsys, tmp_path):
+def test_a_bare_start_without_a_terminal_starts_the_foreground_app_without_the_desktop_app(
+    monkeypatch, capsys, tmp_path
+):
+    """`curl | sh` and scripts run the bare command without a terminal: no question, no desktop app, app started."""
     executable = tmp_path / "bin/hz"
+    calls: list[object] = []
     monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
     monkeypatch.setattr(bootstrap, "_interactive_launch", lambda _args: False)
+    monkeypatch.setattr(bootstrap, "_supports_app", lambda: True)
     monkeypatch.setattr(bootstrap, "_ensure_app", lambda **_k: executable)
-    monkeypatch.setattr(bootstrap.os, "execve", lambda *_a: pytest.fail("A script must never get a foreground server"))
-    bootstrap.main()  # returns normally: exit 0, never SystemExit
-    out = capsys.readouterr().out
-    assert "Nothing started." in out
-    assert "uvx heinzel@latest --yes" in out
+    monkeypatch.setattr(bootstrap, "_app_environment", lambda _e: {})
+    monkeypatch.setattr(bootstrap, "_install_app", lambda *_a: pytest.fail("No desktop app without --yes"))
+    monkeypatch.setattr(bootstrap, "_human_console", lambda: pytest.fail("Nothing is asked without a terminal"))
+    monkeypatch.setattr(bootstrap, "_workspace_command", lambda *_a: calls.append(("app", _a[3])) or ["ui", "open"])
+    monkeypatch.setattr(bootstrap, "_prepare_profile", lambda *_a, **k: calls.append(("profile", k["interactive"])))
+    monkeypatch.setattr(bootstrap, "_install_services", lambda _e, choices, _env: calls.append(("services", choices)))
+    launched: list[list[str]] = []
+    monkeypatch.setattr(bootstrap, "_launch_app", lambda _e, workspace, _env: launched.append(workspace))
+    bootstrap.main()
+    assert launched == [["ui", "open"]]
+    assert calls == [("app", False), ("profile", False), ("services", [])]
+    assert "Nothing started" not in capsys.readouterr().out
 
 
 def test_yes_installs_services_and_app_but_does_not_open_without_a_terminal(monkeypatch, capsys, tmp_path):
