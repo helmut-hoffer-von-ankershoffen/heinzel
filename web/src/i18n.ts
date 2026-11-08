@@ -743,6 +743,7 @@ const en = {
   "plugins.yoursIntro": "Installed on this machine. Their modules, themes and playbooks are part of hz now.",
   "plugins.discoverIntro":
     "Not installed yet: first-party plugins and community ones from GitHub. Add installs any other, e.g. your company's private plugin.",
+  "plugins.refresh": "Refresh",
   "plugins.haveAll": "You have every plugin in the catalog. Use Add for one from a git URL.",
   "settings.customize": "Customize",
   "settings.preferences": "Preferences",

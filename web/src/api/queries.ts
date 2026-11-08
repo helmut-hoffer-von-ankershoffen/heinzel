@@ -237,6 +237,16 @@ export const usePluginSearch = (text: string) =>
     staleTime: 60_000,
   });
 
+/** `hz system plugin search --refresh`: asks GitHub again, past the minute the server keeps its answer, and shows it. */
+export const useRefreshPluginSearch = (text: string) => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      unwrap(api.GET("/system/plugin/search", { params: { query: { text: text || undefined, refresh: true } } })),
+    onSuccess: (found) => client.setQueryData(["system", "plugin", "search", text], found),
+  });
+};
+
 /** `hz system plugin add` without `confirm`: what a spec would install (source, version, publisher), installing nothing. */
 export const usePluginPreview = () =>
   useMutation({
