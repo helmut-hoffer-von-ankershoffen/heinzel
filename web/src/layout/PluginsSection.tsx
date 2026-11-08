@@ -292,8 +292,10 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
           <ul className="mt-0.5 list-none">
             {also.map((item) => (
               <li key={item.distribution} className="break-words">
-                {item.distribution}
-                {item.version ? ` ${item.version}` : ""} · {sourceLabel({ source_url: candidate.url }, candidate.private)}
+                {[
+                  item.version ? `${item.distribution} ${item.version}` : item.distribution,
+                  sourceLabel({ source_url: candidate.url }, candidate.private),
+                ].join(" · ")}
               </li>
             ))}
           </ul>
