@@ -436,7 +436,8 @@ class SetupService:
         if qualname is None:
             action = RowAction(kind="install", connector=adapter, command=f"hz system plugin add {adapter} --confirm")
             return row("not-installed", "Not installed", action, owner_only=False, serves=capabilities)
-        serves, unbound = [], []
+        serves: list[str] = []
+        unbound: list[str] = []
         for capability in capabilities:
             bound, how = self._view.binding(capability)
             if now.get(capability) == adapter or bound == adapter:
