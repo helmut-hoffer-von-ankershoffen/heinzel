@@ -324,7 +324,8 @@ module.service(SetupService)
 MODULE = Annotated[str, Field(description="The module whose playbook to set up, e.g. `acme`.")]
 
 
-@module.operation(read_only=False, heads=CHANGES, render=render_result)
+# setup stays at the terminal like `hz setup`; the web app and MCP set up through add, bind and checklist
+@module.operation(read_only=False, heads={"cli"}, render=render_result)
 def setup(
     service: SetupService,
     module: MODULE,

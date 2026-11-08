@@ -3244,28 +3244,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/system/plugin/setup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Set up a module's playbook without questions: its connectors, its settings, then the checklist.
-         * @description Set up a module's playbook without questions: its connectors, its settings, then the checklist.
-         *
-         *     A binding you set is never changed. Choosing assets and writing templates need a terminal: `hz setup <module>`.
-         */
-        post: operations["system_plugin_setup"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/system/plugin/unbind": {
         parameters: {
             query?: never;
@@ -13139,58 +13117,6 @@ export interface components {
             summary: string;
         };
         /**
-         * SetupResult
-         * @description What `system plugin setup` did: its steps, the bindings and the checklist after it.
-         */
-        SetupResult: {
-            /**
-             * Bindings
-             * @description Each recommended binding with its result.
-             */
-            bindings: components["schemas"]["BindingResult"][];
-            /** @description What is still to do, mostly the person's own sign-ins. */
-            checklist: components["schemas"]["Checklist"];
-            /**
-             * Module
-             * @description The module set up.
-             */
-            module: string;
-            /**
-             * Steps
-             * @description Each step, in order.
-             */
-            steps: components["schemas"]["SetupStep"][];
-        };
-        /**
-         * SetupStep
-         * @description One step of `system plugin setup`, as it ended.
-         */
-        SetupStep: {
-            /**
-             * Command
-             * @description For `needs-cli`: the command a terminal runs; never shown by a web head.
-             * @default
-             */
-            command: string;
-            /**
-             * Detail
-             * @description What it did or why not.
-             * @default
-             */
-            detail: string;
-            /**
-             * Name
-             * @description The step: `bind`, `settings`, `templates` or `check`.
-             */
-            name: string;
-            /**
-             * State
-             * @description done, skipped, needs-cli (the wizard `hz setup` asks it) or failed.
-             * @enum {string}
-             */
-            state: "done" | "skipped" | "needs-cli" | "failed";
-        };
-        /**
          * SignInFlow
          * @description A sign-in hz runs for the person through the vendor's tool; the consent click on the vendor's page is theirs.
          */
@@ -17138,8 +17064,6 @@ export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaSettingRevealed = components['schemas']['SettingRevealed'];
 export type SchemaSetupBind = components['schemas']['SetupBind'];
 export type SchemaSetupDoc = components['schemas']['SetupDoc'];
-export type SchemaSetupResult = components['schemas']['SetupResult'];
-export type SchemaSetupStep = components['schemas']['SetupStep'];
 export type SchemaSignInFlow = components['schemas']['SignInFlow'];
 export type SchemaSignInProgress = components['schemas']['SignInProgress'];
 export type SchemaSignInStatus = components['schemas']['SignInStatus'];
@@ -22061,40 +21985,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginSearch"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    system_plugin_setup: {
-        parameters: {
-            query: {
-                /** @description The module whose playbook to set up, e.g. `acme`. */
-                module: string;
-                /** @description A playbook setting to accept, as `key=value` (the value as JSON, else text), e.g. `acme.region=lisbon`; repeat for each. */
-                answer?: string[] | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SetupResult"];
                 };
             };
             /** @description Validation Error */
