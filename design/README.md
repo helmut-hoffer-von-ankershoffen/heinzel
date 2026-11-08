@@ -63,6 +63,12 @@ follows from it:
   theme or its daypart variant changes; no colour is written in `web/src/audio` (`choices-standards.test.ts`). The
   Aurora is a full-window layer under the content, so the page colour is painted on `<html>` and `<body>` stays
   transparent; a painted `<body>` hides it.
+- **Switches show the person's choice (2026-11-08).** A provider switch (`ContributionToggle`) reads On as soon as the
+  person turns it on; whether it is live is its one status line: *Turning on…*, the URL, or one short cause with
+  **Try again** (or **Restart hz** when only a restart loads the change). The line is at most 60 characters in the
+  person's words; `ToggleControl.status` and `problem` refuse longer text and internal state words (requested,
+  applied, verified, owning, apply, intent, mapping, origin, handler, readiness). Longer text goes to the
+  provider's `explanation` and detail lines, shown only under the native **Details** disclosure, never as bullets.
 
 ## Content in focus, no screen space wasted
 

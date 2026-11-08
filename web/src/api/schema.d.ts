@@ -15046,13 +15046,23 @@ export interface components {
             /** @description The declaring module's operation that enables the feature. */
             enable: components["schemas"]["RunOperation"];
             /**
+             * Explanation
+             * @description The longer explanation, shown only on demand under Details.
+             */
+            explanation?: string | null;
+            /**
              * Label
              * @description The action the person enables or disables.
              */
             label: string;
             /**
+             * Problem
+             * @description One short cause the person can fix, e.g. `Sign in to Tailscale, then try again.`; its presence offers Try again.
+             */
+            problem?: string | null;
+            /**
              * Requested
-             * @description The requested state when it differs from verified readiness; never a success claim.
+             * @description The person's choice, which the switch shows; `checked` alone says whether it is live.
              */
             requested?: boolean | null;
             /**
@@ -15060,6 +15070,11 @@ export interface components {
              * @description Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and an active session or device credential.
              */
             sign_in_url?: string | null;
+            /**
+             * Status
+             * @description The provider's one short status line, e.g. `Turning on…`; the host shows its own when absent.
+             */
+            status?: string | null;
             /**
              * Url
              * @description Optional nonsecret link shown alongside the toggle.
