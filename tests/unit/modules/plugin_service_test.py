@@ -2073,6 +2073,11 @@ class FakeCompanyGitHub:
         return self.answers[path]
 
 
+def siblings(candidate):
+    """The plugins of its own repository a candidate installs in the same run."""
+    return [need for need in candidate.needs if need.with_it]
+
+
 def quote_path(path):
     return _sources.quote(path)
 
@@ -2105,12 +2110,12 @@ def company_service(make_kernel, tool_env, monkeypatch):
 def test_the_preview_names_the_sibling_plugins_a_plugin_needs_at_the_same_commit(make_kernel, tool_env, monkeypatch):
     service, runs = company_service(make_kernel, tool_env, monkeypatch)
     candidate = service.add(CHECKOUT).candidate
-    assert [(item.distribution, item.version) for item in candidate.also_installs] == [
+    assert [(item.distribution, item.version) for item in siblings(candidate)] == [
         ("heinzel-acme", "0.2.0"),
         ("heinzel-acme-payments", "0.2.0"),
     ]
     revision = FakeCompanyGitHub.REVISION
-    assert [item.requirement for item in candidate.also_installs] == [
+    assert [item.requirement for item in siblings(candidate)] == [
         f"heinzel-acme @ git+https://github.com/acme-example/heinzel-acme@{revision}",
         (
             f"heinzel-acme-payments @ git+https://github.com/acme-example/heinzel-acme@{revision}"
@@ -2173,7 +2178,7 @@ def test_a_plugin_without_sibling_dependencies_installs_as_before(make_kernel, t
     service, runs = installing(make_kernel, tool_env, monkeypatch)
     service.github_api = FakeGitHubApi()
     candidate = service.candidate("git+https://github.com/acme-example/heinzel-crm@main")
-    assert candidate.also_installs == []
+    assert siblings(candidate) == []
     assert service.add_command(candidate.requirement) == service.add_command(candidate.requirement, [])
     assert runs == []
 
@@ -2185,7 +2190,7 @@ def test_siblings_that_resolve_elsewhere_or_are_installed_are_left_to_uv(make_ke
         "installed",
         lambda **_: [PluginInfo(distribution="heinzel-acme", version="0.2.0", modules=[], name="acme")],
     )
-    names = [item.distribution for item in service.candidate(CHECKOUT).also_installs]
+    names = [item.distribution for item in siblings(service.candidate(CHECKOUT))]
     assert names == ["heinzel-acme-payments"]  # heinzel, httpx: not siblings; heinzel-acme: installed
 
 
@@ -2203,7 +2208,7 @@ def test_unreadable_siblings_leave_a_warning_and_the_plain_install(make_kernel, 
 
     service.github_api = offline_for_payments
     candidate = service.candidate(CHECKOUT)
-    assert candidate.also_installs == []
+    assert siblings(candidate) == []
     assert any("couldn't be read" in w for w in candidate.warnings)
 
 
@@ -2223,7 +2228,9 @@ def test_the_cli_preview_and_result_name_the_plugins_installed_with_it(make_kern
     done = service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
     console = Console(record=True, width=200)
     console.print(render_change(done))
-    assert "Also installed: heinzel-acme, heinzel-acme-payments." in console.export_text()
+    text = console.export_text()
+    assert "✓ Installed heinzel-acme 0.2.0, which heinzel-acme-checkout needs." in text
+    assert "✓ Installed heinzel-acme-payments 0.2.0, which heinzel-acme-checkout needs." in text
 
 
 def test_the_company_root_cannot_be_removed_while_a_plugin_installed_with_it_needs_it(
