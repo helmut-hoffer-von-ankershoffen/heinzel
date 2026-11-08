@@ -7,7 +7,7 @@
 import { ExternalLink, GripHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { PaneAction, PaneActions } from "@/components/PaneActions";
+import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { clampToWindow } from "@/lib/placement";
 import { cn } from "@/lib/utils";
@@ -224,17 +224,15 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
               </PaneAction>
             )
           )}
+          <PaneAction ghost icon={ExternalLink} href={watchUrl} onClick={stop}>
+            {t("sound.openOn", { host })}
+          </PaneAction>
           <PaneAction ghost icon={X} onClick={stop}>
             {t("sound.close")}
           </PaneAction>
         </div>
       </header>
       {children}
-      <PaneActions className="mx-3 mb-2">
-        <PaneAction icon={ExternalLink} href={watchUrl} onClick={stop}>
-          {t("sound.openOn", { host })}
-        </PaneAction>
-      </PaneActions>
     </section>
   );
   return createPortal(body, document.body);
