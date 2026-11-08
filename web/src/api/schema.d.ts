@@ -21577,6 +21577,8 @@ export interface operations {
             query?: {
                 /** @description Words that name or describe the plugin, e.g. `calendar`; sent to GitHub's search. All plugins if omitted. */
                 text?: string;
+                /** @description Ask GitHub again instead of using the answer kept for the last minute. */
+                refresh?: boolean;
             };
             header?: never;
             path?: never;

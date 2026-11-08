@@ -923,6 +923,25 @@ describe("PluginsSection", () => {
     expect(screen.getByRole("tab", { name: "Installed" })).toBeEnabled();
   });
 
+  it("refreshes Discover past the server's cache, and only there", async () => {
+    window.history.replaceState(null, "", "/");
+    const calls = serve((url) =>
+      url.pathname === "/api/system/plugin/search" ? { body: { plugins: [], warnings: [] } } : base(url),
+    );
+    const user = userEvent.setup();
+    show({ restartInterval: 1 });
+    expect(screen.queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    const refresh = await screen.findByRole("button", { name: "Refresh" });
+    expect(refresh).toHaveAttribute("title", "Refresh");
+    const searches = () => calls.filter((call) => new URL(call.url).pathname === "/api/system/plugin/search");
+    expect(searches().every((call) => !new URL(call.url).searchParams.has("refresh"))).toBe(true);
+    await user.click(refresh);
+    await waitFor(() =>
+      expect(searches().some((call) => new URL(call.url).searchParams.get("refresh") === "true")).toBe(true),
+    );
+  });
+
   it("keeps the tab in the address so a reload returns to it", async () => {
     window.history.replaceState(null, "", "/");
     serve((url) =>

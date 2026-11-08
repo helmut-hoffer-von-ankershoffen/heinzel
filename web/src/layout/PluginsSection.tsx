@@ -14,6 +14,7 @@ import {
   Plus,
   Power,
   PowerOff,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -30,6 +31,7 @@ import {
   usePluginPreview,
   usePluginSearch,
   usePlugins,
+  useRefreshPluginSearch,
 } from "@/api/queries";
 import { Loaded } from "@/components/common";
 import { PaneAction } from "@/components/PaneActions";
@@ -363,6 +365,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     window.history.replaceState(window.history.state, "", `${address.pathname}${address.search}${address.hash}`);
   };
   const [query, setQuery] = useState("");
+  const refresh = useRefreshPluginSearch(query);
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
@@ -672,6 +675,17 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
           className="ml-auto py-1"
           inputClassName="w-36 text-sm"
         />
+        {tab === "discover" && (
+          <PaneAction
+            ghost
+            icon={RefreshCw}
+            className={refresh.isPending ? "[&_svg]:motion-safe:animate-spin" : undefined}
+            disabled={frozen || refresh.isPending}
+            onClick={() => refresh.mutate()}
+          >
+            {t("plugins.refresh")}
+          </PaneAction>
+        )}
         <Button
           variant="outline"
           size="sm"
