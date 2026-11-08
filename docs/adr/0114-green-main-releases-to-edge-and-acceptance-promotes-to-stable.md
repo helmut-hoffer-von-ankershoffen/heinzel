@@ -139,6 +139,13 @@ modules. A flag does not hide state schema changes; those follow the rule above.
 edge releases, and `stable` also turns on promotion. Only a maintainer sets it. Until then the manual path keeps
 working unchanged.
 
+**The hold on the manual path.** From v0.9.35, **Publish** always creates `vX.Y.Z` as a pre-release with `latest` off,
+so the stable updater, which skips pre-releases, never installs a version before its acceptance. The PyPI publisher
+accepts the held release, and acceptance reads its assets by tag. Only after the acceptance verdict ACCEPTED does the
+release agent promote it with `gh release edit vX.Y.Z --prerelease=false --latest`. A release absorbed because its own
+acceptance failed stays a pre-release for good; the absorbing release is promoted on its own verdict. Releases up to
+v0.9.34 were published final and stay so.
+
 ### Consequences
 
 - Good: no human step on the way to edge or stable, with roughly 35 edge releases a day and stable bounded by budget.

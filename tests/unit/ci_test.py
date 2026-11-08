@@ -696,6 +696,8 @@ def test_release_docs_follow_the_successful_producer_without_recording_or_delayi
     publish = yaml.safe_load((REPO / ".github/workflows/publish.yml").read_text(encoding="utf-8"))
     release_step, dispatch = publish["jobs"]["publish"]["steps"][-2:]
     assert 'gh release create "$TAG"' in release_step["run"]
+    # ADR 0114: a stable release is held until acceptance promotes it, so the stable updater never sees it early.
+    assert "--prerelease --latest=false" in release_step["run"]
     assert dispatch["timeout-minutes"] == 1
     assert dispatch["if"] == "github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'"
     assert (
