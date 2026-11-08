@@ -182,7 +182,12 @@ export function OperationDialog() {
       className="confirmation-dialog fixed z-(--layer-modal) max-h-[calc(var(--hz-viewport-height,100dvh)-2rem)] w-[min(28rem,calc(var(--hz-viewport-width,100vw)-2rem))] overflow-y-auto rounded-xl border border-border bg-popover p-4 text-sm shadow-xl outline-none"
     >
       <div className="flex items-start gap-2">
-        <p id={heading} ref={title} tabIndex={-1} className="min-w-0 flex-1 text-base font-medium outline-none focus:outline-none focus-visible:outline-none">
+        <p
+          id={heading}
+          ref={title}
+          tabIndex={-1}
+          className="min-w-0 flex-1 text-base font-medium outline-none focus:outline-none focus-visible:outline-none"
+        >
           {titleOf(run)}
         </p>
         {driven && run.stage !== "running" && (
