@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { doctor } from "@/test/fixtures";
+import { expectPane } from "@/test/pane";
 import { expectAccessible, mockApi } from "@/test/render";
 import { HealthStatus } from "./HealthStatus";
 
@@ -28,7 +29,17 @@ describe("footer system health", () => {
     expect(screen.getByRole("region")).toHaveTextContent("1 healthy · 2 need attention · 0 unavailable");
     expect(screen.getByRole("region")).toHaveTextContent("missing org.handle");
     expect(screen.getByRole("region")).toHaveTextContent("Run `hz setup`");
-    expect(screen.getByRole("link", { name: "Open Doctor" })).toHaveAttribute("href", "/doctor");
+    const doctor = screen.getByRole("link", { name: "Open Doctor" });
+    expect(doctor).toHaveAttribute("href", "/doctor");
+    // Both actions are buttons of one style in the one bottom row under the divider.
+    const row = doctor.closest("[data-pane-actions]");
+    expect(row).toHaveClass("border-t");
+    await expectPane(screen.getByRole("region"));
+    const refresh = screen.getByRole("button", { name: "Refresh health checks" });
+    expect(refresh.closest("[data-pane-actions]")).toBe(row);
+    expect(doctor).not.toHaveClass("underline");
+    expect(doctor.className.split(" ")).toEqual(expect.arrayContaining(["border", "h-8"]));
+    expect(refresh.className.split(" ")).toEqual(expect.arrayContaining(["border", "h-8"]));
     await expectAccessible(container);
   });
   it("keeps a typed DOWN result returned as HTTP 503", async () => {

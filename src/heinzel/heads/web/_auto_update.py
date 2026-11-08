@@ -697,9 +697,13 @@ class AutoUpdater:
             pins = self._kernel.resolve(Installation).plugin_pins()
         except Exception:  # noqa: BLE001 - an unreadable receipt holds updates as well
             return []
+        # A commit pin whose repository tags its releases updates by itself (ADR 0137), as in `by_hand`.
+        followed = set(self.plan.followed)
         holds: list[PluginHold] = []
         for pin in pins:
             name = pin.name
+            if pin.kind == "commit" and _canonical(name) in followed:
+                continue
             if pin.kind == "index":
                 exact = (pin.ref or "").strip()
                 if exact.startswith("==") and "," not in exact and "*" not in exact:
