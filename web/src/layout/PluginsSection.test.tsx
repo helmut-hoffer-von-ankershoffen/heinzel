@@ -26,6 +26,7 @@ const installed = {
 };
 
 const candidate = {
+  also: "",
   spec: "git+https://github.com/acme-example/heinzel-crm@v1.2.0",
   requirement: PINNED,
   distribution: "heinzel-crm",
@@ -266,9 +267,18 @@ describe("PluginsSection", () => {
       { distribution: "heinzel-acme", version: "0.2.0", requirement: "heinzel-acme @ git+x", source: "git" as const },
       { distribution: "heinzel-acme-payments", version: null, requirement: "p @ git+x", source: "git" as const },
     ];
-    const { unmount } = render(<CandidateDetails candidate={{ ...candidate, source: "git", also_installs: also }} />);
+    const { unmount } = render(
+      <CandidateDetails
+        candidate={{
+          ...candidate,
+          source: "git",
+          also_installs: also,
+          also: "x also needs heinzel-acme; installing it too.",
+        }}
+      />,
+    );
     const list = screen.getByTestId("plugin-also-installs");
-    expect(list).toHaveTextContent("Also installs");
+    expect(list).toHaveTextContent("also needs heinzel-acme; installing it too.");
     expect(list).toHaveTextContent("heinzel-acme 0.2.0");
     expect(list).toHaveTextContent("heinzel-acme-payments");
     unmount();

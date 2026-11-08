@@ -76,7 +76,7 @@
       "included_version": "",
       "provides": [],
       "requires": [],
-      "requires_plugins": [],
+      "sibling_plugins": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-acme",
         "revision": "e1c7df84b952be35167b869aec0b724e7b1ca7fd",
@@ -180,7 +180,7 @@
       "included_version": "",
       "provides": [],
       "requires": [],
-      "requires_plugins": [
+      "sibling_plugins": [
         "heinzel-acme"
       ],
       "source": {
@@ -231,7 +231,7 @@
       "included_version": "",
       "provides": [],
       "requires": [],
-      "requires_plugins": [
+      "sibling_plugins": [
         "heinzel-acme"
       ],
       "source": {
@@ -277,7 +277,7 @@
       "included_version": "",
       "provides": [],
       "requires": [],
-      "requires_plugins": [
+      "sibling_plugins": [
         "heinzel-acme",
         "heinzel-acme-payments",
         "heinzel-acme-lisbon"
@@ -339,7 +339,7 @@
       "requires": [
         "core:plugin-api@1"
       ],
-      "requires_plugins": [],
+      "sibling_plugins": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
         "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
@@ -399,7 +399,7 @@
       "requires": [
         "core:plugin-api@1"
       ],
-      "requires_plugins": [],
+      "sibling_plugins": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
         "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
@@ -459,7 +459,7 @@
       "requires": [
         "core:plugin-api@1"
       ],
-      "requires_plugins": [],
+      "sibling_plugins": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
         "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
@@ -527,7 +527,7 @@
       "requires": [
         "core:plugin-api@1"
       ],
-      "requires_plugins": [],
+      "sibling_plugins": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
         "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
@@ -591,7 +591,7 @@
       "requires": [
         "core:plugin-api@1"
       ],
-      "requires_plugins": [],
+      "sibling_plugins": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
         "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
@@ -661,7 +661,7 @@
       "requires": [
         "core:plugin-api@1"
       ],
-      "requires_plugins": [],
+      "sibling_plugins": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
         "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
@@ -716,7 +716,7 @@
       "requires": [
         "core:plugin-api@1"
       ],
-      "requires_plugins": [],
+      "sibling_plugins": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
         "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
@@ -776,7 +776,7 @@
       "requires": [
         "core:plugin-api@1"
       ],
-      "requires_plugins": [],
+      "sibling_plugins": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
         "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
@@ -912,7 +912,7 @@
       "requires": [
         "core:plugin-api@1"
       ],
-      "requires_plugins": [],
+      "sibling_plugins": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
         "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
@@ -975,7 +975,7 @@
         "core:plugin-api@1",
         "mail:read"
       ],
-      "requires_plugins": [],
+      "sibling_plugins": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
         "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",

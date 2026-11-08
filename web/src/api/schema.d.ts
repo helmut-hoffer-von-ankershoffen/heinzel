@@ -10288,6 +10288,12 @@ export interface components {
          */
         PluginCandidate: {
             /**
+             * Also
+             * @description Said before it starts: which plugins it installs with this one, and which it offers.
+             * @default
+             */
+            also: string;
+            /**
              * Also Installs
              * @description Plugins of the same repository it needs and that are not installed yet, in install order (dependencies first), pinned to the same commit; they are installed in the same confirmed operation.
              */

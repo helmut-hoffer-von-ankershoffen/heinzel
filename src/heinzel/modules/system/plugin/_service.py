@@ -405,6 +405,7 @@ class PluginService:
                 PluginDependency(distribution=item.name, version=item.version, requirement=item.requirement)
                 for item in siblings
             ],
+            also=_also_sentence(distribution or spec, [item.name for item in siblings]),
         )
 
     def _siblings(self, source: PluginSource, metadata: Metadata, warnings: list[str]) -> list[Sibling]:
@@ -1381,6 +1382,17 @@ class PluginService:
             PluginInfo.model_validate(item)
             for item in json.loads(self._installation.hz("system", "plugin", "list", "--json"))
         ]
+
+
+def _names(items: Sequence[str]) -> str:
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def _also_sentence(name: str, coming: Sequence[str]) -> str:
+    """The sentence shown before an add starts (one wording with the required-plugin install)."""
+    if not coming:
+        return ""
+    return f"{name} also needs {_names(coming)}; installing {'it' if len(coming) == 1 else 'them'} too."
 
 
 def _raise_not_replayable(status: str) -> None:

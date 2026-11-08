@@ -312,7 +312,7 @@ def project_record(source: Object, path: str, data: Object) -> Object | None:
         "included_version": "",
         "provides": strings(plugin.get("provides"), 24),
         "requires": strings(plugin.get("requires"), 24),
-        "requires_plugins": [],
+        "sibling_plugins": [],
         "source": source,
         "directory": folder,
         "url": f"https://github.com/{source['repository']}/tree/{source['revision']}/{folder}",
@@ -444,7 +444,7 @@ def repository_records(api: GitHub, repo: str) -> tuple[Object, list[Object]]:
     # Plugins of one revision that depend on each other install together; names that resolve elsewhere stay uv's.
     names = {record["name"] for record in records}
     for record in records:
-        record["requires_plugins"] = [n for n in dependencies[record["name"]] if n in names and n != record["name"]]
+        record["sibling_plugins"] = [n for n in dependencies[record["name"]] if n in names and n != record["name"]]
     return source, records
 
 

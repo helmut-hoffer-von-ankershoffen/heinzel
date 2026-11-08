@@ -983,7 +983,7 @@ def test_the_machine_readable_catalog_keeps_its_pinned_install_command(tmp_path)
     assert "a" * 40 in install
 
 
-def test_plugins_of_one_revision_that_depend_on_each_other_list_requires_plugins():
+def test_plugins_of_one_revision_that_depend_on_each_other_list_sibling_plugins():
     def declaration(name, dependencies):
         quoted = ", ".join(f'"{item}"' for item in dependencies)
         return (
@@ -1010,16 +1010,16 @@ def test_plugins_of_one_revision_that_depend_on_each_other_list_requires_plugins
             return files[entry["path"]]
 
     _, projects = catalog.repository_records(Public(), SOURCE["repository"])
-    assert {p["name"]: p["requires_plugins"] for p in projects} == {
+    assert {p["name"]: p["sibling_plugins"] for p in projects} == {
         "heinzel-harbor": [],
         "heinzel-harbor-dock": ["heinzel-harbor"],
         "heinzel-harbor-crane": ["heinzel-harbor-dock", "heinzel-harbor"],
     }
-    assert record()["requires_plugins"] == []
+    assert record()["sibling_plugins"] == []
 
 
 def test_the_published_acme_rows_list_the_plugins_each_one_needs():
-    plugins = {p["name"]: p["requires_plugins"] for p in json.loads(catalog.SNAPSHOT.read_text())["plugins"]}
+    plugins = {p["name"]: p["sibling_plugins"] for p in json.loads(catalog.SNAPSHOT.read_text())["plugins"]}
     assert plugins["heinzel-acme"] == []
     assert plugins["heinzel-acme-lisbon"] == ["heinzel-acme"]
     assert plugins["heinzel-acme-payments-checkout"] == [

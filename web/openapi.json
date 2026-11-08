@@ -10754,6 +10754,12 @@
       "PluginCandidate": {
         "description": "What `hz system plugin add` would install: the code, where it comes from and who publishes it.",
         "properties": {
+          "also": {
+            "default": "",
+            "description": "Said before it starts: which plugins it installs with this one, and which it offers.",
+            "title": "Also",
+            "type": "string"
+          },
           "also_installs": {
             "description": "Plugins of the same repository it needs and that are not installed yet, in install order (dependencies first), pinned to the same commit; they are installed in the same confirmed operation.",
             "items": {

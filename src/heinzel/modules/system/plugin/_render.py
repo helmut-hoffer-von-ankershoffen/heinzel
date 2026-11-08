@@ -86,7 +86,6 @@ def render_change(change: PluginChange) -> RenderableType:
             "Installs": candidate.requirement,
             "Summary": candidate.summary,
         }
-        rows["Also installs"] = _also_installs(candidate)
         if candidate.private:
             rows["Visibility"] = "private repository, read with your gh login"
         if candidate.installed_version:
@@ -95,6 +94,7 @@ def render_change(change: PluginChange) -> RenderableType:
             if value:
                 table.add_row(label, Text(value))
         parts.append(table)
+        parts.extend(Text(candidate.also, style="bold") for _ in [0] if candidate.also)
         parts.extend(Text(f"Warning: {warning}", style="yellow") for warning in candidate.warnings)
         if not candidate.first_party:
             parts.append(Text(RIGHTS, style="dim"))
@@ -115,14 +115,6 @@ def render_change(change: PluginChange) -> RenderableType:
             parts.append(Text(RESTART, style="dim"))
     parts.extend(Text(f"Undo with: {command}", style="dim") for command in change.next)
     return Group(*parts)
-
-
-def _also_installs(candidate: PluginCandidate) -> str:
-    """The sibling plugins installed with the candidate, with versions; empty when there are none."""
-    if not candidate.also_installs:
-        return ""
-    names = ", ".join(f"{i.distribution} {i.version}" if i.version else i.distribution for i in candidate.also_installs)
-    return f"{names} (same repository and commit)"
 
 
 def _also_names(candidate: PluginCandidate) -> str:

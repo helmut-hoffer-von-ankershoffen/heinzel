@@ -710,7 +710,6 @@ const en = {
   "plugins.field.publisher": "Publisher",
   "plugins.field.source": "Source",
   "plugins.field.replaces": "Replaces",
-  "plugins.alsoInstalls": "Also installs, from the same repository and commit",
   "plugins.none": "No plugins installed yet. Find some under Discover.",
   "plugins.noneFound": "No plugin matches.",
   "plugins.modules": "Modules: {modules}",

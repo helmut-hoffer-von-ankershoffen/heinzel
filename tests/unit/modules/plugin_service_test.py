@@ -2102,7 +2102,10 @@ def test_the_cli_preview_and_result_name_the_plugins_installed_with_it(make_kern
     preview = service.add(CHECKOUT)
     console = Console(record=True, width=200)
     console.print(render_change(preview))
-    assert "Also installs  heinzel-acme 0.2.0, heinzel-acme-payments 0.2.0" in console.export_text()
+    assert (
+        "heinzel-acme-checkout also needs heinzel-acme and heinzel-acme-payments; installing them too."
+        in console.export_text()
+    )
     done = service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
     console = Console(record=True, width=200)
     console.print(render_change(done))

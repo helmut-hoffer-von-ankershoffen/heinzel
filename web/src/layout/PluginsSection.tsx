@@ -288,7 +288,7 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
       </p>
       {also.length > 0 && (
         <div className="mt-1" data-testid="plugin-also-installs">
-          <p className="text-muted-foreground">{t("plugins.alsoInstalls")}</p>
+          <p className="font-medium">{candidate.also}</p>
           <ul className="mt-0.5 list-none">
             {also.map((item) => (
               <li key={item.distribution} className="break-words">
