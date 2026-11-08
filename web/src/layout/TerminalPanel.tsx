@@ -189,15 +189,17 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
                 </button>
               )}
               {tab.id === active && renaming !== tab.id && (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   onClick={() => setRenaming(tab.id)}
                   aria-label={t("terminal.renameTab", { title: tabName(tab) })}
                   title={t("terminal.rename")}
-                  className="mr-0.5 rounded p-0.5 opacity-60 hover:bg-background/40 hover:opacity-100"
+                  className="mr-0.5 size-6 opacity-60 hover:opacity-100"
                 >
                   <Pencil aria-hidden className="size-3" />
-                </button>
+                </Button>
               )}
               {tabs.length > 1 && (
                 <button
@@ -663,10 +665,11 @@ function OptionsMenu({
       </Button>
       {open && (
         <AnchoredPopover anchor={ref} role="menu" className="w-60">
-          <button
+          <Button
             type="button"
+            variant="ghost"
             role="menuitem"
-            className={row}
+            className={cn(row, "h-auto justify-start font-normal")}
             onClick={() => {
               setOpen(false);
               onRename();
@@ -674,18 +677,19 @@ function OptionsMenu({
           >
             {t("terminal.rename")}
             <kbd className="ml-auto font-sans text-xs text-muted-foreground">F2</kbd>
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="ghost"
             role="menuitem"
-            className={row}
+            className={cn(row, "h-auto justify-start font-normal")}
             onClick={() => {
               setOpen(false);
               onCloseTab();
             }}
           >
             {t("terminal.closeTabItem")}
-          </button>
+          </Button>
           <button
             type="button"
             role="menuitem"
