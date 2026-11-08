@@ -969,35 +969,22 @@ def _register_review_services(module: Module) -> None:
     register_draft_workflow_operations(module)
 
 
-def _check_history(kernel: Kernel) -> None:
-    if not feature_enabled(kernel.settings, "connected_history"):
-        msg = "Connected history is not enabled"
-        raise HeinzelError(msg)
-
-
 def _register_history_search(module: Module) -> None:
     """Register bounded owner-private conversation search."""
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
-    def search_agent_conversations(
-        service: SessionCrud, kernel: Kernel, request: CrossHistoryRequest
-    ) -> CrossHistoryPage:
+    def search_agent_conversations(service: SessionCrud, request: CrossHistoryRequest) -> CrossHistoryPage:
         """Search the current owner's conversations with explicit bounded progress."""
-        _check_history(kernel)
         return search_owner_history(service, request)
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
-    def search_conversation(service: SessionCrud, kernel: Kernel, request: HistorySearchRequest) -> HistorySearchPage:
+    def search_conversation(service: SessionCrud, request: HistorySearchRequest) -> HistorySearchPage:
         """Search privately by POST so terms do not appear in request URLs; this changes no state."""
-        _check_history(kernel)
         return search_history(service, request)
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
-    def indexed_conversation_search(
-        service: SessionCrud, kernel: Kernel, request: HistorySearchRequest
-    ) -> IndexedHistoryPage:
+    def indexed_conversation_search(service: SessionCrud, request: HistorySearchRequest) -> IndexedHistoryPage:
         """Search a disposable private text index; its coverage is not a completeness guarantee."""
-        _check_history(kernel)
         return indexed_search(service, request)
 
 
