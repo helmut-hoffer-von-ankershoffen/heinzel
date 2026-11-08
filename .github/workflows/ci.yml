@@ -817,7 +817,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: helmut-hoffer-von-ankershoffen/heinzel-plugins
-          ref: 98ab970edad83ec4b778865907b4d35d44e89ca2 # candidate dependency locks; restore main after SDK publication
+          ref: c64ccd4d203ac1f5d4ad3d1455b8ef6f3b5122cc # candidate dependency locks + ADR 0141 Issue fields; restore main after SDK publication
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -854,7 +854,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: helmut-hoffer-von-ankershoffen/heinzel-plugins
-          ref: 98ab970edad83ec4b778865907b4d35d44e89ca2 # candidate dependency locks; restore main after SDK publication
+          ref: c64ccd4d203ac1f5d4ad3d1455b8ef6f3b5122cc # candidate dependency locks + ADR 0141 Issue fields; restore main after SDK publication
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
