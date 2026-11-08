@@ -107,6 +107,18 @@
       "AccessOption": {
         "description": "One installed AI access option and what it says about itself.",
         "properties": {
+          "client": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For `client`: the optional client of hz itself it needs, e.g. `openai` (`heinzel[openai]`).",
+            "title": "Client"
+          },
           "detail": {
             "default": "",
             "description": "What it found, e.g. the CLI's path.",
@@ -6419,6 +6431,37 @@
         "title": "ExpertMode",
         "type": "object"
       },
+      "ExtraChange": {
+        "description": "The outcome of adding an optional client of hz itself.",
+        "properties": {
+          "done": {
+            "description": "Whether it was installed now; false when it was there already.",
+            "title": "Done",
+            "type": "boolean"
+          },
+          "extra": {
+            "description": "The client added, e.g. `openai`.",
+            "enum": [
+              "openai",
+              "anthropic"
+            ],
+            "title": "Extra",
+            "type": "string"
+          },
+          "restart_required": {
+            "description": "Whether running servers load it only after a restart.",
+            "title": "Restart Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "extra",
+          "done",
+          "restart_required"
+        ],
+        "title": "ExtraChange",
+        "type": "object"
+      },
       "Filters": {
         "additionalProperties": false,
         "description": "The filters the graph was cut with; none means everything.",
@@ -8123,6 +8166,21 @@
         "type": "object"
       },
       "JsonValue": {},
+      "KeyState": {
+        "description": "Whether the Model API's key is stored in the credentials store; never the key itself.",
+        "properties": {
+          "stored": {
+            "description": "Whether a key is kept for the Model API (`ai.access api-key`).",
+            "title": "Stored",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stored"
+        ],
+        "title": "KeyState",
+        "type": "object"
+      },
       "LastTest": {
         "description": "The last live check of an option, as `hz ai access test` kept it.",
         "properties": {
@@ -19747,6 +19805,31 @@
         "title": "WidgetEntry",
         "type": "object"
       },
+      "ai_access_remove_key_Input": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "ai_access_remove_key_Input",
+        "type": "object"
+      },
+      "ai_access_set_key_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "description": "The API key, as the vendor shows it.",
+            "format": "password",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "ai_access_set_key_Input",
+        "type": "object"
+      },
       "heinzel_abandon_chat_turn_Input": {
         "additionalProperties": false,
         "properties": {
@@ -21403,6 +21486,28 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/ai/access/key": {
+      "get": {
+        "description": "Whether a Model API key is stored in your keychain; never shows it.",
+        "operationId": "ai_access_key",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Whether a Model API key is stored in your keychain; never shows it.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
     "/ai/access/list": {
       "get": {
         "description": "List the AI access options, the one in use, whether each is signed in, and what runs each use.\n\nAsks each option offline (e.g. `claude auth status`); calls no model and spends nothing.",
@@ -21420,6 +21525,90 @@
           }
         },
         "summary": "List the AI access options, the one in use, whether each is signed in, and what runs each use.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/ai/access/remove-key": {
+      "post": {
+        "description": "Remove the Model API key from your keychain.\n\nRaises:\n    HeinzelError: If the keychain can't remove it.",
+        "operationId": "ai_access_remove_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ai_access_remove_key_Input",
+                "default": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove the Model API key from your keychain.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/ai/access/set-key": {
+      "post": {
+        "description": "Keep the Model API key you typed in your keychain, replacing one kept before; it is never shown again.\n\nRaises:\n    HeinzelError: If the key is empty or the keychain can't keep it; never with the key in the message.",
+        "operationId": "ai_access_set_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ai_access_set_key_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Keep the Model API key you typed in your keychain, replacing one kept before; it is never shown again.",
         "tags": [
           "ai"
         ]
@@ -27909,6 +28098,55 @@
           }
         },
         "summary": "Show what a plugin would install, then add it with `--confirm`; adding it again replaces it.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/add-extra": {
+      "post": {
+        "description": "Add an optional client of hz itself, e.g. OpenAI's for the ChatGPT plan; not a plugin. A restart loads it.",
+        "operationId": "system_plugin_add_extra",
+        "parameters": [
+          {
+            "description": "The optional client of hz itself: `openai` (Model API, ChatGPT plan) or `anthropic`.",
+            "in": "query",
+            "name": "extra",
+            "required": true,
+            "schema": {
+              "description": "The optional client of hz itself: `openai` (Model API, ChatGPT plan) or `anthropic`.",
+              "enum": [
+                "openai",
+                "anthropic"
+              ],
+              "title": "Extra",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtraChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add an optional client of hz itself, e.g. OpenAI's for the ChatGPT plan; not a plugin. A restart loads it.",
         "tags": [
           "system"
         ]

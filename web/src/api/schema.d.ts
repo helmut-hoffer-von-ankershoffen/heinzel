@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/ai/access/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether a Model API key is stored in your keychain; never shows it.
+         * @description Whether a Model API key is stored in your keychain; never shows it.
+         */
+        get: operations["ai_access_key"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai/access/list": {
         parameters: {
             query?: never;
@@ -20,6 +40,52 @@ export interface paths {
         get: operations["ai_access_list"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/access/remove-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove the Model API key from your keychain.
+         * @description Remove the Model API key from your keychain.
+         *
+         *     Raises:
+         *         HeinzelError: If the keychain can't remove it.
+         */
+        post: operations["ai_access_remove_key"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/access/set-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep the Model API key you typed in your keychain, replacing one kept before; it is never shown again.
+         * @description Keep the Model API key you typed in your keychain, replacing one kept before; it is never shown again.
+         *
+         *     Raises:
+         *         HeinzelError: If the key is empty or the keychain can't keep it; never with the key in the message.
+         */
+        post: operations["ai_access_set_key"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2979,6 +3045,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/plugin/add-extra": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add an optional client of hz itself, e.g. OpenAI's for the ChatGPT plan; not a plugin. A restart loads it.
+         * @description Add an optional client of hz itself, e.g. OpenAI's for the ChatGPT plan; not a plugin. A restart loads it.
+         */
+        post: operations["system_plugin_add_extra"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/plugin/disable": {
         parameters: {
             query?: never;
@@ -4189,6 +4275,11 @@ export interface components {
          * @description One installed AI access option and what it says about itself.
          */
         AccessOption: {
+            /**
+             * Client
+             * @description For `client`: the optional client of hz itself it needs, e.g. `openai` (`heinzel[openai]`).
+             */
+            client?: string | null;
             /**
              * Detail
              * @description What it found, e.g. the CLI's path.
@@ -7777,6 +7868,28 @@ export interface components {
             operations: components["schemas"]["OperationAudience"][];
         };
         /**
+         * ExtraChange
+         * @description The outcome of adding an optional client of hz itself.
+         */
+        ExtraChange: {
+            /**
+             * Done
+             * @description Whether it was installed now; false when it was there already.
+             */
+            done: boolean;
+            /**
+             * Extra
+             * @description The client added, e.g. `openai`.
+             * @enum {string}
+             */
+            extra: "openai" | "anthropic";
+            /**
+             * Restart Required
+             * @description Whether running servers load it only after a restart.
+             */
+            restart_required: boolean;
+        };
+        /**
          * Filters
          * @description The filters the graph was cut with; none means everything.
          */
@@ -8744,6 +8857,17 @@ export interface components {
             timeout_seconds: number;
         };
         JsonValue: unknown;
+        /**
+         * KeyState
+         * @description Whether the Model API's key is stored in the credentials store; never the key itself.
+         */
+        KeyState: {
+            /**
+             * Stored
+             * @description Whether a key is kept for the Model API (`ai.access api-key`).
+             */
+            stored: boolean;
+        };
         /**
          * LastTest
          * @description The last live check of an option, as `hz ai access test` kept it.
@@ -15533,6 +15657,17 @@ export interface components {
              */
             widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"] | components["schemas"]["ChartWidget"]) | null;
         };
+        /** ai_access_remove_key_Input */
+        ai_access_remove_key_Input: Record<string, never>;
+        /** ai_access_set_key_Input */
+        ai_access_set_key_Input: {
+            /**
+             * Value
+             * Format: password
+             * @description The API key, as the vendor shows it.
+             */
+            value: string;
+        };
         /** heinzel_abandon_chat_turn_Input */
         heinzel_abandon_chat_turn_Input: {
             /**
@@ -16518,6 +16653,7 @@ export type SchemaEdgeMetadata = components['schemas']['EdgeMetadata'];
 export type SchemaEffortChoice = components['schemas']['EffortChoice'];
 export type SchemaEvent = components['schemas']['Event'];
 export type SchemaExpertMode = components['schemas']['ExpertMode'];
+export type SchemaExtraChange = components['schemas']['ExtraChange'];
 export type SchemaFilters = components['schemas']['Filters'];
 export type SchemaFoundServer = components['schemas']['FoundServer'];
 export type SchemaFoundSkill = components['schemas']['FoundSkill'];
@@ -16548,6 +16684,7 @@ export type SchemaItemNotificationPolicy = components['schemas']['ItemNotificati
 export type SchemaJobDoc = components['schemas']['JobDoc'];
 export type SchemaJobInfo = components['schemas']['JobInfo'];
 export type SchemaJsonValue = components['schemas']['JsonValue'];
+export type SchemaKeyState = components['schemas']['KeyState'];
 export type SchemaLastTest = components['schemas']['LastTest'];
 export type SchemaLayerDoc = components['schemas']['LayerDoc'];
 export type SchemaLayerList = components['schemas']['LayerList'];
@@ -16738,6 +16875,8 @@ export type SchemaWakeScheduleView = components['schemas']['WakeScheduleView'];
 export type SchemaWeek = components['schemas']['Week'];
 export type SchemaWidgetAction = components['schemas']['WidgetAction'];
 export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
+export type SchemaAiAccessRemoveKeyInput = components['schemas']['ai_access_remove_key_Input'];
+export type SchemaAiAccessSetKeyInput = components['schemas']['ai_access_set_key_Input'];
 export type SchemaHeinzelAbandonChatTurnInput = components['schemas']['heinzel_abandon_chat_turn_Input'];
 export type SchemaHeinzelAcceptAgentContractInput = components['schemas']['heinzel_accept_agent_contract_Input'];
 export type SchemaHeinzelAmendScheduledAgentInput = components['schemas']['heinzel_amend_scheduled_agent_Input'];
@@ -16790,6 +16929,26 @@ export type SchemaSystemStatePushInput = components['schemas']['system_state_pus
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
 export type $defs = Record<string, never>;
 export interface operations {
+    ai_access_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyState"];
+                };
+            };
+        };
+    };
     ai_access_list: {
         parameters: {
             query?: never;
@@ -16806,6 +16965,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccessList"];
+                };
+            };
+        };
+    };
+    ai_access_remove_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ai_access_remove_key_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_access_set_key: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ai_access_set_key_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -21202,6 +21427,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_add_extra: {
+        parameters: {
+            query: {
+                /** @description The optional client of hz itself: `openai` (Model API, ChatGPT plan) or `anthropic`. */
+                extra: "openai" | "anthropic";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtraChange"];
                 };
             };
             /** @description Validation Error */
