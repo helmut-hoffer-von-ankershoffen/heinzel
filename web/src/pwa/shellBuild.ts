@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import type { Plugin } from "vite";
+import { compareCodeUnits } from "../lib/sort";
 
 export const WORKER = "sw.js";
 export const PLACEHOLDER = 'const BUILD = "dev";';
@@ -23,7 +24,7 @@ export function buildId(outDir: string): string {
   const hash = createHash("sha256");
   for (const name of files(outDir)
     .filter((name) => name !== WORKER)
-    .sort()) {
+    .sort(compareCodeUnits)) {
     hash
       .update(name)
       .update("\0")

@@ -78,6 +78,16 @@ function kept(...lookup) {
   return caches.open(SHELL).then((cache) => cache.match(...lookup));
 }
 
+/** The answer to a page request that hz did not answer: this build's offline page, logged with why. */
+async function offlinePage(error) {
+  log(
+    "web.shell.offline",
+    { operation: "web.shell", step: "navigate", outcome: "skipped", reason: "network", error_type: error?.name },
+    "warn",
+  );
+  return (await kept(OFFLINE)) || Response.error();
+}
+
 // Keeping a copy is best effort: a full or unavailable cache must never fail the response being served.
 function remember(request, response) {
   return caches
@@ -98,16 +108,7 @@ self.addEventListener("fetch", (event) => {
     // The page from the network, so it is always current. When hz isn't running, the offline page: it reloads itself
     // once hz answers. The app's old page is not kept: it could not start without hz, and went stale (an old version,
     // a missing icon, old guidance).
-    event.respondWith(
-      fetch(event.request).catch((error) => {
-        log(
-          "web.shell.offline",
-          { operation: "web.shell", step: "navigate", outcome: "skipped", reason: "network", error_type: error?.name },
-          "warn",
-        );
-        return kept(OFFLINE).then((page) => page || Response.error());
-      }),
-    );
+    event.respondWith(fetch(event.request).catch(offlinePage));
     return;
   }
   if (PRECACHED.includes(url.pathname)) {

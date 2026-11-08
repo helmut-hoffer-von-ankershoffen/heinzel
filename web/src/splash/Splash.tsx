@@ -329,6 +329,13 @@ type Props = {
   now?: () => number;
   reload?: () => void;
 };
+/** The version the last start remembered is not hz's until hz says so: a phone that cannot reach it must not show an
+ * old build's number as if it were the one it is connecting to. */
+function forgetShownVersion() {
+  const shown = byId("splash-version");
+  if (shown) shown.textContent = "";
+}
+
 const reloadPage = () => window.location.reload();
 const clock = () => performance.now();
 
@@ -372,10 +379,7 @@ export function Splash({ store = splash, probe = probeServer, now = clock, reloa
         store.send({ type: "refused" });
         return false;
       }
-      // The version the last start remembered is not hz's until hz says so: a phone that cannot reach it must not
-      // show an old build's number as if it were the one it is connecting to.
-      const shown = byId("splash-version");
-      if (shown && !store.get().booted) shown.textContent = "";
+      if (!store.get().booted) forgetShownVersion();
       store.send({ type: "unreachable", at: now() });
       return polling(store.get());
     },
