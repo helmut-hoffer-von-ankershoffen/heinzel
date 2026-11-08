@@ -89,15 +89,6 @@ class PluginUpdate(BaseModel):
         description="Whether the update asked for its newest version; false when the plugin update stopped before it.",
     )
 
-    def standing(self) -> str:
-        """Where an `unchanged` plugin stands, saying only what is known: newest only when nothing pins it."""
-        version = self.after or "version unknown"
-        if not self.checked:
-            return f"not updated ({version}): the plugin update stopped before it; newer releases not checked"
-        if self.pinned is not None:
-            return f"kept at {version} (pinned to {self.pinned}; newer releases not checked)"
-        return f"already newest ({version})"
-
 
 class ChannelReport(BaseModel):
     """The update channel, and what a switch changes."""

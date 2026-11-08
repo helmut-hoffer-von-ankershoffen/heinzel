@@ -59,6 +59,7 @@ from heinzel.modules.system._announced import (
 )
 from heinzel.modules.system._models import AnnouncedUpdate, PluginUpdate, UpdateResult
 from heinzel.modules.system._phases import Phases, State
+from heinzel.modules.system._render import standing
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
 from heinzel.modules.system.plugin._sources import dependents, git_credentials, required_by
 
@@ -1636,7 +1637,7 @@ def _plugin_step(update: PluginUpdate) -> tuple[State, str]:
     if update.status == "upgraded":
         return "done", f"Updated {update.before or '?'} → {update.after or '?'}"
     if update.status == "unchanged":
-        return ("done" if update.checked else "warn"), _sentence(update.standing())
+        return ("done" if update.checked else "warn"), _sentence(standing(update))
     if update.disabled:
         return "warn", "Taken out: it does not allow this hz yet"
     return "warn", f"Held back at {update.before or 'its version'}: it does not allow the new hz yet"

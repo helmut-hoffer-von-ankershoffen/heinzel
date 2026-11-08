@@ -1,7 +1,7 @@
 """How the CLI head presents system results."""
 
 import json
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from rich.console import Group, RenderableType
 from rich.markup import escape
@@ -9,14 +9,10 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from heinzel.modules.system._models import (
-    AutomaticUpdates,
-    ChannelReport,
-    ModuleInfo,
-    ReleaseCheck,
-    SystemInfo,
-    UpdateResult,
-)
+from heinzel.modules.system._models import ChannelReport, ModuleInfo, ReleaseCheck, SystemInfo, UpdateResult
+
+if TYPE_CHECKING:  # read only through attributes: an hz updated in place renders with the old models (see below)
+    from heinzel.modules.system._models import AutomaticUpdates, PluginUpdate
 
 
 def render_modules(modules: list[ModuleInfo]) -> RenderableType:
@@ -83,18 +79,35 @@ def render_channel(report: ChannelReport) -> RenderableType:
 
 
 def render_update(result: UpdateResult) -> RenderableType:
-    """What the update did, or what the installation is pinned to and the command that moves it."""
+    """What the update did, or what the installation is pinned to and the command that moves it.
+
+    The hz that ran `hz system update` imports this file only after uv replaced it with the new release's, while it
+    still holds its own `_models` in memory. So it names no model that is new, and reads a field that is new with a
+    default: an older hz updating itself must still print its result.
+    """
     lines = [result.message]
     unchanged = [p for p in result.plugins if p.status == "unchanged"]
     if unchanged:
         lines.append("Plugins:")
-        lines += [f"  {p.distribution}: {p.standing()}" for p in unchanged]
-    if result.updated and result.automatic is not None:
-        lines.append(_automatic(result.automatic))
+        lines += [f"  {p.distribution}: {standing(p)}" for p in unchanged]
+    automatic = getattr(result, "automatic", None)
+    if result.updated and automatic is not None:
+        lines.append(_automatic(automatic))
     return Text("\n".join(lines))
 
 
-def _automatic(automatic: AutomaticUpdates) -> str:
+def standing(update: "PluginUpdate") -> str:
+    """Where an `unchanged` plugin stands, saying only what is known: newest only when nothing pins it."""
+    version = update.after or "version unknown"
+    if not getattr(update, "checked", True):
+        return f"not updated ({version}): the plugin update stopped before it; newer releases not checked"
+    pinned = getattr(update, "pinned", None)
+    if pinned is not None:
+        return f"kept at {version} (pinned to {pinned}; newer releases not checked)"
+    return f"already newest ({version})"
+
+
+def _automatic(automatic: "AutomaticUpdates") -> str:
     """Why this ran by hand: what automatic updates install, whether they are on, and how to turn them on."""
     accepted = (
         f"Automatic updates install only accepted releases: hz {automatic.core_min_age_hours} h and plugins "
