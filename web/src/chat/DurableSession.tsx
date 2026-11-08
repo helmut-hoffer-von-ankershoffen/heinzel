@@ -1,5 +1,6 @@
 // A durable personal session has a different id and service from the legacy runner chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Search } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
@@ -134,7 +135,7 @@ function DurableSessionView({
   const config = useConfig();
   const features = config.data?.settings.find(({ section, key }) => section === "hz" && key === "features")?.value;
   const capturedWrites = Array.isArray(features) && features.includes("captured_writes");
-  const searchEnabled = Array.isArray(features) && features.includes("connected_history");
+  const [searchOpen, setSearchOpen] = useState(false);
   const pendingSearchJump = conversationJump(routeState, sessionId);
   const {
     state: composer,
@@ -158,13 +159,11 @@ function DurableSessionView({
   const [searchJump, setSearchJump] = useState(false);
   const searchTarget = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!pendingSearchJump || config.isPending) return;
-    if (searchEnabled) {
-      setSearchJump(true);
-      setHistoryCursors([null, pendingSearchJump]);
-    }
+    if (!pendingSearchJump) return;
+    setSearchJump(true);
+    setHistoryCursors([null, pendingSearchJump]);
     setParams((current) => current, { replace: true, state: null });
-  }, [config.isPending, pendingSearchJump, searchEnabled, setParams]);
+  }, [pendingSearchJump, setParams]);
   const clearScheduleError = () => {
     setScheduleError(false);
     setScheduleErrorMessage(null);
@@ -809,9 +808,23 @@ function DurableSessionView({
     <div className="flex h-full flex-col">
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
         <h2 className="min-w-0 truncate font-medium">{query.data?.name ?? t("durable.title")}</h2>
-        <Button type="button" variant="ghost" size="sm" disabled={busy || profileLocked} onClick={onClose}>
-          {t("durable.close")}
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="text-icon"
+            aria-label={t("durable.search")}
+            title={t("durable.search")}
+            aria-expanded={searchOpen}
+            onClick={() => setSearchOpen((open) => !open)}
+          >
+            <Search aria-hidden />
+          </Button>
+          <Button type="button" variant="ghost" size="sm" disabled={busy || profileLocked} onClick={onClose}>
+            {t("durable.close")}
+          </Button>
+        </div>
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {query.isPending && <p role="status">{t("state.loading")}</p>}
@@ -855,7 +868,7 @@ function DurableSessionView({
         {!connectedFrontdoor && sourceReview}
         {query.data?.session_id === sessionId && <ContractHistory contracts={query.data.contracts ?? []} />}
         {query.data?.session_id === sessionId && <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />}
-        {searchEnabled && query.data?.session_id === sessionId && (
+        {searchOpen && query.data?.session_id === sessionId && (
           <>
             <ConversationSearch
               key={`search:${sessionId}`}
@@ -1344,17 +1357,17 @@ function DurableSessionView({
             {daemonReadinessMessage && (
               <p className="text-sm text-warn" role="status">
                 {daemonReadinessMessage}{" "}
-                <Link className="underline" to="/?settings=daemon">
-                  {t("durable.daemonSettings")}
-                </Link>
+                <Button asChild variant="outline" size="sm" className="align-middle">
+                  <Link to="/?settings=daemon">{t("durable.daemonSettings")}</Link>
+                </Button>
               </p>
             )}
             {query.data.schedule?.status === "active" && daemonStatus.isError && (
               <p className="text-sm text-warn" role="status">
                 {t("durable.daemonStatusUnavailable")}{" "}
-                <Link className="underline" to="/?settings=daemon">
-                  {t("durable.daemonSettings")}
-                </Link>
+                <Button asChild variant="outline" size="sm" className="align-middle">
+                  <Link to="/?settings=daemon">{t("durable.daemonSettings")}</Link>
+                </Button>
               </p>
             )}
             {query.data.schedule && !scheduleApprovalNeedsAttention && uncertainApprovalActions.length === 0 ? (

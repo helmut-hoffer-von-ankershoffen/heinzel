@@ -27,7 +27,6 @@ const installed = {
 };
 
 const candidate = {
-  also: "",
   spec: "git+https://github.com/acme-example/heinzel-crm@v1.2.0",
   requirement: PINNED,
   distribution: "heinzel-crm",
@@ -41,6 +40,7 @@ const candidate = {
   revision: "b".repeat(40),
   installed_version: null as string | null,
   warnings: ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."],
+  also: "",
 };
 let receiptCount = 0;
 let confirmedStreamDelay = 0;
@@ -265,28 +265,51 @@ describe("PluginsSection", () => {
     expect(line.closest("details")).toBeNull();
   });
 
-  it("names the plugins it also installs before anything is confirmed, and shows nothing for a plugin alone", () => {
-    const also = [
-      { distribution: "heinzel-acme", version: "0.2.0", requirement: "heinzel-acme @ git+x", source: "git" as const },
-      { distribution: "heinzel-acme-payments", version: null, requirement: "p @ git+x", source: "git" as const },
+  it("says before it starts which plugins it installs with this one", () => {
+    const also = "heinzel-crm also needs heinzel-github; installing it too.";
+    render(<CandidateDetails candidate={{ ...candidate, source: "git", also }} />);
+    expect(screen.getByTestId("plugin-also").textContent).toBe(also);
+    expect(screen.getByText(also).closest("details")).toBeNull();
+  });
+
+  it("lists the plugins it also installs, with versions, and nothing for a plugin alone", () => {
+    const need = { required: true, needed_by: "x", install: "acme", detail: "", with_it: true };
+    const needs = [
+      {
+        ...need,
+        distribution: "heinzel-acme",
+        requirement: "heinzel-acme @ git+x",
+        state: "install" as const,
+        version: "0.2.0",
+      },
+      {
+        ...need,
+        distribution: "heinzel-acme-payments",
+        requirement: "p @ git+x",
+        state: "install" as const,
+        version: null,
+      },
+      {
+        ...need,
+        distribution: "heinzel-google",
+        requirement: "heinzel-google",
+        state: "offered" as const,
+        required: false,
+      },
     ];
     const { unmount } = render(
       <CandidateDetails
-        candidate={{
-          ...candidate,
-          source: "git",
-          also_installs: also,
-          also: "x also needs heinzel-acme; installing it too.",
-        }}
+        candidate={{ ...candidate, source: "git", needs, also: "x also needs heinzel-acme; installing it too." }}
       />,
     );
     const list = screen.getByTestId("plugin-also-installs");
-    expect(list).toHaveTextContent("also needs heinzel-acme; installing it too.");
+    expect(screen.getByTestId("plugin-also")).toHaveTextContent("also needs heinzel-acme; installing it too.");
     expect(list).toHaveTextContent("heinzel-acme 0.2.0");
     expect(list).toHaveTextContent("heinzel-acme-payments");
+    expect(list).not.toHaveTextContent("heinzel-google");
     unmount();
-    render(<CandidateDetails candidate={{ ...candidate, source: "git", also_installs: [] }} />);
-    expect(screen.queryByTestId("plugin-also-installs")).toBeNull();
+    render(<CandidateDetails candidate={{ ...candidate, source: "git", needs: [] }} />);
+    expect(screen.queryByTestId("plugin-also")).toBeNull();
   });
 
   it("does not call an uncompleted backend reply an installed plugin or restart the server", async () => {
@@ -898,6 +921,25 @@ describe("PluginsSection", () => {
     await user.click(within(card).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("group", { name: /Install this plugin/ })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Installed" })).toBeEnabled();
+  });
+
+  it("refreshes Discover past the server's cache, and only there", async () => {
+    window.history.replaceState(null, "", "/");
+    const calls = serve((url) =>
+      url.pathname === "/api/system/plugin/search" ? { body: { plugins: [], warnings: [] } } : base(url),
+    );
+    const user = userEvent.setup();
+    show({ restartInterval: 1 });
+    expect(screen.queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    const refresh = await screen.findByRole("button", { name: "Refresh" });
+    expect(refresh).toHaveAttribute("title", "Refresh");
+    const searches = () => calls.filter((call) => new URL(call.url).pathname === "/api/system/plugin/search");
+    expect(searches().every((call) => !new URL(call.url).searchParams.has("refresh"))).toBe(true);
+    await user.click(refresh);
+    await waitFor(() =>
+      expect(searches().some((call) => new URL(call.url).searchParams.get("refresh") === "true")).toBe(true),
+    );
   });
 
   it("keeps the tab in the address so a reload returns to it", async () => {

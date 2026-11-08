@@ -49,6 +49,6 @@ session-pruning feature, a live provider, or recovery of deleted content.
 ## More Information
 
 This continuation salvages the original owner-private bounded search, disposable FTS cache, catalog traversal and
-anchored navigation. Operations stay off behind `connected_history`; no search is offered to the model, and model
+anchored navigation. The `connected_history` flag is retired and the search is on, reached from an icon button in the chat header; no search is offered to the model, and model
 context remains the existing bounded same-conversation tail. The current activity projector remains authoritative.
-The web search interface and CLI navigation acceptance remain separate work.
+CLI navigation acceptance remains separate work.

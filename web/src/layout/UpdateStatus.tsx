@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, LoaderCircle, RefreshCw, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FooterItem } from "@/components/FooterItem";
+import { PaneAction } from "@/components/PaneActions";
 import { Progress, type ProgressSegment } from "@/components/Progress";
-import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { type Phase, trackOperation } from "@/lib/operationRun";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
@@ -149,6 +149,30 @@ export function UpdateStatus() {
       icon={busy ? LoaderCircle : Download}
       className={view.available && !problem ? "animate-pulse text-bad" : view.allCurrent ? "text-ok" : undefined}
       disabled={busy}
+      actions={
+        // The lead is what the pane is for: finish a pending update, else install one; checking again is an icon.
+        <>
+          {recovery === "verify" && (
+            <PaneAction icon={RotateCcw} primary disabled={busy} onClick={() => void run(true)}>
+              {t("updates.verify")}
+            </PaneAction>
+          )}
+          {canUpdate && (
+            <PaneAction icon={Download} primary={view.count > 0} onClick={() => void run(false)}>
+              {view.count > 1
+                ? t("updates.allAction")
+                : view.count === 1
+                  ? t("updates.action")
+                  : t("updates.manualAction")}
+            </PaneAction>
+          )}
+          {view.canRetry && !busy && (
+            <PaneAction icon={RefreshCw} disabled={retry.isPending} onClick={() => retry.mutate()}>
+              {t("updates.retry")}
+            </PaneAction>
+          )}
+        </>
+      }
     >
       <div className="space-y-2 px-1.5 pb-1.5">
         {view.rows.map((row) => (
@@ -170,31 +194,6 @@ export function UpdateStatus() {
         )}
         {status?.reason && <p className="text-xs text-muted-foreground">{status.reason}</p>}
         <AutoUpdateToggle />
-        {/* The actions stay at the bottom, under a divider, when late facts grow this above-anchored pane. */}
-        {(recovery === "verify" || canUpdate || (view.canRetry && !busy)) && (
-          <div className="flex flex-wrap gap-2 border-t border-border/70 pt-2">
-            {recovery === "verify" && (
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(true)}>
-                <RotateCcw aria-hidden /> {t("updates.verify")}
-              </Button>
-            )}
-            {view.canRetry && !busy && (
-              <Button size="sm" variant="outline" disabled={retry.isPending} onClick={() => retry.mutate()}>
-                <RefreshCw aria-hidden className={retry.isPending ? "animate-spin" : undefined} /> {t("updates.retry")}
-              </Button>
-            )}
-            {canUpdate && (
-              <Button size="sm" variant="outline" onClick={() => void run(false)}>
-                <Download aria-hidden />{" "}
-                {view.count > 1
-                  ? t("updates.allAction")
-                  : view.count === 1
-                    ? t("updates.action")
-                    : t("updates.manualAction")}
-              </Button>
-            )}
-          </div>
-        )}
       </div>
     </FooterItem>
   );
