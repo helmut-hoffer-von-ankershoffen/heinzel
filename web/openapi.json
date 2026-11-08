@@ -18566,12 +18566,40 @@
             "$ref": "#/components/schemas/RunOperation",
             "description": "The declaring module's operation that enables the feature."
           },
+          "explanation": {
+            "anyOf": [
+              {
+                "maxLength": 280,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The longer explanation, shown only on demand under Details.",
+            "title": "Explanation"
+          },
           "label": {
             "description": "The action the person enables or disables.",
             "maxLength": 80,
             "minLength": 1,
             "title": "Label",
             "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One short cause the person can fix, e.g. `Sign in to Tailscale, then try again.`; its presence offers Try again.",
+            "title": "Problem"
           },
           "requested": {
             "anyOf": [
@@ -18582,7 +18610,7 @@
                 "type": "null"
               }
             ],
-            "description": "The requested state when it differs from verified readiness; never a success claim.",
+            "description": "The person's choice, which the switch shows; `checked` alone says whether it is live.",
             "title": "Requested"
           },
           "sign_in_url": {
@@ -18596,6 +18624,20 @@
             ],
             "description": "Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and an active session or device credential.",
             "title": "Sign In Url"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The provider's one short status line, e.g. `Turning on…`; the host shows its own when absent.",
+            "title": "Status"
           },
           "url": {
             "anyOf": [
