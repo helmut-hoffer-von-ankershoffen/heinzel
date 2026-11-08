@@ -73,7 +73,11 @@ class Settings(ModuleSettings):
         title="Output format",
         description="What every command prints unless it is asked for another format: text for people, or JSON for "
         "scripts and agents.",
-        json_schema_extra={"x-expert": True, "x-labels": {"text": "Text", "json": "JSON"}},
+        json_schema_extra={
+            "x-expert": True,
+            "x-live": True,  # each command reads it as it starts; the web app's server never uses it
+            "x-labels": {"text": "Text", "json": "JSON"},
+        },
     )
     expert: bool = Field(
         default=False,
@@ -88,6 +92,7 @@ class Settings(ModuleSettings):
         title="Playful terminal",
         description="A small Heinzelmännchen in the terminal: in the start screen, the setup, the spinner of long work "
         "and the done and error lines. Only on a colour terminal, never in JSON, a pipe or CI.",
+        json_schema_extra={"x-live": True},  # each command reads it as it starts; the web app's server never uses it
     )
     plugins_enabled: bool = Field(
         default=True,
@@ -100,6 +105,7 @@ class Settings(ModuleSettings):
         title="Check for updates",
         description="Look for a newer release at most once an hour and mention it after a command's output. The "
         "check uses no personal data, and never runs in CI or in JSON, MCP or REST output.",
+        json_schema_extra={"x-live": True},  # the web app's server reads it again with every update status
     )
     auto_update: bool = Field(
         default=True,
@@ -133,6 +139,7 @@ class Settings(ModuleSettings):
         "tested. Choosing a channel installs nothing until you update. Going back to stable never downgrades: edge "
         "stays installed until stable is as new, and your data stays as it is.",
         json_schema_extra={
+            "x-live": True,  # the web app's server reads it again with every update status and release list
             "x-labels": {
                 "stable": "Stable (recommended)",
                 "edge": "Edge (every green change)",
