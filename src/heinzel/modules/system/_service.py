@@ -320,11 +320,12 @@ def _source_of(distribution: str) -> Literal["PyPI", "git", "path"]:
     """Where a distribution was installed from, per its `direct_url.json` (PEP 610); no such file means an index."""
     try:
         text = importlib.metadata.distribution(distribution).read_text("direct_url.json") or "{}"
-        direct = json.loads(text)
+        parsed: object = json.loads(text)
     except (importlib.metadata.PackageNotFoundError, ValueError):
         return "PyPI"
-    if not isinstance(direct, dict):
+    if not isinstance(parsed, dict):
         return "PyPI"
+    direct = cast("dict[str, Any]", parsed)
     if "vcs_info" in direct:
         return "git"
     return "path" if "dir_info" in direct or str(direct.get("url", "")).startswith("file:") else "PyPI"
