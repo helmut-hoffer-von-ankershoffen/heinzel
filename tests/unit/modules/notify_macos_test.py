@@ -184,6 +184,20 @@ def test_a_stale_face_proof_is_refused(monkeypatch, tmp_path):
         proof.test_bundled_face_renders_in_an_owned_private_directory_without_posting(tmp_path)
 
 
+@pytest.mark.parametrize("app_built", [True, False])
+def test_a_missing_face_proof_fails_where_the_notifier_was_built_and_skips_elsewhere(app_built, monkeypatch, tmp_path):
+    from tests.e2e import notifier_face_test as proof
+
+    app = tmp_path / "HeinzelNotifier.app"
+    if app_built:
+        app.mkdir()
+    built = {"PROOF": tmp_path / "missing", "APP": app, "proof_source": lambda: ""}
+    monkeypatch.setattr(proof.runpy, "run_path", lambda *a, **k: built)
+    outcome = pytest.fail.Exception if app_built else pytest.skip.Exception
+    with pytest.raises(outcome):
+        proof.test_bundled_face_renders_in_an_owned_private_directory_without_posting(tmp_path)
+
+
 def test_the_build_script_and_the_runtime_agree_on_the_version():
     script = build_script()
     assert script._version() == source_version(SOURCES)

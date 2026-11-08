@@ -6,7 +6,6 @@ only checks the digest and runs it: compiling here overran the budget on a loade
 """
 
 import hashlib
-import os
 import runpy
 import subprocess
 import sys
@@ -27,9 +26,11 @@ def test_bundled_face_renders_in_an_owned_private_directory_without_posting(tmp_
     proof = notifier["PROOF"]
     stamp = proof / "source.sha256"
     if not stamp.is_file():
-        if os.environ.get("CI"):
-            pytest.fail("make notifier did not build the face-rendering proof")
-        pytest.skip("the face-rendering proof isn't built: make notifier")
+        # Like the other notifier tests: only a job that built the notifier can run it (the required macOS-specific
+        # job does); where the notifier app exists, `make notifier` must also have built this proof.
+        if notifier["APP"].is_dir():
+            pytest.fail("make notifier built the app but not the face-rendering proof")
+        pytest.skip("the notifier isn't built: make notifier")
     expected = hashlib.sha256(notifier["proof_source"]().encode()).hexdigest()
     assert stamp.read_text().strip() == expected, "the proof is older than main.swift or its harness: make notifier"
     rendered = subprocess.run(
