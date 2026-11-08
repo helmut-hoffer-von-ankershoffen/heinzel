@@ -8,6 +8,7 @@ import { useSearchParams } from "react-router";
 import { useSharedChat } from "@/chat/ChatContext";
 import { type TodayCard, useToday } from "@/chat/today";
 import { TodayWidgets } from "@/components/Contributions";
+import { TodayHiddenWidgets } from "@/components/HiddenWidgets";
 import { PaneAction, PaneActions, PaneChrome } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -92,6 +93,9 @@ export function Home() {
         <h1 id="today" className="sr-only">
           {t("today.title")}
         </h1>
+        <div className="mb-1 flex empty:hidden">
+          <TodayHiddenWidgets />
+        </div>
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(15rem,100%),1fr))] gap-3 empty:hidden">
           <TodayNotifications />
           {today.cards.map((card) => (
