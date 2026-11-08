@@ -73,3 +73,12 @@ def test_subprocess_environment_gets_the_augmented_path(tmp_path):
     assert environment["KEEP"] == "1"
     assert environment["PATH"].startswith(MINIMAL)
     assert "/opt/homebrew/bin" in environment["PATH"].split(os.pathsep)
+
+
+def test_world_writable_directories_are_ignored(tmp_path):
+    shared = tmp_path / "shared"
+    _fake_uv(shared)
+    shared.chmod(0o777)
+    environment = {"PATH": MINIMAL, "HOME": str(tmp_path / "home"), "UV_INSTALL_DIR": str(shared)}
+    assert str(shared) not in standard_directories(environment)
+    assert find_uv(environment) != str(shared / "uv")

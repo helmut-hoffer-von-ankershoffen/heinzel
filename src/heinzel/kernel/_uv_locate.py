@@ -2,11 +2,13 @@
 
 macOS gives such an app `/usr/bin:/bin:/usr/sbin:/sbin`, which holds none of the places uv is installed to, so a
 plain `shutil.which("uv")` fails although uv is there. The extra places are fixed directories under the home
-directory and the system prefixes: nothing here runs a shell or reads a PATH from a request.
+directory and the system prefixes: nothing here runs a shell or reads a PATH from a request,
+and a directory that is relative or writable by every user is skipped.
 """
 
 import os
 import shutil
+import stat
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
@@ -27,7 +29,7 @@ def standard_directories(environment: Mapping[str, str] | None = None) -> list[s
         str(Path(configured[2]) / "bin") if configured[2] else "",
         str(home / ".cargo/bin"),
     ]
-    return _unique(entry for entry in candidates if entry and Path(entry).is_absolute())
+    return _unique(entry for entry in candidates if entry and _trusted(entry))
 
 
 def search_path(environment: Mapping[str, str] | None = None) -> str:
@@ -51,6 +53,17 @@ def missing_uv_message(environment: Mapping[str, str] | None = None) -> str:
 def with_search_path(environment: Mapping[str, str]) -> dict[str, str]:
     """`environment` with PATH augmented, so uv and what it starts (python, git) are found from a Finder app too."""
     return {**environment, "PATH": search_path(environment)}
+
+
+def _trusted(entry: str) -> bool:
+    """Absolute, and not writable by every user: anyone could otherwise plant a `uv` there."""
+    if not Path(entry).is_absolute():
+        return False
+    try:
+        mode = Path(entry).stat().st_mode
+    except OSError:
+        return True  # Not there yet: nothing to run from it, and creating it needs its parent.
+    return not mode & stat.S_IWOTH
 
 
 def _unique(entries: Iterable[str]) -> list[str]:
