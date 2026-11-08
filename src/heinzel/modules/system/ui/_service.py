@@ -33,7 +33,8 @@ from heinzel import (
     WidgetLet,
     clean_text,
 )
-from heinzel.kernel import Badge, Effect, OperationCall, Widget, display_name, operation_path, public_parameters
+from heinzel.kernel import Badge, Effect, OperationCall, Widget, operation_path, public_parameters
+from heinzel.kernel._text import display_name
 from heinzel.modules.system.ui._models import (
     ActionEntry,
     ContributionInfo,

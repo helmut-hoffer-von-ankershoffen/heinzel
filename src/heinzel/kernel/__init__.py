@@ -385,7 +385,7 @@ from heinzel.kernel._telemetry import (
     Verb,
     check_target,
 )
-from heinzel.kernel._text import clean_text, display_name, redact_emails
+from heinzel.kernel._text import clean_text, redact_emails
 from heinzel.kernel._theme_signals import DAYPARTS, WEATHERS, Daypart, SignalLet, ThemeSignals, Weather, daypart
 from heinzel.kernel._themes import (
     DEFAULT_LOGO,
@@ -797,7 +797,6 @@ __all__ = [
     "collapses",
     "daypart",
     "discover",
-    "display_name",
     "draft_reporting_lines",
     "env_prefix",
     "environment_variable",
