@@ -193,6 +193,7 @@ $ hz app [OPTIONS] COMMAND [ARGS]...
 
 * `doctor`: Check whether macOS will open the...
 * `install`: Install the desktop app for this version...
+* `open`: Open the desktop app, installing it first...
 * `refresh`: Refresh the managed app after an orderly...
 * `uninstall`: Remove the managed desktop app and keep...
 
@@ -234,6 +235,28 @@ $ hz app install [OPTIONS]
 **Options**:
 
 * `--keep-quarantine`: Mark the app as downloaded so macOS asks once before the first open (Open Anyway in System Settings, Privacy &amp; Security).
+* `--replace`: Move a Heinzelmaennchen.app that hz app install did not install to the Trash (nothing is deleted), then install a verified copy.
+* `-y, --yes`: Forget an earlier install whose app is gone, without asking.
+* `--details`: Also print the installer&#x27;s full diagnosis (paths and internal state) when something fails.
+* `--help`: Show this message and exit.
+
+### `hz app open`
+
+Open the desktop app, installing it first when it is not there yet.
+
+Raises:
+    typer.Exit: If the app cannot be installed or would not open.
+
+**Usage**:
+
+```console
+$ hz app open [OPTIONS]
+```
+
+**Options**:
+
+* `--details`: Also print the installer&#x27;s full diagnosis (paths and internal state) when something fails.
+* `--json`: Print the opened app&#x27;s path as JSON on stdout.
 * `--help`: Show this message and exit.
 
 ### `hz app refresh`
@@ -265,6 +288,7 @@ $ hz app uninstall [OPTIONS]
 
 **Options**:
 
+* `--details`: Also print the installer&#x27;s full diagnosis (paths and internal state) when something fails.
 * `--help`: Show this message and exit.
 
 ## `hz chat`

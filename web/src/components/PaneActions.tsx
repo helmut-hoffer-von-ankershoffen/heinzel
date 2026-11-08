@@ -234,9 +234,9 @@ export function PaneChrome({ children }: { children: ReactNode }) {
   );
 }
 
-/** Buttons and links a container may show only in its action row or chrome; switches and form fields are content. */
+/** Buttons and links a container may show only in its action row or chrome; switches, the radios of a segmented choice and form fields are content. */
 const ACTION =
-  'button:not([role="switch"]), a[href]:not([data-prose-link]), [role="button"], [role="link"]:not([data-prose-link]), [role="menuitem"]';
+  'button:not([role="switch"]):not([role="radio"]), a[href]:not([data-prose-link]), [role="button"], [role="link"]:not([data-prose-link]), [role="menuitem"]';
 
 /**
  * What breaks the action structure (design/README.md, "Actions") of a pane, card or dialog: an action outside the

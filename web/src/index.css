@@ -140,8 +140,15 @@ body,
   height: 100%;
 }
 
-body {
+/* The page colour belongs to <html>, and <body> stays transparent. index.html gives <html> the splash colour, so a
+   painted <body> would cover everything below the content layer: the audio aurora (fixed, -z-10) drew but was never
+   seen. */
+html {
   background: var(--color-background);
+}
+
+body {
+  background: transparent;
   color: var(--color-foreground);
   font-family: var(--font-sans);
   font-size: 14px;

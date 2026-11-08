@@ -269,6 +269,7 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
     ],
   ];
   if (candidate.installed_version) rows.push([t("plugins.field.replaces"), candidate.installed_version]);
+  const also = candidate.also_installs ?? [];
   return (
     <div className="mt-2 text-xs">
       {candidate.summary && <p className="mb-1 text-muted-foreground">{candidate.summary}</p>}
@@ -281,6 +282,21 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
           ...(candidate.installed_version ? [`${t("plugins.field.replaces")} ${candidate.installed_version}`] : []),
         ].join(" · ")}
       </p>
+      {also.length > 0 && (
+        <div className="mt-1" data-testid="plugin-also-installs">
+          <p className="font-medium">{candidate.also}</p>
+          <ul className="mt-0.5 list-none">
+            {also.map((item) => (
+              <li key={item.distribution} className="break-words">
+                {[
+                  item.version ? `${item.distribution} ${item.version}` : item.distribution,
+                  sourceLabel({ source_url: candidate.url }, candidate.private),
+                ].join(" · ")}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <details className="mt-1">
         <summary className="cursor-pointer text-muted-foreground">{t("plugins.sourceDetails")}</summary>
         <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
@@ -860,24 +876,33 @@ function KindBadges({ plugin }: { plugin: SchemaPluginInfo }) {
 
 /** All, or only the plugins of one kind. */
 function KindFilter({ kind, onKind }: { kind: PluginKind | null; onKind: (kind: PluginKind | null) => void }) {
+  // One exclusive choice (design/README.md, Choices): radios, the chosen one filled primary, never the hover fill alone.
   const chip = (active: boolean) =>
     cn(
-      "flex items-center gap-1.5 rounded-lg border px-2 py-1 text-ui-sm transition-colors [&_svg]:size-3.5 [&_svg]:text-icon",
+      "flex items-center gap-1.5 rounded-lg border px-2 py-1 text-ui-sm transition-colors [&_svg]:size-3.5",
       active
-        ? "border-transparent bg-accent text-accent-foreground"
-        : "border-border text-muted-foreground hover:bg-accent/60",
+        ? "border-transparent bg-primary font-medium text-primary-foreground"
+        : "border-border text-muted-foreground hover:bg-accent/60 [&_svg]:text-icon",
     );
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a row of toggle buttons, not a form's fieldset
-    <div role="group" aria-label={t("plugins.kind.filter")} className="mb-2 flex flex-wrap gap-1.5">
-      <button type="button" aria-pressed={kind === null} onClick={() => onKind(null)} className={chip(kind === null)}>
+    <div role="radiogroup" aria-label={t("plugins.kind.filter")} className="mb-2 flex flex-wrap gap-1.5">
+      {/* biome-ignore lint/a11y/useSemanticElements: chips announced as the radios of their group */}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={kind === null}
+        onClick={() => onKind(null)}
+        className={chip(kind === null)}
+      >
         {t("plugins.kind.all")}
       </button>
       {KINDS.map(({ kind: value, icon: Icon, label }) => (
+        // biome-ignore lint/a11y/useSemanticElements: chips announced as the radios of their group
         <button
           key={value}
           type="button"
-          aria-pressed={kind === value}
+          role="radio"
+          aria-checked={kind === value}
           onClick={() => onKind(kind === value ? null : value)}
           className={chip(kind === value)}
         >

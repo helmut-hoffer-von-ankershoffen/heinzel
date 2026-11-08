@@ -824,8 +824,8 @@ class AutoUpdater:
             log.info("automatic update check of the plugins failed: %s", exc)
             news = None
             plugins_ok = False
-        plugins = dict(self.plan.plugins) if news is None else {n: r.version for n, r in news.releases.items()}
         self._looked = (now, core_ok, plugins_ok)
+        plugins = dict(self.plan.plugins) if news is None else {n: r.version for n, r in news.releases.items()}
         with self._editing() as plan:
             before = (plan.core, dict(plan.plugins))
             found(plan, core, plugins, now)
@@ -1023,11 +1023,11 @@ class AutoUpdater:
                 development=self.development,
                 held=self.development or (reason if reason == CHECKS_OFF else None),
                 by_hand=[] if self.development is not None else self.by_hand(),
-                plugins_held=[] if self.development is not None else list(plan.held_plugins),
                 holds=[] if self.development is not None else self.holds(),
                 checked_at=self._looked[0] if self._looked else None,
                 core_checked=self._looked[1] if self._looked else None,
                 plugins_checked=self._looked[2] if self._looked else None,
+                plugins_held=[] if self.development is not None else list(plan.held_plugins),
             )
 
     def recheck(self) -> AutoUpdateStatus:

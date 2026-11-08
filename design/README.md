@@ -38,6 +38,21 @@ follows from it:
 - **Heinzels screen icon (2026-11-07).** The navigation item for the Heinzels screen is the team glyph (one face
   with two caps behind it, `HeinzelTeam`), in the line style of its neighbours; the single face (`HeinzelFace`)
   stays for one Heinzel: a graph node, a plugin's contribution.
+- **Choices (2026-11-07).** A choice among two to four exclusive options is a segmented control
+  (`components/ui/segmented.tsx`): a `radiogroup` of `radio` segments on a `color-muted` track; the chosen segment is
+  filled `color-primary` with `color-primary-foreground`, never the `color-accent` hover fill alone, and the fill is the
+  one accent in that container. A longer exclusive set (filter chips) is still radios. `aria-pressed` is for one
+  independent on/off toggle (the top bar's panel buttons), never for a member of a set; `choices-standards.test.ts`
+  fails an `aria-pressed` set. A choice the app cannot offer stays in the group, dimmed and `aria-disabled`, with its
+  reason in the tooltip and the status line. Choosing while another option is live switches in one step: the new one
+  is asked for first, the old one stopped only once the new one runs. Segmented controls and switches are content, so
+  a pane made of them has no action row. Example: the Audio pane is Show (Spectrum | Aurora | Both) and Listen to
+  (Off | Microphone | Shared audio) segmented controls, a live status line, one privacy line and the master switch.
+- **Audio visualizations follow the theme (2026-11-07).** The Spectrum rail and the Aurora take every hue from the live
+  theme tokens (`color-primary`, `color-ok`, `color-warn`) in any CSS colour notation, re-read the moment the mode,
+  theme or its daypart variant changes; no colour is written in `web/src/audio` (`choices-standards.test.ts`). The
+  Aurora is a full-window layer under the content, so the page colour is painted on `<html>` and `<body>` stays
+  transparent; a painted `<body>` hides it.
 
 ## Content in focus, no screen space wasted
 
@@ -102,7 +117,7 @@ card, a dialog, a panel, a page, a settings section, a toast) places its actions
 | System health pane | Check summary; divider; [🩺 Open Doctor] [⟳] |
 | Updates pane | Status lines, automatic-updates switch; divider; [⬇ Update now] [⟳] |
 | Daemon pane (plugin) | Status lines; divider; [⚡ Restart daemon] [📄] [⏱] [⚠] (red) |
-| Audio visualizer pane | Status, Spectrum/Aurora checkboxes, master switch; divider; [🖥 Share audio] [🎤] |
+| Audio visualizer pane | Segmented Show and Listen to, status, master switch; no action row (all content) |
 | Today card | title row with [x] Dismiss; body; divider; [↗ Open] [💬] |
 | Operation dialog | title row with [x]; question; divider; right: [Cancel] [Install] |
 | Plugins list row | ghost [⏻] [🗑] (red); Remove opens a confirming dialog |

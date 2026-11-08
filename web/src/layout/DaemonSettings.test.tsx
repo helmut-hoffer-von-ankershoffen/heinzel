@@ -24,7 +24,7 @@ const running: SchemaDaemonStatus = {
   last_tick: null,
 };
 
-function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false) {
+function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false, restartFails = false) {
   let status = { ...running, ...initial };
   const { calls } = mockApi({
     "/api/system/daemon/status": () => status,
@@ -53,6 +53,7 @@ function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false) {
       return { paused: false };
     },
     "/api/system/daemon/restart": () => {
+      if (restartFails) return { status: 400, body: { error: "previous handover cannot be verified" } };
       status = { ...status, loaded: true, installed_version: "2.0.0", version_mismatch: false };
       return { restarted: true, version: "2.0.0", interval_minutes: 5 };
     },
@@ -219,6 +220,14 @@ describe("Daemon Settings", () => {
     await user.click(screen.getByRole("button", { name: "Restart" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(await screen.findByText("The daemon restarted.")).toBeInTheDocument();
+  });
+
+  it("says in plain words that a restart did not work, without the technical reason", async () => {
+    const { user } = show({ version: "1.0.0", installed_version: "2.0.0", version_mismatch: true }, false, true);
+    await user.click(await screen.findByRole("button", { name: "Restart" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The daemon could not restart. Try again in a moment.");
+    expect(alert).not.toHaveTextContent("handover");
   });
 
   it("keeps state and reports a refused pause instead of claiming success or retrying", async () => {

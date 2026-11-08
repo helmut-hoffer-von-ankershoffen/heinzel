@@ -16,6 +16,7 @@ from packaging.utils import canonicalize_name
 
 from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress, Settings, Theme
 from heinzel.kernel import DEFAULT_THEME, Installation, Origin
+from heinzel.kernel._logging import record_fields
 from heinzel.modules.system.plugin import _receipts, _service, _sources
 from heinzel.modules.system.plugin._models import PluginCandidate, PluginInfo, PluginSettings
 from heinzel.modules.system.plugin._receipts import PluginReceipts
@@ -1914,3 +1915,211 @@ def test_a_plugin_another_plugin_needs_is_not_removed_and_nothing_changes(make_k
         HeinzelError, match=r"heinzel_old can't be removed: heinzel-older needs it.*Nothing was changed"
     ):
         service_for(make_kernel, tool_env).remove_command("heinzel_old")
+
+
+class FakeCompanyGitHub:
+    """One repository holding a root plugin and two plugins under `plugins/`, one needing the other two."""
+
+    BASE = "repos/acme-example/heinzel-acme"
+    REVISION = "c" * 40
+
+    def __init__(self):
+        projects = {
+            "": ("heinzel-acme", "0.2.0", []),
+            "plugins/heinzel-acme-payments": ("heinzel-acme-payments", "0.2.0", ["heinzel-acme>=0.0.0"]),
+            "plugins/heinzel-acme-checkout": (
+                "heinzel-acme-checkout",
+                "0.2.1",
+                ["heinzel>=0.9,<1", "heinzel-acme>=0.0.0", "heinzel-acme-payments>=0.0.0", "httpx>=0.28"],
+            ),
+        }
+        self.answers = {
+            self.BASE: {
+                "default_branch": "main",
+                "private": False,
+                "owner": {"login": "acme-example"},
+                "html_url": "https://github.com/acme-example/heinzel-acme",
+            },
+            f"{self.BASE}/commits/main": {"sha": self.REVISION},
+            f"{self.BASE}/commits/{self.REVISION}": {"sha": self.REVISION},
+        }
+        for directory, (name, version, dependencies) in projects.items():
+            text = f'[project]\nname = "{name}"\nversion = "{version}"\ndependencies = {json.dumps(dependencies)}\n'
+            text += f'[project.entry-points."heinzel.modules"]\n{name.removeprefix("heinzel-")} = "x"\n'
+            where = f"{directory}/pyproject.toml" if directory else "pyproject.toml"
+            content = {"type": "file", "content": base64.b64encode(text.encode()).decode()}
+            self.answers[f"{self.BASE}/contents/{quote_path(where)}?ref={self.REVISION}"] = content
+        self.paths: list[str] = []
+
+    def __call__(self, path):
+        self.paths.append(path)
+        if path not in self.answers:
+            msg = f"HTTP 404: Not Found ({path})"
+            raise LookupError(msg)
+        return self.answers[path]
+
+
+def quote_path(path):
+    return _sources.quote(path)
+
+
+CHECKOUT = "https://github.com/acme-example/heinzel-acme#subdirectory=plugins/heinzel-acme-checkout"
+
+
+def company_service(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.github_api = FakeCompanyGitHub()
+    monkeypatch.setattr(
+        service,
+        "_host_list",
+        lambda **_kwargs: [
+            PluginInfo(
+                distribution="heinzel-acme-checkout",
+                version="0.2.1",
+                revision=FakeCompanyGitHub.REVISION,
+                source_kind="git",
+                source_url=f"https://github.com/acme-example/heinzel-acme/tree/{FakeCompanyGitHub.REVISION}"
+                "/plugins/heinzel-acme-checkout",
+                modules=["acme-checkout"],
+                name="acme-checkout",
+            )
+        ],
+    )
+    return service, runs
+
+
+def test_the_preview_names_the_sibling_plugins_a_plugin_needs_at_the_same_commit(make_kernel, tool_env, monkeypatch):
+    service, runs = company_service(make_kernel, tool_env, monkeypatch)
+    candidate = service.add(CHECKOUT).candidate
+    assert [(item.distribution, item.version) for item in candidate.also_installs] == [
+        ("heinzel-acme", "0.2.0"),
+        ("heinzel-acme-payments", "0.2.0"),
+    ]
+    revision = FakeCompanyGitHub.REVISION
+    assert [item.requirement for item in candidate.also_installs] == [
+        f"heinzel-acme @ git+https://github.com/acme-example/heinzel-acme@{revision}",
+        (
+            f"heinzel-acme-payments @ git+https://github.com/acme-example/heinzel-acme@{revision}"
+            "#subdirectory=plugins/heinzel-acme-payments"
+        ),
+    ]
+    assert runs == []  # a preview installs nothing
+
+
+def test_confirming_installs_the_whole_closure_in_one_uv_run_dependencies_first(
+    make_kernel, tool_env, monkeypatch, caplog
+):
+    service, runs = company_service(make_kernel, tool_env, monkeypatch)
+    caplog.set_level("INFO", logger="heinzel.plugin")
+    preview = service.add(CHECKOUT)
+    caplog.clear()
+    change = service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
+    assert change.done
+    [(command, _)] = runs
+    with_specs = [command[i + 1].split(" @ ")[0] for i, part in enumerate(command) if part == "--with"]
+    assert with_specs[-3:] == ["heinzel-acme", "heinzel-acme-payments", "heinzel-acme-checkout"]
+    assert {c.split("@")[-1].split("#")[0] for c in command if "heinzel-acme" in c and "git+" in c} == {
+        FakeCompanyGitHub.REVISION
+    }
+    assert [(e.distribution, e.version) for e in service.history()] == [
+        ("heinzel-acme", "0.2.0"),
+        ("heinzel-acme-payments", "0.2.0"),
+        ("heinzel-acme-checkout", "0.2.1"),
+    ]
+    events = [record_fields(r) for r in caplog.records if r.name == "heinzel.plugin"]
+    ends = [e for e in events if e.get("phase") == "end"]
+    assert [(e["event"], e["outcome"]) for e in ends] == [("plugin.add.install", "ok")]
+    assert ends[0]["also"] == ["heinzel-acme", "heinzel-acme-payments"]
+    assert {"operation", "plugin", "duration_ms"} <= ends[0].keys()
+
+
+def test_a_failed_closure_install_logs_the_error_and_records_nothing(make_kernel, tool_env, monkeypatch, caplog):
+    service, _ = company_service(make_kernel, tool_env, monkeypatch)
+    candidate = service.candidate(CHECKOUT)
+    monkeypatch.setattr(
+        service._installation,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(HeinzelError("uv says no")),
+    )
+    caplog.set_level("INFO", logger="heinzel.plugin")
+    with pytest.raises(HeinzelError, match="uv says no"):
+        service.add(candidate.requirement, confirm=True)
+    [failure] = [
+        record_fields(r) for r in caplog.records if r.name == "heinzel.plugin" and getattr(r, "outcome", "") == "error"
+    ]
+    assert (failure["event"], failure["error_type"], failure["error"]) == (
+        "plugin.add.install",
+        "HeinzelError",
+        "uv says no",
+    )
+    assert service.history() == []
+
+
+def test_a_plugin_without_sibling_dependencies_installs_as_before(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.github_api = FakeGitHubApi()
+    candidate = service.candidate("git+https://github.com/acme-example/heinzel-crm@main")
+    assert candidate.also_installs == []
+    assert service.add_command(candidate.requirement) == service.add_command(candidate.requirement, [])
+    assert runs == []
+
+
+def test_siblings_that_resolve_elsewhere_or_are_installed_are_left_to_uv(make_kernel, tool_env, monkeypatch):
+    service, _ = company_service(make_kernel, tool_env, monkeypatch)
+    monkeypatch.setattr(
+        service,
+        "installed",
+        lambda **_: [PluginInfo(distribution="heinzel-acme", version="0.2.0", modules=[], name="acme")],
+    )
+    names = [item.distribution for item in service.candidate(CHECKOUT).also_installs]
+    assert names == ["heinzel-acme-payments"]  # heinzel, httpx: not siblings; heinzel-acme: installed
+
+
+def test_unreadable_siblings_leave_a_warning_and_the_plain_install(make_kernel, tool_env, monkeypatch):
+    service, _ = company_service(make_kernel, tool_env, monkeypatch)
+    real = service.github_api
+
+    def offline_for_payments(path):
+        if "heinzel-acme-payments" in path or path.endswith(
+            "/contents/pyproject.toml?ref=" + FakeCompanyGitHub.REVISION
+        ):
+            msg = "offline"
+            raise OSError(msg)
+        return real(path)
+
+    service.github_api = offline_for_payments
+    candidate = service.candidate(CHECKOUT)
+    assert candidate.also_installs == []
+    assert any("couldn't be read" in w for w in candidate.warnings)
+
+
+def test_the_cli_preview_and_result_name_the_plugins_installed_with_it(make_kernel, tool_env, monkeypatch):
+    from rich.console import Console
+
+    from heinzel.modules.system.plugin._render import render_change
+
+    service, _ = company_service(make_kernel, tool_env, monkeypatch)
+    preview = service.add(CHECKOUT)
+    console = Console(record=True, width=200)
+    console.print(render_change(preview))
+    assert (
+        "heinzel-acme-checkout also needs heinzel-acme and heinzel-acme-payments; installing them too."
+        in console.export_text()
+    )
+    done = service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
+    console = Console(record=True, width=200)
+    console.print(render_change(done))
+    assert "Also installed: heinzel-acme, heinzel-acme-payments." in console.export_text()
+
+
+def test_the_company_root_cannot_be_removed_while_a_plugin_installed_with_it_needs_it(
+    make_kernel, tool_env, monkeypatch
+):
+    service, _ = company_service(make_kernel, tool_env, monkeypatch)
+    graph = {"heinzel-acme": {"heinzel-acme-payments", "heinzel-acme-checkout"}}
+    monkeypatch.setattr(_service, "required_by", lambda _distributions: graph)
+    monkeypatch.setattr(service, "_known", canonicalize_name)
+    with pytest.raises(
+        HeinzelError, match=r"heinzel-acme can't be removed: .*heinzel-acme-checkout.*Nothing was changed"
+    ):
+        service.remove_command("heinzel-acme")
