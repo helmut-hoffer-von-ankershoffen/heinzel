@@ -181,8 +181,19 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 title="Tracker",
                 purpose="issues and tickets",
                 protocol=Tracker,
-                summary="Issues in an issue tracker.",
-                methods=MappingProxyType({"issues_updated": "read"}),
+                summary="Issues in an issue tracker: reading what changed; creating, claiming, moving, commenting on, "
+                "attaching to and closing issues through publish operations.",
+                methods=MappingProxyType(
+                    {
+                        "issues_updated": "read",
+                        "create": "write",
+                        "claim": "write",
+                        "transition": "write",
+                        "note": "write",
+                        "attach": "write",
+                        "close": "write",
+                    }
+                ),
             ),
         )
     }

@@ -1,0 +1,7 @@
+Installing Heinzelmännchen 0.9.29 into <tmp>/system/Applications (for everyone on this Mac; you are an administrator)
+  Downloading 48.2 MB ... done (7 s)
+  ok Verified   checksum and build provenance match the GitHub release
+  ok Sealed     local code seal; marked as downloaded, so macOS asks once (Privacy & Security, Open Anyway)
+  ok Installed  <tmp>/system/Applications/Heinzelmaennchen.app
+  ok Recorded   hz owns this copy; hz app doctor checks it, hz app uninstall removes it
+Done. Open it from Launchpad, or run: open <tmp>/system/Applications/Heinzelmaennchen.app

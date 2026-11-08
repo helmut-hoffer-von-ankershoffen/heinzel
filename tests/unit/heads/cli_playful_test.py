@@ -72,7 +72,7 @@ def test_banner_matches_the_golden():
     assert lines == [line.rstrip() for line in GOLDEN.read_text().splitlines()]
 
 
-def test_banner_keeps_the_words_readable_beside_the_art():
+def test_banner_keeps_the_words_readable_under_the_art():
     console = tty()
     console.print(_playful.banner(LINES), end="")
     text = console.export_text()

@@ -19,7 +19,8 @@ def test_xdist_timing_is_emitted_for_a_failed_session_without_replacing_its_resu
 ):
     tests = tmp_path / "tests"
     tests.mkdir()
-    shutil.copyfile(Path(__file__).resolve().parents[1] / "conftest.py", tests / "conftest.py")
+    for harness in ("conftest.py", "_e2e_schedule.py"):  # the root conftest imports its E2E scheduling hooks
+        shutil.copyfile(Path(__file__).resolve().parents[1] / harness, tests / harness)
     if unchanged_cpu:
         # A short test can finish within one OS accounting tick; keep the actual session clock and timeout.
         with (tests / "conftest.py").open("a") as plugin:

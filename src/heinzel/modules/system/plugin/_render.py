@@ -5,7 +5,7 @@ from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 
-from heinzel.modules.system.plugin._models import PluginChange, PluginInfo, PluginSearch
+from heinzel.modules.system.plugin._models import PluginCandidate, PluginChange, PluginInfo, PluginSearch
 
 RIGHTS = (
     "Plugins run with your rights. Community plugins are not reviewed by the Heinzelmännchen maintainers; "
@@ -94,6 +94,7 @@ def render_change(change: PluginChange) -> RenderableType:
             if value:
                 table.add_row(label, Text(value))
         parts.append(table)
+        parts.extend(Text(candidate.also, style="bold") for _ in [0] if candidate.also)
         parts.extend(Text(f"Warning: {warning}", style="yellow") for warning in candidate.warnings)
         if not candidate.first_party:
             parts.append(Text(RIGHTS, style="dim"))
@@ -105,6 +106,7 @@ def render_change(change: PluginChange) -> RenderableType:
     if change.action == "add" and change.candidate is not None:
         version = f" {change.candidate.version}" if change.candidate.version else ""
         parts.append(Text(f"✓ Installed {change.distribution or 'the plugin'}{version}.", style="green"))
+        parts.extend(Text(f"Also installed: {names}.") for names in [_also_names(change.candidate)] if names)
         parts.append(Text("Open hz and click Restart and apply in the footer, or restart hz ui, to load it."))
         parts.extend(Text(line) for line in _brings(change))
     else:
@@ -113,6 +115,10 @@ def render_change(change: PluginChange) -> RenderableType:
             parts.append(Text(RESTART, style="dim"))
     parts.extend(Text(f"Undo with: {command}", style="dim") for command in change.next)
     return Group(*parts)
+
+
+def _also_names(candidate: PluginCandidate) -> str:
+    return ", ".join(item.distribution for item in candidate.also_installs)
 
 
 def _brings(change: PluginChange) -> list[str]:

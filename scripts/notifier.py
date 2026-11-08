@@ -23,6 +23,7 @@ drew them, so redraw them only when the drawing changes.
 import hashlib
 import json
 import platform
+import plistlib
 import re
 import shutil
 import struct
@@ -279,6 +280,51 @@ def build() -> None:
         shutil.rmtree(APP, ignore_errors=True)
         shutil.copytree(app, APP, symlinks=True)
     print(f"Built {APP.relative_to(ROOT)} ({version})")
+    if PROOF_SOURCE.is_file():
+        render_proof()
+
+
+PROOF_SOURCE = ROOT / "tests" / "fixtures" / "notifier" / "render_proof.swift"
+PROOF = ROOT / "build" / "notifier-render-proof"
+"""Where `make notifier` leaves the face-rendering proof for tests/e2e/notifier_face_test.py (source checkouts)."""
+
+
+def proof_source() -> str:
+    """The production helpers of main.swift (before the application delegate) followed by the proof harness.
+
+    Raises:
+        SystemExit: If main.swift no longer defines its helpers before the application delegate.
+    """
+    prefix, separator, _delegate = (SOURCES / "main.swift").read_text().partition("final class Notifier:")
+    if not separator:
+        msg = "main.swift must define its helper functions before the application delegate"
+        raise SystemExit(msg)
+    return prefix + PROOF_SOURCE.read_text()
+
+
+def render_proof() -> None:
+    """Compile the face-rendering proof into a minimal app with the bundled face, stamped with its source digest.
+
+    Bead 4mgv: compiling inside the timed test overran its budget on a loaded runner; this build has no such clock.
+    """
+    source = proof_source()
+    with tempfile.TemporaryDirectory(prefix="hz-render-proof-") as directory:
+        work = Path(directory)
+        swift = work / "render.swift"
+        swift.write_text(source)
+        contents = work / "RenderingProof.app" / "Contents"
+        (contents / "MacOS").mkdir(parents=True)
+        (contents / "Resources").mkdir()
+        shutil.copyfile(SOURCES / "heinzel.svg", contents / "Resources" / "face.svg")
+        with (contents / "Info.plist").open("wb") as handle:
+            plistlib.dump({"CFBundleExecutable": "render", "CFBundlePackageType": "APPL"}, handle)
+        target = f"{platform.machine()}-apple-macos13"  # the production slice's settings reuse its SDK module cache
+        _run("swiftc", "-O", "-target", target, str(swift), "-o", str(contents / "MacOS" / "render"))
+        shutil.rmtree(PROOF, ignore_errors=True)
+        PROOF.mkdir(parents=True)
+        shutil.copytree(work / "RenderingProof.app", PROOF / "RenderingProof.app", symlinks=True)
+        (PROOF / "source.sha256").write_text(hashlib.sha256(source.encode()).hexdigest() + "\n")
+    print(f"Built {PROOF / 'RenderingProof.app'}")
 
 
 if __name__ == "__main__":

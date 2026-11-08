@@ -1,5 +1,5 @@
 ---
-description: Set up Heinzelmännchen for your team: install hz, connect your tools, create the team repository and get a first draft out every Friday.
+description: "Set up Heinzelmännchen for your team: install hz, connect your tools, create the team repository and get a first draft out every Friday."
 ---
 
 # Bootstrap your team
