@@ -2026,6 +2026,10 @@ def test_each_update_step_logs_a_start_and_an_outcome_with_fields(tmp_path, capl
     assert plugin[2:] == ("done", "heinzel-acme", "1.2.0")
     outcomes = [r for r in caplog.records if r.getMessage() == "operation.step.outcome"]
     assert all(isinstance(r.duration_ms, int) and r.duration_ms >= 0 for r in outcomes)
+    assert {(r.event, r.phase) for r in caplog.records if r.name == "heinzel.operation"} == {
+        ("operation.step.start", "start"),
+        ("operation.step.outcome", "end"),
+    }
 
 
 def test_a_failed_update_step_logs_its_failure_with_the_reason(tmp_path, caplog):
