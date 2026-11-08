@@ -406,6 +406,87 @@ def test_search_lists_metadata_plugins_by_stars(make_kernel, tmp_path, github):
     assert result.warnings == []
 
 
+class Clock:
+    """A clock the test sets: the cache never sleeps."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def searching_service(make_kernel, tmp_path, github):
+    github.answer = {"items": [repository("heinzel-new", 2)]}
+    service = service_for(make_kernel, tmp_path)
+    service._clock = Clock()
+    return service
+
+
+def searches(github):
+    return [r for r in github.requests if "/search/repositories" in r[0]]
+
+
+def test_discover_is_kept_for_a_minute_then_asked_again(make_kernel, tmp_path, github):
+    service = searching_service(make_kernel, tmp_path, github)
+    first = service.search()
+    service._clock.now += 59.9
+    assert service.search().plugins == first.plugins
+    assert len(searches(github)) == 1
+    service._clock.now += 0.2
+    service.search()
+    assert len(searches(github)) == 2
+
+
+def test_discover_is_kept_per_words(make_kernel, tmp_path, github):
+    service = searching_service(make_kernel, tmp_path, github)
+    service.search()
+    service.search("new")
+    assert len(searches(github)) == 2
+
+
+def test_a_plugin_change_forgets_discover_and_refresh_bypasses_it(make_kernel, tmp_path, github):
+    service = searching_service(make_kernel, tmp_path, github)
+    service.search()
+    service.search(refresh=True)
+    assert len(searches(github)) == 2
+    with service._mutation():
+        pass
+    service.search()
+    assert len(searches(github)) == 3
+
+
+def test_a_kept_discover_shows_what_is_installed_now(make_kernel, tmp_path, github):
+    github.answer = {"items": [repository("heinzel-old", 2)]}
+    service = service_for(make_kernel, tmp_path)
+    service._clock = Clock()
+    assert [p.installed for p in service.search().plugins] == [True]
+    service.installed = lambda **_kw: []
+    assert [p.installed for p in service.search().plugins] == [False]
+    assert len(searches(github)) == 1
+
+
+def test_a_discover_with_warnings_is_not_kept(make_kernel, tmp_path, github):
+    github.answer = OSError("rate limited")
+    service = service_for(make_kernel, tmp_path)
+    service._clock = Clock()
+    assert service.search().warnings
+    service.search()
+    assert len(searches(github)) == 2
+
+
+def test_discover_cache_events_are_debug_hits_and_misses(make_kernel, tmp_path, github, caplog):
+    service = searching_service(make_kernel, tmp_path, github)
+    with caplog.at_level("DEBUG", logger="heinzel.plugin"):
+        service.search()
+        service.search()
+        service.search(refresh=True)
+    events = [
+        (r.event, r.outcome, r.levelname) for r in caplog.records if getattr(r, "event", "") == "plugin.search.cache"
+    ]
+    assert events == [("plugin.search.cache", o, "DEBUG") for o in ("miss", "hit", "refresh")]
+
+
 def test_search_tells_how_to_install_a_new_plugin(make_kernel, tmp_path, github):
     github.answer = {"items": [repository("heinzel-unforeseen", 3)]}
     [plugin] = service_for(make_kernel, tmp_path).search().plugins
@@ -1728,7 +1809,7 @@ def test_catalog_outage_keeps_last_successful_metadata(make_kernel, tmp_path, mo
     service = service_for(make_kernel, tmp_path)
     assert [p.name for p in service.search().plugins] == ["heinzel-unexpected"]
     fake.files.clear()
-    result = service.search()
+    result = service.search(refresh=True)
     assert [p.name for p in result.plugins] == ["heinzel-unexpected"]
     assert any("retaining" in message for message in result.warnings)
 
@@ -1760,7 +1841,7 @@ def test_partial_metadata_outage_retains_each_cached_project_across_processes(ma
     assert [entry.name for entry in result.plugins] == ["heinzel-new"]
     assert any("metadata for plugins/new" in warning for warning in result.warnings)
     fake.files["plugins/new/pyproject.toml"] = contents('[project]\nname="ordinary-library"\n')
-    assert service.search().plugins == []  # A successful removal of its entry point retires the project.
+    assert service.search(refresh=True).plugins == []  # A successful removal of its entry point retires the project.
 
 
 def test_installed_sdk_export_is_versioned_and_never_overwrites_files(make_kernel, tmp_path):

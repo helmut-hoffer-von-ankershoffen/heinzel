@@ -105,7 +105,7 @@ export function OwnerConversationSearch({ onJump }: { onJump: (session: string, 
     }
   }
   return (
-    <details className="rounded-lg border border-border p-3">
+    <details open className="rounded-lg border border-border p-3">
       <summary className="cursor-pointer text-sm font-medium">Search all Heinzel conversations</summary>
       <section aria-label="Search all conversations" className="mt-3 min-w-0 space-y-3 text-sm">
         <label className="block">

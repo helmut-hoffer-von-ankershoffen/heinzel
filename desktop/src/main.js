@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, webContents } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, WebContentsView, webContents } from "electron";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
+import { createMiniBrowser } from "./mini-browser.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
 import { createWorkspaceAudio } from "./workspace-audio.js";
@@ -85,9 +86,29 @@ const instance = createInstanceLifecycle({
   }),
 });
 
+const miniBrowser = createMiniBrowser({
+  windows,
+  fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+  connection: () => (stopping || quitting ? null : instance.currentConnection()),
+  createSession: (partition, options) => session.fromPartition(partition, options),
+  createView: (options) => new WebContentsView(options),
+  enabled: async () => {
+    const connection = instance.currentConnection();
+    if (!connection || stopping || quitting) return false;
+    const response = await fetch(`${connection.origin}/api/system/config/show`, {
+      headers: { Authorization: `Bearer ${connection.token}` }, redirect: "error",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return false;
+    const report = await response.json();
+    const features = report.settings?.find((row) => row.section === "hz" && row.key === "features")?.value;
+    return Array.isArray(features) && features.includes("sidebar_browser");
+  },
+});
 const managedMac = app.isPackaged && process.platform === "darwin";
 const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz" });
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
+  ipcMain.handle("hz:browser", (event, request) => miniBrowser.handle(event, request));
   ipcMain.handle("hz:lifecycle", createLifecycleHandler({
     windows,
     fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
@@ -112,6 +133,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     if (stopping) return;
     stopping = true;
     permissions?.revoke();
+    miniBrowser.closeAll();
     workspaceAudio?.revoke();
     let unclean = false;
     void stopWithReport(ownedCli, () => {

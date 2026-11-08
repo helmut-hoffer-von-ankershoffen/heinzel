@@ -58,4 +58,40 @@ describe("The notification center", () => {
     await user.click(screen.getByRole("tab", { name: "Drafts" }));
     expect(screen.queryByText("My helper checked in")).not.toBeInTheDocument();
   });
+
+  it("keeps the delivery line at full muted contrast (axe: no opacity modifier)", async () => {
+    mockApi({
+      ...shell,
+      "/api/system/doctor": doctor,
+      "/api/system/daemon/jobs": [],
+      "/api/system/notify/list": { notices: [checkIn], waiting: 0, native: "through Heinzel Notifier" },
+    });
+    renderAt("/doctor?panel=notifications");
+    const row = (await screen.findByText("My helper checked in")).closest("button");
+    for (const node of row?.querySelectorAll("[class*='text-muted-foreground']") ?? []) {
+      expect(node.className).not.toMatch(/text-muted-foreground\/\d+/);
+    }
+  });
+});
+
+describe("The notification center's actions", () => {
+  it("closes from the title row and keeps Mark all read in the bottom row after the test", async () => {
+    mockApi({
+      ...shell,
+      "/api/system/doctor": doctor,
+      "/api/system/daemon/jobs": [],
+      "/api/system/notify/list": { notices: [checkIn], waiting: 0, native: "" },
+    });
+    renderAt("/doctor?panel=notifications");
+    const close = await screen.findByRole("button", { name: "Close notifications" });
+    expect(close.closest("[data-pane-chrome]")).not.toBeNull();
+    const mark = screen.getByRole("button", { name: "Mark all read" });
+    const row = mark.closest("[data-pane-actions]") as HTMLElement;
+    expect(row).not.toBeNull();
+    const test = screen.getByRole("button", { name: "Send a test notification" });
+    expect(test).toHaveTextContent("Send a test notification");
+    expect(mark).toHaveTextContent("");
+    expect(test.compareDocumentPosition(mark) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(row.contains(test)).toBe(true);
+  });
 });

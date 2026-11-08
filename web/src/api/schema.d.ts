@@ -4338,6 +4338,12 @@ export interface components {
              */
             name: string;
             /**
+             * Needs
+             * @description The one thing missing, in a few words, e.g. `Add a model and API key`; empty when nothing is.
+             * @default
+             */
+            needs: string;
+            /**
              * Plugin
              * @description The plugin it comes with, e.g. `heinzel-acme`; none when built in.
              */
@@ -4348,11 +4354,16 @@ export interface components {
              */
             runner?: string | null;
             /**
+             * Setup
+             * @description What setting it up takes: `model` (a model and API key), `gateway` (its commands), `sign-in` or `client` (an optional Python client hz installs); none when nothing is missing or hz can't tell.
+             */
+            setup?: ("model" | "gateway" | "sign-in" | "client") | null;
+            /**
              * Status
-             * @description `signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `not installed` when what it needs is missing.
+             * @description `signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `needs setup` when a setting, a sign-in or its optional client is missing: these options come with hz, they are never plugins to install.
              * @enum {string}
              */
-            status: "signed in" | "not signed in" | "not tested" | "tested" | "test failed" | "not installed" | "error";
+            status: "signed in" | "not signed in" | "not tested" | "tested" | "test failed" | "needs setup" | "error";
             /**
              * Summary
              * @description One sentence on how it reaches AI.
@@ -10855,6 +10866,11 @@ export interface components {
          */
         PluginLayer: {
             /**
+             * Label
+             * @description Where it sits in its tree, derived from its position; none while the layer is left out of the tree (a missing parent, a cycle).
+             */
+            label?: ("company" | "org" | "site" | "team") | null;
+            /**
              * Module
              * @description The layer's module name, e.g. `acme-payments`.
              */
@@ -15270,13 +15286,23 @@ export interface components {
             /** @description The declaring module's operation that enables the feature. */
             enable: components["schemas"]["RunOperation"];
             /**
+             * Explanation
+             * @description The longer explanation, shown only on demand under Details.
+             */
+            explanation?: string | null;
+            /**
              * Label
              * @description The action the person enables or disables.
              */
             label: string;
             /**
+             * Problem
+             * @description One short cause the person can fix, e.g. `Sign in to Tailscale, then try again.`; its presence offers Try again.
+             */
+            problem?: string | null;
+            /**
              * Requested
-             * @description The requested state when it differs from verified readiness; never a success claim.
+             * @description The person's choice, which the switch shows; `checked` alone says whether it is live.
              */
             requested?: boolean | null;
             /**
@@ -15284,6 +15310,11 @@ export interface components {
              * @description Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and an active session or device credential.
              */
             sign_in_url?: string | null;
+            /**
+             * Status
+             * @description The provider's one short status line, e.g. `Turning on…`; the host shows its own when absent.
+             */
+            status?: string | null;
             /**
              * Url
              * @description Optional nonsecret link shown alongside the toggle.
@@ -22014,6 +22045,8 @@ export interface operations {
             query?: {
                 /** @description Words that name or describe the plugin, e.g. `calendar`; sent to GitHub's search. All plugins if omitted. */
                 text?: string;
+                /** @description Ask GitHub again instead of using the answer kept for the last minute. */
+                refresh?: boolean;
             };
             header?: never;
             path?: never;

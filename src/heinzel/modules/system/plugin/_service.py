@@ -9,11 +9,13 @@ import base64
 import contextlib
 import hashlib
 import json
+import logging
 import re
 import shlex
 import subprocess
 import tempfile
 import threading
+import time
 import tomllib
 import urllib.error
 from collections.abc import Callable, Collection, Generator, Mapping, Sequence
@@ -24,7 +26,7 @@ from importlib.metadata import Distribution, distributions, entry_points
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal, cast
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
@@ -72,6 +74,7 @@ from heinzel.modules.system.plugin._models import (
 )
 from heinzel.modules.system.plugin._receipts import PluginReceipts
 from heinzel.modules.system.plugin._sources import (
+    NEEDS,
     PREFIX,
     JsonGetter,
     Metadata,
@@ -83,6 +86,7 @@ from heinzel.modules.system.plugin._sources import (
     from_pypi,
     git_credentials,
     github_getter,
+    github_project_at,
     installed_repository_url,
     parse,
     pypi_get,
@@ -96,6 +100,8 @@ log = get_logger("plugin")
 TEMPLATE = "gh:helmut-hoffer-von-ankershoffen/heinzel"
 REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
 MAINTAINERS = "Heinzelmännchen maintainers"
+SEARCH_TTL_SECONDS = 60.0
+"""How long a complete Discover answer is kept before GitHub is asked again."""
 _CATALOG_CACHE: dict[str, list[tuple[str, str, str]]] = {}
 """Last successfully read source metadata; a transient source outage retains its catalog."""
 TOPIC = "heinzel-plugin"
@@ -173,6 +179,7 @@ class PluginService:
         settings: PluginSettings,
         *,
         lifecycle: DaemonInstallationLifecycle | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """Create the service; the kernel, the installation and the settings are injected."""
         self._kernel = kernel
@@ -186,6 +193,9 @@ class PluginService:
         self.pypi: JsonGetter = pypi_get
         """Reads PyPI's JSON API for `add`; tests replace it."""
         self._catalog_warnings: list[str] = []
+        self._clock = clock
+        self._searches: dict[tuple[str, tuple[str, ...]], tuple[float, PluginSearch]] = {}
+        """Discover answers by (words, catalogs): the time they stop counting and what they said."""
         self._pending_signature: tuple[tuple[str, str, str | None], ...] = ()
         self._pending_themes: dict[str, list[str]] = {}
         self._unreadable: set[str] = set()
@@ -282,6 +292,7 @@ class PluginService:
                 enabled.setdefault(distribution_name, False)
         distributions = self._plugin_distributions()
         errors = self._errors_by_distribution()
+        tree = self._kernel.layers()
         plugins: list[PluginInfo] = []
         # What the kernel loaded, blocked or failed to load; with `[hz] plugins_enabled` off, that is nothing.
         for plugin_name in sorted(set(records) | set(errors)):
@@ -317,7 +328,12 @@ class PluginService:
                     enabled=enabled.get(plugin_name, False) and self._kernel.settings.plugins_enabled,
                     error=errors.get(plugin_name),
                     layers=[
-                        PluginLayer(module=let.name, parent=let.parent, site=let.site)
+                        PluginLayer(
+                            module=let.name,
+                            parent=let.parent,
+                            site=let.site,
+                            label=found.label.value if (found := tree.get(let.name)) else None,
+                        )
                         for record in mine
                         for let in record.module.lets
                         if isinstance(let, LayerLet)
@@ -771,13 +787,12 @@ class PluginService:
             if declared is None:
                 if key in self._unreadable:
                     continue
-                try:
-                    _found, metadata = self._read_candidate(short_name(plugin.distribution))
-                except HeinzelError:
-                    # Not in a catalog (a local or third-party install), or offline: asked again by the next process.
+                found = self._installed_requires(plugin)
+                if found is None:
+                    # Not a GitHub install, or unreadable/offline: asked again by the next process.
                     self._unreadable.add(key)
                     continue
-                declared = list(metadata.requires)
+                declared = list(found)
                 memory.remember(key, declared)
             now = self._versions_now()
             missing = [d for d in declared if not _satisfies(Requirement(d), now.get(_need_name(d)) or "")]
@@ -839,6 +854,25 @@ class PluginService:
                 return []
             memory.try_once(key)
         return [b for b in self._bind([], None, operation="repair", once=True)[0] if b.state != "kept"]
+
+    def _installed_requires(self, plugin: PluginInfo) -> tuple[str, ...] | None:
+        """What the installed version of `plugin` requires, read from its own pyproject at the commit installed.
+
+        Never the catalog's current entry: a newer release may require more than the version installed does.
+        None when it can't be read (not installed from GitHub, no commit recorded, offline).
+        """
+        match = re.fullmatch(
+            r"https://github\.com/([^/]+)/([^/]+)/tree/([0-9a-f]{7,64})(?:/(.+))?", plugin.source_url or ""
+        )
+        if match is None or not plugin.revision:
+            return None
+        owner, repository, _commit, directory = match.groups()
+        base = f"repos/{quote(owner)}/{quote(repository)}"
+        try:
+            project = github_project_at(self.github_api, base, plugin.revision, directory)
+        except (OSError, ValueError, KeyError, TypeError, LookupError, UnicodeDecodeError):
+            return None
+        return cast("dict[str, tuple[str, ...]]", project.get(NEEDS) or {}).get("requires", ())
 
     def _notify(self, repair: PluginRepair) -> None:
         """Tell the person what an automatic repair did: what was installed, and what wasn't, until it is there."""
@@ -1314,8 +1348,48 @@ class PluginService:
             raise HeinzelError(msg) from exc
         return sorted(written)
 
-    def search(self, text: str = "") -> PluginSearch:
-        """Discover projects from configured repository directories and repositories carrying the plugin topic."""
+    def search(self, text: str = "", *, refresh: bool = False) -> PluginSearch:
+        """Discover projects from configured repository directories and repositories carrying the plugin topic.
+
+        A complete answer counts for `SEARCH_TTL_SECONDS` (per words and configured catalogs); `refresh` asks again,
+        a plugin change forgets it, and an answer with warnings (a catalog that couldn't be read) is never kept.
+        """
+        key = (text, tuple(self._settings.catalog_sources))
+        kept = None if refresh else self._searches.get(key)
+        if kept is not None and self._clock() < kept[0]:
+            log_event(log, "plugin.search.cache", level=logging.DEBUG, outcome="hit", words=len(text.split()))
+            return self._with_installed_flags(kept[1])
+        log_event(
+            log,
+            "plugin.search.cache",
+            level=logging.DEBUG,
+            outcome="refresh" if refresh else "miss",
+            words=len(text.split()),
+        )
+        found = self._search(text)
+        if found.warnings:
+            self._searches.pop(key, None)
+        else:
+            self._searches[key] = (self._clock() + SEARCH_TTL_SECONDS, found)
+        return found
+
+    def forget_searches(self) -> None:
+        """Forget every kept Discover answer: a plugin was installed or removed, or a catalog changed."""
+        self._searches.clear()
+
+    def _with_installed_flags(self, found: PluginSearch) -> PluginSearch:
+        """A kept answer with what is installed now (a change from outside this process shows at once)."""
+        installed = {canonicalize_name(p.distribution) for p in self.installed()}
+        return found.model_copy(
+            update={
+                "plugins": [
+                    entry.model_copy(update={"installed": canonicalize_name(entry.name) in installed})
+                    for entry in found.plugins
+                ]
+            }
+        )
+
+    def _search(self, text: str) -> PluginSearch:
         installed = {canonicalize_name(p.distribution) for p in self.installed()}
         words = text.casefold().split()
         warnings: list[str] = []
@@ -1669,6 +1743,14 @@ class PluginService:
             HeinzelError: If lifecycle authority or the resulting generation is unavailable.
             OSError: If the continuity record cannot be written.
         """
+        try:
+            with self._mutation_scope() as mutation:
+                yield mutation
+        finally:
+            self.forget_searches()
+
+    @contextlib.contextmanager
+    def _mutation_scope(self) -> Generator[_PackageMutation | None]:
         if not self._installation.is_tool:
             yield None
             return

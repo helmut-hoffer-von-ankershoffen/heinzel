@@ -8,6 +8,7 @@ import { useConfig, useExpert, useInfo, useNavigation, usePlugins, useRevealConf
 import { VisualizationSettings } from "@/audio/VisualizationSettings";
 import { ContributionControls, ContributionToggles } from "@/components/Contributions";
 import { Loaded } from "@/components/common";
+import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
@@ -72,14 +73,11 @@ export function SettingsDialog({ section, initialQuery, onSection, onClose }: Pr
           <h2 id={titleId} className="text-ui font-medium">
             {t("settings.title")}
           </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t("settings.close")}
-            className="ml-auto flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <X aria-hidden className="size-(--icon)" />
-          </button>
+          <div data-pane-chrome="" className="ml-auto">
+            <PaneAction ghost icon={X} onClick={onClose}>
+              {t("settings.close")}
+            </PaneAction>
+          </div>
         </header>
         <Loaded query={config}>
           {(report) => (
@@ -289,7 +287,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                   settings={matching}
                   heading={current === "daemon" ? t("daemon.configuration") : page.title}
                   header={["appearance", "ai", "notifications", "daemon"].includes(current) ? undefined : header}
-                  summary={page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined}
+                  summary={page.status ?? (page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined)}
                 />
               </div>
             )}
@@ -420,7 +418,9 @@ function ExpertRow() {
         )}
         {change.error && (
           <p role="alert" className="mt-1 text-xs text-bad">
-            {t("settings.expertFailed", { problem: change.error.message })}
+            {t("settings.expertFailed", {
+              problem: change.error.message,
+            })}
           </p>
         )}
       </div>

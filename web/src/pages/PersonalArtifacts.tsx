@@ -1,6 +1,8 @@
 // Local references only: the registry does not contact Google or verify access or ownership.
+import { ExternalLink } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { api, type SchemaPersonalArtifact, type SchemaSessionSummary } from "@/api/client";
+import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 
 function safeGoogleLink(item: SchemaPersonalArtifact, sessionId: string): boolean {
@@ -67,9 +69,14 @@ export function PersonalArtifactLinks({ sessionId, compact = false }: { sessionI
         <ul className="space-y-1">
           {artifacts.map((item) => (
             <li key={item.request_id} className="rounded border border-border p-2">
-              <a href={item.ref} target="_blank" rel="noopener noreferrer" className="break-all text-primary underline">
-                {names[item.kind]} · {item.ref.split("/")[5]}
-              </a>
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 break-all">
+                  {names[item.kind]} · {item.ref.split("/")[5]}
+                </span>
+                <PaneAction ghost icon={ExternalLink} href={item.ref}>
+                  {`${names[item.kind]} · ${item.ref.split("/")[5]}`}
+                </PaneAction>
+              </div>
               <p className="text-xs text-muted-foreground">{t("artifacts.note")}</p>
             </li>
           ))}

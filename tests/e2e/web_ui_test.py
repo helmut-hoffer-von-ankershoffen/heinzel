@@ -945,6 +945,14 @@ def test_desktop_title_bar_row_in_mounted_chromium_and_unchanged_browser(environ
 
 
 @pytest.mark.timeout(600)
+def test_right_sidebar_resizes_by_drag_and_keys_and_keeps_its_width(environment, tmp_path):
+    """The divider drags and answers keys, the width survives a reload, the terminal refits, a phone has no handle."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "sidebar-resize.mjs")
+    assert result == {"refit": True, "phone": "no handle"}
+
+
+@pytest.mark.timeout(600)
 def test_settings_search_font_floor_precedes_focus_for_phone_input_modes(environment, tmp_path):
     """The real search field retains its minimum and enlarged theme size before any autofocus."""
     env, _recorded = environment
@@ -953,3 +961,14 @@ def test_settings_search_font_floor_precedes_focus_for_phone_input_modes(environ
     result = drive_ui_script(env, tmp_path, "search-field-font.mjs")
     assert len(result["cases"]) == 8
     assert all(case["fontSize"] >= max(16, case["themeSize"]) for case in result["cases"])
+
+
+@pytest.mark.timeout(600)
+def test_phone_pages_never_pan_sideways(environment, tmp_path):
+    """On 375 and 390 px touch viewports no main page, panel or dialog scrolls or pans horizontally."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "no-horizontal-pan.mjs")
+    pages = ("today", "forecast", "notifications", "calendar", "heinzels", "settings", "terminal")
+    assert result["cases"] == [
+        {"viewport": viewport, "page": page} for viewport in ("iphone-375", "iphone-390") for page in pages
+    ]

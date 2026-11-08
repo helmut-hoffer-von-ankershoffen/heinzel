@@ -8,6 +8,7 @@ import Markdown, { type Components } from "react-markdown";
 import { Link } from "react-router";
 import remarkGfm from "remark-gfm";
 import { runCommand } from "@/components/CommandActions";
+import { PaneAction, PaneChrome } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { appCallFor } from "@/lib/operationCalls";
 import { cn } from "@/lib/utils";
@@ -33,34 +34,33 @@ export function CodeBlock({ code, language }: { code: string; language: string }
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
   };
-  const button = "flex size-7 items-center justify-center rounded-md text-icon hover:bg-accent [&_svg]:size-3.5";
   return (
     <div className="group/code relative my-2 rounded-lg border border-border bg-muted">
-      <pre className="overflow-x-auto p-3 pr-16 font-mono text-ui-sm leading-relaxed">
+      <pre className="overflow-x-auto p-3 pr-20 font-mono text-ui-sm leading-relaxed">
         <code>{code.replace(/\n$/, "")}</code>
       </pre>
-      <div className="absolute top-1.5 right-1.5 flex gap-0.5">
+      <PaneChrome>
         {runnable && (
-          <button
-            type="button"
+          <PaneAction
+            ghost
+            icon={SquareTerminal}
             onClick={() => runCommand(command)}
             aria-label={appCallFor(command) ? t("run.hereAria", { command }) : t("run.aria", { command })}
             title={appCallFor(command) ? t("run.here") : t("run.label")}
-            className={button}
           >
-            <SquareTerminal aria-hidden />
-          </button>
+            {appCallFor(command) ? t("run.here") : t("run.label")}
+          </PaneAction>
         )}
-        <button
-          type="button"
+        <PaneAction
+          ghost
+          icon={copied ? Check : Copy}
           onClick={() => void copy()}
           aria-label={t("prose.copyCode")}
           title={copied ? t("copy.done") : t("copy.label")}
-          className={button}
         >
-          {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-        </button>
-      </div>
+          {t("prose.copyCode")}
+        </PaneAction>
+      </PaneChrome>
     </div>
   );
 }
