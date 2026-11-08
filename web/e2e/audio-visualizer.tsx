@@ -45,7 +45,9 @@ Object.defineProperty(navigator, "mediaDevices", {
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing fixture root");
 createRoot(root).render(
-  <div className="flex h-dvh bg-background text-foreground">
+  // Like the app shell: the workspace paints no background of its own (the page colour is on <html>), so the aurora
+  // under the content shows through it.
+  <div className="flex h-dvh text-foreground">
     <div className="min-w-0 flex-1 p-4">
       <h1>Generated test audio</h1>
       <p>No microphone, display or system audio is captured.</p>

@@ -4,7 +4,7 @@ import pytest
 
 from heinzel import Check, Config, Document, HeinzelError, Login, Module, Status
 from heinzel.kernel import CapabilityView
-from heinzel.modules.system.connector import ConnectorCapability, ConnectorService
+from heinzel.modules.system.connector import ConnectorCapability, ConnectorService, SignIns
 from heinzel.modules.system.connector._service import login_of, state_of, title_of
 
 pytestmark = pytest.mark.unit
@@ -89,7 +89,7 @@ def notes_module(*, signed_in: bool | None = True, live: bool = True) -> Module:
 
 def service(make_kernel, module: Module, **bindings: str) -> ConnectorService:
     kernel = make_kernel(notes=module, config=Config(files=(), data={"capabilities": bindings}))
-    return ConnectorService(kernel, kernel.resolve(CapabilityView))
+    return ConnectorService(kernel, kernel.resolve(CapabilityView), SignIns(kernel))
 
 
 def test_the_report_lists_state_tools_commands_and_the_choice_without_running_the_live_test(make_kernel):
