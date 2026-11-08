@@ -2359,6 +2359,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/connector/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show who a connector is signed in as, which of its grants hold, and its latest sign-in here.
+         * @description Show who a connector is signed in as, which of its grants hold, and its latest sign-in here.
+         */
+        get: operations["system_connector_access"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop a sign-in that is waiting for consent; nothing changes in your account.
+         * @description Stop a sign-in that is waiting for consent; nothing changes in your account.
+         */
+        post: operations["system_connector_cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow.
+         * @description Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow.
+         */
+        post: operations["system_connector_connect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign a connector's tool out through its own command; reading and writing through it stop.
+         * @description Sign a connector's tool out through its own command; reading and writing through it stop.
+         */
+        post: operations["system_connector_disconnect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/flow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show where a sign-in started here is: waiting for your consent, or how it ended.
+         * @description Show where a sign-in started here is: waiting for your consent, or how it ended.
+         */
+        get: operations["system_connector_flow"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/connector/list": {
         parameters: {
             query?: never;
@@ -2373,6 +2473,26 @@ export interface paths {
         get: operations["system_connector_list"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to.
+         * @description Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to.
+         */
+        post: operations["system_connector_open"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3025,6 +3145,30 @@ export interface paths {
          * @description Remove a plugin.
          */
         post: operations["system_plugin_remove"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/plugin/repair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
+         * @description Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
+         *
+         *     A plugin declares the plugins it can't work without in `[tool.heinzel.plugin] requires-plugins`; `add` installs them
+         *     first, and this repairs an installation that lacks them (one installed before they were declared). It never signs
+         *     in: `hz system doctor` still names each plugin's sign-in step. Running servers load them after a restart.
+         */
+        post: operations["system_plugin_repair"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4008,6 +4152,32 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * Access
+         * @description A connector's sign-in as its own provider sees it: account, grants, and what can be done (ADR 0136).
+         */
+        Access: {
+            /** @description Its sign-in running now or ended last; none. */
+            flow?: components["schemas"]["SignInFlow"] | null;
+            /**
+             * Message
+             * @description What the request did, such as signing out; empty if nothing.
+             * @default
+             */
+            message: string;
+            /**
+             * Name
+             * @description Qualified name of the module, as `hz system connector list` names it.
+             */
+            name: string;
+            /** @description Who is signed in, which grants hold, and whether the tool can run. */
+            status: components["schemas"]["SignInStatus"];
+            /**
+             * Title
+             * @description Its name for people, e.g. `Google`.
+             */
+            title: string;
+        };
+        /**
          * AccessList
          * @description Every installed AI access option, the one in use, and what each use of AI runs.
          */
@@ -4083,6 +4253,12 @@ export interface components {
              */
             name: string;
             /**
+             * Needs
+             * @description The one thing missing, in a few words, e.g. `Add a model and API key`; empty when nothing is.
+             * @default
+             */
+            needs: string;
+            /**
              * Plugin
              * @description The plugin it comes with, e.g. `heinzel-acme`; none when built in.
              */
@@ -4093,11 +4269,16 @@ export interface components {
              */
             runner?: string | null;
             /**
+             * Setup
+             * @description What setting it up takes: `model` (a model and API key), `gateway` (its commands), `sign-in` or `client` (an optional Python client hz installs); none when nothing is missing or hz can't tell.
+             */
+            setup?: ("model" | "gateway" | "sign-in" | "client") | null;
+            /**
              * Status
-             * @description `signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `not installed` when what it needs is missing.
+             * @description `signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `needs setup` when a setting, a sign-in or its optional client is missing: these options come with hz, they are never plugins to install.
              * @enum {string}
              */
-            status: "signed in" | "not signed in" | "not tested" | "tested" | "test failed" | "not installed" | "error";
+            status: "signed in" | "not signed in" | "not tested" | "tested" | "test failed" | "needs setup" | "error";
             /**
              * Summary
              * @description One sentence on how it reaches AI.
@@ -6500,6 +6681,12 @@ export interface components {
              */
             name: string;
             /**
+             * Sign In
+             * @description Whether hz runs its sign-in itself (`hz system connector connect`), no terminal.
+             * @default false
+             */
+            sign_in: boolean;
+            /**
              * State
              * @description Connected, not signed in, not bound, needs attention, or unknown until tested.
              * @enum {string}
@@ -7767,6 +7954,70 @@ export interface components {
              * @enum {string}
              */
             source: "code-user" | "code-project" | "code-plugin";
+        };
+        /**
+         * Grant
+         * @description Something a connector's sign-in can be allowed to do, in plain words, with the vendor scopes it takes.
+         *
+         *     A connector asks for its `default` grants on a first sign-in and for any other only when the person allows it,
+         *     usually when a feature that needs it is first used: the minimum, and nothing silently (ADR 0136).
+         */
+        Grant: {
+            /**
+             * Capability
+             * @description The capability it serves, e.g. `calendar`; none.
+             */
+            capability?: string | null;
+            /**
+             * Default
+             * @description Whether a first sign-in asks for it.
+             * @default false
+             */
+            default: boolean;
+            /**
+             * Explanation
+             * @description What it permits, in a sentence a person decides on.
+             */
+            explanation: string;
+            /**
+             * Id
+             * @description Its name, lowercase words joined by dashes, e.g. `calendar-write`.
+             */
+            id: string;
+            /**
+             * Modes
+             * @description The capability's modes it allows: read, write.
+             */
+            modes?: ("read" | "write")[];
+            /**
+             * Scopes
+             * @description The vendor's names for it, shown, never secret.
+             */
+            scopes?: string[];
+            /**
+             * Title
+             * @description A short label for people, e.g. `Change your calendar`.
+             */
+            title: string;
+        };
+        /**
+         * GrantStatus
+         * @description One declared grant and whether the vendor confirms it.
+         */
+        GrantStatus: {
+            /** @description The grant, as the connector declares it. */
+            grant: components["schemas"]["Grant"];
+            /**
+             * Needed
+             * @description Whether what the person uses now needs it, e.g. a bound capability's reads.
+             */
+            needed: boolean;
+            /**
+             * State
+             * @description Granted, missing, or unknown when nothing says.
+             * @enum {string}
+             */
+            state: "granted" | "missing" | "unknown";
         };
         /**
          * Graph
@@ -10072,6 +10323,12 @@ export interface components {
          */
         PluginCandidate: {
             /**
+             * Also
+             * @description Said before it starts: which plugins it installs with this one, and which it offers.
+             * @default
+             */
+            also: string;
+            /**
              * Distribution
              * @description Distribution name, when it could be read before installing.
              */
@@ -10086,6 +10343,11 @@ export interface components {
              * @description The version installed now, when this replaces it.
              */
             installed_version: string | null;
+            /**
+             * Needs
+             * @description Plugins it requires (dependencies first, each once) and recommends, and what the add does.
+             */
+            needs?: components["schemas"]["PluginNeed"][];
             /**
              * Private
              * @description Whether the repository is private (read with your gh login); none when unknown.
@@ -10161,6 +10423,11 @@ export interface components {
              * @description Whether it was carried out; false for `add` without `confirm`, which only shows.
              */
             done: boolean;
+            /**
+             * Needs
+             * @description For a confirmed add or a repair: each plugin it required or recommended, with its result.
+             */
+            needs?: components["schemas"]["PluginNeed"][];
             /**
              * Next
              * @description Commands to run next, e.g. the one that confirms.
@@ -10341,6 +10608,11 @@ export interface components {
          */
         PluginLayer: {
             /**
+             * Label
+             * @description Where it sits in its tree, derived from its position; none while the layer is left out of the tree (a missing parent, a cycle).
+             */
+            label?: ("company" | "org" | "site" | "team") | null;
+            /**
              * Module
              * @description The layer's module name, e.g. `acme-payments`.
              */
@@ -10355,6 +10627,67 @@ export interface components {
              * @description The site layer it names, if any.
              */
             site: string | null;
+        };
+        /**
+         * PluginNeed
+         * @description A plugin another plugin requires or recommends (`[tool.heinzel.plugin]`), and what the add does about it.
+         */
+        PluginNeed: {
+            /** @description For a plugin the add installs or updates: exactly what, read from the same catalog. */
+            candidate?: components["schemas"]["PluginCandidate"] | null;
+            /**
+             * Detail
+             * @description What went wrong, or what the person still does (e.g. sign in).
+             * @default
+             */
+            detail: string;
+            /**
+             * Distribution
+             * @description The plugin needed, e.g. `heinzel-github`.
+             */
+            distribution: string;
+            /**
+             * Install
+             * @description What `hz system plugin add` takes for it, e.g. `github`.
+             */
+            install: string;
+            /**
+             * Installed Version
+             * @description The version installed before the add, if any.
+             */
+            installed_version?: string | null;
+            /**
+             * Needed By
+             * @description The plugin that requires or recommends it.
+             */
+            needed_by: string;
+            /**
+             * Required
+             * @description Whether it is required (installed first) or only recommended (offered).
+             */
+            required: boolean;
+            /**
+             * Requirement
+             * @description What is needed, as declared: the plugin and an optional version range.
+             */
+            requirement: string;
+            /**
+             * State
+             * @description What the add does or did about it.
+             * @enum {string}
+             */
+            state: "install" | "update" | "present" | "offered" | "installed" | "updated" | "failed" | "not-reached";
+            /**
+             * Version
+             * @description The version the add installs or installed, when known.
+             */
+            version?: string | null;
+            /**
+             * With It
+             * @description A plugin of the same repository it depends on, installed in the same run and pinned to the same commit; `requirement` is that pinned source.
+             * @default false
+             */
+            with_it: boolean;
         };
         /**
          * PluginOperation
@@ -10525,6 +10858,27 @@ export interface components {
              * @description The installed version, when it is still installed.
              */
             version?: string | null;
+        };
+        /**
+         * PluginRepair
+         * @description What a repair of the installed plugins' requirements found and did, one entry per missing plugin.
+         */
+        PluginRepair: {
+            /**
+             * Message
+             * @description One line: what was repaired, or that nothing needed it.
+             */
+            message: string;
+            /**
+             * Needs
+             * @description Each required plugin that was missing or too old, with its result.
+             */
+            needs: components["schemas"]["PluginNeed"][];
+            /**
+             * Restart Required
+             * @description Whether a running server must restart to load what was installed.
+             */
+            restart_required: boolean;
         };
         /**
          * PluginSearch
@@ -11441,6 +11795,11 @@ export interface components {
              * @description Holds once the hz installed on this machine (on disk, not the running process) is at least this.
              */
             installed_version_at_least?: string | null;
+            /**
+             * Plugins Installed
+             * @description Holds once every plugin distribution named is installed on this machine (on disk).
+             */
+            plugins_installed?: string[] | null;
         };
         /**
          * Restart
@@ -11632,6 +11991,12 @@ export interface components {
             };
             /** @description Filled in by `system.ui`; whatever a plugin sets here is replaced. */
             call?: components["schemas"]["OperationCall"] | null;
+            /**
+             * Inputs
+             * @description Parameters the person fills in, in a view's form, e.g. `text`; only for a private mutation, and still confirmed before it runs.
+             * @default []
+             */
+            inputs: string[];
             /**
              * @description Run an operation of the module. (enum property replaced by openapi-typescript)
              * @enum {string}
@@ -12465,6 +12830,128 @@ export interface components {
              * @description What it asks.
              */
             summary: string;
+        };
+        /**
+         * SignInFlow
+         * @description A sign-in hz runs for the person through the vendor's tool; the consent click on the vendor's page is theirs.
+         */
+        SignInFlow: {
+            /**
+             * Account
+             * @description Who is signed in, once it succeeded and the tool says.
+             * @default
+             */
+            account: string;
+            /**
+             * Connector
+             * @description Qualified name of the connector signing in.
+             */
+            connector: string;
+            /**
+             * Ended At
+             * @description When it ended; none while it runs.
+             */
+            ended_at?: string | null;
+            /**
+             * Grants
+             * @description Every grant asked for: what the sign-in holds once it succeeds.
+             */
+            grants: string[];
+            /**
+             * Id
+             * @description What `hz system connector flow`, `cancel` and `open` take.
+             */
+            id: string;
+            /**
+             * Message
+             * @description What happened, in plain words; what to do if it failed.
+             * @default
+             */
+            message: string;
+            /** @description The vendor's consent page, once its tool gave it; where it must be opened. */
+            progress?: components["schemas"]["SignInProgress"] | null;
+            /**
+             * Started At
+             * Format: date-time
+             * @description When it started.
+             */
+            started_at: string;
+            /**
+             * State
+             * @description starting, waiting (for consent), succeeded, failed, cancelled, timed-out.
+             * @enum {string}
+             */
+            state: "starting" | "waiting" | "succeeded" | "failed" | "cancelled" | "timed-out";
+        };
+        /**
+         * SignInProgress
+         * @description What a running sign-in can tell the person: the vendor's consent page, and a device code if it has one.
+         */
+        SignInProgress: {
+            /**
+             * Code
+             * @description A code to type on that page, for a device sign-in; empty if none.
+             * @default
+             */
+            code: string;
+            /**
+             * Finish On
+             * @description `host` when the page must be opened on the machine hz runs on.
+             * @enum {string}
+             */
+            finish_on: "host" | "anywhere";
+            /**
+             * Url
+             * @description The vendor's consent page, an https address.
+             */
+            url: string;
+        };
+        /**
+         * SignInStatus
+         * @description Who a connector's tool is signed in as and what it was granted, from the evidence its provider has.
+         */
+        SignInStatus: {
+            /**
+             * Account
+             * @description Who, as the tool names them; never a secret. Empty if unsaid.
+             * @default
+             */
+            account: string;
+            /**
+             * Grants
+             * @description Every declared grant and its state.
+             */
+            grants?: components["schemas"]["GrantStatus"][];
+            /**
+             * Install
+             * @description How to install the tool through its supported path, if missing.
+             * @default
+             */
+            install: string;
+            /**
+             * Live
+             * @description Whether the vendor was asked; else it is local evidence only.
+             * @default false
+             */
+            live: boolean;
+            /**
+             * Problem
+             * @description What needs a new sign-in, such as an expired or revoked one; empty if nothing.
+             * @default
+             */
+            problem: string;
+            /**
+             * Signed In
+             * @description Whether there is a sign-in; none when only the vendor could say.
+             */
+            signed_in: boolean | null;
+            /**
+             * Tool
+             * @description Whether the vendor's tool can run a sign-in.
+             * @default ready
+             * @enum {string}
+             */
+            tool: "ready" | "missing" | "unsupported";
         };
         /**
          * Skill
@@ -14440,13 +14927,23 @@ export interface components {
             /** @description The declaring module's operation that enables the feature. */
             enable: components["schemas"]["RunOperation"];
             /**
+             * Explanation
+             * @description The longer explanation, shown only on demand under Details.
+             */
+            explanation?: string | null;
+            /**
              * Label
              * @description The action the person enables or disables.
              */
             label: string;
             /**
+             * Problem
+             * @description One short cause the person can fix, e.g. `Sign in to Tailscale, then try again.`; its presence offers Try again.
+             */
+            problem?: string | null;
+            /**
              * Requested
-             * @description The requested state when it differs from verified readiness; never a success claim.
+             * @description The person's choice, which the switch shows; `checked` alone says whether it is live.
              */
             requested?: boolean | null;
             /**
@@ -14454,6 +14951,11 @@ export interface components {
              * @description Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and an active session or device credential.
              */
             sign_in_url?: string | null;
+            /**
+             * Status
+             * @description The provider's one short status line, e.g. `Turning on…`; the host shows its own when absent.
+             */
+            status?: string | null;
             /**
              * Url
              * @description Optional nonsecret link shown alongside the toggle.
@@ -15960,6 +16462,49 @@ export interface components {
              */
             request_id: string;
         };
+        /** system_connector_cancel_Input */
+        system_connector_cancel_Input: {
+            /**
+             * Flow
+             * @description The sign-in, by the id `connect` returned.
+             */
+            flow: string;
+        };
+        /** system_connector_connect_Input */
+        system_connector_connect_Input: {
+            /**
+             * Allow
+             * @description A grant to add, such as `calendar-write`, as `access` lists them; repeat for each.
+             */
+            allow?: string[] | null;
+            /**
+             * Name
+             * @description The connector, as `hz system connector list` names it, e.g. `github`.
+             */
+            name: string;
+            /**
+             * Wait
+             * @description Wait here until it ends, opening the consent page in this machine's browser; only where a person is told (the terminal). Elsewhere it returns at once: poll `flow`, open the page with `open`.
+             * @default true
+             */
+            wait: boolean;
+        };
+        /** system_connector_disconnect_Input */
+        system_connector_disconnect_Input: {
+            /**
+             * Name
+             * @description The connector, as `hz system connector list` names it, e.g. `github`.
+             */
+            name: string;
+        };
+        /** system_connector_open_Input */
+        system_connector_open_Input: {
+            /**
+             * Flow
+             * @description The sign-in, by the id `connect` returned.
+             */
+            flow: string;
+        };
         /** system_runner_chat_propose_release_draft_share_Input */
         system_runner_chat_propose_release_draft_share_Input: {
             /**
@@ -15984,6 +16529,7 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaAccess = components['schemas']['Access'];
 export type SchemaAccessList = components['schemas']['AccessList'];
 export type SchemaAccessOption = components['schemas']['AccessOption'];
 export type SchemaAccessTestReport = components['schemas']['AccessTestReport'];
@@ -16083,6 +16629,8 @@ export type SchemaExpertMode = components['schemas']['ExpertMode'];
 export type SchemaFilters = components['schemas']['Filters'];
 export type SchemaFoundServer = components['schemas']['FoundServer'];
 export type SchemaFoundSkill = components['schemas']['FoundSkill'];
+export type SchemaGrant = components['schemas']['Grant'];
+export type SchemaGrantStatus = components['schemas']['GrantStatus'];
 export type SchemaGraph = components['schemas']['Graph'];
 export type SchemaGraphEdge = components['schemas']['GraphEdge'];
 export type SchemaGraphMetadata = components['schemas']['GraphMetadata'];
@@ -16163,10 +16711,12 @@ export type SchemaPluginChange = components['schemas']['PluginChange'];
 export type SchemaPluginEvent = components['schemas']['PluginEvent'];
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
+export type SchemaPluginNeed = components['schemas']['PluginNeed'];
 export type SchemaPluginOperation = components['schemas']['PluginOperation'];
 export type SchemaPluginPage = components['schemas']['PluginPage'];
 export type SchemaPluginPending = components['schemas']['PluginPending'];
 export type SchemaPluginPendingChange = components['schemas']['PluginPendingChange'];
+export type SchemaPluginRepair = components['schemas']['PluginRepair'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaPrerequisiteCheck = components['schemas']['PrerequisiteCheck'];
@@ -16222,6 +16772,9 @@ export type SchemaSettingDoc = components['schemas']['SettingDoc'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaSettingRevealed = components['schemas']['SettingRevealed'];
 export type SchemaSetupDoc = components['schemas']['SetupDoc'];
+export type SchemaSignInFlow = components['schemas']['SignInFlow'];
+export type SchemaSignInProgress = components['schemas']['SignInProgress'];
+export type SchemaSignInStatus = components['schemas']['SignInStatus'];
 export type SchemaSkill = components['schemas']['Skill'];
 export type SchemaSkillDetail = components['schemas']['SkillDetail'];
 export type SchemaSkillDraft = components['schemas']['SkillDraft'];
@@ -16337,6 +16890,10 @@ export type SchemaHeinzelSearchAgentConversationsInput = components['schemas']['
 export type SchemaHeinzelSearchConversationInput = components['schemas']['heinzel_search_conversation_Input'];
 export type SchemaHeinzelShareDraftLinkInput = components['schemas']['heinzel_share_draft_link_Input'];
 export type SchemaHeinzelStartHelperInput = components['schemas']['heinzel_start_helper_Input'];
+export type SchemaSystemConnectorCancelInput = components['schemas']['system_connector_cancel_Input'];
+export type SchemaSystemConnectorConnectInput = components['schemas']['system_connector_connect_Input'];
+export type SchemaSystemConnectorDisconnectInput = components['schemas']['system_connector_disconnect_Input'];
+export type SchemaSystemConnectorOpenInput = components['schemas']['system_connector_open_Input'];
 export type SchemaSystemRunnerChatProposeReleaseDraftShareInput = components['schemas']['system_runner_chat_propose_release_draft_share_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
@@ -19963,6 +20520,171 @@ export interface operations {
             };
         };
     };
+    system_connector_access: {
+        parameters: {
+            query: {
+                /** @description The connector, as `hz system connector list` names it, e.g. `github`. */
+                name: string;
+                /** @description Ask the vendor too: confirms the account and which grants hold. */
+                live?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Access"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_connector_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_connector_cancel_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInFlow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_connector_connect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_connector_connect_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInFlow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_connector_disconnect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_connector_disconnect_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Access"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_connector_flow: {
+        parameters: {
+            query: {
+                /** @description The sign-in, by the id `connect` returned. */
+                flow: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInFlow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_connector_list: {
         parameters: {
             query?: never;
@@ -19979,6 +20701,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConnectorReport"];
+                };
+            };
+        };
+    };
+    system_connector_open: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_connector_open_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInFlow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -20805,11 +21560,45 @@ export interface operations {
             };
         };
     };
+    system_plugin_repair: {
+        parameters: {
+            query?: {
+                /** @description As the automatic updater asks: try each missing plugin once per version of the plugin that requires it, so a failure isn't retried every half hour. */
+                automatic?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginRepair"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_plugin_search: {
         parameters: {
             query?: {
                 /** @description Words that name or describe the plugin, e.g. `calendar`; sent to GitHub's search. All plugins if omitted. */
                 text?: string;
+                /** @description Ask GitHub again instead of using the answer kept for the last minute. */
+                refresh?: boolean;
             };
             header?: never;
             path?: never;

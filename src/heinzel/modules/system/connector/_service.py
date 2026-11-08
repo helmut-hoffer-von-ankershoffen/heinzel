@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterable
 from heinzel import Check, HealthLet, HeinzelError, Kernel, Login, ModuleRecord, SetupLet, Status
 from heinzel.kernel import CAPABILITIES, MODES, CapabilityView, ProviderLet, Requirement
 from heinzel.modules.system.connector._models import (
+    Access,
     AdapterCandidate,
     CapabilityChoice,
     Connector,
@@ -17,6 +18,7 @@ from heinzel.modules.system.connector._models import (
     State,
     Tool,
 )
+from heinzel.modules.system.connector._sign_in import SignIns
 
 PROBLEMS = (Status.DEGRADED, Status.DOWN)
 _BRANDS = {"github": "GitHub", "gitlab": "GitLab"}
@@ -69,10 +71,11 @@ def _summary(method: Callable[..., object]) -> str:
 class ConnectorService:
     """Reports connectors from their checks and the capability registry; tests one live only when asked."""
 
-    def __init__(self, kernel: Kernel, view: CapabilityView) -> None:
-        """Work on the kernel and its read-only view of capabilities, injected."""
+    def __init__(self, kernel: Kernel, view: CapabilityView, sign_ins: SignIns) -> None:
+        """Work on the kernel, its read-only view of capabilities and the sign-ins hz runs, injected."""
         self._kernel = kernel
         self._view = view
+        self._sign_ins = sign_ins
 
     def _records(self) -> dict[str, tuple[ModuleRecord, list[ProviderLet]]]:
         """Every module that provides adapters, with its adapters, by qualified name."""
@@ -121,9 +124,12 @@ class ConnectorService:
                 if mode in let.modes
             )
         setup = any(r.qualname == record.qualname for r, _ in self._kernel.lets(SetupLet))
+        sign_in = record.qualname in self._sign_ins.supported()
         connect = list(dict.fromkeys(c.login.command for c in checks if c.login is not None and c.login.command))
         if not connect and setup:
             connect = [f"hz setup {record.qualname}"]
+        if sign_in:
+            connect = list(dict.fromkeys([f"hz system connector connect {record.qualname}", *connect]))
         return Connector(
             name=record.qualname,
             title=title_of(record.qualname, record.module.summary),
@@ -138,6 +144,7 @@ class ConnectorService:
             connect=connect,
             bind=[f"hz system config set {_key(use.capability)} {use.adapter}" for use in uses if not use.used],
             testable=bool(self._health(record.qualname, live=True)),
+            sign_in=sign_in,
         )
 
     def report(self) -> ConnectorReport:
@@ -202,6 +209,19 @@ class ConnectorService:
             login=login_of(checks),
             checks=checks,
         )
+
+    def title(self, name: str) -> str:
+        """The name for people of module `name`; `name` itself if no module has it."""
+        record = next((r for r in self._kernel.modules if r.qualname == name), None)
+        return title_of(name, record.module.summary) if record is not None else name
+
+    def access(self, name: str, *, live: bool) -> Access:
+        """`name`'s sign-in, account and grants, offline unless `live`, and its latest sign-in run here.
+
+        Raises:
+            HeinzelError: If the connector has no sign-in hz can run.
+        """
+        return self._sign_ins.access(name, self.title(name), live=live)
 
 
 def _key(capability: str) -> str:

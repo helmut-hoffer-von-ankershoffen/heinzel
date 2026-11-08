@@ -63,6 +63,7 @@ from heinzel.kernel import (
     tick_interval,
 )
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
+from heinzel.modules.system._phases import Phases
 from heinzel.modules.system.daemon import _process_birth
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._abandoned_mutation import host_boot, marker_token_matches, mutation_record
@@ -89,7 +90,6 @@ from heinzel.modules.system.daemon._ownership import (
     systemd_owned,
     tick_environment,
 )
-from heinzel.modules.system.daemon._phases import Phases
 from heinzel.modules.system.daemon._runtime import (
     Outcome,
     Runner,
@@ -731,7 +731,9 @@ class DaemonService:
                 result[path] = handle.read(MAX_HANDOVER_FILE_BYTES + 1)
         return result
 
-    def _install_locked(self, interval: timedelta, *, dry_run: bool = False, notifier: bool = True) -> Installed:
+    def _install_locked(
+        self, interval: timedelta, *, dry_run: bool = False, notifier: bool = True, operation: str = "system.daemon"
+    ) -> Installed:
         """Replace only an exact owned profile, retaining existing activation and truthful recovery.
 
         Raises:
@@ -772,6 +774,7 @@ class DaemonService:
                 ("verify", "Checking that it is loaded"),
                 *([("notifier", NOTIFIER_STEP)] if darwin and notifier and self._install_notifier else []),
             ],
+            operation=operation,
         )
         self._require_desktop_session(phases)
         if self._capture_install_files() != original or self.owned_manager_state(executable.parent) != previous:
@@ -1018,7 +1021,7 @@ class DaemonService:
             if not installed or "interval_minutes" not in recorded:
                 return Restarted(restarted=False, version=__version__, interval_minutes=None)
             minutes = int(recorded["interval_minutes"])
-            self._install_locked(timedelta(minutes=minutes))
+            self._install_locked(timedelta(minutes=minutes), operation="system.daemon.restart")
             return Restarted(restarted=True, version=__version__, interval_minutes=minutes)
 
     def capture_handover(self) -> DaemonHandoverPlan:

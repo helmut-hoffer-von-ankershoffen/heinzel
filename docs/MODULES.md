@@ -243,6 +243,12 @@ Show whether each connector is signed in and serves something, and test one live
 | --- | --- | --- | --- | --- | --- | --- |
 | List connectors with their sign-in, what they serve and their tools; offline. | `hz system connector list` | `system_connector_list` | — | `GET /api/system/connector/list` |  | expert |
 | Test a connector live: one cheap read-only call through its tool, with a short timeout. | `hz system connector test` | `system_connector_test` | — | `GET /api/system/connector/test` |  | expert |
+| Show who a connector is signed in as, which of its grants hold, and its latest sign-in here. | `hz system connector access` | — | — | `GET /api/system/connector/access` |  | expert |
+| Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow. | `hz system connector connect` | — | — | `POST /api/system/connector/connect` | yes | expert |
+| Show where a sign-in started here is: waiting for your consent, or how it ended. | `hz system connector flow` | — | — | `GET /api/system/connector/flow` |  | expert |
+| Stop a sign-in that is waiting for consent; nothing changes in your account. | `hz system connector cancel` | — | — | `POST /api/system/connector/cancel` | yes | expert |
+| Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to. | `hz system connector open` | — | — | `POST /api/system/connector/open` | yes | expert |
+| Sign a connector's tool out through its own command; reading and writing through it stop. | `hz system connector disconnect` | — | — | `POST /api/system/connector/disconnect` | yes | expert |
 
 ## `system.credential`
 
@@ -341,6 +347,7 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | --- | --- | --- | --- | --- | --- | --- |
 | List installed plugins, enabled or not, with their source and the modules and adapters they bring. | `hz system plugin list` | `system_plugin_list` | `GET /system/plugin/list` | `GET /api/system/plugin/list` |  | expert |
 | Show what a plugin would install, then add it with `--confirm`; adding it again replaces it. | `hz system plugin add` | `system_plugin_add` | — | `POST /api/system/plugin/add` | yes | expert |
+| Install every plugin an installed plugin requires that is missing or too old, from the same catalog. | `hz system plugin repair` | `system_plugin_repair` | — | `POST /api/system/plugin/repair` | yes | expert |
 | List plugins changed on this machine since this server started: what a restart would load. | `hz system plugin pending` | `system_plugin_pending` | — | `GET /api/system/plugin/pending` |  | expert |
 | Read the status and result of a plugin add without repeating it. | `hz system plugin operation` | `system_plugin_operation` | — | `GET /api/system/plugin/operation` |  | expert |
 | Add the plugin in a directory on this machine, to try a plugin you are writing. | `hz system plugin develop` | — | — | — | yes | expert |

@@ -38,3 +38,22 @@ def redact_emails(text: str) -> str:
     need, and an agent that sees one could write it somewhere.
     """
     return _EMAIL.sub(REDACTED_EMAIL, text)
+
+
+NAME_ACRONYMS = {"acme": "ACME", "ai": "AI", "api": "API", "cli": "CLI", "mcp": "MCP", "ui": "UI", "url": "URL"}
+"""Words a name keeps in capitals wherever they appear."""
+
+
+def display_name(name: str, summary: str = "") -> str:
+    """A plugin or module name as people write it: `acme-lisbon` is `ACME Lisbon`, `slack` is `Slack`.
+
+    The rule: drop a `heinzel-` prefix, split on dashes and underscores, write a known acronym (ACME, AI, API, CLI,
+    MCP, UI, URL) in capitals, else keep the casing the summary gives the word (`GitHub`), else capitalise it.
+    """
+    words = name.removeprefix("heinzel-").replace("_", "-").split("-")
+    shown: list[str] = []
+    for word in filter(None, words):
+        found = re.search(rf"\b{re.escape(word)}\b", summary, re.IGNORECASE)
+        written = found.group(0) if found and found.group(0) != found.group(0).lower() else None
+        shown.append(NAME_ACRONYMS.get(word.lower()) or written or word[:1].upper() + word[1:])
+    return " ".join(shown) or name

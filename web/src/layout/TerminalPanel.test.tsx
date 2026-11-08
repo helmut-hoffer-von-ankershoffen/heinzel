@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { connectTerminal } from "@/lib/terminal";
@@ -67,6 +67,7 @@ class Socket {
   }
 }
 afterEach(() => {
+  localStorage.clear();
   terminals.length = 0;
   Socket.instances.length = 0;
   desktopState.mockReturnValue("off");
@@ -106,9 +107,153 @@ describe("typing a command for the person", () => {
   });
 });
 
+const pointer = (coarse: boolean) =>
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: coarse && query === "(pointer: coarse)",
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+
+describe("special keys", () => {
+  it.each([
+    [false, false],
+    [true, true],
+  ])("shows Esc, Tab, Ctrl and arrows only on a touch screen (coarse pointer %s)", (coarse, shown) => {
+    vi.stubGlobal("WebSocket", Socket);
+    pointer(coarse);
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    expect(screen.queryByRole("group", { name: "Terminal keys" }) !== null).toBe(shown);
+    expect(screen.queryByRole("button", { name: "Escape" }) !== null).toBe(shown);
+    expect(screen.queryByRole("button", { name: "Arrow up" }) !== null).toBe(shown);
+  });
+
+  it("shows no keys where the browser cannot tell the pointer", () => {
+    vi.stubGlobal("WebSocket", Socket);
+    vi.stubGlobal("matchMedia", undefined);
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    expect(screen.queryByRole("group", { name: "Terminal keys" })).toBeNull();
+  });
+});
+
+describe("renaming tabs", () => {
+  it("renames a tab from its pencil, keeps the name against the shell's title, and clears it back to automatic", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    const user = userEvent.setup();
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Rename Terminal" }));
+    const field = screen.getByRole("textbox", { name: "Tab name" });
+    await user.clear(field);
+    await user.type(field, "build box{Enter}");
+    expect(screen.getByRole("tab", { name: "build box" })).toBeInTheDocument();
+    act(() => Socket.instances[0]?.onopen?.());
+    act(() => terminals[0]?.title("zsh"));
+    expect(screen.getByRole("tab", { name: "build box" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Rename build box" }));
+    await user.clear(screen.getByRole("textbox", { name: "Tab name" }));
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("tab", { name: "zsh" })).toBeInTheDocument();
+  });
+
+  it("renames on double click and F2, and Escape leaves the name as it was", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    const user = userEvent.setup();
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    await user.dblClick(screen.getByRole("tab", { name: "Terminal" }));
+    await user.type(screen.getByRole("textbox", { name: "Tab name" }), " one{Escape}");
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
+    screen.getByRole("tab", { name: "Terminal" }).focus();
+    await user.keyboard("{F2}");
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
+  });
+
+  it("offers Rename tab and Close tab first in the options menu, with the F2 hint", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    const user = userEvent.setup();
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Terminal options" }));
+    const items = screen.getAllByRole("menuitem");
+    expect(items[0]).toHaveTextContent("Rename tab");
+    expect(items[0]).toHaveTextContent("F2");
+    expect(items[1]).toHaveTextContent("Close tab");
+    await user.click(items[0] as HTMLElement);
+    expect(screen.queryByRole("menu")).toBeNull();
+    const field = screen.getByRole("textbox", { name: "Tab name" });
+    expect(field).toHaveFocus();
+    await user.type(field, "{Control>}a{/Control}deploy{Enter}");
+    expect(screen.getByRole("tab", { name: "deploy" })).toBeInTheDocument();
+  });
+
+  it("closes the shown tab from the options menu", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    const user = userEvent.setup();
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "New terminal tab" }));
+    await user.click(screen.getByRole("button", { name: "Terminal options" }));
+    await user.click(screen.getByRole("menuitem", { name: /Close tab/ }));
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+    expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
+  });
+
+  it("remembers names across reloads, per tab, and an emptied name is forgotten", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    const user = userEvent.setup();
+    const first = render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Rename Terminal" }));
+    await user.type(screen.getByRole("textbox", { name: "Tab name" }), "{Control>}a{/Control}logs{Enter}");
+    first.unmount();
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    expect(screen.getByRole("tab", { name: "logs" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Rename logs" }));
+    await user.clear(screen.getByRole("textbox", { name: "Tab name" }));
+    await user.keyboard("{Enter}");
+    expect(JSON.parse(localStorage.getItem("hz.terminal.names") ?? "{}")).toEqual({});
+  });
+
+  it("ignores a damaged stored name list", () => {
+    vi.stubGlobal("WebSocket", Socket);
+    localStorage.setItem("hz.terminal.names", '{"1": 5, "2": ""}');
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
+  });
+
+  it("renames on a long press with touch, not on a short tap or with a mouse", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", Socket);
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    const tab = screen.getByRole("tab", { name: "Terminal" });
+    fireEvent.pointerDown(tab, { pointerType: "touch" });
+    act(() => void vi.advanceTimersByTime(300));
+    fireEvent.pointerUp(tab, { pointerType: "touch" });
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(screen.queryByRole("textbox")).toBeNull();
+    fireEvent.pointerDown(tab, { pointerType: "mouse" });
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(screen.queryByRole("textbox")).toBeNull();
+    fireEvent.pointerDown(tab, { pointerType: "touch" });
+    act(() => void vi.advanceTimersByTime(600));
+    expect(screen.getByRole("textbox", { name: "Tab name" })).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("names each tab on its own", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    const user = userEvent.setup();
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "New terminal tab" }));
+    await user.click(screen.getByRole("button", { name: "Rename Terminal 2" }));
+    await user.type(screen.getByRole("textbox", { name: "Tab name" }), "{Control>}a{/Control}logs{Enter}");
+    expect(screen.getByRole("tab", { name: "logs" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close logs" })).toBeInTheDocument();
+  });
+});
+
 describe("terminal tabs", () => {
   it("sends mobile keys only to the active open terminal", async () => {
     vi.stubGlobal("WebSocket", Socket);
+    pointer(true);
     const user = userEvent.setup();
     render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
     const escapeKey = screen.getByRole("button", { name: "Escape" });

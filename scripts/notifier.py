@@ -23,6 +23,7 @@ drew them, so redraw them only when the drawing changes.
 import hashlib
 import json
 import platform
+import plistlib
 import re
 import shutil
 import struct
@@ -54,6 +55,8 @@ ARTWORK = SOURCES / "heinzel.svg"
 """One Heinzelmännchen, the default one (grown, cropped to the bust): what every app icon shows."""
 DANCE = ROOT / "web" / "public" / "loading-dance.svg"
 """The four dancing in a ring while hz starts."""
+DESKTOP_ICON = ROOT / "desktop" / "assets" / "heinzel.icns"
+"""The desktop app's icon, packaged by desktop/ci/package.mjs."""
 SWARM = SOURCES / "heinzel-swarm.svg"
 """A busy swarm of them, the product's logo: the logo, not an app icon."""
 THEME_LOGO = ROOT / "src" / "heinzel" / "kernel" / "assets" / "theme" / "logo"
@@ -166,6 +169,17 @@ def draw() -> None:
     _run(node, "--input-type=module", "-e", DRAW, DRAWING.as_uri(), str(ARTWORK), str(SWARM), str(DANCE))
 
 
+def _icns(icon: Path, work: Path, target: Path) -> None:
+    """Write the app icon, an .icns of the Heinzelmännchen tile, to ``target``."""
+    iconset = work / "heinzel.iconset"
+    iconset.mkdir(exist_ok=True)
+    for size in ICON_SIZES:
+        for name, pixels in ((f"icon_{size}x{size}.png", size), (f"icon_{size}x{size}@2x.png", size * 2)):
+            _run(str(icon), str(artwork_for(pixels)), str(iconset / name), str(pixels), "tile")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _run("iconutil", "-c", "icns", "-o", str(target), str(iconset))
+
+
 def icons() -> None:
     """Draw Heinzelmännchen from heinzel.ts, then every icon and logo from the two SVGs that gives.
 
@@ -190,6 +204,7 @@ def icons() -> None:
             _run(str(icon), str(artwork_for(size)), str(out), str(size))
             favicons.append((size, out.read_bytes()))
         (PUBLIC / "favicon.ico").write_bytes(_ico(favicons))
+        _icns(icon, work, DESKTOP_ICON)
     for copy, source in COPIES.items():
         copy.write_bytes(source.read_bytes())
     for name, (background, fill) in WORDMARKS.items():
@@ -256,12 +271,7 @@ def build() -> None:
         _run("lipo", "-create", "-output", str(app / "Contents" / "MacOS" / "notifier"), *slices)
         icon = work / "icon"
         _run("swiftc", "-O", "-o", str(icon), str(SOURCES / "icon.swift"))
-        iconset = work / "heinzel.iconset"
-        iconset.mkdir()
-        for size in ICON_SIZES:
-            for name, pixels in ((f"icon_{size}x{size}.png", size), (f"icon_{size}x{size}@2x.png", size * 2)):
-                _run(str(icon), str(artwork_for(pixels)), str(iconset / name), str(pixels), "tile")
-        _run("iconutil", "-c", "icns", "-o", str(app / "Contents" / "Resources" / "heinzel.icns"), str(iconset))
+        _icns(icon, work, app / "Contents" / "Resources" / "heinzel.icns")
         shutil.copyfile(SOURCES / "heinzel.svg", app / "Contents" / "Resources" / "face.svg")
         plist = (SOURCES / "Info.plist").read_text(encoding="utf-8").replace("@VERSION@", version)
         (app / "Contents" / "Info.plist").write_text(plist, encoding="utf-8")
@@ -270,6 +280,51 @@ def build() -> None:
         shutil.rmtree(APP, ignore_errors=True)
         shutil.copytree(app, APP, symlinks=True)
     print(f"Built {APP.relative_to(ROOT)} ({version})")
+    if PROOF_SOURCE.is_file():
+        render_proof()
+
+
+PROOF_SOURCE = ROOT / "tests" / "fixtures" / "notifier" / "render_proof.swift"
+PROOF = ROOT / "build" / "notifier-render-proof"
+"""Where `make notifier` leaves the face-rendering proof for tests/e2e/notifier_face_test.py (source checkouts)."""
+
+
+def proof_source() -> str:
+    """The production helpers of main.swift (before the application delegate) followed by the proof harness.
+
+    Raises:
+        SystemExit: If main.swift no longer defines its helpers before the application delegate.
+    """
+    prefix, separator, _delegate = (SOURCES / "main.swift").read_text().partition("final class Notifier:")
+    if not separator:
+        msg = "main.swift must define its helper functions before the application delegate"
+        raise SystemExit(msg)
+    return prefix + PROOF_SOURCE.read_text()
+
+
+def render_proof() -> None:
+    """Compile the face-rendering proof into a minimal app with the bundled face, stamped with its source digest.
+
+    Bead 4mgv: compiling inside the timed test overran its budget on a loaded runner; this build has no such clock.
+    """
+    source = proof_source()
+    with tempfile.TemporaryDirectory(prefix="hz-render-proof-") as directory:
+        work = Path(directory)
+        swift = work / "render.swift"
+        swift.write_text(source)
+        contents = work / "RenderingProof.app" / "Contents"
+        (contents / "MacOS").mkdir(parents=True)
+        (contents / "Resources").mkdir()
+        shutil.copyfile(SOURCES / "heinzel.svg", contents / "Resources" / "face.svg")
+        with (contents / "Info.plist").open("wb") as handle:
+            plistlib.dump({"CFBundleExecutable": "render", "CFBundlePackageType": "APPL"}, handle)
+        target = f"{platform.machine()}-apple-macos13"  # the production slice's settings reuse its SDK module cache
+        _run("swiftc", "-O", "-target", target, str(swift), "-o", str(contents / "MacOS" / "render"))
+        shutil.rmtree(PROOF, ignore_errors=True)
+        PROOF.mkdir(parents=True)
+        shutil.copytree(work / "RenderingProof.app", PROOF / "RenderingProof.app", symlinks=True)
+        (PROOF / "source.sha256").write_text(hashlib.sha256(source.encode()).hexdigest() + "\n")
+    print(f"Built {PROOF / 'RenderingProof.app'}")
 
 
 if __name__ == "__main__":

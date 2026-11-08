@@ -197,6 +197,16 @@ def _without_core_browser_setup(text: str) -> str:
 
 def _without_release_candidate(text: str) -> str:
     """Keep owner-Core candidate selection and source proof out of independent plugin CI."""
+    # A plugin's suite fits one Linux cell; only the core outgrew it and shards by level.
+    text = re.sub(
+        r"\n        # One shard per level on Linux too:.*?\n        levels: \[unit, integration\]",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
+    text = text.replace(
+        " && matrix.levels == 'unit' # a cell every pull request runs", " # a cell every pull request runs"
+    )
     text = text.replace(" && needs.changes.outputs.full_release != 'true'", "")
     text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
     return re.sub(r"\n  release-candidate-source:\n.*?(?=\n  ci-ok:)", "", text, flags=re.DOTALL)

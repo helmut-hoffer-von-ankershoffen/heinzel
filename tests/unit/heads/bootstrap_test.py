@@ -24,6 +24,7 @@ def managed_workspace(monkeypatch):
     monkeypatch.setattr(bootstrap, "_verify_setup", lambda *_args: None)
     monkeypatch.setattr(bootstrap, "_require_profile", lambda *_args: None)
     monkeypatch.setattr(bootstrap, "_configure_ai", lambda *_args: None)
+    monkeypatch.setattr(bootstrap, "_app_choice", lambda *_args, **_kwargs: False)
 
 
 @pytest.mark.parametrize("already_installed", [False, True])

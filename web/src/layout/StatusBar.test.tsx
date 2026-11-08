@@ -2,6 +2,7 @@ import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { shell } from "@/test/fixtures";
+import { expectPane } from "@/test/pane";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
 const answers = {
@@ -106,6 +107,7 @@ describe("Mounted footer measurements", () => {
     expect(within(pane).getByText("CPU: 12%")).toBeInTheDocument();
     expect(within(pane).getByText("Memory: 35%")).toBeInTheDocument();
     expect(within(pane).getByText("Load scaled: 8%")).toBeInTheDocument();
+    await expectPane(pane);
   });
   it("keeps the mounted durable Heinzel control visible alongside resources and health at 375px", async () => {
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
@@ -301,12 +303,17 @@ describe("Footer items are icons with a state and a pane", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const bar = await screen.findByRole("contentinfo");
-    const calendar = await within(bar).findByRole("button", { name: "Calendar, error" });
-    expect(calendar).toHaveClass("text-bad");
+    const calendar = await within(bar).findByRole("button", { name: /^Calendar: .*, error$/ });
+    expect(calendar.closest("[data-state]")).toHaveAttribute("data-state", "bad");
+    expect(calendar.querySelector("[data-glyph=unknown]")).not.toBeNull();
     await user.click(calendar);
     const summary = await screen.findByRole("region", { name: "Calendar summary" });
-    await user.click(within(summary).getByRole("button", { name: "Open calendar" }));
+    await expectPane(summary);
+    await user.click(
+      within(within(summary).getByRole("group", { name: "Actions" })).getByRole("button", { name: "Open calendar" }),
+    );
     const panel = await screen.findByRole("region", { name: "Calendar" });
+    expect(screen.queryByRole("region", { name: "Calendar summary" })).not.toBeInTheDocument();
     expect(await within(panel).findByText("No calendar connected.")).toBeInTheDocument();
     expect(await within(panel).findByText(/Calendar reminders need a background worker/)).toBeInTheDocument();
     await user.click(within(panel).getByRole("link", { name: "Connect a calendar…" }));
@@ -339,15 +346,47 @@ describe("Footer items are icons with a state and a pane", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const footer = await screen.findByRole("contentinfo");
-    const calendar = await within(footer).findByRole("button", { name: "Calendar, off" });
+    const calendar = await within(footer).findByRole("button", { name: /^Calendar: In Standup, \d+ min left.*, off$/ });
     expect(calendar).not.toHaveTextContent(/Standup|Review/);
+    expect(calendar.querySelector('[data-glyph="meeting"] [data-label]')).toHaveTextContent(/^[1-9]$/);
     await user.hover(calendar);
     const summary = await screen.findByRole("region", { name: "Calendar summary" });
-    expect(within(summary).getByText(/In Standup · \d+ min remaining/)).toBeInTheDocument();
+    expect(within(summary).getByText("In Standup")).toBeInTheDocument();
+    expect(within(summary).getAllByText(/\d+ min left/)[0]).toBeInTheDocument();
     expect(within(summary).getByText(/Next: Review/)).toBeInTheDocument();
+    // Read-only: the write actions are not drawn at all, only the way to allow them.
+    for (const name of [/^Decline/, /^Extend/, /^Tell the next meeting/])
+      expect(within(summary).queryByRole("button", { name })).not.toBeInTheDocument();
+    expect(within(summary).getByRole("link", { name: "Allow your Heinzels to change your calendar" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("settings=connectors"),
+    );
     await user.click(within(summary).getByRole("button", { name: "Open calendar" }));
     const panel = await screen.findByRole("region", { name: "Calendar" });
     expect(await within(panel).findByText("Review")).toBeInTheDocument();
+    // The pane that opened the panel closes, so its bottom row never covers the panel's own.
+    expect(screen.queryByRole("region", { name: "Calendar summary" })).not.toBeInTheDocument();
+  });
+
+  it("shows Decline, Extend and running late instead of Allow once the calendar is writable", async () => {
+    const now = Date.now();
+    const current = {
+      title: "Standup",
+      start: new Date(now - 60_000).toISOString(),
+      end: new Date(now + 300_000).toISOString(),
+    };
+    mockApi({
+      ...states,
+      "/api/org/agenda": { current, next: null, problem: null, writable: true },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const footer = await screen.findByRole("contentinfo");
+    await user.hover(await within(footer).findByRole("button", { name: /^Calendar: In Standup/ }));
+    const summary = await screen.findByRole("region", { name: "Calendar summary" });
+    for (const name of [/^Decline/, /^Extend/, /^Tell the next meeting/])
+      expect(within(summary).getByRole("button", { name })).toBeEnabled();
+    expect(within(summary).queryByRole("link", { name: /Allow your Heinzels/ })).not.toBeInTheDocument();
   });
 
   it("only renders safe conference links in the calendar", async () => {
@@ -378,7 +417,7 @@ describe("Footer items are icons with a state and a pane", () => {
     renderAt("/doctor");
     await user.click(
       await within(await screen.findByRole("contentinfo")).findByRole("button", {
-        name: "Calendar, error",
+        name: /^Calendar: .*, error$/,
       }),
     );
     const summary = await screen.findByRole("region", { name: "Calendar summary" });
@@ -390,7 +429,7 @@ describe("Footer items are icons with a state and a pane", () => {
     expect(links[1]).toHaveAttribute("href", "http://meet.example/test");
     for (const link of links) {
       expect(link).toHaveAttribute("target", "_blank");
-      expect(link).toHaveAttribute("rel", "noreferrer noopener");
+      expect((link.getAttribute("rel") ?? "").split(" ").sort()).toEqual(["noopener", "noreferrer"]);
     }
   });
 

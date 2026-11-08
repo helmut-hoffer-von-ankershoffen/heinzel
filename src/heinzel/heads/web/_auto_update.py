@@ -48,11 +48,14 @@ from heinzel.kernel import (
     ReleaseSource,
     Settings,
 )
+from heinzel.kernel._logging import log_event
 
 log = logging.getLogger(__name__)
 
 CHECK_EVERY = timedelta(minutes=30)
 """How often the server asks for newer releases."""
+RECHECK_GAP = timedelta(seconds=10)
+"""The least time between two looks that people ask for."""
 JITTER = timedelta(minutes=5)
 """At most this much is added to each check at random, so many installations don't ask at the same second."""
 FIRST_CHECK = (timedelta(minutes=1), timedelta(minutes=5))
@@ -70,6 +73,8 @@ STEP_SECONDS = 1.0
 FILENAME = "auto-update.json"
 
 UPDATE_MODULE, UPDATE_OPERATION, RECOVER_OPERATION = "system", "apply-announced", "recover-announced"
+REPAIR_OPERATION = ("system.plugin", "repair")
+"""Installs the plugins an installed plugin requires but lacks; the updater asks it when nothing else is due."""
 
 type Phase = Literal["off", "idle", "waiting", "countdown", "applying"]
 
@@ -316,6 +321,19 @@ def failure_message(running: str) -> str:
     )
 
 
+class PluginHold(BaseModel):
+    """One installed plugin that automatic updates leave alone, and why, in the words the Updates pane needs."""
+
+    name: str = Field(description="The plugin's distribution name.")
+    why: Literal["pinned", "source"] = Field(
+        description="pinned: someone holds it to one version; source: it is installed from git, a folder or a URL."
+    )
+    version: str | None = Field(default=None, description="The version a pinned plugin is held to.")
+    how: Literal["git", "folder", "link"] | None = Field(
+        default=None, description="Where a source plugin comes from: a git repository, a folder or a URL."
+    )
+
+
 class AutoUpdateStatus(BaseModel):
     """What every window shows about automatic updates; the server's plan, never a browser's."""
 
@@ -342,6 +360,20 @@ class AutoUpdateStatus(BaseModel):
     plugins_held: list[str] = Field(
         default_factory=list[str],
         description="One line per plugin release held back because another plugin can't move with it.",
+    )
+    holds: list[PluginHold] = Field(
+        default_factory=list[PluginHold],
+        description="Every installed plugin automatic updates leave alone, with the reason; by_hand lists the "
+        "source installs among them.",
+    )
+    checked_at: datetime | None = Field(
+        default=None, description="When this server last looked for hz and plugin news; None before its first look."
+    )
+    core_checked: bool | None = Field(
+        default=None, description="Whether the last look at hz releases got an answer; None before the first look."
+    )
+    plugins_checked: bool | None = Field(
+        default=None, description="Whether the last look at plugin releases got an answer; None before the first look."
     )
     held: str | None = Field(
         default=None,
@@ -572,6 +604,8 @@ class AutoUpdater:
         self._apply_lock = folder / "auto-update-apply.lock"
         self._held = False
         """Automatic updates couldn't run at the last look; once they can, the next look checks at once."""
+        self._looked: tuple[datetime, bool, bool] | None = None
+        """When hz and the plugins were last asked for news, and whether each answered; this process only."""
         self._waited: list[str] = []
         """What held the countdown off at the last look, so the log says it once per change."""
         self._applying: IO[str] | None = None
@@ -660,6 +694,30 @@ class AutoUpdater:
         except Exception:  # noqa: BLE001 - an unreadable receipt holds updates as well
             return ["the plugins (the uv receipt can't be read)"]
 
+    def holds(self) -> list[PluginHold]:
+        """Every installed plugin automatic updates leave alone: held to one version, or installed from a source."""
+        try:
+            pins = self._kernel.resolve(Installation).plugin_pins()
+        except Exception:  # noqa: BLE001 - an unreadable receipt holds updates as well
+            return []
+        # A commit pin whose repository tags its releases updates by itself (ADR 0137), as in `by_hand`.
+        followed = set(self.plan.followed)
+        holds: list[PluginHold] = []
+        for pin in pins:
+            name = pin.name
+            if pin.kind == "commit" and _canonical(name) in followed:
+                continue
+            if pin.kind == "index":
+                exact = (pin.ref or "").strip()
+                if exact.startswith("==") and "," not in exact and "*" not in exact:
+                    holds.append(PluginHold(name=name, why="pinned", version=exact[2:].strip()))
+            else:
+                how: Literal["git", "folder", "link"] = (
+                    "git" if pin.git is not None else "folder" if pin.kind == "local" else "link"
+                )
+                holds.append(PluginHold(name=name, why="source", how=how))
+        return sorted(holds, key=lambda hold: hold.name)
+
     def busy(self) -> bool:
         """Whether a chat answer, an install or a daemon job is running now."""
         return bool(self.waiting_for())
@@ -727,6 +785,33 @@ class AutoUpdater:
             self.apply()
         elif checking and not waiting and not self.plan.core and not self.plan.plugins:
             self._refresh_desktop()
+            self._repair_plugins()
+
+    def _repair_plugins(self) -> None:
+        """Install the plugins installed plugins require but lack (`system.plugin.repair`), then restart to load them.
+
+        Each missing plugin is tried once per version of the plugin that requires it; a failure leaves a notice that
+        disappears once the plugin is there. Nothing is signed in: System health names each sign-in step.
+        """
+        found = next(
+            (op for record, op in self._kernel.lets(OperationLet) if (record.qualname, op.name) == REPAIR_OPERATION),
+            None,
+        )
+        if found is None or not self._kernel.available(found.func):
+            return
+        try:
+            with self._kernel.resolve(CurrentUser).local("daemon"):
+                result = self._kernel.invoke(found, automatic=True)
+        except HeinzelError as exc:  # another change is running: the next check asks again
+            log_event(log, "update.auto.repair", outcome="skipped", reason=str(exc))
+            return
+        if getattr(result, "needs", None):
+            log_event(log, "update.auto.repair", outcome="ok", detail=getattr(result, "message", ""))
+        if getattr(result, "restart_required", False) and self._restart is not None:
+            try:
+                self._restart()
+            except Exception as exc:  # noqa: BLE001 - the plugins are installed; the next start loads them
+                log_event(log, "update.auto.repair_restart", level=logging.WARNING, outcome="error", error=str(exc))
 
     def _refresh_desktop(self) -> None:
         """Bring an already installed desktop shell up to this running stable Core."""
@@ -756,16 +841,20 @@ class AutoUpdater:
         once installed. hz and the plugins are asked apart: GitHub or PyPI failing for one keeps the other's news.
         """
         settings = self._read_settings()
+        core_ok = plugins_ok = True
         try:
             core, commit = self._check_core(settings, now)
         except Exception as exc:  # noqa: BLE001 - offline or rate-limited: keep what hz's last check found
             log.info("automatic update check of hz failed: %s", exc)
             core, commit = self.plan.core, self.plan.commit
+            core_ok = False
         try:
             news = self._check_plugins(settings, now)
         except Exception as exc:  # noqa: BLE001 - the same for the plugins
             log.info("automatic update check of the plugins failed: %s", exc)
             news = None
+            plugins_ok = False
+        self._looked = (now, core_ok, plugins_ok)
         plugins = dict(self.plan.plugins) if news is None else {n: r.version for n, r in news.releases.items()}
         with self._editing() as plan:
             before = (plan.core, dict(plan.plugins))
@@ -964,8 +1053,25 @@ class AutoUpdater:
                 development=self.development,
                 held=self.development or (reason if reason == CHECKS_OFF else None),
                 by_hand=[] if self.development is not None else self.by_hand(),
+                holds=[] if self.development is not None else self.holds(),
+                checked_at=self._looked[0] if self._looked else None,
+                core_checked=self._looked[1] if self._looked else None,
+                plugins_checked=self._looked[2] if self._looked else None,
                 plugins_held=[] if self.development is not None else list(plan.held_plugins),
             )
+
+    def recheck(self) -> AutoUpdateStatus:
+        """Look for news now because a person asked (the pane's retry button), at most once every ten seconds."""
+        now = self._clock()
+        if self._looked is not None and now - self._looked[0] < RECHECK_GAP:
+            return self.status()
+        if self.reason() is None:
+            self.check(now)
+        elif self.development is None and self._read_settings().update_check:
+            # Automatic updates can't run here, but the pane still shows when hz itself was last looked up.
+            ReleaseCache(self._kernel.settings.cache_dir).refresh(self._kernel.resolve(ReleaseSource), TIMEOUT)
+            self._looked = (now, ReleaseCache(self._kernel.settings.cache_dir).error is None, False)
+        return self.status()
 
     def postpone(self) -> AutoUpdateStatus:
         """Put the update off by an hour, for every window."""
@@ -1044,6 +1150,11 @@ def add_auto_update(app: FastAPI, updater: AutoUpdater | None) -> None:
     def postpone_update(response: Response) -> AutoUpdateStatus:
         response.headers["Cache-Control"] = "no-store"
         return require().postpone()
+
+    @app.post(f"{AUTO_UPDATE_PATH}/check", tags=["web"], responses=refused)
+    def check_now(response: Response) -> AutoUpdateStatus:
+        response.headers["Cache-Control"] = "no-store"
+        return require().recheck()
 
     @app.post(f"{AUTO_UPDATE_PATH}/dismiss", tags=["web"], responses=refused)
     def dismiss_message(response: Response) -> AutoUpdateStatus:

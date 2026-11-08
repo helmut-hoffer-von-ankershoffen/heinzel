@@ -1,6 +1,49 @@
 {
   "components": {
     "schemas": {
+      "Access": {
+        "description": "A connector's sign-in as its own provider sees it: account, grants, and what can be done (ADR 0136).",
+        "properties": {
+          "flow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignInFlow"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its sign-in running now or ended last; none."
+          },
+          "message": {
+            "default": "",
+            "description": "What the request did, such as signing out; empty if nothing.",
+            "title": "Message",
+            "type": "string"
+          },
+          "name": {
+            "description": "Qualified name of the module, as `hz system connector list` names it.",
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SignInStatus",
+            "description": "Who is signed in, which grants hold, and whether the tool can run."
+          },
+          "title": {
+            "description": "Its name for people, e.g. `Google`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "status"
+        ],
+        "title": "Access",
+        "type": "object"
+      },
       "AccessList": {
         "description": "Every installed AI access option, the one in use, and what each use of AI runs.",
         "properties": {
@@ -118,6 +161,12 @@
             "title": "Name",
             "type": "string"
           },
+          "needs": {
+            "default": "",
+            "description": "The one thing missing, in a few words, e.g. `Add a model and API key`; empty when nothing is.",
+            "title": "Needs",
+            "type": "string"
+          },
           "plugin": {
             "anyOf": [
               {
@@ -142,15 +191,33 @@
             "description": "The agent runner that serves its chat and coding uses.",
             "title": "Runner"
           },
+          "setup": {
+            "anyOf": [
+              {
+                "enum": [
+                  "model",
+                  "gateway",
+                  "sign-in",
+                  "client"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What setting it up takes: `model` (a model and API key), `gateway` (its commands), `sign-in` or `client` (an optional Python client hz installs); none when nothing is missing or hz can't tell.",
+            "title": "Setup"
+          },
           "status": {
-            "description": "`signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `not installed` when what it needs is missing.",
+            "description": "`signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `needs setup` when a setting, a sign-in or its optional client is missing: these options come with hz, they are never plugins to install.",
             "enum": [
               "signed in",
               "not signed in",
               "not tested",
               "tested",
               "test failed",
-              "not installed",
+              "needs setup",
               "error"
             ],
             "title": "Status",
@@ -4402,6 +4469,12 @@
             "title": "Name",
             "type": "string"
           },
+          "sign_in": {
+            "default": false,
+            "description": "Whether hz runs its sign-in itself (`hz system connector connect`), no terminal.",
+            "title": "Sign In",
+            "type": "boolean"
+          },
           "state": {
             "description": "Connected, not signed in, not bound, needs attention, or unknown until tested.",
             "enum": [
@@ -6627,6 +6700,102 @@
           "fingerprint"
         ],
         "title": "FoundSkill",
+        "type": "object"
+      },
+      "Grant": {
+        "description": "Something a connector's sign-in can be allowed to do, in plain words, with the vendor scopes it takes.\n\nA connector asks for its `default` grants on a first sign-in and for any other only when the person allows it,\nusually when a feature that needs it is first used: the minimum, and nothing silently (ADR 0136).",
+        "properties": {
+          "capability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The capability it serves, e.g. `calendar`; none.",
+            "title": "Capability"
+          },
+          "default": {
+            "default": false,
+            "description": "Whether a first sign-in asks for it.",
+            "title": "Default",
+            "type": "boolean"
+          },
+          "explanation": {
+            "description": "What it permits, in a sentence a person decides on.",
+            "title": "Explanation",
+            "type": "string"
+          },
+          "id": {
+            "description": "Its name, lowercase words joined by dashes, e.g. `calendar-write`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "modes": {
+            "description": "The capability's modes it allows: read, write.",
+            "items": {
+              "enum": [
+                "read",
+                "write"
+              ],
+              "type": "string"
+            },
+            "title": "Modes",
+            "type": "array"
+          },
+          "scopes": {
+            "description": "The vendor's names for it, shown, never secret.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "title": {
+            "description": "A short label for people, e.g. `Change your calendar`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "explanation"
+        ],
+        "title": "Grant",
+        "type": "object"
+      },
+      "GrantStatus": {
+        "description": "One declared grant and whether the vendor confirms it.",
+        "properties": {
+          "grant": {
+            "$ref": "#/components/schemas/Grant",
+            "description": "The grant, as the connector declares it."
+          },
+          "needed": {
+            "description": "Whether what the person uses now needs it, e.g. a bound capability's reads.",
+            "title": "Needed",
+            "type": "boolean"
+          },
+          "state": {
+            "description": "Granted, missing, or unknown when nothing says.",
+            "enum": [
+              "granted",
+              "missing",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "grant",
+          "state",
+          "needed"
+        ],
+        "title": "GrantStatus",
         "type": "object"
       },
       "Graph": {
@@ -10609,6 +10778,12 @@
       "PluginCandidate": {
         "description": "What `hz system plugin add` would install: the code, where it comes from and who publishes it.",
         "properties": {
+          "also": {
+            "default": "",
+            "description": "Said before it starts: which plugins it installs with this one, and which it offers.",
+            "title": "Also",
+            "type": "string"
+          },
           "distribution": {
             "anyOf": [
               {
@@ -10637,6 +10812,14 @@
             ],
             "description": "The version installed now, when this replaces it.",
             "title": "Installed Version"
+          },
+          "needs": {
+            "description": "Plugins it requires (dependencies first, each once) and recommends, and what the add does.",
+            "items": {
+              "$ref": "#/components/schemas/PluginNeed"
+            },
+            "title": "Needs",
+            "type": "array"
           },
           "private": {
             "anyOf": [
@@ -10762,7 +10945,8 @@
           "candidate": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/PluginCandidate"
+                "$ref": "#/components/schemas/PluginCandidate",
+                "description": "The exact candidate shown before confirmation."
               },
               {
                 "type": "null"
@@ -10786,6 +10970,14 @@
             "description": "Whether it was carried out; false for `add` without `confirm`, which only shows.",
             "title": "Done",
             "type": "boolean"
+          },
+          "needs": {
+            "description": "For a confirmed add or a repair: each plugin it required or recommended, with its result.",
+            "items": {
+              "$ref": "#/components/schemas/PluginNeed"
+            },
+            "title": "Needs",
+            "type": "array"
           },
           "next": {
             "description": "Commands to run next, e.g. the one that confirms.",
@@ -11131,6 +11323,24 @@
       "PluginLayer": {
         "description": "A layer a plugin's module declares.",
         "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "enum": [
+                  "company",
+                  "org",
+                  "site",
+                  "team"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it sits in its tree, derived from its position; none while the layer is left out of the tree (a missing parent, a cycle).",
+            "title": "Label"
+          },
           "module": {
             "description": "The layer's module name, e.g. `acme-payments`.",
             "title": "Module",
@@ -11167,6 +11377,108 @@
           "site"
         ],
         "title": "PluginLayer",
+        "type": "object"
+      },
+      "PluginNeed": {
+        "description": "A plugin another plugin requires or recommends (`[tool.heinzel.plugin]`), and what the add does about it.",
+        "properties": {
+          "candidate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PluginCandidate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a plugin the add installs or updates: exactly what, read from the same catalog."
+          },
+          "detail": {
+            "default": "",
+            "description": "What went wrong, or what the person still does (e.g. sign in).",
+            "title": "Detail",
+            "type": "string"
+          },
+          "distribution": {
+            "description": "The plugin needed, e.g. `heinzel-github`.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "install": {
+            "description": "What `hz system plugin add` takes for it, e.g. `github`.",
+            "title": "Install",
+            "type": "string"
+          },
+          "installed_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The version installed before the add, if any.",
+            "title": "Installed Version"
+          },
+          "needed_by": {
+            "description": "The plugin that requires or recommends it.",
+            "title": "Needed By",
+            "type": "string"
+          },
+          "required": {
+            "description": "Whether it is required (installed first) or only recommended (offered).",
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requirement": {
+            "description": "What is needed, as declared: the plugin and an optional version range.",
+            "title": "Requirement",
+            "type": "string"
+          },
+          "state": {
+            "description": "What the add does or did about it.",
+            "enum": [
+              "install",
+              "update",
+              "present",
+              "offered",
+              "installed",
+              "updated",
+              "failed",
+              "not-reached"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The version the add installs or installed, when known.",
+            "title": "Version"
+          },
+          "with_it": {
+            "default": false,
+            "description": "A plugin of the same repository it depends on, installed in the same run and pinned to the same commit; `requirement` is that pinned source.",
+            "title": "With It",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "distribution",
+          "requirement",
+          "required",
+          "needed_by",
+          "state",
+          "install"
+        ],
+        "title": "PluginNeed",
         "type": "object"
       },
       "PluginOperation": {
@@ -11462,6 +11774,36 @@
           "change"
         ],
         "title": "PluginPendingChange",
+        "type": "object"
+      },
+      "PluginRepair": {
+        "description": "What a repair of the installed plugins' requirements found and did, one entry per missing plugin.",
+        "properties": {
+          "message": {
+            "description": "One line: what was repaired, or that nothing needed it.",
+            "title": "Message",
+            "type": "string"
+          },
+          "needs": {
+            "description": "Each required plugin that was missing or too old, with its result.",
+            "items": {
+              "$ref": "#/components/schemas/PluginNeed"
+            },
+            "title": "Needs",
+            "type": "array"
+          },
+          "restart_required": {
+            "description": "Whether a running server must restart to load what was installed.",
+            "title": "Restart Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "needs",
+          "restart_required",
+          "message"
+        ],
+        "title": "PluginRepair",
         "type": "object"
       },
       "PluginSearch": {
@@ -12969,6 +13311,24 @@
             ],
             "description": "Holds once the hz installed on this machine (on disk, not the running process) is at least this.",
             "title": "Installed Version At Least"
+          },
+          "plugins_installed": {
+            "anyOf": [
+              {
+                "items": {
+                  "pattern": "^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$",
+                  "type": "string"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Holds once every plugin distribution named is installed on this machine (on disk).",
+            "title": "Plugins Installed"
           }
         },
         "title": "ResolveWhen",
@@ -13273,6 +13633,17 @@
               }
             ],
             "description": "Filled in by `system.ui`; whatever a plugin sets here is replaced."
+          },
+          "inputs": {
+            "default": [],
+            "description": "Parameters the person fills in, in a view's form, e.g. `text`; only for a private mutation, and still confirmed before it runs.",
+            "items": {
+              "pattern": "^[a-z_][a-z0-9_]*$",
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Inputs",
+            "type": "array"
           },
           "kind": {
             "const": "operation",
@@ -14603,6 +14974,189 @@
           "command"
         ],
         "title": "SetupDoc",
+        "type": "object"
+      },
+      "SignInFlow": {
+        "description": "A sign-in hz runs for the person through the vendor's tool; the consent click on the vendor's page is theirs.",
+        "properties": {
+          "account": {
+            "default": "",
+            "description": "Who is signed in, once it succeeded and the tool says.",
+            "title": "Account",
+            "type": "string"
+          },
+          "connector": {
+            "description": "Qualified name of the connector signing in.",
+            "title": "Connector",
+            "type": "string"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it ended; none while it runs.",
+            "title": "Ended At"
+          },
+          "grants": {
+            "description": "Every grant asked for: what the sign-in holds once it succeeds.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Grants",
+            "type": "array"
+          },
+          "id": {
+            "description": "What `hz system connector flow`, `cancel` and `open` take.",
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "description": "What happened, in plain words; what to do if it failed.",
+            "title": "Message",
+            "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignInProgress"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The vendor's consent page, once its tool gave it; where it must be opened."
+          },
+          "started_at": {
+            "description": "When it started.",
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "state": {
+            "description": "starting, waiting (for consent), succeeded, failed, cancelled, timed-out.",
+            "enum": [
+              "starting",
+              "waiting",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "timed-out"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "connector",
+          "state",
+          "grants",
+          "started_at"
+        ],
+        "title": "SignInFlow",
+        "type": "object"
+      },
+      "SignInProgress": {
+        "description": "What a running sign-in can tell the person: the vendor's consent page, and a device code if it has one.",
+        "properties": {
+          "code": {
+            "default": "",
+            "description": "A code to type on that page, for a device sign-in; empty if none.",
+            "title": "Code",
+            "type": "string"
+          },
+          "finish_on": {
+            "description": "`host` when the page must be opened on the machine hz runs on.",
+            "enum": [
+              "host",
+              "anywhere"
+            ],
+            "title": "Finish On",
+            "type": "string"
+          },
+          "url": {
+            "description": "The vendor's consent page, an https address.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "finish_on"
+        ],
+        "title": "SignInProgress",
+        "type": "object"
+      },
+      "SignInStatus": {
+        "description": "Who a connector's tool is signed in as and what it was granted, from the evidence its provider has.",
+        "properties": {
+          "account": {
+            "default": "",
+            "description": "Who, as the tool names them; never a secret. Empty if unsaid.",
+            "title": "Account",
+            "type": "string"
+          },
+          "grants": {
+            "description": "Every declared grant and its state.",
+            "items": {
+              "$ref": "#/components/schemas/GrantStatus"
+            },
+            "title": "Grants",
+            "type": "array"
+          },
+          "install": {
+            "default": "",
+            "description": "How to install the tool through its supported path, if missing.",
+            "title": "Install",
+            "type": "string"
+          },
+          "live": {
+            "default": false,
+            "description": "Whether the vendor was asked; else it is local evidence only.",
+            "title": "Live",
+            "type": "boolean"
+          },
+          "problem": {
+            "default": "",
+            "description": "What needs a new sign-in, such as an expired or revoked one; empty if nothing.",
+            "title": "Problem",
+            "type": "string"
+          },
+          "signed_in": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether there is a sign-in; none when only the vendor could say.",
+            "title": "Signed In"
+          },
+          "tool": {
+            "default": "ready",
+            "description": "Whether the vendor's tool can run a sign-in.",
+            "enum": [
+              "ready",
+              "missing",
+              "unsupported"
+            ],
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signed_in"
+        ],
+        "title": "SignInStatus",
         "type": "object"
       },
       "Skill": {
@@ -18030,12 +18584,40 @@
             "$ref": "#/components/schemas/RunOperation",
             "description": "The declaring module's operation that enables the feature."
           },
+          "explanation": {
+            "anyOf": [
+              {
+                "maxLength": 280,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The longer explanation, shown only on demand under Details.",
+            "title": "Explanation"
+          },
           "label": {
             "description": "The action the person enables or disables.",
             "maxLength": 80,
             "minLength": 1,
             "title": "Label",
             "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One short cause the person can fix, e.g. `Sign in to Tailscale, then try again.`; its presence offers Try again.",
+            "title": "Problem"
           },
           "requested": {
             "anyOf": [
@@ -18046,7 +18628,7 @@
                 "type": "null"
               }
             ],
-            "description": "The requested state when it differs from verified readiness; never a success claim.",
+            "description": "The person's choice, which the switch shows; `checked` alone says whether it is live.",
             "title": "Requested"
           },
           "sign_in_url": {
@@ -18060,6 +18642,20 @@
             ],
             "description": "Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and an active session or device credential.",
             "title": "Sign In Url"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The provider's one short status line, e.g. `Turning on…`; the host shows its own when absent.",
+            "title": "Status"
           },
           "url": {
             "anyOf": [
@@ -20854,6 +21450,87 @@
           "prompt"
         ],
         "title": "heinzel_start_helper_Input",
+        "type": "object"
+      },
+      "system_connector_cancel_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "flow": {
+            "description": "The sign-in, by the id `connect` returned.",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow"
+        ],
+        "title": "system_connector_cancel_Input",
+        "type": "object"
+      },
+      "system_connector_connect_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "allow": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A grant to add, such as `calendar-write`, as `access` lists them; repeat for each.",
+            "title": "Allow"
+          },
+          "name": {
+            "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "wait": {
+            "default": true,
+            "description": "Wait here until it ends, opening the consent page in this machine's browser; only where a person is told (the terminal). Elsewhere it returns at once: poll `flow`, open the page with `open`.",
+            "title": "Wait",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "system_connector_connect_Input",
+        "type": "object"
+      },
+      "system_connector_disconnect_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "system_connector_disconnect_Input",
+        "type": "object"
+      },
+      "system_connector_open_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "flow": {
+            "description": "The sign-in, by the id `connect` returned.",
+            "title": "Flow",
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow"
+        ],
+        "title": "system_connector_open_Input",
         "type": "object"
       },
       "system_runner_chat_propose_release_draft_share_Input": {
@@ -26297,6 +26974,234 @@
         ]
       }
     },
+    "/system/connector/access": {
+      "get": {
+        "description": "Show who a connector is signed in as, which of its grants hold, and its latest sign-in here.",
+        "operationId": "system_connector_access",
+        "parameters": [
+          {
+            "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Ask the vendor too: confirms the account and which grants hold.",
+            "in": "query",
+            "name": "live",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Ask the vendor too: confirms the account and which grants hold.",
+              "title": "Live",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Access"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show who a connector is signed in as, which of its grants hold, and its latest sign-in here.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/cancel": {
+      "post": {
+        "description": "Stop a sign-in that is waiting for consent; nothing changes in your account.",
+        "operationId": "system_connector_cancel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_connector_cancel_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInFlow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop a sign-in that is waiting for consent; nothing changes in your account.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/connect": {
+      "post": {
+        "description": "Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow.",
+        "operationId": "system_connector_connect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_connector_connect_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInFlow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/disconnect": {
+      "post": {
+        "description": "Sign a connector's tool out through its own command; reading and writing through it stop.",
+        "operationId": "system_connector_disconnect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_connector_disconnect_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Access"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign a connector's tool out through its own command; reading and writing through it stop.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/flow": {
+      "get": {
+        "description": "Show where a sign-in started here is: waiting for your consent, or how it ended.",
+        "operationId": "system_connector_flow",
+        "parameters": [
+          {
+            "description": "The sign-in, by the id `connect` returned.",
+            "in": "query",
+            "name": "flow",
+            "required": true,
+            "schema": {
+              "description": "The sign-in, by the id `connect` returned.",
+              "title": "Flow",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInFlow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show where a sign-in started here is: waiting for your consent, or how it ended.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/connector/list": {
       "get": {
         "description": "List connectors with their sign-in, what they serve and their tools; offline.",
@@ -26314,6 +27219,48 @@
           }
         },
         "summary": "List connectors with their sign-in, what they serve and their tools; offline.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/open": {
+      "post": {
+        "description": "Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to.",
+        "operationId": "system_connector_open",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_connector_open_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInFlow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to.",
         "tags": [
           "system"
         ]
@@ -27495,6 +28442,52 @@
         ]
       }
     },
+    "/system/plugin/repair": {
+      "post": {
+        "description": "Install every plugin an installed plugin requires that is missing or too old, from the same catalog.\n\nA plugin declares the plugins it can't work without in `[tool.heinzel.plugin] requires-plugins`; `add` installs them\nfirst, and this repairs an installation that lacks them (one installed before they were declared). It never signs\nin: `hz system doctor` still names each plugin's sign-in step. Running servers load them after a restart.",
+        "operationId": "system_plugin_repair",
+        "parameters": [
+          {
+            "description": "As the automatic updater asks: try each missing plugin once per version of the plugin that requires it, so a failure isn't retried every half hour.",
+            "in": "query",
+            "name": "automatic",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "As the automatic updater asks: try each missing plugin once per version of the plugin that requires it, so a failure isn't retried every half hour.",
+              "title": "Automatic",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginRepair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Install every plugin an installed plugin requires that is missing or too old, from the same catalog.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/plugin/search": {
       "get": {
         "description": "Find plugins to install: first-party ones, and community ones by querying the GitHub API.\n\nConfigured repositories are scanned for plugin projects; topic heinzel-plugin discovers external repositories.\nYour GitHub login also reads private catalogs; authenticated heads only. GH_TOKEN or GITHUB_TOKEN raises the\nrate limit. Catalog outages retain last successfully read metadata.\nPyPI has no keyword search, so it is not queried. Community\nplugins are not reviewed by the Heinzelmännchen maintainers, and every plugin runs with your rights.",
@@ -27510,6 +28503,18 @@
               "description": "Words that name or describe the plugin, e.g. `calendar`; sent to GitHub's search. All plugins if omitted.",
               "title": "Text",
               "type": "string"
+            }
+          },
+          {
+            "description": "Ask GitHub again instead of using the answer kept for the last minute.",
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Ask GitHub again instead of using the answer kept for the last minute.",
+              "title": "Refresh",
+              "type": "boolean"
             }
           }
         ],

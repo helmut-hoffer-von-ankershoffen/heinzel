@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
+import { getRun } from "@/lib/operationRun";
 import { expectAccessible } from "@/test/render";
 import { CandidateDetails, ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
 
@@ -39,10 +40,12 @@ const candidate = {
   revision: "b".repeat(40),
   installed_version: null as string | null,
   warnings: ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."],
+  also: "",
 };
 let receiptCount = 0;
 let confirmedStreamDelay = 0;
 let restartDelay = 0;
+let phaseEvents = "";
 
 describe("plugin source labels", () => {
   it.each([
@@ -206,7 +209,7 @@ function serve(answer: Answer) {
             { status: found.status ?? 200, headers: { "Content-Type": "text/event-stream" } },
           );
         }
-        const events = [task, result].join("");
+        const events = [task, url.searchParams.get("confirm") === "true" ? phaseEvents : "", result].join("");
         return new Response(events, { status: found.status ?? 200, headers: { "Content-Type": "text/event-stream" } });
       }
       return Response.json(found.body, { status: found.status ?? 200 });
@@ -250,6 +253,7 @@ beforeEach(() => {
   receiptCount = 0;
   confirmedStreamDelay = 0;
   restartDelay = 0;
+  phaseEvents = "";
   lifecycleReads = 0;
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -259,6 +263,53 @@ describe("PluginsSection", () => {
     render(<CandidateDetails candidate={{ ...candidate, source: "git", installed_version: "0.9.3" }} />);
     const line = screen.getByText(/Replaces 0\.9\.3/);
     expect(line.closest("details")).toBeNull();
+  });
+
+  it("says before it starts which plugins it installs with this one", () => {
+    const also = "heinzel-crm also needs heinzel-github; installing it too.";
+    render(<CandidateDetails candidate={{ ...candidate, source: "git", also }} />);
+    expect(screen.getByTestId("plugin-also").textContent).toBe(also);
+    expect(screen.getByText(also).closest("details")).toBeNull();
+  });
+
+  it("lists the plugins it also installs, with versions, and nothing for a plugin alone", () => {
+    const need = { required: true, needed_by: "x", install: "acme", detail: "", with_it: true };
+    const needs = [
+      {
+        ...need,
+        distribution: "heinzel-acme",
+        requirement: "heinzel-acme @ git+x",
+        state: "install" as const,
+        version: "0.2.0",
+      },
+      {
+        ...need,
+        distribution: "heinzel-acme-payments",
+        requirement: "p @ git+x",
+        state: "install" as const,
+        version: null,
+      },
+      {
+        ...need,
+        distribution: "heinzel-google",
+        requirement: "heinzel-google",
+        state: "offered" as const,
+        required: false,
+      },
+    ];
+    const { unmount } = render(
+      <CandidateDetails
+        candidate={{ ...candidate, source: "git", needs, also: "x also needs heinzel-acme; installing it too." }}
+      />,
+    );
+    const list = screen.getByTestId("plugin-also-installs");
+    expect(screen.getByTestId("plugin-also")).toHaveTextContent("also needs heinzel-acme; installing it too.");
+    expect(list).toHaveTextContent("heinzel-acme 0.2.0");
+    expect(list).toHaveTextContent("heinzel-acme-payments");
+    expect(list).not.toHaveTextContent("heinzel-google");
+    unmount();
+    render(<CandidateDetails candidate={{ ...candidate, source: "git", needs: [] }} />);
+    expect(screen.queryByTestId("plugin-also")).toBeNull();
   });
 
   it("does not call an uncompleted backend reply an installed plugin or restart the server", async () => {
@@ -381,6 +432,48 @@ describe("PluginsSection", () => {
     expect(inventory.every((call) => new URL(call.url).searchParams.get("fresh") === "true")).toBe(true);
     expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(0);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("shows a confirmed install's real steps, each plugin it needs among them, in the operation dialog", async () => {
+    const phase = (id: string, label: string, state: string, detail?: string) =>
+      `event: phase\ndata: ${JSON.stringify({ id, label, state, ...(detail ? { detail } : {}) })}\n\n`;
+    phaseEvents = [
+      phase("install", "Installing heinzel-crm", "pending"),
+      phase("install", "Installing heinzel-crm", "done"),
+      phase("verify", "Checking that exactly it is installed", "done"),
+      phase("needs:heinzel-auth", "Plugin heinzel-auth, which heinzel-crm needs", "done", "Installed with it: 1.0.0"),
+      phase("record", "Recording the add", "done"),
+    ].join("");
+    let done = false;
+    serve((url) => {
+      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
+        done = url.searchParams.get("confirm") === "true";
+        return { body: change("add", done, { plugins: [installed], restart_required: false }) };
+      }
+      return base(url);
+    });
+    const user = userEvent.setup();
+    show();
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
+    await user.click(screen.getByRole("button", { name: "Install" }));
+    await user.click(
+      within(await screen.findByRole("group", { name: /Install this plugin/ })).getByRole("button", {
+        name: "Restart and apply",
+      }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await waitFor(() => expect(getRun().stage).toBe("done"));
+    const run = getRun();
+    if (run.stage !== "done") throw new Error("not done");
+    expect(run.call.path).toBe("/system/plugin/add");
+    expect(run.phases.map(({ id, state }) => [id, state])).toEqual([
+      ["install", "done"],
+      ["verify", "done"],
+      ["needs:heinzel-auth", "done"],
+      ["record", "done"],
+    ]);
+    expect(run.phases[2]?.detail).toBe("Installed with it: 1.0.0");
   });
 
   it("restarts once and reloads after a Discover install whose row leaves the list", async () => {
@@ -755,7 +848,7 @@ describe("PluginsSection", () => {
     expect(labels.some((text) => text?.includes("First-party"))).toBe(true);
     const row = (name: string) => screen.getByText(name, { exact: true }).closest("li") as HTMLElement;
     expect(within(row("Reference")).getByText("Custom")).toBeInTheDocument();
-    expect(within(row("Private tools")).getByText("Private")).toBeInTheDocument();
+    expect(within(row("Private Tools")).getByText("Private")).toBeInTheDocument();
     expect(within(row("Unknown")).getByText("source not reported yet")).toBeInTheDocument();
     const adds = () =>
       calls.filter((request) => {
@@ -828,6 +921,25 @@ describe("PluginsSection", () => {
     await user.click(within(card).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("group", { name: /Install this plugin/ })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Installed" })).toBeEnabled();
+  });
+
+  it("refreshes Discover past the server's cache, and only there", async () => {
+    window.history.replaceState(null, "", "/");
+    const calls = serve((url) =>
+      url.pathname === "/api/system/plugin/search" ? { body: { plugins: [], warnings: [] } } : base(url),
+    );
+    const user = userEvent.setup();
+    show({ restartInterval: 1 });
+    expect(screen.queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    const refresh = await screen.findByRole("button", { name: "Refresh" });
+    expect(refresh).toHaveAttribute("title", "Refresh");
+    const searches = () => calls.filter((call) => new URL(call.url).pathname === "/api/system/plugin/search");
+    expect(searches().every((call) => !new URL(call.url).searchParams.has("refresh"))).toBe(true);
+    await user.click(refresh);
+    await waitFor(() =>
+      expect(searches().some((call) => new URL(call.url).searchParams.get("refresh") === "true")).toBe(true),
+    );
   });
 
   it("keeps the tab in the address so a reload returns to it", async () => {

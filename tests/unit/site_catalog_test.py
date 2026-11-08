@@ -981,3 +981,49 @@ def test_the_machine_readable_catalog_keeps_its_pinned_install_command(tmp_path)
     install = pages.load_snapshot(path)["plugins"][0]["install"]
     assert install.startswith("hz system plugin add ")
     assert "a" * 40 in install
+
+
+def test_plugins_of_one_revision_that_depend_on_each_other_list_sibling_plugins():
+    def declaration(name, dependencies):
+        quoted = ", ".join(f'"{item}"' for item in dependencies)
+        return (
+            f'[project]\nname="{name}"\ndependencies=[{quoted}]\n[project.entry-points."heinzel.modules"]\nx="y"\n'
+        ).encode()
+
+    files = {
+        "pyproject.toml": declaration("heinzel-harbor", ["heinzel>=0.9", "httpx"]),
+        "plugins/heinzel-harbor-dock/pyproject.toml": declaration("heinzel-harbor-dock", ["heinzel-harbor>=0.0.0"]),
+        "plugins/heinzel-harbor-crane/pyproject.toml": declaration(
+            "heinzel-harbor-crane", ["heinzel-harbor_dock", "heinzel-harbor", "heinzel-elsewhere", "heinzel-harbor"]
+        ),
+    }
+
+    class Public:
+        def get(self, endpoint):
+            if "/commits/" in endpoint:
+                return {"sha": SOURCE["revision"]}
+            if "/git/trees/" in endpoint:
+                return {"tree": [{"path": path} for path in files]}
+            return {"visibility": "public", "private": False, "default_branch": "main"}
+
+        def blob(self, repo, entry):
+            return files[entry["path"]]
+
+    _, projects = catalog.repository_records(Public(), SOURCE["repository"])
+    assert {p["name"]: p["sibling_plugins"] for p in projects} == {
+        "heinzel-harbor": [],
+        "heinzel-harbor-dock": ["heinzel-harbor"],
+        "heinzel-harbor-crane": ["heinzel-harbor-dock", "heinzel-harbor"],
+    }
+    assert record()["sibling_plugins"] == []
+
+
+def test_the_published_acme_rows_list_the_plugins_each_one_needs():
+    plugins = {p["name"]: p["sibling_plugins"] for p in json.loads(catalog.SNAPSHOT.read_text())["plugins"]}
+    assert plugins["heinzel-acme"] == []
+    assert plugins["heinzel-acme-lisbon"] == ["heinzel-acme"]
+    assert plugins["heinzel-acme-payments-checkout"] == [
+        "heinzel-acme",
+        "heinzel-acme-payments",
+        "heinzel-acme-lisbon",
+    ]

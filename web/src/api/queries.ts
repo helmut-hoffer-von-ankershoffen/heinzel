@@ -1,6 +1,7 @@
 // One query per operation the screens read; TanStack Query caches them, so screens share what they fetched.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isLocalServer } from "@/lib/browser";
+import { type Phase, parsePhase } from "@/lib/operationRun";
 import { splash, unreachableError } from "@/splash/store";
 import { api, unwrap } from "./client";
 import type { components } from "./schema";
@@ -232,8 +233,19 @@ export const usePluginSearch = (text: string) =>
     queryKey: ["system", "plugin", "search", text],
     queryFn: ({ signal }) =>
       unwrap(api.GET("/system/plugin/search", { params: { query: { text: text || undefined } }, signal })),
-    staleTime: 5 * 60 * 1000,
+    // The server keeps its answer for a minute too; within it a tab switch shows the kept list, then revalidates.
+    staleTime: 60_000,
   });
+
+/** `hz system plugin search --refresh`: asks GitHub again, past the minute the server keeps its answer, and shows it. */
+export const useRefreshPluginSearch = (text: string) => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      unwrap(api.GET("/system/plugin/search", { params: { query: { text: text || undefined, refresh: true } } })),
+    onSuccess: (found) => client.setQueryData(["system", "plugin", "search", text], found),
+  });
+};
 
 /** `hz system plugin add` without `confirm`: what a spec would install (source, version, publisher), installing nothing. */
 export const usePluginPreview = () =>
@@ -260,7 +272,7 @@ export type PluginChangeRequest = (
   | { remove: string }
   | { enable: string }
   | { disable: string }
-) & { signal?: AbortSignal; onProgress?: (text: string) => void };
+) & { signal?: AbortSignal; onProgress?: (text: string) => void; onPhase?: (phase: Phase) => void };
 
 export const pluginChangeKey = ["system", "plugin", "change"] as const;
 
@@ -279,6 +291,8 @@ export const useChangePlugin = () => {
           { spec: variables.add, confirm: true, operation_id: variables.operationId },
           (event) => {
             if (event.event === "task" && typeof event.data.text === "string") variables.onProgress?.(event.data.text);
+            const phase = event.event === "phase" ? parsePhase(event.data) : null;
+            if (phase) variables.onPhase?.(phase);
           },
           variables.signal,
         );

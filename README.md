@@ -71,7 +71,7 @@ can see what feeds the Friday report. [Explore the ACME team stack →](https://
 
 **Meet the Heinzelmännchen.** In the web app each one shows what it is up to: **working** on a draft, **thinking** it
 over, **waiting for you** to approve, **asleep** when there is nothing to do, **blocked** until you fix something,
-**done** with a happy smile. In `hz` a small one greets you, walks along during long work and marks a finished line.
+**done** with a happy smile. In `hz` the three of them greet you, walks along during long work and marks a finished line.
 They are garnish, never a replacement for words: `hz system config set hz.playful false` (or Settings → General) turns
 them all off, and they stay away from JSON, pipes, CI and `NO_COLOR` anyway.
 
@@ -123,8 +123,10 @@ It reuses uv when available, otherwise runs [Astral's official installer](https:
 It then runs the same app launcher. No administrator access or separate Python installation is needed.
 You can [inspect the script](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/install.sh) first.
 
-The first run installs the verified standard app with its default plugins and opens the workspace. Later runs open
-the installed app. Ctrl-C stops the foreground session; background operation stays optional.
+In a terminal, the first run installs the verified standard app with its default plugins, asks which background
+services (and, on Apple silicon Macs, the desktop app) to install, and opens Heinzelmännchen. Without a terminal it
+asks nothing, skips the desktop app (add `--yes` to install it) and opens the workspace in the foreground. Later runs
+open the installed app. **Ctrl-C** stops the foreground session; background operation stays optional.
 
 <details>
 <summary>Install details, updates and recovery</summary>
@@ -181,9 +183,9 @@ Your configuration files stay; `hz system config show` lists them before you uni
 including expert commands and plugin commands. It runs no operation and leaves your expert-mode setting unchanged.
 The [CLI reference](docs/CLI_REFERENCE.md) is generated from the same executable command tree; CI checks for drift.
 
-<img src="docs/assets/terminal-art.png" alt="A terminal: the command hz prints a pixel-art Heinzelmännchen in a red hat beside the name, version and tagline; after adding the clock plugin, a small one marks the done line" width="560">
+<img src="docs/assets/terminal-art.png" alt="A terminal: the command hz prints the pixel-art swarm of three Heinzelmännchen above the name, version and tagline; after adding the clock plugin, a small one marks the done line" width="560">
 
-On a colour terminal `hz` greets you with a small Heinzelmännchen and a walking one keeps you company during long
+On a colour terminal `hz` greets you with the three Heinzels and a walking one keeps you company during long
 work. `hz system config set hz.playful false` (see [Configure](#configure)), `NO_COLOR`, CI, a pipe or `--json` keep
 the output plain.
 
@@ -266,11 +268,12 @@ installing on its port. After an interrupted update, startup may refuse until su
 status does not call that ready. The service retains the selected configuration files and storage roots. Put
 behavior settings in those files; installation refuses process-only `HZ_*` overrides. Reinstall to change profiles.
 
-In an interactive terminal, bare `uvx heinzel@latest` offers three independent choices: the scheduled daemon,
-web server after login and native notifier. Each defaults to **Yes** and runs only after the persistent standard app
+In an interactive terminal, bare `uvx heinzel@latest` offers independent choices: the desktop app (Apple silicon Macs only), the
+scheduled daemon, web server after login and native notifier. Each defaults to **Yes** and runs only after the persistent standard app
 has been verified. First interactive setup asks for missing name, team name and genuinely required profile fields
 through normal configuration, preserving existing values. Setup is complete only when system health is green. Answer **No** to leave that choice unchanged. Help, explicit commands, machine-readable calls
-and noninteractive use never prompt or select services automatically. Native notification support and OS permission
+and noninteractive use never prompt or select services automatically; without a terminal the bare command still
+opens the workspace in the foreground, and `--yes` also installs the services and the desktop app. Native notification support and OS permission
 are reported separately; an installed notifier does not prove a visible notification.
 
 Built in today:

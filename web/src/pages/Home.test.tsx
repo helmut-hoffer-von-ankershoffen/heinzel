@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { doctorCards, eventCards, jobCards, type TodayCard } from "@/chat/today";
+import { assertActionStructure } from "@/components/PaneActions";
 import { answered, base, empty, frame, mockWithStream, msg } from "@/test/chat";
 import { doctor } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
@@ -44,7 +45,7 @@ describe("Home", () => {
     expect(await screen.findByRole("link", { name: "Open" })).not.toHaveAttribute("data-focus-ring");
   });
 
-  it("asks about a card with an icon-only button, next to Open and dismiss", async () => {
+  it("leads with Open, asks with an icon in the same row, dismisses from the corner", async () => {
     mockApi(base);
     renderAt("/");
     const card = (await screen.findByRole("heading", { name: "Doctor: 2 checks need attention" })).closest(
@@ -53,8 +54,13 @@ describe("Home", () => {
     const ask = within(card).getByRole("button", { name: "Ask about it" });
     expect(ask).toHaveAttribute("title", "Ask about it");
     expect(ask).toHaveTextContent("");
-    expect(ask.parentElement).toBe(within(card).getByRole("link", { name: "Open" }).parentElement);
-    expect(within(card).getByRole("button", { name: /^Dismiss/ }).parentElement).toBe(ask.parentElement);
+    const open = within(card).getByRole("link", { name: "Open" });
+    expect(open).toHaveTextContent("Open");
+    expect(ask.parentElement).toBe(open.parentElement);
+    const dismiss = within(card).getByRole("button", { name: /^Dismiss/ });
+    expect(dismiss.closest("[data-pane-chrome]")).not.toBeNull();
+    expect(dismiss).toHaveTextContent("");
+    assertActionStructure(card);
   });
 
   it("shows what needs you as cards that open their screen", async () => {
@@ -89,10 +95,10 @@ describe("Home", () => {
     const card = (await screen.findByRole("heading", { name: /^Notifications.*unread$/ })).closest("li") as HTMLElement;
     expect(within(card).getByText("4 unread")).toBeInTheDocument();
     expect(within(card).getAllByRole("link", { name: /^Run \d failed/ })).toHaveLength(3);
-    const all = within(card).getByRole("button", { name: "All notifications" });
-    expect(all).toHaveAttribute("title", "All notifications");
-    expect(all).toHaveTextContent("");
-    expect(within(card).queryByRole("link", { name: "All notifications" })).not.toBeInTheDocument();
+    const all = within(card).getByRole("link", { name: "All notifications" });
+    expect(all).toHaveAttribute("href", "/?panel=notifications");
+    expect(all).toHaveTextContent("All notifications");
+    assertActionStructure(card);
     await expectAccessible(container);
   });
 

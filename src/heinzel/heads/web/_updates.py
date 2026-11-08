@@ -44,6 +44,15 @@ class UpdateStatus(BaseModel):
     )
     available: bool = Field(description="Whether the cached release is newer than this server.")
     supported: bool = Field(description="Whether a persistent uv tool, source policy and frontend can be updated here.")
+    checked_at: datetime | None = Field(
+        default=None, description="When the release source was last asked, whether or not it answered."
+    )
+    last_ok_at: datetime | None = Field(
+        default=None, description="When the release source last answered; None if it never did on this machine."
+    )
+    check_failed: bool = Field(
+        default=False, description="Whether the last time the release source was asked it did not answer."
+    )
     reason: str | None = Field(description="Why a manual update is required; contains no private installation source.")
 
 
@@ -153,7 +162,9 @@ def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartabl
     def status(response: Response) -> UpdateStatus:
         response.headers["Cache-Control"] = "no-store"
         cache = ReleaseCache(kernel.settings.cache_dir)
-        enabled = kernel.settings.update_check
+        # Read now, not as booted: Settings saves these two without a restart.
+        current = kernel.fresh_settings()
+        enabled = current.update_check
         pin = installation.core_pin()
         source_allowed = pin is not None and (
             pin.kind in {"release", "default", "index"} or pin.is_edge or (pin.kind == "ref" and pin.ref == "main")
@@ -172,8 +183,11 @@ def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartabl
             current=__version__,
             latest=cache.latest if enabled else None,
             installed_at=installed_at,
-            available=enabled and cache.newer_than(__version__, kernel.settings.update_channel) is not None,
+            available=enabled and cache.newer_than(__version__, current.update_channel) is not None,
             supported=reason is None,
+            checked_at=cache.checked_at if enabled else None,
+            last_ok_at=cache.ok_at if enabled else None,
+            check_failed=enabled and cache.error is not None,
             reason=reason,
         )
 

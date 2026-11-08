@@ -77,7 +77,7 @@ def test_the_listing_shows_every_option_with_the_one_in_use(make_kernel, fakes):
     assert rows == {
         "claude-code": (True, "signed in", ["api.anthropic.com"]),
         "gateway": (False, "signed in", ["ai.acme.example"]),
-        "pydantic-ai": (False, "not installed", []),
+        "pydantic-ai": (False, "needs setup", []),
         "chatgpt": (False, "not signed in", ["api.openai.com", "auth.openai.com"]),
     }
     assert [u["use"] for u in listing["uses"]] == ["chat", "turns", "coding"]

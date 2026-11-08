@@ -94,7 +94,8 @@ export function WorkspacePanels({ panels, active, onSelect, flowing = false }: P
           aria-label={panels.length === 1 ? panel.title : undefined}
           hidden={panel.id !== selected}
           className={cn(
-            "min-w-0",
+            // Clip, not scroll: a page or contributed panel wider than the column stays put instead of panning sideways.
+            "min-w-0 overflow-x-clip",
             flowing
               ? panel.scrollable || panel.id === "page"
                 ? "shrink-0"

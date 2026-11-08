@@ -93,7 +93,12 @@ const report: SchemaConfigReport = {
       env: "HZ_AUTO_UPDATE",
       description:
         "Installs new versions of hz and its plugins by itself, after a 30-second warning you can postpone; never during a chat answer or a running job.",
-      json_schema: { type: "boolean", title: "Automatic updates", default: true, "x-live": true },
+      json_schema: {
+        type: "boolean",
+        title: "Automatic updates",
+        default: true,
+        "x-live": true,
+      },
     },
     {
       section: "github",
@@ -132,7 +137,10 @@ const report: SchemaConfigReport = {
       source: "user",
       env: "HZ_CLOCK__WORKING_HOURS",
       description: "Deprecated: the hours of every zone given by name only.",
-      json_schema: { anyOf: [{ type: "array" }, { type: "null" }], deprecated: true },
+      json_schema: {
+        anyOf: [{ type: "array" }, { type: "null" }],
+        deprecated: true,
+      },
     },
   ],
 };
@@ -143,7 +151,14 @@ const answers = {
   "/api/system/plugin/list": [github, clock],
   "/api/system/ui/navigation": [clockNav],
   "/api/system/capability/list": {
-    capabilities: [{ name: "tracker", summary: "Issues", modes: ["read"], bound: "github" }],
+    capabilities: [
+      {
+        name: "tracker",
+        summary: "Issues",
+        modes: ["read"],
+        bound: "github",
+      },
+    ],
     adapters: [],
     uses: [],
   },
@@ -168,13 +183,20 @@ const answersWithRestart = (restartable = true) => {
       instance = `${instance}-next`;
       return { restarting: true, instance: retiring };
     },
-    "/api/lifecycle/verify": () => ({ instance, version: "0.7.4", matches: true, mismatched: [] }),
+    "/api/lifecycle/verify": () => ({
+      instance,
+      version: "0.7.4",
+      matches: true,
+      mismatched: [],
+    }),
   };
 };
 
 async function confirmSettingsApply(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole("button", { name: "Restart and apply" }));
-  const dialog = await screen.findByRole("alertdialog", { name: "Restart and apply hz ui" });
+  const dialog = await screen.findByRole("alertdialog", {
+    name: "Restart and apply hz ui",
+  });
   await user.click(within(dialog).getByRole("button", { name: "Restart and apply hz ui" }));
 }
 
@@ -249,7 +271,9 @@ describe("Settings: Preferences, Customize, This computer", () => {
     expect(header).toHaveTextContent("First-party");
     expect(header).toHaveTextContent("v0.3.0");
     expect(
-      within(header).getByRole("link", { name: "github.com/helmut-hoffer-von-ankershoffen/heinzel" }),
+      within(header).getByRole("link", {
+        name: "github.com/helmut-hoffer-von-ankershoffen/heinzel",
+      }),
     ).toBeInTheDocument();
     expect(screen.getByText("What time it is for everyone on the team.")).toBeInTheDocument();
     await expectAccessible(container);
@@ -273,17 +297,37 @@ describe("Settings: Preferences, Customize, This computer", () => {
     mockApi({
       ...answers,
       "/api/system/plugin/pending": {
-        changes: [{ change: "installed", distribution: "heinzel-google", version: "0.1.0" }],
+        changes: [
+          {
+            change: "installed",
+            distribution: "heinzel-google",
+            version: "0.1.0",
+          },
+        ],
       },
     });
     const user = userEvent.setup();
     renderAt(`/doctor?settings=${section}`);
 
-    const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    expect(await within(dialog).findByRole("heading", { name: "Plugin changes need a restart" })).toBeVisible();
+    const dialog = await screen.findByRole("dialog", {
+      name: "Settings",
+    });
+    expect(
+      await within(dialog).findByRole("heading", {
+        name: "Plugin changes need a restart",
+      }),
+    ).toBeVisible();
     expect(within(dialog).getByText("heinzel-google was installed")).toBeVisible();
-    await user.click(within(dialog).getByRole("button", { name: "Restart and apply" }));
-    expect(within(dialog).getByRole("alertdialog", { name: "Restart and apply Plugins" })).toBeVisible();
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: "Restart and apply",
+      }),
+    );
+    expect(
+      within(dialog).getByRole("alertdialog", {
+        name: "Restart and apply Plugins",
+      }),
+    ).toBeVisible();
   });
 
   it("defers to a recorded install instead of offering a fresh restart in Connectors", async () => {
@@ -292,13 +336,25 @@ describe("Settings: Preferences, Customize, This computer", () => {
       mockApi({
         ...answers,
         "/api/system/plugin/pending": {
-          changes: [{ change: "installed", distribution: "heinzel-google", version: "0.1.0" }],
+          changes: [
+            {
+              change: "installed",
+              distribution: "heinzel-google",
+              version: "0.1.0",
+            },
+          ],
         },
       });
       renderAt("/doctor?settings=connectors");
-      const dialog = await screen.findByRole("dialog", { name: "Settings" });
+      const dialog = await screen.findByRole("dialog", {
+        name: "Settings",
+      });
       expect(await within(dialog).findByText("Finish the current change in Plugins before restarting.")).toBeVisible();
-      expect(within(dialog).queryByRole("button", { name: "Restart and apply" })).toBeNull();
+      expect(
+        within(dialog).queryByRole("button", {
+          name: "Restart and apply",
+        }),
+      ).toBeNull();
     } finally {
       sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
     }
@@ -309,28 +365,56 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const { calls } = mockApi({
       ...answers,
       "/api/system/plugin/pending": {
-        changes: [{ change: "installed", distribution: "heinzel-google", version: "0.1.0" }],
+        changes: [
+          {
+            change: "installed",
+            distribution: "heinzel-google",
+            version: "0.1.0",
+          },
+        ],
       },
       "/api/lifecycle": () => running,
       "/api/restart": () => {
         expect(JSON.parse(sessionStorage.getItem(ACTIVATION_STORAGE_KEY) ?? "null")).toEqual({
           acknowledged: false,
-          observation: { retired: ["old"], version: "0.9.23", settings: [] },
+          observation: {
+            retired: ["old"],
+            version: "0.9.23",
+            settings: [],
+          },
         });
         return { restarting: true, instance: "old" };
       },
-      "/api/lifecycle/verify": () => ({ ...running, matches: true, mismatched: [] }),
+      "/api/lifecycle/verify": () => ({
+        ...running,
+        matches: true,
+        mismatched: [],
+      }),
     });
     const user = userEvent.setup();
     renderAt("/doctor?settings=plugins");
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    await user.click(await within(dialog).findByRole("button", { name: "Restart and apply" }));
-    await user.click(within(dialog).getByRole("button", { name: "Restart and apply Plugins" }));
+    await user.click(
+      await within(dialog).findByRole("button", {
+        name: "Restart and apply",
+      }),
+    );
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: "Restart and apply Plugins",
+      }),
+    );
     await within(dialog).findByRole("button", { name: "Stop checking" });
     expect(within(dialog).getByRole("button", { name: "Add" })).toBeDisabled();
-    const nav = within(dialog).getByRole("navigation", { name: "Settings" });
+    const nav = within(dialog).getByRole("navigation", {
+      name: "Settings",
+    });
     await user.click(within(nav).getByRole("button", { name: "Connectors" }));
-    await user.click(await within(dialog).findByRole("button", { name: "Stop checking" }));
+    await user.click(
+      await within(dialog).findByRole("button", {
+        name: "Stop checking",
+      }),
+    );
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("Stopped checking");
     expect(within(dialog).queryByRole("button", { name: "Restart and apply" })).toBeNull();
 
@@ -344,7 +428,10 @@ describe("Settings: Preferences, Customize, This computer", () => {
   });
 
   it("heads a built-in module's settings with hz and its version", async () => {
-    mockApi({ ...answers, "/api/system/info": { version: "0.4.0", modules: [] } });
+    mockApi({
+      ...answers,
+      "/api/system/info": { version: "0.4.0", modules: [] },
+    });
     renderAt("/doctor?settings=org");
     expect(await screen.findByRole("link", { name: "First-party" })).toHaveAttribute(
       "href",
@@ -364,14 +451,29 @@ describe("Settings: Preferences, Customize, This computer", () => {
       "/api/system/connector/list": {
         capabilities: [],
         connectors: [
-          { name: "github", distribution: "heinzel-github", login: { signed_in: signedIn } },
-          { name: "other", distribution: "heinzel-other", login: { signed_in: true, account: "other account" } },
+          {
+            name: "github",
+            distribution: "heinzel-github",
+            login: { signed_in: signedIn },
+            checks: [],
+          },
+          {
+            name: "other",
+            distribution: "heinzel-other",
+            login: {
+              signed_in: true,
+              account: "other account",
+            },
+            checks: [],
+          },
         ],
       },
     });
     const user = userEvent.setup();
     renderAt("/doctor?settings=connectors");
-    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    const dialog = await screen.findByRole("dialog", {
+      name: "Settings",
+    });
     const card = (await within(dialog).findByText("Connects: code-host, tracker")).closest("button") as HTMLElement;
     expect(calls.some((request) => new URL(request.url).pathname === "/api/system/connector/list")).toBe(false);
     await user.click(card);
@@ -379,6 +481,42 @@ describe("Settings: Preferences, Customize, This computer", () => {
     expect(await within(dialog).findByText(expected)).toBeVisible();
     expect(within(dialog).queryByText("other account")).toBeNull();
     expect(calls.some((request) => new URL(request.url).pathname === "/api/system/connector/test")).toBe(false);
+  });
+
+  it("shows the connector's own checks under Diagnostics in plain words, closed until opened", async () => {
+    mockApi({
+      ...answers,
+      "/api/system/connector/list": {
+        capabilities: [],
+        connectors: [
+          {
+            name: "github",
+            distribution: "heinzel-github",
+            login: { signed_in: true },
+            checks: [
+              { name: "gh program", status: "up", detail: "", fix: "" },
+              { name: "token scope", status: "degraded", detail: "No read:org scope.", fix: "Sign in again." },
+            ],
+          },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=connectors");
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    await user.click(
+      (await within(dialog).findByText("Connects: code-host, tracker")).closest("button") as HTMLElement,
+    );
+    const summary = await within(dialog).findByText("Diagnostics");
+    const details = summary.closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    await user.click(summary);
+    expect(within(details).getByText("gh program")).toBeVisible();
+    expect(within(details).getByText("OK")).toBeVisible();
+    expect(within(details).getByText("No read:org scope.")).toBeVisible();
+    expect(within(details).getByText("What to do: Sign in again.")).toBeVisible();
+    expect(within(details).getByText("Needs attention")).toBeVisible();
+    expect(within(dialog).queryByText(/source review/i)).toBeNull();
   });
 
   it("lists connectors as cards with what they connect, and opens one's settings inside Connectors", async () => {
@@ -389,11 +527,17 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const card = (await within(dialog).findByText("Connects: code-host, tracker")).closest("button") as HTMLElement;
     expect(card).toHaveTextContent("Connects: code-host, tracker");
     expect(await within(card).findByText("In use for tracker")).toBeInTheDocument();
-    expect(within(dialog).getByRole("heading", { name: "Which connector serves what" })).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("heading", {
+        name: "Which connector serves what",
+      }),
+    ).toBeInTheDocument();
     await user.click(card);
     expect(await within(dialog).findByRole("heading", { name: "GitHub" })).toBeInTheDocument();
     expect(within(dialog).getByLabelText("API URL")).toHaveValue("https://api.github.com");
-    const nav = within(dialog).getByRole("navigation", { name: "Settings" });
+    const nav = within(dialog).getByRole("navigation", {
+      name: "Settings",
+    });
     expect(within(nav).getByRole("button", { name: "Connectors" })).toHaveAttribute("aria-current", "page");
   });
 
@@ -411,7 +555,9 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const user = userEvent.setup();
     renderAt("/doctor?settings=updates");
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    const toggle = await within(dialog).findByRole("switch", { name: "Automatic updates" });
+    const toggle = await within(dialog).findByRole("switch", {
+      name: "Automatic updates",
+    });
     expect(toggle).toHaveAttribute("aria-checked", "true");
     expect(dialog).toHaveTextContent("after a 30-second warning you can postpone");
     await user.click(toggle);
@@ -421,18 +567,27 @@ describe("Settings: Preferences, Customize, This computer", () => {
     await user.click(within(dialog).getByRole("button", { name: "Configuration files" }));
     expect(within(dialog).queryByRole("switch", { name: "Automatic updates" })).not.toBeInTheDocument();
     await user.type(await within(dialog).findByRole("searchbox"), "automatic");
-    expect(await within(dialog).findByRole("switch", { name: "Automatic updates" })).toBeInTheDocument();
+    expect(
+      await within(dialog).findByRole("switch", {
+        name: "Automatic updates",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("disables Automatic updates and says why while hz runs from a source checkout", async () => {
     const { calls } = mockApi({
       ...answers,
-      "/api/auto-update": { phase: "off", development: "Updates are managed by your source checkout." },
+      "/api/auto-update": {
+        phase: "off",
+        development: "Updates are managed by your source checkout.",
+      },
     });
     const user = userEvent.setup();
     renderAt("/doctor?settings=updates");
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    const toggle = await within(dialog).findByRole("switch", { name: "Automatic updates" });
+    const toggle = await within(dialog).findByRole("switch", {
+      name: "Automatic updates",
+    });
     await waitFor(() => expect(toggle).toBeDisabled());
     expect(toggle).toHaveAttribute("aria-checked", "false");
     expect(dialog).toHaveTextContent("Updates are managed by your source checkout.");
@@ -452,10 +607,21 @@ describe("Settings: Preferences, Customize, This computer", () => {
   });
 
   it("offers no reveal button where hz can't open a file manager", async () => {
-    mockApi({ ...answers, "/api/system/config/show": { ...report, can_reveal: false, file_manager: "file manager" } });
+    mockApi({
+      ...answers,
+      "/api/system/config/show": {
+        ...report,
+        can_reveal: false,
+        file_manager: "file manager",
+      },
+    });
     renderAt("/doctor?settings=files");
     await screen.findByRole("heading", { name: "Configuration files" });
-    expect(screen.queryByRole("button", { name: /Show in Finder|Open folder/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: /Show in Finder|Open folder/,
+      }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -465,11 +631,15 @@ describe("The time zones editor (a list of tables by its schema)", () => {
     const user = userEvent.setup();
     const { container } = renderAt("/doctor?settings=clock");
     const zones = await screen.findByRole("group", { name: "Zones" });
-    expect(within(zones).getByRole("button", { name: /^Name \(Berlin\): Berlin · Europe\/Berlin/ })).toHaveClass(
-      "pr-3.5",
-    );
+    expect(
+      within(zones).getByRole("button", {
+        name: /^Name \(Berlin\): Berlin · Europe\/Berlin/,
+      }),
+    ).toHaveClass("pr-3.5");
     // A plain name is a zone with the default hours.
-    const from = within(zones).getByRole("combobox", { name: "Hours (New York) from" });
+    const from = within(zones).getByRole("combobox", {
+      name: "Hours (New York) from",
+    });
     expect(from).toHaveValue("9");
     expect(from.parentElement).toHaveClass("gap-3");
     await expectAccessible(container);
@@ -527,7 +697,10 @@ describe("The time zones editor (a list of tables by its schema)", () => {
     const zones = report.settings.map((setting) =>
       setting.key === "zones" ? { ...setting, value: [{ name: other, hours: [9, 18] }] } : setting,
     );
-    const { calls } = mockApi({ ...answersWithRestart(), "/api/system/config/show": { ...report, settings: zones } });
+    const { calls } = mockApi({
+      ...answersWithRestart(),
+      "/api/system/config/show": { ...report, settings: zones },
+    });
     const user = userEvent.setup();
     renderAt("/doctor?settings=clock");
     await user.click(await screen.findByRole("button", { name: /^Use my time zone/ }));
@@ -554,7 +727,12 @@ describe("The time zones editor (a list of tables by its schema)", () => {
   it("shows the server's error when a change is refused", async () => {
     const { calls } = mockApi({
       ...answersWithRestart(),
-      "/api/system/config/set": { status: 400, body: { error: "Invalid value for clock.zones: end before start" } },
+      "/api/system/config/set": {
+        status: 400,
+        body: {
+          error: "Invalid value for clock.zones: end before start",
+        },
+      },
     });
     const user = userEvent.setup();
     renderAt("/doctor?settings=clock");
@@ -608,11 +786,13 @@ describe("Installed plugins by kind", () => {
     const { container } = renderAt("/doctor?settings=plugins");
     const row = (await screen.findByText("GitHub", { selector: "span *, span" })).closest("li") as HTMLElement;
     expect(within(row).getByTitle("Connector: code-host, tracker")).toBeInTheDocument();
-    const acmeRow = screen.getByText("Acme", { selector: "li span" }).closest("li") as HTMLElement;
+    const acmeRow = screen.getByText("ACME", { selector: "li span" }).closest("li") as HTMLElement;
     expect(within(acmeRow).getByTitle("Theme: acme")).toBeInTheDocument();
     expect(within(acmeRow).getByTitle("Playbook: engineering-team")).toBeInTheDocument();
     await expectAccessible(container);
-    await user.click(screen.getByRole("button", { name: "Theme", pressed: false }));
+    // An exclusive filter is a radiogroup (design/README.md, Choices).
+    await user.click(screen.getByRole("radio", { name: "Theme", checked: false }));
+    expect(screen.getByRole("radio", { name: "Theme" })).toHaveAttribute("aria-checked", "true");
     expect(screen.queryByTitle("Connector: code-host, tracker")).not.toBeInTheDocument();
     expect(screen.getByTitle("Theme: acme")).toBeInTheDocument();
   });
@@ -625,7 +805,7 @@ describe("Where settings live", () => {
     expect(displayName("mcp")).toBe("MCP");
     expect(displayName("cli")).toBe("CLI");
     expect(displayName("github")).toBe("GitHub");
-    expect(displayName("ai-access")).toBe("AI access");
+    expect(displayName("ai-access")).toBe("AI Access");
     expect(inWords("ui_port")).toBe("UI port");
     expect(inWords("api_allowed_hosts")).toBe("API allowed hosts");
     expect(inWords("weekly_digest")).toBe("Weekly digest");
@@ -635,6 +815,141 @@ describe("Where settings live", () => {
     expect(displayName("github", github.summary)).toBe("GitHub");
     expect(displayName("atlassian", "Read Jira issues")).toBe("Atlassian");
     expect(displayName("google", "Read Google Docs")).toBe("Google");
+  });
+
+  it("puts layer plugins under Organisation, alphabetically with You and Team, and keeps connectors", () => {
+    const layerPlugin = (name: string, layer: object, extra: Partial<SchemaPluginInfo> = {}) =>
+      plugin({
+        name,
+        layers: [
+          {
+            module: name,
+            parent: null,
+            site: null,
+            label: "company",
+            ...layer,
+          },
+        ],
+        ...extra,
+      });
+    const acme = layerPlugin("acme", {}, { capabilities: ["acme:tracker"], kinds: ["connector"] });
+    const checkout = layerPlugin("acme-payments-checkout", {
+      parent: "acme-payments",
+      site: "acme-lisbon",
+      label: "team",
+    });
+    const payments = layerPlugin("acme-payments", {
+      parent: "acme",
+      label: "org",
+    });
+    const lisbon = layerPlugin("acme-lisbon", {
+      parent: "acme",
+      label: "site",
+    });
+    const TITLES: Record<string, string> = {
+      acme: "ACME",
+      "acme-lisbon": "ACME Lisbon",
+      "acme-payments": "ACME Payments",
+      "acme-payments-checkout": "ACME Payments Checkout",
+    };
+    const entry = (name: string) => ({
+      id: `${name}:@settings`,
+      module: name,
+      plugin: `heinzel-${name}`,
+      title: TITLES[name] ?? name,
+      icon: "code" as const,
+      declared: false,
+      order: 1000,
+      settings: { group: "organisation" as const, sections: [name] },
+    });
+    const names = ["acme-lisbon", "acme-payments-checkout", "acme", "acme-payments"];
+    const nav = settingsNav(names, [github, acme, checkout, payments, lisbon], names.map(entry));
+    const organisation = nav.pages.filter((page) => page.heading === "organisation").map((page) => page.title);
+    expect(organisation).toEqual(["ACME", "ACME Lisbon", "ACME Payments", "ACME Payments Checkout", "Team", "You"]);
+    const status = (id: string) => nav.pages.find((page) => page.id === `${id}:@settings`)?.status;
+    expect(status("acme-lisbon")).toBe("Site layer of ACME");
+    expect(status("acme")).toBe("Company layer");
+    expect(status("acme-payments-checkout")).toBe("Team layer of ACME Payments, at ACME Lisbon");
+    expect(nav.connectors.map((connector) => connector.id)).toContain("acme");
+    // A plugin that is no layer keeps Preferences.
+    const other = settingsNav(
+      ["weather"],
+      [plugin({ name: "weather" })],
+      [
+        {
+          ...entry("weather"),
+          settings: { group: "preferences", sections: ["weather"] },
+        },
+      ],
+    );
+    expect(other.pages.find((page) => page.id === "weather:@settings")?.heading).toBe("preferences");
+  });
+
+  it("writes ACME in capitals and drops the heinzel- prefix; no plugin name starts in lowercase", () => {
+    expect(displayName("acme-lisbon", "Acme Lisbon, a made-up site.")).toBe("ACME Lisbon");
+    expect(displayName("heinzel-slack", "ask in their own Slack DM")).toBe("Slack");
+    expect(displayName("example", "Show how a plugin is built.")).toBe("Example");
+    for (const name of ["acme-lisbon", "slack", "example", "heinzel-acme", "clock", "weather", "tailscale", "zoom"])
+      expect(displayName(name)).toMatch(/^[A-Z]/);
+  });
+
+  it("lists every sidebar group alphabetically by display name, core and plugin pages together", () => {
+    const entry = (name: string, title: string) => ({
+      id: `${name}:@settings`,
+      module: name,
+      plugin: `heinzel-${name}`,
+      title,
+      icon: "code" as const,
+      declared: true,
+      order: 1000,
+      settings: { group: "preferences" as const, sections: [name] },
+    });
+    const nav = settingsNav(
+      [],
+      [],
+      [
+        entry("slack", "Slack"),
+        entry("acme-lisbon", "ACME Lisbon"),
+        entry("example", "Example"),
+        entry("w", "World clock"),
+      ],
+    );
+    for (const heading of ["preferences", "customize", "organisation", "computer"]) {
+      const labels = nav.pages.filter((page) => page.heading === heading).map((page) => page.title);
+      expect(labels).toEqual(
+        [...labels].sort(new Intl.Collator(undefined, { sensitivity: "base", numeric: true }).compare),
+      );
+    }
+    expect(nav.pages.filter((page) => page.heading === "preferences").map((page) => page.title)).toEqual([
+      "ACME Lisbon",
+      "Appearance",
+      "Example",
+      "Notifications",
+      "Slack",
+      "World clock",
+    ]);
+  });
+
+  it("gives a plugin page without its own icon the plugin glyph, not code brackets", () => {
+    const nav = settingsNav(
+      ["slack"],
+      [],
+      [
+        {
+          id: "slack:@settings",
+          module: "slack",
+          plugin: "heinzel-slack",
+          title: "Slack",
+          icon: "code",
+          declared: false,
+          order: 1000,
+          settings: { group: "preferences", sections: ["slack"] },
+        },
+      ],
+    );
+    expect(nav.pages.find((page) => page.id === "slack:@settings")?.icon).toBe(
+      PAGES.find((p) => p.id === "plugins")?.icon,
+    );
   });
 
   it("puts every module with settings under Preferences, General first, and connectors apart", () => {
@@ -656,7 +971,7 @@ describe("Where settings live", () => {
       ],
     );
     const ids = nav.pages.map((entry) => entry.id);
-    expect(ids.slice(0, 2)).toEqual(["appearance", "notifications"]);
+    expect(ids.filter((id) => ["appearance", "notifications"].includes(id))).toEqual(["appearance", "notifications"]);
     expect(ids).toContain("acme:@settings");
     expect(ids).not.toContain("github");
     expect(nav.pages.find((entry) => entry.id === "clock:main")?.plugin).toBe(clock);
@@ -694,7 +1009,13 @@ describe("Settings: one place for everything", () => {
       defaults: { footer: true, sidebar: false },
     },
   ];
-  const entry = { module: "clock", plugin: "heinzel-clock", order: 900, refresh: 60, problem: null };
+  const entry = {
+    module: "clock",
+    plugin: "heinzel-clock",
+    order: 900,
+    refresh: 60,
+    problem: null,
+  };
   const ui = {
     ...answers,
     "/api/system/ui/list": list,
@@ -705,7 +1026,12 @@ describe("Settings: one place for everything", () => {
         ...entry,
         id: "clock:primary-zone",
         slots: { footer: true, sidebar: false },
-        item: { text: "Berlin", tone: "neutral", icon: "globe", live: { kind: "clock", zone: "Europe/Berlin" } },
+        item: {
+          text: "Berlin",
+          tone: "neutral",
+          icon: "globe",
+          live: { kind: "clock", zone: "Europe/Berlin" },
+        },
       },
     ],
   };
@@ -731,7 +1057,11 @@ describe("Settings: one place for everything", () => {
     await waitFor(() => expect(footer).toHaveTextContent(/Berlin \d{2}:\d{2}:\d{2}/));
     expect(container.querySelector('[data-preview="sidebar"]')).toHaveClass("opacity-40");
     await expectAccessible(container);
-    await user.click(within(dialog).getByRole("switch", { name: "Show in sidebar: Your time zone" }));
+    await user.click(
+      within(dialog).getByRole("switch", {
+        name: "Show in sidebar: Your time zone",
+      }),
+    );
     await waitFor(() => expect(calls.some((call) => call.url.includes("/system/ui/show"))).toBe(true));
   });
 
@@ -741,7 +1071,9 @@ describe("Settings: one place for everything", () => {
     renderAt("/doctor?settings=");
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
     await user.type(await within(dialog).findByRole("searchbox"), "volume");
-    const pages = await within(dialog).findByRole("region", { name: "Settings pages" });
+    const pages = await within(dialog).findByRole("region", {
+      name: "Settings pages",
+    });
     await user.click(within(pages).getByRole("button", { name: "Appearance" }));
     expect(await within(dialog).findByRole("radiogroup", { name: "Mode" })).toBeInTheDocument();
   });

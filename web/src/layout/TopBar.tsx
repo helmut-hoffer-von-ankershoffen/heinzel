@@ -1,6 +1,6 @@
 // The centre pane's header: the screen's title with a menu on the left, quick actions on the right.
-import { useQueryClient } from "@tanstack/react-query";
-import { Calendar, Check, ChevronDown, Link2, RefreshCw, SquareTerminal } from "lucide-react";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { Calendar, Check, ChevronDown, Globe, Link2, RefreshCw, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { matchPath, useLocation } from "react-router";
 import { usePlayful } from "@/api/queries";
@@ -45,6 +45,8 @@ type Props = {
   onToggleTerminal: () => void;
   calendarOpen: boolean;
   onOpenCalendar: () => void;
+  browserOpen?: boolean;
+  onToggleBrowser?: () => void;
   navigationMode?: boolean;
 };
 
@@ -55,6 +57,8 @@ export function TopBar({
   onToggleTerminal,
   calendarOpen,
   onOpenCalendar,
+  browserOpen = false,
+  onToggleBrowser,
   navigationMode = false,
 }: Props) {
   const { title, command } = useScreen();
@@ -84,9 +88,15 @@ export function TopBar({
     setMenu(false);
     window.setTimeout(() => setCopied(null), 1500);
   };
+  // Reload refetches every query the screen shows, without a page reload that would drop open panels and drafts.
+  const fetching = useIsFetching() > 0;
   const refresh = () => {
-    void queries.invalidateQueries();
     setMenu(false);
+    // Abort reads still in flight first, so an older response can never land after the refetch and overwrite it.
+    void Promise.all([
+      queries.cancelQueries({ queryKey: ["org", "calendar"] }),
+      queries.cancelQueries({ queryKey: ["org", "agenda"], exact: true }),
+    ]).then(() => queries.invalidateQueries());
   };
   return (
     // The sidebar's top line has the same height and hairline, so both run across the window as one.
@@ -133,6 +143,19 @@ export function TopBar({
         >
           <SquareTerminal aria-hidden />
         </Button>
+        {onToggleBrowser && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleBrowser}
+            aria-pressed={browserOpen}
+            aria-label={browserOpen ? t("browser.close") : t("browser.open")}
+            title={browserOpen ? t("browser.close") : t("browser.open")}
+            className={cn(browserOpen && "bg-accent text-accent-foreground")}
+          >
+            <Globe aria-hidden />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"
@@ -143,8 +166,16 @@ export function TopBar({
         >
           <Calendar aria-hidden />
         </Button>
-        <Button variant="ghost" size="icon" onClick={refresh} aria-label={t("top.refresh")} title={t("top.refresh")}>
-          <RefreshCw aria-hidden />
+        {/* Reload stays the last action before the mascot; it spins while the refetch runs, so a click shows it worked. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={refresh}
+          aria-label={t("top.refresh")}
+          title={t("top.refresh")}
+          aria-busy={fetching}
+        >
+          <RefreshCw aria-hidden className={cn(fetching && "animate-spin")} />
         </Button>
         {/* The chat is a conversation with your Heinzelmännchen, so its button is a Heinzelmännchen head (not the sidebar's logo); open shows as a dot under it, never a background. */}
         <Button

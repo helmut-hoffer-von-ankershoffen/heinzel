@@ -254,7 +254,45 @@ async function footerPane(page, id, label, ready) {
   // can become obsolete when an independent provider changes footer capacity before Playwright sends the tap.
   await direct.or(more).first().tap();
   if ((await trigger.getAttribute("aria-expanded")) !== "true") await direct.tap();
-  return page.getByRole("region", { name: label, exact: true }).locator("..");
+  const pane = page.getByRole("region", { name: label, exact: true });
+  await pane.waitFor();
+  await assertOneActionRow(pane, `${id} pane`);
+  return pane.locator("..");
+}
+
+/**
+ * A pane's actions (design/README.md, "Actions"): one row that never wraps, the first with its words (or the row's
+ * declared `data-words="none"` fallback), the rest named icons, and every target at least 44px on this touch screen.
+ */
+async function assertOneActionRow(pane, name) {
+  const facts = await pane.evaluate((element) => {
+    const row = element.querySelector("[data-pane-actions]");
+    const actions = row ? [...row.querySelectorAll("[data-pane-action]")] : [];
+    return {
+      words: row?.getAttribute("data-words") ?? null,
+      actions: actions.map((action) => {
+        const box = action.getBoundingClientRect();
+        return {
+          top: Math.round(box.top),
+          width: box.width,
+          height: box.height,
+          kind: action.getAttribute("data-pane-action"),
+          text: action.textContent.trim(),
+          label: action.getAttribute("aria-label"),
+        };
+      }),
+    };
+  });
+  if (!facts.actions.length) return;
+  assert.equal(new Set(facts.actions.map((action) => action.top)).size, 1, `${name}: its actions wrap`);
+  const [lead, ...rest] = facts.actions;
+  if (facts.words === "lead") assert.ok(lead.kind === "text" && lead.text, `${name}: the lead shows its words`);
+  else if (facts.words === "none") assert.ok(lead.kind === "icon" && lead.label, `${name}: the lead's fallback icon`);
+  if (facts.words !== "all")
+    for (const action of rest)
+      assert.ok(action.kind === "icon" && action.label, `${name}: ${action.text} is a named icon`);
+  for (const action of facts.actions)
+    assert.ok(action.height >= 44 && action.width >= 44, `${name}: ${action.label ?? action.text} is under 44px`);
 }
 
 try {
@@ -339,7 +377,7 @@ try {
       const opening = footerPane(page, entry.id, "Share probe");
       publishStatus.resolve();
       const pane = await opening;
-      const copy = pane.getByRole("button", { name: "Copy URL", exact: true });
+      const copy = pane.getByRole("button", { name: "Copy link", exact: true });
       await assertContained(page, pane, "phone: share pane");
       await page.screenshot({ path: join(shots, `mobile-${section}-${supported ? "supported" : "unsupported"}.png`) });
       if (supported) {
@@ -352,13 +390,13 @@ try {
         assert.equal(await pane.getByRole("alert").count(), 0, "Cancellation is silent");
         await copy.waitFor(); // AbortError can also mean that no share targets were available.
         await share.tap();
-        await pane.getByRole("alert").getByText("Could not share the link. You can copy it instead.").waitFor();
+        await pane.getByRole("alert").getByText("Could not share the link; copy it instead.").waitFor();
         assert.equal(await page.evaluate(() => window.shareProbe.url), `${fixtureUrl}/`);
       } else {
         assert.equal(await pane.getByRole("button", { name: "Share", exact: true }).count(), 0);
       }
-      await assertContained(page, copy, "phone: Copy URL");
-      await assertTouchTarget(copy, "Copy URL", "phone");
+      await assertContained(page, copy, "phone: Copy link");
+      await assertTouchTarget(copy, "Copy link", "phone");
       if (supported) await page.screenshot({ path: join(shots, `mobile-${section}-failed.png`) });
       await copy.tap();
       await page.waitForFunction((expected) => window.shareProbe.copied === expected, `${fixtureUrl}/`);
@@ -397,7 +435,9 @@ try {
         module: "ai.access",
         plugin: null,
         in_use: false,
-        status: "not installed",
+        status: "needs setup",
+        needs: "Add the AnExtremelyLongProviderNameThatMustWrapOnAPhone client",
+        setup: "client",
         detail: "",
         fix: "uv tool install an-extremely-long-provider-distribution-name-for-mobile-layout",
         models: [],
@@ -428,10 +468,14 @@ try {
     });
     let updateAvailable = false;
     let updateRequests = 0;
-    await page.route("**/api/system/update", (route) => {
-      updateRequests += 1;
-      return route.abort();
-    });
+    // Plain or streamed: no viewport check may start an update.
+    await page.route(
+      (address) => ["/api/system/update", "/api/stream/system/update"].includes(address.pathname),
+      (route) => {
+        updateRequests += 1;
+        return route.abort();
+      },
+    );
     await page.route("**/api/update-status", (route) =>
       route.fulfill({
         json: {
@@ -440,9 +484,36 @@ try {
           installed_at: "2026-01-02T12:00:00Z",
           available: updateAvailable,
           supported: true,
+          checked_at: new Date().toISOString(),
+          last_ok_at: new Date().toISOString(),
+          check_failed: false,
           reason: null,
         },
       }),
+    );
+    // The automatic-update plan is pinned too: this test server runs from a source checkout, which holds updates.
+    await page.route("**/api/auto-update", (route) =>
+      route.request().method() === "GET"
+        ? route.fulfill({
+            json: {
+              enabled: true,
+              reason: null,
+              phase: "idle",
+              version: "0.7.30",
+              core: null,
+              plugins: {},
+              seconds_left: null,
+              apply_at: null,
+              next_window_at: null,
+              postponements: 0,
+              message: null,
+              holds: [],
+              checked_at: new Date().toISOString(),
+              core_checked: true,
+              plugins_checked: true,
+            },
+          })
+        : route.continue(),
     );
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
@@ -634,9 +705,8 @@ try {
     }
     const updatePane = await footerPane(page, "@updates", "Updates");
     await assertContained(page, updatePane, `${spec.name}: update pane`);
-    assert.equal(await updatePane.getByText("Update availability is unavailable.", { exact: true }).count(), 1);
+    await updatePane.getByText(/^Heinzel 0\.7\.30 is up to date · checked /).waitFor();
     await updatePane.getByRole("button", { name: "Manually update…", exact: true }).waitFor();
-    await updatePane.getByText("Installed: hz 0.7.30").waitFor();
     await updatePane.getByText(/^Last installed:/).waitFor();
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
     await dismissFooterPane(page);
@@ -1411,7 +1481,7 @@ try {
     await playbackHelp.tap();
     const [youtubePage] = await Promise.all([
       soundPage.waitForEvent("popup"),
-      player.getByRole("link", { name: "Play on YouTube" }).tap(),
+      player.getByRole("link", { name: "Open on YouTube" }).tap(),
     ]);
     await youtubePage.waitForURL("https://www.youtube.com/watch**");
     assert.equal(new URL(youtubePage.url()).searchParams.get("v"), sound.stream.video);

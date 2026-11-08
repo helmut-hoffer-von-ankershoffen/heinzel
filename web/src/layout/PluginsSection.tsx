@@ -4,7 +4,9 @@
 // that pinned requirement with `confirm=true` (ADR 0047). The app then restarts `hz ui` itself and reloads.
 import {
   BookOpen,
+  Download,
   ExternalLink,
+  Loader2,
   type LucideIcon,
   Package,
   Palette,
@@ -12,6 +14,7 @@ import {
   Plus,
   Power,
   PowerOff,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -28,12 +31,15 @@ import {
   usePluginPreview,
   usePluginSearch,
   usePlugins,
+  useRefreshPluginSearch,
 } from "@/api/queries";
 import { Loaded } from "@/components/common";
+import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { CodeInput } from "@/components/ui/code-input";
 import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
+import { mergePhase, type Phase, trackOperation } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
 import type { RestartObservation } from "@/lifecycle/controller";
 import { RestartAndApply } from "@/lifecycle/RestartAndApply";
@@ -50,6 +56,16 @@ import {
   validRestartObservation,
 } from "./pluginActivation";
 import { displayName } from "./settingsSections";
+
+/** A confirmed plugin install as the operation dialog shows it: the call the person confirmed on the card. */
+const installCall = (candidate: SchemaPluginCandidate) => ({
+  path: "/system/plugin/add",
+  method: "POST" as const,
+  query: {},
+  command: `hz system plugin add ${candidate.requirement} --confirm`,
+  summary: t("plugins.installing", { name: candidate.distribution ?? candidate.spec }),
+  read_only: false,
+});
 
 type PluginKind = NonNullable<SchemaPluginInfo["kinds"]>[number];
 
@@ -179,16 +195,9 @@ export function repositoryLabel(url: string): string {
 function sourceLink(url: string | null | undefined, name: string) {
   if (!url) return null;
   return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={t("plugins.source", { name })}
-      title={url}
-      className="flex size-8 shrink-0 items-center justify-center rounded-lg text-icon hover:bg-accent"
-    >
-      <ExternalLink aria-hidden className="size-4" />
-    </a>
+    <PaneAction ghost icon={ExternalLink} href={url} className="text-icon">
+      {t("plugins.source", { name })}
+    </PaneAction>
   );
 }
 
@@ -197,7 +206,7 @@ function RepositoryLine({ url }: { url: string | null | undefined }) {
   return url ? (
     <span className="block truncate text-xs text-muted-foreground/80">
       {t("plugins.fromPrefix")}{" "}
-      <a href={url} target="_blank" rel="noreferrer" className="hover:text-foreground hover:underline">
+      <a data-prose-link href={url} target="_blank" rel="noreferrer" className="hover:text-foreground hover:underline">
         {repositoryLabel(url)}
       </a>
     </span>
@@ -273,6 +282,9 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
     ],
   ];
   if (candidate.installed_version) rows.push([t("plugins.field.replaces"), candidate.installed_version]);
+  const coming = (candidate.needs ?? []).filter(
+    (need) => need.required && (need.state === "install" || need.state === "update"),
+  );
   return (
     <div className="mt-2 text-xs">
       {candidate.summary && <p className="mb-1 text-muted-foreground">{candidate.summary}</p>}
@@ -285,6 +297,21 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
           ...(candidate.installed_version ? [`${t("plugins.field.replaces")} ${candidate.installed_version}`] : []),
         ].join(" · ")}
       </p>
+      {/* Said before it starts: the plugins it installs with this one, and those it only offers. */}
+      {candidate.also && (
+        <div className="mt-1" data-testid="plugin-also">
+          <p className="font-medium">{candidate.also}</p>
+          {coming.length > 0 && (
+            <ul className="mt-0.5 list-none" data-testid="plugin-also-installs">
+              {coming.map((item) => (
+                <li key={item.distribution} className="break-words">
+                  {item.version ? `${item.distribution} ${item.version}` : item.distribution}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <details className="mt-1">
         <summary className="cursor-pointer text-muted-foreground">{t("plugins.sourceDetails")}</summary>
         <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
@@ -338,6 +365,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     window.history.replaceState(window.history.state, "", `${address.pathname}${address.search}${address.hash}`);
   };
   const [query, setQuery] = useState("");
+  const refresh = useRefreshPluginSearch(query);
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
@@ -450,7 +478,22 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     }
     // A lost removal response is also uncertain. Require a fresh, explicit choice after status reconciliation.
     if ("remove" in operation) attempted.current = true;
-    const answer = await change.mutateAsync({ ...operation, signal, onProgress: setPluginProgress });
+    // An install shows its real steps in the operation dialog: installing, checking, each plugin it needs, recording.
+    const answer =
+      "add" in operation && pending.action === "add"
+        ? await trackOperation(installCall(pending.candidate), (report) => {
+            let phases: Phase[] = [];
+            return change.mutateAsync({
+              ...operation,
+              signal,
+              onProgress: setPluginProgress,
+              onPhase: (phase) => {
+                phases = mergePhase(phases, phase);
+                report(phases);
+              },
+            });
+          })
+        : await change.mutateAsync({ ...operation, signal, onProgress: setPluginProgress });
     if (!answer.done) throw new Error(t("plugins.notCompleted"));
     completed.current = answer;
     pluginRestartRequired.current = answer.restart_required;
@@ -509,80 +552,76 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
                 </Button>
               </div>
             ) : (
-              <>
-                <RestartAndApply
-                  target={t("plugins.title")}
-                  changes={[
-                    `${actionText(pending.action)}: ${pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name}`,
-                  ]}
-                  preserve={confirm}
-                  acquire={acquirePluginChange}
-                  initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
-                  onNotRestarted={() => {
-                    if (pending.action !== "add") {
-                      forgetPluginRestart();
-                      return;
-                    }
+              <RestartAndApply
+                target={t("plugins.title")}
+                changes={[
+                  `${actionText(pending.action)}: ${pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name}`,
+                ]}
+                preserve={confirm}
+                acquire={acquirePluginChange}
+                initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
+                onNotRestarted={() => {
+                  if (pending.action !== "add") {
+                    forgetPluginRestart();
+                    return;
+                  }
+                  try {
+                    window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
+                  } catch {
+                    // A kept observation only offers Check again after a reload; Apply stays available here.
+                  }
+                  setRestartObservation(null);
+                }}
+                destructive={pending.action === "remove"}
+                cancel={
+                  pending.action !== "add" || operation.data?.status === "previewed"
+                    ? {
+                        label: t("plugins.cancel"),
+                        disabled: change.isPending || activation.changing,
+                        onClick: () => {
+                          if (pending.action === "add") {
+                            setReceiptId(null);
+                            setRestartObservation(null);
+                          }
+                          setPending(null);
+                        },
+                      }
+                    : undefined
+                }
+                onApplied={() => {
+                  if (pending.action === "add") {
                     try {
+                      window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
                       window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
+                      setReceiptId(null);
+                      setRestartObservation(null);
+                      setRestartBlocked(false);
                     } catch {
-                      // A kept observation only offers Check again after a reload; Apply stays available here.
+                      // Keeping the receipt is safe; the next visit will read the completed result.
                     }
-                    setRestartObservation(null);
-                  }}
-                  onApplied={() => {
-                    if (pending.action === "add") {
-                      try {
-                        window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
-                        window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
-                        setReceiptId(null);
-                        setRestartObservation(null);
-                        setRestartBlocked(false);
-                      } catch {
-                        // Keeping the receipt is safe; the next visit will read the completed result.
+                  }
+                  if (pending.action !== "add") completePluginRestart();
+                  setPending(null);
+                  if (pending.action === "add") setTab("yours");
+                  setAdding(false);
+                  setSpec("");
+                  if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
+                }}
+                options={{
+                  ...(pending.action === "add" || pending.action === "remove" ? { preserveTimeout: 20 * 60_000 } : {}),
+                  ...(restartInterval ? { interval: restartInterval } : {}),
+                  ...(pending.action === "add"
+                    ? {
+                        onObservation: (observation: RestartObservation) => {
+                          saveAddRestart(pending.operationId, observation, false);
+                          setRestartObservation(observation);
+                        },
+                        onAcknowledged: (observation: RestartObservation) =>
+                          saveAddRestart(pending.operationId, observation, true),
                       }
-                    }
-                    if (pending.action !== "add") completePluginRestart();
-                    setPending(null);
-                    if (pending.action === "add") setTab("yours");
-                    setAdding(false);
-                    setSpec("");
-                    if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
-                  }}
-                  options={{
-                    ...(pending.action === "add" || pending.action === "remove"
-                      ? { preserveTimeout: 20 * 60_000 }
-                      : {}),
-                    ...(restartInterval ? { interval: restartInterval } : {}),
-                    ...(pending.action === "add"
-                      ? {
-                          onObservation: (observation: RestartObservation) => {
-                            saveAddRestart(pending.operationId, observation, false);
-                            setRestartObservation(observation);
-                          },
-                          onAcknowledged: (observation: RestartObservation) =>
-                            saveAddRestart(pending.operationId, observation, true),
-                        }
-                      : { onObservation: retainPluginRestart, onAcknowledged: acknowledgePluginRestart }),
-                  }}
-                />
-                {(pending.action !== "add" || operation.data?.status === "previewed") && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      if (pending.action === "add") {
-                        setReceiptId(null);
-                        setRestartObservation(null);
-                      }
-                      setPending(null);
-                    }}
-                    disabled={change.isPending || activation.changing}
-                  >
-                    {t("plugins.cancel")}
-                  </Button>
-                )}
-              </>
+                    : { onObservation: retainPluginRestart, onAcknowledged: acknowledgePluginRestart }),
+                }}
+              />
             )}
           </div>
         </fieldset>
@@ -636,6 +675,17 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
           className="ml-auto py-1"
           inputClassName="w-36 text-sm"
         />
+        {tab === "discover" && (
+          <PaneAction
+            ghost
+            icon={RefreshCw}
+            className={refresh.isPending ? "[&_svg]:motion-safe:animate-spin" : undefined}
+            disabled={frozen || refresh.isPending}
+            onClick={() => refresh.mutate()}
+          >
+            {t("plugins.refresh")}
+          </PaneAction>
+        )}
         <Button
           variant="outline"
           size="sm"
@@ -763,7 +813,7 @@ function Yours({
                           <RepositoryLine url={url} />
                         </span>
                         {/* Narrow settings panels keep provenance and controls below the name instead of clipping. */}
-                        <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-end gap-2 @md:contents">
+                        <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 @md:contents">
                           <span className="mr-auto flex min-w-0 flex-wrap items-center gap-2 @md:mr-0 @md:shrink-0">
                             {!enabled && (
                               <span className="rounded-md border border-warn/50 px-1.5 text-[11px] text-muted-foreground">
@@ -776,9 +826,9 @@ function Yours({
                             <span className={VERSION}>v{plugin.version}</span>
                           </span>
                           {sourceLink(url, plugin.distribution)}
-                          <Button
-                            variant="ghost"
-                            size="icon"
+                          <PaneAction
+                            ghost
+                            icon={enabled ? PowerOff : Power}
                             onClick={() =>
                               onChange({ action: enabled ? "disable" : "enable", name: plugin.distribution }, rowKey)
                             }
@@ -789,19 +839,19 @@ function Yours({
                             title={enabled ? t("plugins.disable") : t("plugins.enable")}
                             className="text-icon"
                           >
-                            {enabled ? <PowerOff aria-hidden /> : <Power aria-hidden />}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
+                            {enabled ? t("plugins.disable") : t("plugins.enable")}
+                          </PaneAction>
+                          <PaneAction
+                            ghost
+                            destructive
+                            icon={Trash2}
                             onClick={() => onChange({ action: "remove", name: plugin.distribution }, rowKey)}
                             aria-expanded={slot?.key === rowKey}
                             aria-label={t("plugins.removeName", { name: plugin.distribution })}
                             title={t("plugins.remove")}
-                            className="text-icon"
                           >
-                            <Trash2 aria-hidden />
-                          </Button>
+                            {t("plugins.remove")}
+                          </PaneAction>
                         </div>
                       </div>
                       {slot?.key === rowKey && slot.node}
@@ -868,24 +918,33 @@ function KindBadges({ plugin }: { plugin: SchemaPluginInfo }) {
 
 /** All, or only the plugins of one kind. */
 function KindFilter({ kind, onKind }: { kind: PluginKind | null; onKind: (kind: PluginKind | null) => void }) {
+  // One exclusive choice (design/README.md, Choices): radios, the chosen one filled primary, never the hover fill alone.
   const chip = (active: boolean) =>
     cn(
-      "flex items-center gap-1.5 rounded-lg border px-2 py-1 text-ui-sm transition-colors [&_svg]:size-3.5 [&_svg]:text-icon",
+      "flex items-center gap-1.5 rounded-lg border px-2 py-1 text-ui-sm transition-colors [&_svg]:size-3.5",
       active
-        ? "border-transparent bg-accent text-accent-foreground"
-        : "border-border text-muted-foreground hover:bg-accent/60",
+        ? "border-transparent bg-primary font-medium text-primary-foreground"
+        : "border-border text-muted-foreground hover:bg-accent/60 [&_svg]:text-icon",
     );
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a row of toggle buttons, not a form's fieldset
-    <div role="group" aria-label={t("plugins.kind.filter")} className="mb-2 flex flex-wrap gap-1.5">
-      <button type="button" aria-pressed={kind === null} onClick={() => onKind(null)} className={chip(kind === null)}>
+    <div role="radiogroup" aria-label={t("plugins.kind.filter")} className="mb-2 flex flex-wrap gap-1.5">
+      {/* biome-ignore lint/a11y/useSemanticElements: chips announced as the radios of their group */}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={kind === null}
+        onClick={() => onKind(null)}
+        className={chip(kind === null)}
+      >
         {t("plugins.kind.all")}
       </button>
       {KINDS.map(({ kind: value, icon: Icon, label }) => (
+        // biome-ignore lint/a11y/useSemanticElements: chips announced as the radios of their group
         <button
           key={value}
           type="button"
-          aria-pressed={kind === value}
+          role="radio"
+          aria-checked={kind === value}
           onClick={() => onKind(kind === value ? null : value)}
           className={chip(kind === value)}
         >
@@ -954,15 +1013,16 @@ function Discover({
                     <span aria-hidden className={VERSION} />
                   </span>
                   {sourceLink(repositoryOfEntry(plugin), plugin.name)}
-                  <Button
-                    size="sm"
-                    variant="outline"
+                  <PaneAction
+                    ghost
+                    icon={checking === `discover:${plugin.name}` ? Loader2 : Download}
+                    className={checking === `discover:${plugin.name}` ? "[&_svg]:motion-safe:animate-spin" : undefined}
                     disabled={checking === `discover:${plugin.name}`}
                     aria-expanded={slot?.key === `discover:${plugin.name}`}
                     onClick={() => onInstall(plugin.install_spec, `discover:${plugin.name}`)}
                   >
                     {checking === `discover:${plugin.name}` ? t("plugins.checking") : t("plugins.install")}
-                  </Button>
+                  </PaneAction>
                 </div>
                 {slot?.key === `discover:${plugin.name}` && slot.node}
               </li>

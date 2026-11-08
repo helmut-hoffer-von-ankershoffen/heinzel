@@ -15,8 +15,8 @@ import subprocess
 import tomllib
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from collections.abc import Callable, Collection, Iterable
+from dataclasses import dataclass, replace
 from importlib.metadata import Distribution
 from typing import Any, Literal, NoReturn, cast
 from urllib.parse import quote, urlsplit
@@ -186,6 +186,55 @@ class Metadata:
     revision: str | None = None
     page: str | None = None
     subdirectory: str | None = None
+    dependencies: tuple[str, ...] = ()
+    """The project's `[project].dependencies`, as written."""
+    requires: tuple[str, ...] = ()
+    """Other plugins it can't work without (`[tool.heinzel.plugin] requires-plugins`): installed with it, first."""
+    recommends: tuple[str, ...] = ()
+    """Other plugins it works better with (`[tool.heinzel.plugin] recommends-plugins`): offered, never forced."""
+
+
+NEEDS = "\x00heinzel-plugin-needs"
+"""The key `github_project_at` files a plugin's `[tool.heinzel.plugin]` under in the project table it returns."""
+MAX_NEEDS = 16
+"""How many plugins one plugin may require or recommend: a bound on what one install can pull in."""
+
+
+def plugin_needs(document: object) -> dict[str, tuple[str, ...]]:
+    """The plugins a pyproject's `[tool.heinzel.plugin]` requires and recommends, as checked requirements.
+
+    Read from `requires-plugins` and `recommends-plugins`; the table's `requires` names capability contracts.
+
+    Each entry is a plugin distribution with an optional version, such as `heinzel-github>=0.3`: no URL, extras or
+    markers, as where it comes from is the catalog's word, never the requirer's. A malformed table declares nothing.
+    """
+    tool = cast("dict[str, object]", document).get("tool") if isinstance(document, dict) else None
+    heinzel = cast("dict[str, Any]", tool).get("heinzel") if isinstance(tool, dict) else None
+    table = cast("dict[str, Any]", heinzel).get("plugin") if isinstance(heinzel, dict) else None
+    found: dict[str, tuple[str, ...]] = {"requires": (), "recommends": ()}
+    if not isinstance(table, dict):
+        return found
+    for key in found:
+        entries = cast("dict[str, Any]", table).get(f"{key}-plugins")
+        if not isinstance(entries, list) or len(cast("list[object]", entries)) > MAX_NEEDS:
+            continue
+        checked: list[str] = []
+        for entry in cast("list[object]", entries):
+            try:
+                requirement = Requirement(str(entry))
+            except InvalidRequirement:
+                continue
+            name = canonicalize_name(requirement.name)
+            if (
+                name.startswith(PREFIX)
+                and name != CORE_DISTRIBUTION
+                and not requirement.url
+                and not requirement.extras
+                and requirement.marker is None
+            ):
+                checked.append(f"{name}{requirement.specifier}")
+        found[key] = tuple(checked)
+    return found
 
 
 def github_project_at(get: JsonGetter, base: str, revision: str, directory: str | None) -> dict[str, Any]:
@@ -206,7 +255,7 @@ def github_project_at(get: JsonGetter, base: str, revision: str, directory: str 
     if not isinstance(project, dict):
         msg = "Plugin project metadata must be a table"
         raise TypeError(msg)
-    return cast("dict[str, Any]", project)
+    return {**cast("dict[str, Any]", project), NEEDS: plugin_needs(document)}
 
 
 def _github_root_project(source: PluginSource, get: JsonGetter, base: str, revision: str) -> dict[str, Any]:
@@ -338,6 +387,7 @@ def from_github(source: PluginSource, get: JsonGetter) -> Metadata:
     if authors and authors[0].get("name"):
         publisher = f"{publisher} ({clean(authors[0]['name'])})"
     version = clean(project.get("version"))
+    needs = cast("dict[str, tuple[str, ...]]", project.get(NEEDS) or {})
     return Metadata(
         name=checked_name(str(project["name"]), str(source.url)),
         version=version if _version_key(version)[0] else None,
@@ -347,7 +397,93 @@ def from_github(source: PluginSource, get: JsonGetter) -> Metadata:
         revision=revision,
         page=str(repo.get("html_url") or source.url),
         subdirectory=directory,
+        requires=needs.get("requires", ()),
+        recommends=needs.get("recommends", ()),
+        dependencies=_dependency_texts(project),
     )
+
+
+def _dependency_texts(project: dict[str, Any]) -> tuple[str, ...]:
+    """The strings of a project's `dependencies` list; anything else in it is ignored."""
+    declared: object = project.get("dependencies")
+    values = cast("list[object]", declared) if isinstance(declared, list) else []
+    return tuple(item for item in values if isinstance(item, str))
+
+
+MAX_SIBLINGS = 8
+"""Most sibling plugins one install brings along; a bigger closure is not a plugin collection."""
+
+
+@dataclass(frozen=True)
+class Sibling:
+    """A plugin of the same repository at the same commit that another plugin of it depends on."""
+
+    name: str
+    version: str | None
+    requirement: str
+    directory: str
+
+
+def siblings_from_github(
+    source: PluginSource, get: JsonGetter, metadata: Metadata, *, skip: Collection[str] = ()
+) -> list[Sibling]:
+    """The sibling plugins `metadata` needs, dependencies first, each pinned to the commit of `metadata`.
+
+    Only a dependency that is a plugin project of the same repository (the root or `plugins/<name>`) at that commit
+    counts; every spec derives from the source the person is already shown, so nothing new is trusted. Anything else
+    is left to uv, as before. Names in `skip` (installed already, core) are left out.
+
+    Raises:
+        HeinzelError: If the closure exceeds `MAX_SIBLINGS`.
+        OSError: If GitHub can't be reached.
+        ValueError: If an answer isn't the JSON GitHub sends.
+    """
+    owner, repository = source.github or ("", "")
+    if not metadata.revision or not owner:
+        return []
+    base = f"repos/{quote(owner)}/{quote(repository)}"
+    ordered: dict[str, Sibling] = {}
+    visiting = {canonicalize_name(metadata.name or "")}
+
+    def visit(dependencies: Iterable[str]) -> None:
+        for text in dependencies:
+            try:
+                name = canonicalize_name(Requirement(text).name)
+            except InvalidRequirement:
+                continue
+            if name in visiting or name in skip or name == "heinzel":
+                continue
+            visiting.add(name)
+            found = _sibling_project(get, base, str(metadata.revision), name)
+            if found is None:
+                continue
+            project, directory = found
+            visit(_dependency_texts(project))
+            if len(ordered) >= MAX_SIBLINGS:
+                msg = f"This plugin needs more than {MAX_SIBLINGS} plugins of its repository; add them one by one."
+                raise HeinzelError(msg)
+            version = clean(project.get("version"))
+            ordered[name] = Sibling(
+                name=name,
+                version=version if _version_key(version)[0] else None,
+                requirement=replace(source, subdirectory=directory or None).git_requirement(name, metadata.revision),
+                directory=directory,
+            )
+
+    visit(metadata.dependencies)
+    return list(ordered.values())
+
+
+def _sibling_project(get: JsonGetter, base: str, revision: str, name: str) -> tuple[dict[str, Any], str] | None:
+    """The plugin project called `name` in the repository's root or `plugins/<name>` at `revision`, if any."""
+    for directory in ("", f"plugins/{name}"):
+        try:
+            project = github_project_at(get, base, revision, directory or None)
+        except LookupError:
+            continue
+        if canonicalize_name(str(project.get("name") or "")) == name and _declares_plugin(project):
+            return project, directory
+    return None
 
 
 def github_getter(token: SecretStr | None) -> JsonGetter:
