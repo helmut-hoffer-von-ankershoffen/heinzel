@@ -49,6 +49,10 @@ def no_publish(_):
     pytest.fail("the unverified connection reached the lease publisher")
 
 
+def keep_active(_lease):
+    """The fixture publisher keeps its lease active until its context exits."""
+
+
 def test_protocol_only_sees_original_socket_after_publication(supervised, caplog):
     endpoint, _, bridge = supervised
     active = []
@@ -56,7 +60,7 @@ def test_protocol_only_sees_original_socket_after_publication(supervised, caplog
 
     @contextmanager
     def publish(peer):
-        lease = PublishedMcpLease("active-1", GENERATION, peer)
+        lease = PublishedMcpLease("active-1", GENERATION, peer, keep_active)
         active.append(lease)
         try:
             yield lease
@@ -152,7 +156,7 @@ def test_refuses_a_lease_from_another_connection(supervised):
 
     @contextmanager
     def publish(peer):
-        yield PublishedMcpLease("first", GENERATION, peer)
+        yield PublishedMcpLease("first", GENERATION, peer, keep_active)
 
     with endpoint.admit_next(lambda _: GENERATION, publish) as first:
         assert first.peer.connection.fileno() >= 0
@@ -177,7 +181,7 @@ def test_publisher_must_bind_current_generation_and_live_peer(supervised):
     @contextmanager
     def generation_changed(peer):
         try:
-            yield PublishedMcpLease("wrong-generation", McpGeneration("reg-one", 4), peer)
+            yield PublishedMcpLease("wrong-generation", McpGeneration("reg-one", 4), peer, keep_active)
         finally:
             assert peer.connection.fileno() == -1
 
@@ -201,7 +205,7 @@ def test_closed_stream_during_publication_releases_lease_without_handoff(supervi
         else:
             bridge.close()
         try:
-            yield PublishedMcpLease("disconnected", GENERATION, peer)
+            yield PublishedMcpLease("disconnected", GENERATION, peer, keep_active)
         finally:
             assert peer.connection.fileno() == -1
             released.append(True)
@@ -233,7 +237,7 @@ def test_rechecks_endpoint_ownership_after_lease_publication(supervised, change)
                 path.symlink_to(original)
             else:
                 path.chmod(0o660)
-            yield PublishedMcpLease("changed-endpoint", GENERATION, peer)
+            yield PublishedMcpLease("changed-endpoint", GENERATION, peer, keep_active)
 
         with (
             pytest.raises(HeinzelError, match="Local MCP endpoint"),
@@ -404,5 +408,63 @@ def test_active_lease_expiry_obeys_the_earlier_deadline(supervised, monkeypatch,
             expire(*args)
             assert bridge.recv(1) == b""
             assert result.result(timeout=2) == b""
+        finally:
+            authority.revoke()
+
+
+@pytest.mark.parametrize(
+    ("phase", "refusal"),
+    [
+        ("publication", "lease was not published"),
+        ("handoff", "approval is invalid or unavailable"),
+        ("dispatch", "approval is invalid or unavailable"),
+    ],
+)
+def test_expired_lease_refuses_authority_even_when_timer_callback_is_delayed(supervised, monkeypatch, phase, refusal):
+    endpoint, _, bridge = supervised
+    now = 100.0
+    authority = HostMcpConnectionApprovals(private_plan(101.0), clock=lambda: now)
+
+    class DelayedTimer:
+        def __init__(self, _delay, _expire, *, args):
+            pass
+
+        def start(self):
+            nonlocal now
+            if phase == "publication":
+                now = 102.0  # The timer has not run its callback, but the lease is already expired.
+
+        def cancel(self):
+            pass
+
+    monkeypatch.setattr(_ipc_approval, "Timer", DelayedTimer)
+
+    @contextmanager
+    def publish(peer):
+        nonlocal now
+        with authority.publish(peer) as lease:
+            if phase == "handoff":
+                now = 102.0
+            yield lease
+
+    def initialize():
+        nonlocal now
+        with endpoint.admit_next(lambda _: GENERATION, publish) as lease:
+            if phase == "dispatch":
+                lease.require_active()
+                with pytest.raises(HeinzelError, match="approval is invalid or unavailable"):
+                    replace(lease).require_active()
+                now = 102.0
+                lease.require_active()
+            pytest.fail("Protocol accepted an expired lease")
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        try:
+            result = executor.submit(initialize)
+            (review,) = pending_reviews(authority, 1)
+            authority.approve(review)
+            with pytest.raises(HeinzelError, match=refusal):
+                result.result(timeout=2)
+            assert bridge.recv(1) == b""
         finally:
             authority.revoke()

@@ -84,6 +84,12 @@ class _PendingReview:
     proof: _HostProof | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _ActiveLease:
+    lease: PublishedMcpLease
+    expires_at: float
+
+
 class HostMcpConnectionApprovals:
     """Process-local host control and broker for a single immutable private grant.
 
@@ -98,7 +104,7 @@ class HostMcpConnectionApprovals:
         self._clock = clock
         self._changed = Condition()
         self._pending: dict[str, _PendingReview] = {}
-        self._active: dict[str, PendingMcpPeer] = {}
+        self._active: dict[str, _ActiveLease] = {}
         self._revoked = False
 
     def pending_reviews(self) -> tuple[McpConnectionReview, ...]:
@@ -139,18 +145,27 @@ class HostMcpConnectionApprovals:
             for pending in self._pending.values():
                 _close_stream(pending.peer.connection)
             self._pending.clear()
-            for peer in self._active.values():
-                _close_stream(peer.connection)
+            for active in self._active.values():
+                _close_stream(active.lease.peer.connection)
             self._active.clear()
             self._changed.notify_all()
 
     def _expire(self, lease_id: str) -> None:
         with self._changed:
-            peer = self._active.pop(lease_id, None)
-            if peer is not None:
-                _close_stream(peer.connection)
+            active = self._active.pop(lease_id, None)
+            if active is not None:
+                _close_stream(active.lease.peer.connection)
 
-    def _admit(self, pending: _PendingReview) -> tuple[PublishedMcpLease, float]:
+    def _require_active(self, lease: PublishedMcpLease) -> None:
+        with self._changed:
+            active = self._active.get(lease.id)
+            if self._revoked or active is None or active.lease is not lease:
+                raise HeinzelError(_UNAVAILABLE)
+            if self._clock() >= active.expires_at:
+                self._expire(lease.id)
+                raise HeinzelError(_UNAVAILABLE)
+
+    def _admit(self, pending: _PendingReview) -> _ActiveLease:
         """Wait for a proof and publish exactly one lease while holding the broker condition.
 
         Raises:
@@ -169,9 +184,12 @@ class HostMcpConnectionApprovals:
                 if proof.review != review or now >= proof.expires_at:
                     raise HeinzelError(_UNAVAILABLE)
                 pending.proof = None
-                lease = PublishedMcpLease(secrets.token_urlsafe(32), review.plan.generation, pending.peer)
-                self._active[lease.id] = pending.peer
-                return lease, min(now + _LEASE_SECONDS, review.plan.valid_until)
+                lease = PublishedMcpLease(
+                    secrets.token_urlsafe(32), review.plan.generation, pending.peer, self._require_active
+                )
+                active = _ActiveLease(lease, min(now + _LEASE_SECONDS, review.plan.valid_until))
+                self._active[lease.id] = active
+                return active
             self._changed.wait(min(review.expires_at - now, _PEER_POLL_SECONDS))
 
     @contextmanager
@@ -198,14 +216,16 @@ class HostMcpConnectionApprovals:
             self._pending[review.instance_id] = pending
             self._changed.notify_all()
             try:
-                lease, expires = self._admit(pending)
+                active = self._admit(pending)
             finally:
                 self._pending.pop(review.instance_id, None)
                 self._changed.notify_all()
-        expiry = Timer(max(0, expires - self._clock()), self._expire, args=(lease.id,))
+        lease = active.lease
+        expiry = Timer(max(0, active.expires_at - self._clock()), self._expire, args=(lease.id,))
         expiry.daemon = True
         try:
             expiry.start()
+            lease.require_active()
             yield lease
         finally:
             expiry.cancel()

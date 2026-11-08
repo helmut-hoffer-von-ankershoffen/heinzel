@@ -51,6 +51,11 @@ class PublishedMcpLease:
     id: str
     current_generation: McpGeneration
     peer: PendingMcpPeer
+    check_active: Callable[["PublishedMcpLease"], None] = field(repr=False, compare=False)
+
+    def require_active(self) -> None:
+        """Check current authority synchronously before handoff and each subsequent dispatch."""
+        self.check_active(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,4 +185,5 @@ class OwnedMcpEndpoint:
                     raise HeinzelError(msg)
                 self._verify_endpoint()
                 _require_waiting_peer(connection)
+            lease.require_active()
             yield lease
