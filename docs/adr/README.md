@@ -134,6 +134,7 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0136](0136-connectors-run-their-vendors-sign-in-in-the-app.md) Connectors run their vendor's sign-in in the app | accepted · 7 Nov<br>partial |  |
 | [0137](0137-tagged-git-plugins-update-automatically-with-what-they-need.md) Tagged git plugins update automatically, with what they need | proposed · 7 Nov<br>built |  |
 | [0138](0138-log-structured-events-with-stdlib-logging.md) Log structured events with stdlib logging | proposed · 7 Nov<br>partial |  |
+| [0140](0140-isolate-sidebar-browser-content-in-the-desktop.md) Isolate sidebar browsing from the workspace | proposed · 5 Nov<br>partial |  |
 | [0141](0141-task-tracking-is-a-capability-the-tracker-is-a-connector.md) Task tracking is a capability; the tracker behind it is a connector | proposed · 7 Nov<br>partial | [#572](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/572) |
 
 </div>

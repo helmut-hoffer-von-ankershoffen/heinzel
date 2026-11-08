@@ -9,6 +9,7 @@ import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { watchViewport } from "@/lib/viewport";
 import { FOOTER_RELOCATED, useFooterVisibility, useOpenFooterOverflow } from "./FooterLayout";
+import { actionStructureProblems, assertActionStructure, PaneActions, PaneLeave, PaneTitle } from "./PaneActions";
 
 export type State = "ok" | "warn" | "bad" | "off";
 
@@ -47,6 +48,9 @@ export function FooterItem({
   hideHeading = false,
   steady = false,
   openRequest = 0,
+  actions,
+  actionRow,
+  freeform,
 }: {
   /** What it says, as its accessible name and the pane's heading. */
   label: string;
@@ -76,6 +80,15 @@ export function FooterItem({
   steady?: boolean;
   /** Raised by the owner to pin the pane open (the desktop menu asks for the Updates pane this way). */
   openRequest?: number;
+  /** Every action of the pane: `PaneAction`s in the one bottom row under a divider, after all content. */
+  actions?: ReactNode;
+  /** The row's layout: a pane leads with words (default); an inline confirmation answers like a dialog. */
+  actionRow?: { align?: "start" | "end"; words?: "lead" | "all" };
+  /**
+   * Why this pane may not follow the pane structure (content, divider, one row of action buttons). Only the
+   * version pane, whose release notes are prose with their own links; allowlisted in pane-actions-standards.test.ts.
+   */
+  freeform?: string;
 }) {
   // Longest text seen, in characters: monospace `ch` units make the slot's width exact and never smaller.
   const widest = useRef(0);
@@ -111,6 +124,9 @@ export function FooterItem({
     }
   }, [visible]);
   const open = visible && (hovered || focused || pinned);
+  // In development and tests, an open pane that breaks the structure fails loudly, on each render and late change.
+  const structured = useRef(!freeform);
+  structured.current = !freeform;
   useEffect(() => {
     if (!visible) {
       setHovered(false);
@@ -155,7 +171,10 @@ export function FooterItem({
     observer?.observe(element);
     const mutations = new MutationObserver((records) => {
       // Ignore placement's own writes; content changes still need synchronous measurement.
-      if (records.some((record) => record.target !== element || record.attributeName !== "style")) place();
+      if (records.some((record) => record.target !== element || record.attributeName !== "style")) {
+        if (structured.current) assertActionStructure(element);
+        place();
+      }
     });
     mutations.observe(element, { subtree: true, childList: true, characterData: true, attributes: true });
     const unwatchViewport = watchViewport(place);
@@ -172,6 +191,7 @@ export function FooterItem({
     };
   }, [open, align]);
   useLayoutEffect(() => {
+    if (open && structured.current && pane.current) assertActionStructure(pane.current);
     if (open) position.current?.();
   });
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -280,23 +300,25 @@ export function FooterItem({
             }}
             onFocus={() => setFocused(true)}
           >
-            <section
-              aria-label={paneName ?? label}
-              className={cn(
-                "w-72 max-w-full rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl",
-                popoverClassName,
-              )}
-            >
-              {!hideHeading && (
-                <p className="px-1.5 py-1 font-medium">
-                  <span className="min-w-0">{label}</span>
-                </p>
-              )}
-              {typeof children === "function" ? children(close) : children}
-            </section>
+            <PaneLeave.Provider value={close}>
+              <section
+                aria-label={paneName ?? label}
+                className={cn(
+                  "w-72 max-w-full rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl",
+                  popoverClassName,
+                )}
+              >
+                {!hideHeading && <PaneTitle>{label}</PaneTitle>}
+                {typeof children === "function" ? children(close) : children}
+                <PaneActions {...actionRow}>{actions}</PaneActions>
+              </section>
+            </PaneLeave.Provider>
           </div>,
           document.body,
         )}
     </span>
   );
 }
+
+/** The action structure check, by its footer-pane name for the tests that already use it. */
+export const paneStructureProblems = actionStructureProblems;

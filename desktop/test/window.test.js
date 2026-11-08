@@ -64,6 +64,7 @@ function quitHarness(result, rejects = false) {
     Menu: {}, shell: {}, isAllowedHelpUrl: () => false, appMenuTemplate: () => [], menuScript: () => "", createAboutHandler: () => () => {},
     initializeDesktopIdentity: () => true,
     createInstanceLifecycle: () => ({ acquire: () => true }),
+    createMiniBrowser: () => ({ handle() {}, closeAll() {} }),
     createLifecycleHandler: () => () => {}, createOwnedCli: () => owned,
     stopWithReport, shouldRefresh,
     installSignalQuit: (options) => installSignalQuit({ ...options, setTimer: () => ({ unref() {} }) }),

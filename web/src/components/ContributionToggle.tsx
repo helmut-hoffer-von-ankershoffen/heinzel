@@ -1,9 +1,9 @@
 // A deliberate toggle gesture authorizes one host-projected call; readiness remains a server fact.
 import { Check, Copy, ExternalLink, Share2 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { problem, type SchemaOperationCall } from "@/api/client";
 import { token } from "@/api/token";
-import { Button } from "@/components/ui/button";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +23,8 @@ export type ContributionToggleControl = {
 
 type Props = {
   control: ContributionToggleControl;
+  /** The surrounding pane's own actions, joined to the URL's Share and Open in its one bottom row. */
+  actions?: ReactNode;
   refresh: (signal: AbortSignal) => Promise<ContributionToggleControl | null>;
   applySettings: (expected: ApplySettings, signal: AbortSignal) => Promise<void>;
 };
@@ -98,7 +100,7 @@ function expectations(control: ContributionToggleControl): ApplySettings {
 }
 
 /** One control shared by provider Settings and status popovers; no plugin name or alternate restart path. */
-export function ContributionToggle({ control, refresh, applySettings }: Props) {
+export function ContributionToggle({ control, refresh, applySettings, actions }: Props) {
   const labelId = useId();
   const noteId = useId();
   const active = useRef<AbortController | null>(null);
@@ -249,36 +251,30 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
                 ? t("copy.done")
                 : null}
       </p>
-      {url && (
-        <div className="space-y-2">
-          <p className="break-all font-mono text-xs">{displayUrl}</p>
-          <div className="flex flex-wrap gap-2">
-            {typeof navigator.share === "function" && (
-              <Button type="button" size="sm" variant="outline" onClick={() => void share()}>
-                <Share2 aria-hidden />
-                {t("contrib.toggle.shareUrl")}
-              </Button>
-            )}
-            {(typeof navigator.share !== "function" || shareFailed) && (
-              <Button type="button" size="sm" variant="outline" onClick={() => void copy()}>
-                {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-                {t("contrib.toggle.copyUrl")}
-              </Button>
-            )}
-            <Button size="sm" variant="outline" asChild>
-              <a href={displayUrl ?? url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink aria-hidden />
-                {t("status.open")}
-              </a>
-            </Button>
-          </div>
-        </div>
-      )}
+      {url && <p className="break-all font-mono text-xs">{displayUrl}</p>}
       {error && (
         <p role="alert" className="text-xs text-bad">
           {error}
         </p>
       )}
+      <PaneActions className="px-0">
+        {url && typeof navigator.share === "function" && (
+          <PaneAction icon={Share2} onClick={() => void share()}>
+            {t("contrib.toggle.shareUrl")}
+          </PaneAction>
+        )}
+        {url && (typeof navigator.share !== "function" || shareFailed) && (
+          <PaneAction icon={copied ? Check : Copy} onClick={() => void copy()}>
+            {t("contrib.toggle.copyUrl")}
+          </PaneAction>
+        )}
+        {url && (
+          <PaneAction icon={ExternalLink} href={displayUrl ?? url}>
+            {t("status.open")}
+          </PaneAction>
+        )}
+        {actions}
+      </PaneActions>
     </div>
   );
 }

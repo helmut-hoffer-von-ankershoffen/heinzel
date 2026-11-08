@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ScrollText } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SchemaOperationCall } from "@/api/client";
 import { expectAccessible } from "@/test/render";
 import { type ApplySettings, ContributionToggle, type ContributionToggleControl } from "./ContributionToggle";
+import { PaneAction } from "./PaneActions";
 
 const ORIGIN = "https://workstation.tail-example.ts.net";
 
@@ -293,7 +295,33 @@ describe("authenticated URL copy", () => {
     const link = screen.getByRole("link", { name: "Open" });
     expect(link).toHaveAttribute("href", `${ORIGIN}/#token=session-for-tests`);
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    // The URL is body text; Copy and Open close the pane in one bottom row under the divider, after it.
+    const row = link.closest("[data-pane-actions]");
+    expect(row).toHaveClass("border-t");
+    expect(screen.getByRole("button", { name: "Copy URL" }).closest("[data-pane-actions]")).toBe(row);
+    const url = screen.getByText(`${ORIGIN}/#token=session-for-tests`);
+    expect(url.compareDocumentPosition(row as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("joins the surrounding pane's actions to Share and Open in one bottom row", () => {
+    const value = control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN });
+    const { container } = render(
+      <ContributionToggle
+        control={value}
+        refresh={vi.fn(async () => value)}
+        applySettings={vi.fn(async () => {})}
+        actions={
+          <PaneAction icon={ScrollText} onClick={() => {}}>
+            Logs
+          </PaneAction>
+        }
+      />,
+    );
+    expect(container.querySelectorAll("[data-pane-actions]")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Logs" }).closest("[data-pane-actions]")).toBe(
+      screen.getByRole("link", { name: "Open" }).closest("[data-pane-actions]"),
+    );
   });
 
   it("shows only the public URL when the provider has not approved this host for sign-in", () => {

@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { onMenuAction } from "@/about/menu";
 import { api, unwrap } from "@/api/client";
 import { FooterItem } from "@/components/FooterItem";
+import { PaneAction } from "@/components/PaneActions";
 import { Progress, type ProgressSegment } from "@/components/Progress";
-import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { type Phase, trackOperation } from "@/lib/operationRun";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
@@ -175,6 +175,30 @@ export function UpdateStatus() {
       className={view.available && !problem ? "animate-pulse text-bad" : view.allCurrent ? "text-ok" : undefined}
       disabled={busy}
       openRequest={openRequest}
+      actions={
+        // The lead is what the pane is for: finish a pending update, else install one; checking again is an icon.
+        <>
+          {recovery === "verify" && (
+            <PaneAction icon={RotateCcw} primary disabled={busy} onClick={() => void run(true)}>
+              {t("updates.verify")}
+            </PaneAction>
+          )}
+          {canUpdate && (
+            <PaneAction icon={Download} primary={view.count > 0} onClick={() => void run(false)}>
+              {view.count > 1
+                ? t("updates.allAction")
+                : view.count === 1
+                  ? t("updates.action")
+                  : t("updates.manualAction")}
+            </PaneAction>
+          )}
+          {!busy && (
+            <PaneAction icon={RefreshCw} disabled={check.isPending} onClick={() => runCheck()}>
+              {t("updates.check")}
+            </PaneAction>
+          )}
+        </>
+      }
     >
       <div className="space-y-2 px-1.5 pb-1.5">
         {view.rows.map((row) => (
@@ -206,28 +230,6 @@ export function UpdateStatus() {
             {t("updates.checkFailed")}
           </p>
         )}
-        {/* One action row under a divider, at the bottom when late facts grow this above-anchored pane. */}
-        <div className="flex flex-wrap items-center gap-2 border-t border-border/70 pt-2">
-          <Button size="sm" variant="outline" disabled={busy || check.isPending} onClick={() => runCheck()}>
-            <RefreshCw aria-hidden className={check.isPending ? "animate-spin" : undefined} />
-            {t("updates.check")}
-          </Button>
-          {recovery === "verify" && (
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(true)}>
-              <RotateCcw aria-hidden /> {t("updates.verify")}
-            </Button>
-          )}
-          {canUpdate && (
-            <Button size="sm" variant="outline" onClick={() => void run(false)}>
-              <Download aria-hidden />{" "}
-              {view.count > 1
-                ? t("updates.allAction")
-                : view.count === 1
-                  ? t("updates.action")
-                  : t("updates.manualAction")}
-            </Button>
-          )}
-        </div>
       </div>
     </FooterItem>
   );
