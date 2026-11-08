@@ -2016,8 +2016,8 @@ def test_confirming_installs_the_whole_closure_in_one_uv_run_dependencies_first(
     change = service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
     assert change.done
     [(command, _)] = runs
-    withs = [command[i + 1].split(" @ ")[0] for i, part in enumerate(command) if part == "--with"]
-    assert withs[-3:] == ["heinzel-acme", "heinzel-acme-payments", "heinzel-acme-checkout"]
+    with_specs = [command[i + 1].split(" @ ")[0] for i, part in enumerate(command) if part == "--with"]
+    assert with_specs[-3:] == ["heinzel-acme", "heinzel-acme-payments", "heinzel-acme-checkout"]
     assert {c.split("@")[-1].split("#")[0] for c in command if "heinzel-acme" in c and "git+" in c} == {
         FakeCompanyGitHub.REVISION
     }
