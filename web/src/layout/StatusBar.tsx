@@ -11,6 +11,7 @@ import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions
 import { FooterItem } from "@/components/FooterItem";
 import { FooterLayout, FooterMore, FooterPart } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
+import { PaneAction } from "@/components/PaneActions";
 import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
 import { zoneTime } from "@/lib/zoneTime";
@@ -86,15 +87,9 @@ function ReleaseNotes({ version }: { version: string }) {
           <span className="block">{t("status.tagline")}</span>
           <span className="block">{t("status.origin")}</span>
         </p>
-        <button
-          type="button"
-          onClick={() => requestMenuAction("about")}
-          aria-label={t("about.open")}
-          title={t("about.open")}
-          className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-accent"
-        >
-          <InfoIcon aria-hidden className="size-4" />
-        </button>
+        <PaneAction ghost icon={InfoIcon} onClick={() => requestMenuAction("about")}>
+          {t("about.open")}
+        </PaneAction>
         <a
           href={`${RELEASES}/v${version}`}
           target="_blank"

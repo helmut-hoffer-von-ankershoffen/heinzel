@@ -5,7 +5,7 @@ import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { useInfo } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
-import { Button } from "@/components/ui/button";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { onMenuAction } from "./menu";
 
@@ -139,7 +139,7 @@ export function AboutDialog() {
                   </thead>
                   <tbody>
                     {pluginsOf(data).map((plugin) => (
-                      <tr key={plugin.name} className="border-t border-border">
+                      <tr key={plugin.name} className="border-b border-border">
                         <td className="py-1 pr-2 break-all">{plugin.name}</td>
                         <td className="py-1 pr-2">{plugin.version}</td>
                         <td className="py-1">{plugin.source}</td>
@@ -153,46 +153,23 @@ export function AboutDialog() {
             <p className="mt-4 text-muted-foreground">{info.isError ? t("about.unavailable") : t("about.loading")}</p>
           )}
         </div>
-        <footer className="flex shrink-0 items-center gap-2 border-t border-border px-5 py-3">
-          <Button size="sm" variant="outline" disabled={!details} onClick={() => void copy()}>
-            <Copy aria-hidden />
-            {copied ? t("about.copied") : t("about.copy")}
-          </Button>
-          {data && (
-            <Button asChild size="icon" variant="ghost">
-              <a
-                href={`${REPOSITORY}/releases/tag/v${data.version}`}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={t("status.release")}
-                title={t("status.release")}
-              >
-                <FileText aria-hidden />
-              </a>
-            </Button>
-          )}
-          <Button asChild size="icon" variant="ghost">
-            <a
-              href={REPOSITORY}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={t("about.repository")}
-              title={t("about.repository")}
-            >
-              <ExternalLink aria-hidden />
-            </a>
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="ml-auto"
-            onClick={close}
-            aria-label={t("op.close")}
-            title={t("op.close")}
-            autoFocus
-          >
-            <X aria-hidden />
-          </Button>
+        <footer className="shrink-0 px-4 pb-3">
+          <PaneActions>
+            <PaneAction key="copy" icon={Copy} disabled={!details} onClick={() => void copy()}>
+              {copied ? t("about.copied") : t("about.copy")}
+            </PaneAction>
+            {data && (
+              <PaneAction key="release" icon={FileText} href={`${REPOSITORY}/releases/tag/v${data.version}`}>
+                {t("status.release")}
+              </PaneAction>
+            )}
+            <PaneAction key="repository" icon={ExternalLink} href={REPOSITORY}>
+              {t("about.repository")}
+            </PaneAction>
+            <PaneAction key="close" icon={X} className="ml-auto" onClick={close} autoFocus>
+              {t("op.close")}
+            </PaneAction>
+          </PaneActions>
         </footer>
       </div>
     </div>,
