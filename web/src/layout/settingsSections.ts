@@ -41,6 +41,7 @@ const BRANDS: Record<string, string> = {
 };
 /** Words written in capitals wherever they appear in a name: `ai access` → `AI access`, never `Ai access`. */
 const ACRONYMS: Record<string, string> = {
+  acme: "ACME",
   ai: "AI",
   api: "API",
   cli: "CLI",
@@ -63,14 +64,23 @@ export function inWords(name: string): string {
   return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
 }
 
-/** A plugin's name as its authors write it: the casing its summary uses (`GitHub`), else `Clock`; known names first. */
-export function displayName(name: string, summary = ""): string {
-  const words = name.replaceAll("-", " ").replaceAll("_", " ");
-  const escaped = words.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const found = summary.match(new RegExp(`\\b${escaped}\\b`, "i"))?.[0];
+/**
+ * A plugin's name as people write it, in Title Case: known acronyms and brands first (`ACME`, `AI`, `GitHub`), else the
+ * casing its summary gives the word, else the word capitalised; a `heinzel-` prefix is dropped (`heinzel-slack` is `Slack`).
+ */
+export function displayName(rawName: string, summary = ""): string {
+  const name = rawName.replace(/^heinzel-/, "");
   if (name.toLowerCase() in BRANDS) return BRANDS[name.toLowerCase()] as string;
-  if (found && found !== found.toLowerCase()) return found;
-  return inWords(words);
+  const words = name.split(/[-_ ]+/).filter(Boolean);
+  return words
+    .map((word) => {
+      const known = ACRONYMS[word.toLowerCase()];
+      if (known) return known;
+      const found = summary.match(new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"))?.[0];
+      if (found && found !== found.toLowerCase()) return found;
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
 }
 
 /** A plugin's summary without the "…: a Heinzelmännchen plugin." its template ends it with; the header says so. */
@@ -285,6 +295,26 @@ export function resolvePage(id: string | null | undefined, pages: Page[]): strin
   return pageOf(id, pages)?.id;
 }
 
+/** The sidebar group a plugin's page sits under: the one place that decides it (today the group it declares). */
+function placement(entry: SchemaNavEntry, plugin: SchemaPluginInfo | undefined): Heading {
+  const group = entry.settings?.group ?? "preferences";
+  // A layer is part of the organisation; the server says so, and an older server's undeclared page lands there too.
+  return !entry.declared && group === "preferences" && plugin?.layers?.length ? "organisation" : group;
+}
+
+const COLLATOR = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
+/**
+ * Every sidebar group lists its entries alphabetically by display name (case-insensitive, numeric-aware), core and
+ * plugin pages together; no group pins an entry first. The single place that orders the sidebar. Stable.
+ */
+export function sortedWithinGroups<T extends { title: string; heading: Heading }>(pages: T[]): T[] {
+  const headings = [...new Set(pages.map((page) => page.heading))];
+  return headings.flatMap((heading) =>
+    pages.filter((page) => page.heading === heading).sort((a, b) => COLLATOR.compare(a.title, b.title)),
+  );
+}
+
 /** Sorts the setting groups into pages, Connectors by the plugin that provides each module. */
 export function settingsNav(
   groups: string[],
@@ -312,10 +342,10 @@ export function settingsNav(
     return [
       {
         id: entry.id,
-        title: layer && !entry.declared && plugin ? titled(plugin.name) : entry.title,
+        title: entry.title,
         status: layer ? layerStatus(layer, layers) : undefined,
-        icon: !entry.declared && entry.icon === "code" ? (preferenceIcon(plugin) ?? ICONS.code) : ICONS[entry.icon],
-        heading: entry.settings.group,
+        icon: !entry.declared && entry.icon === "code" ? (preferenceIcon(plugin) ?? Puzzle) : ICONS[entry.icon],
+        heading: placement(entry, plugin),
         owns: entry.settings.sections,
         plugin,
         module: entry.module,
@@ -323,13 +353,9 @@ export function settingsNav(
       },
     ];
   });
-  const rank = (page: Page) => (page.plugin?.layers?.[0] ? stackRank(page.plugin.layers[0], layers) : 0);
-  // Layer pages follow You and Team in stack order, general to specific, the site last; others keep their order.
-  extra.sort((a, b) => rank(a) - rank(b));
-  const pages = [...PAGES, ...extra].map((page) => ({
-    ...page,
-    plugin: page.plugin ?? pluginOfPage(page, owner),
-  }));
+  const pages = sortedWithinGroups(
+    [...PAGES, ...extra].map((page) => ({ ...page, plugin: page.plugin ?? pluginOfPage(page, owner) })),
+  );
   return {
     pages,
     connectors: plugins
@@ -344,30 +370,17 @@ export function settingsNav(
   };
 }
 
-/** A layer's module name as a title: "acme-lisbon" is "Acme Lisbon". */
-const titled = (module: string) => inWords(module).replace(/ [a-z]/g, (letters) => letters.toUpperCase());
-
 type Layer = NonNullable<SchemaPluginInfo["layers"]>[number];
 
 /** "Site layer of Acme": its label, the layer above it, and for a team the site it is at; at most 60 characters. */
 function layerStatus(layer: Layer, all: Layer[]): string {
-  const name = titled;
+  const name = (module: string) => displayName(module).replace(/ [a-z]/g, (letters) => letters.toUpperCase());
   const label = layer.label ? `${inWords(layer.label)} layer` : "Layer";
   const above = layer.parent;
   const site =
     layer.label === "team" && layer.site && all.some((item) => item.module === layer.site) ? layer.site : null;
   const text = `${label}${above ? ` of ${name(above)}` : ""}${site ? `, at ${name(site)}` : ""}`;
   return text.length <= 60 ? text : `${text.slice(0, 59)}…`;
-}
-
-/** Position in the stack: the number of layers above it; a site closes the list, a layer outside the tree comes last. */
-function stackRank(layer: Layer, all: Layer[]): number {
-  if (!layer.label) return 2000;
-  if (layer.label === "site") return 1000;
-  let depth = 0;
-  for (let parent = layer.parent; parent && depth < 50; depth += 1)
-    parent = all.find((item) => item.module === parent)?.parent ?? null;
-  return depth;
 }
 
 function pluginOfPage(page: Page, owner: Map<string, SchemaPluginInfo>): SchemaPluginInfo | undefined {

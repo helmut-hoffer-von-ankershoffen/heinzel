@@ -160,3 +160,22 @@ def test_explicit_settings_name_cannot_collide_with_reserved_legacy_settings_ide
     fallback = next(entry for entry in entries if not entry.declared)
     assert fallback.settings.sections == ("harbor",)
     assert (explicit.sidebar is None) is invalid_settings
+
+
+@pytest.mark.parametrize(
+    ("name", "summary", "title"),
+    [
+        ("acme-lisbon", "Acme Lisbon, a made-up site.", "ACME Lisbon"),
+        ("slack", "Ask for approval in their own Slack DM.", "Slack"),
+        ("example", "Show how a plugin is built.", "Example"),
+        ("heinzel-github", "Read GitHub pull requests.", "GitHub"),
+        ("mcp-tools", "", "MCP Tools"),
+    ],
+)
+def test_legacy_settings_entries_are_named_properly_never_in_lowercase(make_kernel, name, summary, title):
+    module = Module(name, summary)
+    module.settings(type("S", (ModuleSettings,), {"__annotations__": {"limit": int}, "limit": 3}))
+    entries = make_kernel(builtins=True, **{name: module}).resolve(UiService).navigation()
+    (entry,) = [item for item in entries if item.module == name]
+    assert entry.title == title
+    assert entry.title[0].isupper()

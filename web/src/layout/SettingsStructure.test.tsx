@@ -748,7 +748,7 @@ describe("Installed plugins by kind", () => {
     const { container } = renderAt("/doctor?settings=plugins");
     const row = (await screen.findByText("GitHub", { selector: "span *, span" })).closest("li") as HTMLElement;
     expect(within(row).getByTitle("Connector: code-host, tracker")).toBeInTheDocument();
-    const acmeRow = screen.getByText("Acme", { selector: "li span" }).closest("li") as HTMLElement;
+    const acmeRow = screen.getByText("ACME", { selector: "li span" }).closest("li") as HTMLElement;
     expect(within(acmeRow).getByTitle("Theme: acme")).toBeInTheDocument();
     expect(within(acmeRow).getByTitle("Playbook: engineering-team")).toBeInTheDocument();
     await expectAccessible(container);
@@ -767,7 +767,7 @@ describe("Where settings live", () => {
     expect(displayName("mcp")).toBe("MCP");
     expect(displayName("cli")).toBe("CLI");
     expect(displayName("github")).toBe("GitHub");
-    expect(displayName("ai-access")).toBe("AI access");
+    expect(displayName("ai-access")).toBe("AI Access");
     expect(inWords("ui_port")).toBe("UI port");
     expect(inWords("api_allowed_hosts")).toBe("API allowed hosts");
     expect(inWords("weekly_digest")).toBe("Weekly digest");
@@ -779,7 +779,7 @@ describe("Where settings live", () => {
     expect(displayName("google", "Read Google Docs")).toBe("Google");
   });
 
-  it("puts layer plugins under Organisation after You and Team, in stack order, and keeps connectors", () => {
+  it("puts layer plugins under Organisation, alphabetically with You and Team, and keeps connectors", () => {
     const layerPlugin = (name: string, layer: object, extra: Partial<SchemaPluginInfo> = {}) =>
       plugin({
         name,
@@ -808,11 +808,17 @@ describe("Where settings live", () => {
       parent: "acme",
       label: "site",
     });
+    const TITLES: Record<string, string> = {
+      acme: "ACME",
+      "acme-lisbon": "ACME Lisbon",
+      "acme-payments": "ACME Payments",
+      "acme-payments-checkout": "ACME Payments Checkout",
+    };
     const entry = (name: string) => ({
       id: `${name}:@settings`,
       module: name,
       plugin: `heinzel-${name}`,
-      title: name,
+      title: TITLES[name] ?? name,
       icon: "code" as const,
       declared: false,
       order: 1000,
@@ -821,11 +827,11 @@ describe("Where settings live", () => {
     const names = ["acme-lisbon", "acme-payments-checkout", "acme", "acme-payments"];
     const nav = settingsNav(names, [github, acme, checkout, payments, lisbon], names.map(entry));
     const organisation = nav.pages.filter((page) => page.heading === "organisation").map((page) => page.title);
-    expect(organisation).toEqual(["You", "Team", "Acme", "Acme Payments", "Acme Payments Checkout", "Acme Lisbon"]);
+    expect(organisation).toEqual(["ACME", "ACME Lisbon", "ACME Payments", "ACME Payments Checkout", "Team", "You"]);
     const status = (id: string) => nav.pages.find((page) => page.id === `${id}:@settings`)?.status;
-    expect(status("acme-lisbon")).toBe("Site layer of Acme");
+    expect(status("acme-lisbon")).toBe("Site layer of ACME");
     expect(status("acme")).toBe("Company layer");
-    expect(status("acme-payments-checkout")).toBe("Team layer of Acme Payments, at Acme Lisbon");
+    expect(status("acme-payments-checkout")).toBe("Team layer of ACME Payments, at ACME Lisbon");
     expect(nav.connectors.map((connector) => connector.id)).toContain("acme");
     // A plugin that is no layer keeps Preferences.
     const other = settingsNav(
@@ -839,6 +845,73 @@ describe("Where settings live", () => {
       ],
     );
     expect(other.pages.find((page) => page.id === "weather:@settings")?.heading).toBe("preferences");
+  });
+
+  it("writes ACME in capitals and drops the heinzel- prefix; no plugin name starts in lowercase", () => {
+    expect(displayName("acme-lisbon", "Acme Lisbon, a made-up site.")).toBe("ACME Lisbon");
+    expect(displayName("heinzel-slack", "ask in their own Slack DM")).toBe("Slack");
+    expect(displayName("example", "Show how a plugin is built.")).toBe("Example");
+    for (const name of ["acme-lisbon", "slack", "example", "heinzel-acme", "clock", "weather", "tailscale", "zoom"])
+      expect(displayName(name)).toMatch(/^[A-Z]/);
+  });
+
+  it("lists every sidebar group alphabetically by display name, core and plugin pages together", () => {
+    const entry = (name: string, title: string) => ({
+      id: `${name}:@settings`,
+      module: name,
+      plugin: `heinzel-${name}`,
+      title,
+      icon: "code" as const,
+      declared: true,
+      order: 1000,
+      settings: { group: "preferences" as const, sections: [name] },
+    });
+    const nav = settingsNav(
+      [],
+      [],
+      [
+        entry("slack", "Slack"),
+        entry("acme-lisbon", "ACME Lisbon"),
+        entry("example", "Example"),
+        entry("w", "World clock"),
+      ],
+    );
+    for (const heading of ["preferences", "customize", "organisation", "computer"]) {
+      const labels = nav.pages.filter((page) => page.heading === heading).map((page) => page.title);
+      expect(labels).toEqual(
+        [...labels].sort(new Intl.Collator(undefined, { sensitivity: "base", numeric: true }).compare),
+      );
+    }
+    expect(nav.pages.filter((page) => page.heading === "preferences").map((page) => page.title)).toEqual([
+      "ACME Lisbon",
+      "Appearance",
+      "Example",
+      "Notifications",
+      "Slack",
+      "World clock",
+    ]);
+  });
+
+  it("gives a plugin page without its own icon the plugin glyph, not code brackets", () => {
+    const nav = settingsNav(
+      ["slack"],
+      [],
+      [
+        {
+          id: "slack:@settings",
+          module: "slack",
+          plugin: "heinzel-slack",
+          title: "Slack",
+          icon: "code",
+          declared: false,
+          order: 1000,
+          settings: { group: "preferences", sections: ["slack"] },
+        },
+      ],
+    );
+    expect(nav.pages.find((page) => page.id === "slack:@settings")?.icon).toBe(
+      PAGES.find((p) => p.id === "plugins")?.icon,
+    );
   });
 
   it("puts every module with settings under Preferences, General first, and connectors apart", () => {
@@ -860,7 +933,7 @@ describe("Where settings live", () => {
       ],
     );
     const ids = nav.pages.map((entry) => entry.id);
-    expect(ids.slice(0, 2)).toEqual(["appearance", "notifications"]);
+    expect(ids.filter((id) => ["appearance", "notifications"].includes(id))).toEqual(["appearance", "notifications"]);
     expect(ids).toContain("acme:@settings");
     expect(ids).not.toContain("github");
     expect(nav.pages.find((entry) => entry.id === "clock:main")?.plugin).toBe(clock);

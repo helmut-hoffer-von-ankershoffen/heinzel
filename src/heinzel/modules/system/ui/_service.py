@@ -34,6 +34,7 @@ from heinzel import (
     clean_text,
 )
 from heinzel.kernel import Badge, Effect, LayerLet, OperationCall, Widget, operation_path, public_parameters
+from heinzel.kernel._text import display_name
 from heinzel.modules.system.ui._models import (
     ActionEntry,
     ContributionInfo,
@@ -301,7 +302,9 @@ class UiService:
             if section in seen or any(section == prefix or section.startswith(f"{prefix}.") for prefix in claimed):
                 continue
             seen.add(section)
-            title = " ".join(clean_text(let.model.section_title or record.module.name.replace("-", " ")).split())
+            title = " ".join(
+                clean_text(let.model.section_title or display_name(record.module.name, record.module.summary)).split()
+            )
             fallback = NavLet(
                 name="settings",
                 title=(title or record.module.name)[:80],
