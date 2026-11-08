@@ -156,8 +156,8 @@ def update(
         Literal["stable", "edge", "main", "release"] | None,
         Field(
             description="Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the "
-            "newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; "
-            "or `main`: its newest commit."
+            "newest published stable release, also from `main` or edge once it is as new; `edge`: the newest edge "
+            "release; or `main`: its newest commit."
         ),
     ] = None,
 ) -> UpdateResult:
@@ -177,10 +177,11 @@ def update(
     version, the error names it and the previous version stays installed.
 
     Why it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)
-    install only accepted releases, ones old enough (`auto_update_min_age_hours` for hz,
-    `auto_update_plugin_min_age_hours` for plugins) that a broken one could be withdrawn first; this command installs
-    the newest release now, accepted or not. The desktop app is not part of the tool: it updates itself at the web
-    server's next automatic update check, or now with `hz app install`. The output says which applies.
+    run in the web server. About every 30 minutes it looks for the newest published stable release (not a draft or
+    prerelease) and installs it once it is `auto_update_min_age_hours` old (plugins:
+    `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait. The desktop
+    app is not part of the tool: it updates itself at the web server's next automatic update check, or now with
+    `hz app install`. The output says which applies.
 
     Each step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds
     only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so
@@ -192,11 +193,16 @@ def update(
     settings = kernel.settings
     automatic = AutomaticUpdates(
         enabled=settings.auto_update,
+        check_every_minutes=AUTOMATIC_CHECK_MINUTES,
         core_min_age_hours=settings.auto_update_min_age_hours,
         plugin_min_age_hours=settings.auto_update_plugin_min_age_hours,
     )
     result = service.update(source, channel=channel or settings.update_channel)
     return result.model_copy(update={"automatic": automatic})
+
+
+AUTOMATIC_CHECK_MINUTES = 30
+"""How often the web server checks for updates (`heinzel.heads.web._auto_update.CHECK_EVERY`; a test checks)."""
 
 
 @module.operation(read_only=False, heads={"cli"}, audience="everyday")

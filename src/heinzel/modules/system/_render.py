@@ -108,12 +108,12 @@ def standing(update: "PluginUpdate") -> str:
 
 
 def _automatic(automatic: "AutomaticUpdates") -> str:
-    """Why this ran by hand: what automatic updates install, whether they are on, and how to turn them on."""
-    accepted = (
-        f"Automatic updates install only accepted releases: hz {automatic.core_min_age_hours} h and plugins "
-        f"{automatic.plugin_min_age_hours} h after release, so a broken one can be withdrawn first. "
-        "This command installs the newest release now, accepted or not."
+    """What automatic updates install and when, whether they are on, and how to turn them on."""
+    rule = (
+        f"The web server checks about every {automatic.check_every_minutes} minutes and installs the newest "
+        f"published stable release (not a prerelease) once it is {automatic.core_min_age_hours} h old (plugins "
+        f"{automatic.plugin_min_age_hours} h). An update run by hand installs that same release now."
     )
     if automatic.enabled:
-        return f"Automatic updates: on. {accepted}"
-    return f"Automatic updates: off. Turn them on with `hz system config set auto_update true`. {accepted}"
+        return f"Automatic updates: on. {rule}"
+    return f"Automatic updates: off. Turn them on with `hz system config set auto_update true`. {rule}"

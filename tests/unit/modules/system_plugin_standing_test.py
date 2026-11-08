@@ -67,3 +67,10 @@ def test_the_render_module_imports_no_model_an_older_hz_lacks():
     runtime = source.split("if TYPE_CHECKING:")[0]
     assert "AutomaticUpdates" not in runtime
     assert "PluginUpdate" not in runtime
+
+
+def test_the_stated_check_interval_is_the_web_servers():
+    from heinzel.heads.web._auto_update import CHECK_EVERY
+    from heinzel.modules.system import AUTOMATIC_CHECK_MINUTES
+
+    assert CHECK_EVERY.total_seconds() == AUTOMATIC_CHECK_MINUTES * 60

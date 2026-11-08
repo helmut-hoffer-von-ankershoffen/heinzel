@@ -4201,7 +4201,7 @@ $ hz system update [OPTIONS]
 **Options**:
 
 * `--source <str>`: Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel.
-* `--channel <stable|edge|main|release>`: Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit.
+* `--channel <stable|edge|main|release>`: Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest published stable release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

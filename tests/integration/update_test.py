@@ -21,8 +21,9 @@ pytestmark = pytest.mark.integration
 runner = CliRunner()
 KEPT = "kept at 1.0.0 (pinned to v1.0.0; newer releases not checked)"
 AUTOMATIC = (
-    "Automatic updates: on. Automatic updates install only accepted releases: hz 6 h and plugins 24 h after release, "
-    "so a broken one can be withdrawn first. This command installs the newest release now, accepted or not."
+    "Automatic updates: on. The web server checks about every 30 minutes and installs the newest published stable "
+    "release (not a prerelease) once it is 6 h old (plugins 24 h). "
+    "An update run by hand installs that same release now."
 )
 REPO = "https://github.com/example-org/heinzel"
 PLUGIN = "heinzel-acme @ git+https://github.com/example-org/heinzel-acme@v1.0.0"
@@ -201,7 +202,12 @@ def test_json_carries_before_after_latest_and_the_pin(app, env, monkeypatch):
     invoked = runner.invoke(app, ["system", "update", "--json"])
     assert invoked.exit_code == 0, invoked.output
     result = json.loads(invoked.stdout)
-    assert result["automatic"] == {"enabled": True, "core_min_age_hours": 6, "plugin_min_age_hours": 24}
+    assert result["automatic"] == {
+        "enabled": True,
+        "check_every_minutes": 30,
+        "core_min_age_hours": 6,
+        "plugin_min_age_hours": 24,
+    }
     # The steps go to stderr as one JSON object per line, so stdout stays exactly the result.
     events = [json.loads(line) for line in invoked.stderr.splitlines()]
     assert {event["event"] for event in events} == {"phase"}

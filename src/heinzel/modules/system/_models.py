@@ -102,8 +102,9 @@ class AutomaticUpdates(BaseModel):
     """The automatic-updates setting, as an update run by hand reports it."""
 
     enabled: bool = Field(description="The setting `auto_update`: whether hz updates itself and its plugins.")
-    core_min_age_hours: int = Field(description="How old a release of hz must be before it is accepted.")
-    plugin_min_age_hours: int = Field(description="How old a plugin's release must be before it is accepted.")
+    check_every_minutes: int = Field(description="How often the web server checks for the newest stable release.")
+    core_min_age_hours: int = Field(description="How old a stable release of hz must be before it is installed.")
+    plugin_min_age_hours: int = Field(description="How old a plugin's release must be before it is installed.")
 
 
 class UpdateResult(BaseModel):
