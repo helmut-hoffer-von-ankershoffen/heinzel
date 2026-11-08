@@ -9,6 +9,7 @@ import os
 import plistlib
 import re
 import struct
+import sys
 from pathlib import Path
 
 import pytest
@@ -79,6 +80,18 @@ def _extract(archive: Path, staging: Path) -> Path:
     return bundle
 
 
+def _rename(source: Path, target: Path, *, swap: bool = False) -> None:
+    if not swap:
+        if os.path.lexists(target):
+            raise FileExistsError(target)
+        source.rename(target)
+        return
+    holding = source.with_name("swap")
+    source.rename(holding)
+    target.rename(source)
+    holding.rename(target)
+
+
 @pytest.fixture
 def mac(monkeypatch, tmp_path):
     """A fake home and a fake system Applications folder this user may write to, unless a case locks it."""
@@ -98,6 +111,10 @@ def mac(monkeypatch, tmp_path):
     monkeypatch.setattr(desktop, "extract_bundle", _extract)
     monkeypatch.setattr(desktop, "_prepare_for_gatekeeper", lambda _bundle, **_options: None)
     monkeypatch.setattr(desktop, "_in_use", lambda _bundle: False)
+    if (
+        sys.platform != "darwin"
+    ):  # renamex_np is macOS only: Linux CI swaps with plain renames, as the location tests do
+        monkeypatch.setattr(desktop, "_rename", _rename)
     monkeypatch.setattr(_app, "__version__", VERSION)
     monkeypatch.setattr(_app, "desktop_executable", lambda _kernel: executable)
     yield home, system, executable, clock
