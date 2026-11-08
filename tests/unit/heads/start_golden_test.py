@@ -146,16 +146,16 @@ def test_a_declined_app_is_not_asked_again_on_the_next_run(monkeypatch, tmp_path
 
 def _events(caplog):
     return [
-        (r.event, {k: v for k, v in vars(r).items() if k in {"answer", "source", "outcome", "step"}})
+        (r.event, {k: v for k, v in vars(r).items() if k in {"answer", "source", "outcome", "step", "phase"}})
         for r in caplog.records
         if hasattr(r, "event")
     ]
 
 
 EXPECTED_EVENTS = {
-    "happy": [("start.app.decision", "question", True), ("start.app_install.outcome", None, "ok")],
+    "happy": [("start.app.decision", "question", True), ("start.app_install", None, "ok")],
     "decline": [("start.app.decision", "question", False)],
-    "app_fails": [("start.app_install.outcome", None, "failed")],
+    "app_fails": [("start.app_install", None, "error")],
 }
 
 
@@ -170,8 +170,8 @@ def test_start_emits_structured_events(monkeypatch, tmp_path, capsys, caplog, na
     names = [event for event, _ in seen]
     assert names[0] == "start.begin"
     assert names[-1] == "start.outcome"
-    assert names.count("start.service.start") == names.count("start.service.outcome") == 3
+    assert names.count("start.service") == 6
     for event, source, answer in expected:
-        fields = next(f for e, f in seen if e == event)
+        fields = next(f for e, f in seen if e == event and f.get("phase") != "start")
         assert fields.get("source", source) == source
         assert answer in (fields.get("answer"), fields.get("outcome"))

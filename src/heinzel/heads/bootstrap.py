@@ -1,7 +1,6 @@
 """The versionless `uvx heinzel@latest` quick start runs application commands in the managed app."""
 
 import json
-import logging
 import os
 import platform
 import subprocess
@@ -18,6 +17,7 @@ from heinzel.heads import _start_messages as words
 from heinzel.heads import install
 from heinzel.heads._tool_install import inspection_guidance, resolve_target
 from heinzel.kernel import FILENAME, Installation
+from heinzel.kernel._logging import get_logger, log_event
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -26,12 +26,12 @@ _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
 _JSON_OBJECTS = TypeAdapter(list[dict[str, JsonValue]])
 _STRINGS = TypeAdapter(list[str])
 _JSON_STRING = TypeAdapter(str)
-log = logging.getLogger(__name__)
+log = get_logger("start")
 
 
 def _event(name: str, **fields: object) -> None:
     """One structured start event: a stable dotted name and fields, never a formatted sentence or a secret."""
-    log.info(name, extra={"event": name, "operation": "start", **fields})
+    log_event(log, name, **fields)  # type: ignore[arg-type]  # start fields never include level or exc_info
 
 
 _START_FLAGS = ("--yes", "--no-app", "--ask")
@@ -102,7 +102,7 @@ def _app_choice(arguments: list[str], flags: set[str], *, interactive: bool) -> 
 def _install_app(executable: Path, environment: dict[str, str]) -> bool:
     """Run the app installer with its own progress on the terminal, then require that macOS will open the app."""
     started = time.monotonic()
-    _event("start.app_install.start", step="app_install")
+    _event("start.app_install", step="app_install", phase="start")
     command = [str(executable.parent / "python"), "-I", "-m", "heinzel", "app"]
     try:
         installed = subprocess.run(  # noqa: S603 - verified persistent interpreter and fixed operation
@@ -117,9 +117,10 @@ def _install_app(executable: Path, environment: dict[str, str]) -> bool:
     except (OSError, subprocess.SubprocessError, HeinzelError):
         opens = False
     _event(
-        "start.app_install.outcome",
+        "start.app_install",
+        phase="end",
         step="app_install",
-        outcome="ok" if opens else "failed",
+        outcome="ok" if opens else "error",
         duration_ms=round((time.monotonic() - started) * 1000),
     )
     if not opens:
@@ -310,7 +311,7 @@ def _install_services(executable: Path, choices: list[tuple[str, ...]], environm
     interpreter = str(executable.parent / "python")
     command = [interpreter, "-I", "-m", "heinzel"]
     for service in choices:
-        _event("start.service.start", step=" ".join(service))
+        _event("start.service", step=" ".join(service), phase="start")
         if installed_app() != executable:
             msg = "The managed installation changed before service setup; inspect it before retrying."
             raise HeinzelError(msg)
@@ -322,7 +323,7 @@ def _install_services(executable: Path, choices: list[tuple[str, ...]], environm
             check=False,
             timeout=600,
         )
-        _event("start.service.outcome", step=" ".join(service), outcome="failed" if installed.returncode else "ok")
+        _event("start.service", step=" ".join(service), phase="end", outcome="error" if installed.returncode else "ok")
         if installed.returncode:
             msg = f"Service installation did not complete. Inspect `hz {' '.join(service)} status` before retrying."
             raise HeinzelError(msg)
@@ -716,7 +717,7 @@ def main() -> None:
         sys.stderr.write(words.INTERRUPTED + "\n")
         sys.exit(130)
     except HeinzelError as error:
-        _event("start.outcome", outcome="failed", error=type(error).__name__)
+        _event("start.outcome", outcome="error", error_type=type(error).__name__)
         sys.stderr.write(f"Heinzel could not start. {error}\n")
         sys.exit(1)
     except (OSError, ValueError, ValidationError, subprocess.SubprocessError):
