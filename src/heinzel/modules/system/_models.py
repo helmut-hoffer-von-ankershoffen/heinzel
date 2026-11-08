@@ -33,6 +33,7 @@ class InstalledPlugin(BaseModel):
     repository: str | None = Field(
         description="Source repository, from its Project-URL metadata; none if it names none."
     )
+    installed: dt.date | None = Field(description="The day this version was installed here; none if unknown.")
 
 
 class SystemInfo(BaseModel):
@@ -43,6 +44,9 @@ class SystemInfo(BaseModel):
     python_version: str = Field(description="Version of the Python running hz.")
     python_executable: str = Field(description="Path of the Python interpreter running hz.")
     platform: str = Field(description="Operating system and architecture.")
+    installed: dt.date | None = Field(
+        description="The day this Heinzelmännchen version was installed here; none if unknown."
+    )
     installation: Literal["uv tool", "environment"] = Field(
         description="Whether hz runs from a uv tool environment or from another Python environment."
     )

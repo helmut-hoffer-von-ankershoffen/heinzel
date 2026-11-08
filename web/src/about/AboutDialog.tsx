@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { useInfo } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
-import { t } from "@/i18n";
+import { format, t } from "@/i18n";
 import { onMenuAction } from "./menu";
 
 const REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
@@ -18,6 +18,9 @@ const desktopBridge = (): Bridge | undefined => (window as Window & { heinzelDes
 
 type Info = NonNullable<ReturnType<typeof useInfo>["data"]>;
 
+const isFirstParty = (repository: string | null) =>
+  repository?.startsWith("https://github.com/helmut-hoffer-von-ankershoffen/") === true;
+
 /** The installed plugins, one row per distribution, as the API lists them. */
 export const pluginsOf = (info: Info) => info.plugins ?? [];
 
@@ -28,13 +31,13 @@ export function detailsText(info: Info, desktop: Desktop | null): string {
   lines.push(
     `python ${info.python_version} (${info.python_executable})`,
     `platform ${info.platform}`,
-    `installation ${info.installation}`,
+    `installation ${info.installation}${info.installed ? ` (installed ${info.installed})` : ""}`,
     `daemon running ${info.version}`,
   );
   if (desktop) lines.push(`desktop ${desktop.version} ${desktop.path}`);
   for (const plugin of pluginsOf(info))
     lines.push(
-      `plugin ${plugin.name} ${plugin.version} ${plugin.source}${plugin.repository ? ` ${plugin.repository}` : ""}`,
+      `plugin ${plugin.name} ${plugin.version} ${plugin.source}${plugin.installed ? ` installed ${plugin.installed}` : ""}${plugin.repository ? ` ${plugin.repository}` : ""}`,
     );
   return lines.join("\n");
 }
@@ -110,7 +113,14 @@ export function AboutDialog() {
           {data ? (
             <>
               <dl className="mt-4">
-                <Row label={t("about.version")}>hz {data.version}</Row>
+                <Row label={t("about.version")}>
+                  hz {data.version}
+                  {data.installed && (
+                    <span className="block text-xs text-muted-foreground">
+                      {t("about.installedOn", { date: format.date(data.installed) })}
+                    </span>
+                  )}
+                </Row>
                 {desktop.data && (
                   <Row label={t("about.desktop")}>
                     {desktop.data.version}
@@ -135,6 +145,7 @@ export function AboutDialog() {
                       <th className="py-1 font-normal">{t("about.pluginName")}</th>
                       <th className="py-1 font-normal">{t("about.pluginVersion")}</th>
                       <th className="py-1 font-normal">{t("about.pluginSource")}</th>
+                      <th className="py-1 font-normal">{t("about.pluginInstalled")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -142,7 +153,15 @@ export function AboutDialog() {
                       <tr key={plugin.name} className="border-b border-border">
                         <td className="py-1 pr-2 break-all">{plugin.name}</td>
                         <td className="py-1 pr-2">{plugin.version}</td>
-                        <td className="py-1">{plugin.source}</td>
+                        <td className="py-1 pr-2">
+                          {plugin.source}
+                          {isFirstParty(plugin.repository) && (
+                            <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
+                              {t("about.firstParty")}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-1">{plugin.installed ? format.date(plugin.installed) : ""}</td>
                       </tr>
                     ))}
                   </tbody>

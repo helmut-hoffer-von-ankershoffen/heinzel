@@ -180,6 +180,9 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
   });
   void app.whenReady().then(() => {
     if (stopping) return;
+    // The native About panel is never the target (the menu opens the web dialog), but if macOS shows it anyway it
+    // names the app properly and shows one version, not "Version X (X)".
+    app.setAboutPanelOptions({ applicationName: app.name, applicationVersion: app.getVersion(), version: "" });
     // The page owns what About, Settings and Updates show; the menu only asks it to open them.
     if (process.platform === "darwin") Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate({
       name: app.name,

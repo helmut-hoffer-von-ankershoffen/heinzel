@@ -8606,6 +8606,11 @@ export interface components {
          */
         InstalledPlugin: {
             /**
+             * Installed
+             * @description The day this version was installed here; none if unknown.
+             */
+            installed: string | null;
+            /**
              * Name
              * @description Distribution name.
              */
@@ -13870,6 +13875,11 @@ export interface components {
              * @enum {string}
              */
             installation: "uv tool" | "environment";
+            /**
+             * Installed
+             * @description The day this Heinzelmännchen version was installed here; none if unknown.
+             */
+            installed: string | null;
             /**
              * Latest Release
              * @description Latest release last seen by `hz system release` or the CLI's hourly check, from the cache; none if never asked.

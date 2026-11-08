@@ -316,6 +316,18 @@ def installed_releases(installation: Installation, channel: str = "stable") -> G
     return GitHubReleases(repository_of(requirements[0] if requirements else None), channel)
 
 
+def _installed_on(distribution: str) -> date | None:
+    """The day a distribution was installed here: the change time of its METADATA file; None if it can't be read."""
+    try:
+        dist = importlib.metadata.distribution(distribution)
+        metadata = next((file for file in dist.files or [] if file.name == "METADATA"), None)
+        if metadata is None:
+            return None
+        return datetime.fromtimestamp(Path(str(dist.locate_file(metadata))).stat().st_mtime).astimezone().date()
+    except (importlib.metadata.PackageNotFoundError, OSError, ValueError):
+        return None
+
+
 def _source_of(distribution: str) -> Literal["PyPI", "git", "path"]:
     """Where a distribution was installed from, per its `direct_url.json` (PEP 610); no such file means an index."""
     try:
@@ -372,6 +384,7 @@ class SystemService:
                     version=origin.version,
                     source=_source_of(origin.distribution),
                     repository=origin.url,
+                    installed=_installed_on(origin.distribution),
                 )
         return sorted(found.values(), key=lambda plugin: plugin.name)
 
@@ -386,6 +399,7 @@ class SystemService:
             python_version=platform.python_version(),
             python_executable=sys.executable,
             platform=platform.platform(),
+            installed=_installed_on("heinzel"),
             installation="uv tool" if (Path(sys.prefix) / "uv-receipt.toml").is_file() else "environment",
             settings=self._kernel.settings.model_dump(mode="json"),
             modules=modules,

@@ -383,3 +383,21 @@ def test_info_logs_one_structured_event_with_counts_and_no_paths(make_kernel, ca
     assert records[0].outcome == "ok"
     assert isinstance(records[0].plugins, int)
     assert "/" not in records[0].getMessage()
+
+
+def test_installed_on_reads_the_day_from_the_metadata_file(tmp_path, monkeypatch):
+    from heinzel.modules.system import _service
+
+    metadata = tmp_path / "METADATA"
+    metadata.write_text("Name: x")
+    dist = SimpleNamespace(files=[SimpleNamespace(name="METADATA")], locate_file=lambda file: metadata)
+    monkeypatch.setattr(_service.importlib.metadata, "distribution", lambda name: dist)
+    assert _service._installed_on("x") == datetime.fromtimestamp(metadata.stat().st_mtime).astimezone().date()
+    monkeypatch.setattr(dist, "files", None)
+    assert _service._installed_on("x") is None
+
+
+def test_installed_on_is_none_for_an_unknown_distribution():
+    from heinzel.modules.system import _service
+
+    assert _service._installed_on("no-such-distribution-xyz") is None

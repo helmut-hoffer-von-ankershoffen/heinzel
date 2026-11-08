@@ -7896,6 +7896,19 @@
       "InstalledPlugin": {
         "description": "An installed plugin distribution.",
         "properties": {
+          "installed": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The day this version was installed here; none if unknown.",
+            "title": "Installed"
+          },
           "name": {
             "description": "Distribution name.",
             "title": "Name",
@@ -7933,7 +7946,8 @@
           "name",
           "version",
           "source",
-          "repository"
+          "repository",
+          "installed"
         ],
         "title": "InstalledPlugin",
         "type": "object"
@@ -16734,6 +16748,19 @@
             "title": "Installation",
             "type": "string"
           },
+          "installed": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The day this Heinzelmännchen version was installed here; none if unknown.",
+            "title": "Installed"
+          },
           "latest_release": {
             "anyOf": [
               {
@@ -16821,6 +16848,7 @@
           "python_version",
           "python_executable",
           "platform",
+          "installed",
           "installation",
           "settings",
           "modules",

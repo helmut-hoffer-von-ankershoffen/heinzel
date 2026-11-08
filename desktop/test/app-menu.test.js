@@ -89,3 +89,15 @@ test("every menu item sends a listed action or opens an allowed link, in menu or
   assert.throws(() => menuScript("x"));
   assert.ok(labelsOf(template.at(-1).submenu).includes("Report an Issue\u2026"));
 });
+
+test("About opens the web dialog, never the native panel", async () => {
+  const sent = [];
+  const [app] = appMenuTemplate({ name: NAME, send: (a) => sent.push(a), open() {} });
+  const about = app.submenu[0];
+  assert.equal(about.role, undefined);
+  about.click();
+  assert.deepEqual(sent, ["about"]);
+  const { readFile } = await import("node:fs/promises");
+  const main = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
+  assert.match(main, /setAboutPanelOptions\(\{ applicationName: app\.name, applicationVersion: app\.getVersion\(\), version: "" \}\)/);
+});
