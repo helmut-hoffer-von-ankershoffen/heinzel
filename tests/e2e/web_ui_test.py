@@ -945,6 +945,14 @@ def test_desktop_title_bar_row_in_mounted_chromium_and_unchanged_browser(environ
 
 
 @pytest.mark.timeout(600)
+def test_right_sidebar_resizes_by_drag_and_keys_and_keeps_its_width(environment, tmp_path):
+    """The divider drags and answers keys, the width survives a reload, the terminal refits, a phone has no handle."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "sidebar-resize.mjs")
+    assert result == {"refit": True, "phone": "no handle"}
+
+
+@pytest.mark.timeout(600)
 def test_settings_search_font_floor_precedes_focus_for_phone_input_modes(environment, tmp_path):
     """The real search field retains its minimum and enlarged theme size before any autofocus."""
     env, _recorded = environment

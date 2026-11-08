@@ -924,6 +924,7 @@ const en = {
   "chat.personalSessions": "Your Heinzels",
   "workspace.page": "Page",
   "workspace.panels": "Workspace panels",
+  "workspace.resize": "Resize sidebar",
   "chat.sessions": "Your chats",
   "chat.switch": "{title}: switch chats",
   "chat.searchSessions": "Search chats",

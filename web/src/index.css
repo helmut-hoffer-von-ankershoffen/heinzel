@@ -543,3 +543,13 @@ html[data-desktop-titlebar]
   :is(dialog, [role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"], .viewport-popover, [data-pane]) {
   -webkit-app-region: no-drag;
 }
+
+/* While the right sidebar is dragged: no text selection, no pointer events lost to frames or the terminal canvas. */
+html[data-sidebar-resizing] {
+  cursor: col-resize;
+  user-select: none;
+  -webkit-user-select: none;
+}
+html[data-sidebar-resizing] :is(iframe, canvas, .xterm) {
+  pointer-events: none;
+}
