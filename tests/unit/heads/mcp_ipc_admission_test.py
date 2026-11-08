@@ -420,10 +420,13 @@ def test_active_lease_expiry_obeys_the_earlier_deadline(supervised, monkeypatch,
         ("dispatch", "approval is invalid or unavailable"),
     ],
 )
-def test_expired_lease_refuses_authority_even_when_timer_callback_is_delayed(supervised, monkeypatch, phase, refusal):
+def test_expired_lease_refuses_authority_even_when_timer_callback_is_delayed(
+    supervised, monkeypatch, caplog, phase, refusal
+):
     endpoint, _, bridge = supervised
     now = 100.0
     authority = HostMcpConnectionApprovals(private_plan(101.0), clock=lambda: now)
+    caplog.set_level(logging.INFO, logger="heinzel.mcp")
 
     class DelayedTimer:
         def __init__(self, _delay, _expire, *, args):
@@ -468,3 +471,12 @@ def test_expired_lease_refuses_authority_even_when_timer_callback_is_delayed(sup
             assert bridge.recv(1) == b""
         finally:
             authority.revoke()
+
+    records = [record for record in caplog.records if record.message == "mcp.ipc.admit_peer"]
+    assert [record.phase for record in records] == ["start", "end"]
+    outcome = records[-1]
+    if phase == "dispatch":
+        assert outcome.outcome == "ok"  # The lease was valid when it reached the protocol.
+    else:
+        assert outcome.outcome == "error"
+        assert refusal in outcome.error

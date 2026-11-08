@@ -185,5 +185,5 @@ class OwnedMcpEndpoint:
                     raise HeinzelError(msg)
                 self._verify_endpoint()
                 _require_waiting_peer(connection)
-            lease.require_active()
+                lease.require_active()
             yield lease
