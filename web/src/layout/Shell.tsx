@@ -463,7 +463,8 @@ function Layout() {
         <div
           ref={scroller}
           className={cn(
-            "workspace-scroll relative flex min-h-0 min-w-0 flex-1",
+            // Vertical only: a child wider than the column must never let the whole workspace pan sideways on a phone.
+            "workspace-scroll relative flex min-h-0 min-w-0 flex-1 overflow-x-clip",
             beside ? "flex-row" : flowingWorkspace ? "flex-col overflow-y-auto" : "flex-col",
           )}
         >
@@ -483,7 +484,7 @@ function Layout() {
               // as a stray outline. Real controls inside keep their focus-visible ring.
               data-focus-ring="parent"
               className={cn(
-                "flex-1 outline-none bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]",
+                "min-w-0 flex-1 overflow-x-clip outline-none bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]",
                 !flowingWorkspace && "min-h-0 overflow-y-auto",
               )}
             >

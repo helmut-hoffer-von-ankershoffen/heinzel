@@ -4,13 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { onMenuAction } from "@/about/menu";
 import { api, unwrap } from "@/api/client";
 import { FooterItem } from "@/components/FooterItem";
+import { Progress, type ProgressSegment } from "@/components/Progress";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { trackOperation } from "@/lib/operationRun";
+import { type Phase, trackOperation } from "@/lib/operationRun";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
 import { KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
 import { canVerifyUpdate, finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
-import { describe } from "@/updates/updateState";
+import { describe, partSegments } from "@/updates/updateState";
 
 /** The update as the operation dialog shows it: the call the person confirmed with the update button. */
 const updateCall = () => ({
@@ -42,6 +43,8 @@ export function UpdateStatus() {
   const mounted = useRef(true);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<string | null>(null);
+  // The steps the update reports as it runs (the same list the operation dialog shows), kept after a failure.
+  const [steps, setSteps] = useState<Phase[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<"none" | "inspect" | "verify">("none");
   const [message, setMessage] = useState<string | null>(null);
@@ -80,6 +83,7 @@ export function UpdateStatus() {
     active.current = controller;
     setBusy(true);
     setProblem(null);
+    setSteps([]);
     try {
       const answer = resume
         ? await finishUpdate(controller.signal)
@@ -90,10 +94,14 @@ export function UpdateStatus() {
                 if (mounted.current) setPhase(phase);
               },
               undefined,
-              report,
+              (phases) => {
+                if (mounted.current) setSteps(phases);
+                report(phases);
+              },
             ),
           );
       if (mounted.current) {
+        setSteps([]);
         setMessage(answer);
         setRecovery(updateRecoveryState());
       }
@@ -144,6 +152,14 @@ export function UpdateStatus() {
     message,
     problem,
   });
+  // The head's own steps while this window updates; while the server applies on its own it reports none, so the
+  // parts it is changing show as running together.
+  const segments: ProgressSegment[] =
+    steps.length > 0
+      ? steps.map(({ id, label, state }) => ({ id, label, state }))
+      : phase === null && plan?.phase === "applying"
+        ? partSegments(view.parts)
+        : [];
   const installed = status?.installed_at ? new Date(status.installed_at) : null;
   const installedDate =
     installed && !Number.isNaN(installed.getTime())
@@ -172,6 +188,7 @@ export function UpdateStatus() {
             </div>
           </div>
         ))}
+        <Progress label={t("updates.progress")} segments={segments} />
         {status && (
           <p className="text-xs text-muted-foreground">
             {installedDate ? t("updates.installedDate", { date: installedDate }) : t("updates.installedDateUnknown")}

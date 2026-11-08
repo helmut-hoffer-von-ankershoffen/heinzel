@@ -70,6 +70,7 @@ import { FooterPart } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { HeinzelFace } from "@/components/HeinzelFace";
 import { OperationDialog } from "@/components/OperationDialog";
+import { Progress } from "@/components/Progress";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { contributionPath } from "@/lib/navigation";
@@ -789,12 +790,7 @@ function WidgetBody({ widget, run }: { widget: Widget; run: (effect: Effect) => 
       return (
         <>
           <h3 className="text-xs text-muted-foreground">{widget.label}</h3>
-          <progress
-            className="h-2 w-full accent-primary"
-            max={widget.total}
-            value={widget.done}
-            aria-label={widget.label}
-          />
+          <Progress label={widget.label} value={widget.done} max={widget.total} />
           <p className="text-xs tabular-nums">{t("contrib.progress", { done: widget.done, total: widget.total })}</p>
         </>
       );
