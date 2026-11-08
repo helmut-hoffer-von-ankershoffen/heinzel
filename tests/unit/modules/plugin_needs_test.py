@@ -79,6 +79,8 @@ class World:
         monkeypatch.setattr(service, "_read_candidate", self.read)
         monkeypatch.setattr(service, "_versions_now", lambda: dict(self.installed))
         monkeypatch.setattr(service, "installed", self.listed)
+        monkeypatch.setattr(service, "_installed_requires", self.installed_requires)
+        self.installed_declared: dict[str, tuple[str, ...]] = {}
         monkeypatch.setattr(service, "_mutation", contextlib.nullcontext)
         monkeypatch.setattr(service, "_install_candidate", self.install)
 
@@ -89,6 +91,13 @@ class World:
             raise HeinzelError(msg)
         found, requires, recommends = self.catalog[spec]
         return found, Metadata(name=found.distribution, requires=requires, recommends=recommends)
+
+    def installed_requires(self, plugin):
+        """What the installed version declared: its own record, else what the catalog declares for it."""
+        self.reads += 1
+        if plugin.distribution in self.installed_declared:
+            return self.installed_declared[plugin.distribution]
+        return self.catalog[plugin.name][1] if plugin.name in self.catalog else None
 
     def listed(self, *, fresh=False):
         del fresh
@@ -282,6 +291,46 @@ def test_repair_installs_what_an_installed_plugin_lacks_once_and_never_signs_in(
     assert world.order == ["heinzel-github", "heinzel-atlassian"]
     # What each installed version requires is remembered: acme isn't read again (github and atlassian are, once).
     assert world.reads - reads == 2
+
+
+def test_repair_uses_what_the_installed_version_requires_not_the_current_catalog_entry(
+    make_kernel, tmp_path, monkeypatch
+):
+    # The catalog's newest acme requires github and atlassian; the 0.2.0 installed required only github.
+    world = acme_world(make_kernel, tmp_path, monkeypatch, {"heinzel-acme": "0.2.0"})
+    world.installed_declared["heinzel-acme"] = ("heinzel-github",)
+    repair = world.service.repair(automatic=True)
+    assert world.order == ["heinzel-github"]
+    assert [n.distribution for n in repair.needs] == ["heinzel-github"]
+
+
+def test_the_installed_requirements_are_read_at_the_commit_installed(make_kernel, tmp_path):
+    seen = []
+    toml = '[project]\nname="heinzel-acme"\n[tool.heinzel.plugin]\nrequires-plugins=["heinzel-github>=0.3"]\n'
+
+    def get(url):
+        seen.append(url)
+        return {"type": "file", "content": base64.b64encode(toml.encode()).decode()}
+
+    service = PluginService(
+        Kernel(make_kernel().settings, []),
+        Installation(Progress(), prefix=tmp_path, uv="uv"),
+        PluginSettings(github_token=None, catalog_sources=[]),
+    )
+    service.github_api = get
+    base = "https://github.com/o/r/tree/" + "a" * 40
+    plugin = PluginInfo(
+        distribution="heinzel-acme",
+        version="0.2.0",
+        modules=[],
+        name="acme",
+        revision="a" * 40,
+        source_url=base + "/plugins/acme",
+    )
+    assert service._installed_requires(plugin) == ("heinzel-github>=0.3",)
+    assert seen == [f"repos/o/r/contents/plugins/acme/pyproject.toml?ref={'a' * 40}"]
+    pypi = PluginInfo(distribution="heinzel-acme", version="0.2.0", modules=[], name="acme")
+    assert service._installed_requires(pypi) is None
 
 
 def test_a_failed_automatic_repair_is_tried_once_and_its_notice_resolves_once_installed(

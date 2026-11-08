@@ -24,7 +24,7 @@ from importlib.metadata import Distribution, distributions, entry_points
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal, cast
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
@@ -71,6 +71,7 @@ from heinzel.modules.system.plugin._models import (
 )
 from heinzel.modules.system.plugin._receipts import PluginReceipts
 from heinzel.modules.system.plugin._sources import (
+    NEEDS,
     PREFIX,
     JsonGetter,
     Metadata,
@@ -82,6 +83,7 @@ from heinzel.modules.system.plugin._sources import (
     from_pypi,
     git_credentials,
     github_getter,
+    github_project_at,
     installed_repository_url,
     parse,
     pypi_get,
@@ -639,13 +641,12 @@ class PluginService:
             if declared is None:
                 if key in self._unreadable:
                     continue
-                try:
-                    _found, metadata = self._read_candidate(short_name(plugin.distribution))
-                except HeinzelError:
-                    # Not in a catalog (a local or third-party install), or offline: asked again by the next process.
+                found = self._installed_requires(plugin)
+                if found is None:
+                    # Not a GitHub install, or unreadable/offline: asked again by the next process.
                     self._unreadable.add(key)
                     continue
-                declared = list(metadata.requires)
+                declared = list(found)
                 memory.remember(key, declared)
             now = self._versions_now()
             missing = [d for d in declared if not _satisfies(Requirement(d), now.get(_need_name(d)) or "")]
@@ -680,6 +681,25 @@ class PluginService:
             installed_any = installed_any or any(n.state in {"installed", "updated"} for n in done)
             results.extend(n for n in done if n.state != "present")
         return PluginRepair(needs=results, restart_required=installed_any, message=_repair_message(results))
+
+    def _installed_requires(self, plugin: PluginInfo) -> tuple[str, ...] | None:
+        """What the installed version of `plugin` requires, read from its own pyproject at the commit installed.
+
+        Never the catalog's current entry: a newer release may require more than the version installed does.
+        None when it can't be read (not installed from GitHub, no commit recorded, offline).
+        """
+        match = re.fullmatch(
+            r"https://github\.com/([^/]+)/([^/]+)/tree/([0-9a-f]{7,64})(?:/(.+))?", plugin.source_url or ""
+        )
+        if match is None or not plugin.revision:
+            return None
+        owner, repository, _commit, directory = match.groups()
+        base = f"repos/{quote(owner)}/{quote(repository)}"
+        try:
+            project = github_project_at(self.github_api, base, plugin.revision, directory)
+        except (OSError, ValueError, KeyError, TypeError, LookupError, UnicodeDecodeError):
+            return None
+        return cast("dict[str, tuple[str, ...]]", project.get(NEEDS) or {}).get("requires", ())
 
     def _notify(self, repair: PluginRepair) -> None:
         """Tell the person what an automatic repair did: what was installed, and what wasn't, until it is there."""
