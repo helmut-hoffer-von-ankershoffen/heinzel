@@ -499,7 +499,7 @@ class HeinzelSettings(ModuleSettings):
         allow_inf_nan=False,
         title="Most per durable chat",
         description="The most one saved chat with a Heinzel may cost in US dollars on direct API replies.",
-        json_schema_extra={"x-unit": "usd"},
+        json_schema_extra={"x-unit": "usd", "x-live": True},  # read again with every chat turn
     )
     message_max_usd: float = Field(
         default=0.2,
@@ -507,7 +507,7 @@ class HeinzelSettings(ModuleSettings):
         allow_inf_nan=False,
         title="Most per message",
         description="The most one direct API reply in a saved chat with a Heinzel may cost in US dollars.",
-        json_schema_extra={"x-unit": "usd"},
+        json_schema_extra={"x-unit": "usd", "x-live": True},  # read again with every chat turn
     )
 
     subscription_budget_mode: Literal["usd-cap", "plan-unknown"] = Field(
@@ -515,6 +515,7 @@ class HeinzelSettings(ModuleSettings):
         title="Subscription chat budget",
         description="Subscription plans use provider limits and report unknown dollar cost; USD caps govern APIs. "
         "With a dollar cap, every turn must stay under the dollar limit, so subscription turns are blocked for now.",
+        json_schema_extra={"x-live": True},  # read again with every chat turn
     )
 
     retention_days: int = Field(

@@ -455,6 +455,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
             name: "github",
             distribution: "heinzel-github",
             login: { signed_in: signedIn },
+            checks: [],
           },
           {
             name: "other",
@@ -463,6 +464,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
               signed_in: true,
               account: "other account",
             },
+            checks: [],
           },
         ],
       },
@@ -479,6 +481,42 @@ describe("Settings: Preferences, Customize, This computer", () => {
     expect(await within(dialog).findByText(expected)).toBeVisible();
     expect(within(dialog).queryByText("other account")).toBeNull();
     expect(calls.some((request) => new URL(request.url).pathname === "/api/system/connector/test")).toBe(false);
+  });
+
+  it("shows the connector's own checks under Diagnostics in plain words, closed until opened", async () => {
+    mockApi({
+      ...answers,
+      "/api/system/connector/list": {
+        capabilities: [],
+        connectors: [
+          {
+            name: "github",
+            distribution: "heinzel-github",
+            login: { signed_in: true },
+            checks: [
+              { name: "gh program", status: "up", detail: "", fix: "" },
+              { name: "token scope", status: "degraded", detail: "No read:org scope.", fix: "Sign in again." },
+            ],
+          },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=connectors");
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    await user.click(
+      (await within(dialog).findByText("Connects: code-host, tracker")).closest("button") as HTMLElement,
+    );
+    const summary = await within(dialog).findByText("Diagnostics");
+    const details = summary.closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    await user.click(summary);
+    expect(within(details).getByText("gh program")).toBeVisible();
+    expect(within(details).getByText("OK")).toBeVisible();
+    expect(within(details).getByText("No read:org scope.")).toBeVisible();
+    expect(within(details).getByText("What to do: Sign in again.")).toBeVisible();
+    expect(within(details).getByText("Needs attention")).toBeVisible();
+    expect(within(dialog).queryByText(/source review/i)).toBeNull();
   });
 
   it("lists connectors as cards with what they connect, and opens one's settings inside Connectors", async () => {
