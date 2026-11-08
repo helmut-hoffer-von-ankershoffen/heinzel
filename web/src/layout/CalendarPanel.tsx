@@ -366,7 +366,7 @@ function EventRow({
   next: boolean;
   onOpen: (event: Event) => void;
 }) {
-  const { event, edge } = item;
+  const { event } = item;
   const join = conferenceLink(event.conference_url);
   const times = rowTimes(item, tz);
   const state = rowState(event, now);
