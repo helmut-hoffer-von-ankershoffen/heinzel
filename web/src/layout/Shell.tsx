@@ -34,6 +34,7 @@ import { StatusBar } from "./StatusBar";
 import { TerminalPanel } from "./TerminalPanel";
 import { ThemeTokens } from "./ThemeTokens";
 import { TopBar } from "./TopBar";
+import { applyTitlebar, useTitlebar } from "./titlebar";
 import { WorkspacePanels } from "./WorkspacePanels";
 
 /** A pane's open state, remembered in this browser; without storage it starts from `initial` each time. */
@@ -94,6 +95,12 @@ function Layout() {
   const showAudioVisualizer = (audioVisualizer?.value ?? audioVisualizer?.default) === true;
   // Narrow windows start with the navigation as a rail, so the screen keeps its room.
   const [navOpen, setNavOpen] = useRemembered("hz.nav.open", () => window.innerWidth >= 1024);
+  // The desktop app's integrated title bar (macOS): its insets become CSS variables; a browser gets 0.
+  const titlebar = useTitlebar();
+  useLayoutEffect(
+    () => applyTitlebar(document.documentElement, titlebar.bar, titlebar.fullscreen, navOpen),
+    [titlebar.bar, titlebar.fullscreen, navOpen],
+  );
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -438,6 +445,7 @@ function Layout() {
       >
         <Sidebar
           collapsed={!navOpen}
+          titlebar={titlebar.bar !== null}
           onToggle={() => setNavOpen((open) => !open)}
           onSearch={() => setSearchOpen(true)}
           onNotifications={() =>

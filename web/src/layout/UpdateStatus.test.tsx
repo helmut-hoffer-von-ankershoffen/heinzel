@@ -35,6 +35,7 @@ it("opens the update details without installing until the button is chosen", asy
   await user.click(icon);
   expect(startUpdate).not.toHaveBeenCalled();
   expect(await screen.findByText(/^Last installed:/)).toBeInTheDocument();
+  expect(screen.getByText("Heinzel 0.2.0 is available")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Update now" }));
   expect(startUpdate).toHaveBeenCalledTimes(1);
 });
@@ -64,14 +65,14 @@ it("keeps a current core neutral because an empty plan cannot establish every pl
     expect(icon).not.toHaveClass("animate-pulse", "text-bad");
   });
   await userEvent.setup().hover(icon);
-  expect(await screen.findByText("Installed: hz 0.1.0")).toBeInTheDocument();
+  expect(await screen.findByText("Couldn't check plugin updates right now")).toBeInTheDocument();
   const expectedDate = new Date(status.installed_at).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
   });
   expect(screen.getByText(`Last installed: ${expectedDate}`)).toBeInTheDocument();
-  expect(screen.queryByText("Up to date · hz 0.1.0")).not.toBeInTheDocument();
+  expect(screen.queryByText(/is up to date/)).not.toBeInTheDocument();
 });
 
 it("labels the explicit full updater as manual when no cached update is known", async () => {
@@ -125,7 +126,13 @@ it("reports an installer failure and never retries installation without another 
   renderAt("/");
   await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
   await user.click(screen.getByRole("button", { name: "Update now" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Installer failed before changing hz.");
+  // The popover and the operation dialog that showed its steps both say why.
+  await waitFor(() =>
+    expect(screen.getAllByRole("alert").map((alert) => alert.textContent)).toEqual([
+      expect.stringContaining("Installer failed before changing hz."),
+      expect.stringContaining("Installer failed before changing hz."),
+    ]),
+  );
   expect(startUpdate).toHaveBeenCalledTimes(1);
 });
 
@@ -134,7 +141,7 @@ it("does not claim to be up to date or invent an installation date when those fa
   renderAt("/");
   const icon = await screen.findByRole("button", { name: "Updates, off" });
   await userEvent.setup().hover(icon);
-  expect(await screen.findByText("Update availability is unavailable.")).toBeInTheDocument();
+  expect(await screen.findByText("Checking for updates…")).toBeInTheDocument();
   expect(screen.getByText("Installation date unavailable.")).toBeInTheDocument();
   expect(screen.queryByText("Up to date")).not.toBeInTheDocument();
 });
@@ -242,12 +249,22 @@ it("names the plugins from git or a folder that are updated by hand", async () =
     ...shell,
     "/api/update-status": status,
     "/api/system/config/show": config,
-    "/api/auto-update": { phase: "off", development: null, held: null, by_hand: ["heinzel-crm"] },
+    "/api/auto-update": {
+      phase: "idle",
+      development: null,
+      held: null,
+      by_hand: ["heinzel-crm"],
+      holds: [{ name: "heinzel-crm", why: "source", how: "git" }],
+    },
   });
   const user = userEvent.setup();
   renderAt("/");
   await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
-  expect(await screen.findByText(/^Manual updates: heinzel-crm$/)).toBeInTheDocument();
+  expect(
+    await screen.findByText(
+      "heinzel-crm is installed from the Heinzel catalog source and isn't followed for updates yet",
+    ),
+  ).toBeInTheDocument();
 });
 
 const plan = {
@@ -265,9 +282,9 @@ const plan = {
 };
 
 it.each([
-  ["plugin only", false, { "heinzel-example": "2.0.0" }, "Known updates: heinzel-example 2.0.0"],
-  ["core only", true, {}, "Known updates: hz 0.2.0"],
-  ["core and plugin", true, { "heinzel-example": "2.0.0" }, "Known updates: hz 0.2.0, heinzel-example 2.0.0"],
+  ["plugin only", false, { "heinzel-example": "2.0.0" }, "heinzel-example 2.0.0 is available"],
+  ["core only", true, {}, "Heinzel 0.2.0 is available"],
+  ["core and plugin", true, { "heinzel-example": "2.0.0" }, "heinzel-example 2.0.0 is available"],
 ] as const)("shows %s cached news without mutating on inspection", async (_name, core, plugins, line) => {
   const { calls } = mockApi({
     ...shell,
@@ -277,7 +294,9 @@ it.each([
   renderAt("/");
   await userEvent.setup().click(await screen.findByRole("button", { name: "Updates available, warning" }));
   expect(await screen.findByText(line)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Update now" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: core && Object.keys(plugins).length ? "Update all" : "Update now" }),
+  ).toBeInTheDocument();
   expect(startUpdate).not.toHaveBeenCalled();
   expect(
     calls
@@ -296,7 +315,7 @@ it.each([plan, { ...plan, phase: "off", enabled: false }, { status: 503, body: {
     });
     renderAt("/");
     await userEvent.setup().click(await screen.findByRole("button", { name: "Updates, off" }));
-    expect(screen.getByText("Update availability is unavailable.")).toBeInTheDocument();
+    expect(screen.queryByText(/up to date/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Manually update…" })).toBeInTheDocument();
     expect(startUpdate).not.toHaveBeenCalled();
@@ -322,7 +341,7 @@ it("observes the live plan instead of the indefinitely cached installation facts
   await act(async () => {
     client.setQueryData(KEY, { ...plan, plugins: { "heinzel-example": "2.0.0" } });
   });
-  expect(await screen.findByText("Known updates: heinzel-example 2.0.0")).toBeInTheDocument();
+  expect(await screen.findByText("heinzel-example 2.0.0 is available")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Update now" })).toBeInTheDocument();
   expect(startUpdate).not.toHaveBeenCalled();
 });

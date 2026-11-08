@@ -612,7 +612,9 @@ describe("Installed plugins by kind", () => {
     expect(within(acmeRow).getByTitle("Theme: acme")).toBeInTheDocument();
     expect(within(acmeRow).getByTitle("Playbook: engineering-team")).toBeInTheDocument();
     await expectAccessible(container);
-    await user.click(screen.getByRole("button", { name: "Theme", pressed: false }));
+    // An exclusive filter is a radiogroup (design/README.md, Choices).
+    await user.click(screen.getByRole("radio", { name: "Theme", checked: false }));
+    expect(screen.getByRole("radio", { name: "Theme" })).toHaveAttribute("aria-checked", "true");
     expect(screen.queryByTitle("Connector: code-host, tracker")).not.toBeInTheDocument();
     expect(screen.getByTitle("Theme: acme")).toBeInTheDocument();
   });

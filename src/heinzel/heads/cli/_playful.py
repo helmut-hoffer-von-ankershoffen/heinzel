@@ -1,9 +1,7 @@
-"""A small Heinzelmännchen in the terminal: the start screen's bust, the setup welcome's swarm and one-line touches.
+"""Heinzelmännchen in the terminal: the product's crew and one-line touches.
 
-The pixels come from the same drawing as the web app (`make terminal-art`). Art is a garnish: it appears only where a
-person watches a colour terminal, never replaces information, and a Rich console downgrades its colours to 256 or 16
-when the terminal has no more. At most one block of art per command: the start screen and `--version` show the bust,
-`hz setup` the swarm, nothing else more than a line.
+The pixels come from the same drawing as the web app (`make terminal-art`). Art appears where a person watches a
+colour terminal, and Rich downgrades its colours to 256 or 16 when the terminal has no more.
 """
 
 import os
@@ -13,7 +11,7 @@ from rich.console import Console
 from rich.style import Style
 from rich.text import Text
 
-from heinzel.heads.cli._art_data import BUST, PALETTE, SWARM
+from heinzel.heads.cli._art_data import PALETTE, SWARM
 from heinzel.kernel import Settings
 
 HAT = Style(color="rgb(224,84,41)")
@@ -66,16 +64,11 @@ def _cell(upper: str, lower: str) -> tuple[str, Style | None]:
 
 
 def banner(lines: Sequence[str], *, body_style: str = "dim") -> Text:
-    """The bust with `lines` of text beside its lower half; 80 columns at most."""
-    art = pixels(BUST).split("\n")
-    width = max(len(line) for line in art)
-    start = len(art) // 2 - len(lines) // 2
-    out = Text()
-    for number, line in enumerate(art):
-        out.append_text(line)
-        out.pad_right(width - len(line) + 2)
-        if 0 <= (at := number - start) < len(lines):
-            out.append(lines[at], style="bold magenta" if at == 0 else body_style)
+    """The shared crew with the banner text underneath."""
+    out = swarm()
+    out.append("\n\n")
+    for index, line in enumerate(lines):
+        out.append(line, style="bold magenta" if index == 0 else body_style)
         out.append("\n")
     return out
 

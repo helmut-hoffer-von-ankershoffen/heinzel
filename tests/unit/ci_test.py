@@ -1617,7 +1617,10 @@ def test_a_pull_request_tests_python_oldest_and_newest_and_main_every_supported_
     test = _ci_jobs()["test"]
     assert _oses(test["strategy"]["matrix"]["python"], event) == expected
     probe = next(step for step in test["steps"] if step.get("run") == "make linux-user-manager-proof")
-    assert probe["if"] == "matrix.os == 'ubuntu-24.04' && matrix.python == '3.12'"  # a cell every pull request runs
+    assert probe["if"] == (  # a cell every pull request runs, once
+        "matrix.os == 'ubuntu-24.04' && matrix.python == '3.12' && matrix.levels == 'unit'"
+    )
+    assert test["strategy"]["matrix"]["levels"] == ["unit", "integration"]  # Linux shards by level under the cap
 
 
 @pytest.mark.parametrize(

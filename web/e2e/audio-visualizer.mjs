@@ -44,7 +44,7 @@ try {
     const pane = page.getByRole("region", { name: "Audio visualizer controls" });
     await pane.waitFor();
     assert.equal(await page.evaluate(() => window.audioFixture.requests), 0, "Opening help must not capture");
-    const share = pane.getByRole("button", { name: "Share audio", exact: true });
+    const share = pane.getByRole("radio", { name: "Shared audio", exact: true });
     await share.click();
     await page.waitForFunction(() => document.querySelector("output")?.textContent?.startsWith("Visualizing"));
     assert.equal(await page.evaluate(() => window.audioFixture.options.preferCurrentTab), true);
@@ -123,6 +123,10 @@ try {
       `Changing a real tone must move the drawn spectrum up the rail: ${JSON.stringify({ low, high })}`,
     );
     result.realSignal = true;
+    // What the person sees: a region of the page away from the controls must change while the aurora paints and
+    // return once it clears. A painted <body> (index.html gives <html> its own background) hid the aurora completely.
+    const away = { x: 40, y: Math.round(viewport.height / 3), width: Math.round(viewport.width / 4), height: 200 };
+    const lit = await page.screenshot({ clip: away });
     await page.screenshot({ path: join(shots, `audio-${viewport.width}-signal.png`) });
     await page.evaluate(() => {
       window.audioFixture.gain.gain.value = 0;
@@ -136,8 +140,12 @@ try {
         .getImageData(0, 0, element.width, element.height)
         .data.every((value) => value === 0);
     });
+    assert(
+      !lit.equals(await page.screenshot({ clip: away })),
+      `${viewport.width}px: the aurora painted but nothing on the page changed: it is hidden under another layer`,
+    );
     result.realSilence = true;
-    await pane.getByRole("button", { name: "Stop sharing audio" }).click();
+    await pane.getByRole("radio", { name: "Off", exact: true }).click();
     assert(
       await page.evaluate(() =>
         window.audioFixture.streams.every((stream) =>
@@ -149,7 +157,7 @@ try {
     await page.evaluate(() => {
       window.audioFixture.mode = "no-audio";
     });
-    await pane.getByRole("button", { name: "Share audio", exact: true }).click();
+    await pane.getByRole("radio", { name: "Shared audio", exact: true }).click();
     await page.waitForFunction(() => document.querySelector("output")?.textContent?.includes("No audio was shared"));
     assert(await pane.getByRole("status").isVisible());
     assert(
@@ -162,17 +170,17 @@ try {
     await page.evaluate(() => {
       window.audioFixture.mode = "deny";
     });
-    await pane.getByRole("button", { name: "Share audio", exact: true }).click();
+    await pane.getByRole("radio", { name: "Shared audio", exact: true }).click();
     await page.waitForFunction(() => document.querySelector("output")?.textContent?.includes("cancelled or blocked"));
     await page.screenshot({ path: join(shots, `audio-${viewport.width}-failure.png`) });
     const beforeUnsupported = await page.evaluate(() => {
       delete navigator.mediaDevices.getDisplayMedia;
       return window.audioFixture.requests;
     });
-    await pane.getByRole("button", { name: "Share audio", exact: true }).click();
-    await page.waitForFunction(() =>
-      document.querySelector("output")?.textContent?.includes("Audio sharing is unavailable"),
-    );
+    await pane.getByRole("radio", { name: "Shared audio", exact: true }).click();
+    // Not offered any more: the choice leaves the group and one line says why.
+    await pane.getByText("Shared audio is not offered by this browser.", { exact: true }).waitFor();
+    assert.equal(await pane.getByRole("radio", { name: "Shared audio", exact: true }).count(), 0);
     assert.equal(await page.evaluate(() => window.audioFixture.requests), beforeUnsupported);
     const bounds = await pane.boundingBox();
     assert(
@@ -187,9 +195,12 @@ try {
         await window.axe.run(document, {
           runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"] },
         })
-      ).violations.map((item) => item.id),
+      ).violations.map((item) => ({
+        id: item.id,
+        nodes: item.nodes.map((node) => ({ target: node.target, summary: node.failureSummary })),
+      })),
     );
-    assert.deepEqual(violations, []);
+    assert.deepEqual(violations, [], `${viewport.width}px axe: ${JSON.stringify(violations)}`);
     await page.keyboard.press("Escape");
     await pane.waitFor({ state: "hidden" });
     assert(await trigger.evaluate((element) => element === document.activeElement));
