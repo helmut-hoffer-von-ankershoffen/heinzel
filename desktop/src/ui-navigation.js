@@ -1,4 +1,5 @@
 import { parseConnection } from "./connection.js";
+import { externalActionUrl } from "./external-links.js";
 
 /** Use the existing web head's fragment authentication; never attach a bearer to another origin. */
 export function authenticatedUiUrl(connection) {
@@ -20,38 +21,30 @@ export function isOwnedUiNavigation(target, connection) {
   }
 }
 
-// Where a link with target=_blank may go: the meeting tools and calendar pages the calendar pane offers (Join, Open in
-// calendar). Anything else stays denied. Always https, no credentials, no port.
-const EXTERNAL_HOSTS = new Set(["zoom.us", "meet.google.com", "teams.microsoft.com", "teams.live.com", "calendar.google.com"]);
-const EXTERNAL_SUFFIXES = [".zoom.us", ".webex.com"];
-
-/** True for an https link the app may hand to the system's default handler. */
-export function isAllowedExternal(target) {
-  try {
-    const url = new URL(target);
-    if (url.protocol !== "https:" || url.username || url.password || url.port) return false;
-    const host = url.hostname.toLowerCase();
-    if (host === "www.google.com") return url.pathname.startsWith("/calendar/");
-    return EXTERNAL_HOSTS.has(host) || EXTERNAL_SUFFIXES.some((suffix) => host.endsWith(suffix));
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Embedded third-party frames keep the web head's CSP; only top-level documents use this guard. A new window is never
- * created: an allow-listed link (Join, Open in calendar) goes to the system handler through `openExternal`.
- */
-export function guardUiNavigation(contents, connection, openExternal = () => {}) {
-  contents.setWindowOpenHandler(({ url }) => {
-    if (isAllowedExternal(url)) openExternal(url);
-    return { action: "deny" };
-  });
+/** Embedded frames keep the web head's CSP. Popups from any frame are denied without side effects. */
+export function guardUiNavigation(contents, connection) {
+  contents.setWindowOpenHandler(() => ({ action: "deny" }));
   contents.on("will-navigate", (event) => {
     if (!isOwnedUiNavigation(event.url, connection)) event.preventDefault();
   });
   contents.on("will-redirect", (event) => {
     if (event.isMainFrame !== false && !isOwnedUiNavigation(event.url, connection)) event.preventDefault();
+  });
+}
+
+/** Only the owned main frame's isolated preload can request an external action after a trusted click. */
+export function handleExternalActions(contents, connection, openExternal) {
+  contents.ipc.handle("hz:open-external", async (event, action, target) => {
+    if (event.sender !== contents || contents.isDestroyed()) return false;
+    const frame = event.senderFrame;
+    const main = contents.mainFrame;
+    if (!frame || !main || frame.isDestroyed() || main.isDestroyed() || frame.detached ||
+        frame.processId !== main.processId || frame.frameToken !== main.frameToken ||
+        !isOwnedUiNavigation(frame.url, connection())) return false;
+    const url = externalActionUrl(action, target);
+    if (!url) return false;
+    await openExternal(url);
+    return true;
   });
 }
 

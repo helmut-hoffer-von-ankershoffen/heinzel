@@ -225,6 +225,36 @@ const listed = (section: HTMLElement) =>
     .queryAllByRole("button")
     .map((b) => b.getAttribute("aria-label"));
 
+it("offers desktop links only for supported meeting and calendar routes", async () => {
+  vi.stubGlobal("heinzelDesktop", { externalLinks: true });
+  agenda([
+    {
+      ...agendaEvents[4],
+      conference_url: "https://zoom.com/j/9",
+      url: "https://calendar.google.com/calendar/event?eid=example",
+    },
+    {
+      ...agendaEvents[5],
+      conference_url: "https://meet.google.com/unrelated",
+      url: "https://outlook.office.com/calendar/item/example",
+    },
+  ]);
+  const zoom = await screen.findByRole("link", { name: "Join Zoom meeting" });
+  expect(zoom).toHaveAttribute("data-hz-external-action", "join-meeting");
+  expect(zoom).toHaveAttribute("href", "https://zoom.com/j/9");
+  expect(screen.queryByRole("link", { name: "Join Google Meet meeting" })).not.toBeInTheDocument();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: /Review with Anna/ }));
+  expect(screen.getByRole("link", { name: "Open in calendar" })).toHaveAttribute(
+    "data-hz-external-action",
+    "open-calendar",
+  );
+  await user.click(screen.getByRole("button", { name: "Back to the week" }));
+  await user.click(screen.getByRole("button", { name: /Dentist/ }));
+  expect(screen.getByText("Google Meet")).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Open in calendar" })).not.toBeInTheDocument();
+});
+
 it("names each day in a sticky header, Today first among the live ones, and drops empty days", async () => {
   agenda();
   await screen.findByText("Standup");
@@ -378,7 +408,7 @@ it("hides the band while the worker runs, and shows the remote sentence without 
 
 it("tells a remote browser to use the computer itself", async () => {
   agenda(agendaEvents, { local: false });
-  expect(await screen.findByText("Open Calendar on this computer to set up its reminder worker.")).toBeInTheDocument();
+  expect(await screen.findByText("Open Calendar on this computer to set up reminders.")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /reminder worker/ })).not.toBeInTheDocument();
 });
 

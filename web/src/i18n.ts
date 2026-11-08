@@ -1,9 +1,8 @@
 // Every string the app shows, in one catalogue (ADR 0039): adding a language is a file, not a refactor.
 // Shared by the notification test and the settings hint, so the iPhone and iPad advice has one wording.
-const IOS_INSTALL =
-  "On iPhone or iPad, use Share → Add to Home Screen, open hz from that icon, then allow notifications. Keep hz open to receive notices; background push is not available.";
+const IOS_INSTALL = "Share → Add to Home Screen, open its icon, allow alerts.";
 
-const en = {
+export const en = {
   "personal.title": "Personal Heinzels",
   "personal.intro": "Give each personal Heinzel a name and look. Creating one does not start a schedule.",
   "personal.choose": "Personal Heinzel",
@@ -845,6 +844,7 @@ const en = {
   "notify.app.open": "This app is open. Read the test in Notifications.",
   "notify.browser.failed": "Notifications are allowed, but this browser could not show the test.",
   "notify.browser.install": IOS_INSTALL,
+  "notify.installDetails": "Keep Heinzel open. Background alerts are unavailable.",
   "notify.works": "works",
   "notify.blocked": "doesn't work",
   "notify.channel.web": "This app",
@@ -1218,7 +1218,7 @@ const en = {
   "calendar.backToWeek": "Back to the week",
   "calendar.noTitle": "(no title)",
   "calendar.workerNeeded": "Reminders need a background worker on this computer.",
-  "calendar.workerRemote": "Open Calendar on this computer to set up its reminder worker.",
+  "calendar.workerRemote": "Open Calendar on this computer to set up reminders.",
   "calendar.remindersOff": "Calendar reminders are off or unavailable.",
   "calendar.workerUnknown": "Reminders are on, but the worker's state is unavailable.",
   "calendar.statusUnavailable": "Reminder status unavailable.",

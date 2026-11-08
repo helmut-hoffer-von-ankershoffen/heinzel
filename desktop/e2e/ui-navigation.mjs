@@ -93,9 +93,11 @@ async function run(redirectOnStart) {
     } else {
       const page = await app.firstWindow({ timeout: 30_000 });
       await page.locator("p").waitFor();
-      await app.evaluate(({ BrowserWindow }) => {
+      await app.evaluate(({ BrowserWindow, shell }) => {
         const contents = BrowserWindow.getAllWindows()[0].webContents;
         globalThis.navigationEvents = [];
+        globalThis.externalOpens = [];
+        shell.openExternal = async (url) => { globalThis.externalOpens.push(url); };
         for (const name of ["will-navigate", "will-redirect"]) contents.on(name, (event) => {
           globalThis.navigationEvents.push({ name, url: event.url, isMainFrame: event.isMainFrame });
         });
@@ -108,6 +110,7 @@ async function run(redirectOnStart) {
       await waitEvent(app, "will-redirect", targetUrl);
       assert.equal(targetRequests, 0);
       assert.equal(new URL(page.url()).origin, `http://127.0.0.1:${source.address().port}`);
+      await proveExternalActions(app, page);
       const exited = new Promise((done) => processHandle.once("exit", done));
       await page.close();
       await withTimeout(exited, 15_000, "Electron did not exit after closing its window.");
@@ -131,6 +134,35 @@ async function run(redirectOnStart) {
       loadPid: async () => Number(await readFile(join(root, "owned-pid"), "utf8")), processExists,
       remove: (directory) => rm(directory, { recursive: true, force: true }) }));
   }
+}
+async function proveExternalActions(app, page) {
+  const meet = "https://meet.google.com/abc-defg-hij";
+  const watch = "https://www.youtube.com/watch?v=tRsQsTMvPNg";
+  await page.evaluate(({ meet, watch }) => {
+    document.body.insertAdjacentHTML("beforeend", `
+      <a id="join" data-hz-external-action="join-meeting" target="_blank" href="${meet}">Join</a>
+      <a id="watch" data-hz-external-action="watch-video" target="_blank" href="${watch}&amp;unused=1">Watch</a>
+      <a id="unmarked" target="_blank" href="${meet}">Unmarked link</a>
+      <iframe title="Untrusted fixture" sandbox="allow-forms allow-popups" srcdoc='
+        <form action="${meet}" target="_blank"><button>Submit popup</button></form>
+        <a data-hz-external-action="join-meeting" target="_blank" href="${meet}">Subframe link</a>
+      '></iframe>`);
+    document.addEventListener("hz:external-opened", (event) => { event.target.dataset.handoff = "complete"; });
+    document.querySelector("#join").click();
+    window.open(meet, "_blank");
+  }, { meet, watch });
+  await page.locator("#unmarked").click();
+  const frame = page.frameLocator("iframe");
+  await frame.getByRole("button", { name: "Submit popup" }).click();
+  await frame.getByRole("link", { name: "Subframe link" }).click();
+  assert.deepEqual(await app.evaluate(() => globalThis.externalOpens), []);
+  assert.equal(app.windows().length, 1);
+  await page.locator("#join").click();
+  await page.locator("#join[data-handoff=complete]").waitFor();
+  await page.locator("#watch").press("Enter");
+  await page.locator("#watch[data-handoff=complete]").waitFor();
+  assert.deepEqual(await app.evaluate(() => globalThis.externalOpens), [meet, watch]);
+  assert.equal(app.windows().length, 1);
 }
 async function waitEvent(app, name, url) {
   await withTimeout((async () => {

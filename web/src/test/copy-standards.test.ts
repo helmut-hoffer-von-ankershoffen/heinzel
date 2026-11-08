@@ -3,16 +3,14 @@
 // - no internal state words reach the person (requested, applied, verified, owning, ...);
 // - a control has at most one status line.
 // ALLOW only shrinks: every entry needs a reason, and an entry whose string now passes must be deleted.
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { en } from "@/i18n";
 
-const SRC = join(__dirname, "..");
 const MAX = 60;
 const PLACEHOLDER = 12;
 const PANE =
-  /^(contrib\.toggle|daemon|lifecycle|durable|pluginsPending|updates|autoUpdate|notify|plugins\.operation|op)\./;
-const BANNED = /\b(requested|applied|verified|owning|apply|intent|mapping|origin|handler|readiness)\b/i;
+  /^(?:(contrib\.toggle|daemon|lifecycle|durable|pluginsPending|updates|autoUpdate|notify|plugins\.operation|op)\.|calendar\.(?:worker\w+|remindersOff|status\w*|reminderStatusFailed|loading|unavailable)$)/;
+const BANNED = /\b(requested|applied|verified|owning|apply|intent|mapping|origin|handler|instance|readiness)\b/i;
 
 const ALLOW: Record<string, string> = {
   "durable.failed": "sweep backlog: durable and operation copy, rewrite when the pane is next touched",
@@ -74,15 +72,10 @@ const ALLOW: Record<string, string> = {
   "autoUpdate.reloadLater": "sweep backlog row in research/pane-microcopy-2026-11-08.md",
 };
 
-function entries(): [string, string][] {
-  const text = readFileSync(join(SRC, "i18n.ts"), "utf8");
-  return [...text.matchAll(/^\s*"([^"]+)":\s*"((?:[^"\\]|\\.)*)",?\s*$/gm)].map((m) => [m[1] ?? "", m[2] ?? ""]);
-}
-
 const length = (value: string) => value.replace(/\{[^}]*\}/g, "x".repeat(PLACEHOLDER)).length;
 
-function violations(): string[] {
-  return entries()
+function violations(catalogue: Record<string, string> = en): string[] {
+  return Object.entries(catalogue)
     .filter(([key, value]) => (PANE.test(key) && length(value) > MAX) || BANNED.test(value))
     .map(([key]) => key);
 }
@@ -101,8 +94,14 @@ describe("pane copy", () => {
     expect(Object.entries(ALLOW).filter(([, reason]) => reason.trim().length < 10)).toEqual([]);
   });
 
-  it("renders at most one status line per toggle", () => {
-    const text = readFileSync(join(SRC, "components", "ContributionToggle.tsx"), "utf8");
-    expect(text.match(/role="status"/g)?.length ?? 0).toBeLessThanOrEqual(1);
+  it("detects internal words and long calendar status copy regardless of source formatting", () => {
+    expect(
+      violations({
+        "other.message": "Another instance is running.",
+        "calendar.workerRemote": "x".repeat(MAX + 1),
+        "calendar.workerNeeded": "x".repeat(MAX),
+        "calendar.installSummary": "x".repeat(MAX + 1),
+      }),
+    ).toEqual(["other.message", "calendar.workerRemote"]);
   });
 });

@@ -21,6 +21,7 @@ import { PaneAction, PaneActions, PaneTitle } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { isLocalServer } from "@/lib/browser";
 import { conferenceLink, conferenceProvider } from "@/lib/conferenceLink";
+import { type ExternalAction, externalHref } from "@/lib/externalActions";
 import { requestOperation } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
 import {
@@ -367,7 +368,7 @@ function EventRow({
   onOpen: (event: Event) => void;
 }) {
   const { event } = item;
-  const join = conferenceLink(event.conference_url);
+  const join = externalHref("join-meeting", conferenceLink(event.conference_url));
   const times = rowTimes(item, tz);
   const state = rowState(event, now);
   const running = state.state === "running";
@@ -419,7 +420,7 @@ function EventRow({
           {next && <span className="block text-sm text-muted-foreground">{startsIn}</span>}
         </span>
       </button>
-      {join && <IconLink href={join} label={joinLabel(event.conference_url)} icon={Video} />}
+      {join && <IconLink href={join} action="join-meeting" label={joinLabel(event.conference_url)} icon={Video} />}
     </li>
   );
 }
@@ -442,9 +443,19 @@ function joinLabel(url: string | null | undefined): string {
   return provider ? t("calendar.joinProvider", { provider }) : t("calendar.join");
 }
 
-function IconLink({ href, label, icon }: { href: string; label: string; icon: LucideIcon }) {
+function IconLink({
+  href,
+  action,
+  label,
+  icon,
+}: {
+  href: string;
+  action: ExternalAction;
+  label: string;
+  icon: LucideIcon;
+}) {
   return (
-    <PaneAction ghost icon={icon} href={href}>
+    <PaneAction ghost icon={icon} href={href} externalAction={action}>
       {label}
     </PaneAction>
   );
@@ -452,9 +463,10 @@ function IconLink({ href, label, icon }: { href: string; label: string; icon: Lu
 
 /** One meeting in full: provider and a Join icon button, then who organizes and who is invited. Read-only (phase 1). */
 function EventDetail({ event, timezone, onBack }: { event: Event; timezone: string | null; onBack: () => void }) {
-  const join = conferenceLink(event.conference_url);
+  const conference = conferenceLink(event.conference_url);
+  const join = externalHref("join-meeting", conference);
   const provider = conferenceProvider(event.conference_url);
-  const source = conferenceLink(event.url);
+  const source = externalHref("open-calendar", conferenceLink(event.url));
   const attendees = [...new Set((event.attendees ?? []).map(personName))];
   return (
     <article aria-label={event.title || t("calendar.noTitle")} className="space-y-3">
@@ -466,11 +478,13 @@ function EventDetail({ event, timezone, onBack }: { event: Event; timezone: stri
           <h3 className="font-medium break-words">{event.title || t("calendar.noTitle")}</h3>
           <p className="text-muted-foreground">{when(event, timezone)}</p>
         </div>
-        {join && <IconLink href={join} label={joinLabel(event.conference_url)} icon={Video} />}
-        {source && <IconLink href={source} label={t("calendar.openInCalendar")} icon={ExternalLink} />}
+        {join && <IconLink href={join} action="join-meeting" label={joinLabel(event.conference_url)} icon={Video} />}
+        {source && (
+          <IconLink href={source} action="open-calendar" label={t("calendar.openInCalendar")} icon={ExternalLink} />
+        )}
       </div>
       <dl className="space-y-2">
-        {join && <Fact term={t("calendar.provider")} value={provider ?? new URL(join).hostname} />}
+        {conference && <Fact term={t("calendar.provider")} value={provider ?? new URL(conference).hostname} />}
         {event.location && <Fact term={t("calendar.location")} value={event.location} />}
         {event.organizer && <Fact term={t("calendar.organizer")} value={personName(event.organizer)} />}
         {event.response && <Fact term={t("calendar.yourReply")} value={t(`calendar.reply.${event.response}`)} />}

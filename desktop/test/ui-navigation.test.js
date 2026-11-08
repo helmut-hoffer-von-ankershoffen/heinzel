@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import { authenticatedUiUrl, guardUiNavigation, isAllowedExternal, isOwnedUiNavigation, openProductUi } from "../src/ui-navigation.js";
+import { externalActionUrl } from "../src/external-links.js";
+import { authenticatedUiUrl, guardUiNavigation, handleExternalActions, isOwnedUiNavigation, openProductUi } from "../src/ui-navigation.js";
 
 const connection = Object.freeze({ origin: "http://127.0.0.1:30123", token: "synthetic_native_ui_test_token_1234567890" });
 
@@ -46,26 +47,66 @@ test("the actual navigation handlers block cross-origin main-frame redirects and
   assert.deepEqual(open({ url: "https://example.com/" }), { action: "deny" });
 });
 
-test("a link with target=_blank opens only allow-listed meeting and calendar pages, in the system handler", () => {
-  const contents = new EventEmitter();
-  let open;
-  contents.setWindowOpenHandler = (handler) => { open = handler; };
-  const opened = [];
-  guardUiNavigation(contents, connection, (url) => opened.push(url));
-  const allowed = [
-    "https://zoom.us/j/12345678901", "https://acme.zoom.us/j/12345678901", "https://meet.google.com/abc-defg-hij",
-    "https://teams.microsoft.com/l/meetup-join/x", "https://acme.webex.com/meet/a",
-    "https://www.google.com/calendar/event?eid=abc", "https://calendar.google.com/calendar/event?eid=abc",
-  ];
-  const denied = [
+test("external actions require their own provider routes and return canonical HTTPS URLs", () => {
+  const allowed = {
+    "join-meeting": [
+      "https://zoom.us/j/12345678901", "https://acme.zoom.us/j/12345678901", "https://zoom.com/j/12345678901",
+      "https://meet.google.com/abc-defg-hij", "https://teams.microsoft.com/l/meetup-join/x",
+      "https://teams.live.com/meet/123", "https://acme.webex.com/meet/a", "https://webex.com/meet/a",
+    ],
+    "open-calendar": [
+      "https://www.google.com/calendar/event?eid=abc", "https://calendar.google.com/calendar/event?eid=abc",
+      "https://calendar.google.com/calendar/u/0/r/eventedit/ZmFrZQ",
+    ],
+    "watch-video": ["https://www.youtube.com/watch?v=tRsQsTMvPNg"],
+  };
+  for (const [action, targets] of Object.entries(allowed)) {
+    for (const target of targets) {
+      assert.equal(externalActionUrl(action, target), target);
+      for (const other of Object.keys(allowed).filter((key) => key !== action))
+        assert.equal(externalActionUrl(other, target), null);
+    }
+  }
+  for (const target of [
     "http://zoom.us/j/1", "https://evil.example/", "https://zoom.us.evil.example/j/1", "https://evilzoom.us/j/1",
     "https://user:pass@zoom.us/j/1", "https://zoom.us:8443/j/1", "https://www.google.com/search?q=1",
+    "https://meet.google.com/unrelated", "https://zoom.us/signin", "https://webex.com/redirect",
     "zoommtg://zoom.us/join", "javascript:alert(1)", "file:///etc/passwd", "not a URL", "http://127.0.0.1:30123/",
-  ];
-  for (const url of [...allowed, ...denied]) assert.deepEqual(open({ url }), { action: "deny" });
-  assert.deepEqual(opened, allowed);
-  for (const url of allowed) assert.equal(isAllowedExternal(url), true);
-  for (const url of denied) assert.equal(isAllowedExternal(url), false);
+  ]) assert.equal(externalActionUrl("join-meeting", target), null);
+  assert.equal(externalActionUrl("open-calendar", "https://www.google.com/calendar/unrelated"), null);
+  assert.equal(externalActionUrl("open-calendar", "https://outlook.office.com/calendar/item/example"), null);
+  assert.equal(externalActionUrl("watch-video", "https://www.youtube.com/redirect?v=tRsQsTMvPNg"), null);
+  assert.equal(externalActionUrl("watch-video", "https://www.youtube.com/watch?v=tRsQsTMvPNg&v=another"), null);
+  assert.equal(externalActionUrl("watch-video", "https://WWW.YOUTUBE.COM:443/watch?v=tRsQsTMvPNg&other=1#example"),
+    "https://www.youtube.com/watch?v=tRsQsTMvPNg");
+});
+
+test("popup requests have no opener side effect and IPC denies foreign, subframe and stale senders", async () => {
+  const main = { url: `${connection.origin}/`, processId: 1, frameToken: "main", isDestroyed: () => false };
+  let popup, invoke;
+  const contents = Object.assign(new EventEmitter(), {
+    mainFrame: main,
+    isDestroyed: () => false,
+    setWindowOpenHandler: (handler) => { popup = handler; },
+    ipc: { handle: (channel, handler) => { assert.equal(channel, "hz:open-external"); invoke = handler; } },
+  });
+  const opened = [];
+  let current = connection;
+  guardUiNavigation(contents, connection);
+  handleExternalActions(contents, () => current, async (url) => opened.push(url));
+  const url = "https://meet.google.com/abc-defg-hij";
+  assert.deepEqual(popup({ url, postBody: {}, referrer: { url: "https://other.example/" } }), { action: "deny" });
+  assert.deepEqual(popup({ url }), { action: "deny" });
+  for (const frame of [null, { ...main, frameToken: "child" }, { ...main, processId: 2 },
+    { ...main, detached: true }, { ...main, isDestroyed: () => true }, { ...main, url: "https://other.example/" }])
+    assert.equal(await invoke({ sender: contents, senderFrame: frame }, "join-meeting", url), false);
+  assert.equal(await invoke({ sender: {}, senderFrame: main }, "join-meeting", url), false);
+  assert.equal(await invoke({ sender: contents, senderFrame: main }, "watch-video", url), false);
+  assert.deepEqual(opened, []);
+  assert.equal(await invoke({ sender: contents, senderFrame: main }, "join-meeting", url), true);
+  current = null;
+  assert.equal(await invoke({ sender: contents, senderFrame: main }, "join-meeting", url), false);
+  assert.deepEqual(opened, [url]);
 });
 
 test("quit while lifecycle authentication is pending never constructs a window", async () => {
