@@ -28261,6 +28261,18 @@
               "title": "Text",
               "type": "string"
             }
+          },
+          {
+            "description": "Ask GitHub again instead of using the answer kept for the last minute.",
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Ask GitHub again instead of using the answer kept for the last minute.",
+              "title": "Refresh",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
