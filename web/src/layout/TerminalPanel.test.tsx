@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { connectTerminal } from "@/lib/terminal";
@@ -67,6 +67,7 @@ class Socket {
   }
 }
 afterEach(() => {
+  localStorage.clear();
   terminals.length = 0;
   Socket.instances.length = 0;
   desktopState.mockReturnValue("off");
@@ -165,6 +166,75 @@ describe("renaming tabs", () => {
     await user.keyboard("{F2}");
     await user.keyboard("{Enter}");
     expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
+  });
+
+  it("offers Rename tab and Close tab first in the options menu, with the F2 hint", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    const user = userEvent.setup();
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Terminal options" }));
+    const items = screen.getAllByRole("menuitem");
+    expect(items[0]).toHaveTextContent("Rename tab");
+    expect(items[0]).toHaveTextContent("F2");
+    expect(items[1]).toHaveTextContent("Close tab");
+    await user.click(items[0] as HTMLElement);
+    expect(screen.queryByRole("menu")).toBeNull();
+    const field = screen.getByRole("textbox", { name: "Tab name" });
+    expect(field).toHaveFocus();
+    await user.type(field, "{Control>}a{/Control}deploy{Enter}");
+    expect(screen.getByRole("tab", { name: "deploy" })).toBeInTheDocument();
+  });
+
+  it("closes the shown tab from the options menu", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    const user = userEvent.setup();
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "New terminal tab" }));
+    await user.click(screen.getByRole("button", { name: "Terminal options" }));
+    await user.click(screen.getByRole("menuitem", { name: /Close tab/ }));
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+    expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
+  });
+
+  it("remembers names across reloads, per tab, and an emptied name is forgotten", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    const user = userEvent.setup();
+    const first = render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Rename Terminal" }));
+    await user.type(screen.getByRole("textbox", { name: "Tab name" }), "{Control>}a{/Control}logs{Enter}");
+    first.unmount();
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    expect(screen.getByRole("tab", { name: "logs" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Rename logs" }));
+    await user.clear(screen.getByRole("textbox", { name: "Tab name" }));
+    await user.keyboard("{Enter}");
+    expect(JSON.parse(localStorage.getItem("hz.terminal.names") ?? "{}")).toEqual({});
+  });
+
+  it("ignores a damaged stored name list", () => {
+    vi.stubGlobal("WebSocket", Socket);
+    localStorage.setItem("hz.terminal.names", '{"1": 5, "2": ""}');
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
+  });
+
+  it("renames on a long press with touch, not on a short tap or with a mouse", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", Socket);
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    const tab = screen.getByRole("tab", { name: "Terminal" });
+    fireEvent.pointerDown(tab, { pointerType: "touch" });
+    act(() => void vi.advanceTimersByTime(300));
+    fireEvent.pointerUp(tab, { pointerType: "touch" });
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(screen.queryByRole("textbox")).toBeNull();
+    fireEvent.pointerDown(tab, { pointerType: "mouse" });
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(screen.queryByRole("textbox")).toBeNull();
+    fireEvent.pointerDown(tab, { pointerType: "touch" });
+    act(() => void vi.advanceTimersByTime(600));
+    expect(screen.getByRole("textbox", { name: "Tab name" })).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it("names each tab on its own", async () => {

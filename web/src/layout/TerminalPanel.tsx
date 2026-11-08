@@ -28,6 +28,32 @@ function loadOptions(): Options {
   }
 }
 
+const NAMES = "hz.terminal.names";
+
+/** The names the person gave tabs, by tab number, remembered in this browser profile. */
+function loadNames(): Record<number, string> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(NAMES) ?? "{}");
+    if (typeof raw !== "object" || raw === null) return {};
+    return Object.fromEntries(
+      Object.entries(raw).filter(([, name]) => typeof name === "string" && name.length > 0 && name.length <= 40),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveName(id: number, name: string | undefined) {
+  try {
+    const names = loadNames();
+    if (name) names[id] = name;
+    else delete names[id];
+    localStorage.setItem(NAMES, JSON.stringify(names));
+  } catch {
+    // Not remembered.
+  }
+}
+
 type Tab = { id: number; title: string; custom?: string; agentTitle?: string; notice?: string; status?: string };
 /** The name a tab shows: the one the person gave it, else what the running program says, else the numbered default. */
 const tabName = (tab: Tab) => tab.custom || tab.agentTitle || tab.title;
@@ -51,10 +77,11 @@ function useTouchPrimary(): boolean {
 type Props = { onClose: () => void; full: boolean; onToggleFull: () => void; onActivate?: () => void };
 
 export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props) {
-  const [tabs, setTabs] = useState<Tab[]>([{ id: 1, title: t("terminal.title") }]);
+  const [tabs, setTabs] = useState<Tab[]>(() => [{ id: 1, title: t("terminal.title"), custom: loadNames()[1] }]);
   const [active, setActive] = useState(1);
   const [options, setOptions] = useState<Options>(loadOptions);
   const [renaming, setRenaming] = useState<number | null>(null);
+  const press = useRef(0);
   const nextId = useRef(2);
   const panelRef = useRef<HTMLElement>(null);
   const change = (patch: Partial<Options>) =>
@@ -69,8 +96,13 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
     });
   const add = () => {
     const id = nextId.current++;
-    setTabs((current) => [...current, { id, title: `${t("terminal.title")} ${id}` }]);
+    setTabs((current) => [...current, { id, title: `${t("terminal.title")} ${id}`, custom: loadNames()[id] }]);
     setActive(id);
+  };
+  const rename = (id: number, name: string) => {
+    const custom = name.trim().slice(0, 40) || undefined;
+    saveName(id, custom);
+    updateTab(id, { custom });
   };
   const updateTab = (id: number, patch: Partial<Tab>) =>
     setTabs((current) => current.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)));
@@ -117,8 +149,7 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
                   }}
                   onBlur={(event) => {
                     // Empty brings back the automatic name; Escape has already closed the field without saving.
-                    if (!event.currentTarget.dataset.cancelled)
-                      updateTab(tab.id, { custom: event.currentTarget.value.trim() || undefined });
+                    if (!event.currentTarget.dataset.cancelled) rename(tab.id, event.currentTarget.value);
                     setRenaming(null);
                   }}
                   className="mx-1 my-0.5 w-32 rounded-md border border-border bg-background px-2 py-0.5 text-sm"
@@ -133,8 +164,17 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
                     updateTab(tab.id, { notice: undefined });
                   }}
                   onDoubleClick={() => setRenaming(tab.id)}
+                  // A long press renames on a touch screen, where a double tap zooms or does nothing.
+                  onPointerDown={(event) => {
+                    if (event.pointerType === "mouse") return;
+                    window.clearTimeout(press.current);
+                    press.current = window.setTimeout(() => setRenaming(tab.id), 600);
+                  }}
+                  onPointerUp={() => window.clearTimeout(press.current)}
+                  onPointerLeave={() => window.clearTimeout(press.current)}
+                  onPointerCancel={() => window.clearTimeout(press.current)}
                   onKeyDown={(event) => event.key === "F2" && setRenaming(tab.id)}
-                  className="px-3.5 py-1"
+                  className="px-3.5 py-1 select-none [-webkit-touch-callout:none]"
                 >
                   {tabName(tab)}
                   {tab.status && <span className="ml-2 text-xs text-muted-foreground">{tab.status}</span>}
@@ -182,7 +222,12 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
           <Plus aria-hidden />
         </Button>
         <div className="ml-auto flex items-center text-muted-foreground">
-          <OptionsMenu options={options} onChange={change} />
+          <OptionsMenu
+            options={options}
+            onChange={change}
+            onRename={() => setRenaming(active)}
+            onCloseTab={() => close(active)}
+          />
           <Button
             variant="ghost"
             size="icon"
@@ -570,7 +615,17 @@ const SCROLLBACK = [1_000, 10_000, 100_000];
 const CURSORS: CursorStyle[] = ["block", "bar", "underline"];
 
 /** Cursor style, blink, copy on select and scrollback, remembered in this browser. */
-function OptionsMenu({ options, onChange }: { options: Options; onChange: (patch: Partial<Options>) => void }) {
+function OptionsMenu({
+  options,
+  onChange,
+  onRename,
+  onCloseTab,
+}: {
+  options: Options;
+  onChange: (patch: Partial<Options>) => void;
+  onRename: () => void;
+  onCloseTab: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [sub, setSub] = useState<"cursor" | "scrollback" | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -608,6 +663,29 @@ function OptionsMenu({ options, onChange }: { options: Options; onChange: (patch
       </Button>
       {open && (
         <AnchoredPopover anchor={ref} role="menu" className="w-60">
+          <button
+            type="button"
+            role="menuitem"
+            className={row}
+            onClick={() => {
+              setOpen(false);
+              onRename();
+            }}
+          >
+            {t("terminal.rename")}
+            <kbd className="ml-auto font-sans text-xs text-muted-foreground">F2</kbd>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={row}
+            onClick={() => {
+              setOpen(false);
+              onCloseTab();
+            }}
+          >
+            {t("terminal.closeTabItem")}
+          </button>
           <button
             type="button"
             role="menuitem"

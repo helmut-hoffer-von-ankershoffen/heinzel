@@ -850,6 +850,7 @@ const en = {
   "terminal.newTab": "New terminal tab",
   "terminal.closeTab": "Close {title}",
   "terminal.rename": "Rename tab",
+  "terminal.closeTabItem": "Close tab",
   "terminal.renameTab": "Rename {title}",
   "terminal.renameField": "Tab name",
   "terminal.full": "Full screen",
