@@ -19,6 +19,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -83,12 +84,39 @@ def required_in(preview: dict) -> list[str]:
     return sorted(n["distribution"] for n in preview.get("needs", []) if n.get("required"))
 
 
+ARGUMENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/=+-]*")
+"""What an argument to hz may look like here: the script's own subcommands, flags and values, nothing a shell reads."""
+
+
+def executable(path: str) -> str:
+    """The `hz` executable to test: an existing, executable file named `hz`, as an absolute path.
+
+    Raises:
+        SetupError: when `path` is anything else.
+    """
+    try:
+        found = Path(path).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        message = "no hz at that path"
+        raise SetupError(message, path) from exc
+    if found.name != "hz" or not found.is_file() or not os.access(found, os.X_OK):
+        message = "--hz must name an executable file called hz"
+        raise SetupError(message, str(found))
+    return str(found)
+
+
 def run_hz(hz: str, env: dict[str, str], *args: str) -> dict | list:
     """Run `hz <args> --json` in the isolated environment, logging one start and one outcome event.
 
     Raises:
-        SetupError: when hz exits non-zero.
+        SetupError: when hz exits non-zero, or an argument isn't one this script passes.
     """
+    if Path(hz).name != "hz" or not Path(hz).is_absolute():
+        message = "run_hz takes the checked hz executable"
+        raise SetupError(message, hz)
+    if bad := [arg for arg in args if not ARGUMENT.fullmatch(arg)]:
+        message = "refusing an argument this script never passes"
+        raise SetupError(message, repr(bad[0]))
     started = time.monotonic()
     LOG.info("acme_e2e.step.start", extra={"step": " ".join(args[:3])})
     command = [hz, *args, "--json"]
@@ -133,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     home = Path(tempfile.mkdtemp(prefix="hz-acme-e2e-"))
     try:
-        prove(args.hz, isolated_env(home))
+        prove(executable(args.hz), isolated_env(home))
     except SetupError as error:
         print(f"FAIL: {error}", file=sys.stderr)
         return 1

@@ -45,3 +45,18 @@ def test_missing_names_what_acme_did_not_bring(script):
     ]
     assert script.missing(listing) == ["heinzel-atlassian"]
     assert script.missing({"plugins": [*listing, {"distribution": "heinzel-atlassian", "version": "0.4.0"}]}) == []
+
+
+def test_only_an_executable_named_hz_is_run(script, tmp_path):
+    hz = tmp_path / "hz"
+    hz.write_text("#!/bin/sh\n")
+    hz.chmod(0o755)
+    assert script.executable(str(hz)) == str(hz.resolve())
+    other = tmp_path / "sh"
+    other.write_text("#!/bin/sh\n")
+    other.chmod(0o755)
+    for path in (str(other), str(tmp_path / "missing" / "hz")):
+        with pytest.raises(script.SetupError):
+            script.executable(path)
+    with pytest.raises(script.SetupError, match="never passes"):
+        script.run_hz(str(hz.resolve()), {}, "system", "; rm -rf /")
