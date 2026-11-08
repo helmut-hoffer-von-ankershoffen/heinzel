@@ -56,4 +56,4 @@ def test_registered_renderers_keep_runtime_annotations_and_forward_unchanged(mak
             assert renderer(value) is returned
         assert seen == [value]
         checked.add(renderer)
-    assert len(checked) == 45
+    assert len(checked) == 46

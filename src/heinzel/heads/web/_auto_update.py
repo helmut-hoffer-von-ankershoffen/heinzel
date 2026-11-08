@@ -48,6 +48,7 @@ from heinzel.kernel import (
     ReleaseSource,
     Settings,
 )
+from heinzel.kernel._logging import log_event
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,8 @@ STEP_SECONDS = 1.0
 FILENAME = "auto-update.json"
 
 UPDATE_MODULE, UPDATE_OPERATION, RECOVER_OPERATION = "system", "apply-announced", "recover-announced"
+REPAIR_OPERATION = ("system.plugin", "repair")
+"""Installs the plugins an installed plugin requires but lacks; the updater asks it when nothing else is due."""
 
 type Phase = Literal["off", "idle", "waiting", "countdown", "applying"]
 
@@ -782,6 +785,33 @@ class AutoUpdater:
             self.apply()
         elif checking and not waiting and not self.plan.core and not self.plan.plugins:
             self._refresh_desktop()
+            self._repair_plugins()
+
+    def _repair_plugins(self) -> None:
+        """Install the plugins installed plugins require but lack (`system.plugin.repair`), then restart to load them.
+
+        Each missing plugin is tried once per version of the plugin that requires it; a failure leaves a notice that
+        disappears once the plugin is there. Nothing is signed in: System health names each sign-in step.
+        """
+        found = next(
+            (op for record, op in self._kernel.lets(OperationLet) if (record.qualname, op.name) == REPAIR_OPERATION),
+            None,
+        )
+        if found is None or not self._kernel.available(found.func):
+            return
+        try:
+            with self._kernel.resolve(CurrentUser).local("daemon"):
+                result = self._kernel.invoke(found, automatic=True)
+        except HeinzelError as exc:  # another change is running: the next check asks again
+            log_event(log, "update.auto.repair", outcome="skipped", reason=str(exc))
+            return
+        if getattr(result, "needs", None):
+            log_event(log, "update.auto.repair", outcome="ok", detail=getattr(result, "message", ""))
+        if getattr(result, "restart_required", False) and self._restart is not None:
+            try:
+                self._restart()
+            except Exception as exc:  # noqa: BLE001 - the plugins are installed; the next start loads them
+                log_event(log, "update.auto.repair_restart", level=logging.WARNING, outcome="error", error=str(exc))
 
     def _refresh_desktop(self) -> None:
         """Bring an already installed desktop shell up to this running stable Core."""

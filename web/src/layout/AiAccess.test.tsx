@@ -20,6 +20,8 @@ function option(name: string, fields: Partial<SchemaAccessOption> = {}): SchemaA
     runner: null,
     hosts: [],
     last_test: null,
+    needs: "",
+    setup: null,
     ...fields,
   };
 }
@@ -32,8 +34,18 @@ function listing(selected: string): SchemaAccessList {
       option("gateway", { in_use: selected === "gateway", status: "not tested" }),
       option("pydantic-ai", {
         title: "Model API",
-        status: "not installed",
+        status: "needs setup",
+        needs: "Add a model and API key",
+        setup: "model",
+        detail: "no model is configured",
         fix: "hz system config set ai.access.model",
+      }),
+      option("chatgpt", {
+        title: "ChatGPT plan",
+        status: "needs setup",
+        needs: "Add the OpenAI client",
+        setup: "client",
+        fix: "uv tool install --reinstall 'heinzel[openai]'",
       }),
     ],
     uses: [],
@@ -54,6 +66,7 @@ function accessApi() {
       selected = "gateway";
       return listing(selected);
     },
+    "/api/system/config/set": "config.toml",
     "/api/ai/access/test": {
       name: "gateway",
       ok: true,
@@ -76,7 +89,9 @@ describe("AI access", () => {
     expect(claude).toHaveAttribute("aria-checked", "true");
     expect(claude).toHaveTextContent("In use");
     expect(within(group).getByRole("radio", { name: /Model API/ })).toBeDisabled();
-    expect(within(group).getByText("hz system config set ai.access.model")).toBeInTheDocument();
+    expect(within(group).getByRole("radio", { name: /Model API/ })).toHaveTextContent(
+      "Needs setup: Add a model and API key",
+    );
     await user.click(within(group).getByRole("radio", { name: /Acme AI/ }));
     await waitFor(() =>
       expect(within(group).getByRole("radio", { name: /Acme AI/ })).toHaveAttribute("aria-checked", "true"),
@@ -96,5 +111,36 @@ describe("AI access", () => {
     expect(await screen.findByText("Answered: pong")).toBeInTheDocument();
     const test = calls.find((call) => call.url.includes("/ai/access/test"));
     expect(new URL(test?.url ?? "").searchParams.get("name")).toBe("gateway");
+  });
+
+  it("never shows a command outside a card's Details, nor asks for a restart", async () => {
+    accessApi();
+    const { container } = renderAt("/doctor?settings=ai");
+    await screen.findByRole("radio", { name: /Model API/ });
+    const commands = /\bhz (system|ai|ui) |uv tool|restart/;
+    for (const card of container.querySelectorAll("[data-option]")) {
+      const outside = card.cloneNode(true) as HTMLElement;
+      for (const details of outside.querySelectorAll("details")) details.remove();
+      expect(outside.textContent ?? "").not.toMatch(commands);
+    }
+    const model = container.querySelector('[data-option="pydantic-ai"] details');
+    expect(model?.textContent).toContain("hz system config set ai.access.model");
+    expect(container.textContent).not.toMatch(/restart `?hz ui serve/);
+  });
+
+  it("sets the Model API up in a dialog, then tests it there with the result inline", async () => {
+    const { calls } = accessApi();
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Set up Model API" }));
+    const dialog = await screen.findByRole("dialog", { name: "Set up Model API" });
+    await user.type(within(dialog).getByLabelText("Model"), "anthropic:claude-sonnet-4-5");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByText("Saved. Test it to see it answer.")).toBeInTheDocument();
+    const set = calls.find((call) => call.url.includes("/system/config/set"));
+    expect(new URL(set?.url ?? "").searchParams.get("key")).toBe("ai.access.model");
+    expect(new URL(set?.url ?? "").searchParams.get("value")).toBe("anthropic:claude-sonnet-4-5");
+    await user.click(within(dialog).getByRole("button", { name: "Test" }));
+    expect(await within(dialog).findByText("Answered: pong")).toBeInTheDocument();
   });
 });

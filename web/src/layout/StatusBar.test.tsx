@@ -354,8 +354,9 @@ describe("Footer items are icons with a state and a pane", () => {
     expect(within(summary).getByText("In Standup")).toBeInTheDocument();
     expect(within(summary).getAllByText(/\d+ min left/)[0]).toBeInTheDocument();
     expect(within(summary).getByText(/Next: Review/)).toBeInTheDocument();
+    // Read-only: the write actions are not drawn at all, only the way to allow them.
     for (const name of [/^Decline/, /^Extend/, /^Tell the next meeting/])
-      expect(within(summary).getByRole("button", { name })).toBeDisabled();
+      expect(within(summary).queryByRole("button", { name })).not.toBeInTheDocument();
     expect(within(summary).getByRole("link", { name: "Allow your Heinzels to change your calendar" })).toHaveAttribute(
       "href",
       expect.stringContaining("settings=connectors"),
@@ -365,6 +366,27 @@ describe("Footer items are icons with a state and a pane", () => {
     expect(await within(panel).findByText("Review")).toBeInTheDocument();
     // The pane that opened the panel closes, so its bottom row never covers the panel's own.
     expect(screen.queryByRole("region", { name: "Calendar summary" })).not.toBeInTheDocument();
+  });
+
+  it("shows Decline, Extend and running late instead of Allow once the calendar is writable", async () => {
+    const now = Date.now();
+    const current = {
+      title: "Standup",
+      start: new Date(now - 60_000).toISOString(),
+      end: new Date(now + 300_000).toISOString(),
+    };
+    mockApi({
+      ...states,
+      "/api/org/agenda": { current, next: null, problem: null, writable: true },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const footer = await screen.findByRole("contentinfo");
+    await user.hover(await within(footer).findByRole("button", { name: /^Calendar: In Standup/ }));
+    const summary = await screen.findByRole("region", { name: "Calendar summary" });
+    for (const name of [/^Decline/, /^Extend/, /^Tell the next meeting/])
+      expect(within(summary).getByRole("button", { name })).toBeEnabled();
+    expect(within(summary).queryByRole("link", { name: /Allow your Heinzels/ })).not.toBeInTheDocument();
   });
 
   it("only renders safe conference links in the calendar", async () => {

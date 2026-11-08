@@ -12,6 +12,7 @@ import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { OperationDialog } from "@/components/OperationDialog";
 import { t } from "@/i18n";
 import { OPEN_CHAT } from "@/lib/chatIntent";
+import { clampSidebar, readSidebarWidth, sidebarMax, writeSidebarWidth } from "@/lib/sidebarWidth";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import { useWidth } from "@/lib/useWidth";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ import { NotificationPanel } from "./NotificationCenter";
 import { SearchPalette } from "./SearchPalette";
 import { SettingsDialog } from "./SettingsDialog";
 import { Sidebar } from "./Sidebar";
+import { SidebarResizer } from "./SidebarResizer";
 import { StatusBar } from "./StatusBar";
 import { TerminalPanel } from "./TerminalPanel";
 import { ThemeTokens } from "./ThemeTokens";
@@ -74,6 +76,9 @@ const MAIN_REM = 30;
 export function fitsBeside(areaPx: number, remPx: number): boolean {
   return areaPx >= (PANEL_REM + MAIN_REM) * remPx;
 }
+
+/** No element: `useWidth` then follows the window. */
+const WINDOW = { current: null };
 
 export function Shell() {
   useVisualViewport();
@@ -169,7 +174,12 @@ function Layout() {
     };
   }, []);
   const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-  const beside = fitsBeside(useWidth(area), rem);
+  const areaWidth = useWidth(area);
+  const beside = fitsBeside(areaWidth, rem);
+  const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
+  const windowWidth = useWidth(WINDOW);
+  const sidebarLimit = sidebarMax(windowWidth, areaWidth);
+  const sidebarShown = clampSidebar(sidebarWidth, windowWidth, areaWidth);
   const besideHeader = useRef<HTMLDivElement>(null);
   const belowHeader = useRef<HTMLDivElement>(null);
   const [headerHost] = useState(() => document.createElement("div"));
@@ -485,21 +495,35 @@ function Layout() {
             // One selected workspace panel; the same mounted contents move between desktop and phone layouts.
             <div
               ref={workspace}
-              style={pageHold !== null && selectedPanel === "page" ? { minHeight: pageHold } : undefined}
               data-placement={beside ? "beside" : "below"}
               data-active={selectedPanel}
+              style={{
+                ...(pageHold !== null && selectedPanel === "page" ? { minHeight: pageHold } : undefined),
+                ...(beside && !full ? { width: sidebarShown } : undefined),
+              }}
               className={cn(
                 "workspace-panel flex flex-col bg-background",
                 flowingWorkspace && panelViews.some((view) => view.id === selectedPanel) ? "min-h-full" : "min-h-0",
                 full
                   ? "absolute inset-0"
                   : beside
-                    ? "w-96 shrink-0 border-l border-border"
+                    ? "relative shrink-0 border-l border-border"
                     : selectedPanel === "page" || flowingWorkspace
                       ? "shrink-0 border-t border-border"
                       : "absolute inset-x-0 top-12 bottom-0 border-t border-border",
               )}
             >
+              {beside && !full && (
+                <SidebarResizer
+                  width={sidebarShown}
+                  max={sidebarLimit}
+                  onChange={(next, final) => {
+                    const clamped = clampSidebar(next, window.innerWidth, areaWidth);
+                    setSidebarWidth(clamped);
+                    if (final) writeSidebarWidth(clamped);
+                  }}
+                />
+              )}
               <WorkspacePanels
                 flowing={flowingWorkspace}
                 active={selectedPanel}

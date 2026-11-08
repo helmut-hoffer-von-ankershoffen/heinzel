@@ -144,6 +144,7 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
         active,
         upcoming,
         onOpen,
+        writable: agenda.data?.writable === true,
         full: !agenda.isPending && !agenda.isError && !agenda.data?.problem,
       })}
       popoverClassName="w-[min(24rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
