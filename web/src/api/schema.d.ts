@@ -4117,6 +4117,12 @@ export interface paths {
          *     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
          *     version, the error names it and the previous version stays installed.
          *
+         *     Why it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)
+         *     install only accepted releases, ones old enough (`auto_update_min_age_hours` for hz,
+         *     `auto_update_plugin_min_age_hours` for plugins) that a broken one could be withdrawn first; this command installs
+         *     the newest release now, accepted or not. The desktop app is not part of the tool: it updates itself at the web
+         *     server's next automatic update check, or now with `hz app install`. The output says which applies.
+         *
          *     Raises:
          *         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
          */
@@ -4842,6 +4848,27 @@ export interface components {
              * @enum {string}
              */
             state: "retained" | "expired";
+        };
+        /**
+         * AutomaticUpdates
+         * @description The automatic-updates setting, as an update run by hand reports it.
+         */
+        AutomaticUpdates: {
+            /**
+             * Core Min Age Hours
+             * @description How old a release of hz must be before it is accepted.
+             */
+            core_min_age_hours: number;
+            /**
+             * Enabled
+             * @description The setting `auto_update`: whether hz updates itself and its plugins.
+             */
+            enabled: boolean;
+            /**
+             * Plugin Min Age Hours
+             * @description How old a plugin's release must be before it is accepted.
+             */
+            plugin_min_age_hours: number;
         };
         /**
          * AvailablePlugin
@@ -15116,6 +15143,8 @@ export interface components {
              * @description Heinzelmännchen version installed now; the same as `before` if nothing changed.
              */
             after: string;
+            /** @description Whether automatic updates are on and what they install, so a run by hand says why it was needed. */
+            automatic?: components["schemas"]["AutomaticUpdates"] | null;
             /**
              * Before
              * @description Heinzelmännchen version installed before.
@@ -16545,6 +16574,7 @@ export type SchemaAgentResult = components['schemas']['AgentResult'];
 export type SchemaAssetTypeDoc = components['schemas']['AssetTypeDoc'];
 export type SchemaAssetView = components['schemas']['AssetView'];
 export type SchemaAttachmentRef = components['schemas']['AttachmentRef'];
+export type SchemaAutomaticUpdates = components['schemas']['AutomaticUpdates'];
 export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
 export type SchemaAvatar = components['schemas']['Avatar'];
 export type SchemaAvatarSlot = components['schemas']['AvatarSlot'];
