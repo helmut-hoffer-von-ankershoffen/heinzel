@@ -2,6 +2,7 @@
 
 import base64
 import contextlib
+import json
 import types
 
 import pytest
@@ -81,6 +82,19 @@ class World:
         monkeypatch.setattr(service, "installed", self.listed)
         monkeypatch.setattr(service, "_mutation", contextlib.nullcontext)
         monkeypatch.setattr(service, "_install_candidate", self.install)
+        self.binds: list[tuple[str, ...]] = []
+        self.bindings: list[dict[str, object]] = []
+        self.bind_fails = False
+        monkeypatch.setattr(installation, "hz", self.hz)
+
+    def hz(self, *args):
+        """The fresh `hz` the bind step runs: answers with the bindings the test set."""
+        assert args[:3] == ("system", "plugin", "bind")
+        self.binds.append(args)
+        if self.bind_fails:
+            msg = "`hz system plugin bind` failed after the change:\nboom"
+            raise HeinzelError(msg)
+        return json.dumps({"bindings": self.bindings, "message": ""})
 
     def read(self, spec):
         self.reads += 1
@@ -174,7 +188,7 @@ def test_github_metadata_carries_what_the_plugin_needs():
 
 def test_the_preview_says_up_front_what_comes_with_it_in_dependency_order(make_kernel, tmp_path, monkeypatch):
     world = acme_world(make_kernel, tmp_path, monkeypatch, {"heinzel-google": "0.9.2"})
-    preview = world.service.candidate("acme")
+    preview = world.service.candidate("acme", with_recommended=False)
     assert [(n.distribution, n.state, n.needed_by) for n in preview.needs] == [
         ("heinzel-github", "install", "heinzel-acme"),
         ("heinzel-atlassian", "install", "heinzel-acme"),
@@ -201,25 +215,26 @@ def test_the_preview_says_up_front_what_comes_with_it_in_dependency_order(make_k
 
 def test_a_confirmed_add_installs_what_it_requires_first_with_one_step_each(make_kernel, tmp_path, monkeypatch):
     world = acme_world(make_kernel, tmp_path, monkeypatch, {"heinzel-atlassian": "0.1.0"})
-    change = world.service._add_confirmed(world.service.candidate("acme"), "acme")
+    change = world.service._add_confirmed(world.service.candidate("acme", with_recommended=False), "acme")
     assert world.order == ["heinzel-github", "heinzel-atlassian", "heinzel-acme"]
     assert [(n.distribution, n.state, n.version) for n in change.needs if n.required] == [
         ("heinzel-github", "installed", "0.5.0"),
         ("heinzel-atlassian", "updated", "0.4.0"),  # 0.1.0 was too old for >=0.2
     ]
-    assert world.progress.events[:4] == [
+    assert world.progress.events[:5] == [
         ("requires:heinzel-github", "pending", None),
         ("requires:heinzel-atlassian", "pending", None),
         ("install", "pending", None),
         ("verify", "pending", None),
+        ("bind", "pending", None),
     ]
-    finished = [e[0] for e in world.progress.events[4:] if e[1] == "done"]
-    assert finished == ["requires:heinzel-github", "requires:heinzel-atlassian", "install"]
+    finished = [e[0] for e in world.progress.events[5:] if e[1] in {"done", "skipped"}]
+    assert finished == ["requires:heinzel-github", "requires:heinzel-atlassian", "install", "bind"]
 
 
 def test_an_add_again_is_idempotent_when_what_it_requires_is_there(make_kernel, tmp_path, monkeypatch):
     world = acme_world(make_kernel, tmp_path, monkeypatch, {"heinzel-github": "0.5.0", "heinzel-atlassian": "0.4.0"})
-    preview = world.service.candidate("acme")
+    preview = world.service.candidate("acme", with_recommended=False)
     assert {n.distribution: n.state for n in preview.needs if n.required} == {
         "heinzel-github": "present",
         "heinzel-atlassian": "present",
@@ -332,6 +347,14 @@ def test_the_auto_updater_repairs_when_nothing_else_is_due_and_restarts_to_load(
 FIELDS = ("event", "phase", "operation", "step", "plugin", "version", "dependency_of", "outcome", "state", "error")
 
 
+def _plain(renderable):
+    from rich.console import Console
+
+    console = Console(width=200, record=True, color_system=None)
+    console.print(renderable)
+    return console.export_text()
+
+
 def events(caplog, name):
     return [
         {k: getattr(r, k, None) for k in FIELDS} | {"timed": isinstance(getattr(r, "duration_ms", None), int)}
@@ -371,3 +394,115 @@ def test_a_failed_required_plugin_logs_its_outcome_and_error(make_kernel, tmp_pa
     ]
     [run] = [r for r in caplog.records if getattr(r, "event", None) == "plugin.repair.run" and r.phase == "end"]
     assert (run.outcome, run.failed) == ("error", ["heinzel-github", "heinzel-atlassian"])
+
+
+def test_recommended_plugins_come_with_the_add_by_default_and_one_the_catalog_lacks_is_offered(
+    make_kernel, tmp_path, monkeypatch
+):
+    world = acme_world(make_kernel, tmp_path, monkeypatch)
+    preview = world.service.candidate("acme")
+    assert [(n.distribution, n.state, n.required) for n in preview.needs] == [
+        ("heinzel-github", "install", True),
+        ("heinzel-atlassian", "install", True),
+        ("heinzel-google", "install", False),
+        ("heinzel-zoom", "offered", False),  # not in the catalog
+    ]
+    assert "It recommends heinzel-google; installing it too." in preview.also
+    change = world.service._add_confirmed(preview, "acme")
+    assert world.order == ["heinzel-github", "heinzel-atlassian", "heinzel-google", "heinzel-acme"]
+    assert {n.distribution: n.state for n in change.needs}["heinzel-google"] == "installed"
+    assert ("recommends:heinzel-google", "done", None) in world.progress.events
+
+
+def test_without_recommended_they_are_only_offered(make_kernel, tmp_path, monkeypatch):
+    world = acme_world(make_kernel, tmp_path, monkeypatch)
+    preview = world.service.candidate("acme", with_recommended=False)
+    assert {n.distribution: n.state for n in preview.needs if not n.required} == {
+        "heinzel-google": "offered",
+        "heinzel-zoom": "offered",
+    }
+
+
+def test_a_recommended_plugin_that_fails_is_said_and_the_add_goes_on(make_kernel, tmp_path, monkeypatch):
+    world = acme_world(make_kernel, tmp_path, monkeypatch)
+    world.fail = {"heinzel-google"}
+    change = world.service._add_confirmed(world.service.candidate("acme"), "acme")
+    assert world.order == ["heinzel-github", "heinzel-atlassian", "heinzel-acme"]
+    google = next(n for n in change.needs if n.distribution == "heinzel-google")
+    assert (google.state, google.detail) == ("failed", "uv failed")
+
+
+BINDINGS = [
+    {"capability": "code-host", "adapter": "github", "state": "written", "reason": "", "by": "acme"},
+    {"capability": "tracker", "adapter": "atlassian", "state": "kept", "reason": "yours: github", "by": "acme"},
+]
+
+
+def test_the_add_sets_the_recommended_bindings_in_a_fresh_hz_for_what_it_installed(make_kernel, tmp_path, monkeypatch):
+    world = acme_world(make_kernel, tmp_path, monkeypatch)
+    world.bindings = BINDINGS
+    change = world.service._add_confirmed(world.service.candidate("acme"), "acme", operation_id="op-7")
+    [args] = world.binds
+    plugins = [args[i + 1] for i, a in enumerate(args) if a == "--plugin"]
+    assert plugins == ["heinzel-acme", "heinzel-github", "heinzel-atlassian", "heinzel-google"]
+    assert args[-2:] == ("--operation-id", "op-7")
+    assert "--decline" not in args
+    assert [(b.capability, b.state) for b in change.bindings] == [("code-host", "written"), ("tracker", "kept")]
+    assert ("bind", "done", "code-host → github; kept tracker (yours)") in world.progress.events
+    text = _plain(render_change(change))
+    assert "code-host → github, as acme recommends" in text
+    assert "Undo with: hz system plugin unbind acme" in text
+
+
+def test_no_bind_writes_nothing_and_remembers_it(make_kernel, tmp_path, monkeypatch):
+    world = acme_world(make_kernel, tmp_path, monkeypatch)
+    world.service._add_confirmed(world.service.candidate("acme"), "acme", bind=False)
+    [args] = world.binds
+    assert "--decline" in args
+    assert ("bind", "skipped", "Not asked to: no binding set") in world.progress.events
+
+
+def test_a_bind_that_cannot_run_is_a_warning_and_a_next_step_not_a_failed_install(
+    make_kernel, tmp_path, monkeypatch, caplog
+):
+    caplog.set_level("INFO", logger="heinzel.plugin")
+    world = acme_world(make_kernel, tmp_path, monkeypatch)
+    world.bind_fails = True
+    change = world.service._add_confirmed(world.service.candidate("acme"), "acme")
+    assert change.done
+    assert change.bindings == []
+    assert change.next[-1] == "hz system plugin bind --plugin heinzel-acme"
+    assert any(e[0] == "bind" and e[1] == "warn" for e in world.progress.events)
+    [end] = [e for e in events(caplog, "plugin.add.bind") if e["phase"] == "end"]
+    assert end["outcome"] == "error"
+    assert "failed after the change" in end["error"]
+
+
+def test_bind_success_logs_its_fields(make_kernel, tmp_path, monkeypatch, caplog):
+    caplog.set_level("INFO", logger="heinzel.plugin")
+    world = acme_world(make_kernel, tmp_path, monkeypatch)
+    world.bindings = BINDINGS
+    world.service._add_confirmed(world.service.candidate("acme"), "acme")
+    [end] = [r for r in caplog.records if getattr(r, "event", None) == "plugin.add.bind" and r.phase == "end"]
+    assert (end.outcome, end.written, end.kept, end.step) == ("ok", ["code-host"], ["tracker"], "bind")
+    assert isinstance(end.duration_ms, int)
+
+
+def test_repair_sets_bindings_of_playbooks_installed_before_once_per_version(make_kernel, tmp_path, monkeypatch):
+    from heinzel import Module
+
+    world = acme_world(make_kernel, tmp_path, monkeypatch, {"heinzel-acme": "0.3.0", "heinzel-github": "0.5.0"})
+    company = Module("acme", "A company.")
+    company.playbook("Tools.", defaults={"capabilities.code_host": "github"}, setup=False)
+    kernel = make_kernel(acme=company)
+    kernel.bind(Progress, world.progress)
+    world.service._kernel = kernel
+    monkeypatch.setattr(world.service, "_read_candidate", world.read)
+    world.installed["heinzel-atlassian"] = "0.4.0"
+    world.bindings = BINDINGS
+    repair = world.service.repair(automatic=True)
+    assert [(b.capability, b.state) for b in repair.bindings] == [("code-host", "written")]
+    assert "Set code-host → github." in repair.message
+    assert "--once" in world.binds[0]
+    world.service.repair(automatic=True)
+    assert len(world.binds) == 1  # the updater asks once per version

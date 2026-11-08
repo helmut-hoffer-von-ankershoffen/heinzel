@@ -211,9 +211,10 @@ def test_a_template_with_only_warnings_is_written(make, tmp_path):
 def test_setup_asks_for_each_setting_and_writes_only_what_is_accepted(make, tmp_path):
     service = make()
     editor = Editor()
-    prompter = ScriptedPrompter(["y", "n", "1", "21", "", "Bad Name", "team-report"])
+    prompter = ScriptedPrompter(["y", "1", "21", "", "Bad Name", "team-report"])
     service.setup(the_playbook(service), prompter, editor)
-    assert editor.written == {"capabilities.documents": "docs"}
+    # documents is bound to docs already, as it recommends (an install sets it, ADR 0144): not asked again.
+    assert editor.written == {"teamwork.region": "eu"}
     text = (tmp_path / "team-report.prose.md").read_text()
     assert 'args: {ref: "doc-1"}' in text
     assert "{{asset:team-tracker}}" in text  # "fill it in later" was chosen
@@ -221,15 +222,16 @@ def test_setup_asks_for_each_setting_and_writes_only_what_is_accepted(make, tmp_
     assert "couldn't run" in said
     assert "count from the next command" in said
     assert "Wrote" in said
+    assert "Already set as teamwork recommends: documents → docs." in said
 
 
 def test_setup_reports_a_refused_setting_and_goes_on(make, tmp_path):
     service = make()
-    prompter = ScriptedPrompter(["y", "y", "2", "21", "n"])
-    editor = Editor(refuse="capabilities.documents")
+    prompter = ScriptedPrompter(["y", "2", "21", "n"])
+    editor = Editor(refuse="teamwork.region")
     service.setup(the_playbook(service), prompter, editor)
-    assert editor.written == {"teamwork.region": "eu"}
-    assert "Not saved: capabilities.documents: no such adapter" in "\n".join(prompter.transcript)
+    assert editor.written == {}
+    assert "Not saved: teamwork.region: no such adapter" in "\n".join(prompter.transcript)
     assert list(tmp_path.glob("*.prose.md")) == []
 
 

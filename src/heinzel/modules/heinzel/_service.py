@@ -1120,6 +1120,22 @@ class HeinzelService:
         more specific layer recommends too is offered with that layer's playbook instead, and one an org and your site
         disagree on is offered by neither until your team decides; each is said, so nothing is left out silently.
         """
+        offered = self._layer_offered(qualname, playbook, prompter)
+        # A binding already set to what it recommends (installing the plugin set it, ADR 0144) isn't asked again.
+        view = self._kernel.resolve(CapabilityView)
+        already: list[str] = []
+        for key, value in list(offered.items()):
+            section, _, rest = key.partition(".")
+            capability = rest.replace("_", "-")
+            served = view.binding(capability) == (str(value), "configured")
+            if section == "capabilities" and served and str(value) in view.installed(capability):
+                already.append(f"{capability} → {value}")
+                del offered[key]
+        if already:
+            prompter.say(f"Already set as {playbook.name} recommends: {', '.join(already)}.")
+        return offered
+
+    def _layer_offered(self, qualname: str, playbook: PlaybookLet, prompter: Prompter) -> dict[str, object]:
         stack = self._kernel.layer_stack()
         layer = next((found for found in stack.layers if found.module == qualname), None)
         if layer is None:

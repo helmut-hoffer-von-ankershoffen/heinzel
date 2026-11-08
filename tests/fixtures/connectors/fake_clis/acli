@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""A fake `acli` for isolated end-to-end runs: `jira auth login` writes a state file; nothing networked."""
+
+import sys
+from pathlib import Path
+
+STATE = Path.home() / ".fake-acli" / "login"
+
+
+def main(args: list[str]) -> int:
+    """Answer the few commands an isolated run uses; anything else fails, so a test never trusts an unfaked one."""
+    if args[:1] == ["--version"]:
+        sys.stdout.write("acli version 1.3.39-stable" + "\n")
+        return 0
+    if args[1:3] == ["auth", "login"]:
+        STATE.parent.mkdir(parents=True, exist_ok=True)
+        STATE.write_text(args[0] + "\n", encoding="utf-8")
+        sys.stdout.write(f"Logged in to {args[0]} (fake)" + "\n")
+        return 0
+    if args[1:3] == ["auth", "status"]:
+        return 0 if STATE.is_file() else 1
+    sys.stderr.write(f"fake acli: {' '.join(args)} is not faked" + "\n")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

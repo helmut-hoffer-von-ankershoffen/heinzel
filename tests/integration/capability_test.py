@@ -204,9 +204,17 @@ def test_doctor_reports_unmet_requirements_and_unknown_bindings(make_kernel):
     checks = {check["name"]: check for check in report["checks"]["system.capability"]}
     assert checks["tracker:read for announcer"]["status"] == "degraded"
     assert checks["tracker:read for announcer"]["detail"] == "tracker:read: no adapter bound"
-    assert checks["tracker:read for announcer"]["fix"] == (
-        "Find a plugin that provides tracker: hz system plugin search --text tracker"
-    )
+    # By cause, with the one action as data: the command is the action's, for a terminal only (ADR 0144).
+    assert checks["tracker:read for announcer"]["fix"] == "Install a connector that serves tracker"
+    assert checks["tracker:read for announcer"]["cause"] == "No connector serves tracker"
+    assert checks["tracker:read for announcer"]["action"] == {
+        "kind": "install",
+        "capability": "tracker",
+        "adapter": None,
+        "connector": None,
+        "command": "hz system plugin search --text tracker",
+    }
+    assert checks["binding code-host"]["cause"] == "nowhere isn't installed"
     assert (
         checks["binding code-host"]["detail"] == "code-host is bound to 'nowhere', which no installed module provides"
     )
@@ -271,7 +279,9 @@ def test_an_optional_need_with_a_broken_binding_is_a_doctor_finding(make_kernel)
     [check] = [c for c in report["checks"]["system.capability"] if c["name"] == "calendar:read for org agenda"]
     assert check["status"] == "degraded"
     assert "ambiguous" in check["detail"]
-    assert check["fix"].startswith("Bind an installed adapter")
+    assert check["fix"] == "Choose which connector serves calendar (g)"
+    assert check["action"]["kind"] == "bind"
+    assert check["action"]["command"] == "hz system config set capabilities.calendar g"
     _, agenda = hz(kernel, "org", "agenda")
     assert agenda["calendar"] == "g"
     assert agenda["problem"].startswith("Your calendar binding 'g' can't be used: the adapter name 'g' is ambiguous")

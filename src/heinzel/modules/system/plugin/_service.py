@@ -16,7 +16,7 @@ import tempfile
 import threading
 import tomllib
 import urllib.error
-from collections.abc import Collection, Generator, Mapping, Sequence
+from collections.abc import Callable, Collection, Generator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from http import HTTPStatus
@@ -48,12 +48,13 @@ from heinzel.kernel import (
     ThemeLet,
     subprocess_environment,
 )
-from heinzel.kernel._logging import get_logger, step
+from heinzel.kernel._logging import get_logger, log_event, step
 from heinzel.modules.system._github import GITHUB_API
 from heinzel.modules.system._phases import Phases
 from heinzel.modules.system.plugin._models import (
     Action,
     AvailablePlugin,
+    PluginBinding,
     PluginCandidate,
     PluginChange,
     PluginEvent,
@@ -105,6 +106,9 @@ PAGE_SIZE = 100
 MAX_CATALOG_BYTES = 512 * 1024
 CATALOG_ROW_FIELDS = 3
 TIMEOUT = 10
+BIND_LABEL = "Set up which connector serves what"
+KEPT_NEEDS = frozenset({"installed", "updated", "present"})
+"""States of a needed plugin that is installed after the add: its playbook's bindings are set too."""
 """Seconds to wait for GitHub before searching without it."""
 HISTORY = "plugins.jsonl"
 
@@ -339,18 +343,19 @@ class PluginService:
 
     # Adding.
 
-    def candidate(self, spec: str) -> PluginCandidate:
+    def candidate(self, spec: str, *, with_recommended: bool = True) -> PluginCandidate:
         """What `add` would install for `spec`, read from PyPI or GitHub and pinned where it can be.
 
         It also says which plugins it requires that aren't installed (or are too old), each read from the same catalog
-        and installed first, and which it recommends, offered only.
+        and installed first, and which it recommends: installed with it too, unless `with_recommended` is False,
+        then only offered (ADR 0144).
 
         Raises:
             HeinzelError: If the source isn't one `add` takes, names a package, repository or ref that doesn't exist, or
                 requires a plugin that can't be found in a trusted catalog.
         """
         candidate, metadata = self._read_candidate(spec)
-        needs = [*candidate.needs, *self._needs(candidate, metadata)]
+        needs = [*candidate.needs, *self._needs(candidate, metadata, with_recommended=with_recommended)]
         return candidate.model_copy(update={"needs": needs, "also": _also(candidate, needs)})
 
     def _read_candidate(self, spec: str) -> tuple[PluginCandidate, Metadata]:
@@ -437,8 +442,13 @@ class PluginService:
 
     # What a plugin needs: other plugins it requires (installed first) or recommends (offered).
 
-    def _needs(self, candidate: PluginCandidate, metadata: Metadata) -> list[PluginNeed]:
+    def _needs(
+        self, candidate: PluginCandidate, metadata: Metadata, *, with_recommended: bool = False
+    ) -> list[PluginNeed]:
         """Every plugin `candidate` requires, dependencies first and each once, then those it recommends.
+
+        With `with_recommended`, a recommended plugin is read and installed like a required one (its own requirements
+        first), except that one the catalog can't give is offered instead of stopping the add.
 
         A required plugin that is installed in a matching version is `present`; one that is missing or too old is read
         from the catalog (`hz system plugin search`), which must be first-party or the requirer's own GitHub owner, and
@@ -507,8 +517,62 @@ class PluginService:
 
         for declared in metadata.requires:
             visit(declared, requirer, candidate, 1)
+        if with_recommended:
+            ordered.extend(self._recommended(metadata.recommends, requirer, candidate, seen=seen, visit=visit))
         ordered.extend(_offered(metadata.recommends, requirer, seen, installed))
         return ordered
+
+    def _recommended(
+        self,
+        recommends: Sequence[str],
+        requirer: str,
+        owner: PluginCandidate,
+        *,
+        seen: set[str],
+        visit: Callable[[str, str, PluginCandidate, int], None],
+    ) -> list[PluginNeed]:
+        """The recommended plugins to install with the add, each after its own requirements.
+
+        One installed already is left out; one that can't be read from a trusted catalog stays unseen, so `_offered`
+        offers it instead.
+        """
+        installed = self._versions_now()
+        found_needs: list[PluginNeed] = []
+        for declared in recommends:
+            name = _need_name(declared)
+            if name in seen or name in installed:
+                continue
+            try:
+                found, found_metadata = self._read_candidate(short_name(name))
+                _require_trusted_need(owner, found, requirer)
+            except HeinzelError as exc:
+                log_event(
+                    log,
+                    "plugin.add.recommends",
+                    operation="add",
+                    step=f"recommends:{name}",
+                    plugin=name,
+                    dependency_of=requirer,
+                    outcome="offered",
+                    error=str(exc),
+                )
+                continue
+            seen.add(name)
+            for nested in found_metadata.requires:
+                visit(nested, found.distribution or name, found, 2)
+            found_needs.append(
+                PluginNeed(
+                    distribution=name,
+                    requirement=declared,
+                    required=False,
+                    needed_by=requirer,
+                    state="install",
+                    version=found.version,
+                    install=short_name(name),
+                    candidate=found,
+                )
+            )
+        return found_needs
 
     def _install_needs(
         self, candidate: PluginCandidate, phases: Phases | None, operation: Literal["add", "repair"] = "add"
@@ -524,16 +588,16 @@ class PluginService:
         results: list[PluginNeed] = []
         failed: str | None = None
         for need in candidate.needs:
-            if not need.required or need.candidate is None:
+            if need.candidate is None:
                 results.append(need)
                 continue
             result = self._install_need(need, phases, failed, operation)
             results.append(result)
-            if result.state == "failed":
+            if result.state == "failed" and need.required:  # a recommended one that fails is said, not fatal
                 failed = need.distribution
         if failed is not None:
             requirer = candidate.distribution or candidate.spec
-            reason = next(n.detail for n in results if n.state == "failed")
+            reason = next(n.detail for n in results if n.state == "failed" and n.required)
             msg = f"{failed}, which {requirer} needs, couldn't be installed, so {requirer} wasn't either: {reason}"
             raise HeinzelError(msg)
         return results
@@ -541,11 +605,14 @@ class PluginService:
     def _install_need(
         self, need: PluginNeed, phases: Phases | None, failed: str | None, operation: Literal["add", "repair"]
     ) -> PluginNeed:
-        """Install or update one required plugin as one step, logged as `plugin.<operation>.requires` (ADR 0138)."""
-        step_id, label = f"requires:{need.distribution}", _need_label(need)
+        """Install or update one plugin it needs as one step, logged as `plugin.<operation>.requires` (ADR 0138).
+
+        A recommended one is the step `recommends:<distribution>`, logged as `plugin.<operation>.recommends`.
+        """
+        step_id, label = _need_step(need), _need_label(need)
         with step(
             log,
-            f"plugin.{operation}.requires",
+            f"plugin.{operation}.{'requires' if need.required else 'recommends'}",
             operation=operation,
             step=step_id,
             plugin=need.distribution,
@@ -584,17 +651,28 @@ class PluginService:
         state = "installed" if need.state == "install" else "updated"
         return need.model_copy(update={"state": state, "version": version, "candidate": None})
 
-    def _add_confirmed(self, candidate: PluginCandidate, spec: str) -> PluginChange:
-        """Install what `candidate` requires, then it, telling one step per required plugin and its own steps.
+    def _add_confirmed(
+        self, candidate: PluginCandidate, spec: str, *, bind: bool = True, operation_id: str | None = None
+    ) -> PluginChange:
+        """Install what `candidate` needs, then it, then set the connector bindings its playbooks recommend.
+
+        One step per plugin it requires or recommends, its own steps, and `bind` (ADR 0144): a fresh `hz` (which
+        loads what was just installed) writes the recommended bindings, keeping any the person set; with `bind`
+        False it writes none and remembers that, so a repair doesn't either.
 
         Raises:
             HeinzelError: If a required plugin or the plugin itself fails to install.
         """
         name = candidate.distribution or spec
-        plan = [(f"requires:{n.distribution}", _need_label(n)) for n in candidate.needs if n.required and n.candidate]
+        plan = [(_need_step(n), _need_label(n)) for n in candidate.needs if n.candidate]
         phases = Phases(
             self._kernel.resolve(Progress),
-            [*plan, ("install", f"Installing {name}"), ("verify", "Checking that exactly it is installed")],
+            [
+                *plan,
+                ("install", f"Installing {name}"),
+                ("verify", "Checking that exactly it is installed"),
+                ("bind", BIND_LABEL),
+            ],
             operation="system.plugin.add",
         )
         needs = self._install_needs(candidate, phases)
@@ -602,7 +680,56 @@ class PluginService:
             change = self._install_candidate(candidate, spec, mutation, phases=phases)
         # Its own repository's plugins came in the same run: they are installed now, at the version shown.
         needs = [n.model_copy(update={"state": "installed"}) if n.with_it else n for n in needs]
-        return change.model_copy(update={"needs": needs})
+        installed = [change.distribution or name, *(n.distribution for n in needs if n.state in KEPT_NEEDS)]
+        bindings, problem = self._bind(installed, phases, operation="add", decline=not bind, operation_id=operation_id)
+        nexts = [*change.next, f"hz system plugin bind --plugin {change.distribution or name}"] if problem else None
+        return change.model_copy(update={"needs": needs, "bindings": bindings, **({"next": nexts} if nexts else {})})
+
+    def _bind(  # noqa: PLR0913 - what to bind and how, each by keyword
+        self,
+        plugins: Sequence[str],
+        phases: Phases | None,
+        *,
+        operation: Literal["add", "repair"],
+        decline: bool = False,
+        once: bool = False,
+        operation_id: str | None = None,
+    ) -> tuple[list[PluginBinding], str | None]:
+        """Run `hz system plugin bind` in a fresh `hz`, one step, logged as `plugin.<operation>.bind` (ADR 0138).
+
+        Returns:
+            The bindings it reports, and what went wrong if it couldn't run (the install stands: it is a next step).
+        """
+        args = ["system", "plugin", "bind", "--json"]
+        for plugin in dict.fromkeys(plugins):
+            args += ["--plugin", plugin]
+        if decline:
+            args.append("--decline")
+        if once:
+            args.append("--once")
+        if operation_id:
+            args += ["--operation-id", operation_id]
+        with step(log, f"plugin.{operation}.bind", operation=operation, step="bind", plugins=list(plugins)) as running:
+            if phases is not None:
+                phases.note("bind", BIND_LABEL, "running")
+            try:
+                answer = json.loads(self._installation.hz(*args))
+                bindings = [PluginBinding.model_validate(item) for item in answer.get("bindings", [])]
+            except (HeinzelError, ValueError, TypeError, AttributeError) as exc:
+                problem = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+                running.outcome = "error"
+                running.note(error=problem)
+                if phases is not None:
+                    phases.note("bind", BIND_LABEL, "warn", f"Not set: {problem}")
+                return [], problem
+            written = [b.capability for b in bindings if b.state == "written"]
+            running.note(written=written, kept=[b.capability for b in bindings if b.state == "kept"])
+            if decline or not bindings:
+                running.skip("declined" if decline else "nothing recommended")
+            if phases is not None:
+                ended: Literal["skipped", "done"] = "skipped" if decline or not bindings else "done"
+                phases.note("bind", BIND_LABEL, ended, _bind_detail(bindings, decline=decline))
+        return bindings, None
 
     def repair(self, *, automatic: bool = False) -> PluginRepair:
         """Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
@@ -679,7 +806,34 @@ class PluginService:
                 continue
             installed_any = installed_any or any(n.state in {"installed", "updated"} for n in done)
             results.extend(n for n in done if n.state != "present")
-        return PluginRepair(needs=results, restart_required=installed_any, message=_repair_message(results))
+        bindings = self._repair_bindings(memory, automatic=automatic, installed_any=installed_any)
+        message = _repair_message(results)
+        if written := [b for b in bindings if b.state == "written"]:
+            message += f" Set {', '.join(f'{b.capability} → {b.adapter}' for b in written)}."
+        return PluginRepair(needs=results, restart_required=installed_any, bindings=bindings, message=message)
+
+    def _repair_bindings(self, memory: "_NeedsMemory", *, automatic: bool, installed_any: bool) -> list[PluginBinding]:
+        """Set the bindings of installed playbooks that recommend connectors and were never considered (ADR 0144).
+
+        A plugin installed before installs set bindings, or added with `--no-bind` (remembered as considered), is
+        asked about once per version: the automatic updater tries once, asked by hand it asks the fresh `hz` again,
+        which still considers each playbook once and keeps every binding the person set.
+        """
+        recommending = sorted(
+            {
+                f"{canonicalize_name(record.origin.distribution)}@{record.origin.version}"
+                for record, let in self._kernel.lets(PlaybookLet)
+                if not record.origin.builtin and any(key.startswith("capabilities.") for key in let.defaults)
+            }
+        )
+        if not installed_any and not recommending:
+            return []
+        key = "bind:" + ",".join(recommending)
+        if automatic and not installed_any:
+            if memory.tried(key):
+                return []
+            memory.try_once(key)
+        return [b for b in self._bind([], None, operation="repair", once=True)[0] if b.state != "kept"]
 
     def _notify(self, repair: PluginRepair) -> None:
         """Tell the person what an automatic repair did: what was installed, and what wasn't, until it is there."""
@@ -728,8 +882,19 @@ class PluginService:
             return []
         return found
 
-    def add(self, spec: str, *, confirm: bool = False, operation_id: str | None = None) -> PluginChange:
+    def add(
+        self,
+        spec: str,
+        *,
+        confirm: bool = False,
+        operation_id: str | None = None,
+        with_recommended: bool = True,
+        bind: bool = True,
+    ) -> PluginChange:
         """Show what `spec` installs; with `confirm`, install exactly that, record it and list the plugins after.
+
+        The plugins it recommends come with it unless `with_recommended` is False; after the install, the connector
+        bindings its playbooks recommend are set unless `bind` is False (ADR 0144). A binding you set is kept.
 
         Raises:
             HeinzelError: If the source is refused, unknown, or installing fails.
@@ -759,8 +924,8 @@ class PluginService:
                     return receipt.result
                 msg = "This plugin operation has an unknown result and must not be replayed."
                 raise HeinzelError(msg)
-            return self._confirm_receipt(operation_id, candidate)
-        candidate = self.candidate(spec)
+            return self._confirm_receipt(operation_id, candidate, bind=bind)
+        candidate = self.candidate(spec, with_recommended=with_recommended)
         if not confirm:
             handle = candidate.spec if candidate.first_party else candidate.requirement
             receipt = self._receipts.create(candidate)
@@ -776,7 +941,7 @@ class PluginService:
                 operation_id=receipt.operation_id,
             )
         with self._receipts.installing(), self._exclusive():
-            return self._add_confirmed(candidate, spec)
+            return self._add_confirmed(candidate, spec, bind=bind)
 
     def _plugin_versions_or_none(self) -> dict[str, str] | None:
         """The installed plugins' versions by canonical name; None if they can't be read (nothing is compared then)."""
@@ -872,7 +1037,7 @@ class PluginService:
         """Read the durable status of a preview receipt without repeating its mutation."""
         return self._receipts.get(operation_id)
 
-    def _confirm_receipt(self, operation_id: str, candidate: PluginCandidate) -> PluginChange:
+    def _confirm_receipt(self, operation_id: str, candidate: PluginCandidate, *, bind: bool = True) -> PluginChange:
         claimed = False
         try:
             with self._receipts.installing(), self._exclusive():
@@ -882,7 +1047,7 @@ class PluginService:
                         return receipt.result
                     _raise_not_replayable(receipt.status)
                 claimed = True
-                result = self._add_confirmed(candidate, candidate.spec)
+                result = self._add_confirmed(candidate, candidate.spec, bind=bind, operation_id=operation_id)
                 completed = self._receipts.complete(operation_id, result)
                 if completed.result is None:
                     _raise_missing_result()
@@ -1997,7 +2162,27 @@ def _require_trusted_need(requirer: PluginCandidate, found: PluginCandidate, nee
 
 def _need_label(need: PluginNeed) -> str:
     verb = "Installing" if need.state == "install" else "Updating"
-    return f"{verb} {need.distribution}, which {need.needed_by} needs"
+    return f"{verb} {need.distribution}, which {need.needed_by} {'needs' if need.required else 'recommends'}"
+
+
+def _need_step(need: PluginNeed) -> str:
+    return f"{'requires' if need.required else 'recommends'}:{need.distribution}"
+
+
+def _bind_detail(bindings: Sequence[PluginBinding], *, decline: bool) -> str:
+    """The bind step's detail: `Tracker → atlassian, …; kept code-host (yours)`."""
+    if decline:
+        return "Not asked to: no binding set"
+    if not bindings:
+        return "No playbook recommends a connector"
+    parts: list[str] = []
+    if written := [f"{b.capability} → {b.adapter}" for b in bindings if b.state == "written"]:
+        parts.append(", ".join(written))
+    if kept := [b.capability for b in bindings if b.state == "kept"]:
+        parts.append(f"kept {', '.join(kept)} (yours)")
+    if conflicts := [b.capability for b in bindings if b.state == "conflict"]:
+        parts.append(f"choose {', '.join(conflicts)}")
+    return "; ".join(parts) or "Nothing to set"
 
 
 def _also(candidate: PluginCandidate, needs: Sequence[PluginNeed]) -> str:
@@ -2007,6 +2192,10 @@ def _also(candidate: PluginCandidate, needs: Sequence[PluginNeed]) -> str:
     if coming := [n.distribution for n in needs if n.required and n.state in {"install", "update"}]:
         them = "it" if len(coming) == 1 else "them"
         parts.append(f"{name} also needs {_names(coming)}; installing {them} too.")
+    if recommended := [n.distribution for n in needs if not n.required and n.state == "install"]:
+        parts.append(
+            f"It recommends {_names(recommended)}; installing {'it' if len(recommended) == 1 else 'them'} too."
+        )
     if offered := [n for n in needs if n.state == "offered"]:
         adds = "; ".join(f"hz system plugin add {n.install}" for n in offered)
         parts.append(f"It recommends {_names([n.distribution for n in offered])}, not installed: {adds}.")

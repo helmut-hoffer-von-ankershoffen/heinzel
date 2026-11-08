@@ -154,7 +154,10 @@ class PluginNeed(BaseModel):
 
     distribution: str = Field(description="The plugin needed, e.g. `heinzel-github`.")
     requirement: str = Field(description="What is needed, as declared: the plugin and an optional version range.")
-    required: bool = Field(description="Whether it is required (installed first) or only recommended (offered).")
+    required: bool = Field(
+        description="Whether it is required (installed first) or only recommended: installed too unless the add is "
+        "asked not to (`with_recommended`), then offered."
+    )
     needed_by: str = Field(description="The plugin that requires or recommends it.")
     state: NeedState = Field(description="What the add does or did about it.")
     installed_version: str | None = Field(default=None, description="The version installed before the add, if any.")
@@ -169,6 +172,21 @@ class PluginNeed(BaseModel):
         description="A plugin of the same repository it depends on, installed in the same run and pinned to the "
         "same commit; `requirement` is that pinned source.",
     )
+
+
+BindingState = Literal["written", "kept", "skipped", "conflict"]
+
+
+class PluginBinding(BaseModel):
+    """A connector binding an installed playbook recommends, and what the add did about it (ADR 0144)."""
+
+    capability: str = Field(description="The capability, e.g. `tracker`.")
+    adapter: str | None = Field(description="The connector recommended; none for a conflict between layers.")
+    state: BindingState = Field(
+        description="written now; kept as you set it; skipped (connector not installed, or `--no-bind`); conflict."
+    )
+    reason: str = Field(default="", description="Why, in a few words, e.g. `yours: github`.")
+    by: str = Field(description="The module whose playbook recommends it, e.g. `acme`.")
 
 
 class PluginCandidate(BaseModel):
@@ -253,6 +271,11 @@ class PluginChange(BaseModel):
         default_factory=list[PluginNeed],
         description="For a confirmed add or a repair: each plugin it required or recommended, with its result.",
     )
+    bindings: list[PluginBinding] = Field(
+        default_factory=list[PluginBinding],
+        description="For a confirmed add: the connector bindings its playbooks recommend, with what the add did; "
+        "`hz system plugin unbind <module>` undoes those it wrote.",
+    )
 
 
 class PluginRepair(BaseModel):
@@ -260,6 +283,10 @@ class PluginRepair(BaseModel):
 
     needs: list[PluginNeed] = Field(description="Each required plugin that was missing or too old, with its result.")
     restart_required: bool = Field(description="Whether a running server must restart to load what was installed.")
+    bindings: list[PluginBinding] = Field(
+        default_factory=list[PluginBinding],
+        description="The connector bindings installed playbooks recommend that the repair wrote, once per version.",
+    )
     message: str = Field(description="One line: what was repaired, or that nothing needed it.")
 
 

@@ -546,6 +546,9 @@ def installing(make_kernel, prefix, monkeypatch, gh=None, identity=("1.1.0", Non
                 ]
             )
             if args[:3] == ("system", "plugin", "list")
+            # The fresh `hz` of the bind step (ADR 0144): no playbook recommends a connector here.
+            else json.dumps({"bindings": [], "message": ""})
+            if args[:3] == ("system", "plugin", "bind")
             else "[]"
         ),
     )
@@ -1960,14 +1963,19 @@ def test_a_confirmed_add_tells_its_steps_with_each_plugin_it_needs(make_kernel, 
         ],
     )
     service.add("heinzel-crm", confirm=True)
-    assert progress.events[:2] == [("install", "pending", None), ("verify", "pending", None)]
-    finished = [event for event in progress.events if event[1] != "running"][2:]
+    assert progress.events[:3] == [
+        ("install", "pending", None),
+        ("verify", "pending", None),
+        ("bind", "pending", None),
+    ]
+    finished = [event for event in progress.events if event[1] != "running"][3:]
     assert finished == [
         ("install", "done", None),
         ("verify", "done", None),
         ("needs:heinzel-auth", "done", "Installed with it: 1.0.0"),
         ("needs:heinzel-base", "done", "Already installed: 2.0.0"),
         ("record", "done", None),
+        ("bind", "skipped", "No playbook recommends a connector"),
     ]
 
 
@@ -1984,7 +1992,7 @@ def test_a_failed_add_marks_the_install_step_failed(make_kernel, tmp_path, monke
     with pytest.raises(HeinzelError):
         service.add("heinzel-crm", confirm=True)
     states = {event[0]: event[1] for event in progress.events}
-    assert states == {"install": "failed", "verify": "pending"}
+    assert states == {"install": "failed", "verify": "pending", "bind": "pending"}
 
 
 def test_a_plugin_add_logs_each_step_and_each_needed_plugin(make_kernel, tool_env, monkeypatch, caplog):
@@ -2147,7 +2155,7 @@ def test_confirming_installs_the_whole_closure_in_one_uv_run_dependencies_first(
     ]
     events = [record_fields(r) for r in caplog.records if r.name == "heinzel.plugin"]
     ends = [e for e in events if e.get("phase") == "end"]
-    assert [(e["event"], e["outcome"]) for e in ends] == [("plugin.add.install", "ok")]
+    assert [(e["event"], e["outcome"]) for e in ends] == [("plugin.add.install", "ok"), ("plugin.add.bind", "skipped")]
     assert ends[0]["also"] == ["heinzel-acme", "heinzel-acme-payments"]
     assert {"operation", "plugin", "duration_ms"} <= ends[0].keys()
 
