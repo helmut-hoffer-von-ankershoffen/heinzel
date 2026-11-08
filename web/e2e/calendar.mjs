@@ -35,7 +35,9 @@ for (const [name, engine] of [
           body: 'event: result\ndata: {"data":"Calendar reminder service installed."}\n\n',
         });
       });
-      const now = Date.now();
+      // Keep the fixture's meetings within their intended UTC days, even when CI runs around midnight.
+      const now = Date.UTC(2026, 10, 4, 12);
+      await page.clock.setFixedTime(now);
       const current = {
         id: "a",
         title: "Standup with an exceptionally long meeting title that must not hide the ending time",
@@ -138,10 +140,11 @@ for (const [name, engine] of [
         .getByRole("region", { name: "Calendar summary", exact: true })
         .waitFor({ state: "detached", timeout: 10000 });
       try {
-        await panel
-          .getByText("Review with a very long title that must not hide the starting time", { exact: true })
-          .first()
-          .waitFor({ timeout: 10000 });
+        const review = panel.getByText(next.title, { exact: true });
+        await review.waitFor({ timeout: 10000 });
+        assert.equal(await review.count(), 1, "the review must appear exactly once in the agenda");
+        const today = panel.getByRole("region", { name: /^Today/ });
+        assert.equal(await today.getByText(next.title, { exact: true }).count(), 1, "the review belongs under Today");
       } catch (error) {
         await page.screenshot({ path: join(shots, `${name}-${size}-panel-failed.png`) });
         throw new Error(
