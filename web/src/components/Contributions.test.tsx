@@ -173,6 +173,54 @@ describe("Contributions", () => {
     },
   );
 
+  it("keeps a switch's longer lines in Details instead of bullets under it", async () => {
+    const call = (operation: string) => ({
+      method: "POST",
+      path: `/acme/${operation}`,
+      query: {},
+      body: {},
+      command: `hz acme ${operation}`,
+      summary: `${operation} sharing`,
+      read_only: false,
+    });
+    mockApi({
+      ...answers,
+      "/api/system/ui/status": [
+        {
+          ...entry,
+          id: "acme:share",
+          slots: { footer: true },
+          item: {
+            text: "Sharing",
+            icon: "link",
+            tone: "neutral",
+            detail: [{ text: "A longer explanation that belongs on demand only.", tone: "neutral" }],
+            toggle: {
+              label: "Share over Acme",
+              checked: false,
+              requested: true,
+              enable: { operation: "enable", arguments: {}, call: call("enable") },
+              disable: { operation: "disable", arguments: {}, call: call("disable") },
+              apply_settings: {},
+              status: null,
+              problem: null,
+            },
+          },
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await user.hover(await screen.findByRole("button", { name: /^Sharing/ }));
+    const control = await screen.findByRole("switch", { name: "Share over Acme" });
+    expect(control).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Turning on…");
+    expect(screen.getByText("A longer explanation that belongs on demand only.")).not.toBeVisible();
+    await user.click(screen.getByText("Details"));
+    expect(screen.getByText("Details").closest("details")).toHaveAttribute("open");
+    expect(screen.getByText("A longer explanation that belongs on demand only.")).toBeVisible();
+  });
+
   it("names a footer clock's pane by its zone, without a heading that repeats the time", async () => {
     mockApi({
       ...answers,

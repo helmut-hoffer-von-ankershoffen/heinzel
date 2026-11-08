@@ -5,7 +5,7 @@ from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 
-from heinzel.modules.system.plugin._models import PluginCandidate, PluginChange, PluginInfo, PluginSearch
+from heinzel.modules.system.plugin._models import PluginChange, PluginInfo, PluginNeed, PluginRepair, PluginSearch
 
 RIGHTS = (
     "Plugins run with your rights. Community plugins are not reviewed by the Heinzelmännchen maintainers; "
@@ -85,6 +85,7 @@ def render_change(change: PluginChange) -> RenderableType:
             "Source": f"{'first-party, ' if candidate.first_party else ''}{candidate.source}: {candidate.url}",
             "Installs": candidate.requirement,
             "Summary": candidate.summary,
+            "Needs": candidate.also,
         }
         if candidate.private:
             rows["Visibility"] = "private repository, read with your gh login"
@@ -94,7 +95,6 @@ def render_change(change: PluginChange) -> RenderableType:
             if value:
                 table.add_row(label, Text(value))
         parts.append(table)
-        parts.extend(Text(candidate.also, style="bold") for _ in [0] if candidate.also)
         parts.extend(Text(f"Warning: {warning}", style="yellow") for warning in candidate.warnings)
         if not candidate.first_party:
             parts.append(Text(RIGHTS, style="dim"))
@@ -105,8 +105,8 @@ def render_change(change: PluginChange) -> RenderableType:
     done = {"add": "Added", "develop": "Added", "remove": "Removed", "enable": "Enabled", "disable": "Disabled"}
     if change.action == "add" and change.candidate is not None:
         version = f" {change.candidate.version}" if change.candidate.version else ""
+        parts.extend(_need_lines(change.needs))
         parts.append(Text(f"✓ Installed {change.distribution or 'the plugin'}{version}.", style="green"))
-        parts.extend(Text(f"Also installed: {names}.") for names in [_also_names(change.candidate)] if names)
         parts.append(Text("Open hz and click Restart and apply in the footer, or restart hz ui, to load it."))
         parts.extend(Text(line) for line in _brings(change))
     else:
@@ -117,8 +117,31 @@ def render_change(change: PluginChange) -> RenderableType:
     return Group(*parts)
 
 
-def _also_names(candidate: PluginCandidate) -> str:
-    return ", ".join(item.distribution for item in candidate.also_installs)
+def render_repair(repair: PluginRepair) -> RenderableType:
+    """Each required plugin a repair installed, updated or couldn't install, then what it means."""
+    return Group(*_need_lines(repair.needs), Text(repair.message, style="bold"))
+
+
+def _need_lines(needs: list[PluginNeed]) -> list[Text]:
+    """One line per plugin another required or recommended, with its result."""
+    lines: list[Text] = []
+    for need in needs:
+        version = f" {need.version}" if need.version else ""
+        if need.state in {"installed", "updated"}:
+            text, style = (
+                f"✓ {need.state.capitalize()} {need.distribution}{version}, which {need.needed_by} needs.",
+                "green",
+            )
+        elif need.state == "present":
+            text, style = f"✓ {need.distribution}{version}, which {need.needed_by} needs, was already installed.", "dim"
+        elif need.state == "offered":
+            text, style = f"{need.needed_by} recommends {need.distribution}; {need.detail}", "dim"
+        elif need.state == "failed":
+            text, style = f"✗ {need.distribution}, which {need.needed_by} needs: {need.detail}", "red"
+        else:
+            text, style = f"{need.distribution}, which {need.needed_by} needs: {need.state}", "yellow"
+        lines.append(Text(text, style=style))
+    return lines
 
 
 def _brings(change: PluginChange) -> list[str]:
