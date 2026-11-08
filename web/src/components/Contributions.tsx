@@ -70,8 +70,8 @@ import { FooterItem, stateOf } from "@/components/FooterItem";
 import { FooterPart } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { HeinzelFace } from "@/components/HeinzelFace";
-import { OperationDialog } from "@/components/OperationDialog";
 import { HideToast, useWidgetVisibility } from "@/components/HiddenWidgets";
+import { OperationDialog } from "@/components/OperationDialog";
 import { PaneAction, PaneActions, PaneChrome } from "@/components/PaneActions";
 import { Progress } from "@/components/Progress";
 import { Button } from "@/components/ui/button";
@@ -968,14 +968,7 @@ export function TodayWidgets({ onAsk }: { onAsk?: (context: string, text: string
   return (
     <>
       {unique.map((entry) => (
-        <WidgetCard
-          key={entry.id}
-          entry={entry}
-          updatedAt={updatedAt}
-          run={run}
-          onAsk={onAsk}
-          onHide={onHide}
-        />
+        <WidgetCard key={entry.id} entry={entry} updatedAt={updatedAt} run={run} onAsk={onAsk} onHide={onHide} />
       ))}
       {/* The confirmation and its live region are not list items: they go beside the grid, not in it. */}
       {createPortal(dialog, document.body)}

@@ -24,7 +24,9 @@ export function useWidgetVisibility() {
   const set = async (ids: string[], shown: boolean) => {
     // One at a time: each call rewrites the same user file.
     for (const item of ids) {
-      await unwrap(api.POST(shown ? "/system/ui/show" : "/system/ui/hide", { params: { query: { item, slot: "today" } } }));
+      await unwrap(
+        api.POST(shown ? "/system/ui/show" : "/system/ui/hide", { params: { query: { item, slot: "today" } } }),
+      );
     }
     await queries.invalidateQueries({ queryKey: ["ui"] });
   };
@@ -67,12 +69,12 @@ export function HiddenWidgets({
     const close = (event: Event) => {
       if (event.target instanceof Node && !anchor.current?.contains(event.target)) setOpen(false);
     };
-    const escape = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    const onEscape = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
     document.addEventListener("pointerdown", close);
-    document.addEventListener("keydown", escape);
+    document.addEventListener("keydown", onEscape);
     return () => {
       document.removeEventListener("pointerdown", close);
-      document.removeEventListener("keydown", escape);
+      document.removeEventListener("keydown", onEscape);
     };
   }, [open]);
   useEffect(() => {
@@ -81,13 +83,7 @@ export function HiddenWidgets({
   if (!hidden.length) return null;
   return (
     <span ref={anchor} className="relative ml-auto inline-flex">
-      <PaneAction
-        ghost
-        icon={EyeOff}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        onClick={() => setOpen(!open)}
-      >
+      <PaneAction ghost icon={EyeOff} aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen(!open)}>
         {t("today.hiddenCount", { count: hidden.length })}
       </PaneAction>
       <span
@@ -97,7 +93,13 @@ export function HiddenWidgets({
         {hidden.length}
       </span>
       {open && (
-        <AnchoredPopover anchor={anchor} role="dialog" aria-label={t("today.hiddenWidgets")} focusFirst className="w-72">
+        <AnchoredPopover
+          anchor={anchor}
+          role="dialog"
+          aria-label={t("today.hiddenWidgets")}
+          focusFirst
+          className="w-72"
+        >
           <h2 className="px-1.5 py-1 text-sm font-medium">{t("today.hiddenWidgets")}</h2>
           <ul>
             {hidden.map((widget) => (

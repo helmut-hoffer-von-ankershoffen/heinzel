@@ -289,7 +289,6 @@ describe("Contributions", () => {
 
   it("puts widgets on Today, with Ask about it and dismiss", async () => {
     mockApi(answers);
-    const user = userEvent.setup();
     renderAt("/");
     const card = (await screen.findByText("2/3")).closest("li") as HTMLElement;
     expect(within(card).getByText("Zones at work now")).toBeInTheDocument();
@@ -324,8 +323,14 @@ describe("Contributions", () => {
         return widgetsNow().filter((w) => !only || w.id === only);
       },
       "/api/system/ui/list": () => listNow(),
-      "/api/system/ui/hide": (request: Request) => (off.add(item(request)), listNow()),
-      "/api/system/ui/show": (request: Request) => (off.delete(item(request)), listNow()),
+      "/api/system/ui/hide": (request: Request) => {
+        off.add(item(request));
+        return listNow();
+      },
+      "/api/system/ui/show": (request: Request) => {
+        off.delete(item(request));
+        return listNow();
+      },
     });
   }
 
