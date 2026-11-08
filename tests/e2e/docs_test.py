@@ -284,7 +284,9 @@ def launch_documented_app(command, env, tmp_path, deadline, *, bootstrap_wheels)
     # Select the candidate only for uvx's bootstrap resolution. An inherited UV_FIND_LINKS would also become
     # persistent resolver policy in the managed tool, unlike an ordinary user's standard installation.
     program, *arguments = shlex.split(command)
-    selected = [program, "--find-links", str(bootstrap_wheels), *arguments]
+    # Without a terminal the bare quick start installs and prints a status instead of serving (ADR 0138's start
+    # contract), so the documented command is followed by the foreground web command a person would run next.
+    selected = [program, "--find-links", str(bootstrap_wheels), *arguments, "ui", "open"]
     log = tmp_path / "launch.log"
     process = GuardedCommand(selected, env=env, cwd=tmp_path)
     try:
