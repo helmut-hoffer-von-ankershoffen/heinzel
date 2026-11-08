@@ -229,7 +229,7 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
                         {notice.body && (
                           <span className="mt-0.5 line-clamp-2 block text-sm text-muted-foreground">{notice.body}</span>
                         )}
-                        <span className="mt-1 block text-xs text-muted-foreground/80">
+                        <span className="mt-1 block text-xs text-muted-foreground">
                           {notice.delivered_by === "daemon" && !local
                             ? t("notify.shownOnServer")
                             : notice.delivered_by

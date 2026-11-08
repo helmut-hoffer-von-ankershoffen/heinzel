@@ -225,6 +225,14 @@ describe("Contributions", () => {
     expect(await screen.findByRole("button", { name: "Team clock (2)" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Hidden/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Weather map" })).toBeInTheDocument();
+    const team = screen.getByRole("button", { name: "Team clock (2)" });
+    const hint = screen
+      .getAllByRole("tooltip", { hidden: true })
+      .find((tip) => tip.id === team.getAttribute("aria-describedby"));
+    if (!hint) throw new Error("the badge hover pane is missing");
+    expect(hint).toHaveTextContent("Badge 2: the count this button currently shows");
+    expect(hint).toHaveClass("hidden", "group-hover/badge:block", "group-focus-within/badge:block");
+    expect(screen.getByRole("button", { name: "Weather map" })).not.toHaveAttribute("aria-describedby");
     expect(screen.queryByRole("button", { name: "Open weather report" })).not.toBeInTheDocument();
   });
 
