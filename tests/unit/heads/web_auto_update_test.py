@@ -604,6 +604,49 @@ def test_a_plugin_from_git_or_a_folder_is_named_to_update_by_hand_while_the_rest
     assert made.applied[0]["plugins"] == {"heinzel-example": "2.0.0"}
 
 
+def test_holds_name_pinned_and_source_plugins_but_not_those_that_follow_updates(make_kernel, tmp_path):
+    made, _clock, _calls, kernel = updater(make_kernel, tmp_path)
+    receipt = Receipt(CorePin("release", "heinzel", ref="v0.1.0", git="https://github.com/org/heinzel"), tmp_path)
+    receipt.plugin_pins = lambda: [
+        CorePin("index", "heinzel-google==0.9.1", ref="==0.9.1", name="heinzel-google"),
+        CorePin("index", "heinzel-clock>=1", ref=">=1", name="heinzel-clock"),
+        CorePin("index", "heinzel-bare", name="heinzel-bare"),
+        CorePin(
+            "ref",
+            "heinzel-acme @ git+https://example.test/a@main",
+            ref="main",
+            name="heinzel-acme",
+            git="https://example.test/a",
+        ),
+        CorePin("local", "heinzel-dev @ file:///x", ref="/x", name="heinzel-dev"),
+    ]
+    kernel.bind(Installation, receipt)
+    holds = [(hold.name, hold.why, hold.version, hold.how) for hold in made.status().holds]
+    assert holds == [
+        ("heinzel-acme", "source", None, "git"),
+        ("heinzel-dev", "source", None, "folder"),
+        ("heinzel-google", "pinned", "0.9.1", None),
+    ]
+
+
+def test_the_status_says_whether_hz_and_the_plugins_each_answered_at_the_last_look(make_kernel, tmp_path):
+    made, clock, _calls, kernel = updater(make_kernel, tmp_path)
+    assert made.status().checked_at is None
+    assert made.status().plugins_checked is None
+    advance(made, clock, 5 * 60)
+    assert (made.status().core_checked, made.status().plugins_checked) == (True, True)
+    assert made.status().checked_at is not None
+
+    class Down(Plugins):
+        def newer_releases(self, timeout):
+            raise OSError(errno.ECONNREFUSED, "offline")
+
+    kernel.bind(PluginReleases, Down())
+    clock.now += timedelta(minutes=31)
+    made.check(clock.now)
+    assert (made.status().core_checked, made.status().plugins_checked) == (True, False)
+
+
 def test_a_left_copy_is_put_back_at_start_only_while_no_other_server_applies(make_kernel, tmp_path, monkeypatch):
     asked = []
     monkeypatch.setattr(AutoUpdater, "_recover_with_lock", lambda self: asked.append(True))

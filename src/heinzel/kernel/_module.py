@@ -65,6 +65,7 @@ from heinzel.kernel._playbooks import (
 )
 from heinzel.kernel._prerequisites import Homebrew, ManualInstall, PrerequisiteContext, PrerequisiteLet
 from heinzel.kernel._prompter import Prompter
+from heinzel.kernel._sign_in import Grant, SignInLet, SignInProvider, grants_of
 from heinzel.kernel._skills import SkillLet, skills_in
 from heinzel.kernel._soundscapes import Soundscape, SoundscapeLet, sourced_soundscapes
 from heinzel.kernel._spec import hookimpl
@@ -463,6 +464,28 @@ class Module:
             return target
 
         return decorate if func is None else decorate(func)
+
+    def sign_in[F: Callable[..., SignInProvider]](self, *, grants: Iterable[Grant]) -> Callable[[F], F]:
+        """Advertise the connector's sign-in: a provider that runs its vendor's own flow for the person (ADR 0136).
+
+        The kernel builds the provider from the decorated class or function, injecting its parameters, only when
+        `hz system connector` needs it. `grants` are what the sign-in can ask for, each with its plain-words
+        explanation and vendor scopes; a first sign-in asks for the `default` ones, any other only when the person
+        allows it. Once per module.
+
+        Args:
+            grants: Every grant the sign-in can ask for.
+
+        Raises:
+            ValueError: If a grant is malformed, a name repeats, there are none, or the module already has a sign-in.
+        """
+        declared = grants_of(grants)
+
+        def decorate(target: F) -> F:
+            self.add(SignInLet(name=self.name, factory=target, grants=declared))
+            return target
+
+        return decorate
 
     def prerequisite(  # noqa: PLR0913 - a declaration's complete portable metadata
         self,

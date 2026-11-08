@@ -301,12 +301,14 @@ describe("Footer items are icons with a state and a pane", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const bar = await screen.findByRole("contentinfo");
-    const calendar = await within(bar).findByRole("button", { name: "Calendar, error" });
-    expect(calendar).toHaveClass("text-bad");
+    const calendar = await within(bar).findByRole("button", { name: /^Calendar: .*, error$/ });
+    expect(calendar.closest("[data-state]")).toHaveAttribute("data-state", "bad");
+    expect(calendar.querySelector("[data-glyph=unknown]")).not.toBeNull();
     await user.click(calendar);
     const summary = await screen.findByRole("region", { name: "Calendar summary" });
     await user.click(within(summary).getByRole("button", { name: "Open calendar" }));
     const panel = await screen.findByRole("region", { name: "Calendar" });
+    expect(screen.queryByRole("region", { name: "Calendar summary" })).not.toBeInTheDocument();
     expect(await within(panel).findByText("No calendar connected.")).toBeInTheDocument();
     expect(await within(panel).findByText(/Calendar reminders need a background worker/)).toBeInTheDocument();
     await user.click(within(panel).getByRole("link", { name: "Connect a calendar…" }));
@@ -339,12 +341,20 @@ describe("Footer items are icons with a state and a pane", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const footer = await screen.findByRole("contentinfo");
-    const calendar = await within(footer).findByRole("button", { name: "Calendar, off" });
+    const calendar = await within(footer).findByRole("button", { name: /^Calendar: In Standup, \d+ min left.*, off$/ });
     expect(calendar).not.toHaveTextContent(/Standup|Review/);
+    expect(calendar.querySelector('[data-glyph="meeting"] [data-label]')).toHaveTextContent(/^[1-9]$/);
     await user.hover(calendar);
     const summary = await screen.findByRole("region", { name: "Calendar summary" });
-    expect(within(summary).getByText(/In Standup · \d+ min remaining/)).toBeInTheDocument();
+    expect(within(summary).getByText("In Standup")).toBeInTheDocument();
+    expect(within(summary).getAllByText(/\d+ min left/)[0]).toBeInTheDocument();
     expect(within(summary).getByText(/Next: Review/)).toBeInTheDocument();
+    for (const name of [/^Decline/, /^Extend/, /^Tell the next meeting/])
+      expect(within(summary).getByRole("button", { name })).toBeDisabled();
+    expect(within(summary).getByRole("link", { name: "Allow your Heinzels to change your calendar" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("settings=connectors"),
+    );
     await user.click(within(summary).getByRole("button", { name: "Open calendar" }));
     const panel = await screen.findByRole("region", { name: "Calendar" });
     expect(await within(panel).findByText("Review")).toBeInTheDocument();
@@ -378,7 +388,7 @@ describe("Footer items are icons with a state and a pane", () => {
     renderAt("/doctor");
     await user.click(
       await within(await screen.findByRole("contentinfo")).findByRole("button", {
-        name: "Calendar, error",
+        name: /^Calendar: .*, error$/,
       }),
     );
     const summary = await screen.findByRole("region", { name: "Calendar summary" });
