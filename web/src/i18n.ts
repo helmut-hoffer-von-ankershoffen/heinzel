@@ -101,6 +101,7 @@ const en = {
   "durable.proposalOutcomeUnknown":
     "The proposal outcome is unknown. It was not repeated; inspect the saved schedule before taking another action.",
   "durable.create": "Create a personal Heinzel",
+  "durable.openChat": "Open chat",
   "durable.createFailed": "The personal Heinzel could not be created. Retry the same request.",
   "daemon.controls": "Daemon status and controls",
   "daemon.version": "Last service tick version",
@@ -198,6 +199,7 @@ const en = {
   "pluginsPending.disabled": "{name} was disabled",
   "pluginsPending.theme": "It brings the theme {theme}: after the restart, choose it in Settings → Appearance.",
   "updates.title": "Updates",
+  "pane.actions": "Actions",
   "updates.availableLabel": "Updates available",
 
   "settings.previewOnly":
@@ -412,8 +414,8 @@ const en = {
     "Sign in to YouTube in this browser, then retry. You may need to allow YouTube's embedded content or third-party cookies. If sign-in is blocked, play on YouTube instead; it uses YouTube's controls.",
   "sound.accountPlayer": "Use YouTube sign-in",
   "sound.privatePlayer": "Use private player",
-  "sound.retryPlayer": "Retry player",
   "sound.playOnYouTube": "Play on YouTube",
+  "sound.retryPlayer": "Retry player",
   "sound.noAudio": "This browser can't play layered sound.",
   "sound.cantLoad": "{title} couldn't be loaded.",
   "theme.light": "Light",

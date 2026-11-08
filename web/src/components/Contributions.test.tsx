@@ -1,7 +1,9 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { assertActionStructure } from "@/components/PaneActions";
 import { shell } from "@/test/fixtures";
+import { expectPane } from "@/test/pane";
 import { eventStream, expectAccessible, mockApi, renderAt } from "@/test/render";
 import { axisLabel, type ChartData } from "./ChartBody";
 import { ICONS, liveText, widgetText } from "./Contributions";
@@ -200,6 +202,7 @@ describe("Contributions", () => {
     expect(within(pane).queryByText(/^Berlin \d\d:\d\d:\d\d$/)).not.toBeInTheDocument();
     expect(within(pane).getByText("New York")).toBeInTheDocument();
     expect(within(pane).getByRole("button", { name: "Open" })).toBeInTheDocument();
+    await expectPane(pane);
   });
 
   it("asks before a write and runs exactly the call the server built", async () => {
@@ -284,11 +287,13 @@ describe("Contributions", () => {
     expect(within(card).getByText("Zones at work now")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Weather" })).toBeInTheDocument();
     const ask = within(card).getByRole("button", { name: "Ask about it" });
-    expect(ask).toHaveTextContent("");
-    expect(ask).toHaveAttribute("title", "Ask about it");
-    // Simple actions sit together at the card's top right, not on a row of their own.
-    expect(ask.parentElement).toHaveClass("absolute", "top-1.5", "right-1.5");
-    await user.click(within(card).getByRole("button", { name: "Dismiss Zones at work now" }));
+    // A card with nothing else to offer leads with it: words in the bottom row; Dismiss is the corner's chrome.
+    expect(ask).toHaveTextContent("Ask about it");
+    expect(ask.closest("[data-pane-actions]")).not.toBeNull();
+    const dismiss = within(card).getByRole("button", { name: "Dismiss Zones at work now" });
+    expect(dismiss.closest("[data-pane-chrome]")).toHaveClass("absolute", "top-1.5", "right-1.5");
+    assertActionStructure(card);
+    await user.click(dismiss);
     expect(screen.queryByText("2/3")).not.toBeInTheDocument();
   });
 

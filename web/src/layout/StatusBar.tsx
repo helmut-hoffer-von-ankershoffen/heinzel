@@ -14,7 +14,7 @@ import { t } from "@/i18n";
 import { zoneTime } from "@/lib/zoneTime";
 import { AutoUpdate } from "@/updates/AutoUpdate";
 import { CalendarGlyph } from "./CalendarGlyph";
-import { CalendarSummary } from "./CalendarSummary";
+import { CalendarSummary, calendarActions } from "./CalendarSummary";
 import { type AgendaData, glyphModel } from "./calendarModel";
 import { DurableHeinzelStatus } from "./DurableHeinzelStatus";
 import { HealthStatus } from "./HealthStatus";
@@ -140,37 +140,33 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
       className="px-0"
       paneName="Calendar summary"
       hideHeading
+      actions={calendarActions({
+        active,
+        upcoming,
+        onOpen,
+        full: !agenda.isPending && !agenda.isError && !agenda.data?.problem,
+      })}
       popoverClassName="w-[min(24rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
     >
-      {(close) => {
-        const open = () => {
-          close();
-          onOpen();
-        };
-        return agenda.isPending ? (
-          <p className="p-3">Loading calendar…</p>
-        ) : agenda.isError ? (
-          <p className="p-3">Calendar unavailable. Try again later.</p>
-        ) : agenda.data?.problem ? (
-          <div className="space-y-2 p-3">
-            <p className="text-[17px] font-semibold">Calendar</p>
-            <p>{agenda.data.problem}</p>
-            <button type="button" className="min-h-11 text-primary underline" onClick={open} aria-label="Open calendar">
-              Open calendar
-            </button>
-          </div>
-        ) : (
-          <CalendarSummary
-            model={model}
-            active={active}
-            upcoming={upcoming}
-            now={ms}
-            zone={zone}
-            clock={(iso) => time(new Date(iso), zone)}
-            onOpen={open}
-          />
-        );
-      }}
+      {agenda.isPending ? (
+        <p className="p-3">Loading calendar…</p>
+      ) : agenda.isError ? (
+        <p className="p-3">Calendar unavailable. Try again later.</p>
+      ) : agenda.data?.problem ? (
+        <div className="space-y-2 p-3">
+          <p className="text-[17px] font-semibold">Calendar</p>
+          <p>{agenda.data.problem}</p>
+        </div>
+      ) : (
+        <CalendarSummary
+          model={model}
+          active={active}
+          upcoming={upcoming}
+          now={ms}
+          zone={zone}
+          clock={(iso) => time(new Date(iso), zone)}
+        />
+      )}
     </FooterItem>
   );
 }
@@ -189,6 +185,7 @@ export function StatusBar({ onOpenCalendar = () => {} }: { onOpenCalendar?: () =
               state="off"
               text={`v${info.data.version}`}
               align="left"
+              freeform="The about card links to its release on GitHub and the release notes are prose with their own links."
               popoverClassName="w-[min(28rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
             >
               <ReleaseNotes version={info.data.version} />
