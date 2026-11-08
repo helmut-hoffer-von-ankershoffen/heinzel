@@ -91,7 +91,8 @@ def run_hz(hz: str, env: dict[str, str], *args: str) -> dict | list:
     """
     started = time.monotonic()
     LOG.info("acme_e2e.step.start", extra={"step": " ".join(args[:3])})
-    done = subprocess.run([hz, *args, "--json"], env=env, capture_output=True, text=True, check=False)  # noqa: S603
+    command = [hz, *args, "--json"]
+    done = subprocess.run(command, env=env, capture_output=True, text=True, check=False, timeout=1800)  # noqa: S603
     LOG.info(
         "acme_e2e.step.outcome",
         extra={
