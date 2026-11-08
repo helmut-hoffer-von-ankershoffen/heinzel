@@ -775,6 +775,7 @@ def test_failed_fallback_reports_both_routes(tmp_path):
 
 
 def test_gh_route_downloads_the_pinned_release_asset(monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     commands = []
     monkeypatch.setattr(tools, "on_path", lambda name, *_: Path("/fictional/gh"))
 
@@ -805,6 +806,7 @@ def test_gh_route_refuses_other_hosts_without_running_anything(monkeypatch):
 
 @pytest.mark.parametrize("failure", [subprocess.TimeoutExpired("gh", 120), PermissionError("not executable")])
 def test_hanging_or_unexecutable_gh_is_a_route_failure(monkeypatch, failure):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     monkeypatch.setattr(tools, "on_path", lambda name, *_: Path("/fictional/gh"))
 
     def gh(*args, **kwargs):
@@ -819,3 +821,34 @@ def test_option_shaped_release_tag_never_reaches_gh(monkeypatch):
     monkeypatch.setattr(tools.subprocess, "run", lambda *_, **__: pytest.fail("an option-shaped tag reached gh"))
     with pytest.raises(tools.ToolError, match="no authenticated route"):
         tools.gh_release_get("https://github.com/o/r/releases/download/--repo=x/tool.tar.gz")
+
+
+def test_hosted_step_without_token_skips_gh_and_retries_the_direct_url_longer(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr(tools, "on_path", lambda name, *_: Path("/fictional/gh"))
+    monkeypatch.setattr(tools.subprocess, "run", lambda *_, **__: pytest.fail("gh cannot authenticate here"))
+    pauses, rounds = [], []
+    monkeypatch.setattr(tools.time, "sleep", pauses.append)
+
+    def flapping(url):
+        rounds.append(url)
+        if len(rounds) == 1:
+            _gateway_timeout(url)
+        return BINARY
+
+    assert tools.fetch(tools.Download(RELEASE, sha(BINARY)), tmp_path, flapping) == BINARY
+    assert len(rounds) == 2
+    assert tools.HOSTED_PAUSE * 0.5 <= pauses[0] <= tools.HOSTED_PAUSE * 1.5
+
+
+def test_hosted_step_without_token_says_why_when_both_direct_rounds_fail(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr(tools, "on_path", lambda name, *_: Path("/fictional/gh"))
+    monkeypatch.setattr(tools.time, "sleep", lambda _: None)
+    download = tools.Download(RELEASE, ZERO)
+    with pytest.raises(tools.ToolError, match="no GH_TOKEN; second direct round: download failed"):
+        tools.fetch(download, tmp_path, _gateway_timeout)

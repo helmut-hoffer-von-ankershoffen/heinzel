@@ -40,6 +40,21 @@ RELEASE_ASSET = re.compile(
 )
 
 # Split callable argument lists to avoid the shared template's variable delimiter.
+HOSTED_PAUSE = 20
+"""Seconds (jittered) before the second direct round when a hosted step has no token for the authenticated route."""
+
+
+class NoCredentialsError(OSError):
+    """The authenticated route cannot work here: a hosted CI step without a token for gh or the API."""
+
+
+def hosted_without_token() -> bool:
+    """A GitHub Actions step that passes no GH_TOKEN or GITHUB_TOKEN, where gh cannot authenticate."""
+    return os.environ.get("GITHUB_ACTIONS") == "true" and not (
+        os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    )
+
+
 type Fetch = Callable[
     [str],
     bytes,
@@ -126,12 +141,16 @@ def authenticated_get(url: str) -> bytes:
     `gh release download` when gh is installed, else the REST asset endpoint with a token from the environment or gh.
 
     Raises:
+        NoCredentialsError: a hosted CI step passes no token, so no authenticated route can work.
         OSError: no route works (not a GitHub release asset, no gh and no token, or the API failed).
     """
     match = RELEASE_ASSET.fullmatch(urlsplit(url).path) if urlsplit(url).hostname == "github.com" else None
     if match is None:
         msg = "not a GitHub release asset; no authenticated route"
         raise OSError(msg)
+    if hosted_without_token():
+        msg = "authenticated fallback skipped: this hosted CI step has no GH_TOKEN"
+        raise NoCredentialsError(msg)
     repo, tag, name = match["repo"], match["tag"], match["name"]
     gh = shutil.which("gh")
     if gh:
@@ -192,9 +211,19 @@ def fetch_verified(  # noqa: PLR0913 - every source injectable for tests
     if cached.is_file() and hashlib.sha256(cached.read_bytes()).hexdigest() == digest:
         return cached
     failures: list[str] = []
+
+    def authenticated() -> bytes:
+        try:
+            return fallback(url)
+        except NoCredentialsError:
+            # No token on a hosted step: one more direct round after a longer pause instead
+            failures.append("authenticated download: skipped, this hosted CI step has no GH_TOKEN")
+            sleep(HOSTED_PAUSE * (0.5 + secrets.randbelow(1001) / 1000))
+            return retried(get, url, sleep)
+
     routes: tuple[tuple[str, Source], ...] = (
         ("download", lambda: retried(get, url, sleep)),
-        ("authenticated download", lambda: fallback(url)),
+        ("authenticated download", authenticated),
     )
     for route, source in routes:
         try:

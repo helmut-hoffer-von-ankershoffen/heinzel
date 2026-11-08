@@ -33,6 +33,7 @@ def offline_toolkit(monkeypatch, tmp_path_factory):
     """No test reaches GitHub or the user's cache: the pinned toolkit resolves to a local fixture wheel."""
     cache = tmp_path_factory.mktemp("cache")
     monkeypatch.setattr(tooling, "CACHE", cache)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)  # hosted CI must not change which route a test sees
 
     def fetch(url, digest):
         wheel = cache / f"{digest}.whl"
@@ -349,3 +350,38 @@ def test_option_shaped_release_tag_never_reaches_gh(monkeypatch):
     monkeypatch.setattr(tooling.subprocess, "run", lambda *_, **__: pytest.fail("an option-shaped tag reached gh"))
     with pytest.raises(OSError, match="not a GitHub release asset"):
         tooling.authenticated_get("https://github.com/o/r/releases/download/--repo=x/t-1-py3-none-any.whl")
+
+
+def test_hosted_step_without_token_retries_the_direct_url_after_a_longer_pause(release, tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr(tooling.subprocess, "run", lambda *_, **__: pytest.fail("gh cannot authenticate here"))
+    server, delays = release([504, 504, 504, 200]), []
+    wheel = fetch_verified(
+        server.url,
+        DIGEST,
+        cache=tmp_path,
+        fallback=lambda _: tooling.authenticated_get(tooling.TOOLKIT.split(" @ ")[1].split("#")[0]),
+        sleep=delays.append,
+    )
+    assert wheel.read_bytes() == WHEEL
+    assert server.hits == 4
+    assert tooling.HOSTED_PAUSE * 0.5 <= delays[2] <= tooling.HOSTED_PAUSE * 1.5
+
+
+def test_hosted_step_without_token_names_the_missing_token_when_everything_fails(release, tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    server = release([504])
+    toolkit = tooling.TOOLKIT.split(" @ ")[1].split("#")[0]
+    with pytest.raises(ValueError, match="skipped, this hosted CI step has no GH_TOKEN"):
+        fetch_verified(
+            server.url,
+            DIGEST,
+            cache=tmp_path,
+            fallback=lambda _: tooling.authenticated_get(toolkit),
+            sleep=lambda _: None,
+        )
+    assert server.hits == 2 * tooling.ATTEMPTS

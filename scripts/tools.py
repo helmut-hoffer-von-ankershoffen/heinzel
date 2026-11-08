@@ -79,6 +79,21 @@ class ToolError(Exception):
     """A tool can't be installed; the message says why and what to do."""
 
 
+class NoCredentialsError(ToolError):
+    """The authenticated route cannot work here: a hosted CI step without a token for gh."""
+
+
+HOSTED_PAUSE = 20
+"""Seconds (jittered) before the second direct round when a hosted step has no token for the gh route."""
+
+
+def hosted_without_token() -> bool:
+    """A GitHub Actions step that passes no GH_TOKEN or GITHUB_TOKEN, where gh cannot authenticate."""
+    return os.environ.get("GITHUB_ACTIONS") == "true" and not (
+        os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    )
+
+
 @dataclass(frozen=True)
 class Download:
     """One pinned file: where it is, its checksum and, for an archive, the binary's path inside it."""
@@ -299,6 +314,7 @@ def gh_release_get(url: str) -> bytes:
     It keeps working while the anonymous download edge answers 504.
 
     Raises:
+        NoCredentialsError: a hosted CI step passes no token, so gh cannot authenticate.
         ToolError: the URL is no GitHub release asset, gh is missing, or gh could not fetch it.
     """
     match = RELEASE_ASSET.fullmatch(url)
@@ -306,6 +322,9 @@ def gh_release_get(url: str) -> bytes:
     if match is None or gh is None:
         msg = "no authenticated route (needs a GitHub release asset and gh)"
         raise ToolError(msg)
+    if hosted_without_token():
+        msg = "gh fallback skipped: this hosted CI step has no GH_TOKEN"
+        raise NoCredentialsError(msg)
     with tempfile.TemporaryDirectory(prefix="heinzel-dev-gh-") as directory:
         # gh found on PATH or in .tools/bin; tag, repository and name come from the pinned manifest URL
         try:
@@ -350,8 +369,9 @@ def fetch(
     """A pinned file's bytes, from the cache or the network, refused unless they match the checksum.
 
     `cached_ok=False` always downloads (and refreshes the cache), to check the file is still published.
-    When the retried download fails, a GitHub release asset is fetched once more through `fallback` (gh); either
-    way the bytes are checked against the pin before they are cached or returned.
+    When the retried download fails, a GitHub release asset is fetched once more through `fallback` (gh); where
+    gh has no token (a hosted CI step) the direct download gets a second round after a pause instead. Either way
+    the bytes are checked against the pin before they are cached or returned.
 
     Raises:
         ToolError: the download failed or doesn't match the checksum.
@@ -366,6 +386,13 @@ def fetch(
     except ToolError as error:
         try:
             data = fallback(download.url)
+        except NoCredentialsError as alternative:
+            time.sleep(HOSTED_PAUSE * (0.5 + secrets.randbelow(1001) / 1000))  # jitter spreads the retries
+            try:
+                data = download_bytes(download.url, get)
+            except ToolError as second:
+                msg = f"{error}; {alternative}; second direct round: {second}"
+                raise ToolError(msg) from error
         except ToolError as alternative:
             msg = f"{error}; fallback: {alternative}"
             raise ToolError(msg) from error
