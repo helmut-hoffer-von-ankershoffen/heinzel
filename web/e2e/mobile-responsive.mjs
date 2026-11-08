@@ -1478,7 +1478,9 @@ try {
       (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube-nocookie.com/embed/"),
       "private player choice must restore the privacy-enhanced origin",
     );
-    await playbackHelp.tap();
+    // The help pane floats over the player's header, where Open on YouTube now sits: close it first, as a person would.
+    await playbackHelp.press("Escape");
+    await player.getByRole("button", { name: /Playback or sign-in trouble\?/, expanded: false }).waitFor();
     const [youtubePage] = await Promise.all([
       soundPage.waitForEvent("popup"),
       player.getByRole("link", { name: "Open on YouTube" }).tap(),
