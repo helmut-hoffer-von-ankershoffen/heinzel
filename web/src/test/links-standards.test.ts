@@ -16,12 +16,12 @@ const linkTags = (source: string) => [
 const LINKS: Record<string, { count: number; reason: string }> = {
   "../components/PaneActions.tsx": {
     count: 2,
-    reason: "the link inside PaneAction to= and href=: the one place a link is a button",
+    reason: "KEEP: the link inside PaneAction to= and href=: the one place a link is a button",
   },
-  "../components/Prose.tsx": { count: 3, reason: "rendered Markdown: links and images in running text" },
-  "../layout/Shell.tsx": { count: 1, reason: "the skip link to #content, visually hidden (accessibility)" },
-  "../layout/Sidebar.tsx": { count: 12, reason: "navigation and account-menu rows, the whole row is the target" },
-  "../pages/graph/TeamNodes.tsx": { count: 3, reason: "the whole graph card is the hit target, no underline" },
+  "../components/Prose.tsx": { count: 3, reason: "KEEP: rendered Markdown: links and images in running text" },
+  "../layout/Shell.tsx": { count: 1, reason: "KEEP: the skip link to #content, visually hidden (accessibility)" },
+  "../layout/Sidebar.tsx": { count: 12, reason: "KEEP: navigation and account-menu rows, the whole row is the target" },
+  "../pages/graph/TeamNodes.tsx": { count: 3, reason: "KEEP: the whole graph card is the hit target, no underline" },
   "../notifications/TodayNotifications.tsx": {
     count: 1,
     reason: "CONVERT: a notice row; mark data-nav-row instead of data-prose-link (brief C)",
@@ -68,15 +68,8 @@ it("has links only in the listed files, and the counts only fall", () => {
     if (count) found[file] = count;
   }
   expect(found).toEqual(Object.fromEntries(Object.entries(LINKS).map(([file, entry]) => [file, entry.count])));
-  for (const [file, entry] of Object.entries(LINKS)) expect(entry.reason, file).toMatch(/\S{3}/);
+  for (const [file, entry] of Object.entries(LINKS)) expect(entry.reason, file).toMatch(/^(CONVERT|KEEP): \S/);
 });
-
-// Controls that still look like a link, removed with their conversion (same briefs as LINKS). Only shrinks.
-const LINK_LOOK: Record<string, string> = {
-  "../layout/PluginsSection.tsx": "CONVERT: the source address hover:underline (brief D)",
-  "../pages/Contracts.tsx": "CONVERT: title text-primary underline (brief C)",
-  "../pages/Heinzelmaennchen.tsx": "CONVERT: name hover:underline (brief C)",
-};
 
 it("gives no control the look of a link", () => {
   const look =
@@ -84,10 +77,10 @@ it("gives no control the look of a link", () => {
   const found: string[] = [];
   for (const [file, source] of sources) {
     if (file.endsWith("/Prose.tsx")) continue; // rendered Markdown: links in running text are underlined text-primary
-    if (file in LINK_LOOK) continue;
+    // A tag still marked data-prose-link is on the PROSE_MARKERS list and leaves with its conversion.
     for (const name of ["a", "Link", "NavLink", "button", "Button"])
       for (const tag of openingTags(source, name))
-        if (look.test(tag) || /variant="link"/.test(tag))
+        if ((look.test(tag) && !tag.includes("data-prose-link")) || /variant="link"/.test(tag))
           found.push(`${file}: ${tag.slice(0, 60).replace(/\s+/g, " ")}`);
   }
   expect(found).toEqual([]);
@@ -108,6 +101,7 @@ const PROSE_MARKERS: Record<string, string> = {
 it("marks prose links only in prose, and navigation rows only where listed", () => {
   const prose = sources.filter(([, source]) => source.includes("data-prose-link")).map(([file]) => file);
   expect(prose.sort()).toEqual(["../components/PaneActions.tsx", ...Object.keys(PROSE_MARKERS)].sort());
+  for (const [file, reason] of Object.entries(PROSE_MARKERS)) expect(reason, file).toMatch(/^(CONVERT|KEEP): \S/);
   const rows = sources.filter(([, source]) => source.includes("data-nav-row")).map(([file]) => file);
   expect(rows.filter((file) => !(file in NAV_ROWS) && !file.endsWith("/PaneActions.tsx"))).toEqual([]);
 });
