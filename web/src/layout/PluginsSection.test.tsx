@@ -2,7 +2,8 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
-import { getRun } from "@/lib/operationRun";
+import { OperationDialog } from "@/components/OperationDialog";
+import { getRun, resetOperationRun } from "@/lib/operationRun";
 import { expectAccessible } from "@/test/render";
 import { CandidateDetails, ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
 
@@ -243,8 +244,25 @@ function show(props: Parameters<typeof PluginsSection>[0] = {}) {
   return render(
     <Providers client={queryClient()}>
       <PluginsSection {...props} />
+      <OperationDialog />
     </Providers>,
   );
+}
+
+/** The one operation dialog, by its title. */
+const dialog = (name: RegExp) => screen.findByRole("dialog", { name });
+
+/** Choose `action` in the dialog titled `name`: the one confirmation a plugin change asks. */
+async function choose(user: ReturnType<typeof userEvent.setup>, name: RegExp, action: string) {
+  await user.click(within(await dialog(name)).getByRole("button", { name: action }));
+}
+
+/** No inline confirmation and no second restart question ever renders. */
+function expectNoOldConfirmation() {
+  expect(screen.queryByRole("group", { name: /Install this plugin/ })).toBeNull();
+  expect(document.querySelector("[data-plugin-confirm]")).toBeNull();
+  expect(screen.queryByText(/Restart and apply/)).toBeNull();
+  expect(screen.queryByText(/Restart the server to apply/)).toBeNull();
 }
 
 beforeEach(() => {
@@ -301,13 +319,12 @@ describe("PluginsSection", () => {
     await user.click(screen.getByRole("button", { name: "Add" }));
     await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
     await user.click(screen.getByRole("button", { name: "Install" }));
-    await user.click(
-      within(await screen.findByRole("group", { name: /Install this plugin/ })).getByRole("button", {
-        name: "Restart and apply",
-      }),
-    );
-    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("cannot confirm how this installation ended");
+    await choose(user, /Install heinzel-crm/, "Install");
+    expect(
+      (await screen.findAllByRole("alert")).some((alert) =>
+        alert.textContent?.includes("cannot confirm how this installation ended"),
+      ),
+    ).toBe(true);
     expect(screen.queryByRole("button", { name: "Remove heinzel-crm" })).not.toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
     expect(await screen.findByRole("button", { name: "Resolve after checking" })).toBeInTheDocument();
@@ -327,8 +344,7 @@ describe("PluginsSection", () => {
     const user = userEvent.setup();
     show({ reload, restartInterval: 1 });
 
-    await user.click(await screen.findByRole("button", { name: "Restart and apply" }));
-    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await choose(user, /Install heinzel-crm/, "Install");
     await waitFor(() => expect(reload).toHaveBeenCalledOnce());
 
     expect(calls.filter((request) => new URL(request.url).pathname === "/api/stream/system/plugin/add")).toHaveLength(
@@ -352,6 +368,8 @@ describe("PluginsSection", () => {
 
     expect(await screen.findByText(/server is still working on this installation/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Restart and apply" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Install" })).not.toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname === "/api/stream/system/plugin/add")).toHaveLength(
       0,
     );
@@ -392,12 +410,9 @@ describe("PluginsSection", () => {
     show({ reload });
     await user.click(screen.getByRole("tab", { name: "Discover" }));
     await user.click(await screen.findByRole("button", { name: "Install" }));
-    await user.click(
-      within(await screen.findByRole("group", { name: /Install this plugin/ })).getByRole("button", {
-        name: "Restart and apply",
-      }),
-    );
-    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await choose(user, /Install heinzel-crm/, "Install");
+    await choose(user, /Installed heinzel-crm/, "Done");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(await screen.findByText("CRM", { exact: true })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Installed" })).toHaveAttribute("aria-selected", "true");
     expect(
@@ -422,10 +437,15 @@ describe("PluginsSection", () => {
       phase("record", "Recording the add", "done"),
     ].join("");
     let done = false;
+    const crm = { ...installed, distribution: "heinzel-crm", name: "crm", version: "1.2.0", summary: "CRM notes." };
     serve((url) => {
+      // The final check reads the list fresh: the confirmed install is in it.
+      if (url.pathname === "/api/system/plugin/list") return { body: done ? [installed, crm] : [installed] };
       if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
         done = url.searchParams.get("confirm") === "true";
-        return { body: change("add", done, { plugins: [installed], restart_required: false }) };
+        return {
+          body: change("add", done, { plugins: done ? [installed, crm] : [installed], restart_required: false }),
+        };
       }
       return base(url);
     });
@@ -434,23 +454,29 @@ describe("PluginsSection", () => {
     await user.click(screen.getByRole("button", { name: "Add" }));
     await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
     await user.click(screen.getByRole("button", { name: "Install" }));
-    await user.click(
-      within(await screen.findByRole("group", { name: /Install this plugin/ })).getByRole("button", {
-        name: "Restart and apply",
-      }),
-    );
-    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await choose(user, /Install heinzel-crm/, "Install");
     await waitFor(() => expect(getRun().stage).toBe("done"));
     const run = getRun();
     if (run.stage !== "done") throw new Error("not done");
     expect(run.call.path).toBe("/system/plugin/add");
+    // The plan is fixed before it starts; the server's own steps (its check, each plugin it needs) are the write's
+    // detail. The install took effect without a restart, so restarting, waiting and reloading were not needed.
     expect(run.phases.map(({ id, state }) => [id, state])).toEqual([
-      ["install", "done"],
-      ["verify", "done"],
-      ["needs:heinzel-auth", "done"],
-      ["record", "done"],
+      ["preserve", "done"],
+      ["write", "done"],
+      ["restart", "skipped"],
+      ["wait", "skipped"],
+      ["reload", "skipped"],
+      ["check", "done"],
     ]);
-    expect(run.phases[2]?.detail).toBe("Installed with it: 1.0.0");
+    expect(run.phases[1]?.label).toBe("Installing heinzel-crm");
+    expect(run.phases[1]?.detail).toBe(
+      "Checked · Plugin heinzel-auth, which heinzel-crm needs: Installed with it: 1.0.0",
+    );
+    const shown = await dialog(/Installed heinzel-crm/);
+    expect(
+      within(shown).getByText(/Plugin heinzel-auth, which heinzel-crm needs: Installed with it: 1\.0\.0/),
+    ).toBeInTheDocument();
   });
 
   it("restarts once and reloads after a Discover install whose row leaves the list", async () => {
@@ -497,12 +523,7 @@ describe("PluginsSection", () => {
     show({ reload, restartInterval: 1 });
     await user.click(screen.getByRole("tab", { name: "Discover" }));
     await user.click((await screen.findAllByRole("button", { name: "Install" }))[0] as HTMLElement);
-    await user.click(
-      within(await screen.findByRole("group", { name: /Install this plugin/ })).getByRole("button", {
-        name: "Restart and apply",
-      }),
-    );
-    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await choose(user, /Install heinzel-crm/, "Install");
     await waitFor(() => expect(reload).toHaveBeenCalledOnce());
     expect(screen.queryByText(/may already be restarting/)).not.toBeInTheDocument();
     expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(1);
@@ -538,19 +559,13 @@ describe("PluginsSection", () => {
     await user.click(screen.getByRole("button", { name: "Add" }));
     await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
     await user.click(screen.getByRole("button", { name: "Install" }));
-    const confirm = async () => {
-      await user.click(
-        within(screen.getByRole("group", { name: /Install this plugin/ })).getByRole("button", {
-          name: "Restart and apply",
-        }),
-      );
-      await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
-    };
-    await screen.findByRole("group", { name: /Install this plugin/ });
-    await confirm();
-    expect(await screen.findByRole("alert")).toHaveTextContent("Restart refused fixture");
+    await choose(user, /Install heinzel-crm/, "Install");
+    const failed = await dialog(/Installing heinzel-crm/);
+    expect(await within(failed).findByRole("alert")).toHaveTextContent("Restart refused fixture");
     expect(screen.getByText("CRM", { exact: true })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Check again" })).toBeInTheDocument();
+    // Trying again observes the kept restart; it never offers the install itself again.
+    expect(within(failed).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(within(failed).queryByRole("button", { name: "Install" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Restart and apply" })).not.toBeInTheDocument();
     expect(calls.filter((call) => new URL(call.url).searchParams.get("confirm") === "true")).toHaveLength(1);
     expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(1);
@@ -559,10 +574,13 @@ describe("PluginsSection", () => {
     expect(savedRestart.observation.retired).toContain("old");
     expect(savedRestart.acknowledged).toBe(false);
     view.unmount();
+    // A reload starts with no run in memory; only what the tab stored survives it.
+    resetOperationRun();
     show({ reload, restartInterval: 1 });
     expect(await screen.findByRole("alert")).toHaveTextContent("can’t verify the previous installation or restart");
     expect(screen.queryByRole("button", { name: "Restart and apply" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Check again" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(reload).not.toHaveBeenCalled();
     expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(1);
     expect(calls.filter((call) => new URL(call.url).searchParams.get("confirm") === "true")).toHaveLength(1);
@@ -591,10 +609,12 @@ describe("PluginsSection", () => {
         return { body: { instance: "replacement", version: "0.9.23", matches: true, mismatched: [] } };
       return base(url);
     });
-    const user = userEvent.setup();
     const reload = vi.fn();
     show({ reload, restartInterval: 1 });
-    await user.click(await screen.findByRole("button", { name: "Check again" }));
+    // The dialog opens in its progress view at the restart it observes again: it never asks a second time.
+    const resumed = await dialog(/Installing heinzel-crm/);
+    expect(within(resumed).queryByRole("button", { name: "Install" })).not.toBeInTheDocument();
+    expect(within(resumed).queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
     await waitFor(() => expect(reload).toHaveBeenCalledOnce());
     const verifies = calls.filter((request) => new URL(request.url).pathname === "/api/lifecycle/verify");
     expect(verifies).toHaveLength(1);
@@ -614,12 +634,29 @@ describe("PluginsSection", () => {
     });
     const user = userEvent.setup();
     const reload = vi.fn();
-    const { container } = show({ reload, restartInterval: 1 });
+    // The confirmed install answers after a moment, so its running view can be read.
+    confirmedStreamDelay = 300;
+    show({ reload, restartInterval: 1 });
     await user.click(screen.getByRole("button", { name: "Add" }));
     await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
     await user.click(screen.getByRole("button", { name: "Install" }));
 
-    const preview = await screen.findByRole("group", { name: /Install this plugin/ });
+    const preview = await dialog(/Install heinzel-crm/);
+    expectNoOldConfirmation();
+    // One question: Cancel, then Install, beside the title row's Close; the dialog opens on Cancel.
+    expect(
+      within(preview)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim()),
+    ).toEqual(["Close", "Cancel", "Install"]);
+    expect(within(preview).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    for (const line of [
+      "Runs as code on this computer with your permissions.",
+      "hz restarts and this page reloads itself.",
+      "Your open work is preserved.",
+    ]) {
+      expect(within(preview).getByText(line)).toBeInTheDocument();
+    }
     const adds = () =>
       calls.filter((request) => {
         const path = new URL(request.url).pathname;
@@ -637,11 +674,28 @@ describe("PluginsSection", () => {
         name: "github.com/acme-example/heinzel-crm",
       }),
     ).toHaveAttribute("href", candidate.url);
-    await expectAccessible(container);
+    await expectAccessible(document.body);
 
     expect(adds()).toHaveLength(1);
-    await user.click(within(preview).getByRole("button", { name: "Restart and apply" }));
-    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await user.click(within(preview).getByRole("button", { name: "Install" }));
+    const running = await dialog(/Installing heinzel-crm/);
+    expect(within(running).getByText(/Step \d of 6: /)).toBeInTheDocument();
+    expect(within(running).getByRole("progressbar")).toBeInTheDocument();
+    const steps = within(within(running).getByRole("list", { name: /steps/i })).getAllByRole("listitem");
+    const plan = [
+      "Preserving your open work",
+      "Installing heinzel-crm",
+      "Restarting hz",
+      "Waiting for hz to come back",
+      "Reloading the page",
+      "Checking that exactly it is installed",
+    ];
+    expect(steps).toHaveLength(plan.length);
+    expect(steps.map((step, index) => step.textContent?.startsWith(plan[index] ?? "-"))).toEqual(plan.map(() => true));
+    expect(within(running).queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+    expect(within(running).queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+    expect(within(running).getByRole("button", { name: "Installing…" })).toBeDisabled();
+    expectNoOldConfirmation();
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
     expect(calls.some((request) => new URL(request.url).pathname === "/api/restart")).toBe(true);
     const confirmed = new URL(adds()[1]?.url ?? "");
@@ -649,6 +703,13 @@ describe("PluginsSection", () => {
     expect(confirmed.searchParams.get("spec")).toBe(PINNED);
     expect(confirmed.searchParams.get("confirm")).toBe("true");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    // The reloaded page opens the dialog again at its final check.
+    const saved = JSON.parse(sessionStorage.getItem("hz.plugin-operation.v1") ?? "null");
+    expect(saved?.pending?.action).toBe("add");
+    expect(saved?.phases?.find((phase: { id: string }) => phase.id === "reload")?.state).toBe("running");
+    await choose(user, /Installed heinzel-crm/, "Done");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expectNoOldConfirmation();
   });
 
   it.each(["add", "remove"])(
@@ -675,14 +736,18 @@ describe("PluginsSection", () => {
       } else {
         await user.click(await screen.findByRole("button", { name: "Remove heinzel-clock" }));
       }
-      const preview = await screen.findByRole("group", {
-        name: action === "add" ? /Install this plugin/ : /Remove heinzel-clock/,
-      });
-      await user.click(within(preview).getByRole("button", { name: "Restart and apply" }));
-      await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+      await choose(
+        user,
+        action === "add" ? /Install heinzel-crm/ : /Remove heinzel-clock\?/,
+        action === "add" ? "Install" : "Remove",
+      );
 
+      // While the stream stays open past four seconds, the dialog shows its write step running.
+      const running = await dialog(action === "add" ? /Installing heinzel-crm/ : /Removing heinzel-clock/);
       expect(
-        await screen.findByText(action === "add" ? "Adding plugin heinzel-crm" : "Removing heinzel-clock"),
+        await within(running).findByText(
+          `Step 2 of 6: ${action === "add" ? "Installing heinzel-crm" : "Removing heinzel-clock"}`,
+        ),
       ).toBeInTheDocument();
       await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 10_000 });
       const paths = calls.map((request) => new URL(request.url).pathname);
@@ -716,9 +781,7 @@ describe("PluginsSection", () => {
     const reload = vi.fn();
     show({ reload, restartInterval: 1 });
     await user.click(await screen.findByRole("button", { name: "Remove heinzel-clock" }));
-    const card = await screen.findByRole("group", { name: /Remove heinzel-clock/ });
-    await user.click(within(card).getByRole("button", { name: "Restart and apply" }));
-    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await choose(user, /Remove heinzel-clock\?/, "Remove");
     await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 10_000 });
     expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(1);
   });
@@ -742,21 +805,23 @@ describe("PluginsSection", () => {
     const user = userEvent.setup();
     show({ reload: vi.fn(), restartInterval: 1 });
     await user.click(await screen.findByRole("button", { name: "Remove heinzel-clock" }));
-    const preview = await screen.findByRole("group", { name: /Remove heinzel-clock/ });
-    await user.click(within(preview).getByRole("button", { name: "Restart and apply" }));
-    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await choose(user, /Remove heinzel-clock\?/, "Remove");
     expect(await screen.findAllByText("response lost")).not.toHaveLength(0);
-    await user.click(within(preview).getByRole("button", { name: "Restart and apply" }));
-    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
-    expect(await screen.findByText(/The request result is unknown/)).toBeInTheDocument();
+    // Trying again in the same dialog is the same confirmation: the lost removal is not sent again.
+    await choose(user, /Removing heinzel-clock/, "Try again");
+    expect(await screen.findAllByText(/The request result is unknown/)).not.toHaveLength(0);
     expect(calls.filter((call) => new URL(call.url).pathname === "/api/stream/system/plugin/remove")).toHaveLength(1);
     expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(0);
     // Reopening the still-present plugin is a new explicit choice after the invalidated list has been read.
-    await user.click(within(preview).getByRole("button", { name: "Cancel" }));
+    // The failed dialog's footer Close (the title row has one too).
+    await user.click(
+      within(await dialog(/Removing heinzel-clock/))
+        .getAllByRole("button", { name: "Close" })
+        .at(-1) as HTMLElement,
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "Remove heinzel-clock" }));
-    const reopened = await screen.findByRole("group", { name: /Remove heinzel-clock/ });
-    await user.click(within(reopened).getByRole("button", { name: "Restart and apply" }));
-    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await choose(user, /Remove heinzel-clock\?/, "Remove");
     expect(await screen.findAllByText("response lost")).not.toHaveLength(0);
     expect(calls.filter((call) => new URL(call.url).pathname === "/api/stream/system/plugin/remove")).toHaveLength(2);
   });
@@ -781,7 +846,14 @@ describe("PluginsSection", () => {
       installed: false,
     });
     const git = "git+https://github.com/acme-example/heinzel-crm";
+    // Each restart brings up a new server instance, so both installs can finish.
+    let restarts = 0;
     const calls = serve((url) => {
+      if (url.pathname === "/api/restart") restarts += 1;
+      if (url.pathname === "/api/lifecycle")
+        return { body: { instance: `instance-${restarts}`, version: "0.3.0", restartable: true } };
+      if (url.pathname === "/api/lifecycle/verify")
+        return { body: { instance: `instance-${restarts}`, version: "0.3.0", matches: true, mismatched: [] } };
       if (url.pathname === "/api/system/plugin/search") {
         return {
           body: {
@@ -839,27 +911,25 @@ describe("PluginsSection", () => {
     });
     await user.click(installs[0] as HTMLElement);
     expect(spec(0)).toBe("zoom");
-    await user.click(
-      within(await screen.findByRole("group", { name: /Install/ })).getByRole("button", { name: "Restart and apply" }),
-    );
-    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await choose(user, /Install heinzel-crm/, "Install");
     await waitFor(() => expect(adds()).toHaveLength(2));
     expect(spec(1)).toBe("zoom");
 
-    await waitFor(() => expect(screen.queryByRole("group", { name: /Install/ })).not.toBeInTheDocument());
+    await choose(user, /Installed heinzel-crm/, "Done");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await user.click(screen.getByRole("tab", { name: "Discover" }));
 
     await user.click((await screen.findAllByRole("button", { name: "Install" }))[1] as HTMLElement);
     expect(spec(2)).toBe(git);
-    await user.click(
-      within(await screen.findByRole("group", { name: /Install/ })).getByRole("button", { name: "Restart and apply" }),
-    );
-    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await choose(user, /Install heinzel-crm/, "Install");
     await waitFor(() => expect(adds()).toHaveLength(4));
     expect(spec(3)).toBe(PINNED);
+    // The second install runs to its end here: a run outlives the section, so it must not leak into the next test.
+    await waitFor(() => expect(getRun().stage).toBe("done"));
+    expect(screen.getByRole("dialog", { name: /Installed heinzel-crm/ })).toBeInTheDocument();
   });
 
-  it("opens the confirmation under the clicked Discover row, focused, one at a time, with provenance collapsed", async () => {
+  it("opens the confirmation for the clicked Discover row in the dialog, focused, one at a time, with provenance collapsed", async () => {
     const entry = (name: string) => ({
       name: `heinzel-${name}`,
       short_name: name,
@@ -888,15 +958,18 @@ describe("PluginsSection", () => {
     const row = rows[2] as HTMLElement;
     const install = within(row).getByRole("button", { name: "Install" });
     await user.click(install);
-    const card = await screen.findByRole("group", { name: /Install this plugin/ });
-    expect(row).toContainElement(card);
-    expect(screen.getAllByRole("group", { name: /Install this plugin/ })).toHaveLength(1);
-    expect(card.closest("[data-plugin-confirm]")).toHaveFocus();
+    const card = await dialog(/Install heinzel-crm/);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expectNoOldConfirmation();
+    expect(within(card).getByRole("button", { name: "Cancel" })).toHaveFocus();
     expect(within(row).getByRole("button", { name: "Install" })).toHaveAttribute("aria-expanded", "true");
     expect(card.querySelector("details")).not.toHaveAttribute("open");
     expect(screen.getByRole("tab", { name: "Installed" })).toBeDisabled();
+    // Another row's Install does not open a second confirmation.
+    await user.click(within(rows[0] as HTMLElement).getByRole("button", { name: "Install" }));
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
     await user.click(within(card).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("group", { name: /Install this plugin/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Installed" })).toBeEnabled();
   });
 
@@ -934,6 +1007,7 @@ describe("PluginsSection", () => {
     await user.click(screen.getByRole("button", { name: "Install" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("local paths aren't added");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).searchParams.get("confirm"))).toHaveLength(0);
   });
 
@@ -958,12 +1032,20 @@ describe("PluginsSection", () => {
         name: "Disable heinzel-clock",
       }),
     );
-    await user.click(
-      within(screen.getByRole("group", { name: /Disable/ })).getByRole("button", { name: "Restart and apply" }),
+    const asked = await dialog(/Disable heinzel-clock/);
+    expect(asked).toHaveTextContent("It stays installed, switched off.");
+    expect(asked).toHaveTextContent("hz restarts and this page reloads itself.");
+    expect(
+      within(asked)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim()),
+    ).toEqual(["Close", "Cancel", "Disable"]);
+    expect(calls.some((request) => new URL(request.url).pathname === "/api/system/plugin/disable")).toBe(false);
+    await user.click(within(asked).getByRole("button", { name: "Disable" }));
+    expectNoOldConfirmation();
+    await waitFor(() =>
+      expect(calls.some((request) => new URL(request.url).pathname === "/api/system/plugin/disable")).toBe(true),
     );
-    const dialog = await screen.findByRole("alertdialog", { name: "Restart and apply Plugins" });
-    expect(dialog).toHaveTextContent("Disable: heinzel-clock");
-    await user.click(within(dialog).getByRole("button", { name: "Restart and apply Plugins" }));
     const disabled = calls.find((request) => new URL(request.url).pathname === "/api/system/plugin/disable");
     expect(new URL(disabled?.url ?? "").searchParams.get("distribution")).toBe("heinzel-clock");
 
