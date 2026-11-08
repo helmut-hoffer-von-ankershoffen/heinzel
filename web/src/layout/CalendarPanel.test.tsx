@@ -139,3 +139,20 @@ it("opens a meeting row into its detail with provider, a Join icon button, organ
   expect(screen.queryByRole("article")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Plain/ })).toBeInTheDocument();
 });
+
+it("puts Close in the title row and every action in one bottom row, Today leading with its words", async () => {
+  panel(true);
+  const close = await screen.findByRole("button", { name: "Close calendar" });
+  expect(close.closest("[data-pane-chrome]")).not.toBeNull();
+  expect(close).toHaveTextContent("");
+  const row = (await screen.findByRole("group", { name: "Actions" })) as HTMLElement;
+  const buttons = [...row.querySelectorAll<HTMLElement>("button, a")];
+  expect(buttons.map((button) => button.getAttribute("aria-label") ?? button.textContent)).toEqual([
+    "Today",
+    "Previous week",
+    "Next week",
+    "Set up reminder worker",
+  ]);
+  expect(buttons[0]).toHaveTextContent("Today");
+  expect(buttons.slice(1).every((button) => button.textContent === "")).toBe(true);
+});
