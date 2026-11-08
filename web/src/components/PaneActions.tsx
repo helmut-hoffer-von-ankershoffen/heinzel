@@ -248,9 +248,9 @@ export function actionStructureProblems(container: Element): string[] {
   const problems: string[] = [];
   if (rows.length > 1) problems.push(`${rows.length} action rows; a pane has one`);
   const row = rows[0];
-  const chrome = container.querySelector("[data-pane-chrome]");
+  const chromes = [...container.querySelectorAll("[data-pane-chrome]")];
   for (const element of container.querySelectorAll(ACTION))
-    if (!row?.contains(element) && !chrome?.contains(element))
+    if (!row?.contains(element) && !chromes.some((chrome) => chrome.contains(element)))
       problems.push(`"${element.getAttribute("aria-label") ?? element.textContent?.trim()}" is outside the action row`);
   const all = container.querySelectorAll("*");
   const last = all[all.length - 1];

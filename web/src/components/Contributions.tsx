@@ -71,6 +71,7 @@ import { FooterPart } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { HeinzelFace } from "@/components/HeinzelFace";
 import { OperationDialog } from "@/components/OperationDialog";
+import { HideToast, useWidgetVisibility } from "@/components/HiddenWidgets";
 import { PaneAction, PaneActions, PaneChrome } from "@/components/PaneActions";
 import { Progress } from "@/components/Progress";
 import { Button } from "@/components/ui/button";
@@ -883,37 +884,22 @@ const DEFAULT_SIZE: Record<Widget["kind"], keyof typeof SIZES> = {
 };
 export const sizeOf = (widget: Widget): keyof typeof SIZES => widget.size ?? DEFAULT_SIZE[widget.kind];
 
-const DISMISSED = "hz.today.widgets.dismissed";
-
-function loadDismissed(): Set<string> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(DISMISSED) ?? "[]") as string[]);
-  } catch {
-    return new Set();
-  }
-}
-
-/** A widget's key while what it shows is the same, so a dismissed one comes back when it changes. */
-const widgetKey = (entry: SchemaWidgetEntry) => `${entry.id}:${JSON.stringify(entry.widget)}`;
-
 function WidgetCard({
   entry,
   updatedAt,
   run,
   onAsk,
-  dismissed,
-  onDismiss,
+  onHide,
 }: {
   entry: SchemaWidgetEntry;
   updatedAt: number;
   run: (effect: Effect) => void;
   onAsk?: (context: string, text: string) => void;
-  dismissed: Set<string>;
-  onDismiss: (key: string) => void;
+  onHide: (id: string, title: string) => void;
 }) {
   const current = useEntry("widgets", entry, updatedAt);
   const widget = current.widget;
-  if (!widget || dismissed.has(widgetKey(current))) return null;
+  if (!widget) return null;
   const tone = "tone" in widget ? widget.tone : "neutral";
   const title = "title" in widget ? widget.title : widget.label;
   const cardActions = widget.kind === "card" ? (widget.actions ?? []) : [];
@@ -928,8 +914,8 @@ function WidgetCard({
       data-size={sizeOf(widget)}
     >
       <PaneChrome>
-        <PaneAction ghost icon={X} onClick={() => onDismiss(widgetKey(current))}>
-          {t("today.dismiss", { title })}
+        <PaneAction ghost icon={X} onClick={() => onHide(current.id, title)}>
+          {t("today.hide", { title })}
         </PaneAction>
       </PaneChrome>
       <div className="min-w-0 pr-10">
@@ -971,19 +957,14 @@ function WidgetCard({
 export function TodayWidgets({ onAsk }: { onAsk?: (context: string, text: string) => void }) {
   const { entries, updatedAt } = useEntries("widgets", "today");
   const { run, dialog } = useEffectRunner();
-  const [dismissed, setDismissed] = useState(loadDismissed);
-  const dismiss = (key: string) => {
-    const next = new Set(dismissed).add(key);
-    setDismissed(next);
-    try {
-      localStorage.setItem(DISMISSED, JSON.stringify([...next].slice(-100)));
-    } catch {
-      // No storage: dismissed for this visit only.
-    }
+  const { hide, restore } = useWidgetVisibility();
+  const [undo, setUndo] = useState<string | null>(null);
+  const onHide = (id: string) => {
+    void hide(id).then(() => setUndo(id));
   };
   // One card per contribution id, whatever the list repeats.
   const unique = [...new Map(entries.map((entry) => [entry.id, entry])).values()];
-  if (!unique.length) return null;
+  if (!unique.length && !undo) return null;
   return (
     <>
       {unique.map((entry) => (
@@ -993,12 +974,22 @@ export function TodayWidgets({ onAsk }: { onAsk?: (context: string, text: string
           updatedAt={updatedAt}
           run={run}
           onAsk={onAsk}
-          dismissed={dismissed}
-          onDismiss={dismiss}
+          onHide={onHide}
         />
       ))}
       {/* The confirmation and its live region are not list items: they go beside the grid, not in it. */}
       {createPortal(dialog, document.body)}
+      {undo &&
+        createPortal(
+          <HideToast
+            onUndo={() => {
+              void restore([undo]);
+              setUndo(null);
+            }}
+            onDone={() => setUndo(null)}
+          />,
+          document.body,
+        )}
     </>
   );
 }
