@@ -144,6 +144,15 @@ class PluginSearch(BaseModel):
     warnings: list[str] = Field(description="Sources that could not be searched, e.g. GitHub while offline.")
 
 
+class PluginDependency(BaseModel):
+    """A plugin of the same repository and commit that installing a plugin installs first."""
+
+    distribution: str = Field(description="Distribution name, e.g. heinzel-acme.")
+    version: str | None = Field(description="The version at that commit, when known.")
+    requirement: str = Field(description="What is installed: its git source pinned to the same commit.")
+    source: Source = Field(default="git", description="Where its code comes from; the same source as the plugin.")
+
+
 class PluginCandidate(BaseModel):
     """What `hz system plugin add` would install: the code, where it comes from and who publishes it."""
 
@@ -168,6 +177,11 @@ class PluginCandidate(BaseModel):
     revision: str | None = Field(description="The git commit that would be installed, for a git source.")
     installed_version: str | None = Field(description="The version installed now, when this replaces it.")
     warnings: list[str] = Field(description="What could not be checked, e.g. metadata of a host other than GitHub.")
+    also_installs: list[PluginDependency] = Field(
+        default_factory=list[PluginDependency],
+        description="Plugins of the same repository it needs and that are not installed yet, in install order "
+        "(dependencies first), pinned to the same commit; they are installed in the same confirmed operation.",
+    )
 
 
 class PluginPendingChange(BaseModel):

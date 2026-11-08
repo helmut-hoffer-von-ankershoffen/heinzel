@@ -261,6 +261,21 @@ describe("PluginsSection", () => {
     expect(line.closest("details")).toBeNull();
   });
 
+  it("names the plugins it also installs before anything is confirmed, and shows nothing for a plugin alone", () => {
+    const also = [
+      { distribution: "heinzel-acme", version: "0.2.0", requirement: "heinzel-acme @ git+x", source: "git" as const },
+      { distribution: "heinzel-acme-payments", version: null, requirement: "p @ git+x", source: "git" as const },
+    ];
+    const { unmount } = render(<CandidateDetails candidate={{ ...candidate, source: "git", also_installs: also }} />);
+    const list = screen.getByTestId("plugin-also-installs");
+    expect(list).toHaveTextContent("Also installs");
+    expect(list).toHaveTextContent("heinzel-acme 0.2.0");
+    expect(list).toHaveTextContent("heinzel-acme-payments");
+    unmount();
+    render(<CandidateDetails candidate={{ ...candidate, source: "git", also_installs: [] }} />);
+    expect(screen.queryByTestId("plugin-also-installs")).toBeNull();
+  });
+
   it("does not call an uncompleted backend reply an installed plugin or restart the server", async () => {
     const calls = serve((url) =>
       url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add"

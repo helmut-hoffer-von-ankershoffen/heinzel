@@ -273,6 +273,7 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
     ],
   ];
   if (candidate.installed_version) rows.push([t("plugins.field.replaces"), candidate.installed_version]);
+  const also = candidate.also_installs ?? [];
   return (
     <div className="mt-2 text-xs">
       {candidate.summary && <p className="mb-1 text-muted-foreground">{candidate.summary}</p>}
@@ -285,6 +286,19 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
           ...(candidate.installed_version ? [`${t("plugins.field.replaces")} ${candidate.installed_version}`] : []),
         ].join(" · ")}
       </p>
+      {also.length > 0 && (
+        <div className="mt-1" data-testid="plugin-also-installs">
+          <p className="text-muted-foreground">{t("plugins.alsoInstalls")}</p>
+          <ul className="mt-0.5 list-none">
+            {also.map((item) => (
+              <li key={item.distribution} className="break-words">
+                {item.distribution}
+                {item.version ? ` ${item.version}` : ""} · {sourceLabel({ source_url: candidate.url }, candidate.private)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <details className="mt-1">
         <summary className="cursor-pointer text-muted-foreground">{t("plugins.sourceDetails")}</summary>
         <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
