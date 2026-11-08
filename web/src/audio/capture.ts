@@ -94,7 +94,7 @@ export async function captureAudio(signal: AbortSignal, system = false): Promise
     const tracks = stream.getAudioTracks();
     if (!tracks.length)
       throw new Error(
-        "No audio was shared. Your browser or operating system may not offer audio for this source. Choose a tab with Share audio, or stop sharing.",
+        `No audio was shared. Your browser or operating system may not offer audio for this source.${system ? "" : " Choose a tab with Share audio, or stop sharing."}`,
       );
     if (!(await resumed)) throw new Error("Audio could not start. Stop sharing, then try again.");
     if (signal.aborted || closed) throw new DOMException("Capture cancelled", "AbortError");

@@ -86,9 +86,15 @@ export function createWorkspaceAudio({ windows, fromWebContents, fromFrame, conn
     try {
       const frame = event?.senderFrame;
       const contents = event?.sender;
-      if (source !== "workspace" && (source !== "system" || !system) || !frame || contents?.mainFrame !== frame) return false;
+      const refuse = (reason) => {
+        log("desktop.audio.source", { operation: "audio_capture", step: "source", outcome: "skipped", reason });
+        return false;
+      };
+      if (source !== "workspace" && source !== "system") return refuse("unknown_source");
+      if (source === "system" && !system) return refuse("unavailable");
+      if (!frame || contents?.mainFrame !== frame) return refuse("subframe");
       const owned = snapshot(contents, frame, new URL(frame.url).origin);
-      if (!owned) return false;
+      if (!owned) return refuse("unowned");
       armed = { contents, source, at: now() };
       log("desktop.audio.source", { operation: "audio_capture", step: "source", source, outcome: "ok" });
       return true;

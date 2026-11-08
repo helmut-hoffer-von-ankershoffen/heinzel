@@ -189,6 +189,25 @@ test("system audio is never granted where unavailable, unowned, expired or revok
   }
 });
 
+test("a refused source choice logs one skipped outcome with its reason", () => {
+  const off = fixture();
+  off.controller.choose(off.sender, "system");
+  const cases = {
+    unknown_source: f => f.controller.choose(f.sender, "screen"),
+    subframe: f => f.controller.choose({ sender: f.contents, senderFrame: { ...f.frame, frameToken: "iframe" } }, "system"),
+    unowned: f => f.controller.choose({ sender: { ...f.contents }, senderFrame: f.frame }, "system"),
+  };
+  const reasons = { unavailable: off.events };
+  for (const [reason, arm] of Object.entries(cases)) {
+    const f = fixture({ system: true });
+    assert.equal(arm(f), false, reason);
+    reasons[reason] = f.events;
+  }
+  for (const [reason, events] of Object.entries(reasons))
+    assert.deepEqual(events, [{ event: "desktop.audio.source", operation: "audio_capture", step: "source",
+      outcome: "skipped", reason }], reason);
+});
+
 test("each capture logs one start and one outcome with ADR 0138 fields and no secrets", async () => {
   const f = fixture({ system: true });
   f.controller.choose(f.sender, "system");

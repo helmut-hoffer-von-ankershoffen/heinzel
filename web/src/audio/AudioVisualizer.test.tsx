@@ -302,6 +302,24 @@ describe("AudioVisualizer", () => {
     }
   });
 
+  it("when system audio cannot work here, offers the other sources with one line instead of a dead-end retry", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    vi.mocked(captureAudio).mockRejectedValueOnce(new DOMException("Not supported", "NotSupportedError"));
+    try {
+      render(<AudioVisualizer />);
+      open();
+      fireEvent.click(await waitFor(() => pane().getByRole("button", { name: "Use system audio" })));
+      await waitFor(() => expect(pane().getByRole("radiogroup", { name: "Listen to" })).toBeInTheDocument());
+      expect(pane().getByText(/System audio does not work on this computer/)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Use system audio|Try again/ })).not.toBeInTheDocument();
+      expect(sessionStorage.getItem("hz.audio.nosystem")).toBe("1");
+    } finally {
+      sessionStorage.removeItem("hz.audio.nosystem");
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("after a declined system audio prompt shows one plain line and Try again, never the other choices", async () => {
     vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
     vi.mocked(systemAudioAvailable).mockResolvedValue(true);
@@ -312,11 +330,7 @@ describe("AudioVisualizer", () => {
       render(<AudioVisualizer />);
       open();
       fireEvent.click(await waitFor(() => pane().getByRole("button", { name: "Use system audio" })));
-      await waitFor(() =>
-        expect(screen.getByRole("status")).toHaveTextContent(
-          "System audio was not allowed. Choose Try again to be asked once more.",
-        ),
-      );
+      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("System audio was not allowed."));
       expect(screen.queryByRole("radiogroup", { name: "Listen to" })).not.toBeInTheDocument();
       expect(captureMicrophone).not.toHaveBeenCalled();
       fireEvent.click(pane().getByRole("button", { name: "Try again" }));

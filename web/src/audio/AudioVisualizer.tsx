@@ -56,6 +56,30 @@ function remember(source: Source) {
 
 const FELL_BACK = "Shared audio is not offered by this browser, so Heinzel listens with the microphone.";
 const UNSHARED_KEY = "hz.audio.unshared";
+const NO_SYSTEM = "System audio does not work on this computer, so the other sources are offered.";
+const NO_SYSTEM_KEY = "hz.audio.nosystem";
+
+/** System audio failed for a reason a retry cannot fix: not offered again this session. */
+function systemFailed(): boolean {
+  try {
+    return sessionStorage.getItem(NO_SYSTEM_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markNoSystem() {
+  try {
+    sessionStorage.setItem(NO_SYSTEM_KEY, "1");
+  } catch {
+    // not remembered: the next try fails the same way and falls back again
+  }
+}
+
+/** A system audio failure that asking again cannot fix: not a decline or a cancel. */
+function systemBroken(error: unknown) {
+  return !(error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "AbortError"));
+}
 
 /**
  * Whether this browser can share a tab's audio: feature detection, never the user agent. Every iPhone and iPad browser
@@ -86,7 +110,7 @@ const unsupported = (error: unknown) =>
 /** A declined or failed system audio request: one plain line; the pane and the prompt offer Try again. */
 function systemProblem(error: unknown) {
   if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "AbortError"))
-    return "System audio was not allowed. Choose Try again to be asked once more.";
+    return "System audio was not allowed.";
   return error instanceof Error ? error.message : "System audio is unavailable.";
 }
 
@@ -184,6 +208,15 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         if (!current.current) void start("mic");
         return;
       }
+      if (kind === "system" && systemBroken(error)) {
+        // Offered but not working here (unsupported, no audio track, device error): no retry dead end; the other
+        // sources come back with one line.
+        markNoSystem();
+        setSystem(false);
+        setProblem("");
+        setNotice(NO_SYSTEM);
+        return;
+      }
       setProblem(kind === "system" ? systemProblem(error) : captureProblem(error));
     }
   }, []);
@@ -211,7 +244,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     if (!hasDesktopAudio()) return;
     let live = true;
     void systemAudioAvailable().then((available) => {
-      if (live) setSystem(available);
+      if (live) setSystem(available && !systemFailed());
     });
     return () => {
       live = false;
