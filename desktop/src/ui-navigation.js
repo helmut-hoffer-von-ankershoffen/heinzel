@@ -20,11 +20,52 @@ export function isOwnedUiNavigation(target, connection) {
   }
 }
 
-/** Embedded third-party frames keep the web head's CSP; only top-level documents use this guard. */
-export function guardUiNavigation(contents, connection) {
-  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "0.0.0.0", "[::]"]);
+
+/**
+ * Classify a link target from the product UI: "app" stays in the window, "external" opens in the
+ * default browser, "deny" does nothing. External means a public http(s) URL without credentials, or
+ * a mailto: address; local services, other schemes and unparsable strings are denied.
+ */
+export function classifyUiLink(target, connection) {
+  if (typeof target !== "string" || target.length > 8192) return { kind: "deny" };
+  if (isOwnedUiNavigation(target, connection)) return { kind: "app" };
+  let url;
+  try {
+    url = new URL(target);
+  } catch {
+    return { kind: "deny" };
+  }
+  if (url.protocol === "mailto:") return url.pathname ? { kind: "external", url: url.href } : { kind: "deny" };
+  if (url.protocol !== "https:" && url.protocol !== "http:") return { kind: "deny" };
+  if (url.username || url.password || !url.hostname) return { kind: "deny" };
+  const host = url.hostname.toLowerCase();
+  if (LOOPBACK_HOSTS.has(host) || host.endsWith(".localhost") || /^127\./.test(host)) return { kind: "deny" };
+  return { kind: "external", url: url.href };
+}
+
+/** Hand a classified external URL to the OS; never throws into Electron's event loop. */
+export function openUiLinkExternally(target, connection, openExternal) {
+  const link = classifyUiLink(target, connection);
+  if (link.kind !== "external") return false;
+  Promise.resolve().then(() => openExternal(link.url)).catch(() => {});
+  return true;
+}
+
+/**
+ * Only top-level documents use this guard; embedded third-party frames keep the web head's CSP.
+ * The window never leaves the owned origin and never opens a child window: target=_blank,
+ * window.open() and middle-click on a public link go to the default browser instead.
+ */
+export function guardUiNavigation(contents, connection, openExternal) {
+  contents.setWindowOpenHandler((details) => {
+    openUiLinkExternally(details?.url, connection, openExternal);
+    return { action: "deny" };
+  });
   contents.on("will-navigate", (event) => {
-    if (!isOwnedUiNavigation(event.url, connection)) event.preventDefault();
+    if (isOwnedUiNavigation(event.url, connection)) return;
+    event.preventDefault();
+    openUiLinkExternally(event.url, connection, openExternal);
   });
   contents.on("will-redirect", (event) => {
     if (event.isMainFrame !== false && !isOwnedUiNavigation(event.url, connection)) event.preventDefault();
