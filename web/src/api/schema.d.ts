@@ -10596,6 +10596,11 @@ export interface components {
          */
         PluginLayer: {
             /**
+             * Label
+             * @description Where it sits in its tree, derived from its position; none while the layer is left out of the tree (a missing parent, a cycle).
+             */
+            label?: ("company" | "org" | "site" | "team") | null;
+            /**
              * Module
              * @description The layer's module name, e.g. `acme-payments`.
              */

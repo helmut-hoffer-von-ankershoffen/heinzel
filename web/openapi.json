@@ -11336,6 +11336,24 @@
       "PluginLayer": {
         "description": "A layer a plugin's module declares.",
         "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "enum": [
+                  "company",
+                  "org",
+                  "site",
+                  "team"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it sits in its tree, derived from its position; none while the layer is left out of the tree (a missing parent, a cycle).",
+            "title": "Label"
+          },
           "module": {
             "description": "The layer's module name, e.g. `acme-payments`.",
             "title": "Module",

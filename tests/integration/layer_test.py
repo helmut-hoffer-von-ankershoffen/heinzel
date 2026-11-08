@@ -278,3 +278,11 @@ def test_plugin_list_tells_what_kind_of_plugin_each_layer_is(acme):
         ["acme"],
         ["acme:tracker"],
     )
+
+
+def test_plugin_listing_labels_each_layer_by_its_position(acme):
+    code, listed = hz(acme(), "system", "plugin", "list")
+    assert code == 0, listed
+    labels = {layer["module"]: layer["label"] for plugin in listed for layer in plugin["layers"]}
+    assert labels["acme-lisbon"] == "site"
+    assert labels["acme"] == "company"

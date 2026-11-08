@@ -52,6 +52,11 @@ class PluginLayer(BaseModel):
     module: str = Field(description="The layer's module name, e.g. `acme-payments`.")
     parent: str | None = Field(description="The layer above it; none for the root (the company).")
     site: str | None = Field(description="The site layer it names, if any.")
+    label: Literal["company", "org", "site", "team"] | None = Field(
+        default=None,
+        description="Where it sits in its tree, derived from its position; none while the layer is left out of the "
+        "tree (a missing parent, a cycle).",
+    )
 
 
 class PluginInfo(BaseModel):
