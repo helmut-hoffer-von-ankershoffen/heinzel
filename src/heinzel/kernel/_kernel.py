@@ -627,6 +627,19 @@ class Kernel:
                 kwargs[name] = self.resolve(annotation)
         return kwargs
 
+    def fresh_settings(self) -> Settings:
+        """The kernel's own settings as the files say now, for a long-running head to see a change without a restart.
+
+        The settings this kernel booted with stay when no file exists (a kernel built in code) or a file is invalid,
+        so a half-written edit never breaks a running head.
+        """
+        if not any(file.exists for file in self.config.files):
+            return self.settings
+        try:
+            return self.config.reread().settings(Settings, KERNEL_SECTION)
+        except (HeinzelError, ValidationError):
+            return self.settings
+
     def settings_of(self) -> list[tuple[str, ModuleSettings]]:
         """Every settings object in effect, by section: the kernel's `hz` first, then each module's."""
         sections: list[tuple[str, ModuleSettings]] = [

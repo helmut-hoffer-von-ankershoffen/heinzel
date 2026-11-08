@@ -236,7 +236,7 @@ export function PaneChrome({ children }: { children: ReactNode }) {
 
 /** Buttons and links a container may show only in its action row or chrome; switches, the radios of a segmented choice and form fields are content. */
 const ACTION =
-  'button:not([role="switch"]):not([role="radio"]), a[href]:not([data-prose-link]), [role="button"], [role="link"]:not([data-prose-link]), [role="menuitem"]';
+  'button:not([role="switch"]):not([role="radio"]), a[href]:not([data-prose-link]):not([data-nav-row]), [role="button"], [role="link"]:not([data-prose-link]):not([data-nav-row]), [role="menuitem"]';
 
 /**
  * What breaks the action structure (design/README.md, "Actions") of a pane, card or dialog: an action outside the
@@ -248,9 +248,9 @@ export function actionStructureProblems(container: Element): string[] {
   const problems: string[] = [];
   if (rows.length > 1) problems.push(`${rows.length} action rows; a pane has one`);
   const row = rows[0];
-  const chrome = container.querySelector("[data-pane-chrome]");
+  const chromes = [...container.querySelectorAll("[data-pane-chrome]")];
   for (const element of container.querySelectorAll(ACTION))
-    if (!row?.contains(element) && !chrome?.contains(element))
+    if (!row?.contains(element) && !chromes.some((chrome) => chrome.contains(element)))
       problems.push(`"${element.getAttribute("aria-label") ?? element.textContent?.trim()}" is outside the action row`);
   const all = container.querySelectorAll("*");
   const last = all[all.length - 1];
