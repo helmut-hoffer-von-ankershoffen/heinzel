@@ -1155,7 +1155,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.2,<7" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "tomlkit", specifier = ">=0.13" },
-    { name = "typer", specifier = ">=0.23.0" },
+    { name = "typer", specifier = ">=0.23.0,<0.29" },
     { name = "uv", specifier = "==0.13.7" },
     { name = "uvicorn", specifier = ">=0.54" },
     { name = "wsproto", specifier = ">=1.3" },
