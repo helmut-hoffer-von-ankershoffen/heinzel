@@ -17,7 +17,6 @@ if TYPE_CHECKING:
 
 PAGE_SIZE = 100
 MAX_RESULTS = 1000  # GitHub can truncate filtered run listings at this boundary.
-POLICY = "scripts/focused_ci_transition.toml"
 SELECTOR = "scripts/focused_ci_receipt.py"
 WORKFLOW = re.compile(r"\.github/workflows/[\w-]+\.ya?ml", re.ASCII)
 
@@ -183,22 +182,28 @@ def collect(
     policy: Path,
     trigger: Trigger,
     *,
+    policy_sha256: str,
     git: Callable[..., bytes] = git_bytes,
 ) -> Receipt:
     """Verify a protected policy against current GitHub data and immutable local Git objects.
 
+    The caller must supply the detached policy digest from outside the tested repository's control.
     The checkout must contain the protected base, head and merge objects, with only protected code running.
     The run ID and attempt come from a trusted trigger. This collector produces no merge authorization.
     """
     policy_bytes = policy.read_bytes()
+    require(
+        bool(DIGEST.fullmatch(policy_sha256)) and hashlib.sha256(policy_bytes).hexdigest() == policy_sha256,
+        "The detached focused policy does not match its protected digest",
+    )
     manifest = tomllib.loads(policy_bytes.decode())
     source = Source(**manifest.pop("source"))
     pr, head, run_id, attempt = trigger.pr, trigger.head, trigger.run_id, trigger.attempt
     require(sha(head) and all(positive(n) for n in (pr, run_id, attempt)), "Invalid focused trigger identity")
     base, merge = pull_snapshot(read, source, pr, head)
-    require(policy_bytes == git("cat-file", "blob", f"{base}:{POLICY}"), "The policy is not the current protected copy")
-    [entry] = [row for row in manifest.values() if row["base"] == base and row["head"] == head]
-    change = Change(**entry, selector_sha256=source.selector_sha256)
+    entries = [row for row in manifest.values() if row["base"] == base and row["head"] == head]
+    require(len(entries) == 1, "The detached policy does not uniquely approve this exact base and head")
+    change = Change(**entries[0], selector_sha256=source.selector_sha256)
     workflow = read(f"actions/workflows/{source.workflow_id}")
     require(
         workflow["id"] == source.workflow_id

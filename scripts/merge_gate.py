@@ -322,10 +322,11 @@ def run_focused(gate: Gate) -> int:
     try:
         receipt = collect(
             gate.github,
-            Path(__file__).with_name("focused_ci_transition.toml"),
+            Path(os.environ["FOCUSED_CI_POLICY_PATH"]),
             Trigger(
                 int(gate.pr), gate.head, int(os.environ["FOCUSED_CI_RUN_ID"]), int(os.environ["FOCUSED_CI_RUN_ATTEMPT"])
             ),
+            policy_sha256=os.environ["FOCUSED_CI_POLICY_SHA256"],
         )
     except (UnavailableError, KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError) as error:
         return finish([f"Focused evidence unavailable: {error}"], "")

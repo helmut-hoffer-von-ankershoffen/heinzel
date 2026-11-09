@@ -327,8 +327,9 @@ def test_focused_coverage_holds_without_reading_the_main_badge(monkeypatch):
     assert merge_gate.main(["coverage", "--focused"]) == 1
 
 
-def test_focused_cli_refuses_the_offline_fixture_before_reading_github(monkeypatch, capsys):
+def test_focused_cli_requires_an_independent_policy_pin_before_reading_github(monkeypatch, capsys):
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    monkeypatch.delenv("FOCUSED_CI_POLICY_SHA256", raising=False)
     for name, value in {
         "GITHUB_REPOSITORY": REPO,
         "PR_NUMBER": "7",
@@ -336,6 +337,7 @@ def test_focused_cli_refuses_the_offline_fixture_before_reading_github(monkeypat
         "GITHUB_TOKEN": "fixture",
         "FOCUSED_CI_RUN_ID": "1",
         "FOCUSED_CI_RUN_ATTEMPT": "1",
+        "FOCUSED_CI_POLICY_PATH": str(ROOT / "scripts" / "focused_ci_transition.toml"),
     }.items():
         monkeypatch.setenv(name, value)
 
