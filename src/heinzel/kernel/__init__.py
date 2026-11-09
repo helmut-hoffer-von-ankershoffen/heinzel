@@ -168,6 +168,7 @@ from heinzel.kernel._git import (
     git_command,
 )
 from heinzel.kernel._head_refresh import HeadRefresh, WebHeadRefresh
+from heinzel.kernel._heinzel_invocation import HeinzelInput, HeinzelInvocations, HeinzelTarget
 from heinzel.kernel._host_maintenance import (
     HostIntegration,
     HostIntegrationScope,
@@ -581,6 +582,9 @@ __all__ = [
     "HeadRefresh",
     "HealthLet",
     "HeinzelError",
+    "HeinzelInput",
+    "HeinzelInvocations",
+    "HeinzelTarget",
     "Homebrew",
     "HostIntegration",
     "HostIntegrationScope",

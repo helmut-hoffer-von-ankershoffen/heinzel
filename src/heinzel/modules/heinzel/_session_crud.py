@@ -647,7 +647,9 @@ class SessionCrud(ApprovalIssuer):
                 )
         return self.snapshot(session_id)
 
-    def accept(self, session_id: str, request: MessageRequest) -> MessageAccepted:
+    def accept(
+        self, session_id: str, request: MessageRequest, *, check_active: Callable[[], None] | None = None
+    ) -> MessageAccepted:
         """Record the exact inbox request before model work, preserving request identity across lost replies.
 
         Raises:
@@ -658,9 +660,16 @@ class SessionCrud(ApprovalIssuer):
             msg = "Attachments need a retained upload before they can be sent in this conversation"
             raise HeinzelError(msg)
         with self.repository.control_writer(session_id) as writer:
-            return self._accept_locked(session_id, request, writer)
+            return self._accept_locked(session_id, request, writer, check_active=check_active)
 
-    def _accept_locked(self, session_id: str, request: MessageRequest, writer: SessionWriter) -> MessageAccepted:
+    def _accept_locked(
+        self,
+        session_id: str,
+        request: MessageRequest,
+        writer: SessionWriter,
+        *,
+        check_active: Callable[[], None] | None = None,
+    ) -> MessageAccepted:
         """Accept under the owning control lock, retaining a creation prompt's first inbox position.
 
         Raises:
@@ -685,7 +694,11 @@ class SessionCrud(ApprovalIssuer):
                 raise HeinzelError(msg)
             event = prior
         else:
+            if check_active is not None:
+                check_active()
             body = immutable_body(writer, "inbox", request.model_dump(mode="json"), control=True)
+            if check_active is not None:
+                check_active()
             event = writer.append(
                 "message.accepted",
                 key=f"message-{request.request_id}",
