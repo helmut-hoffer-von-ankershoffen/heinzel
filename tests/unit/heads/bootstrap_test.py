@@ -266,7 +266,12 @@ def test_current_continuity_governs_updated_versions_and_removed_membership_with
 
 def test_missing_tool_directory_is_first_use(monkeypatch, tmp_path):
     monkeypatch.setattr(install, "uv_executable", lambda: "/trusted/uv")
-    monkeypatch.setattr(bootstrap, "resolve_target", lambda _uv: ToolTarget(tmp_path / "tools", tmp_path / "bin"))
+
+    def read_only_target(_uv, *, create):
+        assert not create
+        return ToolTarget(tmp_path / "tools", tmp_path / "bin")
+
+    monkeypatch.setattr(bootstrap, "resolve_target", read_only_target)
     assert bootstrap.installed_app() is None
 
 
@@ -274,7 +279,7 @@ def test_a_plain_sdk_without_an_app_receipt_can_be_converted(tmp_path, monkeypat
     target = ToolTarget(tmp_path / "tools", tmp_path / "bin")
     target.prefix.mkdir(parents=True)
     monkeypatch.setattr(install, "uv_executable", lambda: "/trusted/uv")
-    monkeypatch.setattr(bootstrap, "resolve_target", lambda _uv: target)
+    monkeypatch.setattr(bootstrap, "resolve_target", lambda _uv, **_kwargs: target)
     monkeypatch.setattr(
         bootstrap.Config,
         "load",
@@ -314,7 +319,7 @@ def test_a_stale_global_app_receipt_cannot_promote_an_unmarked_sdk(tmp_path, mon
     )
     (data / "standard-app.json").write_text(receipt.model_dump_json())
     monkeypatch.setattr(install, "uv_executable", lambda: "/trusted/uv")
-    monkeypatch.setattr(bootstrap, "resolve_target", lambda _uv: target)
+    monkeypatch.setattr(bootstrap, "resolve_target", lambda _uv, **_kwargs: target)
     monkeypatch.setattr(
         bootstrap.Config, "load", lambda: SimpleNamespace(settings=lambda *_: SimpleNamespace(data_dir=data))
     )

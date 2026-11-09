@@ -89,6 +89,12 @@ class DaemonMutationScope(Protocol):
         ...
 
 
+class DaemonQuiescence(Protocol):
+    """A standard installer may pass its exclusive new-store observation."""
+
+    def __call__(self, binary: Path, *, fresh_store: tuple[int, int] | None = None) -> AbstractContextManager[None]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class DaemonInstallationLifecycle:
     """Trusted installer boundary; callers capture before mutation and request handover only after verification."""
@@ -98,6 +104,6 @@ class DaemonInstallationLifecycle:
     observation: Callable[[str], DaemonHandoverObservation | None]
     assess: Callable[[str, str, str, tuple[tuple[str, str, str], ...]], DaemonHandoverAssessment]
     admission: Callable[[], AbstractContextManager[None]]
-    quiescent: Callable[[Path], AbstractContextManager[None]]
+    quiescent: DaemonQuiescence
     recover_quiescent: Callable[[Path], None]
     mutation: Callable[[Callable[[], bool], Callable[[], str]], AbstractContextManager[DaemonMutationScope]]

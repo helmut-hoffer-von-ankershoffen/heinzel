@@ -203,7 +203,7 @@ def installed_app() -> Path | None:
         HeinzelError: If a marked installation no longer matches its recorded state.
     """
     uv = install.uv_executable()
-    target = resolve_target(uv)
+    target = resolve_target(uv, create=False)
     directory = target.prefix
     if not directory.exists():
         return None

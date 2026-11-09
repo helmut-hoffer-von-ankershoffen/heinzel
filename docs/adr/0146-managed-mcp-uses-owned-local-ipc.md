@@ -110,7 +110,11 @@ Standard SDK mutation and rollback enroll the selected ordinary profile before w
 package files. The SDK inventory retains the identities of the profile and its daemon and snapshot directories.
 MCP activation checks pending markers across the enrolled profiles, including after a writer exits before
 changing SDK bytes. Recovery still uses the ordinary profile's existing authority. An unknown or replaced
-inventory entry keeps activation fenced. Legacy profiles enter this inventory when they use the updated writer.
+inventory entry keeps activation fenced. MCP also requires a complete inventory baseline. The standard installer
+can record that baseline after verifying a fresh install in a tool store it exclusively created. The baseline is
+bound to the physical tool store and SDK maintenance lock. An existing or reused store without that receipt
+remains ineligible for MCP. Ordinary update and recovery still work and enroll their selected profiles. One
+profile's enrollment or recovery cannot establish completeness for the legacy SDK.
 
 Direct HTTP is separate follow-up work building on the proposed bearer scope in
 [PR #655](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/655). Claude Desktop and Gemini CLI

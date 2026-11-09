@@ -6,7 +6,11 @@ from dataclasses import asdict
 from typing import TYPE_CHECKING, Literal, cast
 
 from heinzel.heads.mcp._ipc_lifecycle import REGISTRATION_ID, LifecycleAction
-from heinzel.heads.mcp._ipc_registration import InstalledMcpRegistry, installed_mcp_authority
+from heinzel.heads.mcp._ipc_registration import (
+    InstalledMcpRegistry,
+    UnverifiedMcpInventoryError,
+    installed_mcp_authority,
+)
 from heinzel.kernel import (
     HeinzelError,
     HostServiceManager,
@@ -50,8 +54,13 @@ def main(action: LifecycleCommand, arguments: list[str], *, host: "ForegroundMcp
 def _installed(action: LifecycleCommand, id_: str) -> int:
     try:
         authority = installed_mcp_authority()
-    except (HeinzelError, OSError, ValueError):
-        sys.stderr.write("MCP lifecycle requires a registration from the trusted installed host.\n")
+    except (HeinzelError, OSError, ValueError) as exc:
+        message = (
+            str(exc)
+            if isinstance(exc, UnverifiedMcpInventoryError)
+            else "MCP lifecycle requires a registration from the trusted installed host."
+        )
+        sys.stderr.write(message + "\n")
         return 1
     records, errors = discover(plugins=False)
     kernel = Kernel(Settings(state_dir=authority.runtime.state), records, errors)

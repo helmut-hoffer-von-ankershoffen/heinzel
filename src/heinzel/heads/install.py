@@ -423,7 +423,7 @@ def _managed_install(  # noqa: PLR0913 - the downgrade guard is explicit for ret
         msg = "The daemon lifecycle boundary is unavailable; the application was not installed."
         raise HeinzelError(msg)
     lifecycle = kernel.resolve(DaemonInstallationLifecycle)
-    with lifecycle.quiescent(target.binary):
+    with lifecycle.quiescent(target.binary, fresh_store=target.fresh_store):
         if only_if_newer:
             if not installation.startup_state_matches():
                 msg = "The retained app changed before updating. Inspect the installation and retry."

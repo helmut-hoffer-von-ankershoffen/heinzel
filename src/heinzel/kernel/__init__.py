@@ -188,8 +188,10 @@ from heinzel.kernel._installation import (
     requirement_from_receipt,
 )
 from heinzel.kernel._installation_mutations import (
+    installation_inventory_complete,
     installation_mutation_paths,
     installation_mutation_pending,
+    record_fresh_installation_inventory,
     record_installation_profile,
     tracked_installation_mutation_pending,
 )
@@ -823,6 +825,7 @@ __all__ = [
     "host_maintenance_gate",
     "host_maintenance_lock",
     "input_schema",
+    "installation_inventory_complete",
     "installation_mutation_paths",
     "installation_mutation_pending",
     "jsonable",
@@ -843,6 +846,7 @@ __all__ = [
     "read_skill",
     "read_skill_file",
     "read_view_asset",
+    "record_fresh_installation_inventory",
     "record_installation_profile",
     "record_usage",
     "redact_emails",

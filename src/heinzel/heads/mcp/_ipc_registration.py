@@ -23,6 +23,7 @@ from heinzel.kernel import (
     Progress,
     host_maintenance_directory,
     host_maintenance_lock,
+    installation_inventory_complete,
     installation_mutation_pending,
 )
 from heinzel.kernel._logging import get_logger, step
@@ -50,6 +51,10 @@ _GRANT_SECONDS = 3600.0
 log = get_logger("mcp")
 
 
+class UnverifiedMcpInventoryError(HeinzelError):
+    """The existing SDK has no verified starting point for its mutation inventory."""
+
+
 @dataclass(frozen=True, slots=True)
 class InstalledMcpAuthority:
     """The existing standard SDK's verified installed script, interpreter and startup generation."""
@@ -72,6 +77,7 @@ class InstalledMcpAuthority:
 
         Raises:
             HeinzelError: If this SDK no longer matches the captured installed generation.
+            UnverifiedMcpInventoryError: If the legacy inventory has no authoritative baseline.
         """
         if (
             installation_mutation_pending(self.sdk.prefix, self.runtime.state)
@@ -79,6 +85,9 @@ class InstalledMcpAuthority:
             or self.sdk.startup_fingerprint() != self.fingerprint
         ):
             raise HeinzelError(_REFUSED)
+        if not installation_inventory_complete(self.sdk.prefix):
+            msg = "MCP is unavailable until this SDK's legacy mutation inventory has been verified."
+            raise UnverifiedMcpInventoryError(msg)
 
 
 def installed_mcp_authority() -> InstalledMcpAuthority:

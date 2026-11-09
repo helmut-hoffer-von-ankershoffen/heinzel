@@ -17,6 +17,7 @@ import pytest
 
 from heinzel import Config, HeinzelError, Progress
 from heinzel.heads import cli
+from heinzel.heads._tool_install import resolve_target
 from heinzel.heads.cli import _mcp_lifecycle
 from heinzel.heads.mcp import _ipc_registration as registration
 from heinzel.heads.mcp import _ipc_runtime_root as roots
@@ -26,9 +27,11 @@ from heinzel.kernel import (
     Installation,
     Kernel,
     MaintenanceLocks,
+    ProcessOutcome,
     Settings,
     host_maintenance_directory,
     host_maintenance_lock,
+    installation_inventory_complete,
     installation_mutation_pending,
     mcp_registration_inventory,
 )
@@ -56,7 +59,7 @@ class _Manager(HostServiceManager):
         return subprocess.CompletedProcess(args, 0, "PID\tStatus\tLabel\n", "")
 
 
-def _sdk(directory):
+def _write_sdk(directory):
     prefix = directory / "tools" / "heinzel"
     scripts = prefix / "bin"
     scripts.mkdir(parents=True)
@@ -66,7 +69,7 @@ def _sdk(directory):
     interpreter.write_bytes(b"scratch interpreter identity; execution is already isolated")
     interpreter.chmod(0o700)
     bin_dir = directory / "entrypoints"
-    bin_dir.mkdir()
+    bin_dir.mkdir(exist_ok=True)
     (bin_dir / "hz").symlink_to(scripts / "hz")
     (prefix / "uv-receipt.toml").write_text(
         '[tool]\nrequirements = [{ name = "heinzel" }]\n'
@@ -80,9 +83,40 @@ def _sdk(directory):
     return sdk, interpreter, module
 
 
-def _invoke(patcher, action, expected):
+def _sdk(directory, *, fresh=False):
+    if not fresh:
+        return _write_sdk(directory)
+    target, service = _fresh_setup(directory)
+    with service.quiescence_guard(target.binary, fresh_store=target.fresh_store):
+        installed = _write_sdk(directory)
+    assert installation_inventory_complete(target.prefix)
+    return installed
+
+
+def _fresh_setup(directory):
+    def uv_directories(args, **_kwargs):
+        folder = directory / ("entrypoints" if args[-1] == "--bin" else "tools")
+        return subprocess.CompletedProcess(args, 0, str(folder), "")
+
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(subprocess, "run", uv_directories)
+        target = resolve_target("scratch-uv")
+    assert target.fresh_store is not None
+    selected = Installation(Progress(), prefix=target.prefix, uv="unused")
+    service = _ordinary_service(selected, directory / "fresh-install-profile")
+    service._platform = "darwin"
+    facts = {"managername": "Aqua\n", "manageruid": f"{os.getuid()}\n", "list": "PID Status Label\n"}
+    service._quiescence_probe = lambda args: ProcessOutcome(0, facts[args[-1]], "")
+    return target, service
+
+
+def _invoke(patcher, action, expected, *, registration_logged=True):
     patcher.setattr(sys, "argv", ["hz", "system", "mcp", action, _ID])
-    logging_scope = TestCase().assertLogs("heinzel.mcp") if action in {"register", "recover"} else nullcontext()
+    logging_scope = (
+        TestCase().assertLogs("heinzel.mcp")
+        if registration_logged and action in {"register", "recover"}
+        else nullcontext()
+    )
     with logging_scope as logged, pytest.raises(SystemExit) as status:
         cli.main()
     assert status.value.code == expected
@@ -142,7 +176,7 @@ def _exercise_registration(patcher, sdk, phase, native_root):
 
 
 def _run_installed_cli(directory, phase):
-    sdk, interpreter, module = _sdk(directory)
+    sdk, interpreter, module = _sdk(directory, fresh=phase != "legacy-pending")
     native_root = Path(os.confstr(65537)).resolve() / roots._locator_name()
     scratch_units = directory / "native-units"
     scratch_units.mkdir(mode=0o700)
@@ -160,7 +194,17 @@ def _run_installed_cli(directory, phase):
             patcher.setattr(roots, "_locator_name", lambda: native_root.name)
             patcher.setenv("HZ_STATE_DIR", str(directory / "forged"))
             patcher.setattr(cli, "boot", lambda: pytest.fail("Project discovery ran"))
-            if phase == "foreign-unit":
+            if phase == "legacy-pending":
+                marker = directory / "unenrolled-legacy-profile" / "daemon" / "mutation-pending.json"
+                marker.parent.mkdir(parents=True)
+                marker.write_text(json.dumps({"token": "a" * 64}, indent=2) + "\n")
+                runtime = registration.InstalledMcpAuthority(sdk, sdk.startup_fingerprint()).runtime
+                assert not installation_mutation_pending(sdk.prefix, runtime.state)
+                _invoke(patcher, "register", 1, registration_logged=False)
+                assert marker.is_file()
+                assert not runtime.state.exists()
+                assert not native_root.exists()
+            elif phase == "foreign-unit":
                 runtime = registration.InstalledMcpAuthority(sdk, sdk.startup_fingerprint()).runtime
                 unit = scratch_units / (McpNativePlan.capture(runtime, _ID).name + ".plist")
                 unit.write_bytes(b"foreign unit")
@@ -201,7 +245,9 @@ def _observe_foreground(terminal, stderr):
 @pytest.mark.skipif(
     sys.platform != "darwin", reason="Uses real Darwin IPC with a simulated installed image and manager"
 )
-@pytest.mark.parametrize("phase", ["start", "recover", "sdk-changed", "lock-changed", "foreign-unit", "decline"])
+@pytest.mark.parametrize(
+    "phase", ["start", "recover", "sdk-changed", "lock-changed", "foreign-unit", "decline", "legacy-pending"]
+)
 def test_installed_mcp_registration_and_explicit_recovery(short_socket_root, phase):
     master, terminal = pty.openpty()
     settings = termios.tcgetattr(terminal)
@@ -218,7 +264,7 @@ def test_installed_mcp_registration_and_explicit_recovery(short_socket_root, pha
             os.close(terminal)
             terminal = -1
             try:
-                if phase != "foreign-unit":
+                if phase not in {"foreign-unit", "legacy-pending"}:
                     _approve(master, "register", approve=phase != "decline")
                 if phase == "recover":
                     _approve(master, "recover")
@@ -236,8 +282,10 @@ def test_installed_mcp_registration_and_explicit_recovery(short_socket_root, pha
             os.close(master)
         if terminal >= 0:
             os.close(terminal)
-    if phase in {"foreign-unit", "decline"}:
+    if phase in {"foreign-unit", "decline", "legacy-pending"}:
         assert not stdout
+        if phase == "legacy-pending":
+            assert b"legacy mutation inventory has been verified" in stderr
     else:
         rows = [json.loads(line) for line in stdout.splitlines()]
         assert rows[0] == {"registration": "committed", "activation": "dormant"}
@@ -285,7 +333,7 @@ def _interrupt_ordinary_update(prefix, state):
 
 
 def test_interrupted_ordinary_profile_fences_mcp_until_verified_recovery(tmp_path):
-    sdk, _, _ = _sdk(tmp_path)
+    sdk, _, _ = _sdk(tmp_path, fresh=True)
     state = tmp_path / "ordinary-profile"
     fingerprint = sdk.startup_fingerprint()
     result = subprocess.run(
@@ -331,7 +379,7 @@ def test_interrupted_ordinary_profile_fences_mcp_until_verified_recovery(tmp_pat
 
 
 def test_profile_replacement_cannot_hide_an_sdk_mutation(tmp_path):
-    sdk, _, _ = _sdk(tmp_path)
+    sdk, _, _ = _sdk(tmp_path, fresh=True)
     state = tmp_path / "ordinary-profile"
     service = _ordinary_service(sdk, state)
     authority = registration.InstalledMcpAuthority(sdk, sdk.startup_fingerprint())
@@ -352,7 +400,7 @@ def test_profile_replacement_cannot_hide_an_sdk_mutation(tmp_path):
 
 @pytest.mark.parametrize("rollback", [False, True])
 def test_ordinary_mutation_releases_sdk_fence_only_after_verified_outcome(tmp_path, rollback):
-    sdk, _, _ = _sdk(tmp_path)
+    sdk, _, _ = _sdk(tmp_path, fresh=True)
     state = tmp_path / "ordinary-profile"
     other_state = tmp_path / "other-profile"
     service = _ordinary_service(sdk, state)
@@ -397,3 +445,53 @@ def test_announced_rollback_tracks_failed_snapshot_recovery_and_uses_sdk_lock(tm
     assert not snapshot.aside.exists()
     assert not installation_mutation_pending(sdk.prefix, other_state)
     assert sdk.startup_state_matches()
+
+
+def test_verified_legacy_update_enrolls_its_profile_without_certifying_completeness(tmp_path):
+    sdk, _, _ = _sdk(tmp_path)
+    state = tmp_path / "ordinary-legacy-profile"
+    service = _ordinary_service(sdk, state)
+    before = sdk.startup_fingerprint()
+    with service.mutation_guard(sdk.startup_state_matches, sdk.rollback_identity) as scope:
+        plan = scope.capture()
+        scope.verified_complete(before)
+        scope.request(plan)
+    assert not installation_mutation_pending(sdk.prefix, state)
+    assert not installation_inventory_complete(sdk.prefix)
+    with pytest.raises(registration.UnverifiedMcpInventoryError):
+        registration.InstalledMcpAuthority(sdk, before).require_current()
+
+
+def test_fresh_sdk_cannot_restore_a_snapshot_from_an_unenrolled_legacy_profile(tmp_path):
+    sdk, _, _ = _sdk(tmp_path, fresh=True)
+    state = tmp_path / "ordinary-legacy-profile"
+    snapshot = ToolSnapshot.take(sdk.prefix, state / "auto-update")
+    kernel = Kernel(Settings(state_dir=state))
+    service = _ordinary_service(sdk, state)
+    with (
+        pytest.raises(HeinzelError, match="cannot enroll a legacy profile"),
+        service.mutation_guard(sdk.startup_state_matches, sdk.rollback_identity),
+    ):
+        pytest.fail("A new writer adopted the stale snapshot profile")
+    with pytest.raises(HeinzelError, match="rollback profile does not belong"):
+        recover_announced(sdk, kernel)
+    assert snapshot.copy.is_dir()
+    assert sdk.startup_state_matches()
+
+
+def test_recovery_of_interrupted_fresh_install_does_not_infer_completeness(tmp_path):
+    target, service = _fresh_setup(tmp_path)
+    msg = "interrupted before verification"
+
+    def interrupted():
+        _write_sdk(tmp_path)
+        raise RuntimeError(msg)
+
+    with (
+        pytest.raises(RuntimeError, match=msg),
+        service.quiescence_guard(target.binary, fresh_store=target.fresh_store),
+    ):
+        interrupted()
+    assert not installation_inventory_complete(target.prefix)
+    service.recover_quiescent_install(target.binary)
+    assert not installation_inventory_complete(target.prefix)
