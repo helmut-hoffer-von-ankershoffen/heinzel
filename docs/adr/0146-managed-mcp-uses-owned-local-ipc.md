@@ -92,6 +92,14 @@ clients require a pinned bridge and a reviewed config adapter for each supported
 
 ### Confirmation
 
+The private composition retains three independent boundaries. The bounded catalog probe serves empty
+discovery on an admitted bridge; it does not select or delegate to the broker's individual-Heinzel tool
+server. That server requires its own admitted lease and reviewed dispatch grant. Lifecycle and Install
+handoffs do not issue either capability. The dormant native observer and managed-preference prototype
+do not supply protected installation inventory or a client configuration writer. Connecting these paths
+requires an independently reviewed host composition with exact registration, grant and client provenance;
+merging their implementations does not activate them or establish packaged client acceptance.
+
 The first slice checks the owner on real Unix stream sockets and refuses mismatched owners and invalid sockets.
 The feature remains unavailable until admission and revocation, recovery, CLI and UI parity, and the installed
 Claude Code, Codex and Cursor journeys have been verified. Real Claude weather and personal Heinzel calls require
