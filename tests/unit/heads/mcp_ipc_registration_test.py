@@ -10,6 +10,8 @@ import subprocess
 import sys
 import termios
 from contextlib import nullcontext
+from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from unittest import TestCase
 
@@ -25,13 +27,14 @@ from heinzel.kernel import (
     HostIntegrationScope,
     HostServiceManager,
     Installation,
+    InstallationInventoryStatus,
     Kernel,
     MaintenanceLocks,
     ProcessOutcome,
     Settings,
     host_maintenance_directory,
     host_maintenance_lock,
-    installation_inventory_complete,
+    installation_inventory_status,
     installation_mutation_pending,
     mcp_registration_inventory,
 )
@@ -57,6 +60,16 @@ class _Manager(HostServiceManager):
     def command(self, args):
         assert args == ["/bin/launchctl", "list"]
         return subprocess.CompletedProcess(args, 0, "PID\tStatus\tLabel\n", "")
+
+
+@dataclass(frozen=True)
+class _FixtureInventory:
+    prefix: Path
+    outcome: InstallationInventoryStatus = InstallationInventoryStatus.COMPLETE
+
+    def status(self, prefix):
+        assert prefix == self.prefix
+        return self.outcome
 
 
 def _write_sdk(directory):
@@ -86,22 +99,29 @@ def _write_sdk(directory):
 def _sdk(directory, *, fresh=False):
     if not fresh:
         return _write_sdk(directory)
-    target, service = _fresh_setup(directory)
-    with service.quiescence_guard(target.binary, fresh_store=target.fresh_store):
-        installed = _write_sdk(directory)
-    assert installation_inventory_complete(target.prefix)
-    return installed
+    target, service = _install_setup(directory)
+    with service.quiescence_guard(target.binary):
+        return _write_sdk(directory)
 
 
-def _fresh_setup(directory):
+def _install_setup(directory, *, replace_store=None):
     def uv_directories(args, **_kwargs):
         folder = directory / ("entrypoints" if args[-1] == "--bin" else "tools")
         return subprocess.CompletedProcess(args, 0, str(folder), "")
 
     with pytest.MonkeyPatch.context() as patcher:
         patcher.setattr(subprocess, "run", uv_directories)
+        if replace_store is not None:
+            mkdir = Path.mkdir
+
+            def swap(path, *args, **kwargs):
+                mkdir(path, *args, **kwargs)
+                if path == directory / "tools":
+                    path.rename(directory / "displaced-store")
+                    replace_store.rename(path)
+
+            patcher.setattr(Path, "mkdir", swap)
         target = resolve_target("scratch-uv")
-    assert target.fresh_store is not None
     selected = Installation(Progress(), prefix=target.prefix, uv="unused")
     service = _ordinary_service(selected, directory / "fresh-install-profile")
     service._platform = "darwin"
@@ -187,6 +207,12 @@ def _run_installed_cli(directory, phase):
             patcher.setattr(sys, "prefix", str(sdk.prefix))
             patcher.setattr(sys, "executable", str(interpreter))
             patcher.setattr(registration, "__file__", str(module))
+            if phase != "legacy-pending":
+                patcher.setattr(
+                    _mcp_lifecycle,
+                    "installed_mcp_authority",
+                    partial(registration.installed_mcp_authority, inventory=_FixtureInventory(sdk.prefix)),
+                )
             manager = _Manager()
             patcher.setattr(_maintenance.SystemHostServiceManager, "command", lambda _self, args: manager.command(args))
             patcher.setattr(Config, "load", lambda *_args, **_kwargs: pytest.fail("Ambient config was loaded"))
@@ -285,7 +311,7 @@ def test_installed_mcp_registration_and_explicit_recovery(short_socket_root, pha
     if phase in {"foreign-unit", "decline", "legacy-pending"}:
         assert not stdout
         if phase == "legacy-pending":
-            assert b"legacy mutation inventory has been verified" in stderr
+            assert b"a trusted host verifies this SDK's mutation inventory" in stderr
     else:
         rows = [json.loads(line) for line in stdout.splitlines()]
         assert rows[0] == {"registration": "committed", "activation": "dormant"}
@@ -353,7 +379,7 @@ def test_interrupted_ordinary_profile_fences_mcp_until_verified_recovery(tmp_pat
     assert result.returncode == 17, result.stderr.decode()
     ordinary = state / "daemon" / "mutation-pending.json"
     marker = ordinary.read_bytes()
-    authority = registration.InstalledMcpAuthority(sdk, fingerprint)
+    authority = registration.InstalledMcpAuthority(sdk, fingerprint, _FixtureInventory(sdk.prefix))
     assert sdk.startup_state_matches()
     assert sdk.startup_fingerprint() == fingerprint
     assert not (authority.runtime.state / "daemon" / ordinary.name).exists()
@@ -382,7 +408,7 @@ def test_profile_replacement_cannot_hide_an_sdk_mutation(tmp_path):
     sdk, _, _ = _sdk(tmp_path, fresh=True)
     state = tmp_path / "ordinary-profile"
     service = _ordinary_service(sdk, state)
-    authority = registration.InstalledMcpAuthority(sdk, sdk.startup_fingerprint())
+    authority = registration.InstalledMcpAuthority(sdk, sdk.startup_fingerprint(), _FixtureInventory(sdk.prefix))
     msg = "interrupted"
     with (
         pytest.raises(RuntimeError, match="interrupted"),
@@ -405,7 +431,7 @@ def test_ordinary_mutation_releases_sdk_fence_only_after_verified_outcome(tmp_pa
     other_state = tmp_path / "other-profile"
     service = _ordinary_service(sdk, state)
     other = _ordinary_service(sdk, other_state)
-    authority = registration.InstalledMcpAuthority(sdk, sdk.startup_fingerprint())
+    authority = registration.InstalledMcpAuthority(sdk, sdk.startup_fingerprint(), _FixtureInventory(sdk.prefix))
     with service.mutation_guard(sdk.startup_state_matches, sdk.rollback_identity) as scope:
         plan = scope.capture()
         assert installation_mutation_pending(sdk.prefix, other_state)
@@ -457,41 +483,67 @@ def test_verified_legacy_update_enrolls_its_profile_without_certifying_completen
         scope.verified_complete(before)
         scope.request(plan)
     assert not installation_mutation_pending(sdk.prefix, state)
-    assert not installation_inventory_complete(sdk.prefix)
+    assert installation_inventory_status(sdk.prefix, state) is InstallationInventoryStatus.INCOMPLETE
     with pytest.raises(registration.UnverifiedMcpInventoryError):
         registration.InstalledMcpAuthority(sdk, before).require_current()
 
 
-def test_fresh_sdk_cannot_restore_a_snapshot_from_an_unenrolled_legacy_profile(tmp_path):
-    sdk, _, _ = _sdk(tmp_path, fresh=True)
-    state = tmp_path / "ordinary-legacy-profile"
-    snapshot = ToolSnapshot.take(sdk.prefix, state / "auto-update")
-    kernel = Kernel(Settings(state_dir=state))
-    service = _ordinary_service(sdk, state)
-    with (
-        pytest.raises(HeinzelError, match="cannot enroll a legacy profile"),
-        service.mutation_guard(sdk.startup_state_matches, sdk.rollback_identity),
-    ):
-        pytest.fail("A new writer adopted the stale snapshot profile")
-    with pytest.raises(HeinzelError, match="rollback profile does not belong"):
-        recover_announced(sdk, kernel)
-    assert snapshot.copy.is_dir()
+def test_swapped_empty_store_and_old_receipt_do_not_certify_ordinary_installation(tmp_path):
+    reused = tmp_path / "reused-empty-store"
+    reused.mkdir(mode=0o700)
+    info = reused.stat()
+    marker = tmp_path / "unenrolled-legacy-profile" / "daemon" / "mutation-pending.json"
+    marker.parent.mkdir(parents=True)
+    original_marker = (json.dumps({"token": "a" * 64}, indent=2) + "\n").encode()
+    marker.write_bytes(original_marker)
+    target, service = _install_setup(tmp_path, replace_store=reused)
+    assert (target.store.stat().st_dev, target.store.stat().st_ino) == (info.st_dev, info.st_ino)
+    with service.quiescence_guard(target.binary):
+        sdk, _, _ = _write_sdk(tmp_path)
     assert sdk.startup_state_matches()
+    authority = registration.InstalledMcpAuthority(sdk, sdk.startup_fingerprint())
+    assert not installation_mutation_pending(sdk.prefix, authority.runtime.state)
+    inventory = host_maintenance_directory(sdk.prefix)
+    receipt = inventory / "mutation-inventory-complete.json"
+    assert not receipt.exists()
+    lock = host_maintenance_lock(sdk.prefix).stat()
+    former_shape = {
+        "schema": 1,
+        "sdk": os.fspath(sdk.prefix),
+        "lock": [lock.st_dev, lock.st_ino],
+        "fresh_store": [info.st_dev, info.st_ino],
+    }
+    receipt.write_text(json.dumps(former_shape, sort_keys=True, separators=(",", ":")) + "\n")
+    receipt.chmod(0o600)
+    with pytest.raises(registration.UnverifiedMcpInventoryError):
+        authority.require_current()
+    assert marker.read_bytes() == original_marker
 
 
 def test_recovery_of_interrupted_fresh_install_does_not_infer_completeness(tmp_path):
-    target, service = _fresh_setup(tmp_path)
+    target, service = _install_setup(tmp_path)
     msg = "interrupted before verification"
 
     def interrupted():
         _write_sdk(tmp_path)
         raise RuntimeError(msg)
 
-    with (
-        pytest.raises(RuntimeError, match=msg),
-        service.quiescence_guard(target.binary, fresh_store=target.fresh_store),
-    ):
+    with pytest.raises(RuntimeError, match=msg), service.quiescence_guard(target.binary):
         interrupted()
-    assert not installation_inventory_complete(target.prefix)
+    state = tmp_path / "mcp-profile"
+    assert installation_inventory_status(target.prefix, state) is InstallationInventoryStatus.RECOVERY_REQUIRED
     service.recover_quiescent_install(target.binary)
-    assert not installation_inventory_complete(target.prefix)
+    assert installation_inventory_status(target.prefix, state) is InstallationInventoryStatus.INCOMPLETE
+
+
+def test_explicit_inventory_authority_can_require_recovery_with_no_observed_marker(tmp_path):
+    sdk, _, _ = _sdk(tmp_path)
+    state = tmp_path / "state"
+    inventory = _FixtureInventory(sdk.prefix, InstallationInventoryStatus.RECOVERY_REQUIRED)
+    assert not installation_mutation_pending(sdk.prefix, state)
+    assert (
+        installation_inventory_status(sdk.prefix, state, authority=inventory)
+        is InstallationInventoryStatus.RECOVERY_REQUIRED
+    )
+    with pytest.raises(HeinzelError, match="committed MCP registration"):
+        registration.InstalledMcpAuthority(sdk, sdk.startup_fingerprint(), inventory).require_current()

@@ -63,7 +63,6 @@ from heinzel.kernel import (
     private_lock,
     private_read,
     private_write,
-    record_fresh_installation_inventory,
     record_installation_profile,
     tick_interval,
     tracked_installation_mutation_pending,
@@ -1063,10 +1062,9 @@ class DaemonService:
             yield
 
     @contextmanager
-    def _sdk_mutation_fence(self) -> Generator[MaintenanceLocks | None]:
+    def _sdk_mutation_fence(self) -> Generator[None]:
         installation = self._quiescence_installation
         with ExitStack() as ownership:
-            locks = None
             if installation is not None:
                 sdk_lock = host_maintenance_lock(installation.prefix)
                 try:
@@ -1084,7 +1082,7 @@ class DaemonService:
                     raise HeinzelError(msg)
                 self._require_mcp_quiescence(installation.prefix)
                 record_installation_profile(installation.prefix, self.state_dir.parent, locks)
-            yield locks
+            yield
 
     def _require_mcp_quiescence(self, prefix: Path) -> None:
         from heinzel.modules.system.daemon._maintenance import DaemonManagerPort  # noqa: PLC0415 - reuse this manager
@@ -1486,9 +1484,7 @@ class DaemonService:
             return False
 
     @contextmanager
-    def quiescence_guard(
-        self, binary: Path, *, fresh_store: tuple[int, int] | None = None
-    ) -> Generator[None, None, None]:
+    def quiescence_guard(self, binary: Path) -> Generator[None, None, None]:
         """Hold lifecycle and tick locks through a trusted, quiescent standard installation.
 
         Non-GUI, unsupported or malformed manager evidence denies. This does not fence noncooperating OS actors or
@@ -1500,7 +1496,7 @@ class DaemonService:
         Raises:
             HeinzelError: If a lock is busy or daemon quiescence cannot be established.
         """
-        with self._sdk_mutation_fence() as locks, lock(self.state_dir / "lifecycle.lock") as lifecycle:
+        with self._sdk_mutation_fence(), lock(self.state_dir / "lifecycle.lock") as lifecycle:
             if not lifecycle or self._handover_pending():
                 msg = "The daemon lifecycle is changing or requires recovery."
                 raise HeinzelError(msg)
@@ -1534,16 +1530,9 @@ class DaemonService:
                         msg = "The daemon is not proven quiescent on this platform; inspect it before installing."
                     raise HeinzelError(msg)
                 token = secrets.token_hex(32)
-                installation = self._quiescence_installation
-                fresh = installation is not None and _safely_absent(installation.prefix)
                 self._write_state("standard-install-pending.json", {"token": token})
                 yield
                 self._finish_quiescent_install(binary, token)
-                if fresh and installation is not None and locks is not None and fresh_store is not None:
-                    try:
-                        record_fresh_installation_inventory(installation.prefix, fresh_store, locks)
-                    except (OSError, HeinzelError):
-                        logger.warning("Fresh SDK mutation inventory could not be recorded. MCP remains unavailable.")
 
     def _finish_quiescent_install(self, binary: Path, token: str) -> None:
         installation = self._quiescence_installation

@@ -366,15 +366,9 @@ def test_resolves_both_uv_destinations_before_installing(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(command, 0, str(path))
 
     monkeypatch.setattr(tool.subprocess, "run", run)
-    observed = tool.resolve_target("uv", create=False)
-    assert not observed.store.exists()
-    assert not observed.binary.exists()
-    assert observed.fresh_store is None
     target = tool.resolve_target("uv")
     assert target == tool.ToolTarget((tmp_path / "tools").resolve(), (tmp_path / "bin").resolve())
     assert target.prefix.name == "heinzel"
-    assert target.fresh_store == (target.store.stat().st_dev, target.store.stat().st_ino)
-    assert tool.resolve_target("uv").fresh_store is None
 
 
 def test_symlinked_destination_is_refused(tmp_path, monkeypatch):

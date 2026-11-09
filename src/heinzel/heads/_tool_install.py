@@ -11,7 +11,7 @@ import subprocess
 import sys
 import zipfile
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from email.parser import BytesParser
 from importlib.metadata import distributions
 from itertools import islice
@@ -26,7 +26,6 @@ from packaging.version import InvalidVersion, Version
 
 from heinzel import HeinzelError, Progress
 from heinzel.kernel import Installation, run_bounded_process, subprocess_environment
-from heinzel.kernel._mcp_storage import _DIR_FLAGS, _identity, _physical_directory
 
 ENTRYPOINTS = ("hz", "hz-install", "heinzel")
 MAX_WHEEL = 128 * 1024 * 1024
@@ -46,7 +45,6 @@ class ToolTarget:
 
     store: Path
     binary: Path
-    fresh_store: tuple[int, int] | None = field(default=None, compare=False, repr=False)
 
     @property
     def prefix(self) -> Path:
@@ -66,7 +64,6 @@ def resolve_target(uv: str, *, create: bool = True) -> ToolTarget:
         HeinzelError: If uv does not identify absolute, owned destinations.
     """
     paths: list[Path] = []
-    fresh_store = None
     for options in ([], ["--bin"]):
         result = subprocess.run(  # noqa: S603 - fixed uv query without a shell
             [uv, "tool", "dir", *options],
@@ -82,44 +79,14 @@ def resolve_target(uv: str, *, create: bool = True) -> ToolTarget:
             raise HeinzelError(msg)
         path = path.resolve()
         if create:
-            if options:
-                path.mkdir(parents=True, exist_ok=True)
-            else:
-                fresh_store = _create_tool_store(path)
+            path.mkdir(parents=True, exist_ok=True)
         paths.append(path)
-    target = ToolTarget(paths[0], paths[1], fresh_store=fresh_store)
+    target = ToolTarget(*paths)
     if target.binary == target.prefix or target.prefix in target.binary.parents:
         msg = "The executable directory cannot be inside Heinzel's tool environment."
         raise HeinzelError(msg)
-    if create or os.path.lexists(target.prefix):
-        _identities(target)
+    _identities(target)
     return target
-
-
-def _create_tool_store(path: Path) -> tuple[int, int] | None:
-    if os.path.lexists(path):
-        return None
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with _physical_directory(path.parent) as parent:
-            os.mkdir(path.name, 0o700, dir_fd=parent)
-            descriptor = os.open(path.name, _DIR_FLAGS, dir_fd=parent)
-            try:
-                identity = _identity(descriptor)
-                info = os.fstat(descriptor)
-                with os.scandir(descriptor) as entries:
-                    if info.st_uid != os.getuid() or info.st_mode & 0o077 or next(entries, None) is not None:
-                        return None
-                os.fsync(parent)
-                return identity
-            finally:
-                os.close(descriptor)
-    except FileExistsError:
-        return None
-    except HeinzelError:
-        # Existing installer behavior remains available where the stronger fresh-store proof is unavailable.
-        path.mkdir(parents=True, exist_ok=True)
-        return None
 
 
 def _identities(target: ToolTarget) -> tuple[tuple[int, int], ...]:
@@ -387,9 +354,6 @@ def run_tool(  # noqa: PLR0913, PLR0917 - explicit selected installation and ver
     identities = _identities(target)
     _verify_wheels(expected, wheels)
     existing = os.path.lexists(target.prefix)
-    if existing and target.fresh_store is not None:
-        msg = "The fresh installation destination was occupied before installation. Retry inspection."
-        raise HeinzelError(msg)
     if target.prefix.is_symlink():
         msg = "The Heinzel tool environment is a symlink; repair it explicitly with uv."
         raise HeinzelError(msg)

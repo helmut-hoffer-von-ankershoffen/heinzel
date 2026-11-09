@@ -39,9 +39,8 @@ def test_standard_managed_scope_binds_target_before_resolve_and_checkpoints_unde
 
     class Lifecycle:
         @contextmanager
-        def quiescent(self, binary, *, fresh_store=None):
+        def quiescent(self, binary):
             assert binary == target.binary
-            assert fresh_store is None
             events.append("enter")
             yield
             assert (settings.data_dir / "standard-app.json").exists() is (not deferred)

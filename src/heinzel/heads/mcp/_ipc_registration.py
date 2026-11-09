@@ -19,12 +19,12 @@ from heinzel.kernel import (
     HeinzelError,
     HostIntegrationScope,
     Installation,
+    InstallationInventoryStatus,
     MaintenanceLocks,
     Progress,
     host_maintenance_directory,
     host_maintenance_lock,
-    installation_inventory_complete,
-    installation_mutation_pending,
+    installation_inventory_status,
 )
 from heinzel.kernel._logging import get_logger, step
 from heinzel.kernel._mcp_native import McpNativePlan
@@ -44,7 +44,7 @@ from heinzel.kernel._mcp_storage import InstalledMcpRuntime, _physical_directory
 if TYPE_CHECKING:
     from pydantic import JsonValue
 
-    from heinzel.kernel import HostServiceManager
+    from heinzel.kernel import HostServiceManager, InstallationInventoryAuthority
 
 _REVIEW_SECONDS = 60.0
 _GRANT_SECONDS = 3600.0
@@ -61,6 +61,7 @@ class InstalledMcpAuthority:
 
     sdk: Installation = field(repr=False)
     fingerprint: str
+    inventory: "InstallationInventoryAuthority | None" = field(default=None, repr=False, compare=False)
 
     @property
     def runtime(self) -> InstalledMcpRuntime:
@@ -79,18 +80,19 @@ class InstalledMcpAuthority:
             HeinzelError: If this SDK no longer matches the captured installed generation.
             UnverifiedMcpInventoryError: If the legacy inventory has no authoritative baseline.
         """
+        status = installation_inventory_status(self.sdk.prefix, self.runtime.state, authority=self.inventory)
         if (
-            installation_mutation_pending(self.sdk.prefix, self.runtime.state)
+            status is InstallationInventoryStatus.RECOVERY_REQUIRED
             or not self.sdk.startup_state_matches()
             or self.sdk.startup_fingerprint() != self.fingerprint
         ):
             raise HeinzelError(_REFUSED)
-        if not installation_inventory_complete(self.sdk.prefix):
-            msg = "MCP is unavailable until this SDK's legacy mutation inventory has been verified."
+        if status is not InstallationInventoryStatus.COMPLETE:
+            msg = "MCP is unavailable until a trusted host verifies this SDK's mutation inventory."
             raise UnverifiedMcpInventoryError(msg)
 
 
-def installed_mcp_authority() -> InstalledMcpAuthority:
+def installed_mcp_authority(*, inventory: "InstallationInventoryAuthority | None" = None) -> InstalledMcpAuthority:
     """Resolve the actual installed CLI before discovery or reading a registration.
 
     Raises:
@@ -111,7 +113,7 @@ def installed_mcp_authority() -> InstalledMcpAuthority:
         or not sdk.startup_state_matches()
     ):
         raise HeinzelError(_REFUSED)
-    authority = InstalledMcpAuthority(sdk, sdk.startup_fingerprint())
+    authority = InstalledMcpAuthority(sdk, sdk.startup_fingerprint(), inventory)
     authority.require_current()
     return authority
 

@@ -110,11 +110,16 @@ Standard SDK mutation and rollback enroll the selected ordinary profile before w
 package files. The SDK inventory retains the identities of the profile and its daemon and snapshot directories.
 MCP activation checks pending markers across the enrolled profiles, including after a writer exits before
 changing SDK bytes. Recovery still uses the ordinary profile's existing authority. An unknown or replaced
-inventory entry keeps activation fenced. MCP also requires a complete inventory baseline. The standard installer
-can record that baseline after verifying a fresh install in a tool store it exclusively created. The baseline is
-bound to the physical tool store and SDK maintenance lock. An existing or reused store without that receipt
-remains ineligible for MCP. Ordinary update and recovery still work and enroll their selected profiles. One
-profile's enrollment or recovery cannot establish completeness for the legacy SDK.
+inventory entry keeps activation fenced. MCP requires a complete assessment from a trusted host authority.
+The authority can report complete, incomplete or recovery required. Observed pending work still fences a complete
+assessment. The ordinary installer, update and recovery paths enroll their selected profiles and leave completeness
+to the host. A missing host authority keeps the installed CLI fenced. Local receipts, directory creation and
+caller configuration confer no completeness. Positive foreground tests supply a fixture authority explicitly.
+
+Production acceptance requires protected provisioning and a broker that mediates all SDK writers, including
+refresh, update, rollback and uninstall. A legacy migration must establish the complete inventory and recover
+pending work under that same authority before activation. Ordinary install and recovery remain available during
+this work. They cannot certify historical profiles or replace the broker.
 
 Direct HTTP is separate follow-up work building on the proposed bearer scope in
 [PR #655](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/655). Claude Desktop and Gemini CLI

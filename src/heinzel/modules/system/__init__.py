@@ -21,7 +21,6 @@ from heinzel.kernel import (
     WebHeadRefresh,
     host_maintenance_gate,
     host_maintenance_lock,
-    installation_inventory_complete,
     record_installation_profile,
     tracked_installation_mutation_pending,
 )
@@ -256,9 +255,7 @@ def recover_announced(installation: Installation, kernel: Kernel) -> bool:
         if tracked_installation_mutation_pending(prefix, excluding=kernel.settings.state_dir):
             msg = "An SDK mutation in another profile requires recovery before rolling back this installation."
             raise HeinzelError(msg)
-        state = record_installation_profile(
-            prefix, kernel.settings.state_dir, locks, require_existing=installation_inventory_complete(prefix)
-        )
+        state = record_installation_profile(prefix, kernel.settings.state_dir, locks)
         folder = state / "auto-update"
         ToolSnapshot(prefix, folder / "before-update", folder / "after-update").recover()
     return True
