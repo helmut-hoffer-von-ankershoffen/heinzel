@@ -127,10 +127,19 @@ def test_darwin_requires_explicit_well_formed_non_granting_acl():
     assert not admission._deny_only_acl(bytes(4096))
 
 
+def _scratch_acl(path):
+    listing = subprocess.run(
+        ["/bin/ls", "-lde", str(path)], capture_output=True, text=True, check=True, timeout=5
+    ).stdout.splitlines()
+    return listing[0].split(maxsplit=1)[0].endswith("+"), listing[1:]
+
+
 @pytest.mark.skipif(sys.platform != "darwin", reason="requires Darwin's descriptor ACL API")
 def test_macos_reads_actual_acl_on_a_scratch_file(tmp_path):
     path = tmp_path / "acl"
-    path.touch()
+    path.touch(exist_ok=False)
+    original = _scratch_acl(path)
+    assert original == (False, [])
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     try:
         assert not admission._darwin_acl(descriptor)
@@ -139,7 +148,11 @@ def test_macos_reads_actual_acl_on_a_scratch_file(tmp_path):
         subprocess.run(["/bin/chmod", "+a", "everyone allow write", str(path)], check=True, timeout=5)
         assert not admission._darwin_acl(descriptor)
     finally:
-        os.close(descriptor)
+        try:
+            subprocess.run(["/bin/chmod", "-N", str(path)], check=True, timeout=5)
+            assert _scratch_acl(path) == original
+        finally:
+            os.close(descriptor)
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="requires the macOS sealed system volume")
