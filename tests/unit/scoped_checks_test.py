@@ -403,10 +403,124 @@ def test_mixed_manifest_alone_leaves_default_push_selection_unchanged(monkeypatc
     assert [command[3:] for command, _ in calls] == scoped.early_guard_commands(changed)
 
 
-def test_focused_mixed_push_requires_the_manifest_head_to_be_the_only_pushed_ref(monkeypatch, tmp_path):
+@pytest.fixture
+def python_push(monkeypatch, tmp_path):
+    base = "c" * 40
+    head = scoped.resolve_base("HEAD")
+    changed = ["src/heinzel/heads/cli/_app.py", "tests/unit/heads/desktop_open_test.py"]
+    plan = {
+        "base": base,
+        "head": head,
+        "unit": [changed[1]],
+        "integration": ["tests/integration/guides_test.py::test_the_guides_exist_and_cite_commands"],
+        "web": [],
+        "desktop": [],
+    }
+    manifest = tmp_path / "focused.json"
+    monkeypatch.setattr(scoped, "focused_push_head", lambda: head)
+    monkeypatch.setenv("HZ_FOCUSED_PUSH", "1")
+    monkeypatch.setenv("HZ_FOCUSED_PUSH_MANIFEST", str(manifest))
+    return base, plan, changed, manifest
+
+
+def test_focused_python_manifest_keeps_static_checks_and_selects_exact_tests(gate_calls, python_push):
+    gate, calls = gate_calls
+    base, plan, changed, manifest = python_push
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    assert scoped.push_checks(changed, base) == 0
+
+    [(guard, _), (checks, _), (integration, _)] = calls
+    assert guard == [gate, "--timeout", "180", *scoped.early_guard_commands(changed)[0]]
+    assert checks == [
+        gate,
+        "--timeout",
+        "600",
+        "make",
+        "check-fast",
+        f"FAST_TYPES={scoped.TYPES}",
+        f"UNIT_TARGETS={changed[1]}",
+        "PYTEST_XDIST_AUTO_NUM_WORKERS=2",
+        "WEB_TESTS=",
+        "MANAGED_CHECK=",
+    ]
+    assert integration[:10] == [
+        gate,
+        "--timeout",
+        "180",
+        "uv",
+        "run",
+        "pytest",
+        *plan["integration"],
+        "-m",
+        "integration and not perf",
+        "-n",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("base", "a" * 40, "exact base and head"),
+        ("head", "b" * 40, "exact base and head"),
+        ("unit", [], "nonempty unit"),
+        ("unit", ["tests/unit/heads/not_tracked_test.py"], "cover every changed test file"),
+        ("unit", ["tests/unit/heads/desktop_installation_test.py"], "hosted desktop"),
+        ("integration", ["tests/integration/desktop_framework_wrap_test.py::test_unsafe"], "hosted desktop"),
+        ("integration", ["tests/integration/not_tracked_test.py"], "tracked test files"),
+        ("web", ["web/src/updates/AutoUpdate.test.tsx"], "empty web and desktop"),
+        ("desktop", ["desktop/test/window.test.js"], "empty web and desktop"),
+    ],
+)
+def test_focused_python_manifest_refuses_foreign_stale_or_unsafe_targets(
+    gate_calls, python_push, field, value, message
+):
+    _, calls = gate_calls
+    base, plan, changed, manifest = python_push
+    plan[field] = value
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match=message):
+        scoped.push_checks(changed, base)
+
+    assert calls == []
+
+
+@pytest.mark.parametrize("path", ["uv.lock", "tests/unit/conftest.py", "scripts/build.py", "src/heinzel/data.json"])
+def test_focused_python_manifest_refuses_changes_outside_its_scope(gate_calls, python_push, path):
+    _, calls = gate_calls
+    base, plan, changed, manifest = python_push
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="without build or runtime configuration"):
+        scoped.push_checks([*changed, path], base)
+
+    assert calls == []
+
+
+def test_python_manifest_without_opt_in_keeps_the_default_related_selection(monkeypatch, gate_calls, python_push):
+    gate, calls = gate_calls
+    base, _, changed, _ = python_push
+    expected_targets = [changed[1], "tests/unit/heads/desktop_installation_test.py"]
+    monkeypatch.setattr(scoped_related, "related_tests", lambda _: expected_targets)
+    monkeypatch.delenv("HZ_FOCUSED_PUSH")
+
+    assert scoped.push_checks(changed, base) == 0
+
+    [(guard, _), (checks, _)] = calls
+    assert guard == [gate, "--timeout", "180", *scoped.early_guard_commands(changed)[0]]
+    assert checks == [gate, "--timeout", "1800", "make", "check-fast", *scoped.python_overrides(changed)]
+    assert f"UNIT_TARGETS={' '.join(expected_targets)}" in checks
+
+
+def test_focused_push_requires_the_manifest_head_to_be_the_only_pushed_ref(monkeypatch, tmp_path):
     head = "a" * 40
     monkeypatch.setattr(scoped, "resolve_base", lambda _: head)
     monkeypatch.setattr(scoped.subprocess, "check_output", lambda *_, **__: "")
+    monkeypatch.delenv("HZ_DEV_PUSH_REFS_FILE", raising=False)
+    with pytest.raises(SystemExit, match="requires the pre-push hook's ref list"):
+        scoped.focused_push_head()
+
     refs_file = tmp_path / "refs"
     monkeypatch.setenv("HZ_DEV_PUSH_REFS_FILE", str(refs_file))
     ref = f"refs/heads/work {head} refs/heads/work {'0' * 40}\n"
