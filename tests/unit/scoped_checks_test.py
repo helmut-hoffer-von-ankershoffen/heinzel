@@ -423,9 +423,11 @@ def python_push(monkeypatch, tmp_path):
     return base, plan, changed, manifest
 
 
-def test_focused_python_manifest_keeps_static_checks_and_selects_exact_tests(gate_calls, python_push):
+@pytest.mark.parametrize("docs", [[], ["docs/FIXTURE_LISTENER.md"]])
+def test_focused_python_manifest_keeps_static_checks_and_selects_exact_tests(gate_calls, python_push, docs):
     gate, calls = gate_calls
     base, plan, changed, manifest = python_push
+    changed = [*changed, *docs]
     manifest.write_text(json.dumps(plan), encoding="utf-8")
 
     assert scoped.push_checks(changed, base) == 0
@@ -486,7 +488,10 @@ def test_focused_python_manifest_refuses_foreign_stale_or_unsafe_targets(
     assert calls == []
 
 
-@pytest.mark.parametrize("path", ["uv.lock", "tests/unit/conftest.py", "scripts/build.py", "src/heinzel/data.json"])
+@pytest.mark.parametrize(
+    "path",
+    ["uv.lock", "tests/unit/conftest.py", "scripts/build.py", "src/heinzel/data.json", "docs/example.py", "mkdocs.yml"],
+)
 def test_focused_python_manifest_refuses_changes_outside_its_scope(gate_calls, python_push, path):
     _, calls = gate_calls
     base, plan, changed, manifest = python_push

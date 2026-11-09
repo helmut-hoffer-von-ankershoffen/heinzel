@@ -206,6 +206,7 @@ FOCUSED_TEST_PATHS = {
     "desktop": re.compile(r"desktop/test/(?:[\w-]+/)*[\w-]+\.test\.js", re.ASCII),
 }
 PYTHON_SOURCE = re.compile(r"src/heinzel/(?:[\w-]+/)*[\w-]+\.py", re.ASCII)
+PYTHON_DOC = re.compile(r"docs/[a-zA-Z0-9_-]+\.md")
 PUSH_REF_FIELDS = 4  # local ref, local SHA, remote ref, remote SHA
 
 
@@ -318,8 +319,8 @@ def focused_test_targets(
 
 
 def python_manifest_paths(changed: list[str]) -> bool:
-    """Allow Python source, its tests, and the selector itself for staged adoption."""
-    patterns = (PYTHON_SOURCE, FOCUSED_TEST_PATHS["unit"], FOCUSED_TEST_PATHS["integration"])
+    """Allow Python source, its tests, top-level Markdown docs, and the selector itself."""
+    patterns = (PYTHON_SOURCE, FOCUSED_TEST_PATHS["unit"], FOCUSED_TEST_PATHS["integration"], PYTHON_DOC)
     return all(
         path == "scripts/scoped_checks.py" or any(pattern.fullmatch(path) for pattern in patterns) for path in changed
     )
