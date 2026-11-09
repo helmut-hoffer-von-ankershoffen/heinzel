@@ -91,10 +91,16 @@ describe("OperationDialog", () => {
     expect(live.fetchMock).toHaveBeenCalledOnce();
     expect(screen.queryByText(/This changes something/)).not.toBeInTheDocument();
     expect(screen.queryByText("hz system daemon restart")).not.toBeInTheDocument();
+    await plan(live.phase);
+    await live.phase("session", "done");
+    await live.phase("unit", "failed");
     await live.end("error", { error: "previous handover cannot be verified" });
     const failed = await screen.findByRole("alert");
     expect(failed).toHaveTextContent("The daemon could not restart. Try again in a moment.");
     expect(failed).not.toHaveTextContent("handover");
+    const steps = within(screen.getByRole("list", { name: "Steps" }));
+    expect(steps.getByText(/Checking this is your Mac.s desktop session/)).toHaveTextContent("done");
+    expect(steps.getByText(/Writing the service definition/)).toHaveTextContent("failed");
   });
 
   it("shows the real steps as they happen, starts once however often it is clicked, and cannot be cancelled", async () => {
