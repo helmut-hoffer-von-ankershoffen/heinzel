@@ -1,6 +1,6 @@
 """Service of the capability module: the report and its health checks."""
 
-from heinzel import Check, Status
+from heinzel import Check, CheckAction, Status
 from heinzel.kernel import CAPABILITIES, CORE_DISTRIBUTION, MODES, CapabilityView
 from heinzel.modules.system.capability._models import AdapterInfo, CapabilityInfo, CapabilityReport, CapabilityUse
 
@@ -97,15 +97,18 @@ class CapabilityService:
             )
             for key in self.capabilities.unknown_keys
         ]
-        checks.extend(
-            Check(
-                name=f"binding {capability}",
-                status=Status.DEGRADED,
-                detail=f"{capability} is bound to {adapter!r}, which no installed module provides",
-                fix=self.capabilities.fix(capability),
+        for capability, adapter in self.capabilities.unknown_bindings():
+            fix, cause, action = self._serve(capability, f"{adapter} isn't installed")
+            checks.append(
+                Check(
+                    name=f"binding {capability}",
+                    status=Status.DEGRADED,
+                    detail=f"{capability} is bound to {adapter!r}, which no installed module provides",
+                    fix=fix,
+                    cause=cause,
+                    action=action,
+                )
             )
-            for capability, adapter in self.capabilities.unknown_bindings()
-        )
         checks.extend(self._default_checks())
         uses = self.uses()
         checks.extend(self._host_checks(uses))
@@ -119,15 +122,41 @@ class CapabilityService:
                 detail = f"optional: not connected; to use it: {self.capabilities.command(use.capability)}"
                 checks.append(Check(name=name, status=Status.UP, detail=detail))
             else:
+                fix, cause, action = self._serve(use.capability)
                 checks.append(
                     Check(
                         name=name,
                         status=Status.DEGRADED,
                         detail=f"{use.capability}:{','.join(use.modes)}: {use.problem}",
-                        fix=self.capabilities.fix(use.capability),
+                        fix=fix,
+                        cause=cause,
+                        action=action,
                     )
                 )
         return checks or [Check(name="requirements", status=Status.UP, detail="no module declares capabilities")]
+
+    def _serve(self, capability: str, cause: str | None = None) -> tuple[str, str, CheckAction]:
+        """The fix, cause and one action of a check whose capability nobody serves: by cause, never a command.
+
+        The command stays in the action, for a terminal; a web head shows its own button (ADR 0145).
+        """
+        installed = self.capabilities.installed(capability)
+        if not installed:
+            return (
+                f"Install a connector that serves {capability}",
+                cause or f"No connector serves {capability}",
+                CheckAction(kind="install", capability=capability, command=self.capabilities.command(capability)),
+            )
+        return (
+            f"Choose which connector serves {capability} ({' or '.join(installed)})",
+            cause or f"Nobody serves {capability}",
+            CheckAction(
+                kind="bind",
+                capability=capability,
+                adapter=installed[0] if len(installed) == 1 else None,
+                command=self.capabilities.command(capability),
+            ),
+        )
 
     def _default_checks(self) -> list[Check]:
         """A check per capability served by the core's default while another module's adapter could serve it.
@@ -154,7 +183,14 @@ class CapabilityService:
                     name=f"binding {spec.name}",
                     status=Status.DEGRADED,
                     detail=f"{spec.name} is served by the default, {bound}; {', '.join(others)} could serve it",
-                    fix=f"Bind one, or {bound} to keep it: hz system config set capabilities.{key} {others[0]}",
+                    fix=f"Choose the connector for {spec.name}, or {bound} to keep it",
+                    cause=f"{spec.name}: {bound} or {others[0]}",
+                    action=CheckAction(
+                        kind="bind",
+                        capability=spec.name,
+                        adapter=others[0],
+                        command=f"hz system config set capabilities.{key} {others[0]}",
+                    ),
                 )
             )
         return checks

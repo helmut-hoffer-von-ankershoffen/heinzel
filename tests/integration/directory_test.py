@@ -189,7 +189,8 @@ def test_doctor_names_the_binding_when_a_plugin_could_serve_the_directory(make_k
         checks["binding directory"]["detail"]
         == "directory is served by the default, one-on-ones; records could serve it"
     )
-    assert checks["binding directory"]["fix"].endswith("hz system config set capabilities.directory records")
+    assert checks["binding directory"]["action"]["command"] == "hz system config set capabilities.directory records"
+    assert "hz " not in checks["binding directory"]["fix"]
     kernel = make_kernel(
         builtins=True, config=bound(calendar="agenda", directory="one-on-ones"), **modules(records=True)
     )
