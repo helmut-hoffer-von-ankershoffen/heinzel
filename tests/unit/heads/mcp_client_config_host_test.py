@@ -39,10 +39,31 @@ def profile(tmp_path):
     return home, workspace, pins
 
 
+def _codex_config(context, binding, *, installed, source=None):
+    metadata = {"type": "user", "file": str(source or context.path), "profile": None}
+    version = "sha256:" + "3" * 64
+    config = {"mcp_servers": {binding.name: binding.entry(context.client)}} if installed else {}
+    origins = (
+        {
+            f"mcp_servers.{binding.name}.{key}": {"name": metadata, "version": version}
+            for key in ("command", "args.0", "args.1", "args.2")
+        }
+        if installed
+        else {}
+    )
+    return {
+        "config": config,
+        "origins": origins,
+        "layers": [{"name": metadata, "version": version, "config": config, "disabledReason": None}],
+    }
+
+
 def _native(context, binding, *, installed, source=None):
     if context.client is McpClient.CLAUDE:
         if not installed:
-            return NativeInspection(1, f'No MCP server named "{binding.name}". Run `claude mcp add` to add one.', "")
+            return NativeInspection(
+                1, f'No MCP server named "{binding.name}". Run `claude mcp add` to add one.', "", context=context
+            )
         return NativeInspection(
             0,
             (
@@ -56,9 +77,16 @@ def _native(context, binding, *, installed, source=None):
             ),
             "",
             source or context.path,
+            context=context,
         )
     if not installed:
-        return NativeInspection(1, "", f"Error: No MCP server named '{binding.name}' found.")
+        return NativeInspection(
+            1,
+            "",
+            f"Error: No MCP server named '{binding.name}' found.",
+            context=context,
+            codex_config_read=json.dumps(_codex_config(context, binding, installed=False)),
+        )
     return NativeInspection(
         0,
         json.dumps(
@@ -81,6 +109,8 @@ def _native(context, binding, *, installed, source=None):
         ),
         "",
         source or context.path,
+        context=context,
+        codex_config_read=json.dumps(_codex_config(context, binding, installed=True, source=source)),
     )
 
 
@@ -247,8 +277,13 @@ def test_unverified_native_source_and_modified_argv_are_unavailable(profile, cli
     native = _native(context, pin.binding, installed=True)
     assert observe_client_config(context, pin.binding, native).status is NativeConfigStatus.SELECTED
     for changed in (
-        replace(native, source=None),
+        (
+            replace(native, source=None)
+            if client is McpClient.CLAUDE
+            else replace(native, source=None, codex_config_read=None)
+        ),
         replace(native, source=workspace / "override"),
+        replace(native, context=replace(context, workspace=workspace.parent)),
         replace(native, stdout=native.stdout.replace("-I", "-E")),
         replace(native, stdout=native.stdout.replace(pin.binding.name, "other")),
         replace(native, stdout="x" * (129 * 1024)),
@@ -259,7 +294,7 @@ def test_unverified_native_source_and_modified_argv_are_unavailable(profile, cli
 def test_cursor_listing_is_not_effective_config_evidence(profile):
     home, workspace, pin = profile
     context = ClientConfigContext(McpClient.CURSOR, home, workspace)
-    row = NativeInspection(0, f"{pin.binding.name} connected", "", context.path)
+    row = NativeInspection(0, f"{pin.binding.name} connected", "", context.path, context=context)
     assert observe_client_config(context, pin.binding, row).status is NativeConfigStatus.UNAVAILABLE
 
     def probe(*_args):
@@ -267,4 +302,64 @@ def test_cursor_listing_is_not_effective_config_evidence(profile):
 
     flow = HostClientConfigWorkflow(context, pin, observe=probe, approve_local=lambda _review: True)
     with pytest.raises(HeinzelError, match="native MCP config is unavailable"):
+        flow.prepare(ClientConfigAction.INSTALL)
+
+
+@pytest.mark.parametrize(
+    "problem", ["same-argv-project", "project-origin", "wrong-profile", "wrong-version", "missing-arg", "no-layers"]
+)
+def test_codex_get_needs_matching_complete_native_origins(profile, problem):
+    home, workspace, pin = profile
+    context = ClientConfigContext(McpClient.CODEX, home, workspace)
+    binding = pin.binding
+    probe = _native(context, binding, installed=True)
+    result = _codex_config(context, binding, installed=True)
+    key = f"mcp_servers.{binding.name}.args.2"
+    if problem == "same-argv-project":
+        result["layers"].append(
+            {
+                "name": {"type": "project", "dotCodexFolder": str(workspace / ".codex")},
+                "config": {"mcp_servers": {binding.name: binding.entry(McpClient.CODEX)}},
+                "version": "sha256:" + "2" * 64,
+            }
+        )
+    elif problem == "project-origin":
+        result["origins"][key]["name"] = {"type": "project", "dotCodexFolder": str(workspace / ".codex")}
+    elif problem == "wrong-profile":
+        result["layers"][0]["name"]["profile"] = "work"
+    elif problem == "wrong-version":
+        result["origins"][key]["version"] = "sha256:" + "4" * 64
+    elif problem == "missing-arg":
+        del result["origins"][key]
+    else:
+        result["layers"] = None
+    rejected = replace(probe, codex_config_read=json.dumps(result))
+    assert observe_client_config(context, binding, rejected).status is NativeConfigStatus.UNAVAILABLE
+
+
+def test_codex_absence_requires_the_same_standard_profile_layer(profile):
+    home, workspace, pin = profile
+    context = ClientConfigContext(McpClient.CODEX, home, workspace)
+    binding = pin.binding
+    native = _native(context, binding, installed=False)
+    assert observe_client_config(context, binding, native).status is NativeConfigStatus.ABSENT
+    missing = replace(native, codex_config_read=None)
+    assert observe_client_config(context, binding, missing).status is NativeConfigStatus.UNAVAILABLE
+    alternate = _codex_config(context, binding, installed=False, source=home / "alt.toml")
+    mismatched = replace(native, codex_config_read=json.dumps(alternate))
+    assert observe_client_config(context, binding, mismatched).status is NativeConfigStatus.UNAVAILABLE
+
+
+def test_host_refuses_codex_project_config_before_probe(profile):
+    home, workspace, pin = profile
+    context = ClientConfigContext(McpClient.CODEX, home, workspace)
+    project_config = workspace.parent / ".codex" / "config.toml"
+    project_config.parent.mkdir()
+    project_config.write_text(f'[mcp_servers.{pin.binding.name}]\ncommand = "/bin/false"\n')
+
+    def probe(*_args):
+        pytest.fail("project override reached the native client")
+
+    flow = HostClientConfigWorkflow(context, pin, observe=probe, approve_local=lambda _review: True)
+    with pytest.raises(HeinzelError, match="project MCP configuration"):
         flow.prepare(ClientConfigAction.INSTALL)

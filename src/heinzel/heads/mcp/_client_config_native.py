@@ -1,9 +1,10 @@
 """Normalize bounded MCP inspection results from trusted local vendor integrations.
 
 The host supplies output from the exact client/profile/workspace and proves the source separately when
-the client doesn't report it. These functions don't launch clients. Claude's get may run a configured
+the client does not report it. These functions don't launch clients. Claude's get may run a configured
 server, so never use it where launch isolation or trusted selection cannot be established. Codex get
-doesn't report its winning file. Cursor list alone has neither the exact argv nor the winning file.
+does not report its winning file, so the host must pair it with the authenticated config/read result
+for the same profile and workspace. Cursor list alone has neither the exact argv nor the winning file.
 """
 
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ from heinzel.heads.mcp._client_config import (
     NativeConfigStatus,
     _load_json,
 )
+from heinzel.heads.mcp._client_config_codex import codex_config_provenance
 
 _MAX_OUTPUT = 128 * 1024
 _CODEX_NULL = {
@@ -42,7 +44,9 @@ class NativeInspection:
     returncode: int
     stdout: str = field(repr=False)
     stderr: str = field(repr=False)
+    context: ClientConfigContext = field(kw_only=True, repr=False)
     source: Path | None = field(default=None, repr=False)
+    codex_config_read: str | None = field(default=None, kw_only=True, repr=False)
 
 
 def observe_client_config(
@@ -50,18 +54,24 @@ def observe_client_config(
 ) -> NativeClientConfig:
     """Cross-check the native entry and scope, keeping unsupported or ambiguous evidence unavailable."""
     unavailable = NativeClientConfig(context, binding.name, NativeConfigStatus.UNAVAILABLE)
-    if context.client is McpClient.CURSOR or len(inspection.stdout) + len(inspection.stderr) > _MAX_OUTPUT:
+    if (
+        context != inspection.context
+        or context.client is McpClient.CURSOR
+        or len(inspection.stdout) + len(inspection.stderr) > _MAX_OUTPUT
+    ):
         return unavailable
+    if context.client is McpClient.CODEX:
+        provenance = codex_config_provenance(context, binding, inspection.codex_config_read)
+        if provenance is None or provenance.selected != (inspection.returncode == 0):
+            return unavailable
     if inspection.returncode:
         if inspection.source is None and _native_absent(context.client, binding.name, inspection):
             return NativeClientConfig(context, binding.name, NativeConfigStatus.ABSENT)
         return unavailable
-    if inspection.source != context.path:
-        return unavailable
     if context.client is McpClient.CLAUDE:
-        match = _claude_matches(binding, inspection.stdout)
+        match = inspection.source == context.path and _claude_matches(binding, inspection.stdout)
     else:
-        match = _codex_matches(binding, inspection.stdout)
+        match = inspection.source in {None, context.path} and _codex_matches(binding, inspection.stdout)
     if not match:
         return unavailable
     return NativeClientConfig(
