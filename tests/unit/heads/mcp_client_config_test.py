@@ -28,7 +28,7 @@ def context(request):
 
 @pytest.fixture
 def binding():
-    return ClientBridgeBinding("0123456789abcdef" * 2, Path("/fixture/sdk/bin/python"), Path("/fixture/bridge.py"))
+    return ClientBridgeBinding("registration-fixture", Path("/fixture/sdk/bin/python"), Path("/fixture/bridge.py"))
 
 
 def _absent(context, binding):
@@ -209,3 +209,15 @@ def test_uninstall_does_not_delete_the_config_file(context, binding):
         removal.verify(installed, None, _absent(context, binding))
     empty = b"" if context.client is McpClient.CODEX else b"{}"
     removal.verify(installed, empty, _absent(context, binding))
+
+
+def test_server_name_is_stable_and_vendor_safe(context, binding):
+    plan = _plan(context, binding)
+    assert plan.binding.name == binding.name
+    assert binding.name.startswith("heinzel-")
+    assert len(binding.name) == len("heinzel-") + 32
+    assert all(character in "0123456789abcdef" for character in binding.name.removeprefix("heinzel-"))
+    other = replace(binding, registration="another-registration")
+    assert _plan(context, other).digest != plan.digest
+    with pytest.raises(HeinzelError, match="registration locator"):
+        _plan(context, replace(binding, registration=""))

@@ -27,7 +27,7 @@ from heinzel.kernel._logging import get_logger, step
 log = get_logger("mcp")
 _MAX_CONFIG_BYTES = 4 * 1024 * 1024
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
-_REGISTRATION = re.compile(r"[0-9a-f]{32}")
+_MAX_REGISTRATION_LENGTH = 256
 
 
 class McpClient(StrEnum):
@@ -97,7 +97,7 @@ class ClientBridgeBinding:
     @property
     def name(self) -> str:
         """A stable server name reserved for this registration."""
-        return f"heinzel-{self.registration}"
+        return "heinzel-" + arguments_hash(self.registration)[:32]
 
     def entry(self, client: McpClient) -> dict[str, JsonValue]:
         """Render only the pinned, isolated stdio command, with no environment or credentials."""
@@ -143,6 +143,7 @@ class ManualClientConfigPlan:
                 "client": self.context.client.value,
                 "workspace": str(self.context.workspace),
                 "path": str(self.context.path),
+                "registration": self.binding.registration,
                 "name": self.binding.name,
                 "entry": self.binding.entry(self.context.client),
                 "before_digest": self.before_digest,
@@ -236,7 +237,7 @@ def _validate_binding(context: ClientConfigContext, binding: ClientBridgeBinding
         if not path.is_absolute() or ".." in path.parts or _CONTROL.search(value) or "${" in value:
             msg = "The MCP configuration or bridge path is invalid."
             raise HeinzelError(msg)
-    if not _REGISTRATION.fullmatch(binding.registration):
+    if not 0 < len(binding.registration) <= _MAX_REGISTRATION_LENGTH or _CONTROL.search(binding.registration):
         msg = "The MCP registration locator is invalid."
         raise HeinzelError(msg)
 
