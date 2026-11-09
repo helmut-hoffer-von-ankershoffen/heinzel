@@ -21,18 +21,23 @@ Claude settings discovery and human approval have separate contracts.
 
 ## Decision Outcome
 
-- Use one supervised local server per registration on macOS and Linux. A standalone bridge runs under a pinned
-  absolute interpreter with `-I -S` and connects to the owned Unix socket. It never starts the server or boots the
-  application. The broker verifies endpoint ownership, OS peer credentials and the registration generation before
-  admission. Readiness requires authenticated MCP initialization, discovery and identity verification.
+- Use one supervised local server per registration on macOS and Linux. Vendor integration requires a standalone
+  bridge with a pinned absolute interpreter and `-I -S`, plus a trusted bootstrap that delivers a private broker
+  channel. Vendor launches that can only resolve the named socket remain unadmitted. The bridge never starts
+  the server or boots the application. Readiness requires authenticated MCP initialization, discovery and identity
+  verification.
   The isolated activation primitive checks a real owner-verified Unix socket pair and issues each connection
   through a separate retained descriptor pair. Scope exit fences leases and shuts down the owned descriptors.
   At trusted single-thread startup, a forked Unix helper can bind a fresh short generation path relative to an
   inherited directory descriptor. Creation-time permissions and a private listener-descriptor handoff keep the
   caller's cwd and umask unchanged. Stop closes the listener and retains its generation directory and socket
-  node. The adapter performs no pathname chmod, unlink or rename, including after failure. A discovery path is
-  only a locator. This adapter probes transport reachability. A trusted bridge is still required for private
-  admission and MCP readiness. Unsupported platforms and fixed caller-selected socket paths refuse activation.
+  node. The adapter performs no pathname chmod, unlink or rename, including after failure. The named listener
+  provides transport probes only. The foreground supervisor can also fork trusted bridge code at isolated
+  startup with an inherited private descriptor. The bridge exchanges exact versioned bytes bound to the
+  supervisor's fresh in-memory incarnation and one channel. It forwards client bytes only after the broker
+  publishes the reviewed lease and acknowledges admission. This channel is separate from the named listener.
+  The foreground bridge provides byte transport. MCP readiness and vendor bootstrap still require integration.
+  Unsupported platforms and fixed caller-selected socket paths refuse activation.
 - Authorize lifecycle effects through a separate host capability bound to the reviewed plan and action. Trusted
   native review and explicit local CLI review use the same service. Browser and device sessions can prepare a
   plan and see authorized status. The broker admits private connections only after host review of the exact
@@ -68,15 +73,17 @@ separate evidence.
 The installed activation adapter takes an SDK and profile selected by the authenticated native runtime.
 On macOS it obtains the per-user temporary directory through `confstr` with `_CS_DARWIN_USER_TEMP_DIR`.
 On Linux it selects `/run/user/<uid>`. It verifies physical ancestry with no-follow directory opens,
-provisions an owner-only root by parent descriptor, and retains its exact descriptor through generation
-startup. Environment overrides and project paths supply no root authority. The adapter refuses named
+selects a fresh directory by parent descriptor, and retains its descriptor for creation-only operations.
+The `mkdir` and `open` steps cannot prove creation provenance against another process under the same UID.
+The opened directory is locator storage only. Environment overrides and project paths supply no authority. The adapter refuses named
 activation when the OS root is unavailable or when the final root exceeds 86
 filesystem-encoded bytes. The adapter reserves the remaining 17 bytes of the 103-byte socket pathname limit.
-Root and observed generation receipts are stored under the SDK maintenance authority outside the SDK. The
-foreground adapter holds the SDK lock until shutdown. Native manager integration will register the stop and
-recovery hooks before allowing concurrent managed activation and maintenance. Retired and failed nodes
-remain on disk for reviewed cleanup. A recorded directory that the OS has removed or another process has
-replaced requires explicit recovery. A missing or changed locator cannot replace its recorded authority.
+Before publishing the supervisor, the adapter commits a single observation of locator storage and the retained
+listener under the SDK maintenance authority outside the SDK. A failed commit retires the listener and leaves
+any uncertain receipt for inspection. Activation never adopts a prior receipt or grants cleanup rights from one.
+The foreground adapter holds the SDK lock until shutdown. An observed change to a retained anchor or current
+receipt retires the supervisor. Native manager integration will register the stop and recovery hooks before
+allowing concurrent managed activation and maintenance. Retired and failed nodes remain on disk for reviewed cleanup.
 
 Direct HTTP is separate follow-up work building on the proposed bearer scope in
 [PR #655](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/655). Claude Desktop and Gemini CLI

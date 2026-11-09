@@ -165,9 +165,21 @@ class NamedMcpGeneration:
         return self.locator
 
     def maintenance_identity(self) -> tuple[tuple[int, int], tuple[int, int]]:
-        """Observe the retained directory and socket identities for the maintenance inventory."""
-        self.checked_locator()
-        return _identity(os.fstat(self._directory)), self._node_identity
+        """Sync and observe the retained directory and socket for the maintenance inventory.
+
+        Raises:
+            HeinzelError: If the retained directory cannot be synced or the locator changed.
+        """
+        try:
+            os.fsync(self._directory)
+            self.checked_locator()
+            return _identity(os.fstat(self._directory)), self._node_identity
+        except OSError:
+            raise HeinzelError(_REFUSED) from None
+
+    def retire(self) -> None:
+        """Close the retained listener without changing any filesystem node."""
+        self._listener.close()
 
 
 @contextmanager

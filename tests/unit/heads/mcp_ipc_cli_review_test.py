@@ -22,6 +22,7 @@ from heinzel.heads import cli
 from heinzel.heads.mcp._ipc_admission import McpGeneration
 from heinzel.heads.mcp._ipc_approval import PrivateMcpPlan
 from heinzel.heads.mcp._ipc_cli_review import _REVIEWER, _REVIEWER_SHA256
+from heinzel.heads.mcp._ipc_descriptors import receive_exact
 from heinzel.heads.mcp._ipc_supervisor import owned_mcp_supervisor
 from heinzel.heads.mcp._ipc_work import McpWorkRequest
 from heinzel.kernel._approval import arguments_hash
@@ -217,7 +218,7 @@ _SUPERVISOR_LAUNCHER = """
 import fcntl, runpy, sys, termios
 from pathlib import Path
 fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-runpy.run_path(sys.argv[1])['_run_supervised_fixture'](Path(sys.argv[2]), sys.argv[3])
+runpy.run_path(sys.argv[1])[sys.argv[4]](Path(sys.argv[2]), sys.argv[3])
 """
 
 
@@ -328,8 +329,71 @@ def _run_supervised_fixture(directory, phase):
     sys.stdout.write(json.dumps({"first": outcome, "second_admitted": second_admitted.is_set(), "calls": calls}))
 
 
+def _serve_inherited_fixture(transport, release, admitted, finish, calls):
+    request = McpWorkRequest(target="fixture", operation="read-fixture", request_id="one", input_hash="a" * 64)
+    try:
+        with transport.admit() as lease:
+            admitted.set()
+            assert release.wait(2)
+            assert transport.record(lease, request, "reserve") == "queued"
+            assert receive_exact(lease.peer.connection, 4, time.monotonic() + 2) == b"ping"
+            assert transport.record(lease, request, "start") == "running"
+            calls.append("fake-provider")
+            assert transport.record(lease, request, "complete") == "completed"
+            lease.peer.connection.sendall(b"pong")
+            assert finish.wait(2)
+            return "completed"
+    except HeinzelError:
+        return "refused"
+
+
+def _run_inherited_bridge_fixture(directory, phase):
+    generation = McpGeneration("fixture-registration", 3)
+    now = 100.0
+    plan = PrivateMcpPlan.capture(generation, "fixture-grant", 1, 2000.0, {"dispatch": {"fixture": ["read-fixture"]}})
+    release, admitted, finish = Event(), Event(), Event()
+    calls = []
+    with (
+        owned_mcp_supervisor(directory / "state", plan, clock=lambda: now) as supervisor,
+        supervisor.launch_bridge() as (front, transport),
+        ThreadPoolExecutor(max_workers=1) as workers,
+    ):
+        front.settimeout(2)
+        front.sendall(b"ping")  # The child must hold these bytes away from the broker until admission.
+        result = workers.submit(_serve_inherited_fixture, transport, release, admitted, finish, calls)
+        try:
+            (intended,) = _pending(supervisor, 1)
+            assert not admitted.is_set()
+            status = _review_command(supervisor, intended)
+            if phase == "decline":
+                assert status == 1
+                supervisor.revoke()
+            else:
+                assert status == 0
+                assert admitted.wait(2)
+                if phase == "expire":
+                    now = 2001.0
+                elif phase == "revoke":
+                    supervisor.revoke()
+            release.set()
+            if phase == "approve":
+                assert receive_exact(front, 4, time.monotonic() + 2) == b"pong"
+            finish.set()
+            outcome = result.result(timeout=2)
+            assert front.recv(1) == b""
+            if phase == "approve":
+                with pytest.raises(HeinzelError, match="already handed off or retired"), transport.admit():
+                    pytest.fail("The bridge's consumed connection was admitted twice")
+        finally:
+            release.set()
+            finish.set()
+            supervisor.revoke()
+    sys.stdout.write(json.dumps({"first": outcome, "second_admitted": False, "calls": calls}))
+
+
 @pytest.mark.parametrize("phase", ["approve", "decline", "expire", "revoke"])
-def test_public_review_command_reviews_one_connection_and_fences_fake_dispatch(short_socket_root, phase):
+@pytest.mark.parametrize("fixture", ["_run_supervised_fixture", "_run_inherited_bridge_fixture"])
+def test_public_review_command_reviews_one_connection_and_fences_fake_dispatch(short_socket_root, phase, fixture):
     directory = short_socket_root
     master, terminal = pty.openpty()
     settings = termios.tcgetattr(terminal)
@@ -337,7 +401,7 @@ def test_public_review_command_reviews_one_connection_and_fences_fake_dispatch(s
     termios.tcsetattr(terminal, termios.TCSANOW, settings)
     try:
         with subprocess.Popen(
-            [sys.executable, "-I", "-c", _SUPERVISOR_LAUNCHER, __file__, os.fspath(directory), phase],
+            [sys.executable, "-I", "-c", _SUPERVISOR_LAUNCHER, __file__, os.fspath(directory), phase, fixture],
             stdin=terminal,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

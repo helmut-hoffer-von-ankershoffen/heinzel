@@ -1,8 +1,9 @@
-"""Host-selected MCP runtime directories and durable maintenance receipts."""
+"""Host-selected MCP locator storage and observational maintenance receipts."""
 
 import hashlib
 import json
 import os
+import secrets
 import stat
 import sys
 from collections.abc import Generator
@@ -49,6 +50,10 @@ def _os_runtime_base() -> Path:
 def _identity(descriptor: int) -> tuple[int, int]:
     info = os.fstat(descriptor)
     return info.st_dev, info.st_ino
+
+
+def _locator_name() -> str:
+    return "hz-m-" + secrets.token_hex(8)
 
 
 @contextmanager
@@ -100,24 +105,25 @@ def _record(directory: int, name: str, data: bytes) -> None:
     os.fsync(directory)
 
 
-@dataclass(frozen=True, slots=True)
-class OwnedMcpRuntimeRoot:
-    """The retained runtime directory and SDK maintenance authority for the activation scope."""
+@dataclass(slots=True)
+class McpRuntimeLocator:
+    """Retain locator storage and fence activation through the SDK maintenance lock."""
 
     path: Path
     descriptor: int = field(repr=False)
     _installation: InstalledMcpRuntime = field(repr=False)
     _inventory: int = field(repr=False)
     _record_name: str = field(repr=False)
-    _record_bytes: bytes = field(repr=False)
     _locks: MaintenanceLocks = field(repr=False)
     _anchors: tuple[tuple[Path, int, bool], ...] = field(repr=False)
+    _storage: dict[str, JsonValue] = field(repr=False)
+    _observation: bytes | None = field(default=None, init=False, repr=False)
 
     def require_current(self) -> None:
-        """Reject a changed locator, durable inventory or SDK maintenance gate before use.
+        """Refuse changed anchors or a maintenance fence before using locator storage.
 
         Raises:
-            HeinzelError: If the recorded root is stale or the host is under maintenance.
+            HeinzelError: If an anchor or observation changed or the host is under maintenance.
         """
         lock = host_maintenance_lock(self._installation.prefix)
         try:
@@ -126,16 +132,17 @@ class OwnedMcpRuntimeRoot:
                     with _physical_directory(path, private=private) as current:
                         if _identity(current) != _identity(retained):
                             raise HeinzelError(_REFUSED)
-                if _read_record(
-                    self._inventory, self._record_name
-                ) != self._record_bytes or installation_mutation_pending(
-                    self._installation.prefix, self._installation.state
+                if (
+                    self._observation is not None
+                    and _read_record(self._inventory, self._record_name) != self._observation
                 ):
+                    raise HeinzelError(_REFUSED)
+                if installation_mutation_pending(self._installation.prefix, self._installation.state):
                     raise HeinzelError(_REFUSED)
         except OSError:
             raise HeinzelError(_REFUSED) from None
 
-    def retain_generation(
+    def observe_generation(
         self,
         locator: Path,
         directory: tuple[int, int],
@@ -143,34 +150,46 @@ class OwnedMcpRuntimeRoot:
         registration: str,
         generation: int,
     ) -> None:
-        """Link a verified retained generation to the durable root receipt under the SDK lock.
+        """Commit one observation of the retained listener before publishing the supervisor.
+
+        The receipt grants no admission, adoption or deletion rights. An incomplete write is left in
+        inventory and the caller retires its unpublished listener. Activation never restores a receipt.
 
         Raises:
             HeinzelError: If the generation or maintenance inventory cannot be verified or recorded.
         """
         self.require_current()
         leaf = locator.parent.name
-        if locator.parent.parent != self.path or locator.name != "s" or not leaf.startswith("g-"):
+        if (
+            self._observation is not None
+            or locator.parent.parent != self.path
+            or locator.name != "s"
+            or not leaf.startswith("g-")
+        ):
             raise HeinzelError(_REFUSED)
         data: dict[str, JsonValue] = {
             "schema": 1,
-            "root_record": self._record_name,
+            "kind": "mcp-locator-observation",
+            "storage": self._storage,
             "registration": registration,
             "generation": generation,
             "locator": os.fspath(locator),
             "directory": list(directory),
             "socket": list(socket_node),
         }
-        name = self._record_name.removesuffix(".json") + "-" + leaf + ".json"
         try:
-            _record(self._inventory, name, _encode(data))
+            observation = _encode(data)
+            os.fsync(self.descriptor)
+            _record(self._inventory, self._record_name, observation)
+            self._observation = observation
+            self.require_current()
         except OSError:
             raise HeinzelError(_REFUSED) from None
 
 
 def _provision(
     installation: InstalledMcpRuntime, stack: ExitStack, locks: MaintenanceLocks, prefix: int, state: int
-) -> OwnedMcpRuntimeRoot:
+) -> McpRuntimeLocator:
     lock = host_maintenance_lock(installation.prefix)
     if installation_mutation_pending(installation.prefix, installation.state):
         raise HeinzelError(_REFUSED)
@@ -179,21 +198,20 @@ def _provision(
     base_fd = stack.enter_context(_physical_directory(base, private=True))
     sdk, profile = os.fspath(installation.prefix), os.fspath(installation.state)
     key = hashlib.sha256(os.fsencode(sdk) + b"\0" + os.fsencode(profile)).hexdigest()
-    name = "hz-m-" + key[:16]
+    name = _locator_name()
     path = base / name
     if len(os.fsencode(path)) > _ROOT_BYTES:
         msg = "The installed MCP runtime root exceeds the Unix socket path budget"
         raise HeinzelError(msg)
-    record_name = "mcp-root-" + key + ".json"
-    previous = _read_record(inventory, record_name)
-    if previous is None:
-        os.mkdir(name, mode=0o700, dir_fd=base_fd)  # A same-UID unrecorded entry is never adopted.
-        os.fsync(base_fd)
+    record_name = f"mcp-activation-{key}-{name}.json"
+    os.mkdir(name, mode=0o700, dir_fd=base_fd)  # A pre-existing entry refuses this activation.
     descriptor = os.open(name, _DIR_FLAGS, dir_fd=base_fd)
     stack.callback(os.close, descriptor)
     CurrentUser.verify_private(os.fstat(descriptor), directory=True)
+    # mkdir/open cannot prove creation provenance against another process under the same UID.
+    # This descriptor bounds subsequent creation-only operations. It grants no authority to the path.
+    os.fsync(base_fd)
     data: dict[str, JsonValue] = {
-        "schema": 1,
         "platform": sys.platform,
         "uid": os.getuid(),
         "sdk": sdk,
@@ -202,14 +220,9 @@ def _provision(
         "profile_identity": list(_identity(state)),
         "os_root": os.fspath(base),
         "os_root_identity": list(_identity(base_fd)),
-        "runtime_root": os.fspath(path),
-        "runtime_root_identity": list(_identity(descriptor)),
+        "locator_root": os.fspath(path),
+        "observed_directory": list(_identity(descriptor)),
     }
-    expected = _encode(data)
-    if previous is None:
-        _record(inventory, record_name, expected)
-    elif previous != expected:
-        raise HeinzelError(_REFUSED)
     anchors = (
         (installation.prefix, prefix, False),
         (installation.state, state, True),
@@ -217,12 +230,12 @@ def _provision(
         (base, base_fd, True),
         (path, descriptor, True),
     )
-    return OwnedMcpRuntimeRoot(path, descriptor, installation, inventory, record_name, expected, locks, anchors)
+    return McpRuntimeLocator(path, descriptor, installation, inventory, record_name, locks, anchors, data)
 
 
 @contextmanager
-def owned_mcp_runtime_root(installation: InstalledMcpRuntime) -> Generator[OwnedMcpRuntimeRoot]:
-    """Hold the SDK maintenance fence and retain the exact per-installation runtime directory FD.
+def mcp_runtime_locator(installation: InstalledMcpRuntime) -> Generator[McpRuntimeLocator]:
+    """Hold the SDK maintenance fence and retain fresh per-activation locator storage.
 
     The already-authenticated isolated runtime supplies the installation binding. This scope stays locked
     until its supervisor exits, pending a native manager registration that maintenance can stop itself.
@@ -231,7 +244,7 @@ def owned_mcp_runtime_root(installation: InstalledMcpRuntime) -> Generator[Owned
         HeinzelError: If isolation, maintenance authority, inventory or the OS runtime root is unavailable.
 
     Yields:
-        A verified directory and its durable maintenance binding, never a caller-controlled locator.
+        A bounded locator directory descriptor selected by the host.
     """
     if not sys.flags.isolated or os.getuid() != os.geteuid() or installation.state.is_relative_to(installation.prefix):
         raise HeinzelError(_REFUSED)

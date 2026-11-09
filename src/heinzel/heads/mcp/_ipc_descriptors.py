@@ -26,10 +26,14 @@ def local_stream_pair() -> tuple[socket.socket, socket.socket]:
         raise HeinzelError(_REFUSED) from None
 
 
-def _receive(connection: socket.socket, size: int, deadline: float) -> bytes:
+def receive_exact(connection: socket.socket, size: int, deadline: float) -> bytes:
+    """Read at most the requested bytes under one monotonic deadline, leaving later bytes unread."""
     data = bytearray()
     while len(data) < size:
-        connection.settimeout(max(0, deadline - time.monotonic()))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        connection.settimeout(remaining)
         chunk = connection.recv(size - len(data))
         if not chunk:
             break
@@ -49,10 +53,10 @@ def probe_streams(probe: socket.socket, owned: socket.socket) -> None:
     challenge = secrets.token_bytes(32)
     deadline = time.monotonic() + _TIMEOUT
     probe.sendall(challenge)
-    if _receive(owned, len(challenge), deadline) != challenge:
+    if receive_exact(owned, len(challenge), deadline) != challenge:
         raise HeinzelError(_REFUSED)
     owned.sendall(challenge)
-    if _receive(probe, len(challenge), deadline) != challenge:
+    if receive_exact(probe, len(challenge), deadline) != challenge:
         raise HeinzelError(_REFUSED)
 
 

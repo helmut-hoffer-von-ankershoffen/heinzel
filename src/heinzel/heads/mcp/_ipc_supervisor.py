@@ -1,5 +1,6 @@
 """One owned local MCP registration with separate host review and transport entry points."""
 
+import secrets
 import sys
 import time
 from collections.abc import Callable, Generator
@@ -18,10 +19,11 @@ from heinzel.heads.mcp._ipc_admission import (
     admit_owned_stream,
 )
 from heinzel.heads.mcp._ipc_approval import HostMcpConnectionApprovals, PrivateMcpPlan
+from heinzel.heads.mcp._ipc_bridge import BridgeHandshake, launch_inherited_bridge
 from heinzel.heads.mcp._ipc_cli_review import review_private_mcp_from_terminal
 from heinzel.heads.mcp._ipc_descriptors import local_stream_pair, probe_local_descriptors
 from heinzel.heads.mcp._ipc_named_generation import NamedMcpGeneration, owned_named_generation
-from heinzel.heads.mcp._ipc_runtime_root import InstalledMcpRuntime, OwnedMcpRuntimeRoot, owned_mcp_runtime_root
+from heinzel.heads.mcp._ipc_runtime_root import InstalledMcpRuntime, McpRuntimeLocator, mcp_runtime_locator
 from heinzel.heads.mcp._ipc_work import (
     Boundary,
     Disposition,
@@ -46,6 +48,14 @@ class SupervisedMcpTransport:
 
 
 @dataclass(frozen=True, slots=True)
+class InheritedMcpTransport:
+    """A bridge transport with fixed bootstrap and no host review entry point."""
+
+    admit: Callable[[], AbstractContextManager[PublishedMcpLease]]
+    record: Callable[[PublishedMcpLease, McpWorkRequest, Boundary], Disposition]
+
+
+@dataclass(frozen=True, slots=True)
 class OwnedMcpSupervisor:
     """Host-only control of one exact reviewed registration while its private ownership lock is held."""
 
@@ -53,7 +63,8 @@ class OwnedMcpSupervisor:
     _authority: HostMcpConnectionApprovals = field(repr=False)
     _dispatch: PrivateMcpDispatch = field(repr=False)
     _named: NamedMcpGeneration | None = field(default=None, repr=False)
-    _runtime: OwnedMcpRuntimeRoot | None = field(default=None, repr=False)
+    _runtime: McpRuntimeLocator | None = field(default=None, repr=False)
+    _incarnation: bytes = field(default_factory=partial(secrets.token_bytes, 32), init=False, repr=False, compare=False)
     _connections: dict[socket, bool] = field(default_factory=dict, init=False, repr=False, compare=False)
     _released: Event = field(default_factory=Event, init=False, repr=False, compare=False)
     _lifetime: Lock = field(default_factory=Lock, init=False, repr=False, compare=False)
@@ -65,14 +76,20 @@ class OwnedMcpSupervisor:
 
     def pending_review_ids(self) -> tuple[str, ...]:
         """List opaque instance IDs for the trusted CLI's review selection."""
-        self._require_owned()
+        self._check_authority()
         return tuple(review.instance_id for review in self._authority.pending_reviews())
 
     def _require_available(self) -> None:
         self._require_owned()
         self._authority.require_activation()
         if self._runtime is not None:
-            self._runtime.require_current()
+            try:
+                self._runtime.require_current()
+                if self._named is not None:
+                    self._named.checked_locator()
+            except HeinzelError:
+                self._retire()
+                raise
 
     def _check_authority(self) -> McpGeneration:
         with self._lifetime:
@@ -103,6 +120,11 @@ class OwnedMcpSupervisor:
             self._connections[owned] = True
             return owned
 
+    def _record(self, lease: PublishedMcpLease, request: McpWorkRequest, boundary: Boundary) -> Disposition:
+        with self._lifetime:
+            self._require_available()
+            return self._dispatch.record(lease, request, boundary)
+
     @contextmanager
     def open_transport(self) -> Generator[tuple[socket, SupervisedMcpTransport]]:
         """Issue a one-use descriptor pair to the trusted host before any client handoff.
@@ -119,7 +141,7 @@ class OwnedMcpSupervisor:
         )
         try:
             with client:
-                yield client, SupervisedMcpTransport(admit, self._dispatch.record)
+                yield client, SupervisedMcpTransport(admit, self._record)
         finally:
             with self._lifetime:
                 claimed = self._connections.pop(owned, None)
@@ -127,6 +149,34 @@ class OwnedMcpSupervisor:
                     _shutdown_stream(owned)
                 elif claimed is False:
                     _close_stream(owned)
+
+    @contextmanager
+    def launch_bridge(self) -> Generator[tuple[socket, InheritedMcpTransport]]:
+        """Launch trusted bridge code at isolated startup, with a new private channel for this lease.
+
+        Yields:
+            The bridge's front stream and a restricted broker handoff with an exact versioned handshake.
+        """
+        binding = self._incarnation + secrets.token_bytes(32)
+        handshake = BridgeHandshake(b"HZ-MCP-BRIDGE\x00\x01" + binding, b"HZ-MCP-ADMITTED\x00\x01" + binding)
+
+        def read_hello(channel: socket) -> McpGeneration:
+            handshake.require_hello(channel)
+            return self._generation
+
+        @contextmanager
+        def admit() -> Generator[PublishedMcpLease]:
+            with transport.admit(read_hello) as lease:
+                self._check_authority()
+                lease.require_active()
+                handshake.acknowledge(lease.peer.connection)
+                yield lease
+
+        # Unwind the broker channel first so its EOF releases the direct child even before approval.
+        with ExitStack() as child, self.open_transport() as (channel, transport):
+            with step(log, "mcp.ipc.launch_bridge", operation="ipc", step="launch_bridge"):
+                front = child.enter_context(launch_inherited_bridge(channel, handshake))
+            yield front, InheritedMcpTransport(admit, transport.record)
 
     def review(self, instance_id: str) -> None:
         """Give the pinned terminal reviewer one private control descriptor for this exact instance."""
@@ -150,13 +200,18 @@ class OwnedMcpSupervisor:
                 _close_stream(owned)
         self._connections.clear()
 
+    def _retire(self) -> None:
+        self._released.set()
+        try:
+            self._authority.close()
+        finally:
+            self._stop_connections()
+            if self._named is not None:
+                self._named.retire()
+
     def _release(self) -> None:
         with self._lifetime:
-            self._released.set()
-            try:
-                self._authority.close()
-            finally:
-                self._stop_connections()
+            self._retire()
 
 
 @contextmanager
@@ -165,7 +220,7 @@ def owned_mcp_supervisor(
     plan: PrivateMcpPlan,
     *,
     endpoint_path: Path | None = None,
-    named_root: Path | OwnedMcpRuntimeRoot | None = None,
+    named_root: Path | McpRuntimeLocator | None = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> Generator[OwnedMcpSupervisor]:
     """Create, probe and retire one owned transport in the already-trusted isolated CLI runtime.
@@ -186,7 +241,7 @@ def owned_mcp_supervisor(
     if not sys.flags.isolated:
         msg = "Local MCP supervision requires the trusted isolated CLI runtime"
         raise HeinzelError(msg)
-    runtime = named_root if isinstance(named_root, OwnedMcpRuntimeRoot) else None
+    runtime = named_root if isinstance(named_root, McpRuntimeLocator) else None
     if runtime is not None:
         runtime.require_current()
     with owned_private_dispatch(root, plan, clock=clock) as (authority, dispatch), ExitStack() as transport:
@@ -195,7 +250,7 @@ def owned_mcp_supervisor(
         if runtime is not None:
             named = transport.enter_context(owned_named_generation(runtime.path, root_descriptor=runtime.descriptor))
             directory, node = named.maintenance_identity()
-            runtime.retain_generation(
+            runtime.observe_generation(
                 named.locator, directory, node, plan.generation.registration_id, plan.generation.number
             )
         elif isinstance(named_root, Path):
@@ -220,7 +275,7 @@ def owned_installed_mcp_supervisor(
     """
     with ExitStack() as ownership:
         with step(log, "mcp.ipc.activate_installed", operation="ipc", step="activate_installed"):
-            runtime = ownership.enter_context(owned_mcp_runtime_root(installation))
+            runtime = ownership.enter_context(mcp_runtime_locator(installation))
             registration = arguments_hash(plan.generation.registration_id)[:24]
             host = ownership.enter_context(
                 owned_mcp_supervisor(installation.state / "mcp" / registration, plan, named_root=runtime, clock=clock)
