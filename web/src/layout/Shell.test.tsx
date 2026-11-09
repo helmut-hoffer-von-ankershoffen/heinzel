@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { requestMenuAction } from "@/about/menu";
+import { answered } from "@/test/chat";
 import { config, doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
@@ -208,6 +209,39 @@ describe("Desktop menu actions", () => {
     await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
     act(() => requestMenuAction("changelog"));
     expect(await screen.findByRole("dialog", { name: "View changelog" })).toBeInTheDocument();
+  });
+
+  it("starts a new chat and focuses its composer whether the workspace is open or closed", async () => {
+    sessionStorage.setItem("hz.chat", answered.id);
+    mockApi({ ...answers, "/api/system/runner/chat/show": answered });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const panel = await screen.findByRole("complementary", { name: "Chat" });
+    expect(await within(panel).findByText("Make me the lead")).toBeInTheDocument();
+
+    act(() => requestMenuAction("new-chat"));
+    expect(within(panel).queryByText("Make me the lead")).not.toBeInTheDocument();
+    expect(within(panel).getByLabelText("Your message")).toHaveFocus();
+    expect(sessionStorage.getItem("hz.chat")).toBeNull();
+
+    await user.click(within(panel).getByRole("button", { name: "Close the chat" }));
+    expect(screen.queryByRole("complementary", { name: "Chat" })).not.toBeInTheDocument();
+    act(() => requestMenuAction("new-chat"));
+    await waitFor(() => expect(screen.getByLabelText("Your message")).toHaveFocus());
+  });
+
+  it("leaves a linked personal chat when starting a new chat from the menu", async () => {
+    const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const { calls } = mockApi({
+      ...answers,
+      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "Personal Heinzel", messages: [] },
+    });
+    renderAt(`/doctor?chat=${id}`);
+    expect(await screen.findByRole("heading", { name: "Personal Heinzel" })).toBeInTheDocument();
+    act(() => requestMenuAction("new-chat"));
+    expect(screen.queryByRole("heading", { name: "Personal Heinzel" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("Your message")).toHaveFocus());
+    expect(calls.some((request) => request.url.endsWith("/heinzel/new-chat"))).toBe(false);
   });
 
   it("answers the View, Go and Help menu actions", async () => {

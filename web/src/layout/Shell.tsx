@@ -13,7 +13,7 @@ import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { OperationDialog } from "@/components/OperationDialog";
 import { t } from "@/i18n";
-import { OPEN_CHAT } from "@/lib/chatIntent";
+import { clearChatLink, OPEN_CHAT, OPEN_NEW_CHAT } from "@/lib/chatIntent";
 import { clampSidebar, readSidebarWidth, sidebarMax, writeSidebarWidth } from "@/lib/sidebarWidth";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import { useWidth } from "@/lib/useWidth";
@@ -367,8 +367,9 @@ function Layout() {
     return () => cancelAnimationFrame(frame);
   }, [beside, full, pageHold, scrollTarget, selectedPanel]);
 
+  const hasChatLink = params.has("chat") || params.has("chat-context");
   const selectPanel = useCallback(
-    (id: string) => {
+    (id: string, newChat = false) => {
       pageScroll.current?.();
       setScrollTarget(null);
       // Preserve the old panel height while Page scrolls up so selecting its tab cannot clamp the scroll instantly.
@@ -384,11 +385,15 @@ function Layout() {
       setPageHold(hold);
       setActivePanel(id);
       setTerminalFull(false);
-      // Native panel selection needs no URL write unless it closes a contributed panel. A no-op
-      // navigation can overwrite a conversation selected before this router render has committed.
-      if (requestedId || panelViews.some((view) => view.id === id)) {
+      // A no-op navigation can overwrite a conversation selected before this router render has committed.
+      const clearLink = newChat && hasChatLink;
+      if (clearLink || requestedId || panelViews.some((view) => view.id === id)) {
         setParams((current) => {
           const next = new URLSearchParams(current);
+          if (clearLink) {
+            clearChatLink(next);
+            next.delete("chat-context");
+          }
           if (panelViews.some((view) => view.id === id)) next.set("panel", id);
           else if (panelViews.some((view) => view.id === next.get("panel"))) next.delete("panel");
           ownNavigation.current = { path: location.pathname, search: next.toString() };
@@ -397,7 +402,7 @@ function Layout() {
       }
       if (!beside) requestScroll(id);
     },
-    [beside, full, location.pathname, requestScroll, requestedId, selectedPanel, setParams, panelViews],
+    [beside, full, hasChatLink, location.pathname, requestScroll, requestedId, selectedPanel, setParams, panelViews],
   );
   const closeView = (id: string) => {
     pageScroll.current?.();
@@ -415,15 +420,17 @@ function Layout() {
       setTerminalOpen(true);
       selectPanel("terminal");
     };
-    const openChat = () => {
+    const openChat = (event: Event) => {
       setChatOpen(true);
-      selectPanel("chat");
+      selectPanel("chat", event.type === OPEN_NEW_CHAT);
     };
     window.addEventListener(OPEN_TERMINAL, open);
     window.addEventListener(OPEN_CHAT, openChat);
+    window.addEventListener(OPEN_NEW_CHAT, openChat);
     return () => {
       window.removeEventListener(OPEN_TERMINAL, open);
       window.removeEventListener(OPEN_CHAT, openChat);
+      window.removeEventListener(OPEN_NEW_CHAT, openChat);
     };
   }, [setChatOpen, selectPanel]);
   const setSettings = (section: string | null) =>
@@ -472,7 +479,7 @@ function Layout() {
       selectPanel("terminal");
     }
   };
-  // The desktop app's File, View and Go menus call the same closures as the top bar and the sidebar.
+  // The desktop app's View and Go menus call the same closures as the top bar and the sidebar.
   const menu = useRef({ toggleChat, toggleBrowser, toggleTerminal, browserEnabled });
   menu.current = { toggleChat, toggleBrowser, toggleTerminal, browserEnabled };
   useEffect(

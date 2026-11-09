@@ -54,7 +54,7 @@ export function appMenuTemplate({ name, send, open, devTools = false }) {
     {
       label: "File",
       submenu: [
-        { label: "New Chat", accelerator: "CommandOrControl+N", click: () => send("chat") },
+        { label: "New Chat", accelerator: "CommandOrControl+N", click: () => send("new-chat") },
         { type: "separator" },
         { role: "close" },
       ],
@@ -66,9 +66,9 @@ export function appMenuTemplate({ name, send, open, devTools = false }) {
         { label: "Search\u2026", accelerator: "CommandOrControl+K", click: () => send("search") },
         { label: "Toggle Sidebar", accelerator: "CommandOrControl+B", click: () => send("sidebar") },
         { type: "separator" },
-        { label: "Show Terminal", accelerator: "CommandOrControl+J", click: () => send("terminal") },
-        { label: "Show Browser", accelerator: "CommandOrControl+Shift+B", click: () => send("browser") },
-        { label: "Show Side Chat", accelerator: "CommandOrControl+;", click: () => send("chat") },
+        { label: "Toggle Terminal", accelerator: "CommandOrControl+J", click: () => send("terminal") },
+        { label: "Toggle Browser", accelerator: "CommandOrControl+Shift+B", click: () => send("browser") },
+        { label: "Toggle Side Chat", accelerator: "CommandOrControl+;", click: () => send("chat") },
         { label: "Show Notifications", accelerator: "CommandOrControl+Shift+N", click: () => send("notifications") },
         { type: "separator" },
         { role: "resetZoom" },
@@ -122,7 +122,7 @@ export function appMenuTemplate({ name, send, open, devTools = false }) {
 
 export const ACTIONS = [
   "about", "settings", "updates", "changelog", "doctor", "copy", "daemon",
-  "search", "sidebar", "terminal", "browser", "chat", "notifications", "help",
+  "search", "sidebar", "terminal", "browser", "chat", "new-chat", "notifications", "help",
   "go:today", "go:heinzel", "go:team", "go:plugins",
 ];
 

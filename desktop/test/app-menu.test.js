@@ -66,11 +66,20 @@ test("File and Go carry the accelerators of the web app's own screens", () => {
   ]);
 });
 
+test("File New Chat and View Toggle Side Chat send distinct actions", () => {
+  const sent = [];
+  const [, file, , view] = appMenuTemplate({ name: NAME, send: (action) => sent.push(action), open() {} });
+  file.submenu.find((item) => item.label === "New Chat").click();
+  view.submenu.find((item) => item.label === "Toggle Side Chat").click();
+  assert.deepEqual(sent, ["new-chat", "chat"]);
+  assert.match(menuScript("new-chat"), /"hz:menu".*"new-chat"/);
+});
+
 test("View lists the panels with their accelerators, then zoom, reload and full screen; dev tools only in development", () => {
   const view = (devTools) => appMenuTemplate({ name: NAME, send() {}, open() {}, devTools })[3].submenu;
   assert.deepEqual(view(false).filter((i) => i.accelerator).map((i) => [i.label, i.accelerator]), [
-    ["Search\u2026", "CommandOrControl+K"], ["Toggle Sidebar", "CommandOrControl+B"], ["Show Terminal", "CommandOrControl+J"],
-    ["Show Browser", "CommandOrControl+Shift+B"], ["Show Side Chat", "CommandOrControl+;"],
+    ["Search\u2026", "CommandOrControl+K"], ["Toggle Sidebar", "CommandOrControl+B"], ["Toggle Terminal", "CommandOrControl+J"],
+    ["Toggle Browser", "CommandOrControl+Shift+B"], ["Toggle Side Chat", "CommandOrControl+;"],
     ["Show Notifications", "CommandOrControl+Shift+N"],
   ]);
   const roles = (items) => items.filter((i) => i.role).map((i) => i.role);

@@ -1,31 +1,42 @@
 // The app's one chat, shared: the panel beside or below every screen shows it, and Home's cards start a chat about
 // themselves in it, so there is never a second conversation on screen.
-import { createContext, type ReactNode, type RefObject, useContext, useRef } from "react";
-import { OPEN_CHAT } from "@/lib/chatIntent";
+import { createContext, type ReactNode, type RefObject, useContext, useEffect, useRef } from "react";
+import { onMenuAction } from "@/about/menu";
+import { OPEN_CHAT, OPEN_NEW_CHAT } from "@/lib/chatIntent";
 import { type Chat, useChat } from "./useChat";
 
-type SharedChat = { chat: Chat; inputRef: RefObject<HTMLTextAreaElement | null>; focus: () => void };
+type SharedChat = {
+  chat: Chat;
+  inputRef: RefObject<HTMLTextAreaElement | null>;
+  focus: () => void;
+  startNewChat: () => void;
+};
 
 const ChatContext = createContext<SharedChat | null>(null);
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const chat = useChat();
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  // A new value each render, as `chat` is: its users follow every change of the conversation anyway.
-  const value = {
-    chat,
-    inputRef,
-    focus: () => {
-      const input = inputRef.current;
-      const alreadyVisible = input && !input.closest("[hidden]");
-      window.dispatchEvent(new Event(OPEN_CHAT));
-      if (alreadyVisible) input.focus();
-      else
-        requestAnimationFrame(() => {
-          if (!inputRef.current?.closest("[hidden]")) inputRef.current?.focus();
-        });
-    },
+  const openAndFocus = (event: string) => {
+    const input = inputRef.current;
+    const alreadyVisible = input && !input.closest("[hidden]");
+    window.dispatchEvent(new Event(event));
+    if (alreadyVisible) input.focus();
+    else
+      requestAnimationFrame(() => {
+        if (!inputRef.current?.closest("[hidden]")) inputRef.current?.focus();
+      });
   };
+  // An empty chat is already new. Reuse it and focus its composer.
+  const startNewChat = () => {
+    if (chat.loading || chat.session?.messages?.length || chat.live) chat.fresh();
+    openAndFocus(OPEN_NEW_CHAT);
+  };
+  const newChatAction = useRef(startNewChat);
+  newChatAction.current = startNewChat;
+  useEffect(() => onMenuAction(["new-chat"], () => newChatAction.current()), []);
+
+  const value = { chat, inputRef, focus: () => openAndFocus(OPEN_CHAT), startNewChat };
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 
