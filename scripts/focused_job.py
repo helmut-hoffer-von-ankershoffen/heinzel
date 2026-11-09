@@ -17,6 +17,7 @@ environment only, are validated here, and become argument lists: nothing is pass
                       fails on its second execution in a process shows; vitest files repeat as separate runs.
     FOCUSED_STRESS    true: keep every CPU busy with burner processes while the selection runs (timing flakes)
     FOCUSED_OUT       where the JUnit report, screenshots and tally.json go (default focused-artifacts), uploaded
+    FOCUSED_PYTHON315_STARTUP  1: branch-only reproduction of the original startup import test on CPython 3.15.2.
 
 Prints `FOCUSED TALLY k/n green` (rounds without a failure); stops starting rounds near the job's deadline.
 
@@ -44,6 +45,34 @@ DEADLINE = 1020  # seconds into the run: start no new round after this, so the t
 TOKEN = re.compile(r"\w[\w./]{0,199}(::\w{1,120}(\[[\w.,=+-]{1,80}\])?){0,2}", re.ASCII)
 SERIAL = ("-n", "0", "-q", "-p", "no:cacheprovider", "--session-timeout=900")  # one selection, no worker noise
 TIMEOUT = 1080  # under the job's 20 minutes, so the report and screenshots are still written and uploaded
+PYTHON315_STARTUP = (
+    "tests/integration/startup_render_imports_test.py::test_complete_web_does_not_import_unused_cli_renderers"
+)
+PYTHON315_PYTEST = """
+import sys
+
+import pytest
+
+if sys.implementation.name != 'cpython' or sys.version_info[:3] != (3, 15, 2):
+    raise SystemExit(f'Expected CPython 3.15.2, got {sys.version}')
+print(f'Focused interpreter: {sys.version.split()[0]} {sys.executable}', flush=True)
+children = []
+
+def record_startup_child(event, args):
+    if event != 'subprocess.Popen':
+        return
+    executable, argv, _, _ = args
+    if isinstance(argv, (list, tuple)) and len(argv) == 4 and list(argv[1:3]) == ['-I', '-c']:
+        if isinstance(argv[3], str) and 'class NoCliRenderers' in argv[3]:
+            children.append(executable)
+
+sys.addaudithook(record_startup_child)
+code = pytest.main(sys.argv[1:])
+if children != [sys.executable]:
+    raise SystemExit(f'Unexpected startup child executables: {children!r}')
+print(f'Startup child used CPython 3.15.2: {children[0]}')
+raise SystemExit(code)
+"""
 
 
 class SelectorError(ValueError):
@@ -119,6 +148,25 @@ def plan(kind: str, selector: str, out: Path, repeat: int = 1) -> list[list[str]
         return [[*web, *report, *(token.removeprefix("web/") for token in ids)]]
     problem = f"kind must be one of {', '.join(KINDS)}"
     raise SelectorError(kind or "(none)", problem)
+
+
+def python315_startup_plan(
+    kind: str, selector: str, repeat: int, stress: bool, commands: list[list[str]]
+) -> list[list[str]]:
+    """Reuse the original integration cell's PyYAML preparation for its one failing test.
+
+    Raises:
+        SelectorError: If the request differs from the one original test.
+    """
+    if kind != "pytest" or selector.strip() != PYTHON315_STARTUP or repeat != 1 or stress:
+        problem = "Python 3.15.2 study requires the original startup import test, once, without stress"
+        raise SelectorError(kind, problem)
+    sync, pytest_command = commands
+    return [
+        [*sync, "--no-install-package", "pyyaml"],
+        ["bash", "scripts/bootstrap-pyyaml.sh"],
+        [*pytest_command[:3], "python", "-c", PYTHON315_PYTEST, *pytest_command[4:]],
+    ]
 
 
 # The pytest plugin (`-p focused_job`): every selected test runs FOCUSED_REPEAT times in this one process, round by
@@ -217,6 +265,8 @@ def main(argv: list[str]) -> int:
     try:
         repeat = repeat_count(kind, os.environ.get("FOCUSED_REPEAT", "1"))
         commands = plan(kind, selector, out, repeat)
+        if os.environ.get("FOCUSED_PYTHON315_STARTUP") == "1":
+            commands = python315_startup_plan(kind, selector, repeat, stress, commands)
     except SelectorError as error:
         print(f"::error::{error}")
         return 2
