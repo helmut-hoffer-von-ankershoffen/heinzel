@@ -4,6 +4,13 @@
 [source]
 selector_sha256 = "19e7ca96b401db94178cf3baaa9fbe9f404f8ecd8c478e6f91bb548a4a1c506a"
 
+# Detached fixture for the preceding implementation commit. This entry does not cover its own addition.
+[policy_bootstrap]
+base = "432006f27ce2df73a80f2f69a4e162378df2c862"
+head = "cc2a15ca86b60f18f955d5d636b1fb52ed1043a4"
+diff_sha256 = "c6a2b6bdf3e3d60919a4eaeb932d3bdf8b1f7a0e3929f7b3c51dc42544e18b69"
+jobs = ["Focused CI policy tests (ubuntu-24.04)"]
+
 [step_signal]
 base = "432006f27ce2df73a80f2f69a4e162378df2c862"
 head = "fe668ae0b2da4428665675ffabf79cafd055e4e4"
