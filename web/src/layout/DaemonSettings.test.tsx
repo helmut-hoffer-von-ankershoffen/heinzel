@@ -289,6 +289,25 @@ describe("Daemon Settings", () => {
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });
 
+  it("does not claim a restart when the operation reports no service was restarted", async () => {
+    mockApi({
+      "/api/system/daemon/status": { ...running, loaded: false },
+      "/api/stream/system/daemon/restart": eventStream([], {
+        restarted: false,
+        version: "2.0.0",
+        interval_minutes: null,
+      }),
+    });
+    render(
+      <Providers client={queryClient()}>
+        <DaemonSettings />
+      </Providers>,
+    );
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Restart" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The daemon could not restart.");
+    expect(screen.queryByText("The daemon restarted.")).not.toBeInTheDocument();
+  });
+
   it("explains a daemon version mismatch and restarts without a confirmation", async () => {
     const { user } = show({ version: "1.0.0", installed_version: "2.0.0", version_mismatch: true });
     expect(

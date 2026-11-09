@@ -108,6 +108,16 @@ export async function startOperation(onSettled: () => void): Promise<void> {
       undefined,
       call.body,
     );
+    // A restart may return normally without restarting when its service definition is absent.
+    if (
+      call.path === "/system/daemon/restart" &&
+      typeof result === "object" &&
+      result !== null &&
+      "restarted" in result &&
+      result.restarted === false
+    ) {
+      throw new Error("The daemon was not restarted.");
+    }
     set({ stage: "done", call, phases: settle(phases), result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
