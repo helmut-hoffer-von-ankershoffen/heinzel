@@ -339,7 +339,7 @@ def test_focused_mixed_push_keeps_guards_static_checks_and_explicit_test_targets
     assert checks[:5] == [gate, "--timeout", "600", "make", "check-fast"]
     assert f"FAST_TYPES={scoped.TYPES}" in checks
     assert "UNIT_TARGETS=tests/unit/scoped_checks_test.py" in checks
-    assert any("vitest run --maxWorkers=2 /src/updates/AutoUpdate.test.tsx" in arg for arg in checks)
+    assert any("vitest run --maxWorkers=2 src/updates/AutoUpdate.test.tsx" in arg for arg in checks)
     managed = next(arg for arg in checks if arg.startswith("MANAGED_CHECK="))
     assert "runtime-code.mjs --check" in managed
     assert "biome ci ." in managed
