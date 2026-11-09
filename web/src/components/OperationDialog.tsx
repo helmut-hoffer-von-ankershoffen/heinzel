@@ -198,7 +198,9 @@ export function OperationDialog() {
         <>
           <p role="alert" className="mt-1 flex items-start gap-2 text-bad">
             <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-            <span className="min-w-0 break-words">{quick ? plain("failed") : run.error}</span>
+            <span className="min-w-0 break-words">
+              {quick ? (run.outcomeUnknown ? t("op.daemon.restart.unknown") : plain("failed")) : run.error}
+            </span>
           </p>
           <Steps phases={run.phases} active={false} />
           {!quick && (
@@ -211,7 +213,7 @@ export function OperationDialog() {
               {t("op.close")}
             </PaneAction>
             {/* A tracked write is retried where it was asked, which checks what the failed attempt left. */}
-            {!run.tracked && (
+            {!run.tracked && !run.outcomeUnknown && (
               <PaneAction key="retry" icon={RotateCw} primary onClick={go}>
                 {t("op.retry")}
               </PaneAction>

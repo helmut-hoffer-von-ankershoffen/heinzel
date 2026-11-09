@@ -15,6 +15,7 @@ export function DaemonSettings() {
   const status = useDaemonStatus();
   const change = useChangeDaemon();
   const operation = useOperationRun();
+  const operationBusy = operation.stage === "running" || operation.stage === "confirm";
   const [pending, setPending] = useState<Action | null>(null);
   const label = (action: Action) => t(`daemon.${action}`);
   const ask = (action: Action) => {
@@ -65,7 +66,7 @@ export function DaemonSettings() {
                     <PaneAction
                       key="pause"
                       icon={daemon.paused ? Play : Pause}
-                      disabled={change.isPending}
+                      disabled={change.isPending || operationBusy}
                       onClick={() => ask(daemon.paused ? "resume" : "pause")}
                     >
                       {label(daemon.paused ? "resume" : "pause")}
@@ -74,7 +75,7 @@ export function DaemonSettings() {
                     <PaneAction
                       key="install"
                       icon={Download}
-                      disabled={change.isPending}
+                      disabled={change.isPending || operationBusy}
                       onClick={() => ask("install")}
                     >
                       {label("install")}
@@ -84,7 +85,7 @@ export function DaemonSettings() {
                   <PaneAction
                     key="restart"
                     icon={RotateCw}
-                    disabled={change.isPending || operation.stage === "running" || operation.stage === "confirm"}
+                    disabled={change.isPending || operationBusy}
                     onClick={() => {
                       change.reset();
                       requestOperation(DAEMON_RESTART);
@@ -106,7 +107,7 @@ export function DaemonSettings() {
                     key="uninstall"
                     icon={Trash2}
                     destructive
-                    disabled={change.isPending}
+                    disabled={change.isPending || operationBusy}
                     onClick={() => ask("uninstall")}
                   >
                     {label("uninstall")}
@@ -147,7 +148,7 @@ export function DaemonSettings() {
               icon={Check}
               primary
               destructive={pending === "uninstall"}
-              disabled={change.isPending}
+              disabled={change.isPending || operationBusy}
               onClick={confirm}
             >
               {label(pending)}

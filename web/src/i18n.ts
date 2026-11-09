@@ -511,6 +511,7 @@ const en = {
   "op.daemon.restart.running": "Restarting the daemon…",
   "op.daemon.restart.done": "The daemon restarted.",
   "op.daemon.restart.failed": "The daemon could not restart. Try again in a moment.",
+  "op.daemon.restart.unknown": "The restart is still unconfirmed. Check the daemon status before trying again.",
   "op.daemon.uninstall.title": "Stop the background service?",
   "op.daemon.uninstall.consent":
     "Scheduled work stops until you install it again. Your receipts and logs stay where they are.",
