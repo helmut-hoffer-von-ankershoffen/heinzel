@@ -18,7 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
 import typer
 from pydantic import ValidationError
@@ -41,6 +41,7 @@ from heinzel.heads.cli._update import print_changelog_header, print_notice, star
 from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Origin, Progress, boot
 
 if TYPE_CHECKING:
+    from heinzel.heads.mcp._ipc_lifecycle import ForegroundMcpLifecycle, LifecycleAction
     from heinzel.heads.mcp._ipc_supervisor import OwnedMcpSupervisor
 
 console = Console()
@@ -237,12 +238,20 @@ def show(kernel: Kernel, output: Console) -> None:
     render_overview(kernel, output)
 
 
-def main(*, host_mcp_supervisor: "OwnedMcpSupervisor | None" = None) -> None:
+def main(
+    *,
+    host_mcp_supervisor: "OwnedMcpSupervisor | None" = None,
+    host_mcp_lifecycle: "ForegroundMcpLifecycle | None" = None,
+) -> None:
     """Enter `hz`; an activated host runtime may supply its already-owned MCP supervisor."""
     if sys.argv[1:4] == ["system", "mcp", "review"]:
         from heinzel.heads.cli._mcp_review import main as review_main  # noqa: PLC0415 - host-only, before boot
 
         sys.exit(review_main(sys.argv[4:], supervisor=host_mcp_supervisor))
+    if sys.argv[1:3] == ["system", "mcp"] and sys.argv[3:4] in (["start"], ["check"], ["stop"]):
+        from heinzel.heads.cli._mcp_lifecycle import main as lifecycle_main  # noqa: PLC0415 - host-only, before boot
+
+        sys.exit(lifecycle_main(cast("LifecycleAction", sys.argv[3]), sys.argv[4:], host=host_mcp_lifecycle))
     if sys.argv[1:3] == ["system", "uninstall"]:
         from heinzel.heads.cli._uninstall import main as uninstall_main  # noqa: PLC0415 - parse maintenance before discovery
 

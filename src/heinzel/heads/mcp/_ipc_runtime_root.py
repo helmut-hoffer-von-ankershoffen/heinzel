@@ -77,6 +77,22 @@ def _physical_directory(path: Path, *, private: bool = False) -> Generator[int]:
         os.close(descriptor)
 
 
+def installation_directories(installation: InstalledMcpRuntime) -> tuple[tuple[int, int], tuple[int, int]]:
+    """Observe the trusted SDK and private profile directory identities for lifecycle review.
+
+    Raises:
+        HeinzelError: If the SDK or profile directories are unavailable or unsafe.
+    """
+    try:
+        with (
+            _physical_directory(installation.prefix) as prefix,
+            _physical_directory(installation.state, private=True) as state,
+        ):
+            return _identity(prefix), _identity(state)
+    except OSError:
+        raise HeinzelError(_REFUSED) from None
+
+
 def _read_record(directory: int, name: str) -> bytes | None:
     try:
         descriptor = CurrentUser.open_private(directory, name, os.O_RDONLY)

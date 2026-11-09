@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, cast
 
 from heinzel.heads.mcp._ipc_approval import HostMcpConnectionApprovals
+from heinzel.heads.mcp._ipc_descriptors import receive_exact
 from heinzel.kernel import HeinzelError
 from heinzel.kernel._approval import arguments_hash
 from heinzel.kernel._logging import get_logger, step
@@ -51,6 +52,22 @@ def host_review_channel(
         "review_expires_at": review.expires_at,
         "terms": cast("JsonValue", json.loads(plan.terms_json)),
     }
+    with exact_host_review_channel(exact, lambda: authority.approve(review)) as channel:
+        yield channel
+
+
+@contextmanager
+def exact_host_review_channel(
+    exact: "dict[str, JsonValue]", approve: Callable[[], None]
+) -> Generator[tuple[socket.socket, Callable[[], None]]]:
+    """Offer one exact action over a private descriptor from the trusted host.
+
+    Raises:
+        HeinzelError: If the offer exceeds the control bound or the exact answer is unavailable.
+
+    Yields:
+        The reviewer channel and a one-shot handler that delivers the decision to its bound action.
+    """
     digest = arguments_hash(exact)
     offer = json.dumps({"review": exact, "digest": digest}, ensure_ascii=True, separators=(",", ":")).encode() + b"\n"
     if len(offer) > _LIMIT:
@@ -66,17 +83,10 @@ def host_review_channel(
                 broker.settimeout(60)
                 try:
                     broker.sendall(offer)
-                    received = bytearray()
-                    while len(received) < len(accepted):
-                        broker.settimeout(max(0, deadline - time.monotonic()))
-                        chunk = broker.recv(len(accepted) - len(received))
-                        if not chunk:
-                            break
-                        received.extend(chunk)
-                    if received != accepted:
+                    if receive_exact(broker, len(accepted), deadline) != accepted:
                         raise HeinzelError(_REFUSED)
                 except OSError:
                     raise HeinzelError(_REFUSED) from None
-                authority.approve(review)
+                approve()
 
         yield reviewer, serve

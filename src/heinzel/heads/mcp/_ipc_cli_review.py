@@ -10,16 +10,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from heinzel.heads.mcp._ipc_approval import HostMcpConnectionApprovals
-from heinzel.heads.mcp._ipc_host_review import host_review_channel
+from heinzel.heads.mcp._ipc_host_review import exact_host_review_channel, host_review_channel
 from heinzel.kernel import HeinzelError
 from heinzel.kernel._logging import get_logger, step
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from contextlib import AbstractContextManager
+
+    from pydantic import JsonValue
 
 _REVIEWER = Path(__file__).absolute().with_name("_ipc_terminal_reviewer.py")
 # Part of the trusted installed SDK. A source change must deliberately update this pin.
-_REVIEWER_SHA256 = "4fd8e0d08098b099194fa733ed48534de125c3f38b51a07e5b2fa396c6a4cedf"
+_REVIEWER_SHA256 = "107a3c0fc2411c2eb605a19485c4f2f7c52b3e7e286383ac929173ee65acca29"
 _MAX_SOURCE = 64 * 1024
 _REFUSED = "The pinned local MCP reviewer is unavailable"
 log = get_logger("mcp")
@@ -74,11 +77,17 @@ def run_cli_host_reviewer(channel: socket.socket) -> bool:
 
 def review_private_mcp_from_terminal(authority: HostMcpConnectionApprovals, instance_id: str) -> None:
     """Run one broker review in the trusted foreground CLI process."""
+    _review_exact(host_review_channel(authority, instance_id))
+
+
+def review_mcp_lifecycle_from_terminal(exact: "dict[str, JsonValue]") -> None:
+    """Approve one action on the host terminal before the bound lifecycle effect."""
+    _review_exact(exact_host_review_channel(exact, lambda: None))
+
+
+def _review_exact(channel: "AbstractContextManager[tuple[socket.socket, Callable[[], None]]]") -> None:
     review = _load_installed_reviewer()
-    with (
-        host_review_channel(authority, instance_id) as (reviewer, serve),
-        ThreadPoolExecutor(max_workers=1) as executor,
-    ):
+    with channel as (reviewer, serve), ThreadPoolExecutor(max_workers=1) as executor:
         broker_result = executor.submit(serve)
         with reviewer:
             review(reviewer)

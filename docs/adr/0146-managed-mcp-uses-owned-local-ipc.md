@@ -49,6 +49,12 @@ Claude settings discovery and human approval have separate contracts.
   0 means the broker accepted the exact terminal review, 1 means review was unavailable or declined, and 2 means
   invalid syntax. The active host runtime supplies and retains the supervisor in process. Standalone invocation
   without that handle refuses before project discovery. Native activation must still supply the handle.
+  `hz system mcp start|check|stop REGISTRATION_ID` also routes before discovery when a trusted installed host
+  supplies the foreground registration. The host displays and reviews each exact lifecycle action on its
+  controlling terminal. The locator alone cannot supply an installed registration. Start owns a direct child
+  with an inherited control channel. Check reports the manager observation, owned worker and transport separately
+  from MCP readiness. Stop closes the supervisor and proves the exact child's exit before returning success.
+  These foreground Start and Check commands report unverified MCP readiness and return an incomplete status.
 - Restrict discovery and dispatch to reviewed operations and exact target grants. Give authorized personal and
   contract Heinzels stable individual tools and CLI equivalents. Resolve both heads to the same durable retry
   identity for the selected grant. Retain exact result bytes and record uncertain effects without replaying them.
@@ -84,6 +90,12 @@ any uncertain receipt for inspection. Activation never adopts a prior receipt or
 The foreground adapter holds the SDK lock until shutdown. An observed change to a retained anchor or current
 receipt retires the supervisor. Native manager integration will register the stop and recovery hooks before
 allowing concurrent managed activation and maintenance. Retired and failed nodes remain on disk for reviewed cleanup.
+
+The foreground registration plan derives the native unit name from the selected SDK, profile and registration.
+When the host supplies `HostServiceManager`, it uses the verified user manager for read-only collision detection.
+The foreground adapter never loads or stops a launchd or systemd unit. Installed profile registration, durable
+lifecycle action receipts, manager-owned bootstrap and recovery, and authenticated native UI routing are separate
+prerequisites for persistent lifecycle controls.
 
 Direct HTTP is separate follow-up work building on the proposed bearer scope in
 [PR #655](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/655). Claude Desktop and Gemini CLI

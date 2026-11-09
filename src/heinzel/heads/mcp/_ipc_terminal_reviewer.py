@@ -66,7 +66,10 @@ def _confirm(terminal: int, channel: int, deadline: float) -> bool:
     challenge = f"approve MCP {secrets.token_hex(4)}"
     visible = {key: value for key, value in review.items() if key != "challenge"}
     shown = json.dumps(visible, ensure_ascii=True, sort_keys=True, indent=2)
-    prompt = f"Review this exact private MCP connection:\n{shown}\n\nType exactly: {challenge}\n> "
+    subject = (
+        "MCP foreground lifecycle action" if review.get("kind") == "foreground-lifecycle" else "private MCP connection"
+    )
+    prompt = f"Review this exact {subject}:\n{shown}\n\nType exactly: {challenge}\n> "
     termios.tcflush(terminal, termios.TCIFLUSH)
     return (
         _write(terminal, prompt.encode("ascii"), deadline)

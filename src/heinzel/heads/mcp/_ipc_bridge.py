@@ -2,15 +2,14 @@
 
 import os
 import select
-import signal
 import socket
-import sys
-import threading
 import time
 from collections.abc import Generator
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from typing import Never
 
+from heinzel.heads.mcp._ipc_child import OwnedMcpChild, close_unrelated_descriptors, require_isolated_fork
 from heinzel.heads.mcp._ipc_descriptors import local_stream_pair, receive_exact
 from heinzel.kernel import HeinzelError
 
@@ -69,15 +68,10 @@ def _relay(front: socket.socket, channel: socket.socket) -> None:
                 client_reads = False
 
 
-def _bridge_child(front: socket.socket, channel: socket.socket, handshake: BridgeHandshake) -> None:
+def _bridge_child(front: socket.socket, channel: socket.socket, handshake: BridgeHandshake) -> Never:
     status = 1
     try:
-        kept = {front.fileno(), channel.fileno()}
-        for entry in os.listdir("/dev/fd"):  # noqa: PTH208 - take a snapshot before closing inherited descriptors
-            descriptor = int(entry)
-            if descriptor not in kept:
-                with suppress(OSError):  # Enumeration can include its own already-closed descriptor.
-                    os.close(descriptor)
+        close_unrelated_descriptors(front.fileno(), channel.fileno())
         channel.settimeout(_IO_SECONDS)
         channel.sendall(handshake.hello)
         if (
@@ -90,25 +84,6 @@ def _bridge_child(front: socket.socket, channel: socket.socket, handshake: Bridg
         os._exit(status)
 
 
-def _exited(pid: int, seconds: float) -> bool:
-    deadline = time.monotonic() + seconds
-    while True:
-        if os.waitpid(pid, os.WNOHANG)[0] == pid:
-            return True
-        if time.monotonic() >= deadline:
-            return False
-        time.sleep(0.005)
-
-
-def _retire_child(pid: int) -> None:
-    if not _exited(pid, _IO_SECONDS):
-        # This still-unreaped direct child is owned by the supervisor. There is no PID discovery.
-        with suppress(ProcessLookupError):
-            os.kill(pid, signal.SIGKILL)
-        if not _exited(pid, _IO_SECONDS):
-            raise HeinzelError(_REFUSED)
-
-
 @contextmanager
 def launch_inherited_bridge(channel: socket.socket, handshake: BridgeHandshake) -> Generator[socket.socket]:
     """Give only the forked bridge a private peer and return the restricted front stream.
@@ -119,14 +94,7 @@ def launch_inherited_bridge(channel: socket.socket, handshake: BridgeHandshake) 
     Yields:
         A byte stream that forwards nothing to the broker before its exact acknowledgement.
     """
-    if (
-        sys.platform not in {"darwin", "linux"}
-        or not sys.flags.isolated
-        or threading.current_thread() is not threading.main_thread()
-        or threading.active_count() != 1
-        or signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL
-    ):
-        raise HeinzelError(_REFUSED)
+    require_isolated_fork(_REFUSED)
     front, child_front = local_stream_pair()
     with front, child_front:
         try:
@@ -141,4 +109,4 @@ def launch_inherited_bridge(channel: socket.socket, handshake: BridgeHandshake) 
             yield front
         finally:
             front.close()
-            _retire_child(pid)
+            OwnedMcpChild(pid).retire(_IO_SECONDS, _REFUSED)
