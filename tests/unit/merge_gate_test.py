@@ -320,3 +320,28 @@ def test_the_gates_start_after_ci_and_report_the_required_check_names():
     finish = job["steps"][-1]
     assert finish["if"].startswith("always()")
     assert "conclusion=success || conclusion=failure" in finish["run"]
+
+
+def test_focused_coverage_holds_without_reading_the_main_badge(monkeypatch):
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    assert merge_gate.main(["coverage", "--focused"]) == 1
+
+
+def test_focused_cli_refuses_the_offline_fixture_before_reading_github(monkeypatch, capsys):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    for name, value in {
+        "GITHUB_REPOSITORY": REPO,
+        "PR_NUMBER": "7",
+        "PR_HEAD_SHA": HEAD,
+        "GITHUB_TOKEN": "fixture",
+        "FOCUSED_CI_RUN_ID": "1",
+        "FOCUSED_CI_RUN_ATTEMPT": "1",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    def unexpected_read(*_):
+        pytest.fail("offline fixture must fail before API reads")
+
+    monkeypatch.setattr(merge_gate.Gate, "github", unexpected_read)
+    assert merge_gate.main(["focused"]) == 1
+    assert "Focused evidence unavailable" in capsys.readouterr().out

@@ -46,18 +46,27 @@ its source is committed, so the file that records the approved blobs does not ne
 :100644 100644 b4b7efa8db6ffae79c5dfb64c847ba65d1c0c32b f90cb2a2d2489cafc664f9820d08b4027478adee M tests/unit/heads/desktop_release_progress_test.py
 ```
 
-`scripts/focused_ci_transition.toml` contains offline fixtures. `scripts/focused_ci_receipt.py` checks their
-exact source and diff identities against the current trusted run and the receipt. A hosted integration
-would obtain GitHub's job list for one run attempt and compute the tested merge commit, tree and source
-digests independently. Preserve repeated names in the API response and require every result page. A
-missing, duplicate, skipped, cancelled, failing or mismatched expected job blocks the verdict. The reducer
-runs from protected source and rechecks the base at issuance. It does not execute PR code or accept PR
-artifacts as proof of job execution. A diagnostic dispatch never satisfies a required check.
+`scripts/focused_ci_transition.toml` contains offline fixtures. `merge_gate.py focused` can read an exact
+attempt after a protected policy supplies `repository_id`, `workflow_id`, `workflow_path`, `workflow_sha256`
+and `workload_app_id` alongside the selector digest. The checked-in policy leaves those pins unset.
+Run the collector from protected source with the base, PR head and test merge Git objects available, without
+checking out the PR. Pass `PR_NUMBER`, `PR_HEAD_SHA`, `FOCUSED_CI_RUN_ID` and `FOCUSED_CI_RUN_ATTEMPT`
+from the trusted trigger. The GitHub token needs read access to actions, checks, contents and pull requests.
+
+The collector compares the policy with protected `main`, checks the tested merge parents and tree, and
+matches the workflow and selector bytes at the protected base and tested merge. It checks the workflow's
+registered identity and the GitHub App IDs on the workload check suite and every job check. It reads all
+pages of one attempt and preserves repeated job names. Missing, duplicate, skipped, cancelled, failing or
+unexpected jobs fail validation. It rechecks the run and pull request after collecting the jobs. It prints
+an evidence result and leaves required checks unpublished. The focused coverage route `coverage --focused`
+fails closed pending an approved candidate coverage policy.
 
 ## Rollout
 
-1. Verify the manifest and reducer offline. Review the exact detached bootstrap source independently.
-   The offline result leaves `CI OK`, `merge-gate` and `coverage-floor` unchanged.
+1. Verify the manifest and reducer offline. Review the exact detached bootstrap source and collector
+   independently. Register and pin the exact workload workflow after reviewing its checkout of the GitHub
+   test merge and its execution dependencies. Prove the protected collector against a real attempt before
+   adding any required-check publishing path. The current workflow leaves all three gates unchanged.
 2. Authorize strict freshness and a trusted publisher before enabling focused required checks. GitHub's
    Actions app ID identifies an app shared by workflows. It cannot distinguish a PR-controlled workflow
    from the protected reducer. A dedicated GitHub App publishing `CI OK` and configured as its expected

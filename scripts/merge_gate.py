@@ -22,6 +22,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -312,24 +313,49 @@ def finish(problems: list[str], passed: str) -> int:
     return 1 if problems else 0
 
 
+def run_focused(gate: Gate) -> int:
+    """Collect a focused receipt with protected policy. This command never publishes a verdict."""
+    from focused_ci_collect import Trigger, collect  # noqa: PLC0415 - legacy gates do not load the dormant collector
+
+    if not gate.token:
+        return finish(["An authenticated GitHub read token is required."], "")
+    try:
+        receipt = collect(
+            gate.github,
+            Path(__file__).with_name("focused_ci_transition.toml"),
+            Trigger(
+                int(gate.pr), gate.head, int(os.environ["FOCUSED_CI_RUN_ID"]), int(os.environ["FOCUSED_CI_RUN_ATTEMPT"])
+            ),
+        )
+    except (UnavailableError, KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError) as error:
+        return finish([f"Focused evidence unavailable: {error}"], "")
+    run = receipt.run
+    return finish([], f"Verified focused workload receipt for #{run.pr} at {run.head}, run {run.run_id}/{run.attempt}.")
+
+
 def main(argv: list[str]) -> int:
     """Run one gate; the exit code."""
     mode = argv[0] if argv else ""
-    if mode not in ("sonar", "coverage"):
-        print("usage: merge_gate.py sonar|coverage", file=sys.stderr)
+    if argv not in (["sonar"], ["coverage"], ["coverage", "--focused"], ["focused"]):
+        print("usage: merge_gate.py sonar|coverage [--focused]|focused", file=sys.stderr)
         return 2
+    if argv == ["coverage", "--focused"]:
+        return finish(["Focused PR coverage requires an authorized candidate coverage policy."], "")
     env = os.environ
     gate = Gate(
         env["GITHUB_REPOSITORY"], env.get("PR_NUMBER", ""), env.get("PR_HEAD_SHA", ""), env.get("GITHUB_TOKEN", "")
     )
+    if mode == "focused":
+        return run_focused(gate)
     try:
         if mode == "sonar":
             return finish(gate.run_sonar(), "Sonar: quality gate passes and all ratings are A.")
         if not gate.head:
-            print("::error::the coverage gate judges a pull request; none given")
-            return 1
-        workflow = Path(env.get("CI_WORKFLOW", ".github/workflows/ci.yml")).read_text()
-        return finish(gate.run_coverage(env["COVERAGE_CHECK"], red_below(workflow)), "Coverage is above red.")
+            problems = ["the coverage gate judges a pull request; none given"]
+        else:
+            workflow = Path(env.get("CI_WORKFLOW", ".github/workflows/ci.yml")).read_text()
+            problems = gate.run_coverage(env["COVERAGE_CHECK"], red_below(workflow))
+        return finish(problems, "Coverage is above red.")
     except UnavailableError as error:
         print(f"::error::Failing closed, no verdict: {error}. Rerun this job when the service is back.")
         return 1
