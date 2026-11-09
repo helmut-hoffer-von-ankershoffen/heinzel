@@ -83,6 +83,32 @@ async function explain(page) {
   );
   note(`document ${documentState}`);
 }
+// Closing a persistent context ends the browser at once, also in the middle of the worker's install (`cache.addAll`) or
+// of the copies it keeps of the page's assets (`cache.put`). WebKit can then hold the next launch's first navigation:
+// the server answers it, the page never gets the response (beads zd4, #455; Playwright issue 42273 ties such stalls to
+// worker cache writes). A person does not quit the browser within a second of the page loading, so each step ends
+// only after the worker is active and every asset the controlled page loaded is cached: no write is cut off.
+async function settleWorker(page) {
+  await until(
+    () =>
+      page.evaluate(async () => {
+        const registration = await navigator.serviceWorker?.getRegistration("/");
+        if (registration?.active?.state !== "activated" || registration.installing || registration.waiting)
+          return false;
+        if (!(await caches.match("/offline.html"))) return false;
+        // Only what went through the worker is copied: not the assets of a page it took over after they loaded.
+        const assets = performance
+          .getEntriesByType("resource")
+          .filter((entry) => entry.workerStart > 0)
+          .map((entry) => new URL(entry.name))
+          .filter((address) => address.origin === location.origin && address.pathname.startsWith("/assets/"));
+        const kept = await Promise.all(assets.map((address) => caches.match(address.href)));
+        return kept.every(Boolean);
+      }),
+    { timeout: 20000, interval: 200, message: "The service worker never settled: active, with its copies written" },
+  );
+  note("worker settled");
+}
 let current;
 try {
   if (mode === "stale" && step === "open") {
@@ -140,6 +166,7 @@ try {
     await page.waitForTimeout(500);
     afterRestart = (await ready.count()) > 0 && (await failed.count()) === 0;
   }
+  await settleWorker(page);
   console.log(JSON.stringify({ step, signedIn, afterRestart, ...stored }));
 } catch (error) {
   if (current) await explain(current);

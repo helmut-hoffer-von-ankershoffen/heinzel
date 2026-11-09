@@ -252,6 +252,13 @@ def test_imports_follow_the_defining_module_not_the_package_that_re_exports_it()
     assert "tests/unit/modules/system_update_test.py" in graph.dependents({"src/heinzel/modules/system/_update.py"})
 
 
+def test_every_import_resolves_to_a_file_of_the_tree_even_on_a_case_insensitive_disk():
+    """`from heinzel import Kernel` once resolved to a `heinzel/Kernel` package only a macOS disk claims."""
+    graph = scoped_related.graph()
+    assert {target for targets in graph.imports.values() for target in targets} <= graph.known
+    assert "src/heinzel/kernel/_kernel.py" in graph.imports["tests/unit/kernel/kernel_test.py"]
+
+
 def test_make_check_fast_by_hand_is_the_full_unit_run():
     makefile = (REPO / "Makefile").read_text(encoding="utf-8")
     assert "UNIT_TARGETS ?=\n" in makefile
