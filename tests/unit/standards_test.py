@@ -253,6 +253,12 @@ NOT_SETTINGS = {  # names or prefixes that aren't settings of Heinzelmännchen's
 # The optional host queue reads these exact variables outside this repository.
 HOST_GATE_ENV_READS = {"HZ_GATE_HELD", "HZ_GATE_LIGHT"}
 
+# These fixtures pass forged authority inputs. Split the prefix so this declaration is not counted as a use.
+NEGATIVE_ENV_FIXTURES = {
+    ("HZ_" + "MCP_REVIEW_FD", "tests/unit/heads/mcp_ipc_cli_review_test.py"),
+    ("HZ_" + "MCP_HOST", "tests/unit/heads/mcp_ipc_foreground_lifecycle_test.py"),
+}
+
 
 def env_names(text: str) -> set[str]:
     """Every HZ_* name in a text."""
@@ -292,7 +298,9 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
         for name in env_names((REPO / path).read_text(encoding="utf-8", errors="ignore"))
     }
     unknown = sorted(
-        f"{path}: {name}" for name, path in used if name not in known and not name.startswith(tuple(NOT_SETTINGS))
+        f"{path}: {name}"
+        for name, path in used - NEGATIVE_ENV_FIXTURES
+        if name not in known and not name.startswith(tuple(NOT_SETTINGS))
     )
     assert unknown == [], "nothing reads these; use a setting's variable (see `hz system config show`)"
 
