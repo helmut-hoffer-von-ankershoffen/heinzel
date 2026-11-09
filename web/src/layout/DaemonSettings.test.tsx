@@ -1,10 +1,11 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import type { SchemaDaemonStatus } from "@/api/client";
+import { resetOperationRun } from "@/lib/operationRun";
 import { config, shell } from "@/test/fixtures";
-import { expectAccessible, mockApi } from "@/test/render";
+import { eventStream, expectAccessible, mockApi } from "@/test/render";
 import { DaemonSettings } from "./DaemonSettings";
 import { SettingsDialog } from "./SettingsDialog";
 
@@ -52,10 +53,15 @@ function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false, restart
       status = { ...status, paused: false };
       return { paused: false };
     },
-    "/api/system/daemon/restart": () => {
-      if (restartFails) return { status: 400, body: { error: "previous handover cannot be verified" } };
+    "/api/stream/system/daemon/restart": () => {
+      const phase = { id: "verify", label: "Checking the service", state: restartFails ? "failed" : "done" };
+      if (restartFails)
+        return new Response(
+          `event: phase\ndata: ${JSON.stringify(phase)}\n\nevent: error\ndata: ${JSON.stringify({ error: "previous handover cannot be verified" })}\n\n`,
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
       status = { ...status, loaded: true, installed_version: "2.0.0", version_mismatch: false };
-      return { restarted: true, version: "2.0.0", interval_minutes: 5 };
+      return eventStream([["phase", phase]], { restarted: true, version: "2.0.0", interval_minutes: 5 });
     },
   });
   const view = render(
@@ -70,6 +76,7 @@ beforeEach(() => {
   sessionStorage.setItem("hz.token", "test-token");
 });
 afterEach(() => {
+  resetOperationRun();
   vi.unstubAllGlobals();
 });
 
@@ -236,9 +243,49 @@ describe("Daemon Settings", () => {
     expect(screen.getByText("0")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("not loaded");
     await user.click(screen.getByRole("button", { name: "Restart" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(await screen.findByText("2.0.0")).toBeInTheDocument();
     expect(screen.getByText("The daemon restarted.")).toBeInTheDocument();
+    expect(screen.getByText("Checking the service")).toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
+  });
+
+  it("shows the streamed restart step while it runs and retains it on success", async () => {
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        stream = controller;
+      },
+    });
+    const { calls } = mockApi({
+      "/api/system/daemon/status": { ...running, loaded: false },
+      "/api/stream/system/daemon/restart": new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
+    });
+    render(
+      <Providers client={queryClient()}>
+        <DaemonSettings />
+      </Providers>,
+    );
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Restart" }));
+    await screen.findByText("Restarting the daemon…", { selector: "output" });
+    await act(async () => {
+      stream.enqueue(
+        encoder.encode(
+          `event: phase\ndata: ${JSON.stringify({ id: "verify", label: "Checking the service", state: "running" })}\n\n`,
+        ),
+      );
+    });
+    expect(await screen.findByText("Checking the service")).toBeInTheDocument();
+    await act(async () => {
+      stream.enqueue(
+        encoder.encode(
+          `event: phase\ndata: ${JSON.stringify({ id: "verify", label: "Checking the service", state: "done" })}\n\nevent: result\ndata: ${JSON.stringify({ data: { restarted: true } })}\n\n`,
+        ),
+      );
+      stream.close();
+    });
+    expect(await screen.findByText("The daemon restarted.")).toBeInTheDocument();
+    expect(screen.getByText("Checking the service")).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });
 
@@ -250,7 +297,6 @@ describe("Daemon Settings", () => {
       ),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Restart" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(await screen.findByText("The daemon restarted.")).toBeInTheDocument();
   });
 
@@ -260,6 +306,7 @@ describe("Daemon Settings", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("The daemon could not restart. Try again in a moment.");
     expect(alert).not.toHaveTextContent("handover");
+    expect(screen.getByText("Checking the service")).toBeInTheDocument();
   });
 
   it("keeps state and reports a refused pause instead of claiming success or retrying", async () => {

@@ -200,7 +200,7 @@ export function OperationDialog() {
             <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
             <span className="min-w-0 break-words">{quick ? plain("failed") : run.error}</span>
           </p>
-          {!quick && <Steps phases={run.phases} active={false} />}
+          <Steps phases={run.phases} active={false} />
           {!quick && (
             <p className="mt-3 text-xs text-muted-foreground">
               {run.phases.some((phase) => phase.state === "failed") ? t("op.failedNext") : t("op.lost")}
