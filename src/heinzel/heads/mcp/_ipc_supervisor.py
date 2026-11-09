@@ -20,6 +20,7 @@ from heinzel.heads.mcp._ipc_admission import (
 )
 from heinzel.heads.mcp._ipc_approval import HostMcpConnectionApprovals, PrivateMcpPlan
 from heinzel.heads.mcp._ipc_bridge import BridgeHandshake, launch_inherited_bridge
+from heinzel.heads.mcp._ipc_catalog_probe import serve_catalog_probe
 from heinzel.heads.mcp._ipc_cli_review import review_private_mcp_from_terminal
 from heinzel.heads.mcp._ipc_descriptors import local_stream_pair, probe_local_descriptors
 from heinzel.heads.mcp._ipc_named_generation import NamedMcpGeneration, owned_named_generation
@@ -54,6 +55,7 @@ class InheritedMcpTransport:
 
     admit: Callable[[], AbstractContextManager[PublishedMcpLease]]
     record: Callable[[PublishedMcpLease, McpWorkRequest, Boundary], Disposition]
+    catalog_probe: Callable[[], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +128,21 @@ class OwnedMcpSupervisor:
             self._require_available()
             return self._dispatch.record(lease, request, boundary)
 
+    def _reply_catalog(self, lease: PublishedMcpLease, payload: bytes, deadline: float) -> None:
+        # Publish one bounded metadata frame without blocking inside the revocation fence.
+        with self._lifetime:
+            self._require_available()
+            channel = lease.peer.connection
+            channel.settimeout(0.0)
+            with self._authority.fenced(lease) as check:
+                check()
+                if time.monotonic() >= deadline:
+                    msg = "The admitted MCP catalog exchange exceeded its reply deadline"
+                    raise HeinzelError(msg)
+                if channel.send(payload) != len(payload):
+                    msg = "The admitted MCP catalog reply could not be sent in one write"
+                    raise HeinzelError(msg)
+
     @contextmanager
     def open_transport(self) -> Generator[tuple[socket, SupervisedMcpTransport]]:
         """Issue a one-use descriptor pair to the trusted host before any client handoff.
@@ -173,11 +190,15 @@ class OwnedMcpSupervisor:
                 handshake.acknowledge(lease.peer.connection)
                 yield lease
 
+        def catalog_probe() -> None:
+            with admit() as lease:
+                serve_catalog_probe(lease, partial(self._reply_catalog, lease))
+
         # Unwind the broker channel first so its EOF releases the direct child even before approval.
         with ExitStack() as child, self.open_transport() as (channel, transport):
             with step(log, "mcp.ipc.launch_bridge", operation="ipc", step="launch_bridge"):
                 front = child.enter_context(launch_inherited_bridge(channel, handshake))
-            yield front, InheritedMcpTransport(admit, transport.record)
+            yield front, InheritedMcpTransport(admit, transport.record, catalog_probe)
 
     def review(self, instance_id: str) -> None:
         """Give the pinned terminal reviewer one private control descriptor for this exact instance."""

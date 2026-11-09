@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Literal
 from heinzel.heads.mcp._ipc_admission import McpGeneration
 from heinzel.heads.mcp._ipc_approval import PrivateMcpPlan
 from heinzel.heads.mcp._ipc_cli_review import require_local_mcp_terminal, review_mcp_lifecycle_from_terminal
-from heinzel.heads.mcp._ipc_lifecycle import REGISTRATION_ID, ForegroundMcpLifecycle, ForegroundMcpRegistration
+from heinzel.heads.mcp._ipc_lifecycle import ForegroundMcpLifecycle, ForegroundMcpRegistration
 from heinzel.kernel import (
     CurrentUser,
     HeinzelError,
@@ -27,6 +27,7 @@ from heinzel.kernel import (
     installation_inventory_status,
 )
 from heinzel.kernel._logging import get_logger, step
+from heinzel.kernel._mcp_handoff import REGISTRATION_ID
 from heinzel.kernel._mcp_native import McpNativePlan
 from heinzel.kernel._mcp_registry import (
     _POLICY,
@@ -241,5 +242,7 @@ class InstalledMcpRegistry:
             time.monotonic() + _GRANT_SECONDS,
             {"dispatch": {}},
         )
-        registration = ForegroundMcpRegistration.capture(self.authority.runtime, plan, verify_binding=current)
+        registration = ForegroundMcpRegistration.capture(
+            self.authority.runtime, plan, verify_binding=current, sdk_fingerprint=self.authority.fingerprint
+        )
         return ForegroundMcpLifecycle(registration, manager=self.manager)

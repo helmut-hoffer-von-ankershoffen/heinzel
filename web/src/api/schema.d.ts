@@ -1897,6 +1897,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mcp/handoffs/{id_}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve
+         * @description Look up a prepared plan by locator and verify it still describes the current host plan.
+         *
+         *     Raises:
+         *         HTTPException: If the plan is missing, expired or no longer describes the installed host.
+         */
+        get: operations["web_mcp_handoff"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Availability
+         * @description Read whether this UI server has a host lifecycle planner.
+         */
+        get: operations["web_mcp_availability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp/lifecycle/{registration}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Status
+         * @description Read worker, manager, transport and readiness as separate observations.
+         */
+        get: operations["web_mcp_lifecycle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp/lifecycle/{registration}/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Prepare
+         * @description Prepare a plan for local review without approving or applying it.
+         *
+         *     Raises:
+         *         HTTPException: If the host cannot prepare the selected action.
+         */
+        post: operations["web_mcp_prepare"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org/agenda": {
         parameters: {
             query?: never;
@@ -9196,6 +9282,79 @@ export interface components {
              */
             url: string;
         };
+        /**
+         * McpHandoffPlan
+         * @description A comparison commitment for the CLI. No approval or installed binding data is returned.
+         */
+        McpHandoffPlan: {
+            action: components["schemas"]["McpLifecycleAction"];
+            /** Handoff */
+            handoff: string;
+            /** Id */
+            id: string;
+            /** Registration */
+            registration: string;
+            session: components["schemas"]["McpReviewSession"];
+        };
+        /** @enum {string} */
+        McpLifecycleAction: "start" | "check" | "stop" | "install";
+        /**
+         * McpLifecycleAvailability
+         * @description Whether an installed host composed a planning service with this server.
+         */
+        McpLifecycleAvailability: {
+            /** Planning Available */
+            planning_available: boolean;
+        };
+        /**
+         * McpLifecycleObservation
+         * @description Sanitized observations for an authorized UI, independent of lifecycle review.
+         */
+        McpLifecycleObservation: {
+            /**
+             * Actions
+             * @default []
+             */
+            actions: components["schemas"]["McpLifecycleAction"][];
+            /**
+             * Client
+             * @default unverified
+             * @constant
+             */
+            client: "unverified";
+            /**
+             * Host
+             * @default unavailable
+             * @enum {string}
+             */
+            host: "unavailable" | "observed";
+            /**
+             * Manager
+             * @default not-checked
+             * @enum {string}
+             */
+            manager: "not-checked" | "absent" | "conflict" | "unavailable";
+            /**
+             * Mcp Readiness
+             * @default unverified
+             * @constant
+             */
+            mcp_readiness: "unverified";
+            /**
+             * Transport
+             * @default not-checked
+             * @enum {string}
+             */
+            transport: "not-checked" | "reachable" | "unavailable";
+            /**
+             * Worker
+             * @default unobserved
+             * @enum {string}
+             */
+            worker: "unobserved" | "running" | "stopped" | "not-started" | "stop-incomplete";
+        };
+        /** @enum {string} */
+        McpReviewSession: "terminal" | "owning-session";
         /**
          * Measurements
          * @description A contract's success test so far: its drafts, how long drafting took and how much was changed.
@@ -16672,6 +16831,11 @@ export type SchemaLiveUntil = components['schemas']['LiveUntil'];
 export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaLogin = components['schemas']['Login'];
 export type SchemaManualInstall = components['schemas']['ManualInstall'];
+export type SchemaMcpHandoffPlan = components['schemas']['McpHandoffPlan'];
+export type SchemaMcpLifecycleAction = components['schemas']['McpLifecycleAction'];
+export type SchemaMcpLifecycleAvailability = components['schemas']['McpLifecycleAvailability'];
+export type SchemaMcpLifecycleObservation = components['schemas']['McpLifecycleObservation'];
+export type SchemaMcpReviewSession = components['schemas']['McpReviewSession'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
 export type SchemaMessageAccepted = components['schemas']['MessageAccepted'];
@@ -19935,6 +20099,121 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    web_mcp_handoff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id_: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpHandoffPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    web_mcp_availability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpLifecycleAvailability"];
+                };
+            };
+        };
+    };
+    web_mcp_lifecycle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                registration: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpLifecycleObservation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    web_mcp_prepare: {
+        parameters: {
+            query: {
+                action: "start" | "check" | "stop" | "install";
+            };
+            header?: never;
+            path: {
+                registration: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpHandoffPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

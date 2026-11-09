@@ -42,6 +42,7 @@ from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Ori
 
 if TYPE_CHECKING:
     from heinzel.heads._heinzel_tools import HeinzelTools
+    from heinzel.heads.mcp._ipc_install_review import McpInstallReview
     from heinzel.heads.mcp._ipc_lifecycle import ForegroundMcpLifecycle
     from heinzel.heads.mcp._ipc_supervisor import OwnedMcpSupervisor
 
@@ -239,13 +240,14 @@ def show(kernel: Kernel, output: Console) -> None:
     render_overview(kernel, output)
 
 
-def main(
+def _private_mcp(
     *,
-    host_mcp_supervisor: "OwnedMcpSupervisor | None" = None,
-    host_mcp_lifecycle: "ForegroundMcpLifecycle | None" = None,
-    private_heinzel_tools: "HeinzelTools | None" = None,
+    host_mcp_supervisor: "OwnedMcpSupervisor | None",
+    host_mcp_lifecycle: "ForegroundMcpLifecycle | None",
+    private_heinzel_tools: "HeinzelTools | None",
+    host_mcp_install_review: "McpInstallReview | None",
 ) -> None:
-    """Enter `hz`; trusted host startup may supply already-owned MCP capabilities."""
+    """Route each private command only to its independently supplied host capability."""
     if sys.argv[1:4] == ["system", "mcp", "review"]:
         from heinzel.heads.cli._mcp_review import main as review_main  # noqa: PLC0415 - host-only, before boot
 
@@ -257,9 +259,27 @@ def main(
     if sys.argv[1:3] == ["system", "mcp"] and sys.argv[3:]:
         from heinzel.heads.cli import _mcp_lifecycle  # noqa: PLC0415 - host-only, before boot
 
+        if sys.argv[3] == "review-install":
+            sys.exit(_mcp_lifecycle.review_install(sys.argv[4:], host=host_mcp_install_review))
         action = _mcp_lifecycle.COMMANDS.get(sys.argv[3])
         if action is not None:
             sys.exit(_mcp_lifecycle.main(action, sys.argv[4:], host=host_mcp_lifecycle))
+
+
+def main(
+    *,
+    host_mcp_supervisor: "OwnedMcpSupervisor | None" = None,
+    host_mcp_lifecycle: "ForegroundMcpLifecycle | None" = None,
+    private_heinzel_tools: "HeinzelTools | None" = None,
+    host_mcp_install_review: "McpInstallReview | None" = None,
+) -> None:
+    """Enter `hz`; trusted host startup may supply already-owned MCP capabilities."""
+    _private_mcp(
+        host_mcp_supervisor=host_mcp_supervisor,
+        host_mcp_lifecycle=host_mcp_lifecycle,
+        private_heinzel_tools=private_heinzel_tools,
+        host_mcp_install_review=host_mcp_install_review,
+    )
     if sys.argv[1:3] == ["system", "uninstall"]:
         from heinzel.heads.cli._uninstall import main as uninstall_main  # noqa: PLC0415 - parse maintenance before discovery
 

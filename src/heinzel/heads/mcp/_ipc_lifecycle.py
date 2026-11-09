@@ -1,8 +1,8 @@
 """Explicit host lifecycle for a reviewed installed MCP foreground registration."""
 
+import hashlib
 import json
 import os
-import re
 import secrets
 import socket
 import sys
@@ -17,8 +17,15 @@ from heinzel.heads.mcp._ipc_cli_review import review_mcp_lifecycle_from_terminal
 from heinzel.heads.mcp._ipc_descriptors import local_stream_pair, receive_exact
 from heinzel.heads.mcp._ipc_peer import require_owner_peer
 from heinzel.heads.mcp._ipc_supervisor import owned_installed_mcp_supervisor
-from heinzel.kernel import HeinzelError, installation_mutation_pending
+from heinzel.kernel import HeinzelError, McpLifecycleObservation, installation_mutation_pending
 from heinzel.kernel._logging import get_logger, step
+from heinzel.kernel._mcp_handoff import (
+    REGISTRATION_ID,
+    McpLifecycleAction,
+    McpReviewSession,
+    mcp_handoff,
+    require_mcp_handoff,
+)
 from heinzel.kernel._mcp_native import McpNativePlan, NativeMcpState
 from heinzel.kernel._mcp_storage import InstalledMcpRuntime, installation_directories
 
@@ -34,7 +41,6 @@ type WorkerState = Literal["running", "not-started", "stopped", "unavailable", "
 type TransportState = Literal["reachable", "unavailable", "not-checked"]
 type _Directories = tuple[tuple[int, int], tuple[int, int]]
 
-REGISTRATION_ID = re.compile(r"[A-Za-z0-9_-]{1,96}\Z", re.ASCII)
 _REFUSED = "The reviewed MCP foreground registration is unavailable or changed"
 _IO_SECONDS = 2.0
 _START_SECONDS = 8.0
@@ -54,6 +60,7 @@ class ForegroundMcpRegistration:
     directories: _Directories = field(repr=False)
     native: McpNativePlan
     verify_binding: "Callable[[], None] | None" = field(default=None, repr=False, compare=False)
+    sdk_fingerprint: str | None = field(default=None, repr=False)
 
     @classmethod
     def capture(
@@ -62,6 +69,7 @@ class ForegroundMcpRegistration:
         plan: PrivateMcpPlan,
         *,
         verify_binding: "Callable[[], None] | None" = None,
+        sdk_fingerprint: str | None = None,
     ) -> "ForegroundMcpRegistration":
         """Freeze the installed directory identities for the worker that the host can authorize.
 
@@ -71,7 +79,7 @@ class ForegroundMcpRegistration:
         if not sys.flags.isolated or not REGISTRATION_ID.fullmatch(plan.generation.registration_id):
             raise HeinzelError(_REFUSED)
         native = McpNativePlan.capture(installation, plan.generation.registration_id)
-        return cls(installation, plan, installation_directories(installation), native, verify_binding)
+        return cls(installation, plan, installation_directories(installation), native, verify_binding, sdk_fingerprint)
 
     def require_current(self) -> None:
         """Verify the exact approved installed scope before forking and before worker publication.
@@ -86,20 +94,18 @@ class ForegroundMcpRegistration:
         if self.verify_binding is not None:
             self.verify_binding()
 
-    def offer(self, action: LifecycleAction, deadline: float) -> "dict[str, JsonValue]":
-        """Describe the full reviewed foreground action; no result or proof goes to vendor transport."""
+    def exact(self, action: LifecycleAction) -> "dict[str, JsonValue]":
+        """Describe the stable binding checked both at handoff and at terminal review."""
         return {
             "kind": "foreground-lifecycle",
             "action": action,
-            "action_id": secrets.token_urlsafe(24),
             "registration": self.plan.generation.registration_id,
             "generation": self.plan.generation.number,
             "grant": self.plan.grant_id,
             "grant_revision": self.plan.grant_revision,
             "terms": cast("JsonValue", json.loads(self.plan.terms_json)),
-            "grant_valid_until": self.plan.valid_until,
-            "review_expires_at": deadline,
             "sdk": os.fspath(self.installation.prefix),
+            "sdk_fingerprint": self.sdk_fingerprint,
             "profile": os.fspath(self.installation.state),
             "sdk_directory": list(self.directories[0]),
             "profile_directory": list(self.directories[1]),
@@ -228,7 +234,59 @@ class ForegroundMcpLifecycle:
         self._closed = False
         self._lock = Lock()
 
-    def perform(self, action: LifecycleAction, registration_id: str) -> ForegroundMcpStatus:
+    def status(self, registration: str) -> McpLifecycleObservation:
+        """Describe what the host can review without executing a live Check or exposing its locators."""
+        if not self._lock.acquire(blocking=False):
+            return McpLifecycleObservation()
+        try:
+            self._require_registration(registration)
+            self._registration.require_current()
+            if self._registration.sdk_fingerprint is None:
+                return McpLifecycleObservation()
+            return McpLifecycleObservation(
+                host="observed",
+                worker="stopped" if self._stopped else "unobserved",
+                actions=("check", "stop") if self._worker is not None else ("start", "check"),
+            )
+        except (HeinzelError, OSError, ValueError):
+            return McpLifecycleObservation()
+        finally:
+            self._lock.release()
+
+    def prepare(self, action: McpLifecycleAction, registration: str, expires_at: int) -> tuple[str, McpReviewSession]:
+        """Prepare a foreground action for exact review in the local CLI that can perform it.
+
+        Raises:
+            HeinzelError: If the registration, installed binding or owning session is unavailable.
+        """
+        if action == "install" or not self._lock.acquire(blocking=False):
+            raise HeinzelError(_REFUSED)
+        try:
+            self._require_registration(registration)
+            exact, session = self._handoff(action)
+            return mcp_handoff(exact, expires_at), session
+        finally:
+            self._lock.release()
+
+    def _require_registration(self, registration: str) -> None:
+        if self._closed or registration != self._registration.plan.generation.registration_id:
+            raise HeinzelError(_REFUSED)
+
+    def _handoff(self, action: LifecycleAction) -> tuple["dict[str, JsonValue]", McpReviewSession]:
+        registration = self._registration
+        registration.require_current()
+        if registration.sdk_fingerprint is None or (action == "stop" and self._worker is None):
+            raise HeinzelError(_REFUSED)
+        if action == "start" and self._worker is not None:
+            raise HeinzelError(_REFUSED)
+        worker = self._worker
+        session: McpReviewSession = "owning-session" if worker is not None else "terminal"
+        instance = hashlib.sha256(worker.binding).hexdigest() if worker is not None else None
+        return registration.exact(action) | {"review_session": session, "owned_worker": instance}, session
+
+    def perform(
+        self, action: LifecycleAction, registration_id: str, *, handoff: str | None = None
+    ) -> ForegroundMcpStatus:
         """Review one exact action on the controlling terminal and use it once in this scope.
 
         Raises:
@@ -236,20 +294,30 @@ class ForegroundMcpLifecycle:
         """
         with self._lock, step(log, "mcp.ipc.foreground_lifecycle", operation="ipc", step=action):
             registration = self._registration
-            if (
-                self._closed
-                or registration_id != registration.plan.generation.registration_id
-                or action not in {"start", "check", "stop"}
-            ):
+            self._require_registration(registration_id)
+            if action not in {"start", "check", "stop"}:
                 raise HeinzelError(_REFUSED)
             # An owned Stop remains available after grant expiry or a maintenance/locator fence.
             if action == "start":
                 registration.require_current()
                 self._require_clear_native_label()
+            exact = registration.exact(action)
+            if handoff is not None:
+                exact, _ = self._handoff(action)
+                require_mcp_handoff(handoff, exact)
             deadline = time.monotonic() + _REVIEW_SECONDS
-            review_mcp_lifecycle_from_terminal(registration.offer(action, deadline))
+            review_mcp_lifecycle_from_terminal(
+                exact
+                | {
+                    "action_id": secrets.token_urlsafe(24),
+                    "grant_valid_until": registration.plan.valid_until,
+                    "review_expires_at": deadline,
+                }
+            )
             if time.monotonic() >= deadline:
                 raise HeinzelError(_REFUSED)
+            if handoff is not None:
+                require_mcp_handoff(handoff, self._handoff(action)[0])
             if action == "start":
                 manager = self._require_clear_native_label()
                 status = self._start(deadline)
