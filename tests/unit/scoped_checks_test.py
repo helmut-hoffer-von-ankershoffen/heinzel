@@ -393,6 +393,27 @@ def test_focused_mixed_push_refuses_uncovered_changes(gate_calls, mixed_push, ex
     assert calls == []
 
 
+def test_only_the_exact_pwa_refresh_paths_can_include_vite_and_the_hosted_browser_fixture(
+    monkeypatch, gate_calls, mixed_push
+):
+    _, calls = gate_calls
+    base, plan, _, _ = mixed_push
+    monkeypatch.setattr(scoped, "mixed_test_targets", lambda *_, **__: {**plan, "desktop": []})
+    changed = sorted(scoped.MIXED_PWA_REFRESH | scoped.MIXED_SELECTOR_FILES)
+
+    assert scoped.push_checks(changed, base) == 0
+
+    commands = [command[3:] for command, _ in calls]
+    guards = scoped.early_guard_commands(changed)
+    assert commands[: len(guards)] == guards
+    assert "integration" in guards[-1]  # E2E inventory is collected by the guard, with no browser bodies selected.
+    assert not any(
+        "tests/e2e" in command or "tests/e2e/web_ui_test.py" in command for command in commands[len(guards) :]
+    )
+    with pytest.raises(SystemExit, match="without build or runtime configuration"):
+        scoped.push_checks([*changed, "web/src/unrelated.ts"], base)
+
+
 def test_mixed_manifest_alone_leaves_default_push_selection_unchanged(monkeypatch, gate_calls, mixed_push):
     _, calls = gate_calls
     base, _, changed, _ = mixed_push

@@ -186,6 +186,26 @@ MIXED_SOURCE_DIRS = (
     "desktop/src/",
     "desktop/test/",
 )
+# The reviewed PWA shell refresh also touches Vite and its hosted browser fixture. A Vite change on
+# its own, or any extra path in this change, still requires the ordinary hosted route.
+MIXED_PWA_REFRESH = frozenset(
+    {
+        "src/heinzel/heads/web/__init__.py",
+        "tests/e2e/web_ui_test.py",
+        "tests/integration/web_pwa_test.py",
+        "web/e2e/pwa-reconnect.mjs",
+        "web/public/sw.js",
+        "web/src/lib/events.test.ts",
+        "web/src/lib/events.ts",
+        "web/src/pwa/cache.test.ts",
+        "web/src/pwa/shellBuild.test.ts",
+        "web/src/pwa/shellBuild.ts",
+        "web/src/splash/Splash.test.tsx",
+        "web/src/splash/Splash.tsx",
+        "web/vite.config.ts",
+    }
+)
+MIXED_SELECTOR_FILES = {"scripts/scoped_checks.py", "tests/unit/scoped_checks_test.py"}
 
 
 def touches_web(changed: list[str]) -> bool:
@@ -312,7 +332,8 @@ def mixed_push_checks(changed: list[str], base: str, manifest: Path) -> int:
     Raises:
         SystemExit: If the change is outside the supported mixed push scope.
     """
-    if (
+    pwa_refresh = set(changed) - MIXED_SELECTOR_FILES == MIXED_PWA_REFRESH
+    if not pwa_refresh and (
         not any(path.startswith("src/heinzel/") and path.endswith(".py") for path in changed)
         or not any(path.startswith("web/src/") for path in changed)
         or bool(WEB_ROOT_FILES.intersection(changed))
