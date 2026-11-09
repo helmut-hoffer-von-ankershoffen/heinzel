@@ -18,6 +18,7 @@ import {
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import type { ExternalAction } from "@/lib/externalActions";
 import { cn } from "@/lib/utils";
 
 /** A footer pane's way to close itself: an action that takes the person elsewhere calls it, so the pane never covers
@@ -107,7 +108,7 @@ function flatten(children: ReactNode, prefix = ""): ReactNode[] {
   });
 }
 
-type Target = { onClick?: () => void; to?: string; href?: string };
+type Target = { onClick?: () => void; to?: string; href?: string; externalAction?: ExternalAction };
 
 /**
  * One action. `icon` is required and `children` are its words: shown beside the icon when the row says so (the
@@ -124,6 +125,7 @@ export function PaneAction({
   leaves = false,
   to,
   href,
+  externalAction,
   className,
   ...props
 }: Omit<ComponentProps<"button">, "children"> &
@@ -151,7 +153,8 @@ export function PaneAction({
     size: "sm" as const,
     variant: primary ? ("default" as const) : ghost ? ("ghost" as const) : ("outline" as const),
     className: cn(
-      "shrink-0 pointer-coarse:h-11",
+      // Theme spacing can be smaller than 4px; touch targets must still have a 44px floor.
+      "shrink-0 pointer-coarse:h-11 pointer-coarse:min-h-[44px] pointer-coarse:min-w-[44px]",
       !words && "w-8 px-0 pointer-coarse:w-11",
       // Red: the outlined icon in place, or the filled committing button of a dialog that destroys something.
       destructive && (primary ? "bg-bad text-white" : "text-bad"),
@@ -181,6 +184,7 @@ export function PaneAction({
           href={href}
           target="_blank"
           rel="noopener noreferrer"
+          data-hz-external-action={externalAction}
           onClick={props.onClick as ComponentProps<"a">["onClick"]}
         >
           {body}

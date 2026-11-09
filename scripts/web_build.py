@@ -33,7 +33,16 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 STATIC = ROOT / "src" / "heinzel" / "heads" / "web" / "static"
 STAMP = ".source-sha256"
-SOURCES = ("package.json", "pnpm-lock.yaml", "index.html", "vite.config.ts", "tsconfig.json", "src", "public")
+SOURCES = (
+    "package.json",
+    "pnpm-lock.yaml",
+    "index.html",
+    "vite.config.ts",
+    "tsconfig.json",
+    "src",
+    "public",
+    "../desktop/src/external-links.js",
+)
 LOCKED = ("package.json", "pnpm-lock.yaml")
 """What web/node_modules is installed from; `installed()` compares their digest with the one the last install left."""
 INSTALLED = ".hz-installed"

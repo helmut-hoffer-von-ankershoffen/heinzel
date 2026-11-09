@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, session, WebContentsView, webContents } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, shell, WebContentsView, webContents } from "electron";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
@@ -11,7 +11,7 @@ import { createWorkspaceAudio } from "./workspace-audio.js";
 import { initializeDesktopIdentity } from "./identity.js";
 import { refreshAfterQuit, shouldRefresh, stopWithReport } from "./shutdown.js";
 import { installSignalQuit } from "./signal-quit.js";
-import { guardUiNavigation, openProductUi } from "./ui-navigation.js";
+import { guardUiNavigation, handleExternalActions, openProductUi } from "./ui-navigation.js";
 import { windowOptions } from "./window-options.js";
 
 const identityReady = initializeDesktopIdentity(app, dialog);
@@ -81,6 +81,7 @@ const instance = createInstanceLifecycle({
       window.on("enter-full-screen", () => window.webContents.send("hz:fullscreen", true));
       window.on("leave-full-screen", () => window.webContents.send("hz:fullscreen", false));
       guardUiNavigation(window.webContents, connection);
+      handleExternalActions(window.webContents, () => (stopping || quitting ? null : connection), (url) => shell.openExternal(url));
       window.on("closed", () => { audio.revoke(); windowPermissions.revoke(); if (!quitting) app.quit(); });
     },
   }),
