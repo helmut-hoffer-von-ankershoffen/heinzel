@@ -52,14 +52,17 @@ def test_pinned_reads_the_install_spec(kind, ref, pinned):
     assert _pinned(CorePin(kind=kind, requirement="heinzel-acme", ref=ref, name="heinzel-acme")) == pinned
 
 
-def test_an_older_hz_updating_itself_renders_with_its_own_models():
-    """The old process holds models without `automatic`, `pinned` and `checked`: rendering must still work."""
-    old_plugin = SimpleNamespace(distribution="heinzel-acme", status="unchanged", before="1.0.0", after="1.0.0")
+@pytest.mark.parametrize("known", [{}, {"checked": True}, {"pinned": None}])
+def test_an_older_hz_updating_itself_renders_with_its_own_models(known):
+    """Incomplete legacy plugin models only establish that the version is unchanged."""
+    old_plugin = SimpleNamespace(
+        distribution="heinzel-acme", status="unchanged", before="1.0.0", after="1.0.0", **known
+    )
     old_result = SimpleNamespace(message="Updated hz 0.15.0 → 0.16.0.", updated=True, plugins=[old_plugin])
 
     text = render_update(cast("UpdateResult", old_result)).plain
 
-    assert text == "Updated hz 0.15.0 → 0.16.0.\nPlugins:\n  heinzel-acme: already newest (1.0.0)"
+    assert text == "Updated hz 0.15.0 → 0.16.0.\nPlugins:\n  heinzel-acme: unchanged (1.0.0)"
 
 
 def test_the_render_module_imports_no_model_an_older_hz_lacks():
