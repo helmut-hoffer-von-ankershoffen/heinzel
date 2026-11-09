@@ -113,8 +113,9 @@ SECURITY_HEADERS = {
 }
 """How others may treat our answers; none of them limits what the page embeds. Never add COEP `require-corp`: it
 would block the stream soundscape's player (ADR 0058)."""
-NO_CACHE = frozenset({"sw.js", "manifest.webmanifest", "favicon.svg"})
-"""Top-level files a browser must check for a new version every time: the service worker and the manifest."""
+NO_CACHE = frozenset({"sw.js", "manifest.webmanifest", "favicon.svg", "offline.html", "boot-retry.js"})
+"""Top-level files a browser must check for a new version every time: the service worker, the manifest and the shell
+the worker keeps (the offline page and its retry script), so a new build's worker never keeps an older build's copy."""
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 NOT_FOUND = 404
 FONT_THEME = re.compile(r"[a-z](?:-?[a-z0-9]){0,63}")
