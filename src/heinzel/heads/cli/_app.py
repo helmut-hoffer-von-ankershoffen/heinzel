@@ -5,19 +5,23 @@ import platform
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from subprocess import SubprocessError
-from typing import Annotated, NoReturn
+from typing import TYPE_CHECKING, Annotated, NoReturn
 
 import typer
 from rich.console import Console
 
 from heinzel import HeinzelError, Settings, __version__
 from heinzel.heads import _desktop_messages as say
-from heinzel.heads._desktop_log import problem_fields, step
+from heinzel.heads._desktop_log import step
 from heinzel.heads.cli._progress import StepReporter
 from heinzel.heads.cli._render import message
 from heinzel.kernel import KERNEL_SECTION, Installation, Kernel
+
+if TYPE_CHECKING:
+    from heinzel.heads._desktop_seal import SealReport
 
 
 def desktop_executable(kernel: Kernel) -> Path:
@@ -263,6 +267,7 @@ def _open_app(kernel: Kernel, output: Console, error: Console, *, details: bool 
         The app that was opened.
 
     Raises:
+        _RefusedError: Never past this function; it is told to the person and ends as an exit.
         typer.Exit: If it cannot be installed, would not open, or `open` fails.
     """
     from heinzel.heads._desktop_installation import desktop_location  # noqa: PLC0415 - native only
@@ -276,24 +281,16 @@ def _open_app(kernel: Kernel, output: Console, error: Console, *, details: bool 
         location = desktop_location()
         if location is None:
             _say(error, say.lost())
-    with step("open", "check", path=str(location)) as checked:
-        report = inspect_bundle(location)
-        checked.update({"quarantine": report.quarantine, "outcome": "ok" if report.opens else "would_not_open"})
-        if not report.opens:
-            checked.update(problem_fields(say.would_not_open(location)))
-    if not report.opens:
-        _say(error, say.would_not_open(location))
+    try:
+        report = _check(location, inspect_bundle)
+    except _RefusedError as refused:
+        _say(error, refused.problem)
     if report.quarantine != "none":
         output.print(say.asks_once(), markup=False)
-    with step("open", "launch", path=str(location)) as launched:
-        result = subprocess.run(  # noqa: S603 - fixed system executable and the receipt-owned app path
-            ["/usr/bin/open", str(location)], check=False, capture_output=True, text=True, timeout=30
-        )
-        if result.returncode:
-            failed = problem_fields(say.open_failed(location))
-            launched.update({"outcome": "failed", "returncode": result.returncode, **failed})
-    if result.returncode:
-        _say(error, say.open_failed(location))
+    try:
+        _launch(location)
+    except _RefusedError as refused:
+        _say(error, refused.problem)
     output.print(say.opened(location), markup=False, soft_wrap=True)
     return location
 
@@ -322,6 +319,43 @@ def _uninstall(output: Console, error: Console, *, details: bool = False) -> Non
         return
     StepReporter(output).check(say.removed(removed))
     output.print(say.PROFILE_KEPT, markup=False, soft_wrap=True)
+
+
+def _check(location: Path, inspect: Callable[[Path], "SealReport"]) -> "SealReport":
+    """Inspect the bundle in a logged step.
+
+    Raises:
+        _RefusedError: If the app would not open.
+    """
+    with step("open", "check", path=str(location)) as checked:
+        report = inspect(location)
+        checked["quarantine"] = report.quarantine
+        if not report.opens:
+            raise _RefusedError(say.would_not_open(location))
+    return report
+
+
+def _launch(location: Path) -> None:
+    """Launch the app in a logged step.
+
+    Raises:
+        _RefusedError: If `open` fails.
+    """
+    with step("open", "launch", path=str(location)) as launched:
+        result = subprocess.run(  # noqa: S603 - fixed system executable and the receipt-owned app path
+            ["/usr/bin/open", str(location)], check=False, capture_output=True, text=True, timeout=30
+        )
+        if result.returncode:
+            launched["returncode"] = result.returncode
+            raise _RefusedError(say.open_failed(location))
+
+
+class _RefusedError(Exception):
+    """A step of opening the app failed; carries the two lines the person reads, which the step logs too."""
+
+    def __init__(self, problem: say.Problem) -> None:
+        super().__init__(problem.happened)
+        self.problem = problem
 
 
 def _say(error: Console, problem: say.Problem) -> NoReturn:

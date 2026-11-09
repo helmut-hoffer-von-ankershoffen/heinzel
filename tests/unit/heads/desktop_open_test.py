@@ -226,7 +226,7 @@ def test_open_logs_why_it_did_not_launch(launcher, caplog):
     assert _exit_code(lambda: _app._open_app(None, output, error)) == 1
     assert _open_events(caplog) == [
         ("desktop.open.check", "start", None),
-        ("desktop.open.check", "end", "would_not_open"),
+        ("desktop.open.check", "end", "error"),
     ]
     check = caplog.records[-1]
     assert (check.happened, check.action) == tuple(say.would_not_open(APP).lines())
