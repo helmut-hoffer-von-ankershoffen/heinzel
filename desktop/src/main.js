@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, session, WebContentsView, webContents } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, shell, WebContentsView, webContents } from "electron";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
@@ -80,7 +80,7 @@ const instance = createInstanceLifecycle({
       // Full screen hides the traffic lights; the web then gives their inset back to the title bar row.
       window.on("enter-full-screen", () => window.webContents.send("hz:fullscreen", true));
       window.on("leave-full-screen", () => window.webContents.send("hz:fullscreen", false));
-      guardUiNavigation(window.webContents, connection);
+      guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url));
       window.on("closed", () => { audio.revoke(); windowPermissions.revoke(); if (!quitting) app.quit(); });
     },
   }),
