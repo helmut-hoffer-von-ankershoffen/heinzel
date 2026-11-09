@@ -187,7 +187,12 @@ from heinzel.kernel._installation import (
     ToolConstraintPolicy,
     requirement_from_receipt,
 )
-from heinzel.kernel._installation_mutations import installation_mutation_paths, installation_mutation_pending
+from heinzel.kernel._installation_mutations import (
+    installation_mutation_paths,
+    installation_mutation_pending,
+    record_installation_profile,
+    tracked_installation_mutation_pending,
+)
 from heinzel.kernel._jobs import CompiledJobs, JobInactive, tick_interval, using_tick_interval
 from heinzel.kernel._json import jsonable
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
@@ -838,6 +843,7 @@ __all__ = [
     "read_skill",
     "read_skill_file",
     "read_view_asset",
+    "record_installation_profile",
     "record_usage",
     "redact_emails",
     "remove_owned_integration_file",
@@ -855,6 +861,7 @@ __all__ = [
     "subprocess_environment",
     "tick_interval",
     "toml_value",
+    "tracked_installation_mutation_pending",
     "user_config_dir",
     "using_tick_interval",
     "verify_integration_directory",

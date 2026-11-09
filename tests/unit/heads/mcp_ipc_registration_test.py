@@ -29,15 +29,19 @@ from heinzel.kernel import (
     Settings,
     host_maintenance_directory,
     host_maintenance_lock,
+    installation_mutation_pending,
     mcp_registration_inventory,
 )
 from heinzel.kernel._mcp_native import MAC_LABEL_PREFIX, McpNativePlan
+from heinzel.modules.system import recover_announced
+from heinzel.modules.system._announced import ToolSnapshot
 from heinzel.modules.system.daemon import _maintenance
 from heinzel.modules.system.daemon._models import DaemonSettings
 from heinzel.modules.system.daemon._service import DaemonService
 
 pytestmark = pytest.mark.unit
 _ID = "fixture-installed"
+_BOOT = "e8263cb8-6123-48d0-8147-cb24075f3181"
 _LAUNCHER = """
 import fcntl, runpy, sys, termios
 from pathlib import Path
@@ -259,3 +263,137 @@ def test_standard_sdk_mutation_cannot_cross_a_foreground_maintenance_fence(tmp_p
         operation,
     ):
         pytest.fail("Changed an SDK with an owned foreground lifecycle")
+
+
+def _ordinary_service(sdk, state):
+    settings = Settings(state_dir=state)
+    return DaemonService(
+        Kernel(settings),
+        settings,
+        DaemonSettings(unit_dir=state.parent / "scratch-units"),
+        continuity_fingerprint=sdk.startup_fingerprint,
+        quiescence_installation=sdk,
+        host_boot_evidence=lambda: (_BOOT, 0),
+    )
+
+
+def _interrupt_ordinary_update(prefix, state):
+    sdk = Installation(Progress(), prefix=Path(prefix), uv="unused")
+    service = _ordinary_service(sdk, Path(state))
+    with service.mutation_guard(sdk.startup_state_matches, sdk.rollback_identity):
+        os._exit(17)  # The writer dies with the ordinary gate still present and the SDK unchanged.
+
+
+def test_interrupted_ordinary_profile_fences_mcp_until_verified_recovery(tmp_path):
+    sdk, _, _ = _sdk(tmp_path)
+    state = tmp_path / "ordinary-profile"
+    fingerprint = sdk.startup_fingerprint()
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            "import runpy, sys; runpy.run_path(sys.argv[1])['_interrupt_ordinary_update'](*sys.argv[2:])",
+            __file__,
+            os.fspath(sdk.prefix),
+            os.fspath(state),
+        ],
+        capture_output=True,
+        check=False,
+        timeout=4,
+    )
+    assert result.returncode == 17, result.stderr.decode()
+    ordinary = state / "daemon" / "mutation-pending.json"
+    marker = ordinary.read_bytes()
+    authority = registration.InstalledMcpAuthority(sdk, fingerprint)
+    assert sdk.startup_state_matches()
+    assert sdk.startup_fingerprint() == fingerprint
+    assert not (authority.runtime.state / "daemon" / ordinary.name).exists()
+    with pytest.raises(HeinzelError, match="committed MCP registration"):
+        authority.require_current()
+    other = _ordinary_service(sdk, tmp_path / "different-profile")
+    with (
+        pytest.raises(HeinzelError, match="another profile requires recovery"),
+        other.mutation_guard(sdk.startup_state_matches, sdk.rollback_identity),
+    ):
+        pytest.fail("Another ordinary profile bypassed the interrupted SDK mutation")
+    service = _ordinary_service(sdk, state)
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(service, "_host_boot", lambda: (None, None))
+        assert service._recover_abandoned_mutation() is None
+        assert ordinary.read_bytes() == marker
+        assert installation_mutation_pending(sdk.prefix, authority.runtime.state)
+    receipt = service._recover_abandoned_mutation()
+    assert receipt is not None
+    assert json.loads(receipt.read_bytes())["status"] == "archived"
+    assert not ordinary.exists()
+    authority.require_current()
+
+
+def test_profile_replacement_cannot_hide_an_sdk_mutation(tmp_path):
+    sdk, _, _ = _sdk(tmp_path)
+    state = tmp_path / "ordinary-profile"
+    service = _ordinary_service(sdk, state)
+    authority = registration.InstalledMcpAuthority(sdk, sdk.startup_fingerprint())
+    msg = "interrupted"
+    with (
+        pytest.raises(RuntimeError, match="interrupted"),
+        service.mutation_guard(sdk.startup_state_matches, sdk.rollback_identity),
+    ):
+        raise RuntimeError(msg)
+    retained = state / "retained-daemon"
+    service.state_dir.rename(retained)
+    service.state_dir.mkdir(mode=0o700)
+    assert not (service.state_dir / "mutation-pending.json").exists()
+    with pytest.raises(HeinzelError, match="committed MCP registration"):
+        authority.require_current()
+    assert (retained / "mutation-pending.json").is_file()
+
+
+@pytest.mark.parametrize("rollback", [False, True])
+def test_ordinary_mutation_releases_sdk_fence_only_after_verified_outcome(tmp_path, rollback):
+    sdk, _, _ = _sdk(tmp_path)
+    state = tmp_path / "ordinary-profile"
+    other_state = tmp_path / "other-profile"
+    service = _ordinary_service(sdk, state)
+    other = _ordinary_service(sdk, other_state)
+    authority = registration.InstalledMcpAuthority(sdk, sdk.startup_fingerprint())
+    with service.mutation_guard(sdk.startup_state_matches, sdk.rollback_identity) as scope:
+        plan = scope.capture()
+        assert installation_mutation_pending(sdk.prefix, other_state)
+        with (
+            pytest.raises(HeinzelError, match="active host integration"),
+            other.mutation_guard(sdk.startup_state_matches, sdk.rollback_identity),
+        ):
+            pytest.fail("A second writer bypassed the exact SDK lock")
+        if rollback:
+            scope.abort_unchanged()
+        else:
+            scope.verified_complete(sdk.startup_fingerprint())
+            scope.request(plan)
+    authority.require_current()
+
+
+def test_announced_rollback_tracks_failed_snapshot_recovery_and_uses_sdk_lock(tmp_path, monkeypatch):
+    sdk, _, _ = _sdk(tmp_path)
+    state = tmp_path / "ordinary-profile"
+    kernel = Kernel(Settings(state_dir=state))
+    snapshot = ToolSnapshot.take(sdk.prefix, state / "auto-update")
+    other_state = tmp_path / "different-profile"
+    with MaintenanceLocks((host_maintenance_lock(sdk.prefix),)), pytest.raises(HeinzelError, match="in progress"):
+        recover_announced(sdk, kernel)
+    assert snapshot.copy.is_dir()
+
+    def interrupted(_snapshot):
+        raise InterruptedError
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(ToolSnapshot, "recover", interrupted)
+        with pytest.raises(InterruptedError):
+            recover_announced(sdk, kernel)
+    assert installation_mutation_pending(sdk.prefix, other_state)
+    assert recover_announced(sdk, kernel)
+    assert not snapshot.copy.exists()
+    assert not snapshot.aside.exists()
+    assert not installation_mutation_pending(sdk.prefix, other_state)
+    assert sdk.startup_state_matches()

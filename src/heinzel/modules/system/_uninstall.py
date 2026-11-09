@@ -100,9 +100,7 @@ def uninstall_installation(
     if daemon.state_dir.parent != web.directory.parent or installation.prefix != store / "heinzel":
         msg = "The service profile does not match this Heinzel installation; nothing was removed."
         raise HeinzelError(msg)
-    if installation_mutation_pending(installation.prefix, daemon.state_dir.parent):
-        msg = "An installation change requires local recovery before uninstalling Heinzel."
-        raise HeinzelError(msg)
+    _require_mutations_settled(installation.prefix, daemon.state_dir.parent)
     context = _RemovalContext(
         installation,
         before,
@@ -117,6 +115,12 @@ def uninstall_installation(
 
 
 MAX_INTEGRATIONS = 512
+
+
+def _require_mutations_settled(prefix: Path, state: Path) -> None:
+    if installation_mutation_pending(prefix, state):
+        msg = "An installation change requires local recovery before uninstalling Heinzel."
+        raise HeinzelError(msg)
 
 
 @dataclass
@@ -180,6 +184,7 @@ def _compose_removal(context: _RemovalContext, on_recovery: Callable[[str], None
     )
     gate = host_maintenance_gate(installation.prefix)
     with installation.tool_transaction(), MaintenanceLocks(lock_paths) as locks:
+        _require_mutations_settled(installation.prefix, daemon.state_dir.parent)
         if any(owner.inventory(installation.prefix, binary, manager) != items for owner, items in inventory):
             msg = "The host integration inventory changed before removal; no service was stopped."
             raise HeinzelError(msg)

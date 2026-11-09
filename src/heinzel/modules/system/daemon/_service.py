@@ -63,7 +63,9 @@ from heinzel.kernel import (
     private_lock,
     private_read,
     private_write,
+    record_installation_profile,
     tick_interval,
+    tracked_installation_mutation_pending,
     verify_mcp_native_inventory,
 )
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
@@ -1066,13 +1068,20 @@ class DaemonService:
             if installation is not None:
                 sdk_lock = host_maintenance_lock(installation.prefix)
                 try:
-                    ownership.enter_context(MaintenanceLocks((sdk_lock,)))
+                    locks = ownership.enter_context(MaintenanceLocks((sdk_lock,)))
                 except HeinzelError as exc:
                     msg = (
                         "The SDK has an active host integration or maintenance writer. Stop it before changing the SDK."
                     )
                     raise HeinzelError(msg) from exc
+                if not _safely_absent(host_maintenance_gate(installation.prefix)):
+                    msg = "The daemon lifecycle is changing or requires recovery."
+                    raise HeinzelError(msg)
+                if tracked_installation_mutation_pending(installation.prefix, excluding=self.state_dir.parent):
+                    msg = "An SDK mutation in another profile requires recovery before changing this installation."
+                    raise HeinzelError(msg)
                 self._require_mcp_quiescence(installation.prefix)
+                record_installation_profile(installation.prefix, self.state_dir.parent, locks)
             yield
 
     def _require_mcp_quiescence(self, prefix: Path) -> None:
@@ -1551,7 +1560,11 @@ class DaemonService:
         Raises:
             HeinzelError: If the record, installation or manager state cannot be verified.
         """
-        with lock(self.state_dir / "lifecycle.lock") as lifecycle, lock(self.state_dir / "tick.lock") as tick:
+        with (
+            self._sdk_mutation_fence(),
+            lock(self.state_dir / "lifecycle.lock") as lifecycle,
+            lock(self.state_dir / "tick.lock") as tick,
+        ):
             if not lifecycle or not tick:
                 msg = "The daemon lifecycle is changing; retry recovery."
                 raise HeinzelError(msg)

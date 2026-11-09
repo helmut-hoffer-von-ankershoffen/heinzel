@@ -106,6 +106,12 @@ native namespace in standalone recovery. Durable lifecycle action receipts, nati
 manager-owned bootstrap and recovery, and authenticated native UI routing remain prerequisites for persistent
 lifecycle controls.
 
+Standard SDK mutation and rollback enroll the selected ordinary profile before writing its markers or changing
+package files. The SDK inventory retains the identities of the profile and its daemon and snapshot directories.
+MCP activation checks pending markers across the enrolled profiles, including after a writer exits before
+changing SDK bytes. Recovery still uses the ordinary profile's existing authority. An unknown or replaced
+inventory entry keeps activation fenced. Legacy profiles enter this inventory when they use the updated writer.
+
 Direct HTTP is separate follow-up work building on the proposed bearer scope in
 [PR #655](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/655). Claude Desktop and Gemini CLI
 remain follow-up client integrations with their own acceptance matrix.
