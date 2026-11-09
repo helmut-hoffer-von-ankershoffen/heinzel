@@ -1,4 +1,4 @@
-"""Exercise the exact isolated reviewer launch with inherited sockets and a real PTY."""
+"""Exercise the isolated CLI reviewer with a private socket and a real PTY."""
 
 import hashlib
 import json
@@ -13,12 +13,10 @@ import termios
 import time
 from contextlib import suppress
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 
-from heinzel import HeinzelError
-from heinzel.heads.mcp._ipc_cli_review import _REVIEWER, CliReviewRuntime, cli_host_reviewer
+from heinzel.heads.mcp._ipc_cli_review import _REVIEWER, CliReviewRuntime
 from heinzel.kernel._approval import arguments_hash
 
 pytestmark = pytest.mark.unit
@@ -26,28 +24,31 @@ pytestmark = pytest.mark.unit
 _LAUNCHER = """
 import fcntl, os, socket, sys, termios
 from pathlib import Path
-from heinzel.heads.mcp._ipc_cli_review import CliReviewRuntime, cli_host_reviewer
+from heinzel import HeinzelError
+from heinzel.heads.mcp import _ipc_cli_review as cli
 if sys.argv[1] == 'tty':
     fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-os.environ['PYTHONPATH'] = os.getcwd()
-os.environ['PYTHONSTARTUP'] = os.path.join(os.getcwd(), 'sitecustomize.py')
+if sys.argv[1] == 'replace':
+    cli._REVIEWER = Path.cwd() / 'reviewer.py'
+    verify = cli._verified_source
+    def replace_after_verification(path, digest):
+        source = verify(path, digest)
+        (Path.cwd() / 'substitute.py').replace(path)
+        return source
+    cli._verified_source = replace_after_verification
 with socket.socket(fileno=int(sys.argv[2])) as channel:
-    runtime = CliReviewRuntime(Path(sys.argv[3]), sys.argv[4], sys.argv[5])
-    with cli_host_reviewer(channel, runtime) as process:
-        assert channel.fileno() == -1
-        status = process.wait(timeout=2)
-raise SystemExit(status)
+    try:
+        accepted = cli.run_cli_host_reviewer(channel, cli.CliReviewRuntime(sys.argv[3]))
+    except HeinzelError:
+        raise SystemExit(2) from None
+    assert channel.fileno() == -1
+raise SystemExit(0 if accepted else 1)
 """
 
 
 @pytest.fixture
 def runtime():
-    interpreter = Path(sys.executable).resolve()
-    return CliReviewRuntime(
-        interpreter,
-        hashlib.sha256(interpreter.read_bytes()).hexdigest(),
-        hashlib.sha256(_REVIEWER.read_bytes()).hexdigest(),
-    )
+    return CliReviewRuntime(hashlib.sha256(_REVIEWER.read_bytes()).hexdigest())
 
 
 @pytest.fixture
@@ -63,20 +64,20 @@ def offer():
     return json.dumps({"review": review, "digest": digest}, ensure_ascii=True).encode() + b"\n", digest
 
 
-def launch_fixture(channel, runtime, cwd, *, terminal=None):
+def launch_fixture(channel, runtime, cwd, *, terminal=None, mode=""):
+    fixture_mode = mode or ("tty" if terminal is not None else "none")
     return subprocess.Popen(
         [
             sys.executable,
-            "-I",
+            "-E" if fixture_mode == "unisolated" else "-I",
             "-c",
             _LAUNCHER,
-            "tty" if terminal is not None else "none",
+            fixture_mode,
             str(channel.fileno()),
-            str(runtime.interpreter),
-            runtime.interpreter_sha256,
             runtime.reviewer_sha256,
         ],
         cwd=cwd,
+        env=os.environ | {"PYTHONPATH": os.fspath(cwd), "PYTHONSTARTUP": os.fspath(cwd / "sitecustomize.py")},
         pass_fds=(channel.fileno(),),
         stdin=terminal if terminal is not None else subprocess.DEVNULL,
         stdout=subprocess.PIPE,
@@ -161,12 +162,45 @@ def test_same_uid_without_a_controlling_terminal_cannot_send_a_reply(tmp_path, r
                     process.kill()
 
 
-def test_changed_reviewer_digest_refuses_before_descriptor_delivery(runtime):
+def test_changed_reviewer_digest_refuses_before_use(tmp_path, runtime):
     broker, channel = socket.socketpair()
-    with (
-        broker,
-        channel,
-        pytest.raises(HeinzelError, match="pinned local MCP reviewer is unavailable"),
-        cli_host_reviewer(channel, replace(runtime, reviewer_sha256="0" * 64)),
-    ):
-        pytest.fail("A changed reviewer received the private descriptor")
+    with broker, channel, launch_fixture(channel, replace(runtime, reviewer_sha256="0" * 64), tmp_path) as process:
+        channel.close()
+        assert process.communicate(timeout=2) == (b"", b"mcp.ipc.load_reviewer\n")
+        assert process.returncode == 2
+        broker.settimeout(2)
+        assert broker.recv(1) == b""
+
+
+def test_unisolated_runtime_refuses_before_review(tmp_path, runtime):
+    broker, channel = socket.socketpair()
+    with broker, channel, launch_fixture(channel, runtime, tmp_path, mode="unisolated") as process:
+        channel.close()
+        assert process.communicate(timeout=2) == (b"", b"mcp.ipc.load_reviewer\n")
+        assert process.returncode == 2
+        broker.settimeout(2)
+        assert broker.recv(1) == b""
+
+
+def test_reviewer_replacement_after_digest_check_cannot_reply_without_terminal(tmp_path, runtime, offer):
+    candidate = tmp_path / "reviewer.py"
+    candidate.write_bytes(_REVIEWER.read_bytes())
+    marker = tmp_path / "replacement-executed"
+    payload, digest = offer
+    replacement = (
+        f"from pathlib import Path\nPath({str(marker)!r}).touch()\n"
+        f"def review(channel):\n    channel.sendall({f'approve {digest}\n'.encode()!r})\n    return True\n"
+    )
+    (tmp_path / "substitute.py").write_text(replacement)
+    broker, channel = socket.socketpair()
+    with broker, channel:
+        broker.sendall(payload)
+        with launch_fixture(channel, runtime, tmp_path, mode="replace") as process:
+            channel.close()
+            assert process.communicate(timeout=2) == (b"", b"")
+            assert process.returncode == 1
+            broker.settimeout(2)
+            with suppress(ConnectionResetError):
+                assert broker.recv(1) == b""
+    assert candidate.read_text() == replacement
+    assert not marker.exists()

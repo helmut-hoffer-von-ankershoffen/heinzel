@@ -1,4 +1,4 @@
-"""Standalone local host reviewer. The supervisor runs this file under Python -I -S."""
+"""Terminal reviewer loaded from verified source bytes in the isolated local CLI."""
 
 import hashlib
 import json
@@ -7,7 +7,6 @@ import re
 import secrets
 import select
 import socket
-import sys
 import termios
 import time
 
@@ -15,8 +14,6 @@ _REVIEW_BYTES = 16 * 1024
 _ANSWER_BYTES = 64
 _REVIEW_SECONDS = 60
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
-_ARGV_COUNT = 2
-_FIRST_CONTROL_FD = 3
 
 
 def _read_line(descriptor: int, limit: int, deadline: float) -> bytes:
@@ -78,34 +75,25 @@ def _confirm(terminal: int, channel: int, deadline: float) -> bool:
     )
 
 
-def main() -> int:
-    """Accept only an inherited unnamed socket and a live foreground controlling terminal."""
-    if len(sys.argv) != _ARGV_COUNT or not sys.argv[1].isascii() or not sys.argv[1].isdecimal():
-        return 1
+def review(control: socket.socket) -> bool:
+    """Use only the broker's unnamed socket and a live foreground controlling terminal."""
     try:
-        descriptor = int(sys.argv[1])
-        if descriptor < _FIRST_CONTROL_FD:
-            return 1
+        if (
+            control.family != socket.AF_UNIX
+            or control.type != socket.SOCK_STREAM
+            or control.getsockname() != ""
+            or control.getpeername() != ""
+        ):
+            return False
         deadline = time.monotonic() + _REVIEW_SECONDS
-        with socket.socket(fileno=descriptor) as control:
-            if (
-                control.family != socket.AF_UNIX
-                or control.type != socket.SOCK_STREAM
-                or control.getsockname() != ""
-                or control.getpeername() != ""
-            ):
-                return 1
-            terminal = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC | os.O_NONBLOCK)
-            try:
-                if not os.isatty(terminal) or os.tcgetpgrp(terminal) != os.getpgrp():
-                    return 1
-                os.set_blocking(descriptor, False)
-                return 0 if _confirm(terminal, descriptor, deadline) else 1
-            finally:
-                os.close(terminal)
+        terminal = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC | os.O_NONBLOCK)
+        try:
+            if not os.isatty(terminal) or os.tcgetpgrp(terminal) != os.getpgrp():
+                return False
+            descriptor = control.fileno()
+            os.set_blocking(descriptor, False)
+            return _confirm(terminal, descriptor, deadline)
+        finally:
+            os.close(terminal)
     except (OSError, OverflowError, RecursionError, ValueError):
-        return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+        return False

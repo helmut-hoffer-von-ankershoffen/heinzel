@@ -1,35 +1,37 @@
-"""Trusted CLI-side delivery of the broker's one-use host-review descriptor."""
+"""Terminal review inside an already-trusted local CLI runtime."""
 
 import hashlib
 import os
 import socket
 import stat
-import subprocess
-from collections.abc import Generator
-from contextlib import contextmanager
+import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 from heinzel.heads.mcp._ipc_approval import HostMcpConnectionApprovals
 from heinzel.heads.mcp._ipc_host_review import host_review_channel
 from heinzel.kernel import HeinzelError
 from heinzel.kernel._logging import get_logger, step
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 _REVIEWER = Path(__file__).absolute().with_name("_ipc_terminal_reviewer.py")
+_MAX_SOURCE = 64 * 1024
 _REFUSED = "The pinned local MCP reviewer is unavailable"
 log = get_logger("mcp")
 
 
 @dataclass(frozen=True, slots=True)
 class CliReviewRuntime:
-    """Physical interpreter and digests selected by the trusted installation authority."""
+    """Reviewer digest supplied by the installation authority, never derived from the candidate at review time."""
 
-    interpreter: Path
-    interpreter_sha256: str
     reviewer_sha256: str
 
 
-def _verify_file(path: Path, digest: str) -> None:
+def _verified_source(path: Path, digest: str) -> bytes:
     owners = {0, os.getuid()}
     if not path.is_absolute() or ".." in path.parts:
         raise HeinzelError(_REFUSED)
@@ -43,54 +45,44 @@ def _verify_file(path: Path, digest: str) -> None:
         info = os.fstat(source.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_uid not in owners or info.st_mode & 0o022:
             raise HeinzelError(_REFUSED)
-        if hashlib.file_digest(source, "sha256").hexdigest() != digest:
-            raise HeinzelError(_REFUSED)
+        content = source.read(_MAX_SOURCE + 1)
+    if len(content) > _MAX_SOURCE or hashlib.sha256(content).hexdigest() != digest:
+        raise HeinzelError(_REFUSED)
+    return content
 
 
-@contextmanager
-def cli_host_reviewer(channel: socket.socket, runtime: CliReviewRuntime) -> Generator[subprocess.Popen[bytes]]:
-    """Pass the exact private descriptor to the pinned reviewer under the caller's controlling terminal.
+def run_cli_host_reviewer(channel: socket.socket, runtime: CliReviewRuntime) -> bool:
+    """Use the exact checked source without passing the private descriptor through an executable path.
 
-    The supervisor selects the runtime under its installation ownership fence. Only the descriptor number
-    crosses argv. The child has a clean environment, isolated imports and no inherited standard streams.
+    The supervisor must already own the isolated CLI process and supply its private control channel and
+    installed digest. Python isolation and a foreground terminal do not independently confer host authority.
 
     Raises:
-        HeinzelError: If the pinned runtime cannot be verified or launched.
-
-    Yields:
-        The owned reviewer process. The parent relinquishes its copy of the reviewer descriptor before yield.
+        HeinzelError: If the current runtime is unisolated or the pinned reviewer cannot be loaded.
     """
-    with step(log, "mcp.ipc.launch_reviewer", operation="ipc", step="launch_reviewer"):
-        try:
-            _verify_file(runtime.interpreter, runtime.interpreter_sha256)
-            _verify_file(_REVIEWER, runtime.reviewer_sha256)
-            descriptor = channel.fileno()
-            command = [os.fspath(runtime.interpreter), "-I", "-S", "-B", os.fspath(_REVIEWER), str(descriptor)]
-            process = subprocess.Popen(  # noqa: S603 - only the pinned interpreter/script and one inherited descriptor
-                command,
-                cwd=_REVIEWER.parent,
-                env={},
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                pass_fds=(descriptor,),
-            )
-        except (OSError, ValueError):
-            raise HeinzelError(_REFUSED) from None
-    try:
-        channel.close()
-        yield process
-    finally:
-        try:
-            process.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=2)
+    with channel:
+        with step(log, "mcp.ipc.load_reviewer", operation="ipc", step="load_reviewer"):
+            if not sys.flags.isolated:
+                raise HeinzelError(_REFUSED)
+            try:
+                source = _verified_source(_REVIEWER, runtime.reviewer_sha256)
+                namespace: dict[str, object] = {"__name__": "_owned_mcp_terminal_reviewer"}
+                code = compile(source, "<owned MCP terminal reviewer>", "exec")
+                exec(code, namespace)  # noqa: S102 - these exact immutable bytes match the trusted installed digest
+                review = cast("Callable[[socket.socket], bool]", namespace["review"])
+            except (OSError, KeyError, SyntaxError, ValueError):
+                raise HeinzelError(_REFUSED) from None
+        return review(channel)
 
 
 def review_private_mcp_from_terminal(
     authority: HostMcpConnectionApprovals, instance_id: str, runtime: CliReviewRuntime
 ) -> None:
-    """Run one exact broker review from a trusted, explicitly invoked local CLI path."""
-    with host_review_channel(authority, instance_id) as (reviewer, serve), cli_host_reviewer(reviewer, runtime):
-        serve()
+    """Run one broker review in the trusted foreground CLI process."""
+    with (
+        host_review_channel(authority, instance_id) as (reviewer, serve),
+        ThreadPoolExecutor(max_workers=1) as executor,
+    ):
+        broker_result = executor.submit(serve)
+        run_cli_host_reviewer(reviewer, runtime)
+        broker_result.result()

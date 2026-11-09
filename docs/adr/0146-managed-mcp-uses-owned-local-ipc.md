@@ -29,6 +29,8 @@ Claude settings discovery and human approval have separate contracts.
   native review and explicit local CLI review use the same service. Browser and device sessions can prepare a
   plan and see authorized status. The broker admits private connections only after host review of the exact
   pending instance. Owner UID is one prerequisite and does not confer a grant or assert human approval.
+  The local terminal reviewer runs in the supervisor's already-trusted, isolated CLI process. It uses the
+  same source bytes it verifies against the installed digest and keeps its control descriptor within that process.
 - Restrict discovery and dispatch to reviewed operations and exact target grants. Give authorized personal and
   contract Heinzels stable individual tools and CLI equivalents. Resolve both heads to the same durable retry
   identity for the selected grant. Retain exact result bytes and record uncertain effects without replaying them.
