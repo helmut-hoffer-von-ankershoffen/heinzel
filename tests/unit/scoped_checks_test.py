@@ -22,6 +22,7 @@ import related_tests as scoped_related  # noqa: E402 - needs the scripts path ab
 def _without_host_gate(monkeypatch):
     """Keep dispatch tests independent of the developer's PATH."""
     monkeypatch.setattr(scoped.shutil, "which", lambda _: None)
+    monkeypatch.delenv("HZ_FOCUSED_PUSH", raising=False)
 
 
 @pytest.fixture
@@ -243,6 +244,62 @@ def test_a_change_no_test_reaches_still_runs_the_hooks_own_test():
     assert overrides(["docs/TEAMS.md", "scripts/__nothing_mentions_this__.py"])["UNIT_TARGETS"] == (
         "tests/unit/scoped_checks_test.py"
     )
+
+
+def test_focused_push_keeps_early_guards_and_all_related_local_units(monkeypatch, gate_calls):
+    gate, calls = gate_calls
+    changed = ["src/heinzel/heads/_desktop_release.py"]
+    safe = ["tests/unit/heads/desktop_release_progress_test.py", "tests/unit/scoped_checks_test.py"]
+    hosted = [
+        "tests/unit/heads/desktop_installation_test.py",
+        "tests/integration/desktop_framework_wrap_test.py",
+    ]
+    monkeypatch.setattr(scoped_related, "related_tests", lambda _: [hosted[0], *safe, hosted[1]])
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: changed)
+    monkeypatch.setenv("HZ_FOCUSED_PUSH", "1")
+
+    with pytest.raises(SystemExit) as done:
+        scoped.main()
+
+    assert done.value.code == 0
+    [(guard, _), (checks, _)] = calls
+    assert guard == [gate, "--timeout", "180", *scoped.early_guard_commands(changed)[0]]
+    assert checks == [
+        gate,
+        "--timeout",
+        "1800",
+        "make",
+        "check-fast",
+        "WEB_TESTS=",
+        "MANAGED_CHECK=",
+        f"FAST_TYPES={scoped.TYPES}",
+        f"UNIT_TARGETS={' '.join(safe)}",
+    ]
+    assert overrides(changed)["UNIT_TARGETS"].split() == [hosted[0], *safe, hosted[1]]
+
+
+@pytest.mark.parametrize("related", [None, [], ["tests/unit/heads/desktop_installation_test.py"]])
+def test_focused_python_push_refuses_an_unknown_or_empty_local_selection(monkeypatch, related):
+    monkeypatch.setattr(scoped_related, "related_tests", lambda _: related)
+
+    with pytest.raises(SystemExit, match="requires at least one related unit test"):
+        scoped.python_overrides(["src/heinzel/heads/_desktop_release.py"], focused=True)
+
+
+@pytest.mark.parametrize("changed", [[], ["desktop/main.ts"], ["web/src/main.tsx"]])
+def test_focused_push_refuses_routes_that_would_start_a_full_suite(monkeypatch, gate_calls, changed):
+    _, calls = gate_calls
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: changed)
+    monkeypatch.setenv("HZ_FOCUSED_PUSH", "1")
+
+    with pytest.raises(SystemExit, match="requires a Python push"):
+        scoped.main()
+
+    assert calls == []
 
 
 def test_imports_follow_the_defining_module_not_the_package_that_re_exports_it():
