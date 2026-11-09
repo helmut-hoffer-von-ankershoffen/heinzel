@@ -139,12 +139,13 @@ for (const [name, engine] of [
       await page
         .getByRole("region", { name: "Calendar summary", exact: true })
         .waitFor({ state: "detached", timeout: 10000 });
+      const today = panel.getByRole("region", { name: /^Today/ });
       try {
         const review = panel.getByText(next.title, { exact: true });
         await review.waitFor({ timeout: 10000 });
         assert.equal(await review.count(), 1, "the review must appear exactly once in the agenda");
-        const today = panel.getByRole("region", { name: /^Today/ });
         assert.equal(await today.getByText(next.title, { exact: true }).count(), 1, "the review belongs under Today");
+        assert.equal(await today.getAttribute("aria-current"), "date");
       } catch (error) {
         await page.screenshot({ path: join(shots, `${name}-${size}-panel-failed.png`) });
         throw new Error(
@@ -191,6 +192,15 @@ for (const [name, engine] of [
       );
       assert.deepEqual(violations, []);
       await page.screenshot({ path: join(shots, `${name}-${size}.png`) });
+      await context.route(current.conference_url, (route) => route.fulfill({ body: "Fixture meeting" }));
+      const [meeting] = await Promise.all([
+        page.waitForEvent("popup"),
+        today.getByRole("link", { name: "Join meeting", exact: true }).click(),
+      ]);
+      assert.equal(meeting.url(), current.conference_url);
+      await meeting.getByText("Fixture meeting").waitFor({ state: "visible" });
+      await meeting.close();
+      assert.equal(await panel.getByRole("article").count(), 0, "joining must leave the agenda open");
       await panel.getByRole("button", { name: /Standup with an exceptionally long/ }).click();
       const detail = panel.getByRole("article");
       await detail.getByRole("link", { name: "Join meeting", exact: true }).waitFor({ timeout: 10000 });
