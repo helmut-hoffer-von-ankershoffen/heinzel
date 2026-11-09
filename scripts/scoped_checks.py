@@ -326,7 +326,8 @@ def mixed_push_checks(changed: list[str], base: str, manifest: Path) -> int:
         msg = "A focused mixed push supports Python/web source changes without build or runtime configuration."
         raise SystemExit(msg)
     targets = mixed_test_targets(manifest, base=base, head=focused_push_head(), changed=changed)
-    web = " ".join(f"/{path.removeprefix('web/')}" for path in targets["web"])
+    # The pinned Vitest filters on paths relative to its web/ root.
+    web = " ".join(path.removeprefix("web/") for path in targets["web"])
     command = [
         "make",
         "check-fast",
