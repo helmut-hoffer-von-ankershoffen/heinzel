@@ -1446,6 +1446,18 @@ class HeinzelService:
         )
         return RunResult(dry_run=False, rendered=rendered, note=note)
 
+    def run_reviewed(self, name: str, source_digest: str, *, check_active: Callable[[], None]) -> Rendered:
+        """Draft from the same parsed contract whose bytes the trusted grant reviewed.
+
+        Raises:
+            HeinzelError: If the exact qualified contract or reviewed source digest changed.
+        """
+        contract = self.find(name)
+        if contract.qualified != name or contract.sha256 != source_digest:
+            msg = "The reviewed Heinzel contract has changed"
+            raise HeinzelError(msg)
+        return self.render(contract, scheduled=False, check_active=check_active)
+
     def _upstream_draft(self, contract: Contract, name: str, spec: Input) -> JsonValue:
         """The newest draft of the contract output `spec` reads (`stage: draft`): its text, or its JSON.
 
@@ -1497,7 +1509,9 @@ class HeinzelService:
                 raise HeinzelError(msg) from exc
         return text
 
-    def packet(self, contract: Contract, *, scheduled: bool) -> tuple[Packet, AgentRunner]:
+    def packet(
+        self, contract: Contract, *, scheduled: bool, check_active: Callable[[], None] | None = None
+    ) -> tuple[Packet, AgentRunner]:
         """Check the runner, fetch the inputs through the contract's handles and build what the agent session gets.
 
         The runner comes first, so an unbound one fails before any input is fetched, in a dry run too.
@@ -1512,6 +1526,8 @@ class HeinzelService:
         as_of = self._clock()
         inputs: dict[str, FetchedInput] = {}
         for name, spec in hz.inputs.items():
+            if check_active is not None:
+                check_active()
             arguments = spec.arguments(as_of)
             if spec.upstream is not None:
                 result = self._upstream_draft(contract, name, spec)
@@ -1555,7 +1571,9 @@ class HeinzelService:
         )
         return packet, runner
 
-    def render(self, contract: Contract, *, scheduled: bool) -> Rendered:
+    def render(
+        self, contract: Contract, *, scheduled: bool, check_active: Callable[[], None] | None = None
+    ) -> Rendered:
         """Pre-fetch, run the agent with read-only tools in an empty directory, and save the draft with its record.
 
         Raises:
@@ -1563,8 +1581,10 @@ class HeinzelService:
                 the drafts directory is a symbolic link.
         """
         started = time.monotonic()
-        packet, runner = self.packet(contract, scheduled=scheduled)
+        packet, runner = self.packet(contract, scheduled=scheduled, check_active=check_active)
         with tempfile.TemporaryDirectory(prefix="hz-workflow-") as empty:
+            if check_active is not None:
+                check_active()
             result = runner.run(
                 packet.prompt,
                 contract=packet.instructions,
@@ -1573,6 +1593,8 @@ class HeinzelService:
                 budget=Budget(max_usd=packet.max_usd),
             )
         record_usage(self._kernel, UsageEntry.of(result, "scheduled" if scheduled else "render", contract.qualified))
+        if check_active is not None:
+            check_active()
         if result.status != "completed":
             cost = f"; it cost {result.usage.cost_usd} USD" if result.usage.cost_usd is not None else ""
             msg = f"{contract.qualified}: the agent run ended {result.status}: {result.detail or 'no detail'}{cost}"
