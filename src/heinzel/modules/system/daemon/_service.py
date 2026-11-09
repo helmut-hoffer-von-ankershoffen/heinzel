@@ -56,6 +56,7 @@ from heinzel.kernel import (
     MaintenanceLocks,
     ProcessOutcome,
     host_maintenance_gate,
+    host_maintenance_lock,
     private_directory,
     private_lock,
     private_read,
@@ -1056,6 +1057,33 @@ class DaemonService:
             yield
 
     @contextmanager
+    def _sdk_mutation_fence(self) -> Generator[None]:
+        installation = self._quiescence_installation
+        with ExitStack() as ownership:
+            if installation is not None:
+                sdk_lock = host_maintenance_lock(installation.prefix)
+                try:
+                    ownership.enter_context(MaintenanceLocks((sdk_lock,)))
+                except HeinzelError as exc:
+                    msg = (
+                        "The SDK has an active host integration or maintenance writer. Stop it before changing the SDK."
+                    )
+                    raise HeinzelError(msg) from exc
+                self._require_mcp_quiescence(installation.prefix)
+            yield
+
+    def _require_mcp_quiescence(self, prefix: Path) -> None:
+        from heinzel.heads.mcp._ipc_registration import (  # noqa: PLC0415 - SDK mutations only
+            mcp_registration_inventory,
+            native_mcp_scope,
+            verify_mcp_native_inventory,
+        )
+        from heinzel.modules.system.daemon._maintenance import DaemonManagerPort  # noqa: PLC0415 - reuse this manager
+
+        if registrations := mcp_registration_inventory(prefix):
+            verify_mcp_native_inventory(prefix, registrations, DaemonManagerPort(self), native_mcp_scope())
+
+    @contextmanager
     def mutation_guard(
         self, checkpoint: Callable[[], bool], rollback_identity: Callable[[], str]
     ) -> Generator[DaemonMutationScope, None, None]:
@@ -1067,7 +1095,7 @@ class DaemonService:
         Raises:
             HeinzelError: If another mutation or an unresolved transaction exists.
         """
-        with lock(self.state_dir / "lifecycle.lock") as acquired:
+        with self._sdk_mutation_fence(), lock(self.state_dir / "lifecycle.lock") as acquired:
             if not acquired or not self._clear_after_recovery_locked():
                 msg = "The daemon lifecycle is changing or requires recovery."
                 raise HeinzelError(msg)
@@ -1461,7 +1489,7 @@ class DaemonService:
         Raises:
             HeinzelError: If a lock is busy or daemon quiescence cannot be established.
         """
-        with lock(self.state_dir / "lifecycle.lock") as lifecycle:
+        with self._sdk_mutation_fence(), lock(self.state_dir / "lifecycle.lock") as lifecycle:
             if not lifecycle or self._handover_pending():
                 msg = "The daemon lifecycle is changing or requires recovery."
                 raise HeinzelError(msg)

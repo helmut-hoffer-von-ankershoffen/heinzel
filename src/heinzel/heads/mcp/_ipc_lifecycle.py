@@ -23,6 +23,8 @@ from heinzel.kernel import HeinzelError, installation_mutation_pending
 from heinzel.kernel._logging import get_logger, step
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pydantic import JsonValue
 
     from heinzel.kernel import HostServiceManager
@@ -51,9 +53,16 @@ class ForegroundMcpRegistration:
     plan: PrivateMcpPlan = field(repr=False)
     directories: _Directories = field(repr=False)
     native: McpNativePlan
+    verify_binding: "Callable[[], None] | None" = field(default=None, repr=False, compare=False)
 
     @classmethod
-    def capture(cls, installation: InstalledMcpRuntime, plan: PrivateMcpPlan) -> "ForegroundMcpRegistration":
+    def capture(
+        cls,
+        installation: InstalledMcpRuntime,
+        plan: PrivateMcpPlan,
+        *,
+        verify_binding: "Callable[[], None] | None" = None,
+    ) -> "ForegroundMcpRegistration":
         """Freeze the installed directory identities for the worker that the host can authorize.
 
         Raises:
@@ -62,7 +71,7 @@ class ForegroundMcpRegistration:
         if not sys.flags.isolated or not REGISTRATION_ID.fullmatch(plan.generation.registration_id):
             raise HeinzelError(_REFUSED)
         native = McpNativePlan.capture(installation, plan.generation.registration_id)
-        return cls(installation, plan, installation_directories(installation), native)
+        return cls(installation, plan, installation_directories(installation), native, verify_binding)
 
     def require_current(self) -> None:
         """Verify the exact approved installed scope before forking and before worker publication.
@@ -74,6 +83,8 @@ class ForegroundMcpRegistration:
             self.installation.prefix, self.installation.state
         ):
             raise HeinzelError(_REFUSED)
+        if self.verify_binding is not None:
+            self.verify_binding()
 
     def offer(self, action: LifecycleAction, deadline: float) -> "dict[str, JsonValue]":
         """Describe the full reviewed foreground action; no result or proof goes to vendor transport."""
@@ -151,6 +162,7 @@ def _worker_main(registration: ForegroundMcpRegistration, channel: socket.socket
                 if action == b"S":
                     break
                 try:
+                    registration.require_current()
                     supervisor.check_transport()
                 except HeinzelError:
                     _reply(channel, binding, b"U")
@@ -240,7 +252,7 @@ class ForegroundMcpLifecycle:
                 raise HeinzelError(_REFUSED)
             if action == "start":
                 manager = self._require_clear_native_label()
-                status = self._start()
+                status = self._start(deadline)
             else:
                 status = self._stop() if action == "stop" else self._check(action)
                 manager = registration.native.observe(self._manager)
@@ -252,11 +264,11 @@ class ForegroundMcpLifecycle:
             raise HeinzelError(_REFUSED)
         return state
 
-    def _start(self) -> ForegroundMcpStatus:
+    def _start(self, deadline: float) -> ForegroundMcpStatus:
         if self._worker is not None:
             return self._check("start")
         self._registration.require_current()
-        if time.monotonic() >= self._registration.plan.valid_until:
+        if time.monotonic() >= min(deadline, self._registration.plan.valid_until):
             raise HeinzelError(_REFUSED)
         worker = _spawn_worker(self._registration)
         self._worker = worker

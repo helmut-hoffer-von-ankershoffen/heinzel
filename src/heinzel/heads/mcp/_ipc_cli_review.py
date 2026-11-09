@@ -85,6 +85,27 @@ def review_mcp_lifecycle_from_terminal(exact: "dict[str, JsonValue]") -> None:
     _review_exact(exact_host_review_channel(exact, lambda: None))
 
 
+def require_local_mcp_terminal() -> None:
+    """Require the isolated installed command's own foreground controlling terminal.
+
+    Raises:
+        HeinzelError: If the command has no verified local terminal for explicit review.
+    """
+    refused = "MCP lifecycle requires the trusted installed host and a local controlling terminal."
+    if not sys.flags.isolated or os.getuid() != os.geteuid():
+        raise HeinzelError(refused)
+    try:
+        descriptor = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC | os.O_NONBLOCK)
+        try:
+            local = os.isatty(descriptor) and os.tcgetpgrp(descriptor) == os.getpgrp()
+        finally:
+            os.close(descriptor)
+    except OSError:
+        raise HeinzelError(refused) from None
+    if not local:
+        raise HeinzelError(refused)
+
+
 def _review_exact(channel: "AbstractContextManager[tuple[socket.socket, Callable[[], None]]]") -> None:
     review = _load_installed_reviewer()
     with channel as (reviewer, serve), ThreadPoolExecutor(max_workers=1) as executor:

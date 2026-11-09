@@ -1,11 +1,13 @@
 """Exact owned native stop settlement, without weakening foreign-manager refusal."""
 
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
 from heinzel import HeinzelError
+from heinzel.kernel import _host_maintenance
 from heinzel.kernel._host_maintenance import (
     HostIntegration,
     HostIntegrationRemoval,
@@ -15,6 +17,26 @@ from heinzel.kernel._host_maintenance import (
 from heinzel.kernel._tool_uninstall import owned_file
 
 pytestmark = pytest.mark.unit
+
+
+def test_maintenance_refuses_lock_path_replaced_after_flock(tmp_path, monkeypatch):
+    path = tmp_path / "lifecycle.lock"
+    displaced = tmp_path / "displaced.lock"
+    original = _host_maintenance.private_lock
+
+    @contextmanager
+    def replace_after_lock(candidate):
+        with original(candidate) as retained:
+            candidate.rename(displaced)
+            candidate.write_bytes(b"substitute")
+            candidate.chmod(0o600)
+            yield retained
+
+    monkeypatch.setattr(_host_maintenance, "private_lock", replace_after_lock)
+    with pytest.raises(HeinzelError, match="not held"), MaintenanceLocks((path,)):
+        pytest.fail("The replacement was mistaken for the flocked descriptor")
+    assert path.read_bytes() == b"substitute"
+    assert displaced.read_bytes() == b""
 
 
 class Manager(HostServiceManager):

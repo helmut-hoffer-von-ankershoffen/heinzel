@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 type NativeMcpState = Literal["not-checked", "absent", "conflict", "unavailable"]
 _MAX_MANAGER_BYTES = 1_000_000
 _LAUNCHD_ROW = re.compile(r"(?:-|[1-9][0-9]{0,9})\s+(?:-|\-?[0-9]{1,10})\s+(\S+)")
+MAC_LABEL_PREFIX = "io.github.helmut-hoffer-von-ankershoffen.heinzel.mcp."
+LINUX_UNIT_PREFIX = "hz-mcp-"
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,11 +31,7 @@ class McpNativePlan:
     def capture(cls, installation: "InstalledMcpRuntime", registration: str) -> "McpNativePlan":
         """Derive the future on-demand unit name from the trusted host selection."""
         identity = arguments_hash([str(installation.prefix), str(installation.state), registration])[:24]
-        name = (
-            f"io.github.helmut-hoffer-von-ankershoffen.heinzel.mcp.{identity}"
-            if sys.platform == "darwin"
-            else f"hz-mcp-{identity}.service"
-        )
+        name = f"{MAC_LABEL_PREFIX}{identity}" if sys.platform == "darwin" else f"{LINUX_UNIT_PREFIX}{identity}.service"
         return cls(sys.platform, name)
 
     def observe(self, manager: "HostServiceManager | None") -> NativeMcpState:

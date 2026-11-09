@@ -41,7 +41,8 @@ from heinzel.heads.cli._update import print_changelog_header, print_notice, star
 from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Origin, Progress, boot
 
 if TYPE_CHECKING:
-    from heinzel.heads.mcp._ipc_lifecycle import ForegroundMcpLifecycle, LifecycleAction
+    from heinzel.heads.cli._mcp_lifecycle import LifecycleCommand
+    from heinzel.heads.mcp._ipc_lifecycle import ForegroundMcpLifecycle
     from heinzel.heads.mcp._ipc_supervisor import OwnedMcpSupervisor
 
 console = Console()
@@ -248,10 +249,11 @@ def main(
         from heinzel.heads.cli._mcp_review import main as review_main  # noqa: PLC0415 - host-only, before boot
 
         sys.exit(review_main(sys.argv[4:], supervisor=host_mcp_supervisor))
-    if sys.argv[1:3] == ["system", "mcp"] and sys.argv[3:4] in (["start"], ["check"], ["stop"]):
-        from heinzel.heads.cli._mcp_lifecycle import main as lifecycle_main  # noqa: PLC0415 - host-only, before boot
+    if sys.argv[1:3] == ["system", "mcp"] and sys.argv[3:]:
+        from heinzel.heads.cli import _mcp_lifecycle  # noqa: PLC0415 - host-only, before boot
 
-        sys.exit(lifecycle_main(cast("LifecycleAction", sys.argv[3]), sys.argv[4:], host=host_mcp_lifecycle))
+        if sys.argv[3] in _mcp_lifecycle.COMMANDS:
+            sys.exit(_mcp_lifecycle.main(cast("LifecycleCommand", sys.argv[3]), sys.argv[4:], host=host_mcp_lifecycle))
     if sys.argv[1:3] == ["system", "uninstall"]:
         from heinzel.heads.cli._uninstall import main as uninstall_main  # noqa: PLC0415 - parse maintenance before discovery
 

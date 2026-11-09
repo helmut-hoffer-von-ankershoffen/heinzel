@@ -50,11 +50,16 @@ Claude settings discovery and human approval have separate contracts.
   invalid syntax. The active host runtime supplies and retains the supervisor in process. Standalone invocation
   without that handle refuses before project discovery. Native activation must still supply the handle.
   `hz system mcp start|check|stop REGISTRATION_ID` also routes before discovery when a trusted installed host
-  supplies the foreground registration. The host displays and reviews each exact lifecycle action on its
-  controlling terminal. The locator alone cannot supply an installed registration. Start owns a direct child
+  supplies the foreground registration. The standard installed CLI can also load a committed dormant receipt
+  after verifying its installed launcher and SDK continuity and checking for a foreground controlling terminal.
+  `hz system mcp register REGISTRATION_ID` records an explicitly reviewed transport-only registration. Register
+  never starts a worker or writes vendor configuration. `recover` completes a verified interrupted registration
+  with a fresh review. The locator alone cannot supply an installed registration. Start owns a direct child
   with an inherited control channel. Check reports the manager observation, owned worker and transport separately
   from MCP readiness. Stop closes the supervisor and proves the exact child's exit before returning success.
-  These foreground Start and Check commands report unverified MCP readiness and return an incomplete status.
+  The standalone Start session retains its private channel for separately reviewed `check` and `stop` actions.
+  These foreground Start and Check observations report unverified MCP readiness. A separate CLI cannot stop
+  a worker owned by another foreground session.
 - Restrict discovery and dispatch to reviewed operations and exact target grants. Give authorized personal and
   contract Heinzels stable individual tools and CLI equivalents. Resolve both heads to the same durable retry
   identity for the selected grant. Retain exact result bytes and record uncertain effects without replaying them.
@@ -92,10 +97,14 @@ receipt retires the supervisor. Native manager integration will register the sto
 allowing concurrent managed activation and maintenance. Retired and failed nodes remain on disk for reviewed cleanup.
 
 The foreground registration plan derives the native unit name from the selected SDK, profile and registration.
-When the host supplies `HostServiceManager`, it uses the verified user manager for read-only collision detection.
-The foreground adapter never loads or stops a launchd or systemd unit. Installed profile registration, durable
-lifecycle action receipts, manager-owned bootstrap and recovery, and authenticated native UI routing are separate
-prerequisites for persistent lifecycle controls.
+The installed CLI uses `HostServiceManager` and the OS user's definition namespace for read-only collision
+detection. Intent and commit records bind the dormant registration to SDK continuity and the retained SDK
+maintenance lock identity. Standard update, refresh and uninstall check this inventory under the SDK lock.
+An active foreground worker blocks maintenance. An incomplete registration blocks SDK changes until explicit
+recovery, and a changed SDK never adopts a prior activation. Uninstall retains dormant receipts and checks the
+native namespace in standalone recovery. Durable lifecycle action receipts, native unit publication and
+manager-owned bootstrap and recovery, and authenticated native UI routing remain prerequisites for persistent
+lifecycle controls.
 
 Direct HTTP is separate follow-up work building on the proposed bearer scope in
 [PR #655](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/655). Claude Desktop and Gemini CLI
