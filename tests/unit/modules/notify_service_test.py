@@ -66,6 +66,23 @@ def make(settings, clock, runner):
     return build
 
 
+def test_open_settings_reaps_the_opener_in_the_background(make, monkeypatch):
+    service = make()
+    service.platform = "darwin"
+    popen = Mock()
+    thread = Mock()
+    monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr("subprocess.Popen", popen)
+    monkeypatch.setattr("heinzel.modules.system.notify._service.Thread", thread)
+
+    assert service.open_settings().opened
+
+    assert popen.call_args.args[0][0] == "/usr/bin/open"
+    thread.assert_called_once_with(target=popen.return_value.wait, name="hz-open-reaper", daemon=True)
+    thread.return_value.start.assert_called_once_with()
+    popen.return_value.wait.assert_not_called()
+
+
 def draft(service: NotifyService, key: str = "draft:me:weekly", **values: object):
     return service.emit(
         NoticeKind.DRAFT,

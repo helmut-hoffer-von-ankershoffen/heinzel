@@ -1,13 +1,14 @@
 """Show a configuration file in this machine's file manager: Finder, Explorer, or the desktop's own on Linux.
 
-Nothing is created: a file that doesn't exist yet is shown by its nearest existing folder. The file manager is
-started detached, never waited for, with an argument list resolved by `shutil.which`; no shell.
+Nothing is created. A file that doesn't exist yet is shown by its nearest existing folder. The file manager is
+started detached with an argument list resolved by `shutil.which`, and reaped in the background.
 """
 
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Thread
 
 Opener = Callable[[Sequence[str]], None]
 """Starts a file manager with this command line and returns without waiting for it."""
@@ -17,14 +18,15 @@ _SESSION = ("DISPLAY", "WAYLAND_DISPLAY")
 
 
 def launch(command: Sequence[str]) -> None:
-    """Start `command` detached from hz, its output discarded; it lives on as a window, never waited for."""
-    subprocess.Popen(  # noqa: S603 - an executable resolved with shutil.which, arguments only, no shell
+    """Start `command` detached from hz and reap it without delaying the caller."""
+    child = subprocess.Popen(  # noqa: S603 - an executable resolved with shutil.which, arguments only, no shell
         list(command),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
+    Thread(target=child.wait, name="hz-open-reaper", daemon=True).start()
 
 
 @dataclass(frozen=True, slots=True)

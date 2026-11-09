@@ -18,6 +18,7 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Thread
 
 from heinzel import (
     Check,
@@ -849,7 +850,7 @@ def event_route(notice: Notice) -> str:
 
 
 def _open(command: list[str]) -> None:
-    """Start `command` (an argument list, no shell) without waiting for it.
+    """Start `command` and reap it without delaying the caller.
 
     Raises:
         HeinzelError: If its program isn't on this machine's PATH.
@@ -858,7 +859,10 @@ def _open(command: list[str]) -> None:
     if executable is None:
         msg = f"{command[0]} isn't on this machine's PATH"
         raise HeinzelError(msg)
-    subprocess.Popen([executable, *command[1:]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # noqa: S603 - a fixed program and URL, no shell
+    child = subprocess.Popen(  # noqa: S603 - a fixed program and URL, no shell
+        [executable, *command[1:]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    Thread(target=child.wait, name="hz-open-reaper", daemon=True).start()
 
 
 def _no_url(route: str) -> str | None:  # noqa: ARG001 - the web app has no stable address yet
