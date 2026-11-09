@@ -27,6 +27,7 @@ from heinzel.heads._desktop_report import Advance as ByteAdvance
 from heinzel.heads._desktop_report import Row
 from heinzel.heads.cli import _playful
 from heinzel.heads.cli._render import TerminalSafe, terminal_safe
+from heinzel.heads.cli._steps import StepBoard
 from heinzel.kernel import Emit, Progress
 from heinzel.kernel._progress import Advance
 
@@ -39,17 +40,37 @@ class ConsoleProgress(Progress):
         self._console = console
         self._playful = playful
         self.enabled = True
+        self.as_json = False
+        """Whether the command prints JSON: steps then go to stderr as one JSON object per line."""
         self.listener: Emit | None = None
         """Who gets the events operations stream (`hz chat` prints the answer as it comes); none drops them."""
+        self._board: StepBoard | None = None
 
     def emitter(self) -> Emit:
-        """Events go to the listener set when they happen; dropped while there is none."""
+        """Events go to the listener set when they happen; with none, an operation's steps show on the board."""
 
         def emit(kind: str, data: Mapping[str, object]) -> None:
             if self.listener is not None:
                 self.listener(kind, data)
+            elif kind == PHASE:
+                self.board().event(data)
 
         return emit
+
+    def board(self) -> StepBoard:
+        """The board an operation's named steps show on (the same `phase` events the web app's dialog shows)."""
+        if self._board is None:
+            plain = plain_output(self._console) or not self._console.is_interactive
+            # `--json 2>&1` must still parse: no events where stderr is stdout.
+            mode = ("off" if shared_streams() else "json") if self.as_json else "plain" if plain else "live"
+            self._board = StepBoard(self._console, mode)
+        return self._board
+
+    def finish(self) -> None:
+        """End the steps of the command that ran, before its result is printed."""
+        if self._board is not None:
+            self._board.close()
+            self._board = None
 
     @contextmanager
     def task(self, description: str, total: float | None = None) -> Generator[Advance]:
@@ -60,6 +81,10 @@ class ConsoleProgress(Progress):
         """
         if not self.enabled:
             yield lambda _amount: None
+            return
+        if self._board is not None and self._board.active:  # one live display: the running step shows this work
+            self._board.work(description, total)
+            yield self._board.advance
             return
         columns: list[ProgressColumn] = [
             WalkColumn() if self._playful else SpinnerColumn(),
@@ -84,6 +109,15 @@ def plain_output(console: Console, environ: Mapping[str, str] | None = None) -> 
     """Whether `console` gets no art, bar or colour: redirected, `NO_COLOR` or `CI`."""
     environ = os.environ if environ is None else environ
     return not console.is_terminal or console.no_color or bool(environ.get("NO_COLOR")) or bool(environ.get("CI"))
+
+
+def shared_streams() -> bool:
+    """Whether stdout and stderr are the same file (`2>&1`), so lines on stderr would land inside the JSON result."""
+    try:
+        out, err = os.fstat(sys.stdout.fileno()), os.fstat(sys.stderr.fileno())
+    except (OSError, ValueError, AttributeError):  # no real files (a test runner's buffers): they are apart
+        return False
+    return (out.st_dev, out.st_ino) == (err.st_dev, err.st_ino)
 
 
 def _ignore(amount: int) -> None:
@@ -247,6 +281,8 @@ class StepReporter:
         self._print(Text.assemble(f"  {row.label}  ", bar, "  ", f"{amount}  {clock}".lstrip()))
 
 
+PHASE = "phase"
+"""The kind of event `Phases` streams for each step (`heinzel.modules.system._phases.EVENT`)."""
 BAR_WIDTH = 40
 """Cells of the download bar."""
 
