@@ -11,12 +11,18 @@ import subprocess
 import sys
 import termios
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
-from dataclasses import replace
+from threading import Event
 
 import pytest
 
-from heinzel.heads.mcp._ipc_cli_review import _REVIEWER, CliReviewRuntime
+from heinzel import HeinzelError
+from heinzel.heads.mcp._ipc_admission import McpGeneration
+from heinzel.heads.mcp._ipc_approval import PrivateMcpPlan
+from heinzel.heads.mcp._ipc_cli_review import _REVIEWER, _REVIEWER_SHA256
+from heinzel.heads.mcp._ipc_supervisor import owned_mcp_supervisor
+from heinzel.heads.mcp._ipc_work import McpWorkRequest
 from heinzel.kernel._approval import arguments_hash
 
 pytestmark = pytest.mark.unit
@@ -28,8 +34,9 @@ from heinzel import HeinzelError
 from heinzel.heads.mcp import _ipc_cli_review as cli
 if sys.argv[1] == 'tty':
     fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-if sys.argv[1] == 'replace':
+if sys.argv[1] in {'changed', 'replace'}:
     cli._REVIEWER = Path.cwd() / 'reviewer.py'
+if sys.argv[1] == 'replace':
     verify = cli._verified_source
     def replace_after_verification(path, digest):
         source = verify(path, digest)
@@ -38,7 +45,7 @@ if sys.argv[1] == 'replace':
     cli._verified_source = replace_after_verification
 with socket.socket(fileno=int(sys.argv[2])) as channel:
     try:
-        accepted = cli.run_cli_host_reviewer(channel, cli.CliReviewRuntime(sys.argv[3]))
+        accepted = cli.run_cli_host_reviewer(channel)
     except HeinzelError:
         raise SystemExit(2) from None
     assert channel.fileno() == -1
@@ -46,9 +53,8 @@ raise SystemExit(0 if accepted else 1)
 """
 
 
-@pytest.fixture
-def runtime():
-    return CliReviewRuntime(hashlib.sha256(_REVIEWER.read_bytes()).hexdigest())
+def test_installed_pin_matches_the_bundled_reviewer():
+    assert hashlib.sha256(_REVIEWER.read_bytes()).hexdigest() == _REVIEWER_SHA256
 
 
 @pytest.fixture
@@ -64,7 +70,7 @@ def offer():
     return json.dumps({"review": review, "digest": digest}, ensure_ascii=True).encode() + b"\n", digest
 
 
-def launch_fixture(channel, runtime, cwd, *, terminal=None, mode=""):
+def launch_fixture(channel, cwd, *, terminal=None, mode=""):
     fixture_mode = mode or ("tty" if terminal is not None else "none")
     return subprocess.Popen(
         [
@@ -74,7 +80,6 @@ def launch_fixture(channel, runtime, cwd, *, terminal=None, mode=""):
             _LAUNCHER,
             fixture_mode,
             str(channel.fileno()),
-            runtime.reviewer_sha256,
         ],
         cwd=cwd,
         env=os.environ | {"PYTHONPATH": os.fspath(cwd), "PYTHONSTARTUP": os.fspath(cwd / "sitecustomize.py")},
@@ -98,7 +103,7 @@ def read_prompt(terminal):
 
 
 @pytest.mark.parametrize("approve", [False, True], ids=["decline", "exact-confirmation"])
-def test_inherited_reviewer_requires_exact_foreground_terminal_answer(tmp_path, runtime, offer, approve):
+def test_inherited_reviewer_requires_exact_foreground_terminal_answer(tmp_path, offer, approve):
     marker = tmp_path / "injected"
     injection = f"from pathlib import Path\nPath({str(marker)!r}).touch()\n"
     (tmp_path / "sitecustomize.py").write_text(injection)
@@ -113,7 +118,7 @@ def test_inherited_reviewer_requires_exact_foreground_terminal_answer(tmp_path, 
         with broker, channel:
             broker.settimeout(2)
             broker.sendall(payload)
-            with launch_fixture(channel, runtime, tmp_path, terminal=terminal) as process:
+            with launch_fixture(channel, tmp_path, terminal=terminal) as process:
                 os.close(terminal)
                 terminal = -1
                 channel.close()
@@ -144,11 +149,11 @@ def test_inherited_reviewer_requires_exact_foreground_terminal_answer(tmp_path, 
             os.close(terminal)
 
 
-def test_same_uid_without_a_controlling_terminal_cannot_send_a_reply(tmp_path, runtime, offer):
+def test_same_uid_without_a_controlling_terminal_cannot_send_a_reply(tmp_path, offer):
     broker, channel = socket.socketpair()
     with broker, channel:
         broker.sendall(offer[0])
-        with launch_fixture(channel, runtime, tmp_path) as process:
+        with launch_fixture(channel, tmp_path) as process:
             channel.close()
             try:
                 assert process.communicate(timeout=2) == (b"", b"")
@@ -162,9 +167,10 @@ def test_same_uid_without_a_controlling_terminal_cannot_send_a_reply(tmp_path, r
                     process.kill()
 
 
-def test_changed_reviewer_digest_refuses_before_use(tmp_path, runtime):
+def test_changed_reviewer_bytes_refuse_before_use(tmp_path):
+    (tmp_path / "reviewer.py").write_text("def review(channel): return True\n")
     broker, channel = socket.socketpair()
-    with broker, channel, launch_fixture(channel, replace(runtime, reviewer_sha256="0" * 64), tmp_path) as process:
+    with broker, channel, launch_fixture(channel, tmp_path, mode="changed") as process:
         channel.close()
         assert process.communicate(timeout=2) == (b"", b"mcp.ipc.load_reviewer\n")
         assert process.returncode == 2
@@ -172,9 +178,9 @@ def test_changed_reviewer_digest_refuses_before_use(tmp_path, runtime):
         assert broker.recv(1) == b""
 
 
-def test_unisolated_runtime_refuses_before_review(tmp_path, runtime):
+def test_unisolated_runtime_refuses_before_review(tmp_path):
     broker, channel = socket.socketpair()
-    with broker, channel, launch_fixture(channel, runtime, tmp_path, mode="unisolated") as process:
+    with broker, channel, launch_fixture(channel, tmp_path, mode="unisolated") as process:
         channel.close()
         assert process.communicate(timeout=2) == (b"", b"mcp.ipc.load_reviewer\n")
         assert process.returncode == 2
@@ -182,7 +188,7 @@ def test_unisolated_runtime_refuses_before_review(tmp_path, runtime):
         assert broker.recv(1) == b""
 
 
-def test_reviewer_replacement_after_digest_check_cannot_reply_without_terminal(tmp_path, runtime, offer):
+def test_reviewer_replacement_after_digest_check_cannot_reply_without_terminal(tmp_path, offer):
     candidate = tmp_path / "reviewer.py"
     candidate.write_bytes(_REVIEWER.read_bytes())
     marker = tmp_path / "replacement-executed"
@@ -195,7 +201,7 @@ def test_reviewer_replacement_after_digest_check_cannot_reply_without_terminal(t
     broker, channel = socket.socketpair()
     with broker, channel:
         broker.sendall(payload)
-        with launch_fixture(channel, runtime, tmp_path, mode="replace") as process:
+        with launch_fixture(channel, tmp_path, mode="replace") as process:
             channel.close()
             assert process.communicate(timeout=2) == (b"", b"")
             assert process.returncode == 1
@@ -204,3 +210,135 @@ def test_reviewer_replacement_after_digest_check_cannot_reply_without_terminal(t
                 assert broker.recv(1) == b""
     assert candidate.read_text() == replacement
     assert not marker.exists()
+
+
+_SUPERVISOR_LAUNCHER = """
+import fcntl, runpy, sys, termios
+from pathlib import Path
+fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+runpy.run_path(sys.argv[1])['_run_supervised_fixture'](Path(sys.argv[2]), sys.argv[3])
+"""
+
+
+def _pending(supervisor, count):
+    deadline = time.monotonic() + 2
+    while len(ids := supervisor.pending_review_ids()) != count:
+        assert time.monotonic() < deadline
+        time.sleep(0.005)
+    return ids
+
+
+def _fake_dispatch(transport, generation, admitted, release, calls):
+    request = McpWorkRequest(target="fixture", operation="read-fixture", request_id="one", input_hash="a" * 64)
+    try:
+        with transport.admit(lambda _: generation) as lease:
+            admitted.set()
+            assert release.wait(2)
+            assert transport.record(lease, request, "reserve") == "queued"
+            assert transport.record(lease, request, "start") == "running"
+            lease.require_active()
+            calls.append("fake-provider")
+            assert transport.record(lease, request, "complete") == "completed"
+            assert transport.record(lease, request, "reserve") == "completed"
+            with pytest.raises(HeinzelError, match="work authority is invalid or unavailable"):
+                transport.record(lease, request, "start")
+            return "completed"
+    except HeinzelError:
+        return "refused"
+
+
+def _run_supervised_fixture(directory, phase):
+    generation = McpGeneration("fixture-registration", 3)
+    now = 100.0
+    plan = PrivateMcpPlan.capture(generation, "fixture-grant", 1, 2000.0, {"dispatch": {"fixture": ["read-fixture"]}})
+    endpoint = directory / "sock"
+    release = Event()
+    first_admitted, second_admitted = Event(), Event()
+    calls = []
+    with (
+        socket.socket(socket.AF_UNIX) as listener,
+        socket.socket(socket.AF_UNIX) as first,
+        socket.socket(socket.AF_UNIX) as second,
+    ):
+        listener.bind(os.fspath(endpoint))
+        endpoint.chmod(0o600)
+        listener.listen()
+        listener.settimeout(2)
+        with (
+            owned_mcp_supervisor(listener, endpoint, directory / "state", plan, clock=lambda: now) as supervisor,
+            ThreadPoolExecutor(max_workers=2) as workers,
+        ):
+            transport = supervisor.transport
+            assert not hasattr(transport, "review")
+            first.connect(os.fspath(endpoint))
+            first_result = workers.submit(_fake_dispatch, transport, generation, first_admitted, release, calls)
+            try:
+                (intended,) = _pending(supervisor, 1)
+                second.connect(os.fspath(endpoint))
+                second_result = workers.submit(_fake_dispatch, transport, generation, second_admitted, release, calls)
+                assert intended in _pending(supervisor, 2)
+                if phase == "decline":
+                    with pytest.raises(HeinzelError, match="host review was declined or unavailable"):
+                        supervisor.review(intended)
+                    supervisor.revoke()
+                else:
+                    supervisor.review(intended)
+                    assert first_admitted.wait(2)
+                    assert not second_admitted.is_set()
+                    if phase == "expire":
+                        now = 1001.0
+                    elif phase == "revoke":
+                        supervisor.revoke()
+                release.set()
+                outcome = first_result.result(timeout=2)
+                supervisor.revoke()
+                assert second_result.result(timeout=2) == "refused"
+            finally:
+                release.set()
+                supervisor.revoke()
+        with pytest.raises(HeinzelError, match="no longer owns the registration"):
+            supervisor.revoke()
+    sys.stdout.write(json.dumps({"first": outcome, "second_admitted": second_admitted.is_set(), "calls": calls}))
+
+
+@pytest.mark.parametrize("phase", ["approve", "decline", "expire", "revoke"])
+def test_owned_supervisor_reviews_one_connection_and_fences_fake_dispatch(tmp_path_factory, phase):
+    directory = tmp_path_factory.mktemp("svp").resolve()
+    master, terminal = pty.openpty()
+    settings = termios.tcgetattr(terminal)
+    settings[3] &= ~termios.ECHO
+    termios.tcsetattr(terminal, termios.TCSANOW, settings)
+    try:
+        with subprocess.Popen(
+            [sys.executable, "-I", "-c", _SUPERVISOR_LAUNCHER, __file__, os.fspath(directory), phase],
+            stdin=terminal,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        ) as process:
+            os.close(terminal)
+            terminal = -1
+            try:
+                prompt = read_prompt(master)
+                assert b'"registration": "fixture-registration"' in prompt
+                assert b'"grant": "fixture-grant"' in prompt
+                match = re.search(rb"Type exactly: (approve MCP [0-9a-f]{8})\r\n", prompt)
+                assert match is not None
+                os.write(master, (b"no" if phase == "decline" else match[1]) + b"\n")
+                stdout, stderr = process.communicate(timeout=2)
+                assert process.returncode == 0, stderr.decode()
+                assert json.loads(stdout) == {
+                    "first": "completed" if phase == "approve" else "refused",
+                    "second_admitted": False,
+                    "calls": ["fake-provider"] if phase == "approve" else [],
+                }
+            finally:
+                if process.poll() is None:
+                    os.close(master)
+                    master = -1
+                    process.kill()
+    finally:
+        if master >= 0:
+            os.close(master)
+        if terminal >= 0:
+            os.close(terminal)

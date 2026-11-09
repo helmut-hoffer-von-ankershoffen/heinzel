@@ -6,7 +6,6 @@ import socket
 import stat
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -19,16 +18,11 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 _REVIEWER = Path(__file__).absolute().with_name("_ipc_terminal_reviewer.py")
+# Part of the trusted installed SDK. A source change must deliberately update this pin.
+_REVIEWER_SHA256 = "4fd8e0d08098b099194fa733ed48534de125c3f38b51a07e5b2fa396c6a4cedf"
 _MAX_SOURCE = 64 * 1024
 _REFUSED = "The pinned local MCP reviewer is unavailable"
 log = get_logger("mcp")
-
-
-@dataclass(frozen=True, slots=True)
-class CliReviewRuntime:
-    """Reviewer digest supplied by the installation authority, never derived from the candidate at review time."""
-
-    reviewer_sha256: str
 
 
 def _verified_source(path: Path, digest: str) -> bytes:
@@ -51,38 +45,41 @@ def _verified_source(path: Path, digest: str) -> bytes:
     return content
 
 
-def run_cli_host_reviewer(channel: socket.socket, runtime: CliReviewRuntime) -> bool:
+def _load_installed_reviewer() -> "Callable[[socket.socket], bool]":
+    with step(log, "mcp.ipc.load_reviewer", operation="ipc", step="load_reviewer"):
+        if not sys.flags.isolated:
+            raise HeinzelError(_REFUSED)
+        try:
+            source = _verified_source(_REVIEWER, _REVIEWER_SHA256)
+            namespace: dict[str, object] = {"__name__": "_owned_mcp_terminal_reviewer"}
+            code = compile(source, "<owned MCP terminal reviewer>", "exec")
+            exec(code, namespace)  # noqa: S102 - these exact immutable bytes match the trusted installed digest
+            return cast("Callable[[socket.socket], bool]", namespace["review"])
+        except (OSError, KeyError, SyntaxError, ValueError):
+            raise HeinzelError(_REFUSED) from None
+
+
+def run_cli_host_reviewer(channel: socket.socket) -> bool:
     """Use the exact checked source without passing the private descriptor through an executable path.
 
-    The supervisor must already own the isolated CLI process and supply its private control channel and
-    installed digest. Python isolation and a foreground terminal do not independently confer host authority.
+    The supervisor must already own the isolated CLI process and supply its private control channel.
+    Python isolation and a foreground terminal do not independently confer host authority.
 
     Raises:
         HeinzelError: If the current runtime is unisolated or the pinned reviewer cannot be loaded.
     """
     with channel:
-        with step(log, "mcp.ipc.load_reviewer", operation="ipc", step="load_reviewer"):
-            if not sys.flags.isolated:
-                raise HeinzelError(_REFUSED)
-            try:
-                source = _verified_source(_REVIEWER, runtime.reviewer_sha256)
-                namespace: dict[str, object] = {"__name__": "_owned_mcp_terminal_reviewer"}
-                code = compile(source, "<owned MCP terminal reviewer>", "exec")
-                exec(code, namespace)  # noqa: S102 - these exact immutable bytes match the trusted installed digest
-                review = cast("Callable[[socket.socket], bool]", namespace["review"])
-            except (OSError, KeyError, SyntaxError, ValueError):
-                raise HeinzelError(_REFUSED) from None
-        return review(channel)
+        return _load_installed_reviewer()(channel)
 
 
-def review_private_mcp_from_terminal(
-    authority: HostMcpConnectionApprovals, instance_id: str, runtime: CliReviewRuntime
-) -> None:
+def review_private_mcp_from_terminal(authority: HostMcpConnectionApprovals, instance_id: str) -> None:
     """Run one broker review in the trusted foreground CLI process."""
+    review = _load_installed_reviewer()
     with (
         host_review_channel(authority, instance_id) as (reviewer, serve),
         ThreadPoolExecutor(max_workers=1) as executor,
     ):
         broker_result = executor.submit(serve)
-        run_cli_host_reviewer(reviewer, runtime)
+        with reviewer:
+            review(reviewer)
         broker_result.result()
