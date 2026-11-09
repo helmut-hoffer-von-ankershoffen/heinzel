@@ -291,14 +291,21 @@ def run_check(
         requested_wait = int(os.environ.get("HZ_GATE_MAX_WAIT", ""))
     except ValueError:
         requested_wait = GATE_MAX_WAIT
-    env["HZ_GATE_MAX_WAIT"] = str(min(requested_wait, GATE_MAX_WAIT) if requested_wait > 0 else GATE_MAX_WAIT)
+    queue_wait = min(requested_wait, GATE_MAX_WAIT) if requested_wait > 0 else GATE_MAX_WAIT
+    env["HZ_GATE_MAX_WAIT"] = str(queue_wait)
     if light:
         env["HZ_GATE_LIGHT"] = "1"
     else:
         env.pop("HZ_GATE_LIGHT", None)
-    # Let the host authenticate any inherited holder and apply policy to the actual command.
+    # The host enforces separate queue and runtime limits. The outer watchdog allows both
+    # the optional pre-push lock wait and the slot wait, plus time for launcher startup.
     return subprocess.run(  # noqa: S603 - absolute gate, fixed check commands and validated operands
-        [gate, "--timeout", str(timeout), *command], env=env, check=check, capture_output=capture_output, text=True
+        [gate, "--timeout", str(timeout), *command],
+        env=env,
+        check=check,
+        capture_output=capture_output,
+        text=True,
+        timeout=2 * queue_wait + timeout + 10,
     )
 
 

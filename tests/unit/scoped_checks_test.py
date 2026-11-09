@@ -52,7 +52,8 @@ def test_a_full_core_check_passes_the_actual_make_command_to_the_heavy_gate(monk
     target = ["preflight", "BASE=" + "a" * 40] if mode == "preflight" else ["check-fast"]
     assert command == [gate, "--timeout", str(timeout), "make", *target]
     assert "HZ_GATE_LIGHT" not in kwargs["env"]
-    assert "timeout" not in kwargs  # the queue wait is separate from the runtime limit
+    queue_wait = int(kwargs["env"]["HZ_GATE_MAX_WAIT"])
+    assert kwargs["timeout"] > queue_wait + timeout  # the outer watchdog leaves room for admission and execution
 
 
 def test_only_the_selected_documentation_push_checks_take_the_light_lane(monkeypatch, gate_calls):
@@ -95,6 +96,7 @@ def test_a_caller_cannot_skip_the_gate_or_raise_its_queue_deadline(monkeypatch, 
     assert command == [gate, "--timeout", "300", "make", "check-fast"]
     assert kwargs["env"]["HZ_GATE_HELD"] == "4242"  # the host decides whether the holder is real
     assert kwargs["env"]["HZ_GATE_MAX_WAIT"] == expected
+    assert kwargs["timeout"] == 2 * int(expected) + 310
 
 
 @pytest.mark.parametrize("gate_path", [None, "bin/hz-gate"])
