@@ -196,6 +196,10 @@ def test_an_authenticated_policy_for_an_older_base_cannot_admit_the_current_head
 
 def test_detached_policy_collects_against_real_git_commits(case, monkeypatch, tmp_path):
     collector, _ = case
+    # A Git hook exports repository-local variables that survive chdir, including GIT_DIR in linked worktrees.
+    git_env = subprocess.check_output(["git", "rev-parse", "--local-env-vars"], text=True, timeout=10)
+    for name in git_env.splitlines():
+        monkeypatch.delenv(name, raising=False)
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
