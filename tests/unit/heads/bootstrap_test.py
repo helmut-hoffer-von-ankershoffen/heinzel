@@ -759,3 +759,43 @@ def test_welcome_respects_shared_plain_terminal_policy(monkeypatch, capsys, key,
     bootstrap._welcome()
     output = capsys.readouterr()
     assert output.out == output.err == ""
+
+
+@pytest.mark.parametrize(
+    ("stderr", "code", "category"),
+    [
+        ("ModuleNotFoundError: private.module", 1, "import-module"),
+        ("/private/person/python: No module named heinzel", 1, "import-module"),
+        ("ImportError: secret account", 1, "import-module"),
+        ("PermissionError: private/path", 1, "launch-os"),
+        ("Usage: secret --token=private", 2, "usage"),
+        ("SyntaxError: private contents", 1, "syntax"),
+        ("TypeError: private config", 1, "runtime"),
+        ("unknown private output", -9, "other"),
+        ("ImportError: secret\n" + "x" * 20000, 1, "other"),
+        ("private\x1b[31mModuleNotFoundError: secret", 1, "other"),
+    ],
+)
+def test_discovery_failure_reports_only_fixed_categories(monkeypatch, tmp_path, *, stderr, code, category):
+    exit_class = "signal" if code < 0 else "nonzero"
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, code, "private stdout", stderr)
+
+    monkeypatch.setattr(bootstrap.subprocess, "run", run)
+    executable = tmp_path / "private/bin/hz"
+    environment = {"PRIVATE_TOKEN": "private credentials"}
+    with pytest.raises(HeinzelError) as caught:
+        WORKSPACE_COMMAND(executable, environment, [])
+    assert str(caught.value) == (
+        "The installed app's commands could not be verified; inspect `hz --command-tree` before launching. "
+        f"[command-discovery category={category} exit={exit_class}]"
+    )
+    assert calls == [
+        (
+            [str(executable.parent / "python"), "-I", "-m", "heinzel", "--command-tree"],
+            {"env": environment, "capture_output": True, "text": True, "check": False, "timeout": 60},
+        )
+    ]

@@ -419,6 +419,38 @@ def _has_command(children: list[JsonValue], group: str, command: str) -> bool:
     return False
 
 
+def _command_discovery_diagnostic(returncode: int, stderr: str) -> str:
+    """Classify bounded stderr without returning any child-controlled text.
+
+    Categories are hints, not trusted evidence: the child can print a misleading marker.
+    Unknown exception names, paths, arguments and exception messages are never copied.
+    """
+    tail = stderr[-16384:]
+    lines = tail.splitlines()[-64:]
+    category = "other"
+    for line in reversed(lines):
+        if line.startswith(("ModuleNotFoundError:", "ImportError:")):
+            category = "import-module"
+            break
+        if line.startswith(("FileNotFoundError:", "PermissionError:", "OSError:")):
+            category = "launch-os"
+            break
+        if line.startswith(("SyntaxError:", "IndentationError:")):
+            category = "syntax"
+            break
+        if line.startswith(("TypeError:", "AttributeError:", "ValueError:", "RuntimeError:")):
+            category = "runtime"
+            break
+        if line.startswith(("usage:", "Usage:")):
+            category = "usage"
+            break
+        if line.endswith(": No module named heinzel"):
+            category = "import-module"
+            break
+    exit_class = "signal" if returncode < 0 else "nonzero"
+    return f"command-discovery category={category} exit={exit_class}"
+
+
 def _workspace_command(
     executable: Path,
     environment: dict[str, str],
@@ -435,6 +467,8 @@ def _workspace_command(
     )
     if discovery.returncode:
         msg = "The installed app's commands could not be verified; inspect `hz --command-tree` before launching."
+        diagnostic = _command_discovery_diagnostic(discovery.returncode, discovery.stderr)
+        msg = f"{msg} [{diagnostic}]"
         raise HeinzelError(msg)
     tree = _json_object(discovery.stdout)
     root = tree.get("root")
