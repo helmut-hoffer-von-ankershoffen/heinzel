@@ -13,6 +13,7 @@ from threading import Event, Lock
 from heinzel.heads.mcp._ipc_admission import McpGeneration, OwnedMcpEndpoint, PublishedMcpLease
 from heinzel.heads.mcp._ipc_approval import HostMcpConnectionApprovals, PrivateMcpPlan
 from heinzel.heads.mcp._ipc_cli_review import review_private_mcp_from_terminal
+from heinzel.heads.mcp._ipc_listener import owned_unix_listener, probe_listener
 from heinzel.heads.mcp._ipc_work import Boundary, Disposition, McpWorkRequest, owned_private_dispatch
 from heinzel.kernel import HeinzelError
 
@@ -33,6 +34,7 @@ class OwnedMcpSupervisor:
 
     transport: SupervisedMcpTransport
     _authority: HostMcpConnectionApprovals = field(repr=False)
+    _endpoint: OwnedMcpEndpoint = field(repr=False)
     _released: Event = field(default_factory=Event, init=False, repr=False, compare=False)
     _lifetime: Lock = field(default_factory=Lock, init=False, repr=False, compare=False)
 
@@ -45,6 +47,13 @@ class OwnedMcpSupervisor:
         """List opaque instance IDs for the trusted CLI's review selection."""
         self._require_owned()
         return tuple(review.instance_id for review in self._authority.pending_reviews())
+
+    def check_endpoint(self) -> McpGeneration:
+        """Verify the current owned transport endpoint without granting a lease or claiming MCP readiness."""
+        with self._lifetime:
+            self._require_owned()
+            self._authority.require_activation()
+            return self._endpoint.verify_endpoint()
 
     def review(self, instance_id: str) -> None:
         """Give the pinned terminal reviewer one private control descriptor for this exact instance."""
@@ -64,16 +73,16 @@ class OwnedMcpSupervisor:
 
 @contextmanager
 def owned_mcp_supervisor(
-    listener: socket,
     endpoint_path: Path,
     root: Path,
     plan: PrivateMcpPlan,
     *,
     clock: Callable[[], float] = time.monotonic,
 ) -> Generator[OwnedMcpSupervisor]:
-    """Bind a freshly owned listener and reviewed grant in the already-trusted isolated CLI runtime.
+    """Create, probe and retire one owned transport in the already-trusted isolated CLI runtime.
 
-    The caller selects the installed runtime and physical registration paths and owns listener cleanup.
+    The caller selects the installed runtime and private physical registration paths. The registration
+    lock covers endpoint creation, admission fencing and listener cleanup.
     Only the transport handle may be supplied to protocol code. The supervisor is never a tool or web service.
 
     Raises:
@@ -86,10 +95,15 @@ def owned_mcp_supervisor(
         msg = "Local MCP supervision requires the trusted isolated CLI runtime"
         raise HeinzelError(msg)
     with owned_private_dispatch(root, plan, clock=clock) as (authority, dispatch):
-        endpoint = OwnedMcpEndpoint(listener, endpoint_path, plan.generation)
-        transport = SupervisedMcpTransport(partial(endpoint.admit_next, publish=authority.publish), dispatch.record)
-        supervisor = OwnedMcpSupervisor(transport, authority)
-        try:
-            yield supervisor
-        finally:
-            supervisor._release()  # noqa: SLF001 - scope the host handle to this ownership lock
+        authority.require_activation()
+        with owned_unix_listener(endpoint_path) as listener:
+            endpoint = OwnedMcpEndpoint(listener, endpoint_path, plan.generation)
+            probe_listener(listener, endpoint_path)
+            endpoint.verify_endpoint()
+            transport = SupervisedMcpTransport(partial(endpoint.admit_next, publish=authority.publish), dispatch.record)
+            supervisor = OwnedMcpSupervisor(transport, authority, endpoint)
+            try:
+                yield supervisor
+            finally:
+                supervisor._release()  # noqa: SLF001 - scope the host handle to this ownership lock
+                authority.close()

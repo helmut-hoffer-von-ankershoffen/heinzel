@@ -116,6 +116,16 @@ class HostMcpConnectionApprovals:
         self._active: dict[str, _ActiveLease] = {}
         self._revoked = False
 
+    def require_activation(self) -> None:
+        """Refuse startup and endpoint checks for a revoked or expired grant.
+
+        Raises:
+            HeinzelError: If this registration cannot accept work.
+        """
+        with self._changed:
+            if self._revoked or self._clock() >= self._plan.valid_until:
+                raise HeinzelError(_UNAVAILABLE)
+
     def pending_reviews(self) -> tuple[McpConnectionReview, ...]:
         """Return host-only snapshots of pending peers that have no issued decision."""
         with self._changed:

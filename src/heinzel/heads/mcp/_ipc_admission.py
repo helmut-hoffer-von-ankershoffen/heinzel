@@ -138,10 +138,23 @@ class OwnedMcpEndpoint:
         msg = "Local MCP requires its original owned Unix listener"
         raise HeinzelError(msg)
 
-    def _verify_endpoint(self) -> None:
+    def verify_endpoint(self) -> McpGeneration:
+        """Check the retained listener and exact filesystem identity.
+
+        Raises:
+            HeinzelError: If the owned endpoint is no longer available or has changed.
+        """
+        try:
+            bound = self._listener.getsockname() == os.fspath(self._path)
+        except OSError:
+            bound = False
+        if not bound:
+            msg = "Local MCP requires its original owned Unix listener"
+            raise HeinzelError(msg)
         if _endpoint_identity(self._path) != self._identity:
             msg = "Local MCP endpoint identity changed"
             raise HeinzelError(msg)
+        return self._generation
 
     @contextmanager
     def admit_next(
@@ -166,11 +179,11 @@ class OwnedMcpEndpoint:
         # Unwind the stream before the lease, even when an admission check fails.
         with ExitStack() as leases, ExitStack() as streams:
             with step(log, "mcp.ipc.admit_peer", operation="ipc", step="admit_peer"):
-                self._verify_endpoint()
+                self.verify_endpoint()
                 connection, _ = self._listener.accept()
                 streams.callback(_close_stream, connection)
                 require_owner_peer(connection, owner_uid=os.getuid())
-                self._verify_endpoint()
+                self.verify_endpoint()
                 try:
                     requested = read_locator(connection)
                 except (HeinzelError, OSError, ValueError):
@@ -189,7 +202,7 @@ class OwnedMcpEndpoint:
                 if not lease.id or lease.peer is not pending or lease.current_generation != self._generation:
                     msg = "Local MCP lease does not match the current generation and peer"
                     raise HeinzelError(msg)
-                self._verify_endpoint()
+                self.verify_endpoint()
                 _require_waiting_peer(connection)
                 lease.require_active()
             yield lease

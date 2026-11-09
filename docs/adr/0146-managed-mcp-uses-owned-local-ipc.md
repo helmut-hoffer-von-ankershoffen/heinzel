@@ -25,6 +25,9 @@ Claude settings discovery and human approval have separate contracts.
   absolute interpreter with `-I -S` and connects to the owned Unix socket. It never starts the server or boots the
   application. The broker verifies endpoint ownership, OS peer credentials and the registration generation before
   admission. Readiness requires authenticated MCP initialization, discovery and identity verification.
+  The isolated host activation primitive creates its own Unix listener under the registration lock and verifies a
+  local challenge round-trip before handing off the transport. Its endpoint check reports transport ownership.
+  Scope exit fences the leases and removes only the socket node it owns.
 - Authorize lifecycle effects through a separate host capability bound to the reviewed plan and action. Trusted
   native review and explicit local CLI review use the same service. Browser and device sessions can prepare a
   plan and see authorized status. The broker admits private connections only after host review of the exact
