@@ -186,6 +186,11 @@ MIXED_SOURCE_DIRS = (
     "desktop/src/",
     "desktop/test/",
 )
+# These packaging helpers have focused Node tests that do not launch Electron.
+MIXED_DESKTOP_CI_TESTS = {
+    "desktop/ci/bundle-icon.mjs": "desktop/test/bundle-icon.test.js",
+    "desktop/ci/runtime-inventory.mjs": "desktop/test/package-inventory.test.js",
+}
 
 
 def touches_web(changed: list[str]) -> bool:
@@ -293,6 +298,10 @@ def mixed_test_targets(manifest: Path, *, base: str, head: str, changed: list[st
         if required and not targets[lane]:
             msg = f"A focused mixed manifest requires a nonempty {lane} list for this change."
             raise SystemExit(msg)
+    required_desktop = {test for source, test in MIXED_DESKTOP_CI_TESTS.items() if source in changed}
+    if missing := required_desktop.difference(targets["desktop"]):
+        msg = f"A focused mixed manifest must include these desktop packaging tests: {', '.join(sorted(missing))}."
+        raise SystemExit(msg)
     files = {entry.split("::", 1)[0] for entries in targets.values() for entry in entries}
     if files & HOSTED_DESKTOP_TESTS:
         msg = "A focused mixed manifest cannot select hosted desktop tests."
@@ -319,6 +328,7 @@ def mixed_push_checks(changed: list[str], base: str, manifest: Path) -> int:
         or any(
             not is_document(path)
             and path not in {"scripts/scoped_checks.py", "web/openapi.json"}
+            and path not in MIXED_DESKTOP_CI_TESTS
             and not path.startswith(MIXED_SOURCE_DIRS)
             for path in changed
         )
