@@ -32,10 +32,22 @@ export function McpSettings() {
         }),
       ),
   });
-  const plan = prepare.data?.registration === registration ? prepare.data : undefined;
+  const currentStatus = status.isSuccess && !status.isFetching;
+  const plan = currentStatus && prepare.data?.registration === registration ? prepare.data : undefined;
   return (
     <section aria-label={t("mcpSettings.title")} className="space-y-4 text-sm">
       <h3 className="text-ui font-medium">{t("mcpSettings.title")}</h3>
+      <section aria-label={t("mcpSettings.clients")} className="space-y-2">
+        <h4 className="font-medium">{t("mcpSettings.clients")}</h4>
+        <ul>
+          {(["claude", "codex", "cursor"] as const).map((client) => (
+            <li key={client}>
+              {t(`mcpSettings.clientName.${client}`)}: {t("mcpSettings.clientNotChecked")}
+            </li>
+          ))}
+        </ul>
+        <p>{t("mcpSettings.clientEvidence")}</p>
+      </section>
       {availability.isPending && <p role="status">{t("mcpSettings.loading")}</p>}
       {availability.isError && <p role="alert">{t("mcpSettings.statusError")}</p>}
       {availability.data && !canPlan && <p role="status">{t("mcpSettings.unavailable")}</p>}
@@ -67,7 +79,7 @@ export function McpSettings() {
           </form>
           {status.isError && <p role="alert">{t("mcpSettings.statusError")}</p>}
           {status.data?.host === "unavailable" && <p role="status">{t("mcpSettings.targetUnavailable")}</p>}
-          {status.data?.host === "observed" && (
+          {currentStatus && status.data?.host === "observed" && (
             <>
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
                 <dt>{t("mcpSettings.manager")}</dt>
@@ -81,6 +93,7 @@ export function McpSettings() {
                 <dt>{t("mcpSettings.client")}</dt>
                 <dd>{t(`mcpSettings.state.${status.data.client}`)}</dd>
               </dl>
+              {!status.data.actions?.length && <p role="status">{t("mcpSettings.noActions")}</p>}
               <div className="flex flex-wrap gap-2">
                 {status.data.actions?.map((action) => (
                   <Button

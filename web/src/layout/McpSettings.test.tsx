@@ -95,3 +95,58 @@ it("leaves the optional browser command behind an explicit disclosure and descri
   expect(disclosure.closest("details")).toHaveAttribute("open");
   expect(within(page).getByText(`hz system mcp review-install fixture --handoff ${handoff}`)).toBeVisible();
 });
+
+it.each([false, true])("keeps every client connection unverified with host availability %s", async (planning) => {
+  const { calls } = mockApi({ ...shell, "/api/mcp/lifecycle": { planning_available: planning } });
+  renderAt("/doctor?settings=mcp-connections");
+  const clients = await screen.findByRole("region", { name: "Client connections" });
+  for (const name of ["Claude Code", "Codex", "Cursor"]) {
+    expect(within(clients).getByText(`${name}: Connection not checked`)).toBeVisible();
+  }
+  expect(calls.filter((request) => request.method !== "GET")).toHaveLength(0);
+});
+
+it("withdraws stale actions during refresh and after failure, then reports no offered actions", async () => {
+  let response: unknown = {
+    host: "observed",
+    worker: "running",
+    manager: "absent",
+    transport: "reachable",
+    mcp_readiness: "unverified",
+    client: "unverified",
+    actions: ["stop"],
+  };
+  const { calls } = mockApi({
+    ...shell,
+    "/api/mcp/lifecycle": { planning_available: true },
+    "/api/mcp/lifecycle/fixture": () => response,
+  });
+  const user = userEvent.setup();
+  renderAt("/doctor?settings=mcp-connections");
+  const page = await screen.findByRole("region", { name: "MCP connections" });
+  await user.type(await within(page).findByLabelText("Registration ID"), "fixture");
+  await user.click(within(page).getByRole("button", { name: "Read status" }));
+  expect(await within(page).findByRole("button", { name: "Prepare Stop" })).toBeVisible();
+  expect(within(page).getByText("Claude Code: Connection not checked")).toBeVisible();
+  let finish!: (value: unknown) => void;
+  response = new Promise((resolve) => {
+    finish = resolve;
+  });
+  await user.click(within(page).getByRole("button", { name: "Read status" }));
+  expect(within(page).queryByRole("button", { name: "Prepare Stop" })).not.toBeInTheDocument();
+  finish({ status: 503, body: { error: "unavailable" } });
+  expect(await within(page).findByText("Could not read MCP status.")).toBeVisible();
+  expect(within(page).queryByRole("button", { name: "Prepare Stop" })).not.toBeInTheDocument();
+  response = {
+    host: "observed",
+    worker: "running",
+    manager: "absent",
+    transport: "reachable",
+    mcp_readiness: "unverified",
+    client: "unverified",
+    actions: [],
+  };
+  await user.click(within(page).getByRole("button", { name: "Read status" }));
+  expect(await within(page).findByText("The host offers no lifecycle actions for this registration.")).toBeVisible();
+  expect(calls.filter((request) => request.method !== "GET")).toHaveLength(0);
+});

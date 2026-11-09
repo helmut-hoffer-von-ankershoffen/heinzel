@@ -155,6 +155,14 @@ const en = {
   "webServer.disconnect": "This page reconnects for you after a brief disconnect. Your open work stays in place.",
   "webServer.reconnected": "Web server restarted and reconnected.",
   "mcpSettings.title": "MCP connections",
+  "mcpSettings.clients": "Client connections",
+  "mcpSettings.clientName.claude": "Claude Code",
+  "mcpSettings.clientName.codex": "Codex",
+  "mcpSettings.clientName.cursor": "Cursor",
+  "mcpSettings.clientNotChecked": "Connection not checked",
+  "mcpSettings.clientEvidence":
+    "This page cannot yet verify individual client connections. A running worker or reachable transport does not confirm that a client is connected.",
+  "mcpSettings.noActions": "The host offers no lifecycle actions for this registration.",
   "mcpSettings.loading": "Checking host availability…",
   "mcpSettings.unavailable":
     "MCP lifecycle actions require a verified installed host. This server has no host connection for them.",
