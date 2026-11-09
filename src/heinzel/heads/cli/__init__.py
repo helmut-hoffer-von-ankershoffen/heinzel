@@ -18,7 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, cast
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 from pydantic import ValidationError
@@ -42,7 +42,6 @@ from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Ori
 
 if TYPE_CHECKING:
     from heinzel.heads._heinzel_tools import HeinzelTools
-    from heinzel.heads.cli._mcp_lifecycle import LifecycleCommand
     from heinzel.heads.mcp._ipc_lifecycle import ForegroundMcpLifecycle
     from heinzel.heads.mcp._ipc_supervisor import OwnedMcpSupervisor
 
@@ -258,8 +257,9 @@ def main(
     if sys.argv[1:3] == ["system", "mcp"] and sys.argv[3:]:
         from heinzel.heads.cli import _mcp_lifecycle  # noqa: PLC0415 - host-only, before boot
 
-        if sys.argv[3] in _mcp_lifecycle.COMMANDS:
-            sys.exit(_mcp_lifecycle.main(cast("LifecycleCommand", sys.argv[3]), sys.argv[4:], host=host_mcp_lifecycle))
+        action = _mcp_lifecycle.COMMANDS.get(sys.argv[3])
+        if action is not None:
+            sys.exit(_mcp_lifecycle.main(action, sys.argv[4:], host=host_mcp_lifecycle))
     if sys.argv[1:3] == ["system", "uninstall"]:
         from heinzel.heads.cli._uninstall import main as uninstall_main  # noqa: PLC0415 - parse maintenance before discovery
 

@@ -3,18 +3,38 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from io import TextIOWrapper
 
+import anyio
 from mcp import types
 from mcp.server.context import ServerRequestContext
 from mcp.server.lowlevel import Server
+from mcp.server.stdio import stdio_server
 from pydantic import ValidationError
 
 from heinzel import __version__
 from heinzel.heads._heinzel_tools import HeinzelTools
-from heinzel.kernel import HeinzelError
+from heinzel.heads.mcp._ipc_admission import PublishedMcpLease
+from heinzel.heads.mcp._ipc_work import PrivateMcpDispatch
+from heinzel.kernel import HeinzelError, Kernel
 from heinzel.kernel._heinzel_invocation import HeinzelInput, HeinzelTarget
 
 _REFUSED = "The reviewed Heinzel request is invalid or unavailable"
+
+
+async def serve_admitted_heinzel_connection(
+    kernel: Kernel, dispatch: PrivateMcpDispatch, lease: PublishedMcpLease
+) -> None:
+    """Serve the MCP wire only on the exact stream already admitted by this broker."""
+    tools = dispatch.bind_heinzel_tools(kernel, lease, authentication="mcp-stdio")
+    server = build_admitted_heinzel_server(tools)
+    connection = lease.peer.connection
+    with (
+        TextIOWrapper(connection.makefile("rb"), encoding="utf-8") as reader,
+        TextIOWrapper(connection.makefile("wb"), encoding="utf-8") as writer,
+    ):
+        async with stdio_server(anyio.wrap_file(reader), anyio.wrap_file(writer)) as (incoming, outgoing):
+            await server.run(incoming, outgoing, server.create_initialization_options())
 
 
 def _schema(target: HeinzelTarget) -> dict[str, object]:

@@ -63,6 +63,8 @@ Claude settings discovery and human approval have separate contracts.
 - Restrict discovery and dispatch to reviewed operations and exact target grants. Give authorized personal and
   contract Heinzels stable individual tools and CLI equivalents. Resolve both heads to the same durable retry
   identity for the selected grant. Retain exact result bytes and record uncertain effects without replaying them.
+  The broker binds the reviewed `heinzel_targets` identities and contract source digests to their matching
+  `dispatch` operations. Both tool heads use that broker's grant scope and a current admission lease.
 - Fence admission before stopping owned work and verify exit through the supervisor. Keep registered generations
   in the SDK maintenance inventory even with the feature disabled. Require writer exclusion for automatic client
   config changes. Where that proof is unavailable, review a manual change and verify native effective config.

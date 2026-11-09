@@ -3,7 +3,7 @@
 import json
 import sys
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal
 
 from heinzel.heads.mcp._ipc_lifecycle import REGISTRATION_ID, LifecycleAction
 from heinzel.heads.mcp._ipc_registration import (
@@ -27,7 +27,8 @@ if TYPE_CHECKING:
     from heinzel.heads.mcp._ipc_lifecycle import ForegroundMcpLifecycle, ForegroundMcpStatus
 
 type LifecycleCommand = Literal["register", "recover", "start", "check", "stop"]
-COMMANDS = ("register", "recover", "start", "check", "stop")
+_COMMANDS: tuple[LifecycleCommand, ...] = ("register", "recover", "start", "check", "stop")
+COMMANDS: dict[str, LifecycleCommand] = {command: command for command in _COMMANDS}
 
 
 def main(action: LifecycleCommand, arguments: list[str], *, host: "ForegroundMcpLifecycle | None") -> int:
@@ -43,9 +44,11 @@ def main(action: LifecycleCommand, arguments: list[str], *, host: "ForegroundMcp
     try:
         if host is None:
             return _installed(action, id_)
-        if action in {"register", "recover"}:
-            return 1
-        return _report(host.perform(cast("LifecycleAction", action), id_))
+        match action:
+            case "register" | "recover":
+                return 1
+            case _:
+                return _report(host.perform(action, id_))
     except (HeinzelError, OSError, ValueError):
         sys.stderr.write("The reviewed MCP lifecycle action was declined or unavailable.\n")
         return 1
@@ -67,13 +70,16 @@ def _installed(action: LifecycleCommand, id_: str) -> int:
     kernel.bind(Installation, authority.sdk)
     manager = kernel.resolve_builtin_service(HostServiceManager, "system.daemon")
     registry = InstalledMcpRegistry(authority, manager, native_mcp_scope())
-    if action in {"register", "recover"}:
-        registry.publish(action, id_)
-        sys.stdout.write('{"registration":"committed","activation":"dormant"}\n')
-        return 0
-    if action == "stop":
-        sys.stderr.write("Stop this MCP worker from its owning foreground session.\n")
-        return 1
+    match action:
+        case "register" | "recover":
+            registry.publish(action, id_)
+            sys.stdout.write('{"registration":"committed","activation":"dormant"}\n')
+            return 0
+        case "stop":
+            sys.stderr.write("Stop this MCP worker from its owning foreground session.\n")
+            return 1
+        case "start" | "check":
+            pass
     host = registry.host(id_)
     try:
         if action == "check":

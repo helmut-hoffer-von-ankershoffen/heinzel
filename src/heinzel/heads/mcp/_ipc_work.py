@@ -8,11 +8,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
+from heinzel.heads._heinzel_tools import CheckActive, HeinzelTools, HeinzelWork
 from heinzel.heads.mcp._ipc_admission import PublishedMcpLease
 from heinzel.heads.mcp._ipc_approval import HostMcpConnectionApprovals, PrivateMcpPlan
-from heinzel.kernel import HeinzelError
+from heinzel.kernel import CurrentUser, HeinzelError, HeinzelTarget, Kernel
 from heinzel.kernel._approval import arguments_hash
 from heinzel.kernel._logging import get_logger, step
 from heinzel.kernel._private_control import private_lock
@@ -22,6 +23,7 @@ from heinzel.kernel._session_store import SessionStore
 log = get_logger("mcp")
 _REFUSED = "Local MCP work authority is invalid or unavailable"
 _OPERATIONS = TypeAdapter(dict[str, list[str]])
+_HEINZEL_TARGETS = TypeAdapter(list[HeinzelTarget])
 type Disposition = Literal["queued", "running", "completed", "cancelled", "uncertain"]
 type Boundary = Literal["reserve", "start", "complete"]
 _INTERRUPTED: dict[Disposition, Disposition] = {"queued": "cancelled", "running": "uncertain"}
@@ -39,6 +41,13 @@ class McpWorkRequest(BaseModel):
     operation: str = Field(min_length=1, max_length=128)
     request_id: str = Field(min_length=1, max_length=128)
     input_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+@dataclass(frozen=True, slots=True)
+class _HeinzelGrant:
+    targets: tuple[HeinzelTarget, ...]
+    scope: str
+    result_root: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,11 +164,47 @@ class PrivateMcpDispatch:
     """Fenced journal transitions for an explicitly reviewed target and operation allowlist."""
 
     def __init__(
-        self, authority: HostMcpConnectionApprovals, journal: McpWorkJournal, operations: dict[str, list[str]]
+        self,
+        authority: HostMcpConnectionApprovals,
+        journal: McpWorkJournal,
+        operations: dict[str, list[str]],
+        heinzel: _HeinzelGrant,
     ) -> None:
         self._authority = authority
         self._journal = journal
         self._operations = {target: frozenset(names) for target, names in operations.items()}
+        self._heinzel = heinzel
+
+    def bind_heinzel_tools(
+        self, kernel: Kernel, lease: PublishedMcpLease, *, authentication: Literal["cli", "mcp-stdio"]
+    ) -> HeinzelTools:
+        """Bind both tool heads to this broker's exact reviewed targets and a currently published lease."""
+
+        def check_active() -> None:
+            with self._authority.fenced(lease) as check:
+                check()
+
+        @contextmanager
+        def access() -> Generator[CheckActive]:
+            check_active()
+            with kernel.resolve(CurrentUser).local(authentication):
+                yield check_active
+
+        def record(work: HeinzelWork, boundary: Boundary) -> Disposition:
+            request = McpWorkRequest(
+                target=work.target, operation=work.operation, request_id=work.request_id, input_hash=work.input_hash
+            )
+            return self.record(lease, request, boundary)
+
+        check_active()
+        return HeinzelTools(
+            kernel,
+            self._heinzel.targets,
+            scope=self._heinzel.scope,
+            root=self._heinzel.result_root,
+            access=access,
+            record=record,
+        )
 
     def record(self, lease: PublishedMcpLease, request: McpWorkRequest, boundary: Boundary) -> Disposition:
         """Record a queue, pre-effect intent or observed completion without performing any effect.
@@ -196,10 +241,27 @@ def owned_private_dispatch(
     Yields:
         The host-only approval authority and the journal dispatch adapter for this exact grant.
     """
-    terms = json.loads(plan.terms_json)
+    terms: JsonValue = json.loads(plan.terms_json)
     if arguments_hash(terms) != plan.terms_hash:
         raise HeinzelError(_REFUSED)
-    operations = _OPERATIONS.validate_python(terms.get("dispatch", {}) if isinstance(terms, dict) else {}, strict=True)
+    term_values = terms if isinstance(terms, dict) else {}
+    try:
+        operations = _OPERATIONS.validate_python(term_values.get("dispatch", {}), strict=True)
+        targets = _HEINZEL_TARGETS.validate_python(term_values.get("heinzel_targets", []), strict=True)
+    except ValidationError:
+        raise HeinzelError(_REFUSED) from None
+    if any(target.operation not in operations.get(target.key, ()) for target in targets):
+        raise HeinzelError(_REFUSED)
+    scope = arguments_hash(
+        [
+            plan.generation.registration_id,
+            plan.generation.number,
+            plan.grant_id,
+            plan.grant_revision,
+            plan.terms_hash,
+        ]
+    )
+    heinzel = _HeinzelGrant(tuple(targets), scope, root / "heinzel-results")
     with private_lock(root / "broker.lock"):
         journal = McpWorkJournal(SessionStore(root / "work"), plan)
         revoked = journal.fence("recover")
@@ -212,6 +274,6 @@ def owned_private_dispatch(
         if revoked:
             authority.revoke()
         try:
-            yield authority, PrivateMcpDispatch(authority, journal, operations)
+            yield authority, PrivateMcpDispatch(authority, journal, operations, heinzel)
         finally:
             authority.close()
