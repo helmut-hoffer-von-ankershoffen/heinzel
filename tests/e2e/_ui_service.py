@@ -213,6 +213,8 @@ def startup_diagnostics(prefix, directory):
         "import faulthandler, os, sys\n"
         # The stable shim execs isolated Python before importing hz; observe that app, not its short-lived shim.
         "if sys.flags.isolated:\n"
+        # -I implies -E, so PYTHONFAULTHANDLER is ignored after the shim exec.
+        "    faulthandler.enable()\n"
         f"    _hz_stacks = os.open({str(destination)!r}, os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW)\n"
         "    faulthandler.dump_traceback_later(4, repeat=False, file=_hz_stacks)\n"
     )
@@ -225,6 +227,21 @@ def _sample_role(line):
     if "com.apple.main-thread" in line:
         return "main"
     return "publication" if "(when_started)" in line else "other"
+
+
+def _diagnostic_frame(line):
+    match = re.match(r'  File "([^"\n]{1,512})", line ([1-9]\d{0,6}) in ', line)
+    if match is None:
+        return None
+    normalized = match[1].replace("\\", "/")
+    frozen = {
+        "<frozen importlib._bootstrap>": "_bootstrap",
+        "<frozen importlib._bootstrap_external>": "_bootstrap_external",
+    }
+    label = frozen.get(normalized) or next(
+        (name for name in _STARTUP_MODULES if normalized.endswith("/" + name)), "other"
+    )
+    return label, int(match[2])
 
 
 class RunningService:
@@ -289,7 +306,8 @@ class RunningService:
                 pytest.fail(
                     "The owned web server exited before readiness; "
                     f"owned process exit={returncode}, signal={-returncode if returncode < 0 else None}, "
-                    f"publication failure={self.publication_failure(output + errors)}."
+                    f"publication failure={self.publication_failure(output + errors)}"
+                    + (f", crash trace={self.crash_trace(errors)}." if returncode < 0 else ".")
                 )
             changed.wait(0.02)
         pytest.fail(
@@ -299,6 +317,25 @@ class RunningService:
             f"control failure={self.control_failure}, failed status calls={self.control_failure_count}, "
             f"publication evidence={self.publication_evidence(initial=previous is None and len(self.processes) == 1)}."
         )
+
+    @staticmethod
+    def crash_trace(errors):
+        """Summarize fatal Python stderr without exposing arbitrary files, functions or output."""
+        lines = errors[-64 * 1024 :].decode("utf-8", errors="replace").splitlines()
+        prefix = "Fatal Python error: "
+        for index, line in enumerate(lines):
+            if line.startswith(prefix):
+                kind = line.removeprefix(prefix)
+                kinds = {
+                    "Segmentation fault",
+                    "Bus error",
+                    "Aborted",
+                    "Floating-point exception",
+                    "Illegal instruction",
+                }
+                frames = (frame for line in lines[index + 1 :] if (frame := _diagnostic_frame(line)) is not None)
+                return {"error": kind if kind in kinds else "other", "frames": list(islice(frames, 32))}
+        return "none (no faulthandler output)"
 
     @staticmethod
     def publication_failure(output):
@@ -382,18 +419,8 @@ class RunningService:
                 frames = []
                 snapshots.append(frames)
             elif frames is not None and len(frames) < 32:
-                match = re.match(r'  File "([^"\n]{1,512})", line ([1-9]\d{0,6}) in ', line)
-                if match is None:
-                    continue
-                normalized = match[1].replace("\\", "/")
-                frozen = {
-                    "<frozen importlib._bootstrap>": "_bootstrap",
-                    "<frozen importlib._bootstrap_external>": "_bootstrap_external",
-                }
-                label = frozen.get(normalized) or next(
-                    (name for name in _STARTUP_MODULES if normalized.endswith("/" + name)), "other"
-                )
-                frames.append((label, int(match[2])))
+                if (frame := _diagnostic_frame(line)) is not None:
+                    frames.append(frame)
         return snapshots
 
     def native_state(self):
