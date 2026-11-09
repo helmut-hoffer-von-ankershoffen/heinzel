@@ -6,18 +6,23 @@ from typing import Annotated, Literal
 from pydantic import Field
 from rich.console import RenderableType
 
-from heinzel import Homebrew, Kernel, ManualInstall, Module, Progress
+from heinzel import HeinzelError, Homebrew, Kernel, ManualInstall, Module, Progress
 from heinzel.kernel import (
     KERNEL_SECTION,
     CoreMetadataVerifier,
     DaemonInstallationLifecycle,
     Installation,
+    MaintenanceLocks,
     OfflineUninstall,
     PluginReleases,
     ReleaseSource,
     Settings,
     UninstallResult,
     WebHeadRefresh,
+    host_maintenance_gate,
+    host_maintenance_lock,
+    record_installation_profile,
+    tracked_installation_mutation_pending,
 )
 from heinzel.modules.system._announced import Announcement, ToolSnapshot, trial_start
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
@@ -231,11 +236,28 @@ def recover_announced(installation: Installation, kernel: Kernel) -> bool:
 
     The web app's server asks once when it starts, holding the apply lock. A copy left behind is the truth: the
     process that took it died before the update ended, so the tool folder goes back to it.
+
+    Raises:
+        HeinzelError: If the SDK or another profile is busy or requires recovery.
     """
     folder = kernel.settings.state_dir / "auto-update"
     if not installation.is_tool or not (folder / "before-update").is_dir():
         return False
-    ToolSnapshot(installation.prefix.resolve(strict=True), folder / "before-update", folder / "after-update").recover()
+    prefix = installation.prefix.resolve(strict=True)
+    with MaintenanceLocks((host_maintenance_lock(prefix),)) as locks:
+        try:
+            host_maintenance_gate(prefix).lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            msg = "SDK maintenance must finish before rolling back this installation."
+            raise HeinzelError(msg)
+        if tracked_installation_mutation_pending(prefix, excluding=kernel.settings.state_dir):
+            msg = "An SDK mutation in another profile requires recovery before rolling back this installation."
+            raise HeinzelError(msg)
+        state = record_installation_profile(prefix, kernel.settings.state_dir, locks)
+        folder = state / "auto-update"
+        ToolSnapshot(prefix, folder / "before-update", folder / "after-update").recover()
     return True
 
 
