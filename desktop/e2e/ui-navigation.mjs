@@ -104,7 +104,9 @@ async function run(redirectOnStart) {
     } else {
       const page = await app.firstWindow({ timeout: 30_000 });
       await page.locator("p").waitFor();
-      assert.deepEqual(await page.evaluate(() => Object.keys(window.heinzelDesktop)), ["lifecycle"]);
+      assert.deepEqual(await page.evaluate(() => Object.keys(window.heinzelDesktop)), [
+        "workspaceAudio", "titlebar", "browser", "lifecycle", "onFullscreen",
+      ]);
       await page.evaluate(() => document.querySelector("#sound").click());
       assert.equal(await readFile(join(root, "public-media"), "utf8").catch(() => ""), "", "A scripted click reached the OS opener.");
       await page.locator("#capture").click();
