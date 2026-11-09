@@ -12,9 +12,9 @@ only `web/` runs the web checks; changes that touch neither `web/` nor `desktop/
 tests narrowed to the ones related to the change (`scripts/related_tests.py`; configuration, the lockfile and
 `conftest.py` cannot be mapped and run all of them); anything else runs `make check-fast` in full. `make check-fast` by
 hand stays the full run. Set HZ_FOCUSED_PUSH=1 for a Python push from a host where the desktop tests cannot run.
-This requires a nonempty related unit selection and leaves the hosted desktop tests to CI. For an explicit Python
-selection, or for mixed Python/web changes, set HZ_FOCUSED_PUSH_MANIFEST to a reviewed JSON plan for the exact
-base and head. This local selection does not alter the required hosted checks.
+This requires a nonempty related unit selection and leaves the hosted desktop tests to CI. For explicit Python,
+web-only, or mixed Python/web selections, set HZ_FOCUSED_PUSH_MANIFEST to a reviewed JSON plan for the exact base
+and head. This local selection does not alter the required hosted checks.
 """
 
 import argparse
@@ -206,6 +206,8 @@ FOCUSED_TEST_PATHS = {
     "desktop": re.compile(r"desktop/test/(?:[\w-]+/)*[\w-]+\.test\.js", re.ASCII),
 }
 PYTHON_SOURCE = re.compile(r"src/heinzel/(?:[\w-]+/)*[\w-]+\.py", re.ASCII)
+SELECTOR_TEST = "tests/unit/scoped_checks_test.py"
+SELECTOR_FILES = {"scripts/scoped_checks.py", SELECTOR_TEST}
 PUSH_REF_FIELDS = 4  # local ref, local SHA, remote ref, remote SHA
 
 
@@ -270,13 +272,14 @@ def read_focused_manifest(manifest: Path, *, base: str, head: str) -> dict[str, 
 
 
 def focused_test_targets(
-    manifest: Path, *, base: str, head: str, changed: list[str], mixed: bool
+    manifest: Path, *, base: str, head: str, changed: list[str], scope: str
 ) -> dict[str, list[str]]:
     """Load reviewed base/head SHAs and four test lists: unit, integration, web, desktop.
 
     Paths are repository-relative and tracked at head. Python entries can name a test within a file.
-    The unit list is required, with web and desktop lists empty for Python-only pushes. Mixed pushes require web
-    tests and Node tests for Electron shell changes. Review the selection alongside the diff.
+    Python pushes require unit tests and mixed pushes require web tests and Node tests for Electron shell changes.
+    Web-only pushes require web tests and run the selector's unit file if the branch changes it.
+    Review the selection alongside the diff.
 
     Raises:
         SystemExit: If the manifest is stale, incomplete or contains an unsupported test selection.
@@ -288,17 +291,20 @@ def focused_test_targets(
         if not isinstance(entries, list) or any(
             not isinstance(path, str) or not pattern.fullmatch(path) for path in cast("list[object]", entries)
         ):
-            scope = "mixed" if mixed else "Python"
             msg = f"Invalid focused {scope} test path in the {lane} list."
             raise SystemExit(msg)
         targets[lane] = sorted(set(cast("list[str]", entries)))
-    if not mixed and (targets["web"] or targets["desktop"]):
+    selector_units = [SELECTOR_TEST] if SELECTOR_FILES.intersection(changed) else []
+    if scope == "web" and (targets["integration"] or targets["desktop"] or targets["unit"] != selector_units):
+        msg = "A focused web manifest allows only web tests and the full selector unit file if changed."
+        raise SystemExit(msg)
+    if scope == "Python" and (targets["web"] or targets["desktop"]):
         msg = "A focused Python manifest requires empty web and desktop lists."
         raise SystemExit(msg)
     for lane, required in (
-        ("unit", True),
+        ("unit", scope != "web"),
         ("integration", any(path.startswith("tests/integration/") for path in changed)),
-        ("web", mixed),
+        ("web", scope != "Python"),
         ("desktop", any(path.startswith(("desktop/src/", "desktop/test/")) for path in changed)),
     ):
         if required and not targets[lane]:
@@ -331,7 +337,10 @@ def manifest_push_checks(changed: list[str], base: str, manifest: Path) -> int:
     Raises:
         SystemExit: If the change is outside the supported manifest push scope.
     """
-    mixed = any(path.startswith("web/src/") for path in changed)
+    has_web = any(path.startswith("web/src/") for path in changed)
+    has_python = any(PYTHON_SOURCE.fullmatch(path) for path in changed)
+    mixed = has_web and has_python
+    web_only = has_web and not has_python
     if mixed:
         allowed = all(
             is_document(path)
@@ -339,16 +348,28 @@ def manifest_push_checks(changed: list[str], base: str, manifest: Path) -> int:
             or path.startswith(MIXED_SOURCE_DIRS)
             for path in changed
         )
+    elif web_only:
+        allowed = all(
+            path.startswith("web/src/") or path in SELECTOR_FILES or path == "web/openapi.json" for path in changed
+        )
     else:
         allowed = python_manifest_paths(changed)
-    if (
-        not allowed
-        or WEB_ROOT_FILES.intersection(changed)
-        or not any(PYTHON_SOURCE.fullmatch(path) for path in changed)
-    ):
-        msg = "Focused manifests cover Python or Python/web source changes without build or runtime configuration."
+    if not allowed or WEB_ROOT_FILES.intersection(changed) or not (has_python or web_only):
+        msg = (
+            "Focused manifests cover Python, web, or Python/web source changes without build or runtime configuration."
+        )
         raise SystemExit(msg)
-    targets = focused_test_targets(manifest, base=base, head=focused_push_head(), changed=changed, mixed=mixed)
+    scope = "mixed" if mixed else "web" if web_only else "Python"
+    targets = focused_test_targets(manifest, base=base, head=focused_push_head(), changed=changed, scope=scope)
+    # The pinned Vitest filters on paths relative to its web/ root.
+    web = " ".join(path.removeprefix("web/") for path in targets["web"])
+    web_step = f"web-tests={WEB} exec vitest run --maxWorkers=2 {web}"
+    run_early_guards(changed)
+    if web_only and not targets["unit"]:
+        steps = [f"web-prepare={WEB} prepare", *WEB_STEPS[:-1], f"&{web_step}"]
+        return run_check(
+            ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps], check=False, timeout=600
+        ).returncode
     command = [
         "make",
         "check-fast",
@@ -356,11 +377,9 @@ def manifest_push_checks(changed: list[str], base: str, manifest: Path) -> int:
         f"UNIT_TARGETS={' '.join(targets['unit'])}",
         "PYTEST_XDIST_AUTO_NUM_WORKERS=2",
     ]
-    if mixed:
-        # The pinned Vitest filters on paths relative to its web/ root.
-        web = " ".join(path.removeprefix("web/") for path in targets["web"])
+    if mixed or web_only:
         command += [
-            f'WEB_TESTS="web-tests={WEB} exec vitest run --maxWorkers=2 {web}"',
+            f'WEB_TESTS="{web_step}"',
             (
                 'MANAGED_CHECK="managed-runtime=$(MANAGED) exec node tools/runtime-code.mjs --check" '
                 '"&managed-lint=$(MANAGED) exec biome ci ." $(MANAGED_TYPES)'
@@ -368,7 +387,6 @@ def manifest_push_checks(changed: list[str], base: str, manifest: Path) -> int:
         ]
     else:
         command += ["WEB_TESTS=", "MANAGED_CHECK="]
-    run_early_guards(changed)
     result = run_check(command, check=False, timeout=600).returncode
     if result:
         return result

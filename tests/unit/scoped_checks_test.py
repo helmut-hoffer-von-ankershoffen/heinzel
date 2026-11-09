@@ -404,6 +404,146 @@ def test_mixed_manifest_alone_leaves_default_push_selection_unchanged(monkeypatc
 
 
 @pytest.fixture
+def web_push(monkeypatch, tmp_path):
+    base = "c" * 40
+    head = scoped.resolve_base("HEAD")
+    web = [
+        "web/src/api/stream.test.ts",
+        "web/src/components/OperationDialog.test.tsx",
+        "web/src/layout/DaemonSettings.test.tsx",
+        "web/src/layout/SettingsStructure.test.tsx",
+    ]
+    changed = [
+        "web/src/api/stream.ts",
+        "web/src/components/OperationDialog.tsx",
+        "web/src/layout/DaemonSettings.tsx",
+        web[1],
+        web[2],
+    ]
+    plan = {"base": base, "head": head, "unit": [], "integration": [], "web": web, "desktop": []}
+    manifest = tmp_path / "web.json"
+    monkeypatch.setattr(scoped, "focused_push_head", lambda: head)
+    monkeypatch.setenv("HZ_FOCUSED_PUSH", "1")
+    monkeypatch.setenv("HZ_FOCUSED_PUSH_MANIFEST", str(manifest))
+    return base, plan, changed, manifest
+
+
+def test_web_manifest_keeps_prepare_lint_client_types_and_limits_vitest(gate_calls, web_push):
+    gate, calls = gate_calls
+    base, plan, changed, manifest = web_push
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    assert scoped.push_checks(changed, base) == 0
+
+    [(command, _)] = calls
+    assert command == [
+        gate,
+        "--timeout",
+        "600",
+        "uv",
+        "run",
+        "--quiet",
+        "--script",
+        "scripts/steps.py",
+        f"web-prepare={scoped.WEB} prepare",
+        *scoped.WEB_STEPS[:-1],
+        (
+            f"&web-tests={scoped.WEB} exec vitest run --maxWorkers=2 "
+            "src/api/stream.test.ts src/components/OperationDialog.test.tsx "
+            "src/layout/DaemonSettings.test.tsx src/layout/SettingsStructure.test.tsx"
+        ),
+    ]
+
+
+@pytest.mark.parametrize("with_manifest", [False, True])
+def test_ordinary_web_push_keeps_default_selection(monkeypatch, gate_calls, web_push, with_manifest):
+    gate, calls = gate_calls
+    base, plan, changed, manifest = web_push
+    monkeypatch.delenv("HZ_FOCUSED_PUSH")
+    if with_manifest:
+        manifest.write_text(json.dumps(plan), encoding="utf-8")
+    else:
+        monkeypatch.delenv("HZ_FOCUSED_PUSH_MANIFEST")
+
+    assert scoped.push_checks(changed, base) == 0
+
+    [(command, _)] = calls
+    assert command == [
+        gate,
+        "--timeout",
+        "600",
+        "uv",
+        "run",
+        "--quiet",
+        "--script",
+        "scripts/steps.py",
+        f"web-prepare={scoped.WEB} prepare",
+        *scoped.WEB_STEPS,
+    ]
+    assert command[-1] == f"&web-tests={scoped.WEB} exec vitest run"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("base", "a" * 40, "exact base and head"),
+        ("head", "b" * 40, "exact base and head"),
+        ("web", [], "nonempty web"),
+        ("web", ["web/src/api/stream.test.ts"], "cover every changed test file"),
+        ("unit", ["tests/unit/scoped_checks_test.py"], "allows only web tests"),
+        ("integration", ["tests/integration/guides_test.py"], "allows only web tests"),
+        ("desktop", ["desktop/test/window.test.js"], "allows only web tests"),
+    ],
+)
+def test_web_manifest_rejects_stale_foreign_or_incomplete_targets(gate_calls, web_push, field, value, message):
+    _, calls = gate_calls
+    base, plan, changed, manifest = web_push
+    plan[field] = value
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match=message):
+        scoped.push_checks(changed, base)
+
+    assert calls == []
+
+
+@pytest.mark.parametrize("path", ["web/vite.config.ts", "desktop/src/main.js", "tests/unit/ci_test.py"])
+def test_web_manifest_refuses_unrelated_changes(gate_calls, web_push, path):
+    _, calls = gate_calls
+    base, plan, changed, manifest = web_push
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="without build or runtime configuration"):
+        scoped.push_checks([*changed, path], base)
+
+    assert calls == []
+
+
+@pytest.mark.parametrize("with_unit", [False, True])
+def test_web_manifest_with_selector_change_requires_its_full_unit_file(gate_calls, web_push, with_unit):
+    gate, calls = gate_calls
+    base, plan, changed, manifest = web_push
+    changed += ["scripts/scoped_checks.py"]
+    if with_unit:
+        plan["unit"] = [scoped.SELECTOR_TEST]
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    if not with_unit:
+        with pytest.raises(SystemExit, match="full selector unit file"):
+            scoped.push_checks(changed, base)
+        assert calls == []
+        return
+
+    assert scoped.push_checks(changed, base) == 0
+    guards = scoped.early_guard_commands(changed)
+    assert [command[3:] for command, _ in calls[:-1]] == guards
+    checks = calls[-1][0]
+    assert checks[:5] == [gate, "--timeout", "600", "make", "check-fast"]
+    assert f"UNIT_TARGETS={scoped.SELECTOR_TEST}" in checks
+    assert any("vitest run --maxWorkers=2 src/api/stream.test.ts" in arg for arg in checks)
+
+
+@pytest.fixture
 def python_push(monkeypatch, tmp_path):
     base = "c" * 40
     head = scoped.resolve_base("HEAD")
