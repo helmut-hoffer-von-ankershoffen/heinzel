@@ -12,7 +12,9 @@ only `web/` runs the web checks; changes that touch neither `web/` nor `desktop/
 tests narrowed to the ones related to the change (`scripts/related_tests.py`; configuration, the lockfile and
 `conftest.py` cannot be mapped and run all of them); anything else runs `make check-fast` in full. `make check-fast` by
 hand stays the full run. Set HZ_FOCUSED_PUSH=1 for a Python push from a host where the desktop tests cannot run.
-This requires a nonempty related unit selection and leaves the desktop tests to CI. CI always runs the full gate.
+This requires a nonempty related unit selection and leaves the hosted desktop tests to CI. Mixed Python/web pushes
+also require HZ_FOCUSED_PUSH_MANIFEST, the path to a reviewed JSON plan for the exact base and head (see below).
+CI always runs the full gate.
 """
 
 import argparse
@@ -175,6 +177,15 @@ def scoped_steps(changed: list[str]) -> list[str] | None:
 
 WEB_INPUTS = ("web/", "desktop/")
 WEB_ROOT_FILES = {"pyproject.toml", "uv.lock", "Makefile", "mkdocs.yml"}
+MIXED_SOURCE_DIRS = (
+    "src/heinzel/",
+    "tests/unit/",
+    "tests/integration/",
+    "tests/fixtures/",
+    "web/src/",
+    "desktop/src/",
+    "desktop/test/",
+)
 
 
 def touches_web(changed: list[str]) -> bool:
@@ -187,6 +198,160 @@ HOSTED_DESKTOP_TESTS = {
     "tests/unit/heads/desktop_installation_test.py",
     "tests/integration/desktop_framework_wrap_test.py",
 }
+MIXED_TEST_PATHS = {
+    "unit": re.compile(r"tests/unit/(?:[\w-]+/)*[\w-]+_test\.py(?:::[\w]+)?", re.ASCII),
+    "integration": re.compile(r"tests/integration/(?:[\w-]+/)*[\w-]+_test\.py(?:::[\w]+)?", re.ASCII),
+    "web": re.compile(r"web/src/(?:[\w-]+/)*[\w.-]+\.test\.tsx?", re.ASCII),
+    "desktop": re.compile(r"desktop/test/(?:[\w-]+/)*[\w-]+\.test\.js", re.ASCII),
+}
+PUSH_REF_FIELDS = 4  # local ref, local SHA, remote ref, remote SHA
+
+
+def focused_push_head() -> str:
+    """Bind the manifest to the clean checkout and, in the hook, the one ref being pushed.
+
+    Raises:
+        SystemExit: If the checkout or push does not identify one exact committed tree.
+    """
+    head = resolve_base("HEAD")
+    dirty = subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=all"],  # noqa: S607 - repository Git from PATH
+        text=True,
+        timeout=30,
+    )
+    if dirty:
+        msg = "A focused mixed push requires a clean checkout."
+        raise SystemExit(msg)
+    if refs_file := os.environ.get("HZ_DEV_PUSH_REFS_FILE"):
+        try:
+            refs = Path(refs_file).read_text(encoding="utf-8").splitlines()
+        except (OSError, ValueError) as error:
+            msg = "Unable to read the pushed ref list for a focused mixed push."
+            raise SystemExit(msg) from error
+        if len(refs) != 1 or len(fields := refs[0].split()) != PUSH_REF_FIELDS or fields[1] != head:
+            msg = "A focused mixed push requires exactly one pushed ref at the checked-out HEAD."
+            raise SystemExit(msg)
+    return head
+
+
+def tracked_test_files(head: str, files: set[str]) -> set[str]:
+    """Find the requested regular, tracked files, excluding symlinks and directories."""
+    listed = subprocess.check_output(  # noqa: S603 - validated revision and literal test paths after --
+        ["git", "ls-tree", "-rz", "--full-tree", head, "--", *sorted(files)],  # noqa: S607 - repository Git from PATH
+        text=True,
+        timeout=30,
+    )
+    return {entry.split("\t", 1)[1] for entry in listed.split("\0") if entry.startswith(("100644 ", "100755 "))}
+
+
+def read_mixed_manifest(manifest: Path, *, base: str, head: str) -> dict[str, object]:
+    """Read a reviewed manifest for the exact commit pair.
+
+    Raises:
+        SystemExit: If the manifest is malformed or stale.
+    """
+    try:
+        plan = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        msg = "Unable to read HZ_FOCUSED_PUSH_MANIFEST as JSON."
+        raise SystemExit(msg) from error
+    if not isinstance(plan, dict) or plan.keys() != {"base", "head", *MIXED_TEST_PATHS}:
+        msg = "A focused mixed manifest requires base, head, unit, integration, web and desktop fields."
+        raise SystemExit(msg)
+    if plan["base"] != base or plan["head"] != head:
+        msg = "A focused mixed manifest must match the exact base and head commits."
+        raise SystemExit(msg)
+    return plan
+
+
+def mixed_test_targets(manifest: Path, *, base: str, head: str, changed: list[str]) -> dict[str, list[str]]:
+    """Load reviewed base/head SHAs and four test lists: unit, integration, web, desktop.
+
+    Paths are repository-relative and tracked at head. Python entries can name a test within a file.
+    The unit and web lists are required. Changed test files must be covered, and changes to the Electron
+    shell require desktop tests that run under Node without launching Electron. Review the plan alongside the diff.
+
+    Raises:
+        SystemExit: If the manifest is stale, incomplete or contains an unsupported test selection.
+    """
+    plan = read_mixed_manifest(manifest, base=base, head=head)
+    targets = {}
+    for lane, pattern in MIXED_TEST_PATHS.items():
+        entries = plan[lane]
+        if not isinstance(entries, list) or any(
+            not isinstance(path, str) or not pattern.fullmatch(path) for path in entries
+        ):
+            msg = f"Invalid focused mixed test path in the {lane} list."
+            raise SystemExit(msg)
+        targets[lane] = sorted(set(entries))
+    for lane, required in (
+        ("unit", True),
+        ("integration", any(path.startswith("tests/integration/") for path in changed)),
+        ("web", True),
+        ("desktop", any(path.startswith(("desktop/src/", "desktop/test/")) for path in changed)),
+    ):
+        if required and not targets[lane]:
+            msg = f"A focused mixed manifest requires a nonempty {lane} list for this change."
+            raise SystemExit(msg)
+    files = {entry.split("::", 1)[0] for entries in targets.values() for entry in entries}
+    if files & HOSTED_DESKTOP_TESTS:
+        msg = "A focused mixed manifest cannot select hosted desktop tests."
+        raise SystemExit(msg)
+    if any(any(pattern.fullmatch(path) for pattern in MIXED_TEST_PATHS.values()) for path in set(changed) - files):
+        msg = "A focused mixed manifest must cover every changed test file."
+        raise SystemExit(msg)
+    if files != tracked_test_files(head, files):
+        msg = "A focused mixed manifest can select only tracked test files at HEAD."
+        raise SystemExit(msg)
+    return targets
+
+
+def mixed_push_checks(changed: list[str], base: str, manifest: Path) -> int:
+    """Keep the fast gate's static checks and run only the reviewed tests for a mixed push.
+
+    Raises:
+        SystemExit: If the change is outside the supported mixed push scope.
+    """
+    if (
+        not any(path.startswith("src/heinzel/") and path.endswith(".py") for path in changed)
+        or not any(path.startswith("web/src/") for path in changed)
+        or bool(WEB_ROOT_FILES.intersection(changed))
+        or any(
+            not is_document(path)
+            and path not in {"scripts/scoped_checks.py", "web/openapi.json"}
+            and not path.startswith(MIXED_SOURCE_DIRS)
+            for path in changed
+        )
+    ):
+        msg = "A focused mixed push supports Python/web source changes without build or runtime configuration."
+        raise SystemExit(msg)
+    targets = mixed_test_targets(manifest, base=base, head=focused_push_head(), changed=changed)
+    web = " ".join(f"/{path.removeprefix('web/')}" for path in targets["web"])
+    command = [
+        "make",
+        "check-fast",
+        f"FAST_TYPES={TYPES}",
+        f"UNIT_TARGETS={' '.join(targets['unit'])}",
+        "PYTEST_XDIST_AUTO_NUM_WORKERS=2",
+        f'WEB_TESTS="web-tests={WEB} exec vitest run --maxWorkers=2 {web}"',
+        (
+            'MANAGED_CHECK="managed-runtime=$(MANAGED) exec node tools/runtime-code.mjs --check" '
+            '"&managed-lint=$(MANAGED) exec biome ci ." $(MANAGED_TYPES)'
+        ),
+    ]
+    run_early_guards(changed)
+    result = run_check(command, check=False, timeout=600).returncode
+    if result:
+        return result
+    if targets["integration"]:
+        integration = ["uv", "run", "pytest", *targets["integration"], "-m", "integration and not perf"]
+        result = run_check([*integration, "-n", "2", "-x", "-q", "--session-timeout=120"], check=False, timeout=180)
+        if result.returncode:
+            return result.returncode
+    if targets["desktop"]:
+        desktop = [*WEB.split(), "exec", "node", "--test", *(f"../{path}" for path in targets["desktop"])]
+        return run_check(desktop, check=False, timeout=180).returncode
+    return 0
 
 
 def python_overrides(changed: list[str], *, focused: bool = False) -> list[str]:
@@ -328,7 +493,7 @@ def run_early_guards(changed: list[str], *, light: bool = False) -> None:
         run_check(command, timeout=180, light=light)
 
 
-def push_checks(changed: list[str]) -> int | None:
+def push_checks(changed: list[str], base: str) -> int | None:
     """Run scoped push checks, or return None for the ordinary fast gate.
 
     Raises:
@@ -339,6 +504,8 @@ def push_checks(changed: list[str]) -> int | None:
         bool(changed) and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed)
     )
     focused = os.environ.get("HZ_FOCUSED_PUSH") == "1"
+    if focused and (manifest := os.environ.get("HZ_FOCUSED_PUSH_MANIFEST")):
+        return mixed_push_checks(changed, base, Path(manifest))
     if focused and (steps or not python_scope):
         msg = "HZ_FOCUSED_PUSH requires a Python push with a related unit selection."
         raise SystemExit(msg)
@@ -375,7 +542,7 @@ def main() -> None:
     base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if args.mode == "push":
         changed = sorted({*changed, *changed_paths("fast", base)})
-        if (status := push_checks(changed)) is not None:
+        if (status := push_checks(changed, base)) is not None:
             sys.exit(status)
         args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):
