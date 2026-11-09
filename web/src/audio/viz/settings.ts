@@ -2,12 +2,15 @@
 // browser like the app's other interface preferences and applied at once everywhere they are read.
 import { useSyncExternalStore } from "react";
 
-export const STYLES = ["spectrum", "aurora"] as const;
+export const STYLES = ["spectrum", "aurora", "halo", "swarm"] as const;
 export type VizStyle = (typeof STYLES)[number];
 export type VizSettings = { readonly master: boolean; readonly styles: Readonly<Record<VizStyle, boolean>> };
 
 const KEY = "hz.audio.viz";
-export const DEFAULT_SETTINGS: VizSettings = { master: true, styles: { spectrum: true, aurora: true } };
+export const DEFAULT_SETTINGS: VizSettings = {
+  master: true,
+  styles: { spectrum: true, aurora: true, halo: true, swarm: true },
+};
 
 export function parseSettings(raw: string | null): VizSettings {
   if (!raw) return DEFAULT_SETTINGS;
@@ -45,16 +48,6 @@ function commit(next: VizSettings) {
 export const setMaster = (master: boolean) => commit({ ...current, master });
 export const setStyle = (style: VizStyle, on: boolean) =>
   commit({ ...current, styles: { ...current.styles, [style]: on } });
-/** What shows, as one choice: the two styles map onto it, Both = both on. Null when neither is on (master still on). */
-export type VizShown = "spectrum" | "aurora" | "both";
-export function shownOf(settings: VizSettings): VizShown | null {
-  const { spectrum, aurora } = settings.styles;
-  if (spectrum && aurora) return "both";
-  if (spectrum) return "spectrum";
-  return aurora ? "aurora" : null;
-}
-export const setShown = (shown: VizShown) =>
-  commit({ ...current, styles: { spectrum: shown !== "aurora", aurora: shown !== "spectrum" } });
 /** For tests: reread the stored value. */
 export const reloadSettings = () => {
   current = load();

@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AudioVisualizer, spectrumLevel } from "./AudioVisualizer";
 import { captureAudio, captureMicrophone } from "./capture";
 import { publishOwnAudio } from "./own";
-import { reloadSettings, setMaster, setShown } from "./viz/settings";
+import { reloadSettings, setMaster, setStyle } from "./viz/settings";
+import { setVizStage } from "./viz/stage";
 
 vi.mock("./capture", () => ({
   captureAudio: vi.fn(),
@@ -29,7 +30,10 @@ const listening = {
 } as unknown as Awaited<ReturnType<typeof captureMicrophone>>;
 
 const realMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+const realSecure = Object.getOwnPropertyDescriptor(globalThis, "isSecureContext");
 beforeEach(() => {
+  // A secure page (https or localhost), where browsers offer the microphone at all.
+  Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: true });
   // A browser that offers tab sharing; the capture itself is mocked above.
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
@@ -42,11 +46,14 @@ const source = (name: string) =>
   within(screen.getByRole("radiogroup", { name: "Listen to" })).getByRole("radio", { name });
 
 afterEach(() => {
+  if (realSecure) Object.defineProperty(globalThis, "isSecureContext", realSecure);
+  else delete (globalThis as { isSecureContext?: boolean }).isSecureContext;
   if (realMediaDevices) Object.defineProperty(navigator, "mediaDevices", realMediaDevices);
   else delete (navigator as { mediaDevices?: MediaDevices }).mediaDevices;
   vi.clearAllMocks();
   localStorage.clear();
   sessionStorage.clear();
+  act(() => setVizStage(null));
   reloadSettings();
   act(() => publishOwnAudio({ mode: "none" }));
 });
@@ -142,13 +149,16 @@ describe("AudioVisualizer", () => {
     expect(captureMicrophone).not.toHaveBeenCalled();
     expect(screen.getByTestId("audio-aurora")).toBeInTheDocument();
     // Show is one choice: Aurora alone drops the rail and keeps the aurora layer, Spectrum alone the reverse.
-    act(() => setShown("aurora"));
+    act(() => setStyle("spectrum", false));
     expect(screen.queryByRole("img", { name: "Shared audio spectrum" })).not.toBeInTheDocument();
     expect(screen.getByTestId("audio-aurora")).toBeInTheDocument();
-    act(() => setShown("spectrum"));
+    act(() => {
+      setStyle("spectrum", true);
+      setStyle("aurora", false);
+    });
     expect(screen.getByRole("img", { name: "Shared audio spectrum" })).toBeInTheDocument();
     expect(screen.queryByTestId("audio-aurora")).not.toBeInTheDocument();
-    act(() => setShown("both"));
+    act(() => setStyle("aurora", true));
     // The master switch hides every style but keeps its trigger, reading Off, so it can be turned on again here.
     act(() => setMaster(false));
     expect(screen.queryByRole("img", { name: "Shared audio spectrum" })).not.toBeInTheDocument();
@@ -230,20 +240,55 @@ describe("AudioVisualizer", () => {
     expect(signal?.aborted).toBe(true);
   });
 
-  it("fills the chosen segment of each choice, and only that one", () => {
+  it("shows each style as its own checkbox chip, the on ones filled and checked, and the source as one choice", () => {
+    act(() => setVizStage({ element: document.createElement("div"), playful: true }));
     render(<AudioVisualizer />);
     open();
-    const show = within(screen.getByRole("radiogroup", { name: "Show" }));
-    expect(show.getByRole("radio", { name: "Both" })).toHaveAttribute("aria-checked", "true");
-    expect(show.getByRole("radio", { name: "Both" })).toHaveClass("bg-primary", "text-primary-foreground");
-    for (const name of ["Spectrum", "Aurora"]) {
-      expect(show.getByRole("radio", { name })).toHaveAttribute("aria-checked", "false");
-      expect(show.getByRole("radio", { name })).not.toHaveClass("bg-primary");
+    const show = within(screen.getByRole("group", { name: "Show" }));
+    for (const name of ["Spectrum", "Aurora", "Halo", "Swarm"]) {
+      expect(show.getByRole("checkbox", { name })).toBeChecked();
+      expect(show.getByRole("checkbox", { name }).closest("label")).toHaveClass(
+        "bg-primary",
+        "text-primary-foreground",
+      );
     }
-    fireEvent.click(show.getByRole("radio", { name: "Aurora" }));
-    expect(show.getByRole("radio", { name: "Aurora" })).toHaveAttribute("aria-checked", "true");
-    expect(show.getByRole("radio", { name: "Both" })).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(show.getByRole("checkbox", { name: "Halo" }));
+    expect(show.getByRole("checkbox", { name: "Halo" })).not.toBeChecked();
+    expect(show.getByRole("checkbox", { name: "Halo" }).closest("label")).not.toHaveClass("bg-primary");
+    expect(show.getByRole("checkbox", { name: "Swarm" })).toBeChecked();
     expect(document.querySelectorAll("[aria-pressed]")).toHaveLength(0);
+    // Every style off is allowed; the status line says so.
+    for (const name of ["Spectrum", "Aurora", "Swarm"]) fireEvent.click(show.getByRole("checkbox", { name }));
+    expect(screen.getByRole("status")).toHaveTextContent("Nothing shown: every style is off.");
+    // The source is exclusive: radios.
+    expect(source("Off")).toHaveAttribute("aria-checked", "true");
+    expect(within(screen.getByRole("radiogroup", { name: "Listen to" })).queryAllByRole("checkbox")).toHaveLength(0);
+  });
+
+  it("stands the Halo and the Swarm in the sidebar stage, only while the Heinzels play along", () => {
+    const analyser = {
+      frequencyBinCount: 16,
+      getByteFrequencyData: vi.fn(),
+      disconnect: vi.fn(),
+    } as unknown as AnalyserNode;
+    const element = document.createElement("div");
+    document.body.append(element);
+    try {
+      act(() => publishOwnAudio({ mode: "analysed", analyser, label: "Rain" }));
+      act(() => setVizStage({ element, playful: true }));
+      render(<AudioVisualizer />);
+      expect(element.querySelector("[data-testid=audio-halo]")).not.toBeNull();
+      expect(element.querySelector("[data-testid=audio-swarm]")).not.toBeNull();
+      expect(element.querySelectorAll("[data-swarm-figure]")).toHaveLength(3);
+      act(() => setStyle("halo", false));
+      expect(element.querySelector("[data-testid=audio-halo]")).toBeNull();
+      expect(element.querySelector("[data-testid=audio-swarm]")).not.toBeNull();
+      act(() => setVizStage({ element, playful: false }));
+      expect(element.querySelector("[data-testid=audio-swarm]")).toBeNull();
+    } finally {
+      act(() => setVizStage(null));
+      element.remove();
+    }
   });
 
   it("switches from the microphone to shared audio in one step, stopping the microphone only once sharing runs", async () => {
@@ -369,5 +414,67 @@ describe("AudioVisualizer", () => {
     await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
     expect(screen.queryByText(/Audio sharing is unavailable/)).not.toBeInTheDocument();
     expect(screen.queryByText("Retry")).not.toBeInTheDocument();
+  });
+
+  it("shows no microphone choice without getUserMedia or outside a secure context", () => {
+    Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: false });
+    render(<AudioVisualizer />);
+    open();
+    const group = within(screen.getByRole("radiogroup", { name: "Listen to" }));
+    expect(group.getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["Off", "Shared audio"]);
+    cleanup();
+    Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: true });
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getDisplayMedia: vi.fn() } });
+    render(<AudioVisualizer />);
+    open();
+    expect(
+      within(screen.getByRole("radiogroup", { name: "Listen to" }))
+        .getAllByRole("radio")
+        .map((radio) => radio.textContent),
+    ).toEqual(["Off", "Shared audio"]);
+  });
+
+  it("shows no Listen to group when this browser can take no source, and says so", () => {
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: {} });
+    render(<AudioVisualizer />);
+    act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+    expect(screen.queryByRole("complementary", { name: "Let Heinzel see the music" })).not.toBeInTheDocument();
+    open();
+    expect(screen.queryByRole("radiogroup", { name: "Listen to" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("cannot be seen in this browser");
+    expect(
+      screen.getByText("Nothing is recorded or uploaded. This browser shows Heinzel's own sound only."),
+    ).toBeVisible();
+  });
+
+  it("shows only the styles this page can draw: no Halo or Swarm without the sidebar stage, none without a canvas", () => {
+    render(<AudioVisualizer />);
+    open();
+    const names = () =>
+      within(screen.getByRole("group", { name: "Show" }))
+        .getAllByRole("checkbox")
+        .map((box) => box.closest("label")?.textContent);
+    // No sidebar stage here (or playful off): the Heinzel styles cannot stand anywhere.
+    expect(names()).toEqual(["Spectrum", "Aurora"]);
+    cleanup();
+    const element = document.createElement("div");
+    act(() => setVizStage({ element, playful: true }));
+    try {
+      render(<AudioVisualizer />);
+      open();
+      expect(names()).toEqual(["Spectrum", "Aurora", "Halo", "Swarm"]);
+    } finally {
+      act(() => setVizStage(null));
+    }
+    cleanup();
+    const getContext = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "getContext");
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", { configurable: true, value: undefined });
+    try {
+      render(<AudioVisualizer />);
+      open();
+      expect(screen.queryByRole("group", { name: "Show" })).not.toBeInTheDocument();
+    } finally {
+      if (getContext) Object.defineProperty(HTMLCanvasElement.prototype, "getContext", getContext);
+    }
   });
 });
