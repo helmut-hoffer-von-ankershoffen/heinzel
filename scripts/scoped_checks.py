@@ -11,7 +11,8 @@ only `web/` runs the web checks; changes that touch neither `web/` nor `desktop/
 `make check-fast` without the web app's tests and the managed backend's check, with the type checks added and the unit
 tests narrowed to the ones related to the change (`scripts/related_tests.py`; configuration, the lockfile and
 `conftest.py` cannot be mapped and run all of them); anything else runs `make check-fast` in full. `make check-fast` by
-hand stays the full run. CI always runs the full gate, so nothing goes unchecked, only later.
+hand stays the full run. Set HZ_FOCUSED_PUSH=1 for a Python push from a host where the desktop tests cannot run.
+This requires a nonempty related unit selection and leaves the desktop tests to CI. CI always runs the full gate.
 """
 
 import argparse
@@ -182,19 +183,31 @@ def touches_web(changed: list[str]) -> bool:
 
 
 TYPES = '"&mypy=uv run mypy" "&pyright=uv run pyright"'
+HOSTED_DESKTOP_TESTS = {
+    "tests/unit/heads/desktop_installation_test.py",
+    "tests/integration/desktop_framework_wrap_test.py",
+}
 
 
-def python_overrides(changed: list[str]) -> list[str]:
+def python_overrides(changed: list[str], *, focused: bool = False) -> list[str]:
     """Make variables for the pre-push run of `check-fast`: no web steps, the type checks, the related unit tests.
 
     A change that cannot be mapped to tests (configuration, the lockfile, `conftest.py`) keeps the full unit run. When
     nothing is related (a script no test mentions), only the hook's own test runs besides lint, contracts and types.
+
+    Raises:
+        SystemExit: If focused mode cannot select any related tests that can run locally.
     """
     overrides = ["WEB_TESTS=", "MANAGED_CHECK=", f"FAST_TYPES={TYPES}"]
     sys.path.insert(0, str(ROOT / "scripts"))
     from related_tests import related_tests  # noqa: PLC0415 - only the hook needs the import graph
 
     related = related_tests(changed)
+    if focused:
+        related = [path for path in related or [] if path not in HOSTED_DESKTOP_TESTS]
+        if not related:
+            msg = "HZ_FOCUSED_PUSH requires at least one related unit test that can run locally."
+            raise SystemExit(msg)
     if related is None:
         return overrides
     if not related:
@@ -315,6 +328,32 @@ def run_early_guards(changed: list[str], *, light: bool = False) -> None:
         run_check(command, timeout=180, light=light)
 
 
+def push_checks(changed: list[str]) -> int | None:
+    """Run scoped push checks, or return None for the ordinary fast gate.
+
+    Raises:
+        SystemExit: If a focused push cannot use the related Python unit checks.
+    """
+    steps = scoped_steps(changed)
+    python_scope = (
+        bool(changed) and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed)
+    )
+    focused = os.environ.get("HZ_FOCUSED_PUSH") == "1"
+    if focused and (steps or not python_scope):
+        msg = "HZ_FOCUSED_PUSH requires a Python push with a related unit selection."
+        raise SystemExit(msg)
+    light = bool(changed) and all(is_document(path) for path in changed)
+    run_early_guards(changed, light=light)
+    if steps:
+        command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
+        return run_check(command, check=False, timeout=600, light=light).returncode
+    if python_scope:
+        # The generated client is still checked by web-lint.
+        command = ["make", "check-fast", *python_overrides(changed, focused=focused)]
+        return run_check(command, check=False, timeout=1800).returncode
+    return None
+
+
 def main() -> None:
     """Preserve core checks and common policies while selecting independent owning plugin work."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -336,18 +375,8 @@ def main() -> None:
     base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if args.mode == "push":
         changed = sorted({*changed, *changed_paths("fast", base)})
-        light = bool(changed) and all(is_document(path) for path in changed)
-        run_early_guards(changed, light=light)
-        steps = scoped_steps(changed)
-        if steps:
-            command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
-            done = run_check(command, check=False, timeout=600, light=light)
-            sys.exit(done.returncode)
-        if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
-            # Python, scripts, tests and documents: everything of the fast gate but the web app's tests and the managed
-            # backend's check, which read nothing of it (the generated client is still checked by web-lint).
-            command = ["make", "check-fast", *python_overrides(changed)]
-            sys.exit(run_check(command, check=False, timeout=1800).returncode)
+        if (status := push_checks(changed)) is not None:
+            sys.exit(status)
         args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):
         run_check(
