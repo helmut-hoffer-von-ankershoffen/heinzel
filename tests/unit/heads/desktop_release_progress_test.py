@@ -1,13 +1,17 @@
 """The desktop installer never goes quiet: progress lines, stalled servers, missing releases and the real path."""
 
 import fcntl
+import hashlib
 import io
 import json
+import logging
 import re
 import threading
 import time
+from http.client import HTTPMessage
 from http.server import BaseHTTPRequestHandler
-from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import pytest
 from rich.console import Console
@@ -246,9 +250,9 @@ def test_confirm_never_prompts_without_a_terminal():
 
 
 def test_transient_failures_are_retried_then_succeed():
-    from urllib.error import HTTPError, URLError
-
-    outcomes = iter([URLError(ConnectionResetError("reset")), HTTPError("u", 503, "busy", None, None), "ok"])  # pyright: ignore[reportArgumentType]
+    outcomes = iter(
+        [URLError(ConnectionResetError("reset")), HTTPError("u", 503, "busy", HTTPMessage(), io.BytesIO()), "ok"]
+    )
 
     def action():
         outcome = next(outcomes)
@@ -259,6 +263,98 @@ def test_transient_failures_are_retried_then_succeed():
     notes = _Notes()
     assert release._retrying(action, "Asking GitHub", notes) == "ok"
     assert [line.count("retrying") for line in notes.lines] == [1, 1]
+
+
+MANIFEST_URL = f"https://github.com/{release.REPOSITORY}/releases/download/{TAG}/{release.MANIFEST_NAME}"
+ASSET_URL = f"https://api.github.com/repos/{release.REPOSITORY}/releases/assets/42"
+MANIFEST_BODY = b'{"schema":1}'
+ASSET = release._AssetIdentity(TAG, 42, hashlib.sha256(MANIFEST_BODY).hexdigest())
+
+
+def _asset_requests(monkeypatch, *answers):
+    replies = iter(answers)
+    requests = []
+
+    class Opener:
+        def open(self, request, timeout):
+            url = request.full_url if isinstance(request, Request) else request  # noqa: S310 - mock inspects URL only
+            accept = request.get_header("Accept") if isinstance(request, Request) else None  # noqa: S310 - mock inspects header only
+            requests.append((url, accept, timeout))
+            answer = next(replies)
+            if isinstance(answer, int):
+                raise HTTPError(url, answer, "fixture", HTTPMessage(), io.BytesIO())
+            return io.BytesIO(answer)
+
+    monkeypatch.setattr(release, "build_opener", lambda *_handlers: Opener())
+    monkeypatch.setattr(release, "RETRY_PAUSE", 0)
+    return requests
+
+
+def test_asset_gateway_timeout_uses_the_published_id_and_octet_stream(monkeypatch, tmp_path, caplog):
+    caplog.set_level(logging.INFO, logger="heinzel.desktop")
+    requests = _asset_requests(monkeypatch, 504, MANIFEST_BODY)
+    target = tmp_path / release.MANIFEST_NAME
+    notes = _Notes()
+
+    release._download(target, 16 * 1024, ASSET, notes)
+
+    assert target.read_bytes() == MANIFEST_BODY
+    assert requests == [
+        (MANIFEST_URL, None, release.DOWNLOAD_TIMEOUT),
+        (ASSET_URL, "application/octet-stream", release.DOWNLOAD_TIMEOUT),
+    ]
+    assert any("trying the official GitHub release API, attempt 2 of 3" in line for line in notes.lines)
+    assert [(r.msg, r.phase) for r in caplog.records] == [
+        ("desktop.install.release_fallback", "start"),
+        ("desktop.install.release_fallback", "end"),
+    ]
+    assert caplog.records[-1].outcome == "ok"
+
+
+def test_alternate_asset_bytes_must_match_the_published_digest(monkeypatch, tmp_path, caplog):
+    requests = _asset_requests(monkeypatch, 504, b'{"id":42}')
+    target = tmp_path / release.MANIFEST_NAME
+
+    with pytest.raises(release.HeinzelError, match="do not match the published asset"):
+        release._download(target, 16 * 1024, ASSET)
+
+    assert len(requests) == 2
+    assert [(r.msg, r.outcome, r.error) for r in caplog.records if r.phase == "end"] == [
+        ("desktop.install.release_fallback", "failed", "HeinzelError")
+    ]
+
+
+def test_alternate_asset_redirect_stays_on_official_https_hosts():
+    api_request = Request(ASSET_URL, headers={"Accept": "application/octet-stream"})
+    redirects = release._ReleaseRedirects()
+    official_url = "https://release-assets.githubusercontent.com/asset"
+    redirected = redirects.redirect_request(api_request, io.BytesIO(), 302, "", HTTPMessage(), official_url)
+
+    assert redirected.full_url == official_url
+    assert redirected.header_items() == []
+    with pytest.raises(release.HeinzelError, match="redirected outside the official asset hosts"):
+        redirects.redirect_request(api_request, io.BytesIO(), 302, "", HTTPMessage(), "https://example.com/asset")
+
+
+@pytest.mark.parametrize("api_error", [403, 404, 504])
+def test_gateway_recovery_uses_the_existing_attempt_budget(monkeypatch, tmp_path, api_error):
+    requests = _asset_requests(monkeypatch, 504, api_error, 504)
+    target = tmp_path / release.MANIFEST_NAME
+
+    with pytest.raises(release.HeinzelError, match=r"HTTP 504.*githubstatus\.com.*retry hz app install"):
+        release._download(target, 16 * 1024, ASSET)
+
+    assert [url for url, _, _ in requests] == [MANIFEST_URL, ASSET_URL, MANIFEST_URL]
+
+
+def test_missing_asset_remains_a_distinct_error_without_an_alternate(monkeypatch, tmp_path):
+    requests = _asset_requests(monkeypatch, 404)
+    target = tmp_path / release.MANIFEST_NAME
+
+    with pytest.raises(release.HeinzelError, match=r"No desktop app is published.*is missing from its release"):
+        release._download(target, 16 * 1024, ASSET)
+
+    assert [url for url, _, _ in requests] == [MANIFEST_URL]
 
 
 def test_verification_failure_and_timeout_stay_fatal(tmp_path, monkeypatch):
