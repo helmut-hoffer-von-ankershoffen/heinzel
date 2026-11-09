@@ -138,19 +138,61 @@ try {
       JSON.stringify({ window: { since: "2026-01-01T00:00:00Z", until: "2026-01-02T00:00:00Z" } }),
     );
   }
-  await panel.getByRole("button", { name: "Prepare review" }).click();
-  // The proposal either appears or the form says it could not be prepared: fail on the alert at once, with the values
-  // the form held, instead of waiting out the locator timeout.
-  const refused = panel.getByRole("alert").filter({ hasText: "The action could not be verified" });
-  await panel.getByText("Account: fixture-account").or(refused).first().waitFor();
-  if (await refused.isVisible()) {
-    const held = await panel.evaluate((node) =>
-      [...node.querySelectorAll("input, textarea, select")].map((field) => [
-        field.closest("label")?.textContent?.trim().slice(0, 40) ?? field.tagName,
-        field.type === "checkbox" ? field.checked : field.value,
-      ]),
-    );
-    assert.fail(`Prepare review was refused; the form held ${JSON.stringify(held)}`);
+  const prepare = panel.getByRole("button", { name: "Prepare review" });
+  await prepare.evaluate((button) => {
+    const controller = new AbortController();
+    const records = [];
+    const region = button.closest("section");
+    const select = region?.querySelector("select");
+    const snapshot = (kind, event) => {
+      const { x, y, width, height } = button.getBoundingClientRect();
+      const hit = event && document.elementFromPoint(event.clientX, event.clientY);
+      records.push({
+        kind,
+        trusted: event?.isTrusted ?? null,
+        targetInside: event ? event.composedPath().includes(button) : null,
+        pointInside: event ? Boolean(hit && button.contains(hit)) : null,
+        disabled: button.disabled,
+        connected: button.isConnected,
+        selectedOption: Boolean(select?.value && select.selectedOptions.length),
+        rect: [x, y, width, height].map((value) => Math.round(value * 100) / 100),
+        scroll: [button.closest(".overflow-y-auto")?.scrollTop, button.closest(".workspace-scroll")?.scrollTop],
+      });
+      if (records.length > 12) records.shift();
+    };
+    window.__hzPrepareInteraction = {
+      records,
+      stop() {
+        snapshot("after");
+        controller.abort();
+      },
+    };
+    snapshot("before");
+    for (const kind of ["pointerdown", "pointerup", "click"]) {
+      document.addEventListener(kind, (event) => snapshot(kind, event), {
+        capture: true,
+        passive: true,
+        signal: controller.signal,
+      });
+    }
+  });
+  try {
+    await prepare.click();
+    // The proposal either appears or the form says it could not be prepared: fail on the alert at once, with the values
+    // the form held, instead of waiting out the locator timeout.
+    const refused = panel.getByRole("alert").filter({ hasText: "The action could not be verified" });
+    await panel.getByText("Account: fixture-account").or(refused).first().waitFor();
+    if (await refused.isVisible()) {
+      const held = await panel.evaluate((node) =>
+        [...node.querySelectorAll("input, textarea, select")].map((field) => [
+          field.closest("label")?.textContent?.trim().slice(0, 40) ?? field.tagName,
+          field.type === "checkbox" ? field.checked : field.value,
+        ]),
+      );
+      assert.fail(`Prepare review was refused; the form held ${JSON.stringify(held)}`);
+    }
+  } finally {
+    await page.evaluate(() => window.__hzPrepareInteraction?.stop()).catch(() => {});
   }
   await panel.getByText("Provider-reported candidate read: Candidate metadata may be filtered locally.").waitFor();
   await panel.getByRole("button", { name: "Review access" }).click();
@@ -333,7 +375,8 @@ try {
     })
     .catch(() => null);
   const disclosures = await disclosureDiagnostics(page);
-  const diagnostic = `${message}\n${visible}\nLayout: ${JSON.stringify(layout)}\nDisclosure trace: ${JSON.stringify(disclosures)}\nRevocation trace: ${JSON.stringify(revocations.slice(-12))}\nProposal trace: ${JSON.stringify(proposalTrace)}\nProposal form: ${JSON.stringify(form)}`;
+  const prepareInteraction = await page.evaluate(() => window.__hzPrepareInteraction?.records ?? []).catch(() => []);
+  const diagnostic = `${message}\n${visible}\nLayout: ${JSON.stringify(layout)}\nDisclosure trace: ${JSON.stringify(disclosures)}\nRevocation trace: ${JSON.stringify(revocations.slice(-12))}\nPrepare interaction: ${JSON.stringify(prepareInteraction)}\nProposal trace: ${JSON.stringify(proposalTrace)}\nProposal form: ${JSON.stringify(form)}`;
   process.stderr.write(`${diagnostic.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
   process.exitCode = 1;
 } finally {

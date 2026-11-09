@@ -326,3 +326,27 @@ mode 0600 for records, and an atomic replacement of a freshly written regular fi
 identity, error message or other arbitrary detail. Core ignores unsafe, oversized, malformed, future or expired
 records; even fresh evidence is labeled **last observed**, never current reachability. See
 [ADR 0119](adr/0119-interactive-cli-reads-local-overview-records.md).
+
+## Preview screenshots before installation
+
+In Settings → Plugins, open **Screenshots** for a discovered or installed public GitHub plugin. Choose UI or CLI
+captures, or open a capture at full size. `hz system plugin showcase harbor --json` returns the same declared media
+without installing the plugin. Private and unknown installed sources stay in their owning repositories.
+
+Declare captures in the owning project's `pyproject.toml`:
+
+```toml
+[[tool.heinzel.catalog.screenshots]]
+path = "docs/assets/interface.png"
+surface = "ui"
+caption = "The plugin's interface"
+
+[[tool.heinzel.catalog.screenshots]]
+path = "docs/assets/terminal.webp"
+surface = "cli"
+caption = "The plugin's terminal output"
+```
+
+Use at most eight regular PNG, JPG or WebP files of at most 2 MiB each, inside the project. Captions are plain text,
+at most 180 characters. The preview uses the owning public source at an immutable revision and never executes the
+plugin. Stream soundscapes may provide explicit YouTube links; opening a gallery starts no playback.

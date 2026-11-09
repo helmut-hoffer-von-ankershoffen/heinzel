@@ -346,6 +346,7 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | List installed plugins, enabled or not, with their source and the modules and adapters they bring. | `hz system plugin list` | `system_plugin_list` | `GET /system/plugin/list` | `GET /api/system/plugin/list` |  | expert |
+| Preview an owning public plugin's UI and CLI screenshots without installing it. | `hz system plugin showcase` | `system_plugin_showcase` | — | `GET /api/system/plugin/showcase` |  | expert |
 | Show what a plugin would install, then add it with `--confirm`; adding it again replaces it. | `hz system plugin add` | `system_plugin_add` | — | `POST /api/system/plugin/add` | yes | expert |
 | Install every plugin an installed plugin requires that is missing or too old, from the same catalog. | `hz system plugin repair` | `system_plugin_repair` | — | `POST /api/system/plugin/repair` | yes | expert |
 | List plugins changed on this machine since this server started: what a restart would load. | `hz system plugin pending` | `system_plugin_pending` | — | `GET /api/system/plugin/pending` |  | expert |

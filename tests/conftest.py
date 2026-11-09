@@ -56,6 +56,17 @@ def _no_real_homebrew(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ToolHost, "system", classmethod(lambda cls: ready_everywhere()))
 
 
+@pytest.fixture(autouse=True)
+def no_catalog_feed_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests never read the published plugin catalog from the network; they inject their own."""
+
+    def refuse(url: str, etag: str | None) -> tuple[int, str | None, bytes]:
+        message = "no network in tests"
+        raise OSError(message)
+
+    monkeypatch.setattr("heinzel.modules.system.plugin._feed._fetch", refuse)
+
+
 @pytest.fixture
 def settings() -> Settings:
     return Config.empty().settings(Settings, "hz")

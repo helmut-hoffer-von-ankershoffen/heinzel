@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, session, WebContentsView, webContents } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, shell, WebContentsView, webContents } from "electron";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createMiniBrowser } from "./mini-browser.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
+import { createPublicMediaHandler } from "./public-media.js";
 import { createWorkspaceAudio } from "./workspace-audio.js";
 import { initializeDesktopIdentity } from "./identity.js";
 import { refreshAfterQuit, shouldRefresh, stopWithReport } from "./shutdown.js";
@@ -109,6 +110,12 @@ const managedMac = app.isPackaged && process.platform === "darwin";
 const ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz" });
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:browser", (event, request) => miniBrowser.handle(event, request));
+  ipcMain.handle("hz:public-media", createPublicMediaHandler({
+    windows,
+    fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+    connection: () => (stopping || quitting ? null : instance.currentConnection()),
+    openExternal: (url) => shell.openExternal(url, { activate: true }),
+  }));
   ipcMain.handle("hz:lifecycle", createLifecycleHandler({
     windows,
     fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
