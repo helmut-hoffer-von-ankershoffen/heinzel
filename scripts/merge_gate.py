@@ -24,6 +24,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -314,20 +315,50 @@ def finish(problems: list[str], passed: str) -> int:
 
 
 def run_focused(gate: Gate) -> int:
-    """Collect a focused receipt with protected policy. This command never publishes a verdict."""
-    from focused_ci_collect import Trigger, collect  # noqa: PLC0415 - legacy gates do not load the dormant collector
+    """Collect a read-only receipt using the protected caller's event and administrator configuration."""
+    from focused_ci_collect import (  # noqa: PLC0415 - legacy gates do not load the dormant collector
+        authenticate_policy,
+        collect,
+        git_bytes,
+        protected_trigger,
+        require,
+    )
 
     if not gate.token:
         return finish(["An authenticated GitHub read token is required."], "")
     try:
-        receipt = collect(
-            gate.github,
-            Path(os.environ["FOCUSED_CI_POLICY_PATH"]),
-            Trigger(
-                int(gate.pr), gate.head, int(os.environ["FOCUSED_CI_RUN_ID"]), int(os.environ["FOCUSED_CI_RUN_ATTEMPT"])
-            ),
-            policy_sha256=os.environ["FOCUSED_CI_POLICY_SHA256"],
+        env = os.environ
+        require(
+            env.get("GITHUB_ACTIONS") == "true"
+            and env.get("GITHUB_EVENT_NAME") == "workflow_run"
+            and env.get("GITHUB_REF") == "refs/heads/main",
+            "Focused evidence requires a protected workflow_run on main",
         )
+        base = env["GITHUB_SHA"]
+        trigger = protected_trigger(
+            json.loads(Path(env["GITHUB_EVENT_PATH"]).read_bytes()),
+            repo=gate.repo,
+            workflow_ref=env["GITHUB_WORKFLOW_REF"],
+            base=base,
+        )
+        policy = env["FOCUSED_EVIDENCE_ADMIN_MANIFEST"].encode()
+        digest = env["FOCUSED_EVIDENCE_ADMIN_SHA256"]
+        authenticate_policy(policy, digest)
+        require(git_bytes("rev-parse", "HEAD").decode().strip() == base, "The checkout is not the protected event SHA")
+        # Read only Git objects. The collector checks their exact identities before interpreting the run.
+        git_bytes(
+            "fetch",
+            "--no-tags",
+            "--no-recurse-submodules",
+            "origin",
+            f"refs/pull/{trigger.pr}/head",
+            f"refs/pull/{trigger.pr}/merge",
+        )
+        with tempfile.NamedTemporaryFile() as detached:
+            detached.write(policy)
+            detached.flush()
+            receipt = collect(gate.github, Path(detached.name), trigger, policy_sha256=digest)
+        require(receipt.run.base == base, "The protected base advanced during collection")
     except (UnavailableError, KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError) as error:
         return finish([f"Focused evidence unavailable: {error}"], "")
     run = receipt.run

@@ -74,11 +74,46 @@ class Trigger:
     attempt: int
 
 
+def protected_trigger(event: dict[str, Any], *, repo: str, workflow_ref: str, base: str) -> Trigger:
+    """Extract identities from the completed run on the trusted caller's protected revision."""
+    require(
+        workflow_ref == f"{repo}/.github/workflows/merge-gate.yml@refs/heads/main" and sha(base),
+        "Focused evidence requires the protected merge-gate workflow",
+    )
+    run = event["workflow_run"]
+    [pull] = run["pull_requests"]
+    head = run["head_sha"]
+    repository = event["repository"]
+    require(
+        event["action"] == "completed"
+        and repository["full_name"] == repo
+        and run["repository"]["id"] == run["head_repository"]["id"] == repository["id"]
+        and run["event"] == "pull_request"
+        and run["status"] == "completed"
+        and run["conclusion"] == "success"
+        and pull["base"]["ref"] == "main"
+        and pull["base"]["sha"] == base
+        and pull["head"]["sha"] == head
+        and sha(head)
+        and all(positive(n) for n in (repository["id"], pull["number"], run["id"], run["run_attempt"])),
+        "The completed run does not belong to a pull request on this protected base",
+    )
+    return Trigger(pull["number"], head, run["id"], run["run_attempt"])
+
+
 def git_bytes(*args: str) -> bytes:
     """Read Git objects without checking out the PR, following replacement objects or running a diff driver."""
     return subprocess.check_output(  # noqa: S603 - Git object operations with validated identities only
         ["git", "--no-replace-objects", *args],  # noqa: S607 - installed Git
         timeout=30,
+    )
+
+
+def authenticate_policy(policy_bytes: bytes, policy_sha256: str) -> None:
+    """Require the administrator's independent digest before trusting manifest bytes."""
+    require(
+        bool(DIGEST.fullmatch(policy_sha256)) and hashlib.sha256(policy_bytes).hexdigest() == policy_sha256,
+        "The detached focused policy does not match its protected digest",
     )
 
 
@@ -192,10 +227,7 @@ def collect(
     The run ID and attempt come from a trusted trigger. This collector produces no merge authorization.
     """
     policy_bytes = policy.read_bytes()
-    require(
-        bool(DIGEST.fullmatch(policy_sha256)) and hashlib.sha256(policy_bytes).hexdigest() == policy_sha256,
-        "The detached focused policy does not match its protected digest",
-    )
+    authenticate_policy(policy_bytes, policy_sha256)
     manifest = tomllib.loads(policy_bytes.decode())
     source = Source(**manifest.pop("source"))
     pr, head, run_id, attempt = trigger.pr, trigger.head, trigger.run_id, trigger.attempt

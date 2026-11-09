@@ -51,20 +51,30 @@ its source is committed, so the file that records the approved blobs does not ne
 manifest with `repository_id`, `workflow_id`, `workflow_path`, `workflow_sha256` and `workload_app_id`
 alongside the selector digest. Review the manifest and pin its SHA-256 through an administrator-controlled
 configuration outside the tested branch. A Git commit cannot contain an allowlist that names its own SHA.
-The protected caller supplies `FOCUSED_CI_POLICY_PATH` for the detached file and `FOCUSED_CI_POLICY_SHA256`
-from the separately controlled configuration. A PR or a workload artifact must have no influence over that
-pin. Missing or mismatched authorization stops the collector before API reads.
-Run the collector from protected source with the base, PR head and test merge Git objects available, without
-checking out the PR. Pass `PR_NUMBER`, `PR_HEAD_SHA`, `FOCUSED_CI_RUN_ID` and `FOCUSED_CI_RUN_ATTEMPT`
-from the trusted trigger. The GitHub token needs read access to actions, checks, contents and pull requests.
+The uncalled `focused-ci-evidence.yml` can run only from `merge-gate.yml` on `main` with a `workflow_run`
+event. The job checks out the protected event SHA and reads the exact attempt from the runner's event file.
+Configure the `focused-evidence` environment with `main` as its only deployment branch and administrator
+review required. Set `FOCUSED_EVIDENCE_ADMIN_MANIFEST` and `FOCUSED_EVIDENCE_ADMIN_SHA256` as separate
+environment secrets. Reserve those names for this environment and keep inherited secrets off. The digest
+authenticates the manifest before the caller fetches PR objects. The caller fetches the head and merge
+objects without checking them out, uses a read-only token, and never opens workload artifacts.
 
 The collector compares the detached manifest's exact base with protected `main` and checks the tested merge
-parents and tree. It matches the workflow and selector bytes at the protected base and tested merge. It checks the workflow's
-registered identity and the GitHub App IDs on the workload check suite and every job check. It reads all
+parents and tree. It matches the workflow and selector bytes at the protected base and tested merge. It
+checks the registered workflow and the GitHub App IDs on the workload check suite and every job check. It reads all
 pages of one attempt and preserves repeated job names. Missing, duplicate, skipped, cancelled, failing or
 unexpected jobs fail validation. It rechecks the run and pull request after collecting the jobs. It prints
 an evidence result and leaves required checks unpublished. The focused coverage route `coverage --focused`
 fails closed pending an approved candidate coverage policy.
+
+## Hosted evidence still needed
+
+At protected `432006f27ce2df73a80f2f69a4e162378df2c862`, the selector and read-only workflow are absent.
+The existing `focused-job.yml` runs are diagnostic dispatches. A successful dispatch cannot establish the
+required `pull_request` attempt or the protected selector bytes. After an independently reviewed bootstrap,
+one isolated PR study should run the pinned focused workload against an unchanged protected base. Collect
+that exact successful attempt from the protected caller using an approved detached manifest and an exact
+expected job list. Record the read-only receipt before evaluating any required-check publishing change.
 
 ## Rollout
 

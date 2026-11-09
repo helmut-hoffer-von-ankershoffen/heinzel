@@ -1,0 +1,33 @@
+name: Focused CI evidence
+
+# Dormant until a separately reviewed call from the protected merge gate is added.
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  collect:
+    if: >-
+      github.event_name == 'workflow_run'
+      && github.ref == 'refs/heads/main'
+      && github.workflow_ref == format('{0}/.github/workflows/merge-gate.yml@refs/heads/main', github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: focused-evidence
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Collect evidence from the exact completed attempt
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FOCUSED_EVIDENCE_ADMIN_MANIFEST: ${{ secrets.FOCUSED_EVIDENCE_ADMIN_MANIFEST }}
+          FOCUSED_EVIDENCE_ADMIN_SHA256: ${{ secrets.FOCUSED_EVIDENCE_ADMIN_SHA256 }}
+        run: python3 -E -s scripts/merge_gate.py focused

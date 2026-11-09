@@ -1,12 +1,15 @@
 """The merge gate judges from public APIs, waits with a deadline and fails closed."""
 
+import hashlib
 import importlib.util
 import io
 import json
+import os
 import sys
 import urllib.error
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -327,23 +330,155 @@ def test_focused_coverage_holds_without_reading_the_main_badge(monkeypatch):
     assert merge_gate.main(["coverage", "--focused"]) == 1
 
 
-def test_focused_cli_requires_an_independent_policy_pin_before_reading_github(monkeypatch, capsys):
+@pytest.fixture
+def focused_caller(monkeypatch, tmp_path):
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
-    monkeypatch.delenv("FOCUSED_CI_POLICY_SHA256", raising=False)
+    import focused_ci_collect
+
+    base = "b" * 40
+    repository = {"id": 123, "full_name": REPO}
+    event = {
+        "action": "completed",
+        "repository": repository,
+        "workflow_run": {
+            "id": 51,
+            "run_attempt": 2,
+            "repository": repository,
+            "head_repository": repository,
+            "head_sha": HEAD,
+            "event": "pull_request",
+            "status": "completed",
+            "conclusion": "success",
+            "pull_requests": [{"number": 7, "base": {"ref": "main", "sha": base}, "head": {"sha": HEAD}}],
+        },
+    }
+    event_path = tmp_path / "event.json"
+    event_path.write_text(json.dumps(event))
+    manifest = "[source]\nworkload_app_id = 11\n"
+    digest = hashlib.sha256(manifest.encode()).hexdigest()
     for name, value in {
         "GITHUB_REPOSITORY": REPO,
-        "PR_NUMBER": "7",
-        "PR_HEAD_SHA": HEAD,
         "GITHUB_TOKEN": "fixture",
-        "FOCUSED_CI_RUN_ID": "1",
-        "FOCUSED_CI_RUN_ATTEMPT": "1",
-        "FOCUSED_CI_POLICY_PATH": str(ROOT / "scripts" / "focused_ci_transition.toml"),
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_EVENT_NAME": "workflow_run",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_SHA": base,
+        "GITHUB_WORKFLOW_REF": f"{REPO}/.github/workflows/merge-gate.yml@refs/heads/main",
+        "GITHUB_EVENT_PATH": str(event_path),
+        "FOCUSED_EVIDENCE_ADMIN_MANIFEST": manifest,
+        "FOCUSED_EVIDENCE_ADMIN_SHA256": digest,
+    }.items():
+        monkeypatch.setenv(name, value)
+    return focused_ci_collect, base, manifest, digest
+
+
+def test_focused_caller_ignores_untrusted_policy_and_attempt_environment(monkeypatch, focused_caller):
+    collector, base, manifest, digest = focused_caller
+    for name, value in {
+        "PR_NUMBER": "99",
+        "PR_HEAD_SHA": "c" * 40,
+        "FOCUSED_CI_RUN_ID": "88",
+        "FOCUSED_CI_RUN_ATTEMPT": "9",
+        "FOCUSED_CI_POLICY_PATH": "/untrusted/manifest",
+        "FOCUSED_CI_POLICY_SHA256": "a" * 64,
+        "FOCUSED_CI_WORKLOAD_APP_ID": "666",
     }.items():
         monkeypatch.setenv(name, value)
 
+    def git(*args):
+        if args == ("rev-parse", "HEAD"):
+            return base.encode()
+        assert args == (
+            "fetch",
+            "--no-tags",
+            "--no-recurse-submodules",
+            "origin",
+            "refs/pull/7/head",
+            "refs/pull/7/merge",
+        )
+        return b""
+
+    def collect(_read, path, trigger, *, policy_sha256):
+        assert trigger == collector.Trigger(7, HEAD, 51, 2)
+        assert path.read_text() == manifest
+        assert policy_sha256 == digest
+        return SimpleNamespace(run=SimpleNamespace(base=base, pr=7, head=HEAD, run_id=51, attempt=2))
+
+    monkeypatch.setattr(collector, "git_bytes", git)
+    monkeypatch.setattr(collector, "collect", collect)
+    assert merge_gate.main(["focused"]) == 0
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        (("GITHUB_REF", "refs/pull/7/merge"), "workflow_run on main"),
+        (("GITHUB_EVENT_NAME", "workflow_dispatch"), "workflow_run on main"),
+        (
+            ("GITHUB_WORKFLOW_REF", f"{REPO}/.github/workflows/decoy.yml@refs/heads/main"),
+            "protected merge-gate workflow",
+        ),
+        (("FOCUSED_EVIDENCE_ADMIN_SHA256", "c" * 64), "does not match its protected digest"),
+    ],
+)
+def test_focused_caller_rejects_untrusted_ref_or_pin_before_git_or_api(
+    monkeypatch, capsys, focused_caller, override, message
+):
+    collector, _, _, digest = focused_caller
+    monkeypatch.setenv("FOCUSED_CI_POLICY_SHA256", digest)
+    monkeypatch.setenv(*override)
+
     def unexpected_read(*_):
-        pytest.fail("offline fixture must fail before API reads")
+        pytest.fail("the invalid caller must fail before Git or API reads")
 
     monkeypatch.setattr(merge_gate.Gate, "github", unexpected_read)
+    monkeypatch.setattr(collector, "git_bytes", unexpected_read)
     assert merge_gate.main(["focused"]) == 1
-    assert "Focused evidence unavailable" in capsys.readouterr().out
+    assert message in capsys.readouterr().out
+
+
+def test_focused_caller_rejects_a_pr_checkout_before_fetch(monkeypatch, capsys, focused_caller):
+    collector, _, _, _ = focused_caller
+
+    def git(*args):
+        assert args == ("rev-parse", "HEAD")
+        return HEAD.encode()
+
+    monkeypatch.setattr(collector, "git_bytes", git)
+    assert merge_gate.main(["focused"]) == 1
+    assert "checkout is not the protected event SHA" in capsys.readouterr().out
+
+
+def test_focused_caller_rejects_a_run_from_a_different_head_repository(monkeypatch, capsys, focused_caller):
+    collector, _, _, _ = focused_caller
+    event_file = Path(os.environ["GITHUB_EVENT_PATH"])
+    event = json.loads(event_file.read_bytes())
+    event["workflow_run"]["head_repository"]["id"] = 999
+    event_file.write_text(json.dumps(event))
+
+    def unexpected_git(*_):
+        pytest.fail("an untrusted workload source must fail before fetching Git objects")
+
+    monkeypatch.setattr(collector, "git_bytes", unexpected_git)
+    assert merge_gate.main(["focused"]) == 1
+    assert "does not belong to a pull request on this protected base" in capsys.readouterr().out
+
+
+def test_focused_workflow_is_uncalled_and_read_only():
+    path = ".github/workflows/focused-ci-evidence.yml"
+    workflow = yaml.safe_load((ROOT / path).read_text())
+    assert workflow[True] == {"workflow_call": None}
+    assert workflow["permissions"] == {}
+    job = workflow["jobs"]["collect"]
+    assert "merge-gate.yml@refs/heads/main" in job["if"]
+    assert job["environment"] == "focused-evidence"
+    assert set(job["permissions"].values()) == {"read"}
+    checkout, collect = job["steps"]
+    assert checkout["with"] == {"ref": "${{ github.sha }}", "persist-credentials": False}
+    for name in ("FOCUSED_EVIDENCE_ADMIN_MANIFEST", "FOCUSED_EVIDENCE_ADMIN_SHA256"):
+        assert collect["env"][name] == "${{ secrets." + name + " }}"
+    assert all(
+        path not in other.read_text()
+        for other in (ROOT / ".github/workflows").glob("*.yml")
+        if other.name != Path(path).name
+    )
