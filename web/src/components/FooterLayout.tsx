@@ -34,6 +34,9 @@ const FooterContext = createContext<Context | null>(null);
 const FooterVisibility = createContext(true);
 export const useFooterVisibility = () => useContext(FooterVisibility);
 const targets = (element: HTMLElement) => [element, ...element.querySelectorAll("[data-footer-credit-text]")];
+/** Opens the More list, when there is a footer to open it in; a no-op otherwise. */
+export const useOpenFooterOverflow = () => useContext(FooterContext)?.setOverflowOpen;
+
 export function useFooterLayout() {
   const value = useContext(FooterContext);
   if (!value) throw new Error("Footer controls need FooterLayout");

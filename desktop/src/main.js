@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, session, WebContentsView, webContents } from "electron";
+import path from "node:path";
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, WebContentsView, webContents } from "electron";
+import { appMenuTemplate, helpLogLine, isAllowedHelpUrl, menuLogLine, menuScript } from "./app-menu.js";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
-import { createLifecycleHandler } from "./lifecycle-ipc.js";
+import { createAboutHandler, createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createMiniBrowser } from "./mini-browser.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
@@ -115,6 +117,16 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     connection: () => instance.currentConnection(),
     lifecycle,
   }));
+  ipcMain.handle("hz:about", createAboutHandler({
+    windows,
+    fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+    connection: () => instance.currentConnection(),
+    about: () => ({
+      version: app.getVersion(),
+      // A packaged app runs from <name>.app/Contents/MacOS/<exe>; show the bundle, not the inner file.
+      path: app.isPackaged ? path.resolve(app.getPath("exe"), "..", "..", "..") : app.getAppPath(),
+    }),
+  }));
   let serviceStarted = false;
   let unexpectedExitReported = false;
   void ownedCli.exited().then(() => {
@@ -168,6 +180,25 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
   });
   void app.whenReady().then(() => {
     if (stopping) return;
+    // The native About panel is never the target (the menu opens the web dialog), but if macOS shows it anyway it
+    // names the app properly and shows one version, not "Version X (X)".
+    app.setAboutPanelOptions({ applicationName: app.name, applicationVersion: app.getVersion(), version: "" });
+    // The page owns what About, Settings and Updates show; the menu only asks it to open them.
+    if (process.platform === "darwin") Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate({
+      name: app.name,
+      devTools: !app.isPackaged,
+      open: (url) => {
+        const allowed = isAllowedHelpUrl(url);
+        console.info(helpLogLine(url, allowed));
+        if (allowed) void shell.openExternal(url);
+      },
+      send: (action) => {
+        const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+        const ready = Boolean(window && windows.has(window) && !window.isDestroyed());
+        console.info(menuLogLine(action, ready ? "sent" : "no_window"));
+        if (ready) void window.webContents.executeJavaScript(menuScript(action));
+      },
+    })));
     return (managedMac ? acquireDesktopGate() : Promise.resolve(null)).then((gate) => {
       if (gate) {
         desktopGate = gate;

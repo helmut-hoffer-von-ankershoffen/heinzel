@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { requestMenuAction } from "@/about/menu";
 import { config, doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
@@ -177,5 +178,49 @@ describe("Shell", () => {
       "href",
       "https://heinzel.team/guides/first-steps/",
     );
+  });
+});
+
+describe("Desktop menu actions", () => {
+  it("opens Settings from the app menu", async () => {
+    mockApi({ ...answers, "/api/system/config/show": config });
+    renderAt("/doctor");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    act(() => requestMenuAction("settings"));
+    expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("opens the daemon settings and the Doctor from the app menu", async () => {
+    mockApi({ ...answers, "/api/system/config/show": config });
+    renderAt("/graph");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    act(() => requestMenuAction("daemon"));
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    expect(within(dialog).getByRole("heading", { name: /daemon/i })).toBeInTheDocument();
+    await userEvent.setup().keyboard("{Escape}");
+    act(() => requestMenuAction("doctor"));
+    expect(await screen.findByRole("heading", { name: /doctor/i })).toBeInTheDocument();
+  });
+
+  it("opens the changelog panel from the Help menu", async () => {
+    mockApi({ ...answers, "/api/system/config/show": config, "/api/system/changelog": "# Changes\n" });
+    renderAt("/doctor");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    act(() => requestMenuAction("changelog"));
+    expect(await screen.findByRole("dialog", { name: "View changelog" })).toBeInTheDocument();
+  });
+
+  it("answers the View, Go and Help menu actions", async () => {
+    mockApi({ ...answers, "/api/system/config/show": config });
+    renderAt("/doctor");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    expect(await screen.findByRole("heading", { name: /doctor/i })).toBeInTheDocument();
+    act(() => requestMenuAction("go:plugins"));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: /doctor/i })).not.toBeInTheDocument());
+    act(() => requestMenuAction("help"));
+    expect(await screen.findByRole("dialog", { name: /help/i })).toBeInTheDocument();
+    await userEvent.setup().keyboard("{Escape}");
+    act(() => requestMenuAction("search"));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 });

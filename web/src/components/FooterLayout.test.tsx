@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ListChecks } from "lucide-react";
+import { ListChecks, RefreshCw } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FooterItem } from "./FooterItem";
@@ -21,6 +21,26 @@ function Counter({ mounted }: { mounted: () => void }) {
 
 function Empty() {
   return null;
+}
+
+function Asked() {
+  const [request, setRequest] = useState(0);
+  useEffect(() => {
+    const ask = () => setRequest((count) => count + 1);
+    window.addEventListener("test:ask", ask);
+    return () => window.removeEventListener("test:ask", ask);
+  }, []);
+  return (
+    <FooterItem
+      label="Updates"
+      state="warn"
+      text="Updates"
+      openRequest={request}
+      actions={<PaneAction icon={RefreshCw}>Check for updates</PaneAction>}
+    >
+      <p>Up to date.</p>
+    </FooterItem>
+  );
 }
 
 function measuredFooter(initialWidth: number, daemon?: ReactNode) {
@@ -166,6 +186,16 @@ describe("measured footer controls", () => {
 });
 
 describe("single-instance overflow", () => {
+  it("opens More and pins a pane the owner asks for while it is hidden", async () => {
+    measuredFooter(220, <Asked />);
+    await screen.findByRole("button", { name: "More status items" });
+    expect(screen.queryByRole("button", { name: "Check for updates" })).not.toBeInTheDocument();
+    act(() => {
+      window.dispatchEvent(new Event("test:ask"));
+    });
+    expect(await screen.findByRole("button", { name: "Check for updates" })).toBeInTheDocument();
+  });
+
   it("anchors More above its trigger independently of asynchronously growing rows", async () => {
     measuredFooter(220);
     const more = await screen.findByRole("button", { name: "More status items" });

@@ -2,7 +2,9 @@
 // beside the screen when the window leaves it at least 30rem, below it otherwise; never both at once.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Outlet, useLocation, useSearchParams } from "react-router";
+import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router";
+import { AboutDialog } from "@/about/AboutDialog";
+import { type MenuAction, onMenuAction } from "@/about/menu";
 import { useConfig } from "@/api/queries";
 import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { ChatProvider } from "@/chat/ChatContext";
@@ -79,6 +81,13 @@ export function fitsBeside(areaPx: number, remPx: number): boolean {
 
 /** No element: `useWidth` then follows the window. */
 const WINDOW = { current: null };
+
+const GO: Record<string, string> = {
+  "go:today": "/",
+  "go:heinzel": "/heinzel",
+  "go:team": "/team",
+  "go:plugins": "/plugins",
+};
 
 export function Shell() {
   useVisualViewport();
@@ -212,6 +221,22 @@ function Layout() {
     }
   }, [durableChat, setChatOpen]);
   const settings = params.get("settings");
+  const navigate = useNavigate();
+  // The desktop app's menu asks for these screens; About, Updates and Copy are answered where they live.
+  useEffect(
+    () =>
+      onMenuAction(["settings", "daemon", "changelog", "doctor"], (action) => {
+        if (action === "doctor") navigate("/doctor");
+        else
+          setParams((current) => {
+            const next = new URLSearchParams(current);
+            if (action === "changelog") next.set("panel", "changelog");
+            else next.set("settings", action === "daemon" ? "daemon" : "");
+            return next;
+          });
+      }),
+    [navigate, setParams],
+  );
   const requestedView = panelViews.find((view) => view.id === params.get("panel"));
   const viewOpen = Boolean(requestedView);
   const requestedId = requestedView?.id;
@@ -424,6 +449,63 @@ function Layout() {
     window.addEventListener("keydown", open);
     return () => window.removeEventListener("keydown", open);
   }, [setParams]);
+  const toggleChat = () => {
+    if (beside && chatOpen && selectedPanel === "chat") setChatOpen(false);
+    else {
+      setChatOpen(true);
+      selectPanel("chat");
+    }
+  };
+  const toggleBrowser = () => {
+    if (beside && browserOpen && selectedPanel === "browser") setBrowserOpen(false);
+    else {
+      setBrowserOpen(true);
+      selectPanel("browser");
+    }
+  };
+  const toggleTerminal = () => {
+    if (beside && terminalOpen && selectedPanel === "terminal") {
+      setTerminalOpen(false);
+      setTerminalFull(false);
+    } else {
+      setTerminalOpen(true);
+      selectPanel("terminal");
+    }
+  };
+  // The desktop app's File, View and Go menus call the same closures as the top bar and the sidebar.
+  const menu = useRef({ toggleChat, toggleBrowser, toggleTerminal, browserEnabled });
+  menu.current = { toggleChat, toggleBrowser, toggleTerminal, browserEnabled };
+  useEffect(
+    () =>
+      onMenuAction(
+        [
+          "search",
+          "sidebar",
+          "terminal",
+          "browser",
+          "chat",
+          "notifications",
+          "help",
+          ...Object.keys(GO),
+        ] as MenuAction[],
+        (action) => {
+          if (action === "search") setSearchOpen(true);
+          else if (action === "sidebar") setNavOpen((open) => !open);
+          else if (action === "terminal") menu.current.toggleTerminal();
+          else if (action === "browser") {
+            if (menu.current.browserEnabled) menu.current.toggleBrowser();
+          } else if (action === "chat") menu.current.toggleChat();
+          else if (action === "notifications" || action === "help")
+            setParams((current) => {
+              const next = new URLSearchParams(current);
+              next.set("panel", action);
+              return next;
+            });
+          else navigate(GO[action] ?? "/");
+        },
+      ),
+    [navigate, setNavOpen, setParams],
+  );
   return (
     <div
       data-testid="app-shell"
@@ -625,35 +707,11 @@ function Layout() {
               selectPanel("calendar");
             }}
             chatOpen={chatOpen && selectedPanel === "chat"}
-            onToggleChat={() => {
-              if (beside && chatOpen && selectedPanel === "chat") setChatOpen(false);
-              else {
-                setChatOpen(true);
-                selectPanel("chat");
-              }
-            }}
+            onToggleChat={toggleChat}
             browserOpen={browserOpen && selectedPanel === "browser"}
-            onToggleBrowser={
-              browserEnabled
-                ? () => {
-                    if (beside && browserOpen && selectedPanel === "browser") setBrowserOpen(false);
-                    else {
-                      setBrowserOpen(true);
-                      selectPanel("browser");
-                    }
-                  }
-                : undefined
-            }
+            onToggleBrowser={browserEnabled ? toggleBrowser : undefined}
             terminalOpen={terminalOpen && selectedPanel === "terminal"}
-            onToggleTerminal={() => {
-              if (beside && terminalOpen && selectedPanel === "terminal") {
-                setTerminalOpen(false);
-                setTerminalFull(false);
-              } else {
-                setTerminalOpen(true);
-                selectPanel("terminal");
-              }
-            }}
+            onToggleTerminal={toggleTerminal}
           />,
           headerHost,
         )}
@@ -691,6 +749,7 @@ function Layout() {
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <Onboarding />
       <OperationDialog />
+      <AboutDialog />
       {(params.get("panel") === "changelog" || params.get("panel") === "help") && (
         <InfoDialog
           panel={params.get("panel") as Panel}

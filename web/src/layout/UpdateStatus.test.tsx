@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
+import { requestMenuAction } from "@/about/menu";
 import type { Phase, PhaseState } from "@/lib/operationRun";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
@@ -349,6 +350,39 @@ it("observes the live plan instead of the indefinitely cached installation facts
   expect(await screen.findByText("heinzel-example 2.0.0 is available")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Update now" })).toBeInTheDocument();
   expect(startUpdate).not.toHaveBeenCalled();
+});
+
+const release = { current: "0.1.0", latest: "0.2.0", update_available: true, url: null, source: "x", warnings: [] };
+
+it("asks for the latest release once when Check for updates is pressed", async () => {
+  const { calls } = mockApi({ ...shell, "/api/update-status": status, "/api/system/release": release });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
+  await user.click(await screen.findByRole("button", { name: "Check for updates" }));
+  await waitFor(() => expect(calls.filter((call) => call.url.endsWith("/api/system/release"))).toHaveLength(1));
+});
+
+it("checks once and opens the pane when the desktop menu asks", async () => {
+  const { calls } = mockApi({ ...shell, "/api/update-status": status, "/api/system/release": release });
+  renderAt("/");
+  await screen.findByRole("button", { name: "Updates available, warning" });
+  act(() => requestMenuAction("updates"));
+  expect(await screen.findByRole("button", { name: "Check for updates" })).toBeInTheDocument();
+  await waitFor(() => expect(calls.filter((call) => call.url.endsWith("/api/system/release"))).toHaveLength(1));
+});
+
+it("shows why the check could not ask", async () => {
+  mockApi({
+    ...shell,
+    "/api/update-status": status,
+    "/api/system/release": { ...release, warnings: ["Could not ask GitHub (offline)."] },
+  });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
+  await user.click(await screen.findByRole("button", { name: "Check for updates" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("offline");
 });
 
 const planWith = {
