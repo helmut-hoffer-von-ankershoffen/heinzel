@@ -17,6 +17,7 @@ SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "pr.sh"
 URL = "https://github.com/example/widget/pull/7"
 # Each stub logs its arguments to $LOG/<name>; gh answers `pr list` with $PR_URL when set, as if the PR existed.
 STUBS = {
+    "hz-gate": '[ "$1" = "--timeout" ] || exit 2; shift 2; exec "$@"',
     "uv": (
         'printf "%s\\n" "$*" >> "$LOG/uv"; '
         'case "$*" in *scripts/scoped_checks.py*) git rev-parse HEAD >> "$LOG/preflight-head";; esac'

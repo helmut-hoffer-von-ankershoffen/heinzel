@@ -30,6 +30,8 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from heinzel.kernel import Credentials, Kernel, ScriptedPrompter
 
 # Heinzelmännchen itself is imported inside the fixtures: pytest loads this plugin before coverage measurement starts,
@@ -131,6 +133,7 @@ def hz_isolation(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempP
         path.mkdir(mode=0o700)
         monkeypatch.setenv(name, str(path))
     isolate_credentials(monkeypatch)
+    isolate_google_cli(monkeypatch, directory)
     monkeypatch.setenv("HZ_UPDATE_CHECK", "false")  # no `hz` a test starts asks GitHub for the latest release
     monkeypatch.setenv("HZ_SYSTEM_NOTIFY__NATIVE", "false")  # no tick a test runs pops up a real notification
     monkeypatch.setenv("HZ_SYSTEM_NOTIFY__DOCTOR", "false")  # nor runs doctor at its end
@@ -144,6 +147,27 @@ def isolate_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HZ_SYSTEM_CREDENTIAL__BACKEND", "environment")
     for name in [name for name in os.environ if name.startswith("HZ_CREDENTIAL_")]:
         monkeypatch.delenv(name)
+
+
+GOOGLE_CLI_IDENTITY = (
+    "GOOGLE_WORKSPACE_CLI_TOKEN",
+    "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+)
+"""Variables that hand `gws` another identity; no test inherits them."""
+
+
+def isolate_google_cli(monkeypatch: pytest.MonkeyPatch, directory: "Path") -> None:
+    """Never the developer's Google account: a real `gws` a test reaches finds an empty configuration and no sign-in.
+
+    Tests fake `gws`; on a signed-in machine one that reaches the real CLI (through an installed plugin, say) would
+    otherwise read the developer's own calendar or mail.
+    """
+    empty = directory / "gws"
+    empty.mkdir(mode=0o700)
+    monkeypatch.setenv("GOOGLE_WORKSPACE_CLI_CONFIG_DIR", str(empty))
+    for name in GOOGLE_CLI_IDENTITY:
+        monkeypatch.delenv(name, raising=False)
 
 
 class MemoryBackend:

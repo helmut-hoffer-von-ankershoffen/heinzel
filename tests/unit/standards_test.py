@@ -250,6 +250,10 @@ NOT_SETTINGS = {  # names or prefixes that aren't settings of Heinzelmännchen's
 }
 
 
+# The optional host queue reads these exact variables outside this repository.
+HOST_GATE_ENV_READS = {"HZ_GATE_HELD", "HZ_GATE_LIGHT"}
+
+
 def env_names(text: str) -> set[str]:
     """Every HZ_* name in a text."""
     return set(ENV_NAME.findall(text))
@@ -279,6 +283,7 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
         for key in type(settings).model_fields
     }
     code = [path for path in repository_files() if path.endswith(CODE_SUFFIXES)]
+    known |= HOST_GATE_ENV_READS
     known |= {name for path in code for name in env_reads((REPO / path).read_text(encoding="utf-8"))}
     used = {
         (name, path)

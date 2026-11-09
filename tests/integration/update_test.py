@@ -68,6 +68,8 @@ if "--with" not in sys.argv:
 FAKE_PYTHON = """#!{python}
 import json, pathlib, sys
 root = pathlib.Path({env!r})
+# The probe adds -B where the suite runs without bytecode (PYTHONDONTWRITEBYTECODE), as on agent machines.
+sys.argv[1:] = [arg for arg in sys.argv[1:] if arg != "-B"]
 assert sys.argv[1:4] == ["-I", "-m", "heinzel"]
 if (root / "uv.log").exists():
     with (root.parent.parent / "post-uv-probes").open("a") as out: out.write("probe\\n")
