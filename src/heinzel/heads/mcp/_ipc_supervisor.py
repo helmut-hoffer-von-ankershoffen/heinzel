@@ -1,6 +1,8 @@
 """One owned local MCP registration with separate host review and transport entry points."""
 
+import os
 import secrets
+import stat
 import sys
 import time
 from collections.abc import Callable, Generator
@@ -39,6 +41,26 @@ from heinzel.kernel._mcp_storage import InstalledMcpRuntime
 
 type ReadLocator = Callable[[socket], McpGeneration]
 log = get_logger("mcp")
+_RETIRED_DESCRIPTOR = "The owned MCP descriptor was already handed off or retired"
+
+
+def _stream_identity(connection: socket) -> tuple[int, int]:
+    """Identify a retained kernel socket. This does not identify its writer or executable.
+
+    Raises:
+        HeinzelError: If the owned socket no longer has a verifiable identity.
+    """
+    descriptor = connection.fileno()
+    if descriptor < 0:
+        raise HeinzelError(_RETIRED_DESCRIPTOR)
+    try:
+        info = os.fstat(descriptor)
+        if stat.S_ISSOCK(info.st_mode) and info.st_ino > 0:
+            return info.st_dev, info.st_ino
+    except OSError:
+        pass
+    msg = "The owned MCP descriptor identity is unavailable"
+    raise HeinzelError(msg)
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,8 +140,7 @@ class OwnedMcpSupervisor:
         with self._lifetime:
             self._require_available()
             if self._connections.get(owned) is not False:
-                msg = "The owned MCP descriptor was already handed off or retired"
-                raise HeinzelError(msg)
+                raise HeinzelError(_RETIRED_DESCRIPTOR)
             self._connections[owned] = True
             return owned
 
@@ -154,11 +175,18 @@ class OwnedMcpSupervisor:
             self._require_available()
             owned, client = local_stream_pair()
             self._connections[owned] = False
-        admit = partial(
-            admit_owned_stream, partial(self._take, owned), self._check_authority, publish=self._authority.publish
-        )
         try:
             with client:
+                identity = _stream_identity(owned)
+
+                def verify() -> McpGeneration:
+                    generation = self._check_authority()
+                    if _stream_identity(owned) != identity:
+                        msg = "The owned MCP descriptor identity changed"
+                        raise HeinzelError(msg)
+                    return generation
+
+                admit = partial(admit_owned_stream, partial(self._take, owned), verify, publish=self._authority.publish)
                 yield client, SupervisedMcpTransport(admit, self._record)
         finally:
             with self._lifetime:

@@ -146,6 +146,7 @@ def admit_owned_stream(
             if requested != generation:
                 msg = "Local MCP locator does not match the supervised generation"
                 raise HeinzelError(msg)
+            verify()
             require_waiting_peer(connection)
             pending = PendingMcpPeer(generation, connection)
             try:

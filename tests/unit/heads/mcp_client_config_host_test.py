@@ -1,5 +1,9 @@
 import hashlib
 import json
+import os
+import socket
+import subprocess
+import sys
 import tomllib
 from dataclasses import replace
 
@@ -15,6 +19,8 @@ from heinzel.heads.mcp._client_config import (
 from heinzel.heads.mcp._client_config_files import PinnedClientBridge
 from heinzel.heads.mcp._client_config_host import HostClientConfigWorkflow
 from heinzel.heads.mcp._client_config_native import NativeInspection, observe_client_config
+from heinzel.heads.mcp._ipc_bridge import BridgeHandshake
+from heinzel.heads.mcp._ipc_peer import require_owner_peer
 from heinzel.kernel import HeinzelError
 
 pytestmark = pytest.mark.unit
@@ -37,6 +43,32 @@ def profile(tmp_path):
         binding, hashlib.sha256(interpreter.read_bytes()).hexdigest(), hashlib.sha256(bridge.read_bytes()).hexdigest()
     )
     return home, workspace, pins
+
+
+def test_pinned_claude_configuration_and_owner_uid_do_not_authorize_an_inherited_writer(profile):
+    home, _, pins = profile
+    pins.verify()
+    unreviewed = home / "unreviewed_client.py"
+    unreviewed.write_text("import os, sys\nos.write(int(sys.argv[1]), b'wrong')\n", encoding="utf-8")
+    unreviewed.chmod(0o700)
+    broker, inherited = socket.socketpair()
+    with broker, inherited:
+        subprocess.run(
+            [sys.executable, "-I", "-S", str(unreviewed), str(inherited.fileno())],
+            cwd=home,
+            env={},
+            pass_fds=(inherited.fileno(),),
+            check=True,
+            timeout=5,
+        )
+        pins.verify()
+        require_owner_peer(broker, owner_uid=os.getuid())
+        handshake = BridgeHandshake(b"exact", b"admitted")
+        with pytest.raises(HeinzelError, match="inherited local MCP bridge is unavailable"):
+            handshake.require_hello(broker)
+        broker.close()
+        inherited.settimeout(1)
+        assert inherited.recv(1) == b""
 
 
 def _codex_config(context, binding, *, installed, source=None):

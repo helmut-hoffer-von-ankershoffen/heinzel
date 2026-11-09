@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import socket
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -13,10 +14,11 @@ from threading import Barrier, Event
 import pytest
 
 from heinzel import HeinzelError
-from heinzel.heads.mcp import _ipc_approval
+from heinzel.heads.mcp import _ipc_approval, _ipc_supervisor
 from heinzel.heads.mcp._ipc_admission import McpGeneration, OwnedMcpEndpoint, PublishedMcpLease
 from heinzel.heads.mcp._ipc_approval import HostMcpConnectionApprovals, PrivateMcpPlan
 from heinzel.heads.mcp._ipc_host_review import host_review_channel
+from heinzel.heads.mcp._ipc_supervisor import OwnedMcpSupervisor
 from heinzel.heads.mcp._ipc_work import McpWorkJournal, McpWorkRequest, owned_private_dispatch
 from heinzel.kernel._approval import arguments_hash
 from heinzel.kernel._session_store import SessionStore
@@ -257,6 +259,49 @@ def private_plan(deadline):
     return PrivateMcpPlan.capture(
         GENERATION, "grant-one", 2, deadline, {"targets": ["heinzel-one"], "usd_limit": 0, "result_read": True}
     )
+
+
+@pytest.mark.parametrize("replaced", ["before_locator", "during_locator", "after_review"])
+def test_owned_descriptor_replacement_refuses_before_protocol(tmp_path, monkeypatch, replaced):
+    root = tmp_path.resolve() / "dispatch"
+    root.mkdir(mode=0o700)
+    owned, original = socket.socketpair()
+    substitute, forged = socket.socketpair()
+    with (
+        owned,
+        original,
+        substitute,
+        forged,
+        owned_private_dispatch(root, private_plan(time.monotonic() + 60)) as (authority, dispatch),
+    ):
+        supervisor = OwnedMcpSupervisor(GENERATION, authority, dispatch)
+        monkeypatch.setattr(_ipc_supervisor, "local_stream_pair", lambda: (owned, original))
+
+        def replace_endpoint():
+            os.dup2(substitute.fileno(), owned.fileno(), inheritable=False)
+
+        @contextmanager
+        def publish(peer):
+            assert replaced == "after_review"
+            replace_endpoint()
+            yield PublishedMcpLease("reviewed", GENERATION, peer, keep_active)
+
+        def locate(connection):
+            assert replaced != "before_locator"
+            generation = read_locator(connection)
+            if replaced == "during_locator":
+                replace_endpoint()
+            return generation
+
+        monkeypatch.setattr(authority, "publish", publish)
+        with supervisor.open_transport() as (_, transport):
+            if replaced == "before_locator":
+                replace_endpoint()
+                forged.sendall(b"L")
+            else:
+                original.sendall(b"L")
+            with pytest.raises(HeinzelError, match="descriptor identity changed"), transport.admit(locate):
+                pytest.fail("An unrelated socket reached MCP protocol code")
 
 
 def start_private_connection(executor, endpoint, authority):
