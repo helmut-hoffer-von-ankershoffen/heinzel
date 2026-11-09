@@ -164,9 +164,14 @@ class NamedMcpGeneration:
             raise HeinzelError(_REFUSED) from None
         return self.locator
 
+    def maintenance_identity(self) -> tuple[tuple[int, int], tuple[int, int]]:
+        """Observe the retained directory and socket identities for the maintenance inventory."""
+        self.checked_locator()
+        return _identity(os.fstat(self._directory)), self._node_identity
+
 
 @contextmanager
-def owned_named_generation(root: Path) -> Generator[NamedMcpGeneration]:
+def owned_named_generation(root: Path, *, root_descriptor: int | None = None) -> Generator[NamedMcpGeneration]:
     """Start from an isolated single-thread process before plugin, vendor or native worker threads.
 
     The caller holds the registration lock, selects the short private root and retains exclusive child
@@ -198,9 +203,11 @@ def owned_named_generation(root: Path) -> Generator[NamedMcpGeneration]:
         try:
             private_directory(root, create=False)
             flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-            parent = os.open(root, flags)
+            parent = os.open(root, flags) if root_descriptor is None else os.dup(root_descriptor)
             owned.callback(os.close, parent)
             CurrentUser.verify_private(os.fstat(parent), directory=True)
+            if _identity(os.fstat(parent)) != _identity(root.lstat()):
+                raise HeinzelError(_REFUSED)
             os.mkdir(locator.parent.name, mode=0o700, dir_fd=parent)
             directory = os.open(locator.parent.name, flags, dir_fd=parent)
             owned.callback(os.close, directory)

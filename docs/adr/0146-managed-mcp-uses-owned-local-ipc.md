@@ -65,17 +65,18 @@ separate evidence.
 
 ## More Information
 
-The next native activation milestone selects a short per-installation root from the authenticated host runtime.
-On macOS, the native launcher obtains the OS per-user temporary directory through `confstr` with
-`_CS_DARWIN_USER_TEMP_DIR`. On Linux, it verifies the OS session directory at `/run/user/<uid>`. It resolves
-the physical OS path, verifies the owner, permissions and ancestry, and provisions an owner-only root using the
-verified parent directory descriptor. The launcher binds the root to the active installation and retains its
-identity in the maintenance inventory. Environment overrides and project paths supply no root authority.
-The launcher refuses named activation when the OS root is unavailable or when the final root exceeds 86
+The installed activation adapter takes an SDK and profile selected by the authenticated native runtime.
+On macOS it obtains the per-user temporary directory through `confstr` with `_CS_DARWIN_USER_TEMP_DIR`.
+On Linux it selects `/run/user/<uid>`. It verifies physical ancestry with no-follow directory opens,
+provisions an owner-only root by parent descriptor, and retains its exact descriptor through generation
+startup. Environment overrides and project paths supply no root authority. The adapter refuses named
+activation when the OS root is unavailable or when the final root exceeds 86
 filesystem-encoded bytes. The adapter reserves the remaining 17 bytes of the 103-byte socket pathname limit.
-Retired and failed generation nodes remain on disk for reviewed cleanup. The maintenance record remains
-authoritative if the OS later expires the runtime directory. The current adapter requires a caller-supplied
-verified root. Native root resolution and its macOS and Linux acceptance checks are separate from this slice.
+Root and observed generation receipts are stored under the SDK maintenance authority outside the SDK. The
+foreground adapter holds the SDK lock until shutdown. Native manager integration will register the stop and
+recovery hooks before allowing concurrent managed activation and maintenance. Retired and failed nodes
+remain on disk for reviewed cleanup. A recorded directory that the OS has removed or another process has
+replaced requires explicit recovery. A missing or changed locator cannot replace its recorded authority.
 
 Direct HTTP is separate follow-up work building on the proposed bearer scope in
 [PR #655](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/655). Claude Desktop and Gemini CLI
