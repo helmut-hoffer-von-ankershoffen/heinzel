@@ -35,7 +35,9 @@ Claude settings discovery and human approval have separate contracts.
   provides transport probes only. The foreground supervisor can also fork trusted bridge code at isolated
   startup with an inherited private descriptor. The bridge exchanges exact versioned bytes bound to the
   supervisor's fresh in-memory incarnation and one channel. It forwards client bytes only after the broker
-  publishes the reviewed lease and acknowledges admission. This channel is separate from the named listener.
+  publishes the reviewed lease and acknowledges admission. Front input or closure during that wait refuses the
+  bridge, including when the front and acknowledgement become ready together. This channel is separate from
+  the named listener.
   The foreground bridge provides byte transport. MCP readiness and vendor bootstrap still require integration.
   A bounded exchange on the already admitted private bridge verifies MCP initialization, returns the exact
   registration and generation, and answers one empty tool list. Its replies share the grant revocation fence.

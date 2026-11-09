@@ -12,7 +12,7 @@ import sys
 import termios
 import time
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack, suppress
+from contextlib import ExitStack, contextmanager, suppress
 from threading import Event
 from unittest import TestCase
 
@@ -23,6 +23,7 @@ from heinzel import HeinzelError
 from heinzel.heads import cli
 from heinzel.heads.mcp._ipc_admission import McpGeneration
 from heinzel.heads.mcp._ipc_approval import PrivateMcpPlan
+from heinzel.heads.mcp._ipc_bridge import BridgeHandshake
 from heinzel.heads.mcp._ipc_catalog_probe import CATALOG_FRAME_LIMIT, CATALOG_PROTOCOL_VERSION
 from heinzel.heads.mcp._ipc_cli_review import _REVIEWER, _REVIEWER_SHA256
 from heinzel.heads.mcp._ipc_descriptors import receive_exact
@@ -350,6 +351,23 @@ def _serve_inherited_fixture(transport, release, admitted, finish, calls):
         return "refused"
 
 
+_BRIDGE_READY = b"fixture ready\n"
+
+
+@contextmanager
+def _observe_bridge_ready():
+    acknowledge = BridgeHandshake.acknowledge
+
+    def send_marker_after_ack(handshake, channel):
+        acknowledge(handshake, channel)
+        # Receiving this test-only marker proves the child has entered relay, not just that the broker sent its ack.
+        channel.sendall(_BRIDGE_READY)
+
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(BridgeHandshake, "acknowledge", send_marker_after_ack)
+        yield
+
+
 def _run_inherited_bridge_fixture(directory, phase):
     generation = McpGeneration("fixture-registration", 3)
     now = 100.0
@@ -357,12 +375,12 @@ def _run_inherited_bridge_fixture(directory, phase):
     release, admitted, finish = Event(), Event(), Event()
     calls = []
     with (
+        _observe_bridge_ready(),
         owned_mcp_supervisor(directory / "state", plan, clock=lambda: now) as supervisor,
         supervisor.launch_bridge() as (front, transport),
         ThreadPoolExecutor(max_workers=1) as workers,
     ):
         front.settimeout(2)
-        front.sendall(b"ping")  # The child must hold these bytes away from the broker until admission.
         result = workers.submit(_serve_inherited_fixture, transport, release, admitted, finish, calls)
         try:
             (intended,) = _pending(supervisor, 1)
@@ -374,10 +392,13 @@ def _run_inherited_bridge_fixture(directory, phase):
             else:
                 assert status == 0
                 assert admitted.wait(2)
+                assert receive_exact(front, len(_BRIDGE_READY), time.monotonic() + 2) == _BRIDGE_READY
                 if phase == "expire":
                     now = 2001.0
                 elif phase == "revoke":
                     supervisor.revoke()
+                else:
+                    front.sendall(b"ping")
             release.set()
             if phase == "approve":
                 assert receive_exact(front, 4, time.monotonic() + 2) == b"pong"
@@ -429,6 +450,7 @@ def _run_catalog_fixture(directory, phase):
     plan = PrivateMcpPlan.capture(generation, "fixture-grant", 1, 2000.0, {"dispatch": {}})
     with (
         TestCase().assertLogs("heinzel.mcp", level="INFO") as captured,
+        _observe_bridge_ready(),
         owned_mcp_supervisor(directory / "state", plan, clock=lambda: now) as supervisor,
         supervisor.launch_bridge() as (front, transport),
         ThreadPoolExecutor(max_workers=1) as workers,
@@ -444,7 +466,6 @@ def _run_catalog_fixture(directory, phase):
                 "clientInfo": {"name": "fixture-client", "version": "1"},
             },
         )
-        front.sendall(b"x" if phase == "oversize" else initialize)
         result = workers.submit(_catalog_outcome, transport.catalog_probe)
         (intended,) = _pending(supervisor, 1)
         assert not select.select([front], [], [], 0)[0]
@@ -453,8 +474,8 @@ def _run_catalog_fixture(directory, phase):
             supervisor.revoke()
         else:
             assert _review_command(supervisor, intended) == 0
-        if phase == "oversize":
-            front.sendall(b"x" * (CATALOG_FRAME_LIMIT - 1))
+            assert peer.readline() == _BRIDGE_READY
+            front.sendall(b"x" * CATALOG_FRAME_LIMIT if phase == "oversize" else initialize)
         if phase not in {"decline", "version", "oversize"}:
             _initialize_catalog(peer, generation)
             if phase == "revoke":

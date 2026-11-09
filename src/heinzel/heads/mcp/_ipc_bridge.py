@@ -1,5 +1,6 @@
 """An inherited-descriptor bridge launched by the already-trusted foreground supervisor."""
 
+import math
 import os
 import select
 import socket
@@ -68,16 +69,38 @@ def _relay(front: socket.socket, channel: socket.socket) -> None:
                 client_reads = False
 
 
+def _await_acknowledgement(front: socket.socket, channel: socket.socket, expected: bytes, deadline: float) -> bool:
+    """Read only the private acknowledgement while refusing any front readiness."""
+    if not expected:
+        return False
+    readiness = select.poll()
+    readiness.register(front, select.POLLIN)
+    readiness.register(channel, select.POLLIN)
+    channel.settimeout(0.0)
+    received = bytearray()
+    while len(received) < len(expected):
+        remaining = deadline - time.monotonic()
+        # Only a readable, otherwise healthy broker channel is unambiguous.
+        if remaining <= 0 or readiness.poll(math.ceil(remaining * 1000)) != [(channel.fileno(), select.POLLIN)]:
+            return False
+        chunk = channel.recv(len(expected) - len(received))
+        if not chunk:
+            return False
+        received.extend(chunk)
+        if not expected.startswith(received):
+            return False
+    readiness.unregister(channel)
+    # Check the front again for arrivals between the last readiness snapshot and the acknowledgement read.
+    return not readiness.poll(0) and time.monotonic() < deadline
+
+
 def _bridge_child(front: socket.socket, channel: socket.socket, handshake: BridgeHandshake) -> Never:
     status = 1
     try:
         close_unrelated_descriptors(front.fileno(), channel.fileno())
         channel.settimeout(_IO_SECONDS)
         channel.sendall(handshake.hello)
-        if (
-            receive_exact(channel, len(handshake.acknowledged), time.monotonic() + _ACK_SECONDS)
-            == handshake.acknowledged
-        ):
+        if _await_acknowledgement(front, channel, handshake.acknowledged, time.monotonic() + _ACK_SECONDS):
             _relay(front, channel)
             status = 0
     finally:
@@ -92,7 +115,7 @@ def launch_inherited_bridge(channel: socket.socket, handshake: BridgeHandshake) 
         HeinzelError: If this runtime cannot launch or retire its isolated direct child.
 
     Yields:
-        A byte stream that forwards nothing to the broker before its exact acknowledgement.
+        A byte stream that refuses input and closure before the broker's exact acknowledgement.
     """
     require_isolated_fork(_REFUSED)
     front, child_front = local_stream_pair()
