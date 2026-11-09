@@ -37,6 +37,10 @@ Claude settings discovery and human approval have separate contracts.
   supervisor's fresh in-memory incarnation and one channel. It forwards client bytes only after the broker
   publishes the reviewed lease and acknowledges admission. This channel is separate from the named listener.
   The foreground bridge provides byte transport. MCP readiness and vendor bootstrap still require integration.
+  A bounded exchange on the already admitted private bridge verifies MCP initialization, returns the exact
+  registration and generation, and answers one empty tool list. Its replies share the grant revocation fence.
+  The exchange provides no invocation path. A separately scoped host readiness lease and runtime attestation
+  are required before Start can report MCP readiness.
   Unsupported platforms and fixed caller-selected socket paths refuse activation.
 - Authorize lifecycle effects through a separate host capability bound to the reviewed plan and action. Trusted
   native review and explicit local CLI review use the same service. Browser and device sessions can prepare a

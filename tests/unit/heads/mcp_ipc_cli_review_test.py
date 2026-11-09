@@ -14,13 +14,16 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, suppress
 from threading import Event
+from unittest import TestCase
 
 import pytest
+from mcp.types import InitializeResult, JSONRPCResponse, ListToolsResult
 
 from heinzel import HeinzelError
 from heinzel.heads import cli
 from heinzel.heads.mcp._ipc_admission import McpGeneration
 from heinzel.heads.mcp._ipc_approval import PrivateMcpPlan
+from heinzel.heads.mcp._ipc_catalog_probe import CATALOG_FRAME_LIMIT, CATALOG_PROTOCOL_VERSION
 from heinzel.heads.mcp._ipc_cli_review import _REVIEWER, _REVIEWER_SHA256
 from heinzel.heads.mcp._ipc_descriptors import receive_exact
 from heinzel.heads.mcp._ipc_supervisor import owned_mcp_supervisor
@@ -391,9 +394,105 @@ def _run_inherited_bridge_fixture(directory, phase):
     sys.stdout.write(json.dumps({"first": outcome, "second_admitted": False, "calls": calls}))
 
 
-@pytest.mark.parametrize("phase", ["approve", "decline", "expire", "revoke"])
-@pytest.mark.parametrize("fixture", ["_run_supervised_fixture", "_run_inherited_bridge_fixture"])
-def test_public_review_command_reviews_one_connection_and_fences_fake_dispatch(short_socket_root, phase, fixture):
+def _catalog_outcome(probe):
+    try:
+        probe()
+    except HeinzelError:
+        return "refused"
+    return "completed"
+
+
+def _mcp_frame(method, *, request_id=None, params=None):
+    frame = {"jsonrpc": "2.0", "method": method}
+    if request_id is not None:
+        frame["id"] = request_id
+    if params is not None:
+        frame["params"] = params
+    return json.dumps(frame).encode() + b"\n"
+
+
+def _initialize_catalog(peer, generation):
+    response = JSONRPCResponse.model_validate_json(peer.readline(CATALOG_FRAME_LIMIT + 1))
+    assert response.id == 1
+    initialize = InitializeResult.model_validate(response.result)
+    assert initialize.protocol_version == CATALOG_PROTOCOL_VERSION
+    assert initialize.server_info.name == "heinzel"
+    assert initialize.meta == {
+        "heinzel.local/registration": generation.registration_id,
+        "heinzel.local/generation": generation.number,
+    }
+
+
+def _run_catalog_fixture(directory, phase):
+    generation = McpGeneration("fixture-registration", 3)
+    now = 100.0
+    plan = PrivateMcpPlan.capture(generation, "fixture-grant", 1, 2000.0, {"dispatch": {}})
+    with (
+        TestCase().assertLogs("heinzel.mcp", level="INFO") as captured,
+        owned_mcp_supervisor(directory / "state", plan, clock=lambda: now) as supervisor,
+        supervisor.launch_bridge() as (front, transport),
+        ThreadPoolExecutor(max_workers=1) as workers,
+        front.makefile("rb") as peer,
+    ):
+        front.settimeout(2)
+        initialize = _mcp_frame(
+            "initialize",
+            request_id=1,
+            params={
+                "protocolVersion": "unsupported" if phase == "version" else CATALOG_PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "fixture-client", "version": "1"},
+            },
+        )
+        front.sendall(b"x" if phase == "oversize" else initialize)
+        result = workers.submit(_catalog_outcome, transport.catalog_probe)
+        (intended,) = _pending(supervisor, 1)
+        assert not select.select([front], [], [], 0)[0]
+        if phase == "decline":
+            assert _review_command(supervisor, intended) == 1
+            supervisor.revoke()
+        else:
+            assert _review_command(supervisor, intended) == 0
+        if phase == "oversize":
+            front.sendall(b"x" * (CATALOG_FRAME_LIMIT - 1))
+        if phase not in {"decline", "version", "oversize"}:
+            _initialize_catalog(peer, generation)
+            if phase == "revoke":
+                supervisor.revoke()
+            else:
+                if phase == "expire":
+                    now = 2001.0
+                front.sendall(
+                    _mcp_frame("notifications/initialized")
+                    + _mcp_frame(
+                        "tools/call" if phase == "call" else "tools/list", request_id=1 if phase == "replay" else 2
+                    )
+                )
+        if phase == "approve":
+            response = JSONRPCResponse.model_validate_json(peer.readline(CATALOG_FRAME_LIMIT + 1))
+            assert response.id == 2
+            assert ListToolsResult.model_validate(response.result).tools == []
+        assert peer.readline() == b""
+        outcome = result.result(timeout=2)
+    catalog = [record for record in captured.records if record.message == "mcp.ipc.catalog_probe"]
+    if phase == "decline":
+        assert catalog == []
+    else:
+        assert [record.phase for record in catalog] == ["start", "end"]
+        assert catalog[-1].outcome == ("ok" if phase == "approve" else "error")
+    sys.stdout.write(json.dumps({"first": outcome, "second_admitted": False, "calls": []}))
+
+
+@pytest.mark.parametrize(
+    ("fixture", "phase"),
+    [
+        (fixture, phase)
+        for fixture in ("_run_supervised_fixture", "_run_inherited_bridge_fixture", "_run_catalog_fixture")
+        for phase in ("approve", "decline", "expire", "revoke")
+    ]
+    + [("_run_catalog_fixture", phase) for phase in ("call", "replay", "version", "oversize")],
+)
+def test_public_review_command_fences_the_exact_bridge(short_socket_root, phase, fixture):
     directory = short_socket_root
     master, terminal = pty.openpty()
     settings = termios.tcgetattr(terminal)
@@ -425,7 +524,7 @@ def test_public_review_command_reviews_one_connection_and_fences_fake_dispatch(s
                 assert json.loads(messages[-1]) == {
                     "first": "completed" if phase == "approve" else "refused",
                     "second_admitted": False,
-                    "calls": ["fake-provider"] if phase == "approve" else [],
+                    "calls": ["fake-provider"] if phase == "approve" and fixture != "_run_catalog_fixture" else [],
                 }
             finally:
                 if process.poll() is None:
