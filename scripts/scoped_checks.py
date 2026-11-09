@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -272,16 +273,52 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
     return commands
 
 
-def run_early_guards(changed: list[str]) -> None:
+MODES = ("fast", "preflight", "push", "early-fast", "early-preflight")
+GATE_MAX_WAIT = 3600  # waiting for a host slot does not count against the check's runtime limit
+
+
+def run_check(
+    command: list[str], *, timeout: int, light: bool = False, check: bool = True, capture_output: bool = False
+) -> subprocess.CompletedProcess[str]:
+    """Run the selected check through the optional host queue, with its own runtime limit."""
+    gate = shutil.which("hz-gate")
+    if gate is None or not Path(gate).is_absolute():
+        return subprocess.run(  # noqa: S603 - fixed check commands and validated operands
+            command, check=check, timeout=timeout, capture_output=capture_output, text=True
+        )
+    env = os.environ.copy()
+    try:
+        requested_wait = int(os.environ.get("HZ_GATE_MAX_WAIT", ""))
+    except ValueError:
+        requested_wait = GATE_MAX_WAIT
+    queue_wait = min(requested_wait, GATE_MAX_WAIT) if requested_wait > 0 else GATE_MAX_WAIT
+    env["HZ_GATE_MAX_WAIT"] = str(queue_wait)
+    if light:
+        env["HZ_GATE_LIGHT"] = "1"
+    else:
+        env.pop("HZ_GATE_LIGHT", None)
+    # The host enforces separate queue and runtime limits. The outer watchdog allows both
+    # the optional pre-push lock wait and the slot wait, plus time for launcher startup.
+    return subprocess.run(  # noqa: S603 - absolute gate, fixed check commands and validated operands
+        [gate, "--timeout", str(timeout), *command],
+        env=env,
+        check=check,
+        capture_output=capture_output,
+        text=True,
+        timeout=2 * queue_wait + timeout + 10,
+    )
+
+
+def run_early_guards(changed: list[str], *, light: bool = False) -> None:
     """Fail before the caller can launch an expensive full-check command."""
     for command in early_guard_commands(changed):
-        subprocess.run(command, check=True, timeout=180)  # noqa: S603 - fixed owning pytest commands
+        run_check(command, timeout=180, light=light)
 
 
 def main() -> None:
     """Preserve core checks and common policies while selecting independent owning plugin work."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["fast", "preflight", "push", "early-fast", "early-preflight"])
+    parser.add_argument("mode", choices=MODES)
     parser.add_argument("--base", default="origin/main")
     args = parser.parse_args()
     early = args.mode.startswith("early-")
@@ -299,46 +336,42 @@ def main() -> None:
     base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if args.mode == "push":
         changed = sorted({*changed, *changed_paths("fast", base)})
-        run_early_guards(changed)
+        light = bool(changed) and all(is_document(path) for path in changed)
+        run_early_guards(changed, light=light)
         steps = scoped_steps(changed)
         if steps:
             command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
-            done = subprocess.run(command, check=False, timeout=600)  # noqa: S603
+            done = run_check(command, check=False, timeout=600, light=light)
             sys.exit(done.returncode)
         if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
             # Python, scripts, tests and documents: everything of the fast gate but the web app's tests and the managed
             # backend's check, which read nothing of it (the generated client is still checked by web-lint).
             command = ["make", "check-fast", *python_overrides(changed)]
-            sys.exit(subprocess.run(command, check=False, timeout=1800).returncode)  # noqa: S603
+            sys.exit(run_check(command, check=False, timeout=1800).returncode)
         args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):
-        subprocess.run(  # noqa: S603 - explicit owning commands, no shell
-            # Make from PATH
-            ["make", "preflight" if args.mode == "preflight" else "check-fast", *base_arguments],  # noqa: S607
-            check=True,
+        run_check(
+            ["make", "preflight" if args.mode == "preflight" else "check-fast", *base_arguments],
             timeout=1800 if args.mode == "preflight" else 300,
         )
         return
     toolkit = [sys.executable, str(Path(__file__).with_name("plugin_tooling.py")), "--toolkit", TOOLKIT, "hz-plugin"]
     if args.mode == "fast":
-        subprocess.run([*toolkit, "check-changed", "--changed", *changed], check=True, timeout=300)  # noqa: S603 - pinned toolkit, literal paths
+        run_check([*toolkit, "check-changed", "--changed", *changed], timeout=300)
         return
     # These policies apply to plugin source too; no core build, native job or test suite runs.
     # Shared policy targets
-    subprocess.run(["make", "commits", "secrets", *base_arguments], check=True, timeout=120)  # noqa: S603, S607
-    subprocess.run(
-        [sys.executable, "scripts/check_confidentiality.py"],
-        check=True,
-        timeout=120,
-    )
-    plan = json.loads(
-        subprocess.check_output([*toolkit, "plan", "--changed", *changed], text=True, timeout=60)  # noqa: S603 - pinned metadata-only planner
-    )
-    for project in plan["include"]:
-        subprocess.run([*toolkit, "preflight", project["name"]], check=True, timeout=1800)  # noqa: S603 - canonical names from the pinned planner
+    run_check(["make", "commits", "secrets", *base_arguments], timeout=120)
+    run_check([sys.executable, "scripts/check_confidentiality.py"], timeout=120)
+    plan = run_check([*toolkit, "plan", "--changed", *changed], timeout=60, capture_output=True)
+    for project in json.loads(plan.stdout)["include"]:
+        run_check([*toolkit, "preflight", project["name"]], timeout=1800)
 
 
 if __name__ == "__main__":
     # Git runs hooks at the repository root; explicit cwd also supports direct invocation elsewhere.
     os.chdir(Path(__file__).resolve().parents[1])
-    main()
+    try:
+        main()
+    except subprocess.CalledProcessError as error:
+        sys.exit(error.returncode)

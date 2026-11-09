@@ -18,6 +18,99 @@ sys.path.insert(0, str(REPO / "scripts"))
 import related_tests as scoped_related  # noqa: E402 - needs the scripts path above
 
 
+@pytest.fixture(autouse=True)
+def _without_host_gate(monkeypatch):
+    """Keep dispatch tests independent of the developer's PATH."""
+    monkeypatch.setattr(scoped.shutil, "which", lambda _: None)
+
+
+@pytest.fixture
+def gate_calls(monkeypatch, tmp_path):
+    gate = str(tmp_path / "hz-gate")
+    monkeypatch.setattr(scoped.shutil, "which", lambda _: gate)
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(scoped.subprocess, "run", run)
+    return gate, calls
+
+
+@pytest.mark.parametrize(("mode", "timeout"), [("preflight", 1800), ("fast", 300)])
+def test_a_full_core_check_passes_the_actual_make_command_to_the_heavy_gate(monkeypatch, gate_calls, mode, timeout):
+    gate, calls = gate_calls
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", mode, "--base", "origin/main"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: ["README.md"])
+    monkeypatch.setenv("HZ_GATE_LIGHT", "1")
+
+    scoped.main()
+
+    [(command, kwargs)] = calls
+    target = ["preflight", "BASE=" + "a" * 40] if mode == "preflight" else ["check-fast"]
+    assert command == [gate, "--timeout", str(timeout), "make", *target]
+    assert "HZ_GATE_LIGHT" not in kwargs["env"]
+    queue_wait = int(kwargs["env"]["HZ_GATE_MAX_WAIT"])
+    assert kwargs["timeout"] > queue_wait + timeout  # the outer watchdog leaves room for admission and execution
+
+
+def test_only_the_selected_documentation_push_checks_take_the_light_lane(monkeypatch, gate_calls):
+    gate, calls = gate_calls
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: ["docs/guides/install.md"])
+
+    with pytest.raises(SystemExit) as done:
+        scoped.main()
+
+    assert done.value.code == 0
+    [(guard, guard_kwargs), (docs, docs_kwargs)] = calls
+    assert guard == [gate, "--timeout", "180", *scoped.early_guard_commands(["docs/guides/install.md"])[0]]
+    assert docs == [
+        gate,
+        "--timeout",
+        "600",
+        "uv",
+        "run",
+        "--quiet",
+        "--script",
+        "scripts/steps.py",
+        *scoped.DOCS_STEPS,
+    ]
+    assert guard_kwargs["env"]["HZ_GATE_LIGHT"] == docs_kwargs["env"]["HZ_GATE_LIGHT"] == "1"
+
+
+@pytest.mark.parametrize(
+    ("requested", "expected"), [("0", "3600"), ("-1", "3600"), ("bad", "3600"), ("9999", "3600"), ("5", "5")]
+)
+def test_a_caller_cannot_skip_the_gate_or_raise_its_queue_deadline(monkeypatch, gate_calls, requested, expected):
+    gate, calls = gate_calls
+    monkeypatch.setenv("HZ_GATE_HELD", "4242")
+    monkeypatch.setenv("HZ_GATE_MAX_WAIT", requested)
+
+    scoped.run_check(["make", "check-fast"], timeout=300)
+
+    [(command, kwargs)] = calls
+    assert command == [gate, "--timeout", "300", "make", "check-fast"]
+    assert kwargs["env"]["HZ_GATE_HELD"] == "4242"  # the host decides whether the holder is real
+    assert kwargs["env"]["HZ_GATE_MAX_WAIT"] == expected
+    assert kwargs["timeout"] == 2 * int(expected) + 310
+
+
+@pytest.mark.parametrize("gate_path", [None, "bin/hz-gate"])
+def test_checks_run_directly_with_the_same_runtime_limit_without_an_absolute_gate(monkeypatch, gate_calls, gate_path):
+    _, calls = gate_calls
+    monkeypatch.setattr(scoped.shutil, "which", lambda _: gate_path)
+
+    scoped.run_check(["make", "check-fast"], timeout=300)
+
+    [(command, kwargs)] = calls
+    assert command == ["make", "check-fast"]
+    assert kwargs["timeout"] == 300
+
+
 def names(steps: list[str]) -> list[str]:
     return [step.lstrip("&").split("=", 1)[0] for step in steps]
 

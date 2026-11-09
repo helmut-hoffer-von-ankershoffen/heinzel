@@ -263,6 +263,39 @@ def test_a_doctor_notice_disappears_once_its_checks_are_up_again(service, condit
     assert kept.delivered_by is None  # never marked read
 
 
+def test_plugin_and_doctor_conditions_compose_without_extra_doctor_probes(service, monkeypatch):
+    installed: set[str] = set()
+    failing: set[str] | None = None
+    asked: list[int] = []
+
+    def problems() -> set[str] | None:
+        asked.append(1)
+        return failing
+
+    service.problems = problems
+    monkeypatch.setattr(_resolve, "plugin_installed", installed.__contains__)
+    assert doctor(service, ["system.daemon: jobs"], condition=False) is not None
+    condition = ResolveWhen(plugins_installed=("heinzel-needed",))
+    assert service.emit(
+        NoticeKind.PLUGIN, "Plugin needed", route="/", command="hz", key="plugin", resolve_when=condition
+    )
+    both = ResolveWhen(plugins_installed=("heinzel-needed",), checks_up=["org: calendar"])
+    assert service.emit(NoticeKind.DOCTOR, "Both", route="/doctor", command="hz", key="both", resolve_when=both)
+
+    installed.add("heinzel-needed")
+    assert set(shown(service)) == {"Both", "Heinzelmännchen is degraded"}
+    assert asked == []  # disk-only conditions still hide immediately
+    assert service.resolve() == 1  # the plugin is installed, but doctor cannot answer
+    assert asked == [1]  # two unresolved doctor notices share the unavailable result
+    failing = set()
+    assert service.resolve() == 2
+    assert asked == [1, 1]
+    failing = {"org: calendar", "system.daemon: jobs"}
+    assert service.resolve() == 0
+    assert asked == [1, 1]
+    assert shown(service) == []  # resolved notices stay resolved
+
+
 def test_the_doctor_watcher_attaches_its_checks_as_the_condition(service, make_kernel, monkeypatch):
     from heinzel import Status as Health
 

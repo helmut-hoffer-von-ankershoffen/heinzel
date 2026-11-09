@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { useProfile, useSetting } from "@/api/queries";
 import { CopyCommand, Loaded, Page } from "@/components/common";
 import { ErrorScreen } from "@/components/ErrorScreen";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { type MessageKey, t } from "@/i18n";
 
@@ -32,9 +33,9 @@ export function Profile() {
                     <dt className="text-muted-foreground">{t(label)}</dt>
                     <dd>
                       {value ?? (
-                        <Link to={`?settings=&q=${key}`} className="text-muted-foreground underline">
-                          {t("settings.notSet")}
-                        </Link>
+                        <Button asChild variant="ghost" size="sm" className="-ml-2.5 text-muted-foreground">
+                          <Link to={`?settings=&q=${key}`}>{t("settings.notSet")}</Link>
+                        </Button>
                       )}
                     </dd>
                   </div>
@@ -60,9 +61,9 @@ export function NotFound() {
   return (
     <Page title={t("notFound.title")}>
       <ErrorScreen compact state="waiting" message={t("notFound.message")}>
-        <Link to="/" className="inline-flex min-h-6 items-center text-primary underline">
-          {t("notFound.back")}
-        </Link>
+        <Button asChild variant="outline" size="sm">
+          <Link to="/">{t("notFound.back")}</Link>
+        </Button>
       </ErrorScreen>
     </Page>
   );

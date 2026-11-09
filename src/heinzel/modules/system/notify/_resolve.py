@@ -36,6 +36,15 @@ def installed_version() -> str:
         return __version__
 
 
+def plugin_installed(distribution: str) -> bool:
+    """Whether a plugin distribution is installed on this machine, read from disk now."""
+    try:
+        metadata.distribution(distribution)
+    except metadata.PackageNotFoundError:
+        return False
+    return True
+
+
 def _at_least(installed: str, wanted: str) -> bool:
     try:
         return Version(installed) >= Version(wanted)
@@ -62,7 +71,7 @@ def condition(notice: Notice) -> ResolveWhen | None:
 
 
 def at_read(when: ResolveWhen) -> bool:
-    """Whether a read may evaluate `when`: only version conditions, which run nothing."""
+    """Whether `when` can be evaluated from installed metadata without running another operation."""
     return when.capability is None and when.checks_up is None
 
 
@@ -79,6 +88,10 @@ def holds(
         if probe is None or probe(capability) is not True:
             return None
         reasons.append(f"{capability.operation} reports {capability.field} = {capability.equals!r}")
+    if (plugins := when.plugins_installed) is not None:
+        if not all(plugin_installed(name) for name in plugins):
+            return None
+        reasons.append(f"{', '.join(plugins)} {'is' if len(plugins) == 1 else 'are'} installed")
     if (checks := when.checks_up) is not None:
         failing = problems() if problems is not None else None
         if failing is None or failing & set(checks):

@@ -83,7 +83,7 @@ export function ConversationSearch({ sessionId, onJump }: { sessionId: string; o
   }
 
   return (
-    <details className="rounded-lg border border-border p-3">
+    <details open className="rounded-lg border border-border p-3">
       <summary className="cursor-pointer text-sm font-medium">Search conversation</summary>
       <section aria-label="Search conversation" className="mt-3 min-w-0 space-y-3 text-sm">
         <label className="block">

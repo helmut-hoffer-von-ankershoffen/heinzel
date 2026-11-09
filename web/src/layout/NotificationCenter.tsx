@@ -5,6 +5,7 @@ import {
   Bell,
   BellRing,
   CalendarClock,
+  CheckCheck,
   FileText,
   Gift,
   Puzzle,
@@ -17,7 +18,7 @@ import { useNavigate } from "react-router";
 import type { SchemaNotice } from "@/api/client";
 import { useNotices } from "@/api/queries";
 import { Gnome } from "@/components/Gnome";
-import { Button } from "@/components/ui/button";
+import { PaneAction, PaneTitle } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { isLocalServer } from "@/lib/browser";
 import { cn } from "@/lib/utils";
@@ -140,35 +141,28 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
     "calendar",
   ];
   return (
+    // A pane over the window, so in the desktop app it starts under the title bar row (0 in a browser): its header
+    // never meets the traffic lights or the row's drag region, and it claims no-drag (data-pane, index.css).
     <section
       aria-label={t("notify.title")}
+      data-pane
       onKeyDown={(event) => event.key === "Escape" && onClose()}
       className={cn(
-        "absolute top-[var(--hz-safe-area-top,env(safe-area-inset-top,0px))] bottom-[var(--hz-safe-area-bottom,env(safe-area-inset-bottom,0px))] z-(--layer-popover) flex w-[min(26rem,calc(100%-3.5rem))] flex-col border-r border-border bg-popover shadow-2xl",
+        "absolute top-[calc(var(--hz-safe-area-top,env(safe-area-inset-top,0px))+var(--titlebar-height,0px))] bottom-[var(--hz-safe-area-bottom,env(safe-area-inset-bottom,0px))] z-(--layer-popover) flex w-[min(26rem,calc(100%-3.5rem))] flex-col border-r border-border bg-popover shadow-2xl",
         navOpen ? "left-14 sm:left-64 sm:max-w-[calc(100%-16rem)]" : "left-14",
       )}
     >
-      <header className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
-        <h2 className="text-ui font-medium">{t("notify.title")}</h2>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-auto text-muted-foreground"
-          disabled={!newest || newest <= seen}
-          onClick={() => markSeen(newest)}
+      <header className="flex h-12 shrink-0 items-center pr-2 pl-4">
+        <PaneTitle
+          as="h2"
+          chrome={
+            <PaneAction ghost icon={X} onClick={onClose}>
+              {t("notify.close")}
+            </PaneAction>
+          }
         >
-          {t("notify.markRead")}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClose}
-          aria-label={t("notify.close")}
-          title={t("notify.close")}
-          className="text-icon"
-        >
-          <X aria-hidden />
-        </Button>
+          {t("notify.title")}
+        </PaneTitle>
       </header>
       <div role="tablist" aria-label={t("notify.filter")} className="flex shrink-0 gap-1 overflow-x-auto px-3 pb-2">
         {kinds.map((item) => (
@@ -229,7 +223,7 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
                         {notice.body && (
                           <span className="mt-0.5 line-clamp-2 block text-sm text-muted-foreground">{notice.body}</span>
                         )}
-                        <span className="mt-1 block text-xs text-muted-foreground/80">
+                        <span className="mt-1 block text-xs text-muted-foreground">
                           {notice.delivered_by === "daemon" && !local
                             ? t("notify.shownOnServer")
                             : notice.delivered_by
@@ -253,9 +247,18 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
           </section>
         ))}
       </div>
-      <footer className="flex max-h-[50%] shrink-0 flex-col gap-1.5 overflow-y-auto border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
+      <footer className="flex max-h-[50%] shrink-0 flex-col gap-1.5 overflow-y-auto px-4 pb-2.5 text-xs text-muted-foreground">
         {local && <span className="truncate">{notices.data?.native}</span>}
-        <NotificationTest />
+        <NotificationTest>
+          <PaneAction
+            key="read"
+            icon={CheckCheck}
+            disabled={!newest || newest <= seen}
+            onClick={() => markSeen(newest)}
+          >
+            {t("notify.markRead")}
+          </PaneAction>
+        </NotificationTest>
       </footer>
     </section>
   );

@@ -16,7 +16,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 
 class NoticeKind(StrEnum):
@@ -63,6 +63,7 @@ class NoticeHelper(BaseModel):
     reason: str = Field(max_length=120, description="Why the Heinzel speaks now, such as scheduled check-in.")
 
 
+DISTRIBUTION = r"^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$"
 VERSION = r"^[0-9]+(\.[0-9]+){1,3}([.-]?(a|b|rc|dev|post)[0-9]*)?$"
 """A release version a condition may name: PEP 440 shaped, no local part."""
 OPERATION = r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*:[a-z][a-z0-9_-]*$"
@@ -108,6 +109,12 @@ class ResolveWhen(BaseModel):
         max_length=50,
         description="Holds once every named health check (`<module>: <check>`) is up again in `hz system doctor`.",
     )
+    plugins_installed: tuple[Annotated[str, StringConstraints(pattern=DISTRIBUTION)], ...] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=16,
+        description="Holds once every plugin distribution named is installed on this machine (on disk).",
+    )
 
     @model_validator(mode="after")
     def _not_empty(self) -> "ResolveWhen":
@@ -116,8 +123,13 @@ class ResolveWhen(BaseModel):
         Raises:
             ValueError: If no condition is given.
         """
-        if self.installed_version_at_least is None and self.capability is None and self.checks_up is None:
-            msg = "A resolve condition needs installed_version_at_least, capability or checks_up"
+        if (
+            self.installed_version_at_least is None
+            and self.capability is None
+            and self.checks_up is None
+            and self.plugins_installed is None
+        ):
+            msg = "A resolve condition needs installed_version_at_least, capability, checks_up or plugins_installed"
             raise ValueError(msg)
         return self
 

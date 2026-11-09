@@ -91,6 +91,55 @@ async function tabOrder(page, count) {
   return labels;
 }
 
+/** Opens Notifications from the bell and checks the pane keeps clear of the row and every control in it is clickable. */
+async function checkPane(page, bell, shot) {
+  await page.getByRole("button", { name: "Notifications" }).nth(bell).click();
+  const pane = page.locator("section[data-pane]");
+  await pane.waitFor();
+  const facts = await pane.evaluate((section) => {
+    const drags = [...document.querySelectorAll("*")].filter(
+      (element) => getComputedStyle(element).getPropertyValue("-webkit-app-region") === "drag",
+    );
+    const top = section.getBoundingClientRect().top;
+    const controls = [...section.querySelectorAll("a, button, [role=tab], input")]
+      .filter((element) => element.getClientRects().length > 0)
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const [x, y] = [rect.x + rect.width / 2, rect.y + rect.height / 2];
+        // A filter tab scrolled out of its row is not visible, so nothing can be on top of it.
+        const clip = element.parentElement.getBoundingClientRect();
+        const visible = x >= clip.left && x <= clip.right && y >= clip.top && y <= clip.bottom;
+        // A disabled button takes no pointer events (it reads as its row), so only an enabled one must be hit.
+        const centre = visible && !element.disabled ? document.elementFromPoint(x, y) : element;
+        return {
+          label: element.getAttribute("aria-label") ?? element.textContent?.trim().slice(0, 30),
+          region: getComputedStyle(element).getPropertyValue("-webkit-app-region"),
+          top: rect.top,
+          onTop: centre === element || element.contains(centre),
+          coveredByLaterDrag: drags.some((drag) => {
+            if (drag.contains(element) || !(element.compareDocumentPosition(drag) & Node.DOCUMENT_POSITION_FOLLOWING))
+              return false;
+            const box = drag.getBoundingClientRect();
+            return rect.left < box.right && box.left < rect.right && rect.top < box.bottom && box.top < rect.bottom;
+          }),
+        };
+      });
+    return { top, region: getComputedStyle(section).getPropertyValue("-webkit-app-region"), controls };
+  });
+  assert.ok(facts.top >= 44, `The Notifications pane starts under the title bar row (top ${facts.top})`);
+  assert.equal(facts.region, "no-drag", "The pane claims its box from the drag region");
+  assert.ok(facts.controls.some((control) => control.label === "Close notifications"));
+  for (const control of facts.controls) {
+    assert.ok(control.top >= 44, `${control.label} is outside the title bar row`);
+    assert.equal(control.coveredByLaterDrag, false, `${control.label} is under no later drag box`);
+    assert.ok(control.onTop, `${control.label} is on top at its centre`);
+  }
+  await page.screenshot({ path: join(shots, shot) });
+  await page.getByRole("button", { name: "Close notifications" }).click();
+  await pane.waitFor({ state: "detached" });
+  return facts.top;
+}
+
 let browser;
 try {
   browser = await chromium.launch();
@@ -109,6 +158,10 @@ try {
     "Nothing drags a browser window",
   );
   await web.screenshot({ path: join(shots, "titlebar-browser.png") });
+  // The browser's Notifications pane still starts at the top: the row's height is 0 there.
+  await web.getByRole("button", { name: "Notifications" }).first().click();
+  assert.equal(await web.locator("section[data-pane]").evaluate((pane) => pane.getBoundingClientRect().top), 0);
+  await web.getByRole("button", { name: "Close notifications" }).click();
   result.browser = { topbar: plain.topbar.height };
   await web.close();
 
@@ -163,6 +216,8 @@ try {
     () => getComputedStyle(document.documentElement).getPropertyValue("--titlebar-inset-left").trim() === "80px",
   );
 
+  result.paneTop = await checkPane(page, 0, "titlebar-desktop-notifications.png");
+
   // Collapsed: the expand button sits after the lights and the main header starts after it.
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   // Measure the settled rail, not its width transition.
@@ -185,6 +240,7 @@ try {
       assert.ok(control.x >= expand.x + expand.width, `${control.label} starts after the expand button`);
   }
   await page.screenshot({ path: join(shots, "titlebar-desktop-collapsed.png") });
+  result.collapsedPaneTop = await checkPane(page, 0, "titlebar-desktop-notifications-collapsed.png");
   result.collapsed = { expandX: expand.x };
 } finally {
   await browser.close();

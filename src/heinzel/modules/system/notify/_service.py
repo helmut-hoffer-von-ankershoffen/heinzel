@@ -343,9 +343,9 @@ class NotifyService(Notifications):
         return self._shown(list(reversed(self.store.read())))[:limit]
 
     def _shown(self, notices: list[Notice]) -> list[Notice]:
-        """`notices` without the resolved ones, nor those whose version condition holds now (cheap, no write).
+        """`notices` without resolved ones or conditions already met by installed metadata.
 
-        A capability is only asked at a tick (`resolve`), so a read never runs another module's operation.
+        Capability and doctor checks run at resolution time. A read never runs another module's operation.
         """
         installed = self.installed()
         return [
