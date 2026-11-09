@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 _REVIEWER = Path(__file__).absolute().with_name("_ipc_terminal_reviewer.py")
 # Part of the trusted installed SDK. A source change must deliberately update this pin.
-_REVIEWER_SHA256 = "107a3c0fc2411c2eb605a19485c4f2f7c52b3e7e286383ac929173ee65acca29"
+_REVIEWER_SHA256 = "700c0800c0f24644493b06a37a0b8909ae508cb8dc625840d8e6928a1501d086"
 _MAX_SOURCE = 64 * 1024
 _REFUSED = "The pinned local MCP reviewer is unavailable"
 log = get_logger("mcp")

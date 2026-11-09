@@ -8,18 +8,18 @@ from pathlib import Path
 from threading import Lock
 
 from heinzel.heads.mcp._client_config import (
-    _ABSENT,
+    ABSENT_ENTRY,
     ClientBridgeBinding,
     ClientConfigAction,
     ClientConfigContext,
     ManualClientConfigPlan,
     McpClient,
     NativeClientConfig,
-    _require_native,
-    _same,
-    _split,
-    _validate_binding,
     plan_manual_client_config,
+    require_native_config,
+    same_config_value,
+    split_config_entry,
+    validate_config_binding,
 )
 from heinzel.heads.mcp._client_config_files import (
     ClientFileSnapshot,
@@ -99,7 +99,7 @@ class HostClientConfigWorkflow:
         approve_local: Callable[[ClientChangeReview], bool],
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        _validate_binding(context, pinned.binding)
+        validate_config_binding(context, pinned.binding)
         self._context = context
         self._pinned = pinned
         self._observe = observe
@@ -208,11 +208,11 @@ class HostClientConfigWorkflow:
         with step(log, "mcp.client_config.check", client=self._context.client.value):
             current, native = self._inspect()
             binding = self._pinned.binding
-            entry, _ = _split(self._context, binding.name, _bytes(current))
-            if not _same(entry, binding.entry(self._context.client)):
+            entry, _ = split_config_entry(self._context, binding.name, _bytes(current))
+            if not same_config_value(entry, binding.entry(self._context.client)):
                 msg = "The recorded MCP bridge is absent or differs from the installed config."
                 raise HeinzelError(msg)
-            _require_native(self._context, binding, native, present=True)
+            require_native_config(self._context, binding, native, present=True)
 
     def _require_current(self, pending: _Pending) -> None:
         current, native = self._inspect()
@@ -228,8 +228,8 @@ class HostClientConfigWorkflow:
         before = read_client_config(self._context)
         binding = self._pinned.binding
         require_plain_workspace(self._context, binding.name, before)
-        entry, _ = _split(self._context, binding.name, _bytes(before))
-        if entry is not _ABSENT and not _same(entry, binding.entry(self._context.client)):
+        entry, _ = split_config_entry(self._context, binding.name, _bytes(before))
+        if entry is not ABSENT_ENTRY and not same_config_value(entry, binding.entry(self._context.client)):
             msg = "The selected profile already contains a different MCP entry."
             raise HeinzelError(msg)
         native = observe_client_config(self._context, binding, self._observe(self._context, binding))

@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass, field
 from typing import cast
 
-from heinzel.heads.mcp._client_config import ClientBridgeBinding, ClientConfigContext, _load_json
+from heinzel.heads.mcp._client_config import ClientBridgeBinding, ClientConfigContext, load_config_json
 
 _MAX_RESPONSE = 1024 * 1024
 _VERSION = re.compile(r"sha256:[0-9a-f]{64}")
@@ -48,7 +48,7 @@ def codex_config_provenance(
     if raw_result is None or len(raw_result) > _MAX_RESPONSE:
         return None
     try:
-        payload = _load_json(raw_result)
+        payload = load_config_json(raw_result)
     except (ArithmeticError, ValueError, RecursionError):
         return None
     result = _table(payload)

@@ -148,14 +148,14 @@ def _invoke(patcher, action, expected, *, registration_logged=True):
 
 
 def _interrupt_commit(patcher):
-    original = registration._record
+    original = registration.write_record
 
     def interrupt(directory, name, data):
         if name.endswith(".commit"):
             raise OSError
         original(directory, name, data)
 
-    patcher.setattr(registration, "_record", interrupt)
+    patcher.setattr(registration, "write_record", interrupt)
 
 
 def _exercise_registration(patcher, sdk, phase, native_root):

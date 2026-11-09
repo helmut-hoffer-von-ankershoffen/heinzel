@@ -14,7 +14,7 @@ from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._identity import CurrentUser
 
 _RECORD_LIMIT = 4096
-_DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+PHYSICAL_DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 _REFUSED = "The installed MCP runtime root is unavailable or changed"
 
 
@@ -26,19 +26,33 @@ class InstalledMcpRuntime:
     state: Path
 
 
-def _identity(descriptor: int) -> tuple[int, int]:
+def descriptor_identity(descriptor: int) -> tuple[int, int]:
+    """Return the device and inode of the retained descriptor.
+
+    Raises:
+        OSError: If the descriptor cannot be inspected.
+    """
     info = os.fstat(descriptor)
     return info.st_dev, info.st_ino
 
 
 @contextmanager
-def _physical_directory(path: Path, *, private: bool = False) -> Generator[int]:
+def physical_directory(path: Path, *, private: bool = False) -> Generator[int]:
+    """Walk a physical directory path without links and optionally require a private leaf.
+
+    Raises:
+        HeinzelError: If a path component fails the ownership or mode check.
+        OSError: If opening or inspecting a directory fails.
+
+    Yields:
+        The retained descriptor for the leaf directory.
+    """
     if not path.is_absolute() or ".." in path.parts or path.anchor != "/":
         raise HeinzelError(_REFUSED)
-    descriptor = os.open("/", _DIR_FLAGS)
+    descriptor = os.open("/", PHYSICAL_DIRECTORY_FLAGS)
     try:
         for component in path.parts[1:]:
-            child = os.open(component, _DIR_FLAGS, dir_fd=descriptor)
+            child = os.open(component, PHYSICAL_DIRECTORY_FLAGS, dir_fd=descriptor)
             os.close(descriptor)
             descriptor = child
             info = os.fstat(descriptor)
@@ -60,15 +74,21 @@ def installation_directories(installation: InstalledMcpRuntime) -> tuple[tuple[i
     """
     try:
         with (
-            _physical_directory(installation.prefix) as prefix,
-            _physical_directory(installation.state, private=True) as state,
+            physical_directory(installation.prefix) as prefix,
+            physical_directory(installation.state, private=True) as state,
         ):
-            return _identity(prefix), _identity(state)
+            return descriptor_identity(prefix), descriptor_identity(state)
     except OSError:
         raise HeinzelError(_REFUSED) from None
 
 
-def _read_record(directory: int, name: str) -> bytes | None:
+def read_record(directory: int, name: str) -> bytes | None:
+    """Read a bounded private record through its directory descriptor.
+
+    Raises:
+        HeinzelError: If the record is unsafe or exceeds the bound.
+        OSError: If the record cannot be read.
+    """
     try:
         descriptor = CurrentUser.open_private(directory, name, os.O_RDONLY)
     except FileNotFoundError:
@@ -80,14 +100,25 @@ def _read_record(directory: int, name: str) -> bytes | None:
     return data
 
 
-def _encode(data: dict[str, JsonValue]) -> bytes:
+def encode_record(data: dict[str, JsonValue]) -> bytes:
+    """Encode the bounded canonical JSON bytes shared by the storage records.
+
+    Raises:
+        HeinzelError: If the encoded record exceeds the bound.
+    """
     encoded = json.dumps(data, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("ascii") + b"\n"
     if len(encoded) > _RECORD_LIMIT:
         raise HeinzelError(_REFUSED)
     return encoded
 
 
-def _record(directory: int, name: str, data: bytes) -> None:
+def write_record(directory: int, name: str, data: bytes) -> None:
+    """Exclusively create and sync a private record through its directory descriptor.
+
+    Raises:
+        HeinzelError: If the record cannot be safely opened.
+        OSError: If creating, writing or syncing the record fails.
+    """
     descriptor = CurrentUser.open_private(directory, name, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
     with os.fdopen(descriptor, "wb") as target:
         target.write(data)

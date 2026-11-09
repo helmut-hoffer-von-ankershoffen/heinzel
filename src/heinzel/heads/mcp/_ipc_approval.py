@@ -16,8 +16,8 @@ from heinzel.heads.mcp._ipc_admission import (
     McpGeneration,
     PendingMcpPeer,
     PublishedMcpLease,
-    _require_waiting_peer,
-    _shutdown_stream,
+    require_waiting_peer,
+    shutdown_stream,
 )
 from heinzel.heads.mcp._ipc_peer import require_owner_peer
 from heinzel.kernel import HeinzelError
@@ -153,7 +153,7 @@ class HostMcpConnectionApprovals:
                 or now >= review.expires_at
             ):
                 raise HeinzelError(_UNAVAILABLE)
-            _require_waiting_peer(pending.peer.connection)
+            require_waiting_peer(pending.peer.connection)
             pending.proof = _HostProof(pending.review, min(now + _PROOF_SECONDS, review.expires_at))
             self._changed.notify_all()
 
@@ -176,11 +176,11 @@ class HostMcpConnectionApprovals:
                         self._on_lease_end(lease_id)
             finally:
                 for pending in self._pending.values():
-                    _shutdown_stream(pending.peer.connection)
+                    shutdown_stream(pending.peer.connection)
                 self._pending.clear()
                 for active in self._active.values():
                     active.lease.cancelled.set()
-                    _shutdown_stream(active.lease.peer.connection)
+                    shutdown_stream(active.lease.peer.connection)
                 self._active.clear()
                 self._changed.notify_all()
 
@@ -206,7 +206,7 @@ class HostMcpConnectionApprovals:
                         self._on_lease_end(lease_id)
                 finally:
                     active.lease.cancelled.set()
-                    _shutdown_stream(active.lease.peer.connection)
+                    shutdown_stream(active.lease.peer.connection)
                     del self._active[lease_id]
 
     def _require_active(self, lease: PublishedMcpLease, *, retire_expired: bool = True) -> None:
@@ -230,7 +230,7 @@ class HostMcpConnectionApprovals:
             now = self._clock()
             if self._revoked or now >= review.expires_at:
                 raise HeinzelError(_UNAVAILABLE)
-            _require_waiting_peer(pending.peer.connection)
+            require_waiting_peer(pending.peer.connection)
             proof = pending.proof
             if proof is not None:
                 require_owner_peer(pending.peer.connection, owner_uid=review.peer_uid)

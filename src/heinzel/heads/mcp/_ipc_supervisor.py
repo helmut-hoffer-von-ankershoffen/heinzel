@@ -14,9 +14,9 @@ from threading import Event, Lock
 from heinzel.heads.mcp._ipc_admission import (
     McpGeneration,
     PublishedMcpLease,
-    _close_stream,
-    _shutdown_stream,
     admit_owned_stream,
+    close_stream,
+    shutdown_stream,
 )
 from heinzel.heads.mcp._ipc_approval import HostMcpConnectionApprovals, PrivateMcpPlan
 from heinzel.heads.mcp._ipc_bridge import BridgeHandshake, launch_inherited_bridge
@@ -68,7 +68,7 @@ class OwnedMcpSupervisor:
     _named: NamedMcpGeneration | None = field(default=None, repr=False)
     _runtime: McpRuntimeLocator | None = field(default=None, repr=False)
     _incarnation: bytes = field(default_factory=partial(secrets.token_bytes, 32), init=False, repr=False, compare=False)
-    _connections: dict[socket, bool] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _connections: dict[socket, bool] = field(default_factory=dict[socket, bool], init=False, repr=False, compare=False)
     _released: Event = field(default_factory=Event, init=False, repr=False, compare=False)
     _lifetime: Lock = field(default_factory=Lock, init=False, repr=False, compare=False)
 
@@ -164,9 +164,9 @@ class OwnedMcpSupervisor:
             with self._lifetime:
                 claimed = self._connections.pop(owned, None)
                 if claimed is True:
-                    _shutdown_stream(owned)
+                    shutdown_stream(owned)
                 elif claimed is False:
-                    _close_stream(owned)
+                    close_stream(owned)
 
     @contextmanager
     def launch_bridge(self) -> Generator[tuple[socket, InheritedMcpTransport]]:
@@ -217,9 +217,9 @@ class OwnedMcpSupervisor:
     def _stop_connections(self) -> None:
         for owned, claimed in self._connections.items():
             if claimed:
-                _shutdown_stream(owned)  # The owning worker closes a descriptor it may still be polling.
+                shutdown_stream(owned)  # The owning worker closes a descriptor it may still be polling.
             else:
-                _close_stream(owned)
+                close_stream(owned)
         self._connections.clear()
 
     def _retire(self) -> None:
@@ -231,7 +231,8 @@ class OwnedMcpSupervisor:
             if self._named is not None:
                 self._named.retire()
 
-    def _release(self) -> None:
+    def release(self) -> None:
+        """Retire the owned registration and its connections under the lifetime lock."""
         with self._lifetime:
             self._retire()
 
@@ -283,7 +284,7 @@ def owned_mcp_supervisor(
         try:
             yield supervisor
         finally:
-            supervisor._release()  # noqa: SLF001 - scope the host handle to this ownership lock
+            supervisor.release()
 
 
 @contextmanager

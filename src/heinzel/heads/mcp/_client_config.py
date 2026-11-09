@@ -25,7 +25,7 @@ from heinzel.kernel._approval import arguments_hash
 from heinzel.kernel._logging import get_logger, step
 
 log = get_logger("mcp")
-_MAX_CONFIG_BYTES = 4 * 1024 * 1024
+MAX_CONFIG_BYTES = 4 * 1024 * 1024
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _MAX_REGISTRATION_LENGTH = 256
 
@@ -178,7 +178,7 @@ class ManualClientConfigPlan:
         if _snapshot_digest(current) != self.before_digest:
             msg = "The MCP config changed. Prepare a new manual plan."
             raise HeinzelError(msg)
-        _require_native(self.context, self.binding, native, present=self.action is ClientConfigAction.UNINSTALL)
+        require_native_config(self.context, self.binding, native, present=self.action is ClientConfigAction.UNINSTALL)
 
     def verify(self, before: bytes | None, after: bytes | None, native: NativeClientConfig) -> None:
         """Verify the one manual edit and effective native state, retaining unrelated config.
@@ -190,19 +190,19 @@ class ManualClientConfigPlan:
             if _snapshot_digest(before) != self.before_digest:
                 msg = "The original MCP config does not match the reviewed plan."
                 raise HeinzelError(msg)
-            old_entry, old_rest = _split(self.context, self.binding.name, before)
-            new_entry, new_rest = _split(self.context, self.binding.name, after)
+            old_entry, old_rest = split_config_entry(self.context, self.binding.name, before)
+            new_entry, new_rest = split_config_entry(self.context, self.binding.name, after)
             expected = self.binding.entry(self.context.client)
             installed = self.action is ClientConfigAction.INSTALL
             if (
                 after is None
-                or not _same(old_entry, _ABSENT if installed else expected)
-                or not _same(new_entry, expected if installed else _ABSENT)
+                or not same_config_value(old_entry, ABSENT_ENTRY if installed else expected)
+                or not same_config_value(new_entry, expected if installed else ABSENT_ENTRY)
                 or not _same_settings(old_rest, new_rest)
             ):
                 msg = "The manual edit differs from the reviewed MCP config change."
                 raise HeinzelError(msg)
-            _require_native(self.context, self.binding, native, present=installed)
+            require_native_config(self.context, self.binding, native, present=installed)
 
 
 def plan_manual_client_config(
@@ -218,20 +218,25 @@ def plan_manual_client_config(
         HeinzelError: If the target is invalid, already occupied or lacks the exact managed entry for removal.
     """
     with step(log, "mcp.client_config.plan", client=context.client.value, action=action.value):
-        _validate_binding(context, binding)
-        entry, _ = _split(context, binding.name, before)
+        validate_config_binding(context, binding)
+        entry, _ = split_config_entry(context, binding.name, before)
         remove = action is ClientConfigAction.UNINSTALL
-        if not _same(entry, binding.entry(context.client) if remove else _ABSENT):
+        if not same_config_value(entry, binding.entry(context.client) if remove else ABSENT_ENTRY):
             msg = "The MCP entry already exists or does not match the recorded bridge."
             raise HeinzelError(msg)
-        _require_native(context, binding, native, present=remove)
+        require_native_config(context, binding, native, present=remove)
         return ManualClientConfigPlan(action, context, binding, _snapshot_digest(before))
 
 
-_ABSENT = object()
+ABSENT_ENTRY = object()
 
 
-def _validate_binding(context: ClientConfigContext, binding: ClientBridgeBinding) -> None:
+def validate_config_binding(context: ClientConfigContext, binding: ClientBridgeBinding) -> None:
+    """Validate the trusted paths and registration locator before planning a change.
+
+    Raises:
+        HeinzelError: If the supplied paths or registration locator are invalid.
+    """
     for path in (context.home, context.workspace, binding.interpreter, binding.bridge):
         value = str(path)
         if not path.is_absolute() or ".." in path.parts or _CONTROL.search(value) or "${" in value:
@@ -242,15 +247,20 @@ def _validate_binding(context: ClientConfigContext, binding: ClientBridgeBinding
         raise HeinzelError(msg)
 
 
-def _require_native(
+def require_native_config(
     context: ClientConfigContext, binding: ClientBridgeBinding, native: NativeClientConfig, *, present: bool
 ) -> None:
+    """Require a native observation that proves the exact expected entry or its absence.
+
+    Raises:
+        HeinzelError: If the client cannot prove the expected configuration.
+    """
     if native.context == context and native.name == binding.name:
         if present:
             if (
                 native.status is NativeConfigStatus.SELECTED
                 and native.source == context.path
-                and _same(native.entry, binding.entry(context.client))
+                and same_config_value(native.entry, binding.entry(context.client))
             ):
                 return
         elif native.status is NativeConfigStatus.ABSENT and native.source is None and native.entry is None:
@@ -262,7 +272,7 @@ def _require_native(
 def _snapshot_digest(raw: bytes | None) -> str:
     if raw is None:
         return hashlib.sha256(b"\x00").hexdigest()
-    if len(raw) > _MAX_CONFIG_BYTES:
+    if len(raw) > MAX_CONFIG_BYTES:
         msg = "The MCP config is too large to inspect."
         raise HeinzelError(msg)
     digest = hashlib.sha256(b"\x01")
@@ -270,33 +280,44 @@ def _snapshot_digest(raw: bytes | None) -> str:
     return digest.hexdigest()
 
 
-def _split(context: ClientConfigContext, name: str, raw: bytes | None) -> tuple[object, dict[str, object]]:
+def split_config_entry(context: ClientConfigContext, name: str, raw: bytes | None) -> tuple[object, dict[str, object]]:
+    """Separate the named server entry from the remaining parsed configuration.
+
+    Raises:
+        HeinzelError: If the config is too large, malformed or ambiguous.
+    """
     if raw is None:
-        return _ABSENT, {}
-    if len(raw) > _MAX_CONFIG_BYTES:
+        return ABSENT_ENTRY, {}
+    if len(raw) > MAX_CONFIG_BYTES:
         msg = "The MCP config is too large to inspect."
         raise HeinzelError(msg)
     invalid = "The MCP config is invalid or has an ambiguous server table."
     try:
         data = raw.decode("utf-8")
-        parsed = tomllib.loads(data) if context.client is McpClient.CODEX else _load_json(data)
+        parsed = tomllib.loads(data) if context.client is McpClient.CODEX else load_config_json(data)
     except (ArithmeticError, ValueError, RecursionError):
         raise HeinzelError(invalid) from None
     if not isinstance(parsed, dict):
         raise HeinzelError(invalid)
     document = cast("dict[str, object]", parsed)
-    servers = document.get(context.table, _ABSENT)
-    if servers is _ABSENT:
-        return _ABSENT, document
+    servers = document.get(context.table, ABSENT_ENTRY)
+    if servers is ABSENT_ENTRY:
+        return ABSENT_ENTRY, document
     if not isinstance(servers, dict):
         raise HeinzelError(invalid)
-    entry = servers.pop(name, _ABSENT)
+    entry = cast("dict[str, object]", servers).pop(name, ABSENT_ENTRY)
     if not servers:
         del document[context.table]
     return entry, document
 
 
-def _load_json(data: str) -> object:
+def load_config_json(data: str) -> object:
+    """Parse config JSON with exact numbers and without duplicate keys or nonfinite constants.
+
+    Raises:
+        ValueError: If the JSON is malformed or contains an ambiguous value.
+    """
+
     def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
         mapping: dict[str, object] = {}
         for key, value in pairs:
@@ -315,24 +336,25 @@ def _load_json(data: str) -> object:
 
 def _same_settings(left: dict[str, object], right: dict[str, object]) -> bool:
     try:
-        return _same(left, right)
+        return same_config_value(left, right)
     except RecursionError:
         return False
 
 
-def _same(left: object, right: object) -> bool:
+def same_config_value(left: object, right: object) -> bool:
+    """Compare parsed configuration recursively while preserving exact value types."""
     """Compare parsed config while keeping distinct scalar types and NaN values distinct from other types."""
     if type(left) is not type(right):
         return False
     if isinstance(left, dict) and isinstance(right, dict):
         left_table, right_table = cast("dict[str, object]", left), cast("dict[str, object]", right)
         return left_table.keys() == right_table.keys() and all(
-            _same(value, right_table[key]) for key, value in left_table.items()
+            same_config_value(value, right_table[key]) for key, value in left_table.items()
         )
     if isinstance(left, list) and isinstance(right, list):
         left_items, right_items = cast("list[object]", left), cast("list[object]", right)
         return len(left_items) == len(right_items) and all(
-            _same(first, second) for first, second in zip(left_items, right_items, strict=True)
+            same_config_value(first, second) for first, second in zip(left_items, right_items, strict=True)
         )
     if isinstance(left, float):
         return repr(left) == repr(right)

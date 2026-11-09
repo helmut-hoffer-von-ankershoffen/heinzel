@@ -30,17 +30,17 @@ from heinzel.kernel._logging import get_logger, step
 from heinzel.kernel._mcp_handoff import REGISTRATION_ID
 from heinzel.kernel._mcp_native import McpNativePlan
 from heinzel.kernel._mcp_registry import (
-    _POLICY,
-    _REFUSED,
+    FOREGROUND_TRANSPORT_POLICY,
+    REGISTRATION_REFUSED,
     McpRegistrationReceipt,
-    _commit_bytes,
-    _current_lock,
-    _has_commit,
-    _read_intent,
-    _require_native_absence,
-    _verify_scope,
+    has_registration_commit,
+    read_registration_intent,
+    registration_commit_bytes,
+    registration_lock_identity,
+    require_native_absence,
+    verify_registration_scope,
 )
-from heinzel.kernel._mcp_storage import InstalledMcpRuntime, _physical_directory, _record, installation_directories
+from heinzel.kernel._mcp_storage import InstalledMcpRuntime, installation_directories, physical_directory, write_record
 
 if TYPE_CHECKING:
     from pydantic import JsonValue
@@ -87,7 +87,7 @@ class InstalledMcpAuthority:
             or not self.sdk.startup_state_matches()
             or self.sdk.startup_fingerprint() != self.fingerprint
         ):
-            raise HeinzelError(_REFUSED)
+            raise HeinzelError(REGISTRATION_REFUSED)
         if status is not InstallationInventoryStatus.COMPLETE:
             msg = "MCP is unavailable until a trusted host verifies this SDK's mutation inventory."
             raise UnverifiedMcpInventoryError(msg)
@@ -113,7 +113,7 @@ def installed_mcp_authority(*, inventory: "InstallationInventoryAuthority | None
         or not os.access(prefix / "bin" / "hz", os.X_OK)
         or not sdk.startup_state_matches()
     ):
-        raise HeinzelError(_REFUSED)
+        raise HeinzelError(REGISTRATION_REFUSED)
     authority = InstalledMcpAuthority(sdk, sdk.startup_fingerprint(), inventory)
     authority.require_current()
     return authority
@@ -128,7 +128,7 @@ class InstalledMcpRegistry:
     native_scope: HostIntegrationScope
 
     def _require_native_absence(self, id_: str) -> None:
-        _require_native_absence(self.authority.runtime, id_, self.manager, self.native_scope)
+        require_native_absence(self.authority.runtime, id_, self.manager, self.native_scope)
 
     def _review(self, action: str, id_: str, receipt: McpRegistrationReceipt | None) -> float:
         deadline = time.monotonic() + _REVIEW_SECONDS
@@ -139,7 +139,7 @@ class InstalledMcpRegistry:
             "action_id": secrets.token_urlsafe(24),
             "registration": id_,
             "generation": 1,
-            "policy": _POLICY,
+            "policy": FOREGROUND_TRANSPORT_POLICY,
             "sdk": str(runtime.prefix),
             "sdk_fingerprint": self.authority.fingerprint,
             "launcher": str(self.authority.launcher),
@@ -162,24 +162,24 @@ class InstalledMcpRegistry:
 
     def _publish(self, action: Literal["register", "recover"], id_: str) -> None:
         if not REGISTRATION_ID.fullmatch(id_):
-            raise HeinzelError(_REFUSED)
+            raise HeinzelError(REGISTRATION_REFUSED)
         runtime = self.authority.runtime
         lock = host_maintenance_lock(runtime.prefix)
         self.authority.require_current()
-        with MaintenanceLocks((lock,)) as locks, _physical_directory(lock.parent, private=True) as directory:
-            prior = _read_intent(directory, id_)
-            committed = _has_commit(directory, id_, prior)
+        with MaintenanceLocks((lock,)) as locks, physical_directory(lock.parent, private=True) as directory:
+            prior = read_registration_intent(directory, id_)
+            committed = has_registration_commit(directory, id_, prior)
             if (action == "register") != (prior is None) or committed:
-                raise HeinzelError(_REFUSED)
+                raise HeinzelError(REGISTRATION_REFUSED)
             self._require_native_absence(id_)
             deadline = self._review(action, id_, prior)
             self.authority.require_current()
             self._require_native_absence(id_)
-            if prior != _read_intent(directory, id_) or _has_commit(directory, id_, prior):
-                raise HeinzelError(_REFUSED)
+            if prior != read_registration_intent(directory, id_) or has_registration_commit(directory, id_, prior):
+                raise HeinzelError(REGISTRATION_REFUSED)
             lock_identity = locks.identity(lock)
-            if _current_lock(directory) != lock_identity or time.monotonic() >= deadline:
-                raise HeinzelError(_REFUSED)
+            if registration_lock_identity(directory) != lock_identity or time.monotonic() >= deadline:
+                raise HeinzelError(REGISTRATION_REFUSED)
             if prior is None:
                 with suppress(FileExistsError):  # This is bounded storage, with no lifecycle authority.
                     os.mkdir(runtime.state.name, mode=0o700, dir_fd=directory)
@@ -195,29 +195,29 @@ class InstalledMcpRegistry:
                     directories=installation_directories(runtime),
                     lock_identity=lock_identity,
                 )
-                _record(directory, f"mcp-registration-{id_}.intent", prior.data())
-            _verify_scope(directory, prior, runtime)
+                write_record(directory, f"mcp-registration-{id_}.intent", prior.data())
+            verify_registration_scope(directory, prior, runtime)
             if prior.fingerprint != self.authority.fingerprint or locks.identity(lock) != prior.lock_identity:
-                raise HeinzelError(_REFUSED)
+                raise HeinzelError(REGISTRATION_REFUSED)
             intent = CurrentUser.open_private(directory, f"mcp-registration-{id_}.intent", os.O_RDONLY)
             try:
                 os.fsync(intent)
             finally:
                 os.close(intent)
             if time.monotonic() >= deadline:
-                raise HeinzelError(_REFUSED)
-            _record(directory, f"mcp-registration-{id_}.commit", _commit_bytes(prior))
+                raise HeinzelError(REGISTRATION_REFUSED)
+            write_record(directory, f"mcp-registration-{id_}.commit", registration_commit_bytes(prior))
 
     def _committed(self, id_: str) -> McpRegistrationReceipt:
         runtime = self.authority.runtime
         self.authority.require_current()
-        with _physical_directory(host_maintenance_directory(runtime.prefix), private=True) as directory:
-            receipt = _read_intent(directory, id_)
-            if receipt is None or not _has_commit(directory, id_, receipt):
-                raise HeinzelError(_REFUSED)
-            _verify_scope(directory, receipt, runtime)
+        with physical_directory(host_maintenance_directory(runtime.prefix), private=True) as directory:
+            receipt = read_registration_intent(directory, id_)
+            if receipt is None or not has_registration_commit(directory, id_, receipt):
+                raise HeinzelError(REGISTRATION_REFUSED)
+            verify_registration_scope(directory, receipt, runtime)
             if receipt.fingerprint != self.authority.fingerprint:
-                raise HeinzelError(_REFUSED)
+                raise HeinzelError(REGISTRATION_REFUSED)
             return receipt
 
     def host(self, id_: str) -> ForegroundMcpLifecycle:
@@ -227,12 +227,12 @@ class InstalledMcpRegistry:
             HeinzelError: If the committed registration and current installed scope do not agree.
         """
         if not REGISTRATION_ID.fullmatch(id_):
-            raise HeinzelError(_REFUSED)
+            raise HeinzelError(REGISTRATION_REFUSED)
         receipt = self._committed(id_)
 
         def current() -> None:
             if self._committed(id_) != receipt:
-                raise HeinzelError(_REFUSED)
+                raise HeinzelError(REGISTRATION_REFUSED)
             self._require_native_absence(id_)
 
         plan = PrivateMcpPlan.capture(

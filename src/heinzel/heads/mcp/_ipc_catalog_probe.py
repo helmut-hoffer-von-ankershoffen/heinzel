@@ -110,11 +110,16 @@ def _serve_catalog(lease: PublishedMcpLease, reply: Callable[[bytes, float], Non
     generation = lease.current_generation
     if generation != lease.peer.generation:
         raise HeinzelError(_REFUSED)
-    result = InitializeResult(
-        protocol_version=CATALOG_PROTOCOL_VERSION,
-        capabilities=ServerCapabilities(tools=ToolsCapability()),
-        server_info=Implementation(name="heinzel", version=__version__),
-        meta={"heinzel.local/registration": generation.registration_id, "heinzel.local/generation": generation.number},
+    result = InitializeResult.model_validate(
+        {
+            "protocolVersion": CATALOG_PROTOCOL_VERSION,
+            "capabilities": ServerCapabilities(tools=ToolsCapability()),
+            "serverInfo": Implementation(name="heinzel", version=__version__),
+            "_meta": {
+                "heinzel.local/registration": generation.registration_id,
+                "heinzel.local/generation": generation.number,
+            },
+        }
     )
     reply(_response(initialize.id, result), frames.deadline)
     notification = frames.read()

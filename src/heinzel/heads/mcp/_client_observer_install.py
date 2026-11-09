@@ -132,7 +132,7 @@ class ProtectedObserverInstall:
         self, files: tuple[ProtectedObserverFile, ...], stack: ExitStack
     ) -> list[tuple[Path, tuple[int, ...]]]:
         total = 0
-        captured = []
+        captured: list[tuple[Path, tuple[int, ...]]] = []
         for item in files:
             descriptor = _open_protected(item.path, stack)
             identity = _identity(descriptor)

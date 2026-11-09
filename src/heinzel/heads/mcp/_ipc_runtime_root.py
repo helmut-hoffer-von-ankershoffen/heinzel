@@ -15,13 +15,13 @@ from heinzel.kernel import CurrentUser, HeinzelError
 from heinzel.kernel._host_maintenance import MaintenanceLocks, host_maintenance_lock
 from heinzel.kernel._installation_mutations import installation_mutation_pending
 from heinzel.kernel._mcp_storage import (
-    _DIR_FLAGS,
+    PHYSICAL_DIRECTORY_FLAGS,
     InstalledMcpRuntime,
-    _encode,
-    _identity,
-    _physical_directory,
-    _read_record,
-    _record,
+    descriptor_identity,
+    encode_record,
+    physical_directory,
+    read_record,
+    write_record,
 )
 
 _DARWIN_USER_TEMP_DIR = 65537  # Darwin's _CS_DARWIN_USER_TEMP_DIR, absent from Python's string table.
@@ -72,12 +72,12 @@ class McpRuntimeLocator:
         try:
             with self._locks.guard(lock):
                 for path, retained, private in self._anchors:
-                    with _physical_directory(path, private=private) as current:
-                        if _identity(current) != _identity(retained):
+                    with physical_directory(path, private=private) as current:
+                        if descriptor_identity(current) != descriptor_identity(retained):
                             raise HeinzelError(_REFUSED)
                 if (
                     self._observation is not None
-                    and _read_record(self._inventory, self._record_name) != self._observation
+                    and read_record(self._inventory, self._record_name) != self._observation
                 ):
                     raise HeinzelError(_REFUSED)
                 if installation_mutation_pending(self._installation.prefix, self._installation.state):
@@ -121,9 +121,9 @@ class McpRuntimeLocator:
             "socket": list(socket_node),
         }
         try:
-            observation = _encode(data)
+            observation = encode_record(data)
             os.fsync(self.descriptor)
-            _record(self._inventory, self._record_name, observation)
+            write_record(self._inventory, self._record_name, observation)
             self._observation = observation
             self.require_current()
         except OSError:
@@ -136,9 +136,9 @@ def _provision(
     lock = host_maintenance_lock(installation.prefix)
     if installation_mutation_pending(installation.prefix, installation.state):
         raise HeinzelError(_REFUSED)
-    inventory = stack.enter_context(_physical_directory(lock.parent, private=True))
+    inventory = stack.enter_context(physical_directory(lock.parent, private=True))
     base = _os_runtime_base()
-    base_fd = stack.enter_context(_physical_directory(base, private=True))
+    base_fd = stack.enter_context(physical_directory(base, private=True))
     sdk, profile = os.fspath(installation.prefix), os.fspath(installation.state)
     key = hashlib.sha256(os.fsencode(sdk) + b"\0" + os.fsencode(profile)).hexdigest()
     name = _locator_name()
@@ -148,7 +148,7 @@ def _provision(
         raise HeinzelError(msg)
     record_name = f"mcp-activation-{key}-{name}.json"
     os.mkdir(name, mode=0o700, dir_fd=base_fd)  # A pre-existing entry refuses this activation.
-    descriptor = os.open(name, _DIR_FLAGS, dir_fd=base_fd)
+    descriptor = os.open(name, PHYSICAL_DIRECTORY_FLAGS, dir_fd=base_fd)
     stack.callback(os.close, descriptor)
     CurrentUser.verify_private(os.fstat(descriptor), directory=True)
     # mkdir/open cannot prove creation provenance against another process under the same UID.
@@ -158,13 +158,13 @@ def _provision(
         "platform": sys.platform,
         "uid": os.getuid(),
         "sdk": sdk,
-        "sdk_identity": list(_identity(prefix)),
+        "sdk_identity": list(descriptor_identity(prefix)),
         "profile": profile,
-        "profile_identity": list(_identity(state)),
+        "profile_identity": list(descriptor_identity(state)),
         "os_root": os.fspath(base),
-        "os_root_identity": list(_identity(base_fd)),
+        "os_root_identity": list(descriptor_identity(base_fd)),
         "locator_root": os.fspath(path),
-        "observed_directory": list(_identity(descriptor)),
+        "observed_directory": list(descriptor_identity(descriptor)),
     }
     anchors = (
         (installation.prefix, prefix, False),
@@ -195,8 +195,8 @@ def mcp_runtime_locator(installation: InstalledMcpRuntime) -> Generator[McpRunti
         try:
             lock = host_maintenance_lock(installation.prefix)
             # Verify native paths before the existing maintenance lock creates its own state outside the SDK.
-            prefix = stack.enter_context(_physical_directory(installation.prefix))
-            state = stack.enter_context(_physical_directory(installation.state, private=True))
+            prefix = stack.enter_context(physical_directory(installation.prefix))
+            state = stack.enter_context(physical_directory(installation.state, private=True))
             locks = stack.enter_context(MaintenanceLocks((lock,)))
             with locks.guard(lock):
                 runtime = _provision(installation, stack, locks, prefix, state)

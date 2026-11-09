@@ -9,12 +9,19 @@ from contextlib import ExitStack, suppress
 from enum import StrEnum
 from itertools import islice
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._host_maintenance import MaintenanceLocks, host_maintenance_gate, host_maintenance_lock
 from heinzel.kernel._identity import CurrentUser
-from heinzel.kernel._mcp_storage import _DIR_FLAGS, _encode, _identity, _physical_directory, _read_record, _record
+from heinzel.kernel._mcp_storage import (
+    PHYSICAL_DIRECTORY_FLAGS,
+    descriptor_identity,
+    encode_record,
+    physical_directory,
+    read_record,
+    write_record,
+)
 from heinzel.kernel._private_control import private_directory
 
 _PROFILE_PREFIX = "mutation-profile-"
@@ -101,7 +108,7 @@ def _profile_path(state: Path) -> Path:
 def _lock_identity(authority: int, lock: Path) -> tuple[int, int]:
     descriptor = CurrentUser.open_private(authority, lock.name, os.O_RDONLY)
     try:
-        return _identity(descriptor)
+        return descriptor_identity(descriptor)
     finally:
         os.close(descriptor)
 
@@ -110,7 +117,7 @@ def _profile(stack: ExitStack, state: Path, *, create: bool = False) -> dict[str
     # The names are fixed even when a profile has never run the corresponding updater.
     if create and not os.path.lexists(state):
         private_directory(state)
-    directory = stack.enter_context(_physical_directory(state))
+    directory = stack.enter_context(physical_directory(state))
     if os.fstat(directory).st_uid != os.getuid():
         raise HeinzelError(_REFUSED)
     descriptors = {"": directory}
@@ -118,7 +125,7 @@ def _profile(stack: ExitStack, state: Path, *, create: bool = False) -> dict[str
         if create:
             with suppress(FileExistsError):
                 os.mkdir(name, 0o700, dir_fd=directory)
-        child = os.open(name, _DIR_FLAGS, dir_fd=directory)
+        child = os.open(name, PHYSICAL_DIRECTORY_FLAGS, dir_fd=directory)
         stack.callback(os.close, child)
         info = os.fstat(child)
         if info.st_uid != os.getuid() or info.st_mode & 0o022:
@@ -130,13 +137,13 @@ def _profile(stack: ExitStack, state: Path, *, create: bool = False) -> dict[str
 
 
 def _receipt(prefix: Path, state: Path, identity: tuple[int, int], profile: dict[str, int]) -> bytes:
-    return _encode(
+    return encode_record(
         {
             "schema": 1,
             "sdk": os.fspath(prefix),
             "state": os.fspath(state),
             "lock": list(identity),
-            "directories": {name: list(_identity(descriptor)) for name, descriptor in profile.items()},
+            "directories": {name: list(descriptor_identity(descriptor)) for name, descriptor in profile.items()},
         }
     )
 
@@ -152,15 +159,15 @@ def record_installation_profile(prefix: Path, state: Path, locks: MaintenanceLoc
     lock = host_maintenance_lock(prefix)
     with ExitStack() as stack:
         identity = locks.identity(lock)
-        authority = stack.enter_context(_physical_directory(lock.parent, private=True))
+        authority = stack.enter_context(physical_directory(lock.parent, private=True))
         if _lock_identity(authority, lock) != identity:
             raise HeinzelError(_REFUSED)
         name = _name(state)
-        existing = _read_record(authority, name)
+        existing = read_record(authority, name)
         profile = _profile(stack, state, create=existing is None)
         expected = _receipt(prefix, state, identity, profile)
         if existing is None:
-            _record(authority, name, expected)
+            write_record(authority, name, expected)
         elif existing != expected:
             raise HeinzelError(_REFUSED)
         if locks.identity(lock) != identity or _lock_identity(authority, lock) != identity:
@@ -184,11 +191,12 @@ def _tracked_pending(prefix: Path, authority: int, lock: Path, excluding: Path |
     for name in names:
         if not name.startswith(_PROFILE_PREFIX):
             continue
-        data = _read_record(authority, name)
-        payload = json.loads(data) if data is not None else None
-        if not isinstance(payload, dict) or not isinstance(payload.get("state"), str):
+        data = read_record(authority, name)
+        payload: object = json.loads(data) if data is not None else None
+        state_path = cast("dict[str, object]", payload).get("state") if isinstance(payload, dict) else None
+        if not isinstance(state_path, str):
             return True
-        state = Path(payload["state"])
+        state = Path(state_path)
         if name != _name(state):
             return True
         with ExitStack() as stack:
@@ -211,7 +219,7 @@ def tracked_installation_mutation_pending(prefix: Path, *, excluding: Path | Non
     lock = host_maintenance_lock(prefix)
     try:
         selected = _profile_path(excluding) if excluding is not None else None
-        with _physical_directory(lock.parent, private=True) as authority:
+        with physical_directory(lock.parent, private=True) as authority:
             return _tracked_pending(prefix, authority, lock, selected)
     except FileNotFoundError:
         return os.path.lexists(lock.parent)

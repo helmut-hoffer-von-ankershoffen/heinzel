@@ -85,7 +85,12 @@ def _endpoint_identity(path: Path) -> _EndpointIdentity:
     raise HeinzelError(msg)
 
 
-def _require_waiting_peer(connection: socket.socket) -> None:
+def require_waiting_peer(connection: socket.socket) -> None:
+    """Refuse a peer that disconnected or started sending before admission.
+
+    Raises:
+        HeinzelError: If the peer can no longer wait for admission.
+    """
     try:
         readiness = select.poll()
         readiness.register(connection, select.POLLIN)
@@ -97,14 +102,16 @@ def _require_waiting_peer(connection: socket.socket) -> None:
     raise HeinzelError(msg)
 
 
-def _shutdown_stream(connection: socket.socket) -> None:
+def shutdown_stream(connection: socket.socket) -> None:
+    """Interrupt an owned stream without closing its worker's descriptor."""
     # Wake both ends without invalidating a descriptor the owning thread may still be polling.
     with suppress(OSError):
         connection.shutdown(socket.SHUT_RDWR)
 
 
-def _close_stream(connection: socket.socket) -> None:
-    _shutdown_stream(connection)  # Buffered wrappers can defer descriptor close but cannot keep the stream alive.
+def close_stream(connection: socket.socket) -> None:
+    """Shut down and close a stream owned by the caller."""
+    shutdown_stream(connection)  # Buffered wrappers can defer descriptor close but cannot keep the stream alive.
     connection.close()
 
 
@@ -128,7 +135,7 @@ def admit_owned_stream(
         with step(log, "mcp.ipc.admit_peer", operation="ipc", step="admit_peer"):
             generation = verify()
             connection = take()
-            streams.callback(_close_stream, connection)
+            streams.callback(close_stream, connection)
             require_owner_peer(connection, owner_uid=os.getuid())
             verify()
             try:
@@ -139,7 +146,7 @@ def admit_owned_stream(
             if requested != generation:
                 msg = "Local MCP locator does not match the supervised generation"
                 raise HeinzelError(msg)
-            _require_waiting_peer(connection)
+            require_waiting_peer(connection)
             pending = PendingMcpPeer(generation, connection)
             try:
                 lease = leases.enter_context(publish(pending))
@@ -150,7 +157,7 @@ def admit_owned_stream(
                 msg = "Local MCP lease does not match the current generation and peer"
                 raise HeinzelError(msg)
             verify()
-            _require_waiting_peer(connection)
+            require_waiting_peer(connection)
             lease.require_active()
         yield lease
 

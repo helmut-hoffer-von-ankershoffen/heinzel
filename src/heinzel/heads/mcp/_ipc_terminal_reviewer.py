@@ -9,6 +9,7 @@ import select
 import socket
 import termios
 import time
+from typing import cast
 
 _REVIEW_BYTES = 16 * 1024
 _ANSWER_BYTES = 64
@@ -52,12 +53,16 @@ def _write(descriptor: int, data: bytes, deadline: float) -> bool:
 
 
 def _confirm(terminal: int, channel: int, deadline: float) -> bool:
-    offer = json.loads(_read_line(channel, _REVIEW_BYTES, deadline))
-    if not isinstance(offer, dict) or set(offer) != {"review", "digest"}:
+    payload: object = json.loads(_read_line(channel, _REVIEW_BYTES, deadline))
+    if not isinstance(payload, dict):
         return False
-    review, digest = offer["review"], offer["digest"]
-    if not isinstance(review, dict) or not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
+    offer = cast("dict[str, object]", payload)
+    if set(offer) != {"review", "digest"}:
         return False
+    raw_review, digest = offer["review"], offer["digest"]
+    if not isinstance(raw_review, dict) or not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
+        return False
+    review = cast("dict[str, object]", raw_review)
     # Match the broker's versioned canonical arguments hash without importing the application.
     canonical = json.dumps(review, ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False)
     actual = hashlib.sha256(b"hz-approval-arguments-v1\0" + canonical.encode("ascii")).hexdigest()

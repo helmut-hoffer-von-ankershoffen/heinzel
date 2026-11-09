@@ -26,8 +26,14 @@ from typing import cast
 
 from pydantic import JsonValue
 
-from heinzel.heads.mcp._client_config import ClientBridgeBinding, ClientConfigContext, McpClient, _load_json, _same
-from heinzel.heads.mcp._client_config_native import _MAX_OUTPUT, NativeInspection
+from heinzel.heads.mcp._client_config import (
+    ClientBridgeBinding,
+    ClientConfigContext,
+    McpClient,
+    load_config_json,
+    same_config_value,
+)
+from heinzel.heads.mcp._client_config_native import MAX_NATIVE_CONFIG_OUTPUT, NativeInspection
 from heinzel.heads.mcp._client_observer_install import ProtectedObserverInstall
 from heinzel.kernel import HeinzelError
 from heinzel.kernel._logging import get_logger, step
@@ -191,7 +197,7 @@ def _inspection(context: ClientConfigContext, request: dict[str, JsonValue], enc
     if not encoded.endswith(b"\n") or encoded.count(b"\n") != 1 or len(encoded) > _MAX_RESPONSE:
         raise HeinzelError(_REFUSED)
     try:
-        payload = _load_json(encoded.decode("utf-8"))
+        payload = load_config_json(encoded.decode("utf-8"))
     except (ArithmeticError, ValueError, RecursionError):
         raise HeinzelError(_REFUSED) from None
     if not isinstance(payload, dict):
@@ -200,7 +206,7 @@ def _inspection(context: ClientConfigContext, request: dict[str, JsonValue], enc
     expected_keys = {"request", "confinement", "managed_policy", "inspection"}
     if (
         response.keys() != expected_keys
-        or not _same(response.get("request"), request)
+        or not same_config_value(response.get("request"), request)
         or response.get("confinement") != "read-only-no-untrusted-exec"
         or response.get("managed_policy") != _managed_policy_evidence()
     ):
@@ -234,7 +240,7 @@ def _fields(context: ClientConfigContext, value: object) -> NativeInspection:
         or returncode not in {0, 1}
         or not isinstance(stdout, str)
         or not isinstance(stderr, str)
-        or len(stdout) + len(stderr) > _MAX_OUTPUT
+        or len(stdout) + len(stderr) > MAX_NATIVE_CONFIG_OUTPUT
         or source not in (None, str(context.path))
         or (returncode != 0 and source is not None)
     ):

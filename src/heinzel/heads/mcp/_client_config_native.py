@@ -17,11 +17,11 @@ from heinzel.heads.mcp._client_config import (
     McpClient,
     NativeClientConfig,
     NativeConfigStatus,
-    _load_json,
+    load_config_json,
 )
 from heinzel.heads.mcp._client_config_codex import codex_config_provenance
 
-_MAX_OUTPUT = 128 * 1024
+MAX_NATIVE_CONFIG_OUTPUT = 128 * 1024
 _CODEX_NULL = {
     "disabled_reason",
     "enabled_tools",
@@ -57,7 +57,7 @@ def observe_client_config(
     if (
         context != inspection.context
         or context.client is McpClient.CURSOR
-        or len(inspection.stdout) + len(inspection.stderr) > _MAX_OUTPUT
+        or len(inspection.stdout) + len(inspection.stderr) > MAX_NATIVE_CONFIG_OUTPUT
     ):
         return unavailable
     if context.client is McpClient.CODEX:
@@ -119,7 +119,7 @@ def _claude_matches(binding: ClientBridgeBinding, output: str) -> bool:
 
 def _codex_matches(binding: ClientBridgeBinding, output: str) -> bool:
     try:
-        payload = _load_json(output)
+        payload = load_config_json(output)
     except (ArithmeticError, ValueError, RecursionError):
         return False
     if not isinstance(payload, dict):

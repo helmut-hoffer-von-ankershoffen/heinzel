@@ -245,14 +245,14 @@ def _inventory_failure(directory, base):
     installation = _installation(directory)
     with pytest.MonkeyPatch.context() as patcher:
         patcher.setattr(roots, "_os_runtime_base", lambda: base)
-        record = roots._record
+        record = roots.write_record
 
         def write_uncertain(descriptor, name, data):
             record(descriptor, name, data[:8])
             raise OSError
 
         with pytest.MonkeyPatch.context() as writes:
-            writes.setattr(roots, "_record", write_uncertain)
+            writes.setattr(roots, "write_record", write_uncertain)
             with (
                 pytest.raises(HeinzelError, match="unavailable or changed"),
                 owned_installed_mcp_supervisor(installation, _plan(), clock=lambda: 100.0),

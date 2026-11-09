@@ -8,13 +8,14 @@ import stat
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 from heinzel.heads.mcp._client_config import (
-    _MAX_CONFIG_BYTES,
+    MAX_CONFIG_BYTES,
     ClientBridgeBinding,
     ClientConfigContext,
     McpClient,
-    _load_json,
+    load_config_json,
 )
 from heinzel.kernel import HeinzelError
 
@@ -72,7 +73,7 @@ class PinnedClientBridge:
 
 def read_client_config(context: ClientConfigContext) -> ClientFileSnapshot | None:
     """Read the standard profile without following links or creating directories."""
-    return _inspect_file(context.path, _MAX_CONFIG_BYTES, owned=True, executable=False, digest=False)
+    return _inspect_file(context.path, MAX_CONFIG_BYTES, owned=True, executable=False, digest=False)
 
 
 def require_plain_workspace(context: ClientConfigContext, name: str, current: ClientFileSnapshot | None) -> None:
@@ -106,18 +107,18 @@ def _entry_exists(path: Path) -> bool:
 
 def _require_no_claude_local_entry(data: bytes, name: str) -> None:
     try:
-        document = _load_json(data.decode("utf-8"))
+        document = load_config_json(data.decode("utf-8"))
     except (ArithmeticError, ValueError, RecursionError):
         raise HeinzelError(_BAD_FILE) from None
     if not isinstance(document, dict):
         raise HeinzelError(_BAD_FILE)
-    projects = document.get("projects", {})
+    projects = cast("dict[str, object]", document).get("projects", {})
     if not isinstance(projects, dict):
         raise HeinzelError(_BAD_FILE)
-    for project in projects.values():
+    for project in cast("dict[str, object]", projects).values():
         if not isinstance(project, dict):
             raise HeinzelError(_BAD_FILE)
-        servers = project.get("mcpServers", {})
+        servers = cast("dict[str, object]", project).get("mcpServers", {})
         if not isinstance(servers, dict) or name in servers:
             raise HeinzelError(_SHADOWED)
 

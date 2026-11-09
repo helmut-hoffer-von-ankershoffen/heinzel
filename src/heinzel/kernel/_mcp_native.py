@@ -54,7 +54,7 @@ class McpNativePlan:
         lines = result.stdout.splitlines()
         if not lines or lines[0].split() != ["PID", "Status", "Label"]:
             return "unavailable"
-        labels = set()
+        labels: set[str] = set()
         for row in lines[1:]:
             match = _LAUNCHD_ROW.fullmatch(row)
             if match is None or match[1] in labels:
