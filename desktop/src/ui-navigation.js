@@ -1,4 +1,5 @@
 import { parseConnection } from "./connection.js";
+import { externalActionUrl } from "./external-links.js";
 
 /** Use the existing web head's fragment authentication; never attach a bearer to another origin. */
 export function authenticatedUiUrl(connection) {
@@ -152,17 +153,11 @@ export function classifyUiLink(target, connection) {
   return { kind: "external", url: url.href };
 }
 
-/**
- * Electron has no popup blocker and window-open details carry no user activation, so any frame
- * (e.g. a sandboxed embed with allow-popups) could open the browser in a loop. Allow one external
- * open per interval per window, drop the rest and log the first drop of each burst.
- */
-export function createExternalOpener({ connection, openExternal, now = Date.now, intervalMs = 2000, log = defaultLog }) {
+/** Share one throttle across generic and provider-specific opens for the owned window. */
+function createExternalOpener(openExternal, { now = Date.now, intervalMs = 2000, log = defaultLog } = {}) {
   let last = Number.NEGATIVE_INFINITY;
   let logged = false;
-  return (target) => {
-    const link = classifyUiLink(target, connection);
-    if (link.kind !== "external") return false;
+  return async (url) => {
     const time = now();
     if (time - last < intervalMs) {
       if (!logged) log({ event: "desktop.external_link.throttled", interval_ms: intervalMs });
@@ -171,9 +166,14 @@ export function createExternalOpener({ connection, openExternal, now = Date.now,
     }
     last = time;
     logged = false;
-    Promise.resolve().then(() => openExternal(link.url))
-      .catch(() => log({ event: "desktop.external_link.failed" }));
-    return true;
+    try {
+      await openExternal(url);
+      return true;
+    } catch {
+      // An OS error may contain the URL. Keep it out of logs and IPC replies.
+      log({ event: "desktop.external_link.failed" });
+      return false;
+    }
   };
 }
 
@@ -181,30 +181,34 @@ function defaultLog(fields) {
   console.warn(JSON.stringify(fields));
 }
 
-/** Hand one classified external URL to the OS without throttling state; never throws. */
-export function openUiLinkExternally(target, connection, openExternal) {
-  return createExternalOpener({ connection, openExternal, log: () => {} })(target);
-}
-
-/**
- * Only top-level documents use this guard; embedded third-party frames keep the web head's CSP.
- * The window never leaves the owned origin and never opens a child window: target=_blank,
- * window.open() and middle-click on a public link (from any frame) go to the default browser,
- * classified and rate-limited; everything else is denied.
- */
-export function guardUiNavigation(contents, connection, openExternal, options = {}) {
-  const open = createExternalOpener({ connection, openExternal, ...options });
-  contents.setWindowOpenHandler((details) => {
-    open(details?.url);
-    return { action: "deny" };
-  });
+/** Embedded frames keep the web head's CSP. Popups from any frame are denied without side effects. */
+export function guardUiNavigation(contents, connection) {
+  contents.setWindowOpenHandler(() => ({ action: "deny" }));
   contents.on("will-navigate", (event) => {
-    if (isOwnedUiNavigation(event.url, connection)) return;
-    event.preventDefault();
-    open(event.url);
+    if (!isOwnedUiNavigation(event.url, connection)) event.preventDefault();
   });
   contents.on("will-redirect", (event) => {
     if (event.isMainFrame !== false && !isOwnedUiNavigation(event.url, connection)) event.preventDefault();
+  });
+}
+
+/** The isolated preload can request an external open from a genuine click in the owned main frame. */
+export function handleExternalActions(contents, connection, openExternal, options) {
+  const open = createExternalOpener(openExternal, options);
+  contents.ipc.handle("hz:open-external", async (event, action, target) => {
+    if (event.sender !== contents || contents.isDestroyed()) return false;
+    const frame = event.senderFrame;
+    const main = contents.mainFrame;
+    const owned = connection();
+    if (!frame || !main || frame.isDestroyed() || main.isDestroyed() || frame.detached ||
+        frame.processId !== main.processId || frame.frameToken !== main.frameToken ||
+        !isOwnedUiNavigation(frame.url, owned)) return false;
+    if (action === null) {
+      const link = classifyUiLink(target, owned);
+      return link.kind === "external" ? open(link.url) : false;
+    }
+    const url = externalActionUrl(action, target);
+    return url ? open(url) : false;
   });
 }
 

@@ -30,10 +30,11 @@ and reports the temporary profile for inspection. It does not simulate installat
 The web head adopts its initial bearer fragment into the window's session storage, as in the browser. The native
 preload exposes only lifecycle status, checks the owning main frame and exact loopback origin, and exposes no token
 or generic native operation. Main-document navigation and redirects stay on that owned origin; new windows remain
-blocked. A public `http(s)` link (target=_blank, `window.open()`, middle-click or a same-window link) or a `mailto:`
-address (subject, body, cc and bcc only) opens in the default browser through `shell.openExternal`, at most one per
-2 s per window. Local services (loopback, private, link-local and tailnet IPs, `.local`-style and single-label names),
-credentials in the URL and every other scheme are denied. Notification and audio-only microphone requests require a separate native confirmation for the current
+blocked. Clicking a public `http(s)` or `mailto:` link in the owned main frame opens the system browser or mail
+client. The isolated preload requires a genuine gesture, including middle-click or keyboard activation. Scripted
+popups, cross-origin redirects and frame links cannot trigger an external open. Provider actions validate their
+specific routes. All opens share one per-window limit of one every two seconds. URL credentials, local services
+(loopback, private, link-local and tailnet IPs, local-only names), unsupported schemes and unsafe mail fields are denied. Notification and audio-only microphone requests require a separate native confirmation for the current
 document; other permission requests remain denied. That confirmation does not establish an OS grant or prove
 delivery or audio capture. These restrictions are development limitations, not a completed native permission lifecycle.
 

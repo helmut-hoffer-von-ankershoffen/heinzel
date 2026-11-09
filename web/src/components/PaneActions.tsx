@@ -18,6 +18,7 @@ import {
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import type { ExternalAction } from "@/lib/externalActions";
 import { cn } from "@/lib/utils";
 
 /** A footer pane's way to close itself: an action that takes the person elsewhere calls it, so the pane never covers
@@ -107,7 +108,7 @@ function flatten(children: ReactNode, prefix = ""): ReactNode[] {
   });
 }
 
-type Target = { onClick?: () => void; to?: string; href?: string };
+type Target = { onClick?: () => void; to?: string; href?: string; externalAction?: ExternalAction };
 
 /**
  * One action. `icon` is required and `children` are its words: shown beside the icon when the row says so (the
@@ -124,6 +125,7 @@ export function PaneAction({
   leaves = false,
   to,
   href,
+  externalAction,
   className,
   ...props
 }: Omit<ComponentProps<"button">, "children"> &
@@ -181,6 +183,7 @@ export function PaneAction({
           href={href}
           target="_blank"
           rel="noopener noreferrer"
+          data-hz-external-action={externalAction}
           onClick={props.onClick as ComponentProps<"a">["onClick"]}
         >
           {body}

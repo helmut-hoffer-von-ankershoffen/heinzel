@@ -1478,11 +1478,15 @@ try {
       (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube-nocookie.com/embed/"),
       "private player choice must restore the privacy-enhanced origin",
     );
+    // The private-player switch remounts Help. Open it, then tap Help again before using the header link.
     await playbackHelp.tap();
-    const [youtubePage] = await Promise.all([
-      soundPage.waitForEvent("popup"),
-      player.getByRole("link", { name: "Open on YouTube" }).tap(),
-    ]);
+    await player.getByRole("region", { name: "Playback or sign-in trouble?" }).waitFor();
+    await player.getByRole("button", { name: /Playback or sign-in trouble\?/, expanded: true }).waitFor();
+    await playbackHelp.tap();
+    await player.getByRole("button", { name: /Playback or sign-in trouble\?/, expanded: false }).waitFor();
+    const openYouTube = player.getByRole("link", { name: "Open on YouTube" });
+    await assertTouchTarget(openYouTube, "Open on YouTube", "short-landscape");
+    const [youtubePage] = await Promise.all([soundPage.waitForEvent("popup"), openYouTube.tap()]);
     await youtubePage.waitForURL("https://www.youtube.com/watch**");
     assert.equal(new URL(youtubePage.url()).searchParams.get("v"), sound.stream.video);
     await player.waitFor({ state: "detached" });

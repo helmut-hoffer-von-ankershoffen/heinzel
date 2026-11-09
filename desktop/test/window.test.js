@@ -15,12 +15,67 @@ test("startup acquires the single-instance guard before launching the owned CLI"
   assert.match(main, /contextIsolation: true/);
   assert.match(main, /nodeIntegration: false/);
   assert.match(main, /sandbox: true/);
-  assert.match(main, /guardUiNavigation\(window\.webContents, connection, \(url\) => shell\.openExternal\(url\)\)/);
+  assert.match(main, /guardUiNavigation\(window\.webContents, connection\)/);
+  assert.match(main, /handleExternalActions\(window\.webContents,.*\(url\) => shell\.openExternal\(url\)\)/);
   assert.match(main, /openProductUi\(/);
   assert.match(main, /cancelled: \(\) => stopping \|\| quitting/);
   assert.doesNotMatch(main, /data:text\/html/);
   assert.match(preload, /lifecycle: \(\) => ipcRenderer\.invoke\("hz:lifecycle"\)/);
   assert.doesNotMatch(preload, /token|send\(|sendSync|process|require\("node:/);
+});
+
+test("the isolated preload hands off only trusted external anchor clicks from the main frame", async () => {
+  const handlers = new Map();
+  const invocations = [];
+  const emitted = [];
+  const origin = "http://127.0.0.1:30123";
+  const window = { location: { origin } };
+  const navigator = { userActivation: { isActive: true } };
+  class Anchor {
+    constructor(href, action = null) { Object.assign(this, { href, action, target: "_blank" }); }
+    get origin() { return new URL(this.href).origin; }
+    get protocol() { return new URL(this.href).protocol; }
+    closest() { return this; }
+    hasAttribute() { return false; }
+    getAttribute() { return this.action; }
+    dispatchEvent(event) { emitted.push(event.type); }
+  }
+  const context = {
+    window, navigator, Element: Anchor, HTMLAnchorElement: Anchor, Event,
+    document: { addEventListener: (type, handler, capture = false) => handlers.set(`${type}:${capture}`, handler) },
+    require: () => ({ contextBridge: { exposeInMainWorld() {} }, ipcRenderer: {
+      invoke: async (...args) => { invocations.push(args); return true; },
+    } }),
+  };
+  window.top = {};
+  runInNewContext(preload, { ...context });
+  assert.equal(handlers.size, 0);
+  window.top = window;
+  runInNewContext(preload, { ...context });
+  const ordinary = new Anchor("https://example.com/path");
+  const provider = new Anchor("https://www.youtube.com/watch?v=tRsQsTMvPNg", "watch-video");
+  const fire = (target, fields = {}) => {
+    const event = { type: "click", isTrusted: true, button: 0, target, defaultPrevented: false,
+      preventDefault() { this.defaultPrevented = true; }, ...fields };
+    handlers.get(`${event.type}:true`)(event);
+    handlers.get(`${event.type}:false`)(event);
+    return event.defaultPrevented;
+  };
+  assert.equal(fire(ordinary, { isTrusted: false }), false);
+  assert.equal(fire(ordinary, { defaultPrevented: true }), true);
+  assert.equal(fire(new Anchor(origin)), false);
+  navigator.userActivation.isActive = false;
+  assert.equal(fire(ordinary), false);
+  navigator.userActivation.isActive = true;
+  assert.equal(fire(ordinary, { type: "auxclick", button: 2 }), false);
+  assert.equal(fire(ordinary, { type: "auxclick", button: 1 }), true);
+  assert.equal(fire(provider), true);
+  assert.deepEqual(invocations, [
+    ["hz:open-external", null, ordinary.href],
+    ["hz:open-external", "watch-video", provider.href],
+  ]);
+  await Promise.resolve();
+  assert.deepEqual(emitted, ["hz:external-opened"]);
 });
 
 test("Electron readiness starts the CLI and reports startup errors", () => {

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
+import { externalActionUrl } from "../src/external-links.js";
 import {
-  authenticatedUiUrl, classifyUiLink, createExternalOpener, guardUiNavigation, isOwnedUiNavigation, openProductUi, openUiLinkExternally,
+  authenticatedUiUrl, classifyUiLink, guardUiNavigation, handleExternalActions, isOwnedUiNavigation, openProductUi,
 } from "../src/ui-navigation.js";
 
 const connection = Object.freeze({ origin: "http://127.0.0.1:30123", token: "synthetic_native_ui_test_token_1234567890" });
@@ -84,78 +85,11 @@ test("link classifier denies every scheme, credential, local host and unsafe mai
   for (const url of DENIED) assert.equal(classifyUiLink(url, connection).kind, "deny", String(url).slice(0, 60));
 });
 
-test("external opening passes only the normalised href to openExternal and logs its failure", async () => {
-  const opened = [];
-  assert.equal(openUiLinkExternally("https://example.com/x y", connection, (url) => { opened.push(url); }), true);
-  assert.equal(openUiLinkExternally("javascript:alert(1)", connection, (url) => { opened.push(url); }), false);
-  assert.equal(openUiLinkExternally(`${connection.origin}/`, connection, (url) => { opened.push(url); }), false);
-  const logs = [];
-  const failing = createExternalOpener({ connection, openExternal: async () => { throw new Error("no browser"); },
-    log: (fields) => logs.push(fields) });
-  assert.equal(failing("https://example.com/"), true);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(opened, ["https://example.com/x%20y"]);
-  assert.deepEqual(logs, [{ event: "desktop.external_link.failed" }]);
-});
-
-test("external opens are rate limited per window: one per 2 s, the rest dropped and logged once", async () => {
-  let clock = 1_000_000;
-  const opened = [];
-  const logs = [];
-  const open = createExternalOpener({ connection, openExternal: (url) => { opened.push(url); },
-    now: () => clock, log: (fields) => logs.push(fields) });
-  assert.equal(open("https://a.example.com/"), true);
-  for (let i = 0; i < 50; i++) { clock += 10; assert.equal(open(`https://spam.example.com/${i}`), false); }
-  assert.equal(open("javascript:alert(1)"), false);
-  clock += 2000;
-  assert.equal(open("https://b.example.com/"), true);
-  clock += 1;
-  assert.equal(open("https://c.example.com/"), false);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(opened, ["https://a.example.com/", "https://b.example.com/"]);
-  assert.deepEqual(logs, [
-    { event: "desktop.external_link.throttled", interval_ms: 2000 },
-    { event: "desktop.external_link.throttled", interval_ms: 2000 },
-  ]);
-});
-
-test("target=_blank, window.open and middle-click from any frame go to the browser; the window is denied", async () => {
-  const contents = new EventEmitter();
-  let open;
-  contents.setWindowOpenHandler = (handler) => { open = handler; };
-  const opened = [];
-  let clock = 0;
-  guardUiNavigation(contents, connection, (url) => { opened.push(url); }, { now: () => clock, log: () => {} });
-  for (const disposition of ["foreground-tab", "new-window", "background-tab"]) {
-    clock += 5000;
-    assert.deepEqual(open({ url: "https://heinzel.team/learn", disposition, frameName: "_blank" }), { action: "deny" });
-  }
-  for (const url of ["javascript:alert(1)", "file:///etc/passwd", "http://127.0.0.1:30124/", `${connection.origin}/x`]) {
-    clock += 5000;
-    assert.deepEqual(open({ url, disposition: "foreground-tab" }), { action: "deny" });
-  }
-  assert.deepEqual(open(undefined), { action: "deny" });
-  clock += 5000;
-  for (let i = 0; i < 20; i++) assert.deepEqual(open({ url: `https://embed.example.com/${i}` }), { action: "deny" });
-  let blocked = 0;
-  const event = (url) => ({ url, isMainFrame: true, preventDefault: () => { blocked++; } });
-  clock += 5000;
-  contents.emit("will-navigate", event(`${connection.origin}/heinzel`));
-  contents.emit("will-navigate", event("https://example.com/same-window"));
-  contents.emit("will-navigate", event("data:text/html,x"));
-  assert.equal(blocked, 2);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(opened, [
-    "https://heinzel.team/learn", "https://heinzel.team/learn", "https://heinzel.team/learn",
-    "https://embed.example.com/0", "https://example.com/same-window",
-  ]);
-});
-
 test("the actual navigation handlers block cross-origin main-frame redirects and popups", () => {
   const contents = new EventEmitter();
   let open;
   contents.setWindowOpenHandler = (handler) => { open = handler; };
-  guardUiNavigation(contents, connection, () => {});
+  guardUiNavigation(contents, connection);
   let blocked = 0;
   const event = (url, isMainFrame = true) => ({ url, isMainFrame, preventDefault: () => { blocked++; } });
   contents.emit("will-navigate", event(`${connection.origin}/heinzel`));
@@ -165,6 +99,101 @@ test("the actual navigation handlers block cross-origin main-frame redirects and
   contents.emit("will-redirect", event("https://example.com/embed", false));
   assert.equal(blocked, 2);
   assert.deepEqual(open({ url: "https://example.com/" }), { action: "deny" });
+});
+
+test("external actions require their own provider routes and return canonical HTTPS URLs", () => {
+  const allowed = {
+    "join-meeting": [
+      "https://zoom.us/j/12345678901", "https://acme.zoom.us/j/12345678901", "https://zoom.com/j/12345678901",
+      "https://meet.google.com/abc-defg-hij", "https://teams.microsoft.com/l/meetup-join/x",
+      "https://teams.live.com/meet/123", "https://acme.webex.com/meet/a", "https://webex.com/meet/a",
+    ],
+    "open-calendar": [
+      "https://www.google.com/calendar/event?eid=abc", "https://calendar.google.com/calendar/event?eid=abc",
+      "https://calendar.google.com/calendar/u/0/r/eventedit/ZmFrZQ",
+    ],
+    "watch-video": ["https://www.youtube.com/watch?v=tRsQsTMvPNg"],
+  };
+  for (const [action, targets] of Object.entries(allowed)) {
+    for (const target of targets) {
+      assert.equal(externalActionUrl(action, target), target);
+      for (const other of Object.keys(allowed).filter((key) => key !== action))
+        assert.equal(externalActionUrl(other, target), null);
+    }
+  }
+  for (const target of [
+    "http://zoom.us/j/1", "https://evil.example/", "https://zoom.us.evil.example/j/1", "https://evilzoom.us/j/1",
+    "https://user:pass@zoom.us/j/1", "https://zoom.us:8443/j/1", "https://www.google.com/search?q=1",
+    "https://meet.google.com/unrelated", "https://zoom.us/signin", "https://webex.com/redirect",
+    "zoommtg://zoom.us/join", "javascript:alert(1)", "file:///etc/passwd", "not a URL", "http://127.0.0.1:30123/",
+  ]) assert.equal(externalActionUrl("join-meeting", target), null);
+  assert.equal(externalActionUrl("open-calendar", "https://www.google.com/calendar/unrelated"), null);
+  assert.equal(externalActionUrl("open-calendar", "https://outlook.office.com/calendar/item/example"), null);
+  assert.equal(externalActionUrl("watch-video", "https://www.youtube.com/redirect?v=tRsQsTMvPNg"), null);
+  assert.equal(externalActionUrl("watch-video", "https://www.youtube.com/watch?v=tRsQsTMvPNg&v=another"), null);
+  assert.equal(externalActionUrl("watch-video", "https://WWW.YOUTUBE.COM:443/watch?v=tRsQsTMvPNg&other=1#example"),
+    "https://www.youtube.com/watch?v=tRsQsTMvPNg");
+});
+
+test("popup requests have no opener side effect and IPC denies foreign, subframe and stale senders", async () => {
+  const main = { url: `${connection.origin}/`, processId: 1, frameToken: "main", isDestroyed: () => false };
+  let popup, invoke;
+  const contents = Object.assign(new EventEmitter(), {
+    mainFrame: main,
+    isDestroyed: () => false,
+    setWindowOpenHandler: (handler) => { popup = handler; },
+    ipc: { handle: (channel, handler) => { assert.equal(channel, "hz:open-external"); invoke = handler; } },
+  });
+  const opened = [];
+  const logs = [];
+  let current = connection;
+  let rejectHandoff = false;
+  let clock = 0;
+  guardUiNavigation(contents, connection);
+  handleExternalActions(contents, () => current, async (url) => {
+    if (rejectHandoff) throw new Error("System browser unavailable for " + url);
+    opened.push(url);
+  }, { now: () => clock, log: (fields) => logs.push(fields) });
+  const url = "https://meet.google.com/abc-defg-hij";
+  for (const disposition of ["foreground-tab", "background-tab", "new-window"]) {
+    assert.deepEqual(popup({ url, disposition }), { action: "deny" });
+    assert.deepEqual(popup({ url, disposition, postBody: {}, referrer: { url: "https://other.example/" } }), { action: "deny" });
+  }
+  assert.deepEqual(popup(undefined), { action: "deny" });
+  for (const frame of [null, { ...main, frameToken: "child" }, { ...main, processId: 2 },
+    { ...main, detached: true }, { ...main, isDestroyed: () => true }, { ...main, url: "https://other.example/" }]) {
+    assert.equal(await invoke({ sender: contents, senderFrame: frame }, "join-meeting", url), false);
+    assert.equal(await invoke({ sender: contents, senderFrame: frame }, null, url), false);
+  }
+  const event = { sender: contents, senderFrame: main };
+  assert.equal(await invoke({ sender: {}, senderFrame: main }, "join-meeting", url), false);
+  assert.equal(await invoke(event, "watch-video", url), false);
+  assert.equal(await invoke(event, "", url), false);
+  for (const target of [...APP, ...DENIED]) assert.equal(await invoke(event, null, target), false);
+  assert.deepEqual(opened, []);
+  assert.equal(await invoke(event, "join-meeting", url), true);
+  for (let i = 0; i < 50; i++) {
+    clock += 10;
+    assert.equal(await invoke(event, null, `https://example.com/${i}`), false);
+  }
+  clock = 2000;
+  assert.equal(await invoke(event, null, "https://example.com/x y"), true);
+  assert.equal(await invoke(event, "join-meeting", url), false);
+  clock = 4000;
+  assert.equal(await invoke(event, null, "mailto:a@example.com?subject=hi"), true);
+  clock = 6000;
+  rejectHandoff = true;
+  assert.equal(await invoke(event, "join-meeting", url), false);
+  current = null;
+  clock = 8000;
+  assert.equal(await invoke(event, "join-meeting", url), false);
+  assert.equal(await invoke(event, null, url), false);
+  assert.deepEqual(opened, [url, "https://example.com/x%20y", "mailto:a@example.com?subject=hi"]);
+  assert.deepEqual(logs, [
+    { event: "desktop.external_link.throttled", interval_ms: 2000 },
+    { event: "desktop.external_link.throttled", interval_ms: 2000 },
+    { event: "desktop.external_link.failed" },
+  ]);
 });
 
 test("quit while lifecycle authentication is pending never constructs a window", async () => {
