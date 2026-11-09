@@ -142,6 +142,28 @@ def _threaded_start(root):
         worker.join(timeout=2)
 
 
+def _overlong_root(root):
+    suffix = Path("g-000000000000/s")
+    extra = 104 - len(os.fsencode(root / suffix)) - 1
+    assert extra > 0
+    oversized = root / ("x" * extra)
+    oversized.mkdir(mode=0o700)
+    assert len(os.fsencode(oversized / suffix)) == 104
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("The overlong generation attempted startup or filesystem mutation")
+
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(os, "mkdir", forbidden)
+        patcher.setattr(os, "fork", forbidden)
+        with (
+            pytest.raises(HeinzelError, match="exceeds the Unix socket address limit"),
+            owned_named_generation(oversized),
+        ):
+            pytest.fail("An overlong locator was advertised")
+    assert not list(oversized.iterdir())
+
+
 @pytest.mark.parametrize(
     "fixture",
     [
@@ -151,10 +173,13 @@ def _threaded_start(root):
         "_stale_generation",
         "_unsolicited_peer",
         "_threaded_start",
+        "_overlong_root",
     ],
 )
-def test_named_generation_retains_socket_paths_and_refuses_substitution(tmp_path_factory, fixture):
-    root = tmp_path_factory.mktemp("ng").resolve()
+def test_named_generation_retains_socket_paths_and_refuses_substitution(short_socket_root, fixture):
+    # The replacement canary renames this directory. Keep both paths inside the same scratch allocation.
+    root = short_socket_root / "r"
+    root.mkdir(mode=0o700)
     result = subprocess.run(
         [sys.executable, "-I", "-c", _FIXTURE, __file__, fixture, os.fspath(root)],
         stdin=subprocess.DEVNULL,

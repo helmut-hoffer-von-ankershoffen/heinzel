@@ -192,7 +192,8 @@ def owned_named_generation(root: Path) -> Generator[NamedMcpGeneration]:
         raise HeinzelError(_REFUSED)
     locator = root / ("g-" + secrets.token_hex(6)) / _NODE
     if len(os.fsencode(locator)) > _PATH_BYTES:
-        raise HeinzelError(_REFUSED)
+        msg = "The local MCP generation path exceeds the Unix socket address limit"
+        raise HeinzelError(msg)
     with ExitStack() as owned:
         try:
             private_directory(root, create=False)

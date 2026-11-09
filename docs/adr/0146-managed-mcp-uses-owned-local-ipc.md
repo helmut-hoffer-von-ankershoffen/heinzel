@@ -65,6 +65,18 @@ separate evidence.
 
 ## More Information
 
+The next native activation milestone selects a short per-installation root from the authenticated host runtime.
+On macOS, the native launcher obtains the OS per-user temporary directory through `confstr` with
+`_CS_DARWIN_USER_TEMP_DIR`. On Linux, it verifies the OS session directory at `/run/user/<uid>`. It resolves
+the physical OS path, verifies the owner, permissions and ancestry, and provisions an owner-only root using the
+verified parent directory descriptor. The launcher binds the root to the active installation and retains its
+identity in the maintenance inventory. Environment overrides and project paths supply no root authority.
+The launcher refuses named activation when the OS root is unavailable or when the final root exceeds 86
+filesystem-encoded bytes. The adapter reserves the remaining 17 bytes of the 103-byte socket pathname limit.
+Retired and failed generation nodes remain on disk for reviewed cleanup. The maintenance record remains
+authoritative if the OS later expires the runtime directory. The current adapter requires a caller-supplied
+verified root. Native root resolution and its macOS and Linux acceptance checks are separate from this slice.
+
 Direct HTTP is separate follow-up work building on the proposed bearer scope in
 [PR #655](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/655). Claude Desktop and Gemini CLI
 remain follow-up client integrations with their own acceptance matrix.

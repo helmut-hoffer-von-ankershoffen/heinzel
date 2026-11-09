@@ -329,8 +329,8 @@ def _run_supervised_fixture(directory, phase):
 
 
 @pytest.mark.parametrize("phase", ["approve", "decline", "expire", "revoke"])
-def test_public_review_command_reviews_one_connection_and_fences_fake_dispatch(tmp_path_factory, phase):
-    directory = tmp_path_factory.mktemp("svp").resolve()
+def test_public_review_command_reviews_one_connection_and_fences_fake_dispatch(short_socket_root, phase):
+    directory = short_socket_root
     master, terminal = pty.openpty()
     settings = termios.tcgetattr(terminal)
     settings[3] &= ~termios.ECHO
@@ -543,8 +543,8 @@ def _run_path_replacement_canaries(directory):
         ("_run_path_replacement_canaries", []),
     ],
 )
-def test_owned_activation_refuses_unowned_sockets_and_retires_its_endpoint(tmp_path_factory, fixture, arguments):
-    directory = tmp_path_factory.mktemp("act").resolve()
+def test_owned_activation_refuses_unowned_sockets_and_retires_its_endpoint(short_socket_root, fixture, arguments):
+    directory = short_socket_root
     result = subprocess.run(
         [sys.executable, "-I", "-c", _ACTIVATION_LAUNCHER, __file__, fixture, os.fspath(directory), *arguments],
         stdin=subprocess.DEVNULL,
