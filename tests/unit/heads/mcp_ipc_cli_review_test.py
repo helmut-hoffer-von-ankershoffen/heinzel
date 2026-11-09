@@ -18,6 +18,7 @@ from threading import Event
 import pytest
 
 from heinzel import HeinzelError
+from heinzel.heads import cli
 from heinzel.heads.mcp._ipc_admission import McpGeneration
 from heinzel.heads.mcp._ipc_approval import PrivateMcpPlan
 from heinzel.heads.mcp._ipc_cli_review import _REVIEWER, _REVIEWER_SHA256
@@ -247,6 +248,18 @@ def _fake_dispatch(transport, generation, admitted, release, calls):
         return "refused"
 
 
+def _review_command(supervisor, instance_id):
+    def forbidden_boot():
+        pytest.fail("The host review command booted the project kernel")
+
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(sys, "argv", ["hz", "system", "mcp", "review", instance_id])
+        patcher.setattr(cli, "boot", forbidden_boot)
+        with pytest.raises(SystemExit) as exit_status:
+            cli.main(host_mcp_supervisor=supervisor)
+    return exit_status.value.code
+
+
 def _run_supervised_fixture(directory, phase):
     generation = McpGeneration("fixture-registration", 3)
     now = 100.0
@@ -277,12 +290,12 @@ def _run_supervised_fixture(directory, phase):
                 second.connect(os.fspath(endpoint))
                 second_result = workers.submit(_fake_dispatch, transport, generation, second_admitted, release, calls)
                 assert intended in _pending(supervisor, 2)
+                status = _review_command(supervisor, intended)
                 if phase == "decline":
-                    with pytest.raises(HeinzelError, match="host review was declined or unavailable"):
-                        supervisor.review(intended)
+                    assert status == 1
                     supervisor.revoke()
                 else:
-                    supervisor.review(intended)
+                    assert status == 0
                     assert first_admitted.wait(2)
                     assert not second_admitted.is_set()
                     if phase == "expire":
@@ -302,7 +315,7 @@ def _run_supervised_fixture(directory, phase):
 
 
 @pytest.mark.parametrize("phase", ["approve", "decline", "expire", "revoke"])
-def test_owned_supervisor_reviews_one_connection_and_fences_fake_dispatch(tmp_path_factory, phase):
+def test_public_review_command_reviews_one_connection_and_fences_fake_dispatch(tmp_path_factory, phase):
     directory = tmp_path_factory.mktemp("svp").resolve()
     master, terminal = pty.openpty()
     settings = termios.tcgetattr(terminal)
@@ -327,7 +340,11 @@ def test_owned_supervisor_reviews_one_connection_and_fences_fake_dispatch(tmp_pa
                 os.write(master, (b"no" if phase == "decline" else match[1]) + b"\n")
                 stdout, stderr = process.communicate(timeout=2)
                 assert process.returncode == 0, stderr.decode()
-                assert json.loads(stdout) == {
+                messages = stdout.splitlines()
+                assert messages[:-1] == (
+                    [] if phase == "decline" else [b"The broker accepted the selected MCP connection review."]
+                )
+                assert json.loads(messages[-1]) == {
                     "first": "completed" if phase == "approve" else "refused",
                     "second_admitted": False,
                     "calls": ["fake-provider"] if phase == "approve" else [],
@@ -342,3 +359,37 @@ def test_owned_supervisor_reviews_one_connection_and_fences_fake_dispatch(tmp_pa
             os.close(master)
         if terminal >= 0:
             os.close(terminal)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "status", "message"),
+    [
+        (["--help"], 0, b"Usage: hz system mcp review PENDING_ID\n"),
+        (["x" * 32, "--yes"], 2, b"Usage: hz system mcp review PENDING_ID\n"),
+        (["x" * 32], 1, b"Local MCP review requires the active owned supervisor.\n"),
+    ],
+)
+def test_standalone_review_command_parses_offline_and_ignores_forged_descriptor(tmp_path, arguments, status, message):
+    # An ordinary same-user process can inherit a descriptor and set these variables, but neither grants authority.
+    broker, impostor = socket.socketpair()
+    with broker, impostor:
+        result = subprocess.run(
+            [sys.executable, "-I", "-m", "heinzel", "system", "mcp", "review", *arguments],
+            cwd=tmp_path,
+            env={"HZ_CONFIG_HOME": "/unavailable", "HZ_MCP_REVIEW_FD": str(impostor.fileno())},
+            pass_fds=(impostor.fileno(),),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=2,
+            check=False,
+        )
+        assert result.returncode == status
+        if status == 0:
+            assert result.stdout.startswith(message)
+            assert not result.stderr
+        else:
+            assert result.stderr == message
+            assert not result.stdout
+        impostor.close()
+        broker.settimeout(2)
+        assert broker.recv(1) == b""

@@ -32,6 +32,10 @@ Claude settings discovery and human approval have separate contracts.
   The local terminal reviewer runs in the supervisor's already-trusted, isolated CLI process. It uses the
   same source bytes it verifies against the digest embedded in the trusted SDK. The supervisor allocates the
   control descriptor only after that check and keeps the descriptor within the trusted process.
+  `hz system mcp review PENDING_ID` accepts only the opaque locator and stays outside tool discovery. Exit status
+  0 means the broker accepted the exact terminal review, 1 means review was unavailable or declined, and 2 means
+  invalid syntax. The active host runtime supplies and retains the supervisor in process. Standalone invocation
+  without that handle refuses before project discovery. Native activation must still supply the handle.
 - Restrict discovery and dispatch to reviewed operations and exact target grants. Give authorized personal and
   contract Heinzels stable individual tools and CLI equivalents. Resolve both heads to the same durable retry
   identity for the selected grant. Retain exact result bytes and record uncertain effects without replaying them.

@@ -18,7 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
 from pydantic import ValidationError
@@ -39,6 +39,9 @@ from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
 from heinzel.heads.cli._serve import UI_HELP, serve_group, ui_command
 from heinzel.heads.cli._update import print_changelog_header, print_notice, start_check
 from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Origin, Progress, boot
+
+if TYPE_CHECKING:
+    from heinzel.heads.mcp._ipc_supervisor import OwnedMcpSupervisor
 
 console = Console()
 err_console = Console(stderr=True)
@@ -234,8 +237,12 @@ def show(kernel: Kernel, output: Console) -> None:
     render_overview(kernel, output)
 
 
-def main() -> None:
-    """Entry point of the `hz` executable."""
+def main(*, host_mcp_supervisor: "OwnedMcpSupervisor | None" = None) -> None:
+    """Enter `hz`; an activated host runtime may supply its already-owned MCP supervisor."""
+    if sys.argv[1:4] == ["system", "mcp", "review"]:
+        from heinzel.heads.cli._mcp_review import main as review_main  # noqa: PLC0415 - host-only, before boot
+
+        sys.exit(review_main(sys.argv[4:], supervisor=host_mcp_supervisor))
     if sys.argv[1:3] == ["system", "uninstall"]:
         from heinzel.heads.cli._uninstall import main as uninstall_main  # noqa: PLC0415 - parse maintenance before discovery
 
