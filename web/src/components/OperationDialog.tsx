@@ -43,7 +43,11 @@ const TONE: Record<PhaseState, string> = {
 };
 
 /** The steps as a segmented bar, one segment per planned step: never a percentage the head did not measure. */
-function Steps({ phases, active }: Readonly<{ phases: Phase[]; active: boolean }>) {
+function Steps({
+  phases,
+  active,
+  uncertain = false,
+}: Readonly<{ phases: Phase[]; active: boolean; uncertain?: boolean }>) {
   if (!phases.length) return null;
   const finished = phases.filter((phase) => ["done", "warn", "skipped"].includes(phase.state)).length;
   const running = phases.some((phase) => phase.state === "running");
@@ -54,10 +58,14 @@ function Steps({ phases, active }: Readonly<{ phases: Phase[]; active: boolean }
         names={false}
         pulse={active}
         segments={phases.map((phase) => ({ id: phase.id, label: phase.label, state: phase.state }))}
-        valueText={t("op.step", {
-          done: Math.min(finished + (running ? 1 : 0), phases.length),
-          total: phases.length,
-        })}
+        valueText={
+          uncertain
+            ? t("op.lastReportedSteps")
+            : t("op.step", {
+                done: Math.min(finished + (running ? 1 : 0), phases.length),
+                total: phases.length,
+              })
+        }
       />
       <ol aria-label={t("op.steps")} className="space-y-1.5">
         {phases.map((phase) => {
@@ -69,14 +77,20 @@ function Steps({ phases, active }: Readonly<{ phases: Phase[]; active: boolean }
                 className={cn("mt-0.5 flex size-4 shrink-0 items-center justify-center", TONE[phase.state])}
               >
                 {Icon ? (
-                  <Icon className={cn("size-4", phase.state === "running" && "motion-safe:animate-spin")} />
+                  <Icon className={cn("size-4", active && phase.state === "running" && "motion-safe:animate-spin")} />
                 ) : (
                   <span className="size-1.5 rounded-full bg-current opacity-50" />
                 )}
               </span>
               <span className={cn("min-w-0 flex-1", phase.state === "pending" && "text-muted-foreground")}>
                 {phase.label}
-                <span className="sr-only">: {t(`op.state.${phase.state}` as MessageKey)}</span>
+                {uncertain ? (
+                  <span className="block text-xs text-muted-foreground">
+                    {t("op.lastReported", { state: t(`op.state.${phase.state}` as MessageKey) })}
+                  </span>
+                ) : (
+                  <span className="sr-only">: {t(`op.state.${phase.state}` as MessageKey)}</span>
+                )}
                 {phase.detail && <span className={cn("block text-xs", TONE[phase.state])}>{phase.detail}</span>}
               </span>
             </li>
@@ -202,7 +216,7 @@ export function OperationDialog() {
               {quick ? (run.outcomeUnknown ? t("op.daemon.restart.unknown") : plain("failed")) : run.error}
             </span>
           </p>
-          <Steps phases={run.phases} active={false} />
+          <Steps phases={run.phases} active={false} uncertain={run.outcomeUnknown} />
           {!quick && (
             <p className="mt-3 text-xs text-muted-foreground">
               {run.phases.some((phase) => phase.state === "failed") ? t("op.failedNext") : t("op.lost")}

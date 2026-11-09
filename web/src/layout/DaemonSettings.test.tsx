@@ -345,9 +345,24 @@ describe("Daemon Settings", () => {
     );
     await userEvent.setup().click(await screen.findByRole("button", { name: "Restart" }));
     await screen.findByText("Restarting the daemon…", { selector: "output" });
+    await act(async () => {
+      controller.enqueue(
+        new TextEncoder().encode(
+          `event: phase\ndata: ${JSON.stringify({ id: "verify", label: "Checking the service", state: "running" })}\n\n`,
+        ),
+      );
+    });
+    expect(await screen.findByText("Checking the service")).toBeInTheDocument();
     await act(async () => controller.close());
     expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    const steps = screen.getByRole("list", { name: "Steps" });
+    expect(within(steps).getByText("Last reported: in progress")).toBeVisible();
+    expect(steps.querySelector(".motion-safe\\:animate-spin")).toBeNull();
+    expect(screen.getByRole("progressbar", { name: "Steps" })).toHaveAttribute(
+      "aria-valuetext",
+      "Last reported steps; outcome unconfirmed",
+    );
     expect(screen.queryByText("The daemon restarted.")).not.toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });

@@ -486,6 +486,8 @@ const en = {
   "contrib.done": "Done: {command}",
   "op.step": "Step {done} of {total}",
   "op.steps": "Steps",
+  "op.lastReportedSteps": "Last reported steps; outcome unconfirmed",
+  "op.lastReported": "Last reported: {state}",
   "op.working": "Working…",
   "op.close": "Close",
   "op.retry": "Try again",
