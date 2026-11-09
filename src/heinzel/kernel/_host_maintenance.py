@@ -63,20 +63,24 @@ class MaintenanceLocks:
                 while not os.path.lexists(parent):
                     missing.append(parent)
                     parent = parent.parent
-                stack.enter_context(private_lock(path))
+                lock = stack.enter_context(private_lock(path))
                 for directory in {path.parent, *(item.parent for item in missing), *missing}:
                     descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
                     try:
                         os.fsync(descriptor)
                     finally:
                         os.close(descriptor)
-                info = path.lstat()
+                info = os.fstat(lock)
                 self._identities[path] = info.st_dev, info.st_ino
+            self._stack = stack
+            for path in self.paths:
+                with self.guard(path):
+                    pass
         except BaseException:
             stack.close()
+            self._stack = None
             self._identities.clear()
             raise
-        self._stack = stack
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -105,6 +109,11 @@ class MaintenanceLocks:
             raise HeinzelError(msg)
         private_directory(path.parent, create=False)
         yield
+
+    def identity(self, path: Path) -> tuple[int, int]:
+        """Return the physical identity of the exact verified held lock."""
+        with self.guard(path):
+            return self._identities[path]
 
 
 @dataclass(frozen=True, slots=True)

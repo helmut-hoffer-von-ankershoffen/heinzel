@@ -1,7 +1,6 @@
 """Offline removal of one verified uv installation, with owned service cleanup and retained user work."""
 
 import secrets
-import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -10,21 +9,27 @@ from typing import TYPE_CHECKING
 
 from heinzel import Config, HeinzelError, Kernel, Progress, Settings
 from heinzel.kernel import (
+    HostIntegrationScope,
     HostMaintenanceIntegration,
     HostServiceManager,
     Installation,
     MaintenanceLocks,
+    McpRegistrationReceipt,
     OfflineUninstall,
     ServiceLet,
     UninstallResult,
     boot,
     host_maintenance_gate,
     host_maintenance_lock,
+    mcp_registration_inventory,
+    native_mcp_scope,
+    verify_mcp_native_inventory,
 )
 from heinzel.kernel._host_maintenance import HostIntegrationRemoval
 from heinzel.kernel._installation_mutations import installation_mutation_pending
 from heinzel.kernel._offline_uv import VerifiedUV, stage
 from heinzel.kernel._uninstall_journal import RemovalCapture, RemovalJournal
+from heinzel.modules.system.daemon._maintenance import DaemonManagerPort
 
 if TYPE_CHECKING:
     from heinzel.modules.system.daemon._service import DaemonRemoval, DaemonService
@@ -95,9 +100,7 @@ def uninstall_installation(
     if daemon.state_dir.parent != web.directory.parent or installation.prefix != store / "heinzel":
         msg = "The service profile does not match this Heinzel installation; nothing was removed."
         raise HeinzelError(msg)
-    if installation_mutation_pending(installation.prefix, daemon.state_dir.parent):
-        msg = "An installation change requires local recovery before uninstalling Heinzel."
-        raise HeinzelError(msg)
+    _require_mutations_settled(installation.prefix, daemon.state_dir.parent)
     context = _RemovalContext(
         installation,
         before,
@@ -114,6 +117,12 @@ def uninstall_installation(
 MAX_INTEGRATIONS = 512
 
 
+def _require_mutations_settled(prefix: Path, state: Path) -> None:
+    if installation_mutation_pending(prefix, state):
+        msg = "An installation change requires local recovery before uninstalling Heinzel."
+        raise HeinzelError(msg)
+
+
 @dataclass
 class _RemovalContext:
     installation: Installation
@@ -126,12 +135,23 @@ class _RemovalContext:
     maintenance: Kernel
 
 
-@dataclass
-class _UninstallManager(HostServiceManager):
-    daemon: "DaemonService"
+@dataclass(frozen=True, slots=True)
+class _McpRemovalInventory:
+    prefix: Path
+    receipts: tuple[McpRegistrationReceipt, ...]
+    scopes: tuple[HostIntegrationScope, ...]
 
-    def command(self, arguments: list[str]) -> subprocess.CompletedProcess[str]:
-        return self.daemon.owned_manager_command(arguments)
+    @classmethod
+    def capture(cls, prefix: Path) -> "_McpRemovalInventory":
+        receipts = mcp_registration_inventory(prefix)
+        return cls(prefix, receipts, (native_mcp_scope(),) if receipts else ())
+
+    def verify(self, manager: HostServiceManager) -> None:
+        if mcp_registration_inventory(self.prefix) != self.receipts:
+            msg = "The MCP registration inventory changed before removal."
+            raise HeinzelError(msg)
+        for scope in self.scopes:
+            verify_mcp_native_inventory(self.prefix, self.receipts, manager, scope)
 
 
 def _contributions(kernel: Kernel) -> list[HostMaintenanceIntegration]:
@@ -147,10 +167,11 @@ def _compose_removal(context: _RemovalContext, on_recovery: Callable[[str], None
     binary, settings, daemon, web = context.binary, context.settings, context.daemon, context.web
     maintenance = context.maintenance
     contributions = _contributions(maintenance)
-    manager = _UninstallManager(daemon)
+    manager = DaemonManagerPort(daemon)
     inventory = [(owner, owner.inventory(installation.prefix, binary, manager)) for owner in contributions]
     integrations = tuple(item for _, items in inventory for item in items)
-    scopes = tuple(scope for owner in contributions for scope in owner.discovery_scopes())
+    mcp = _McpRemovalInventory.capture(installation.prefix)
+    scopes = (*tuple(scope for owner in contributions for scope in owner.discovery_scopes()), *mcp.scopes)
     if len(integrations) > MAX_INTEGRATIONS or len({item.name for item in integrations}) != len(integrations):
         msg = "The host integration inventory is ambiguous or exceeds its budget."
         raise HeinzelError(msg)
@@ -163,9 +184,11 @@ def _compose_removal(context: _RemovalContext, on_recovery: Callable[[str], None
     )
     gate = host_maintenance_gate(installation.prefix)
     with installation.tool_transaction(), MaintenanceLocks(lock_paths) as locks:
+        _require_mutations_settled(installation.prefix, daemon.state_dir.parent)
         if any(owner.inventory(installation.prefix, binary, manager) != items for owner, items in inventory):
             msg = "The host integration inventory changed before removal; no service was stopped."
             raise HeinzelError(msg)
+        mcp.verify(manager)
         plans = tuple(owner.guard(item, manager, locks) for owner, items in inventory for item in items)
         with (
             web.removal_guard(locks=locks) as remove_web,
@@ -211,6 +234,7 @@ def _compose_removal(context: _RemovalContext, on_recovery: Callable[[str], None
                 if any(owner.inventory(installation.prefix, binary, manager) != items for owner, items in inventory):
                     msg = "The host integration inventory changed before native removal."
                     raise HeinzelError(msg)
+                mcp.verify(manager)
 
             _apply_removal(
                 installation, before, executable, (remove_web, daemon_removal, journal, plans, revalidate), on_recovery
