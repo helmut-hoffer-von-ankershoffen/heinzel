@@ -91,7 +91,7 @@ def test_other_environments(tmp_path):
 
 
 def test_requires_uv(tmp_path, monkeypatch):
-    monkeypatch.setattr("shutil.which", lambda _: None)
+    monkeypatch.setattr("shutil.which", lambda *_, **__: None)
     with pytest.raises(HeinzelError, match="uv is required"):
         _ = Installation(Progress(), prefix=tmp_path).uv
 
