@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from http.client import HTTPException, HTTPMessage
 from pathlib import Path
 from typing import IO, Any, Literal, cast, override
@@ -18,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from heinzel import HeinzelError
 from heinzel.heads import _desktop_messages as copy
 from heinzel.heads._desktop_archive import MAX_ARCHIVE_BYTES
+from heinzel.heads._desktop_log import step
 from heinzel.heads._desktop_report import SILENT, Advance, Reporter
 
 REPOSITORY = "helmut-hoffer-von-ankershoffen/heinzel"
@@ -35,6 +37,7 @@ ATTEMPTS = 3
 RETRY_PAUSE = 1.0
 LATER = "Run `hz system update` to look for a newer release, or try again later."
 HINT = "Check your network connection and proxy settings, then run hz app install again."
+GATEWAY_HINT = "Check https://www.githubstatus.com and your network or proxy, then retry hz app install."
 
 
 class _Archive(BaseModel):
@@ -73,6 +76,13 @@ class _CoreManifest(BaseModel):
     producer: _Producer
 
 
+@dataclass(frozen=True)
+class _AssetIdentity:
+    tag: str
+    identifier: int
+    sha256: str
+
+
 class _NotFoundError(HeinzelError):
     """GitHub has no such resource."""
 
@@ -86,22 +96,31 @@ def _reason(exc: Exception) -> str:
     return str(cause) or type(cause).__name__
 
 
-def _retrying[T](action: Callable[[], T], what: str, reporter: Reporter) -> T:
+def _gateway_timeout(exc: Exception) -> bool:
+    return isinstance(exc, HTTPError) and exc.code == 504  # noqa: PLR2004 - HTTP status
+
+
+def _retrying[T](
+    action: Callable[[], T], what: str, reporter: Reporter, *, gateway_fallback: Callable[[], T] | None = None
+) -> T:
     """Run a network step; transient failures are retried with a visible note, the rest fail with advice.
 
+    An official asset fallback may take one of the existing attempts after a gateway timeout.
+
     Raises:
-        _NotFoundError: If GitHub answers 404.
+        _NotFoundError: If the primary route answers 404.
         HeinzelError: If GitHub refuses, or the network still fails after the last attempt.
     """
     failure: Exception = TimeoutError()
+    current = action
     for attempt in range(1, ATTEMPTS + 1):
         try:
-            return action()
+            return current()
         except HTTPError as exc:
             exc.close()
-            if exc.code == 404:  # noqa: PLR2004 - HTTP status
+            if exc.code == 404 and current is action:  # noqa: PLR2004 - HTTP status
                 raise _NotFoundError(what) from exc
-            if exc.code in {401, 403, 429}:
+            if exc.code in {401, 403, 429} and current is action:
                 msg = (
                     f"GitHub refused {what} (HTTP {exc.code}), probably its limit for requests without a login. "
                     "Wait a few minutes, then run hz app install again."
@@ -112,9 +131,14 @@ def _retrying[T](action: Callable[[], T], what: str, reporter: Reporter) -> T:
             failure = exc
         if attempt == ATTEMPTS:
             break
-        reporter.note(f"{what} failed ({_reason(failure)}); retrying, attempt {attempt + 1} of {ATTEMPTS}.")
+        current, route = action, "retrying"
+        if gateway_fallback is not None and _gateway_timeout(failure):
+            current, gateway_fallback = gateway_fallback, None
+            route = "trying the official GitHub release API"
+        reporter.note(f"{what} failed ({_reason(failure)}); {route}, attempt {attempt + 1} of {ATTEMPTS}.")
         time.sleep(RETRY_PAUSE)
-    msg = f"{what} failed: {_reason(failure)}. {HINT}"
+    hint = GATEWAY_HINT if _gateway_timeout(failure) else HINT
+    msg = f"{what} failed: {_reason(failure)}. {hint}"
     raise HeinzelError(msg) from failure
 
 
@@ -133,7 +157,7 @@ def _api(resource: str, reporter: Reporter = SILENT) -> dict[str, Any]:
     return TypeAdapter(dict[str, Any]).validate_json(data, strict=True)
 
 
-def _release_assets(tag: str, names: set[str], reporter: Reporter = SILENT) -> dict[str, tuple[int, str]]:
+def _release_assets(tag: str, names: set[str], reporter: Reporter = SILENT) -> dict[str, _AssetIdentity]:
     try:
         release = _api(f"releases/tags/{tag}", reporter)
     except _NotFoundError as exc:
@@ -142,7 +166,7 @@ def _release_assets(tag: str, names: set[str], reporter: Reporter = SILENT) -> d
     if release.get("tag_name") != tag or release.get("draft") is not False or release.get("prerelease") is not False:
         msg = "The requested desktop release is not published as stable."
         raise HeinzelError(msg)
-    assets: dict[str, tuple[int, str]] = {}
+    assets: dict[str, _AssetIdentity] = {}
     for asset in release["assets"]:
         name = asset["name"]
         if name not in names:
@@ -156,7 +180,7 @@ def _release_assets(tag: str, names: set[str], reporter: Reporter = SILENT) -> d
         ):
             msg = "The official desktop release asset identity is invalid or ambiguous."
             raise HeinzelError(msg)
-        assets[name] = (identifier, digest.removeprefix("sha256:"))
+        assets[name] = _AssetIdentity(tag, identifier, digest.removeprefix("sha256:"))
     if not assets:
         msg = f"No desktop app is published for hz {tag.removeprefix('v')} yet: release {tag} has no macOS app. {LATER}"
         raise HeinzelError(msg)
@@ -218,17 +242,25 @@ def _ignore(amount: int) -> None:
 
 
 def _download(
-    version: str, target: Path, limit: int, reporter: Reporter = SILENT, advance: Advance | None = None
+    target: Path,
+    limit: int,
+    asset: _AssetIdentity,
+    reporter: Reporter = SILENT,
+    advance: Advance | None = None,
 ) -> None:
-    url = f"https://github.com/{REPOSITORY}/releases/download/v{version}/{target.name}"
+    url = f"https://github.com/{REPOSITORY}/releases/download/{asset.tag}/{target.name}"
+    api_request = Request(
+        f"https://api.github.com/repos/{REPOSITORY}/releases/assets/{asset.identifier}",
+        headers={"Accept": "application/octet-stream"},
+    )
     count: Advance = advance or _ignore
 
-    def fetch() -> None:
+    def fetch(request: str | Request) -> None:
         target.unlink(missing_ok=True)
         sent = 0
         try:
             with (
-                build_opener(_ReleaseRedirects()).open(url, timeout=DOWNLOAD_TIMEOUT) as response,
+                build_opener(_ReleaseRedirects()).open(request, timeout=DOWNLOAD_TIMEOUT) as response,
                 target.open("xb") as output,
             ):
                 remaining = limit
@@ -240,13 +272,21 @@ def _download(
                     output.write(chunk)
                     sent += len(chunk)
                     count(len(chunk))
+            if request is api_request and _digest(target) != asset.sha256:
+                msg = "The desktop release API returned bytes that do not match the published asset."
+                raise HeinzelError(msg)  # noqa: TRY301 - an integrity mismatch is never retried
         except Exception:
             count(-sent)
             raise
 
+    def fetch_from_api() -> None:
+        with step("install", "release_fallback", tag=asset.tag, asset=target.name):
+            fetch(api_request)
+
     try:
-        _retrying(fetch, f"Downloading {target.name}", reporter)
+        _retrying(lambda: fetch(url), f"Downloading {target.name}", reporter, gateway_fallback=fetch_from_api)
     except _NotFoundError as exc:
+        version = asset.tag.removeprefix("v")
         msg = f"No desktop app is published for hz {version} yet: {target.name} is missing from its release. {LATER}"
         raise HeinzelError(msg) from exc
 
@@ -332,9 +372,9 @@ def fetch_archive(version: str, directory: Path, reporter: Reporter = SILENT) ->
         with reporter.phase(copy.RESOLVE.format(tag=tag)):
             assets = _release_assets(tag, names, reporter)
         with reporter.phase(copy.FETCH_MANIFEST):
-            _download(version, manifest_path, 16 * 1024, reporter)
-            _download(version, proof, 2 * 1024 * 1024, reporter)
-            _download(version, core_path, 32 * 1024, reporter)
+            _download(manifest_path, 16 * 1024, assets[manifest_path.name], reporter)
+            _download(proof, 2 * 1024 * 1024, assets[proof.name], reporter)
+            _download(core_path, 32 * 1024, assets[core_path.name], reporter)
             core = _CoreManifest.model_validate_json(core_path.read_bytes())
             manifest = _Manifest.model_validate_json(manifest_path.read_bytes())
             if (
@@ -353,7 +393,7 @@ def fetch_archive(version: str, directory: Path, reporter: Reporter = SILENT) ->
         with reporter.phase(
             copy.DOWNLOAD.format(megabytes=manifest.archive.size / 1e6), manifest.archive.size
         ) as advance:
-            _download(version, archive, manifest.archive.size, reporter, advance)
+            _download(archive, manifest.archive.size, assets[archive.name], reporter, advance)
         with reporter.phase(copy.VERIFY_CHECKSUM):
             if archive.stat().st_size != manifest.archive.size or _digest(archive) != manifest.archive.sha256:
                 msg = "The downloaded desktop bundle differs from its release manifest."
@@ -361,7 +401,7 @@ def fetch_archive(version: str, directory: Path, reporter: Reporter = SILENT) ->
         with reporter.phase(copy.VERIFY_APP):
             _verify(gh, archive, proof, core)
         with reporter.phase(copy.CONFIRM_ASSETS):
-            if any(_digest(path) != assets[path.name][1] for path in paths) or assets != _release_assets(
+            if any(_digest(path) != assets[path.name].sha256 for path in paths) or assets != _release_assets(
                 tag, names, reporter
             ):
                 msg = "The desktop release assets changed or differ from their published identities."
