@@ -306,7 +306,17 @@ def test_cursor_listing_is_not_effective_config_evidence(profile):
 
 
 @pytest.mark.parametrize(
-    "problem", ["same-argv-project", "project-origin", "wrong-profile", "wrong-version", "missing-arg", "no-layers"]
+    "problem",
+    [
+        "same-argv-project",
+        "same-argv-mdm",
+        "project-origin",
+        "mdm-origin",
+        "wrong-profile",
+        "wrong-version",
+        "missing-arg",
+        "no-layers",
+    ],
 )
 def test_codex_get_needs_matching_complete_native_origins(profile, problem):
     home, workspace, pin = profile
@@ -315,16 +325,18 @@ def test_codex_get_needs_matching_complete_native_origins(profile, problem):
     probe = _native(context, binding, installed=True)
     result = _codex_config(context, binding, installed=True)
     key = f"mcp_servers.{binding.name}.args.2"
-    if problem == "same-argv-project":
+    project = {"type": "project", "dotCodexFolder": str(workspace / ".codex")}
+    mdm = {"type": "mdm", "domain": "com.openai.codex", "key": "config_toml_base64"}
+    if problem in {"same-argv-project", "same-argv-mdm"}:
         result["layers"].append(
             {
-                "name": {"type": "project", "dotCodexFolder": str(workspace / ".codex")},
+                "name": project if problem == "same-argv-project" else mdm,
                 "config": {"mcp_servers": {binding.name: binding.entry(McpClient.CODEX)}},
                 "version": "sha256:" + "2" * 64,
             }
         )
-    elif problem == "project-origin":
-        result["origins"][key]["name"] = {"type": "project", "dotCodexFolder": str(workspace / ".codex")}
+    elif problem in {"project-origin", "mdm-origin"}:
+        result["origins"][key]["name"] = project if problem == "project-origin" else mdm
     elif problem == "wrong-profile":
         result["layers"][0]["name"]["profile"] = "work"
     elif problem == "wrong-version":
