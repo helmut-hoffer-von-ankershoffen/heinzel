@@ -97,6 +97,7 @@ export async function startOperation(onSettled: () => void): Promise<void> {
   const { call } = current;
   let phases: Phase[] = [];
   const timeout = call.path === "/system/daemon/restart" ? AbortSignal.timeout(30_000) : undefined;
+  let confirmedFailure = false;
   set({ stage: "running", call, phases, task: null });
   try {
     const result = await stream<unknown>(
@@ -104,6 +105,7 @@ export async function startOperation(onSettled: () => void): Promise<void> {
       call.query,
       ({ event, data }) => {
         if (current.stage !== "running") return;
+        if (event === "error") confirmedFailure = true;
         if (event === "phase") {
           const phase = parsePhase(data);
           if (!phase) return;
@@ -124,12 +126,19 @@ export async function startOperation(onSettled: () => void): Promise<void> {
       "restarted" in result &&
       result.restarted === false
     ) {
+      confirmedFailure = true;
       throw new Error("The daemon was not restarted.");
     }
     set({ stage: "done", call, phases: settle(phases), result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    set({ stage: "failed", call, phases, error: message, ...(timeout?.aborted ? { outcomeUnknown: true } : {}) });
+    set({
+      stage: "failed",
+      call,
+      phases,
+      error: message,
+      ...(timeout && !confirmedFailure ? { outcomeUnknown: true } : {}),
+    });
   } finally {
     onSettled();
   }

@@ -321,10 +321,35 @@ describe("Daemon Settings", () => {
     expect(timer).toHaveBeenCalledWith(30_000);
     await act(async () => timeout.abort(new DOMException("Timed out", "TimeoutError")));
     expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
-    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
     expect(screen.queryByText("The daemon restarted.")).not.toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
     timer.mockRestore();
+  });
+
+  it("marks a disconnected restart as unconfirmed and does not offer a retry", async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+      },
+    });
+    const { calls } = mockApi({
+      "/api/system/daemon/status": { ...running, loaded: false },
+      "/api/stream/system/daemon/restart": new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
+    });
+    render(
+      <Providers client={queryClient()}>
+        <DaemonSettings />
+      </Providers>,
+    );
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Restart" }));
+    await screen.findByText("Restarting the daemon…", { selector: "output" });
+    await act(async () => controller.close());
+    expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    expect(screen.queryByText("The daemon restarted.")).not.toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });
 
   it("does not claim a restart when the operation reports no service was restarted", async () => {
