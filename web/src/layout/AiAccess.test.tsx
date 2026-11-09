@@ -1,9 +1,24 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SchemaAccessList, SchemaAccessOption } from "@/api/client";
 import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
+
+// The restart itself is the lifecycle controller's, tested on its own: here it runs the install and tells its phases.
+vi.mock("@/lifecycle/controller", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  restartAndApply: async (
+    request: { preserve?: (signal: AbortSignal) => Promise<boolean | undefined> },
+    options: { onPhase?: (phase: string) => void },
+  ) => {
+    options.onPhase?.("preserving");
+    await request.preserve?.(new AbortController().signal);
+    options.onPhase?.("reconnecting");
+    options.onPhase?.("applied");
+    return { instance: "after", version: "0.0.0", restartable: true };
+  },
+}));
 
 function option(name: string, fields: Partial<SchemaAccessOption> = {}): SchemaAccessOption {
   return {
@@ -22,6 +37,7 @@ function option(name: string, fields: Partial<SchemaAccessOption> = {}): SchemaA
     last_test: null,
     needs: "",
     setup: null,
+    client: null,
     ...fields,
   };
 }
@@ -45,6 +61,7 @@ function listing(selected: string): SchemaAccessList {
         status: "needs setup",
         needs: "Add the OpenAI client",
         setup: "client",
+        client: "openai",
         fix: "uv tool install --reinstall 'heinzel[openai]'",
       }),
     ],
@@ -67,6 +84,9 @@ function accessApi() {
       return listing(selected);
     },
     "/api/system/config/set": "config.toml",
+    "/api/ai/access/key": { stored: false },
+    "/api/ai/access/set-key": { stored: true },
+    "/api/system/plugin/add-extra": { extra: "openai", done: true, restart_required: true },
     "/api/ai/access/test": {
       name: "gateway",
       ok: true,
@@ -142,5 +162,69 @@ describe("AI access", () => {
     expect(new URL(set?.url ?? "").searchParams.get("value")).toBe("anthropic:claude-sonnet-4-5");
     await user.click(within(dialog).getByRole("button", { name: "Test" }));
     expect(await within(dialog).findByText("Answered: pong")).toBeInTheDocument();
+  });
+
+  it("keeps a typed API key only in the request body, then clears it from the page", async () => {
+    const { calls } = accessApi();
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Set up Model API" }));
+    const dialog = await screen.findByRole("dialog", { name: "Set up Model API" });
+    const field = within(dialog).getByLabelText("API key");
+    expect(field).toHaveAttribute("type", "password");
+    expect(field).toHaveValue("");
+    await user.type(field, "sk-fixture-typed");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByText("Saved. Test it to see it answer.")).toBeInTheDocument();
+    const set = calls.find((call) => call.url.includes("/ai/access/set-key"));
+    expect(set?.url).not.toContain("sk-fixture-typed");
+    expect(await set?.clone().json()).toEqual({ value: "sk-fixture-typed" });
+    expect(field).toHaveValue("");
+    expect(calls.filter((call) => call.url.includes("sk-fixture"))).toEqual([]);
+  });
+
+  it("adds a missing client of hz itself with a confirm, then restarts, with no command to type", async () => {
+    const { calls } = accessApi();
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Set up ChatGPT plan" }));
+    const dialog = await screen.findByRole("dialog", { name: "Set up ChatGPT plan" });
+    expect(dialog).not.toHaveTextContent(/uv tool|hz system/);
+    expect(calls.some((call) => call.url.includes("/add-extra"))).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Add and restart" }));
+    expect(await within(dialog).findByText("Applied")).toBeInTheDocument();
+    const add = calls.find((call) => call.url.includes("/system/plugin/add-extra"));
+    expect(new URL(add?.url ?? "").searchParams.get("extra")).toBe("openai");
+  });
+
+  it("leaves a sign-in to the person's browser: the command only in Details, and Check again", async () => {
+    const { calls } = mockApi({
+      ...shell,
+      "/api/ai/access/list": {
+        ...listing("claude-code"),
+        options: [
+          option("chatgpt", {
+            title: "ChatGPT plan",
+            status: "not signed in",
+            needs: "Sign in to ChatGPT plan",
+            setup: "sign-in",
+            fix: "hz ai access login",
+          }),
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Set up ChatGPT plan" }));
+    const dialog = await screen.findByRole("dialog", { name: "Set up ChatGPT plan" });
+    const outside = dialog.cloneNode(true) as HTMLElement;
+    for (const details of outside.querySelectorAll("details")) details.remove();
+    expect(outside.textContent).not.toContain("hz ai access login");
+    expect(dialog.querySelector("details")).toHaveTextContent("hz ai access login");
+    const before = calls.filter((call) => call.url.includes("/ai/access/list")).length;
+    await user.click(within(dialog).getByRole("button", { name: "Check again" }));
+    await waitFor(() =>
+      expect(calls.filter((call) => call.url.includes("/ai/access/list")).length).toBeGreaterThan(before),
+    );
   });
 });
