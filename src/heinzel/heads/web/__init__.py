@@ -59,6 +59,7 @@ from heinzel.heads.web._auto_update import Activity, AutoUpdater, add_auto_updat
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._lifecycle import CANT_RESTART as CANT_RESTART
 from heinzel.heads.web._lifecycle import add_lifecycle
+from heinzel.heads.web._mcp_lifecycle import add_mcp_lifecycle
 from heinzel.heads.web._pairing import add_pairing
 from heinzel.heads.web._ports import wait_for_port
 from heinzel.heads.web._shutdown import GRACE_SECONDS, KEEP_ALIVE_SECONDS, Stopping
@@ -170,6 +171,7 @@ def api_app(
     )
 
     add_lifecycle(app, kernel, restart)
+    add_mcp_lifecycle(app, kernel)
     return app
 
 

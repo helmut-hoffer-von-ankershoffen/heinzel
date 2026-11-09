@@ -42,6 +42,7 @@ from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Ori
 
 if TYPE_CHECKING:
     from heinzel.heads.cli._mcp_lifecycle import LifecycleCommand
+    from heinzel.heads.mcp._ipc_install_review import McpInstallReview
     from heinzel.heads.mcp._ipc_lifecycle import ForegroundMcpLifecycle
     from heinzel.heads.mcp._ipc_supervisor import OwnedMcpSupervisor
 
@@ -243,6 +244,7 @@ def main(
     *,
     host_mcp_supervisor: "OwnedMcpSupervisor | None" = None,
     host_mcp_lifecycle: "ForegroundMcpLifecycle | None" = None,
+    host_mcp_install_review: "McpInstallReview | None" = None,
 ) -> None:
     """Enter `hz`; an activated host runtime may supply its already-owned MCP supervisor."""
     if sys.argv[1:4] == ["system", "mcp", "review"]:
@@ -252,6 +254,8 @@ def main(
     if sys.argv[1:3] == ["system", "mcp"] and sys.argv[3:]:
         from heinzel.heads.cli import _mcp_lifecycle  # noqa: PLC0415 - host-only, before boot
 
+        if sys.argv[3] == "review-install":
+            sys.exit(_mcp_lifecycle.review_install(sys.argv[4:], host=host_mcp_install_review))
         if sys.argv[3] in _mcp_lifecycle.COMMANDS:
             sys.exit(_mcp_lifecycle.main(cast("LifecycleCommand", sys.argv[3]), sys.argv[4:], host=host_mcp_lifecycle))
     if sys.argv[1:3] == ["system", "uninstall"]:

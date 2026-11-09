@@ -20,6 +20,7 @@ import { AiAccessSetting } from "./AiAccessSetting";
 import { ConnectorsSection } from "./ConnectorsSection";
 import { DaemonSettings } from "./DaemonSettings";
 import { FROM_CLAUDE, FromClaudeSection } from "./FromClaudeSection";
+import { McpSettings } from "./McpSettings";
 import { ModuleHeader, PluginsSection } from "./PluginsSection";
 import { Row, Switch } from "./SettingControls";
 import type { JsonSchema } from "./settingSchema";
@@ -29,6 +30,7 @@ import {
   group,
   type Heading,
   inWords,
+  MCP_CONNECTIONS,
   type Page,
   PLUGINS,
   plainSummary,
@@ -245,6 +247,8 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
           </>
         ) : current === FROM_CLAUDE ? (
           <FromClaudeSection />
+        ) : current === MCP_CONNECTIONS ? (
+          <McpSettings />
         ) : current === CONNECTORS ? (
           <ConnectorsSection
             connectors={nav.connectors}

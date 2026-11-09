@@ -1,5 +1,6 @@
 """Installed CLI foreground lifecycle and isolated native-manager preflight contracts."""
 
+import hashlib
 import json
 import os
 import pty
@@ -11,23 +12,34 @@ import subprocess
 import sys
 import termios
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
-from heinzel.heads import cli
+from heinzel.heads import cli, web
 from heinzel.heads.mcp import _ipc_lifecycle as lifecycle
 from heinzel.heads.mcp import _ipc_runtime_root as roots
 from heinzel.heads.mcp._ipc_admission import McpGeneration
 from heinzel.heads.mcp._ipc_approval import PrivateMcpPlan
-from heinzel.kernel import HostServiceManager, host_maintenance_directory
+from heinzel.heads.mcp._ipc_install_review import McpInstallReview
+from heinzel.heads.web._devices import Devices
+from heinzel.kernel import (
+    HostServiceManager,
+    Kernel,
+    McpLifecycleObservation,
+    McpLifecyclePlanning,
+    Settings,
+    host_maintenance_directory,
+)
 from heinzel.kernel._mcp_native import McpNativePlan
 from heinzel.kernel._mcp_storage import InstalledMcpRuntime
 
 pytestmark = pytest.mark.unit
 
 _REGISTRATION = "fixture-foreground"
-_START_REFUSED = {"decline", "changed", "manager-changed", "wrong-start-ack"}
+_START_REFUSED = {"decline", "changed", "manager-changed", "wrong-start-ack", "handoff-changed"}
 _LAUNCHER = """
 import fcntl, runpy, sys, termios
 from pathlib import Path
@@ -47,11 +59,35 @@ class _Manager(HostServiceManager):
         return subprocess.CompletedProcess(arguments, self.code, self.stdout, "")
 
 
-def _invoke(patcher, host, action, registration=_REGISTRATION):
-    patcher.setattr(sys, "argv", ["hz", "system", "mcp", action, registration])
+def _invoke(patcher, host, action, registration=_REGISTRATION, *, handoff=None):
+    argv = ["hz", "system", "mcp", action, registration]
+    if handoff is not None:
+        argv += ["--handoff", handoff]
+    patcher.setattr(sys, "argv", argv)
     with pytest.raises(SystemExit) as status:
         cli.main(host_mcp_lifecycle=host)
     return status.value.code
+
+
+def _prepare_from_web(host, directory, action):
+    kernel = Kernel(Settings(state_dir=directory / "web-state"), [])
+    kernel.bind(McpLifecyclePlanning, McpLifecyclePlanning(host.status, host.prepare))
+    app = web.build(kernel, port=8000, token="fixture-session", static=None, devices=Devices(directory / "devices"))
+    with TestClient(
+        app, base_url="http://localhost:8000", headers={"Authorization": "Bearer fixture-session"}
+    ) as client:
+        endpoint = f"/api/mcp/lifecycle/{_REGISTRATION}"
+        status = client.get(endpoint).json()
+        assert status["mcp_readiness"] == status["client"] == "unverified"
+        assert action in status["actions"]
+        response = client.post(endpoint + "/prepare", params={"action": action})
+        assert response.status_code == 200, response.text
+        plan = response.json()
+        assert plan["session"] == ("terminal" if action in {"start", "install"} else "owning-session")
+        assert client.get(f"/api/mcp/handoffs/{plan['id']}").json() == plan
+        assert str(directory) not in response.text
+        assert "fixture-only" not in response.text
+        return plan["handoff"]
 
 
 def _exercise_running(patcher, host, installation, native_root, phase):
@@ -61,12 +97,19 @@ def _exercise_running(patcher, host, installation, native_root, phase):
     locator = Path(json.loads(receipt.read_bytes())["locator"])
     assert locator.parent.parent == native_root
     assert locator.is_socket()
-    assert _invoke(patcher, host, "check") == 1  # No MCP readiness proof yet.
+    check, stop = None, None
+    if phase == "handoff":
+        check = _prepare_from_web(host, installation.prefix.parent, "check")
+        stop = _prepare_from_web(host, installation.prefix.parent, "stop")
+        assert _invoke(patcher, host, "stop", handoff=check) == 1  # Cross-action refusal before review.
+    assert _invoke(patcher, host, "check", handoff=check) == 1  # No MCP readiness proof yet.
     assert host._worker.child.pid == pid
-    assert _invoke(patcher, host, "stop") == (1 if phase == "wrong-stop-ack" else 0)
+    assert _invoke(patcher, host, "stop", handoff=stop) == (1 if phase == "wrong-stop-ack" else 0)
     if phase == "wrong-stop-ack":
         assert host._worker.stopping
     else:
+        if stop is not None:
+            assert _invoke(patcher, host, "stop", handoff=stop) == 1
         with pytest.raises(ChildProcessError):
             os.waitpid(pid, os.WNOHANG)  # The exact direct child was reaped before the CLI returned.
         assert _invoke(patcher, host, "stop") == 0
@@ -76,6 +119,9 @@ def _exercise_running(patcher, host, installation, native_root, phase):
 
 
 def _exercise_installed_cli(directory, phase):
+    if phase.startswith("install-"):
+        _exercise_install_handoff(directory, phase)
+        return
     sdk, state = directory / "sdk", directory / "state"
     sdk.mkdir(mode=0o700)
     state.mkdir(mode=0o700)
@@ -83,7 +129,7 @@ def _exercise_installed_cli(directory, phase):
     plan = PrivateMcpPlan.capture(
         McpGeneration(_REGISTRATION, 4), "fixture-only", 3, time.monotonic() + 120, {"dispatch": {}}
     )
-    registration = lifecycle.ForegroundMcpRegistration.capture(installation, plan)
+    registration = lifecycle.ForegroundMcpRegistration.capture(installation, plan, sdk_fingerprint="a" * 64)
     manager = _Manager("PID\tStatus\tLabel\n-\t0\tunrelated\n")
     host = lifecycle.ForegroundMcpLifecycle(registration, manager=manager)
     native_root = Path(os.confstr(65537)).resolve() / roots._locator_name()
@@ -97,7 +143,8 @@ def _exercise_installed_cli(directory, phase):
             patcher.setattr(cli, "boot", forbidden_boot)
             patcher.setattr(roots, "_locator_name", lambda: native_root.name)
             _inject_lifecycle_race(patcher, phase, manager, registration.native.name)
-            assert _invoke(patcher, host, "start") == 1
+            handoff = _prepare_from_web(host, directory, "start") if phase.startswith("handoff") else None
+            assert _invoke(patcher, host, "start", handoff=handoff) == 1
             if phase in _START_REFUSED:
                 assert host._worker is None
                 if phase == "wrong-start-ack":
@@ -114,6 +161,44 @@ def _exercise_installed_cli(directory, phase):
         host.close()
         if native_root.is_dir():
             shutil.rmtree(native_root)
+
+
+def _exercise_install_handoff(directory, phase):
+    config = directory / "fixture-client.json"
+    config.write_text("{}\n")
+
+    def snapshot(registration):
+        assert registration == _REGISTRATION
+        info = config.stat()
+        return {
+            "client": "fictional-client",
+            "config": str(config),
+            "config_identity": [info.st_dev, info.st_ino],
+            "config_preimage": hashlib.sha256(config.read_bytes()).hexdigest(),
+            "sdk_fingerprint": "a" * 64,
+            "grant": "fixture-only",
+            "grant_revision": 3,
+            "generation": 4,
+        }
+
+    reviewer = McpInstallReview(snapshot)
+
+    class Planner:
+        def status(self, _registration):
+            return McpLifecycleObservation(host="observed", actions=("install",))
+
+        def prepare(self, action, registration, expires_at):
+            assert action == "install"
+            return reviewer.prepare(registration, expires_at), "terminal"
+
+    plan = _prepare_from_web(Planner(), directory, "install")
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(sys, "argv", ["hz", "system", "mcp", "review-install", _REGISTRATION, "--handoff", plan])
+        with pytest.raises(SystemExit) as result:
+            cli.main(host_mcp_install_review=reviewer)
+    assert result.value.code == (0 if phase == "install-accepted" else 1)
+    expected = '{"updated": true}\n' if phase == "install-changed" else "{}\n"
+    assert config.read_text() == expected
 
 
 def _inject_lifecycle_race(patcher, phase, manager, name):
@@ -149,9 +234,9 @@ def _read_review(terminal):
 
 def _answer_reviews(terminal, directory, phase):
     actions = ["start"]
-    if phase in {"success", "wrong-stop-ack"}:
+    if phase in {"success", "wrong-stop-ack", "handoff"}:
         actions += ["check", "stop"]
-    if phase == "success":
+    if phase in {"success", "handoff"}:
         actions += ["stop"]
     for action in actions:
         prompt = _read_review(terminal)
@@ -161,24 +246,22 @@ def _answer_reviews(terminal, directory, phase):
         assert b'"grant_revision": 3' in prompt
         match = re.search(rb"Type exactly: (approve MCP [0-9a-f]{8})\r\n", prompt)
         assert match is not None
-        if phase == "changed":
+        if phase in {"changed", "handoff-changed"}:
             (directory / "state").rename(directory / "old-state")
             (directory / "state").mkdir(mode=0o700)
         os.write(terminal, (b"no" if phase == "decline" else match[1]) + b"\n")
 
 
-@pytest.mark.skipif(sys.platform != "darwin", reason="Exercises a real Darwin locator and owned foreground child")
-@pytest.mark.parametrize(
-    "phase", ["success", "decline", "changed", "manager-changed", "wrong-start-ack", "wrong-stop-ack"]
-)
-def test_installed_foreground_cli_reviews_action_and_proves_owned_worker_exit(short_socket_root, phase):
+@contextmanager
+def _installed_terminal(directory, phase):
     master, terminal = pty.openpty()
     settings = termios.tcgetattr(terminal)
+    # An unread answer echo can block Darwin PTY close while communicate waits for exit.
     settings[3] &= ~termios.ECHO
     termios.tcsetattr(terminal, termios.TCSANOW, settings)
     try:
         with subprocess.Popen(
-            [sys.executable, "-I", "-c", _LAUNCHER, __file__, os.fspath(short_socket_root), phase],
+            [sys.executable, "-I", "-c", _LAUNCHER, __file__, os.fspath(directory), phase],
             stdin=terminal,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -187,9 +270,7 @@ def test_installed_foreground_cli_reviews_action_and_proves_owned_worker_exit(sh
             os.close(terminal)
             terminal = -1
             try:
-                _answer_reviews(master, short_socket_root, phase)
-                stdout, stderr = process.communicate(timeout=4)
-                assert process.returncode == 0, stderr.decode()
+                yield master, process
             finally:
                 if process.poll() is None:
                     os.close(master)
@@ -200,6 +281,27 @@ def test_installed_foreground_cli_reviews_action_and_proves_owned_worker_exit(sh
             os.close(master)
         if terminal >= 0:
             os.close(terminal)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Exercises a real Darwin locator and owned foreground child")
+@pytest.mark.parametrize(
+    "phase",
+    [
+        "success",
+        "decline",
+        "changed",
+        "manager-changed",
+        "wrong-start-ack",
+        "wrong-stop-ack",
+        "handoff",
+        "handoff-changed",
+    ],
+)
+def test_installed_foreground_cli_reviews_action_and_proves_owned_worker_exit(short_socket_root, phase):
+    with _installed_terminal(short_socket_root, phase) as (master, process):
+        _answer_reviews(master, short_socket_root, phase)
+        stdout, stderr = process.communicate(timeout=4)
+        assert process.returncode == 0, stderr.decode()
     if phase in _START_REFUSED:
         assert stdout == b""
         assert stderr.endswith(b"The reviewed MCP lifecycle action was declined or unavailable.\n")
@@ -215,10 +317,15 @@ def test_installed_foreground_cli_reviews_action_and_proves_owned_worker_exit(sh
         )
 
 
-@pytest.mark.parametrize("action", ["start", "check", "stop"])
+@pytest.mark.parametrize("action", ["start", "check", "stop", "review-install"])
 def test_standalone_cli_cannot_assert_installed_host_authority(tmp_path, action):
+    arguments = [sys.executable, "-I", "-m", "heinzel", "system", "mcp", action, _REGISTRATION]
+    error = b"MCP lifecycle requires a registration from the trusted installed host.\n"
+    if action == "review-install":
+        arguments += ["--handoff", f"{int(time.time()) + 100}.{'a' * 64}"]
+        error = b"The local MCP Install review was declined or unavailable.\n"
     result = subprocess.run(
-        [sys.executable, "-I", "-m", "heinzel", "system", "mcp", action, _REGISTRATION],
+        arguments,
         cwd=tmp_path,
         env={"HZ_MCP_HOST": "true", "HZ_STATE_DIR": os.fspath(tmp_path / "forged")},
         stdin=subprocess.DEVNULL,
@@ -226,12 +333,29 @@ def test_standalone_cli_cannot_assert_installed_host_authority(tmp_path, action)
         timeout=2,
         check=False,
     )
-    assert (result.returncode, result.stdout, result.stderr) == (
-        1,
-        b"",
-        b"MCP lifecycle requires a registration from the trusted installed host.\n",
-    )
+    assert (result.returncode, result.stdout, result.stderr) == (1, b"", error)
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("phase", ["install-accepted", "install-declined", "install-changed"])
+def test_web_install_handoff_reaches_exact_local_review_only(short_socket_root, phase):
+    with _installed_terminal(short_socket_root, phase) as (master, process):
+        prompt = _read_review(master)
+        assert b'"action": "install"' in prompt
+        assert b'"review_mode": "review-only"' in prompt
+        assert b'"config_preimage":' in prompt
+        assert b'"grant_revision": 3' in prompt
+        match = re.search(rb"Type exactly: (approve MCP [0-9a-f]{8})\r\n", prompt)
+        assert match is not None
+        if phase == "install-changed":
+            (short_socket_root / "fixture-client.json").write_text('{"updated": true}\n')
+        os.write(master, (b"no" if phase == "install-declined" else match[1]) + b"\n")
+        stdout, stderr = process.communicate(timeout=4)
+        assert process.returncode == 0, stderr.decode()
+    if phase == "install-accepted":
+        assert json.loads(stdout) == {"review": "accepted", "installation": "not-applied"}
+    else:
+        assert stdout == b""
 
 
 def test_native_manager_preflight_observes_only_exact_namespace():

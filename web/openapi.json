@@ -8824,6 +8824,137 @@
         "title": "ManualInstall",
         "type": "object"
       },
+      "McpHandoffPlan": {
+        "description": "A comparison commitment for the CLI. No approval or installed binding data is returned.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/McpLifecycleAction"
+          },
+          "handoff": {
+            "title": "Handoff",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "registration": {
+            "title": "Registration",
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/McpReviewSession"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "registration",
+          "session",
+          "handoff"
+        ],
+        "title": "McpHandoffPlan",
+        "type": "object"
+      },
+      "McpLifecycleAction": {
+        "enum": [
+          "start",
+          "check",
+          "stop",
+          "install"
+        ],
+        "type": "string"
+      },
+      "McpLifecycleAvailability": {
+        "description": "Whether an installed host composed a planning service with this server.",
+        "properties": {
+          "planning_available": {
+            "title": "Planning Available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "planning_available"
+        ],
+        "title": "McpLifecycleAvailability",
+        "type": "object"
+      },
+      "McpLifecycleObservation": {
+        "description": "Sanitized observations for an authorized UI, independent of lifecycle review.",
+        "properties": {
+          "actions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/McpLifecycleAction"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "client": {
+            "const": "unverified",
+            "default": "unverified",
+            "title": "Client",
+            "type": "string"
+          },
+          "host": {
+            "default": "unavailable",
+            "enum": [
+              "unavailable",
+              "observed"
+            ],
+            "title": "Host",
+            "type": "string"
+          },
+          "manager": {
+            "default": "not-checked",
+            "enum": [
+              "not-checked",
+              "absent",
+              "conflict",
+              "unavailable"
+            ],
+            "title": "Manager",
+            "type": "string"
+          },
+          "mcp_readiness": {
+            "const": "unverified",
+            "default": "unverified",
+            "title": "Mcp Readiness",
+            "type": "string"
+          },
+          "transport": {
+            "default": "not-checked",
+            "enum": [
+              "not-checked",
+              "reachable",
+              "unavailable"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
+          "worker": {
+            "default": "unobserved",
+            "enum": [
+              "unobserved",
+              "running",
+              "stopped",
+              "not-started",
+              "stop-incomplete"
+            ],
+            "title": "Worker",
+            "type": "string"
+          }
+        },
+        "title": "McpLifecycleObservation",
+        "type": "object"
+      },
+      "McpReviewSession": {
+        "enum": [
+          "terminal",
+          "owning-session"
+        ],
+        "type": "string"
+      },
       "Measurements": {
         "description": "A contract's success test so far: its drafts, how long drafting took and how much was changed.",
         "properties": {
@@ -26105,6 +26236,175 @@
           }
         },
         "summary": "Verify expected settings against this instance's startup snapshot without exposing their values.",
+        "tags": [
+          "web"
+        ]
+      }
+    },
+    "/mcp/handoffs/{id_}": {
+      "get": {
+        "description": "Look up a prepared plan by locator and verify it still describes the current host plan.\n\nRaises:\n    HTTPException: If the plan is missing, expired or no longer describes the installed host.",
+        "operationId": "web_mcp_handoff",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id_",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-f0-9]{32}$",
+              "title": "Id ",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpHandoffPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve",
+        "tags": [
+          "web"
+        ]
+      }
+    },
+    "/mcp/lifecycle": {
+      "get": {
+        "description": "Read whether this UI server has a host lifecycle planner.",
+        "operationId": "web_mcp_availability",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpLifecycleAvailability"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Availability",
+        "tags": [
+          "web"
+        ]
+      }
+    },
+    "/mcp/lifecycle/{registration}": {
+      "get": {
+        "description": "Read worker, manager, transport and readiness as separate observations.",
+        "operationId": "web_mcp_lifecycle",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "registration",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9_-]{1,96}$",
+              "title": "Registration",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpLifecycleObservation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Status",
+        "tags": [
+          "web"
+        ]
+      }
+    },
+    "/mcp/lifecycle/{registration}/prepare": {
+      "post": {
+        "description": "Prepare a plan for local review without approving or applying it.\n\nRaises:\n    HTTPException: If the host cannot prepare the selected action.",
+        "operationId": "web_mcp_prepare",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "registration",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9_-]{1,96}$",
+              "title": "Registration",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": true,
+            "schema": {
+              "enum": [
+                "start",
+                "check",
+                "stop",
+                "install"
+              ],
+              "title": "Action",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpHandoffPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Prepare",
         "tags": [
           "web"
         ]

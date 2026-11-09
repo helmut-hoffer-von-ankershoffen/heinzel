@@ -64,6 +64,13 @@ Claude settings discovery and human approval have separate contracts.
   The standalone Start session retains its private channel for separately reviewed `check` and `stop` actions.
   These foreground Start and Check observations report unverified MCP readiness. A separate CLI cannot stop
   a worker owned by another foreground session.
+  MCP Connections in Settings reads sanitized host observations and prepares expiring plan commitments.
+  The web API offers no approval or apply operation. Electron resolves a plan ID on its authenticated local
+  backend and can copy a command to the terminal. The commitment carries no authority. The local CLI rechecks
+  the selected action, registration, grant, SDK identity and owning worker before and after explicit review.
+  The Install handoff reviews a trusted adapter's exact config plan and returns `not-applied`. The production
+  composition supplies neither an MCP planner to the web server nor a client plan to the local Install reviewer
+  until protected host authority and client bootstrap are available.
 - Restrict discovery and dispatch to reviewed operations and exact target grants. Give authorized personal and
   contract Heinzels stable individual tools and CLI equivalents. Resolve both heads to the same durable retry
   identity for the selected grant. Retain exact result bytes and record uncertain effects without replaying them.
@@ -106,8 +113,8 @@ detection. Intent and commit records bind the dormant registration to SDK contin
 maintenance lock identity. Standard update, refresh and uninstall check this inventory under the SDK lock.
 An active foreground worker blocks maintenance. An incomplete registration blocks SDK changes until explicit
 recovery, and a changed SDK never adopts a prior activation. Uninstall retains dormant receipts and checks the
-native namespace in standalone recovery. Durable lifecycle action receipts, native unit publication and
-manager-owned bootstrap and recovery, and authenticated native UI routing remain prerequisites for persistent
+native namespace in standalone recovery. Durable lifecycle action receipts, native unit publication,
+manager-owned bootstrap and recovery, and protected native review and apply remain prerequisites for persistent
 lifecycle controls.
 
 Standard SDK mutation and rollback enroll the selected ordinary profile before writing its markers or changing

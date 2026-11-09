@@ -232,6 +232,7 @@ from heinzel.kernel._lets import (
 )
 from heinzel.kernel._local_overview import CachedOverviewLet, DaemonOverview, LocalObservation, WebOverview
 from heinzel.kernel._local_web import LocalWebRuntime, PersistentWeb
+from heinzel.kernel._mcp_handoff import McpLifecycleAction, McpLifecycleObservation, McpLifecyclePlanning
 from heinzel.kernel._mcp_registry import (
     McpRegistrationReceipt,
     mcp_registration_inventory,
@@ -640,6 +641,9 @@ __all__ = [
     "MaintenanceLocks",
     "ManualInstall",
     "McpChatSessions",
+    "McpLifecycleAction",
+    "McpLifecycleObservation",
+    "McpLifecyclePlanning",
     "McpRegistrationReceipt",
     "McpServer",
     "Meeting",

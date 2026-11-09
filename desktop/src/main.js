@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, session, WebContentsView, webContents } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, session, WebContentsView, webContents } from "electron";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
+import { createMcpHandoffHandler } from "./mcp-handoff-ipc.js";
 import { createMiniBrowser } from "./mini-browser.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
@@ -114,6 +115,13 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
     connection: () => instance.currentConnection(),
     lifecycle,
+  }));
+  ipcMain.handle("hz:mcp-handoff", createMcpHandoffHandler({
+    windows,
+    fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+    connection: () => (stopping || quitting ? null : instance.currentConnection()),
+    prompt: (owner, options) => dialog.showMessageBox(owner, options),
+    copy: (command) => clipboard.writeText(command),
   }));
   let serviceStarted = false;
   let unexpectedExitReported = false;
