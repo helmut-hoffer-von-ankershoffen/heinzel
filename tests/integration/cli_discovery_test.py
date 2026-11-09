@@ -63,9 +63,14 @@ def test_discovery_includes_hidden_commands_syntax_and_schemas_without_invoking(
     parameters = {p["name"]: p for p in entry["parameters"]}
     assert parameters["entry"]["kind"] == "argument"
     assert parameters["entry"]["metavar"] == "JSON"
+    assert parameters["entry"]["type"] == "parse"
     assert parameters["copies"]["opts"] == ["--copies"]
+    assert parameters["copies"]["type"] == "int"
     assert parameters["copies"]["help"] == "Number of copies."
     assert parameters["json_output"]["opts"] == ["--json"]
+    assert parameters["json_output"]["type"] == "boolean"
+    assert parameters["output_format"]["type"] == "choice"
+    assert parameters["output_format"]["choices"] == ["text", "json"]
     assert hz.settings.expert is False
 
 
@@ -85,6 +90,19 @@ def test_every_ui_operation_has_a_discoverable_cli_command_and_matching_input_sc
         assert name in commands, f"CLI operation is not discoverable: {name}"
     assert {"hz setup", "hz join", "hz ui", "hz chat", "hz system serve api"} <= commands.keys()
     assert commands["hz system expert"]["operation"]["name"] == "expert"
+
+
+def test_schema_v1_keeps_builtin_parameter_types_and_choices(make_kernel):
+    commands = command_catalog(build(make_kernel(builtins=True)))
+    expected = {
+        ("hz setup", "answers"): ("file", None),
+        ("hz ai usage", "period"): ("choice", ["today", "week"]),
+        ("hz chat send", "effort"): ("choice", ["", "low", "medium", "high", "xhigh", "max"]),
+        ("hz system serve daemon", "interval"): ("_duration", None),
+    }
+    for (command, name), metadata in expected.items():
+        parameter = next(p for p in commands[command]["parameters"] if p["name"] == name)
+        assert (parameter["type"], parameter["choices"]) == metadata
 
 
 @pytest.mark.parametrize("ui_only", [False, True])
