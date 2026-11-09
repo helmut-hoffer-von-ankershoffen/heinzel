@@ -463,6 +463,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   const preview = usePluginPreview();
   const change = useChangePlugin();
   const activation = usePluginActivation();
+  const changeBusy = pending !== null || receiptId !== null || restartBlocked || preview.isPending || change.isPending;
   const resolveReceipt = () => {
     if (!resolveArmed) {
       setResolveArmed(true);
@@ -496,9 +497,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       active ? "bg-accent text-foreground" : "text-muted-foreground",
     );
   const show = (value: string, rowKey: string | null = null) => {
-    if (change.isPending || pluginActivationBlocksChanges()) return;
-    if (restartObservation || restartBlocked) return;
-    if (receiptId && operation.data?.status !== "previewed") return;
+    if (changeBusy || pluginActivationBlocksChanges()) return;
     change.reset();
     completed.current = null;
     attempted.current = false;
@@ -522,7 +521,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     });
   };
   const ask = (value: Pending, rowKey: string | null = null) => {
-    if (change.isPending || pluginActivationBlocksChanges()) return;
+    if (changeBusy || pluginActivationBlocksChanges()) return;
     setAnchor(rowKey);
     change.reset();
     completed.current = null;
@@ -531,13 +530,12 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     preview.reset();
     setPending(value);
   };
-  const confirm = async (signal: AbortSignal, heard: (phase: Phase) => void = () => {}) => {
-    if (!pending) return false;
+  const confirm = async (value: Pending, signal: AbortSignal, heard: (phase: Phase) => void) => {
     if (pluginActivationBlocksChanges()) throw new Error(t("pluginsPending.restartRequired"));
     if (completed.current) return completed.current.restart_required;
     if (attempted.current) throw new Error(t("plugins.resultUnknown"));
     setPluginProgress(null);
-    const operation = request(pending);
+    const operation = request(value);
     if ("add" in operation) {
       if (!operation.operationId) throw new Error(t("plugins.receiptStorageUnavailable"));
       try {
@@ -572,8 +570,6 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       enable: t("plugins.enable"),
       disable: t("plugins.disable"),
     })[action];
-  const latest = useRef({ pending, confirm, receiptId });
-  latest.current = { pending, confirm, receiptId };
   const restartRef = useRef(restartObservation);
   restartRef.current = restartObservation;
   const opened = useRef<Pending | null>(null);
@@ -593,7 +589,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       try {
         await applyWithSteps(
           {
-            change: (signal, heard) => latest.current.confirm(signal, heard),
+            change: (signal, heard) => confirm(value, signal, heard),
             resume,
             options: {
               ...(value.action === "add" || value.action === "remove" ? { preserveTimeout: 20 * 60_000 } : {}),
@@ -734,7 +730,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     ) : null;
   const slot: Slot | null = pending && anchor ? { key: anchor, node: card } : null;
   const activationInProgress = activation.pending || activation.observation !== undefined;
-  const frozen = pending !== null || preview.isPending || activationInProgress;
+  const frozen = changeBusy || activationInProgress;
   return (
     <>
       {!pending && !receiptId && !restartBlocked && <PluginsPending inline reload={reload} />}
@@ -791,12 +787,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
             {t("plugins.refresh")}
           </PaneAction>
         )}
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={activationInProgress}
-          onClick={() => setAdding((value) => !value)}
-        >
+        <Button variant="outline" size="sm" disabled={frozen} onClick={() => setAdding((value) => !value)}>
           <Plus aria-hidden />
           {t("plugins.add")}
         </Button>
@@ -821,8 +812,9 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
               value={spec}
               onChange={(event) => setSpec(event.target.value)}
               placeholder="git+https://github.com/acme-example/heinzel-acme"
+              disabled={frozen}
             />
-            <Button type="submit" size="sm" disabled={!spec.trim() || preview.isPending}>
+            <Button type="submit" size="sm" disabled={!spec.trim() || frozen}>
               {preview.isPending ? t("plugins.checking") : t("plugins.install")}
             </Button>
           </div>
@@ -843,9 +835,15 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
         </div>
       )}
       {pending && !slot && card}
-      {tab === "yours" ? <Yours query={query} onChange={ask} slot={slot} /> : null}
+      {tab === "yours" ? <Yours query={query} onChange={ask} slot={slot} disabled={frozen} /> : null}
       {tab === "discover" ? (
-        <Discover query={query} onInstall={show} slot={slot} checking={preview.isPending ? anchor : null} />
+        <Discover
+          query={query}
+          onInstall={show}
+          slot={slot}
+          checking={preview.isPending ? anchor : null}
+          disabled={frozen}
+        />
       ) : null}
     </>
   );
@@ -855,10 +853,12 @@ function Yours({
   query,
   onChange,
   slot,
+  disabled,
 }: {
   query: string;
   onChange: (pending: Pending, rowKey: string) => void;
   slot: Slot | null;
+  disabled: boolean;
 }) {
   const plugins = usePlugins();
   const catalog = usePluginSearch("");
@@ -934,6 +934,7 @@ function Yours({
                           <PaneAction
                             ghost
                             icon={enabled ? PowerOff : Power}
+                            disabled={disabled}
                             onClick={() =>
                               onChange({ action: enabled ? "disable" : "enable", name: plugin.distribution }, rowKey)
                             }
@@ -950,6 +951,7 @@ function Yours({
                             ghost
                             destructive
                             icon={Trash2}
+                            disabled={disabled}
                             onClick={() => onChange({ action: "remove", name: plugin.distribution }, rowKey)}
                             aria-expanded={slot?.key === rowKey}
                             aria-label={t("plugins.removeName", { name: plugin.distribution })}
@@ -1066,11 +1068,13 @@ function Discover({
   onInstall,
   slot,
   checking,
+  disabled,
 }: {
   query: string;
   onInstall: (spec: string, rowKey: string) => void;
   slot: Slot | null;
   checking: string | null;
+  disabled: boolean;
 }) {
   const search = usePluginSearch(query);
   const installed = usePlugins();
@@ -1122,7 +1126,7 @@ function Discover({
                     ghost
                     icon={checking === `discover:${plugin.name}` ? Loader2 : Download}
                     className={checking === `discover:${plugin.name}` ? "[&_svg]:motion-safe:animate-spin" : undefined}
-                    disabled={checking === `discover:${plugin.name}`}
+                    disabled={disabled}
                     aria-expanded={slot?.key === `discover:${plugin.name}`}
                     onClick={() => onInstall(plugin.install_spec, `discover:${plugin.name}`)}
                   >

@@ -809,6 +809,59 @@ describe("PluginsSection", () => {
     expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(1);
   });
 
+  it("does not install a previewed plugin when confirming a different action", async () => {
+    let removed = false;
+    const calls = serve((url) => {
+      if (url.pathname.endsWith("/plugin/add")) return { body: change("add", url.searchParams.has("confirm")) };
+      if (url.pathname === "/api/stream/system/plugin/remove") {
+        removed = true;
+        return { body: change("remove", true, { distribution: "heinzel-clock", restart_required: false }) };
+      }
+      if (url.pathname === "/api/system/plugin/list" && removed) return { body: [] };
+      return base(url);
+    });
+    const answer = vi.mocked(fetch).getMockImplementation();
+    if (!answer) throw new Error("missing fetch fixture");
+    let markReceiptStarted!: () => void;
+    let releaseReceipt!: () => void;
+    const receiptStarted = new Promise<void>((resolve) => {
+      markReceiptStarted = resolve;
+    });
+    const receiptReady = new Promise<void>((resolve) => {
+      releaseReceipt = resolve;
+    });
+    vi.mocked(fetch).mockImplementation(async (request) => {
+      const url = new URL((request as Request).url);
+      if (url.pathname === "/api/system/plugin/operation") {
+        markReceiptStarted();
+        await receiptReady;
+      }
+      return answer(request);
+    });
+    show({ restartInterval: 1 });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
+    await user.click(screen.getByRole("button", { name: "Install" }));
+    await receiptStarted;
+
+    const remove = await screen.findByRole("button", { name: "Remove heinzel-clock" });
+    expect(remove).toBeDisabled();
+    releaseReceipt();
+    await choose(user, /Install heinzel-crm/, "Cancel");
+    await waitFor(() => expect(remove).toBeEnabled());
+    await user.click(remove);
+    await choose(user, /Remove heinzel-clock\?/, "Remove");
+    await dialog(/Removed heinzel-clock/);
+
+    const writes = () =>
+      calls
+        .map((call) => new URL(call.url))
+        .filter((url) => url.pathname.endsWith("/plugin/remove") || url.searchParams.get("confirm") === "true")
+        .map((url) => url.pathname);
+    expect(writes()).toEqual(["/api/stream/system/plugin/remove"]);
+  });
+
   it("does not repeat an uncertain removal in the same confirmation", async () => {
     const calls = serve((url) => {
       if (url.pathname === "/api/stream/system/plugin/remove") {
