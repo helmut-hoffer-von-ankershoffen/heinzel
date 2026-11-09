@@ -108,3 +108,18 @@ def test_desktop_owned_cli_inherits_finder_path_and_finds_home_uv_offline(tmp_pa
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == "ready"
         assert trace.read_text() == expected
+
+    # A broken home uv must not be mistaken for a working Finder update path.
+    trace.unlink()
+    (owned_bin / "uv").write_text(f"#!/bin/sh\nprintf '%s' broken > {str(trace)!r}\nexit 42\n")
+    result = subprocess.run(
+        [node, "--input-type=module", "-e", script],
+        env={"HOME": str(home), "PATH": minimal},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode != 0
+    assert "ready" not in result.stdout
+    assert trace.read_text() == "broken"
