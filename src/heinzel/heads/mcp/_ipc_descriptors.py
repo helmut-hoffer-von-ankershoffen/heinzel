@@ -37,6 +37,25 @@ def _receive(connection: socket.socket, size: int, deadline: float) -> bytes:
     return bytes(data)
 
 
+def probe_streams(probe: socket.socket, owned: socket.socket) -> None:
+    """Check both owner peers and exchange one bounded challenge with the retained descriptor.
+
+    Raises:
+        HeinzelError: If the two descriptors do not form the expected owned connection.
+    """
+    for connection in (probe, owned):
+        connection.settimeout(_TIMEOUT)
+        require_owner_peer(connection, owner_uid=os.getuid())
+    challenge = secrets.token_bytes(32)
+    deadline = time.monotonic() + _TIMEOUT
+    probe.sendall(challenge)
+    if _receive(owned, len(challenge), deadline) != challenge:
+        raise HeinzelError(_REFUSED)
+    owned.sendall(challenge)
+    if _receive(probe, len(challenge), deadline) != challenge:
+        raise HeinzelError(_REFUSED)
+
+
 def probe_local_descriptors() -> None:
     """Exchange a real challenge over an independent owner-verified pair. No lease is issued.
 
@@ -47,16 +66,6 @@ def probe_local_descriptors() -> None:
         try:
             probe, owned = local_stream_pair()
             with probe, owned:
-                for connection in (probe, owned):
-                    connection.settimeout(_TIMEOUT)
-                    require_owner_peer(connection, owner_uid=os.getuid())
-                challenge = secrets.token_bytes(32)
-                deadline = time.monotonic() + _TIMEOUT
-                probe.sendall(challenge)
-                if _receive(owned, len(challenge), deadline) != challenge:
-                    raise HeinzelError(_REFUSED)
-                owned.sendall(challenge)
-                if _receive(probe, len(challenge), deadline) != challenge:
-                    raise HeinzelError(_REFUSED)
+                probe_streams(probe, owned)
         except OSError:
             raise HeinzelError(_REFUSED) from None

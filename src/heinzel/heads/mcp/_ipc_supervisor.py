@@ -3,7 +3,7 @@
 import sys
 import time
 from collections.abc import Callable, Generator
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
@@ -20,6 +20,7 @@ from heinzel.heads.mcp._ipc_admission import (
 from heinzel.heads.mcp._ipc_approval import HostMcpConnectionApprovals, PrivateMcpPlan
 from heinzel.heads.mcp._ipc_cli_review import review_private_mcp_from_terminal
 from heinzel.heads.mcp._ipc_descriptors import local_stream_pair, probe_local_descriptors
+from heinzel.heads.mcp._ipc_named_generation import NamedMcpGeneration, owned_named_generation
 from heinzel.heads.mcp._ipc_work import (
     Boundary,
     Disposition,
@@ -47,6 +48,7 @@ class OwnedMcpSupervisor:
     _generation: McpGeneration
     _authority: HostMcpConnectionApprovals = field(repr=False)
     _dispatch: PrivateMcpDispatch = field(repr=False)
+    _named: NamedMcpGeneration | None = field(default=None, repr=False)
     _connections: dict[socket, bool] = field(default_factory=dict, init=False, repr=False, compare=False)
     _released: Event = field(default_factory=Event, init=False, repr=False, compare=False)
     _lifetime: Lock = field(default_factory=Lock, init=False, repr=False, compare=False)
@@ -68,11 +70,19 @@ class OwnedMcpSupervisor:
             return self._generation
 
     def check_transport(self) -> McpGeneration:
-        """Probe an independent owned pair without granting a lease or claiming MCP readiness."""
+        """Probe the retained named listener or an independent pair without granting a lease."""
         generation = self._check_authority()
-        probe_local_descriptors()
+        if self._named is None:
+            probe_local_descriptors()
+        else:
+            self._named.check()
         self._check_authority()
         return generation
+
+    def discovery_locator(self) -> Path | None:
+        """Return the selected pathname as a locator only. It conveys no host or lease authority."""
+        self._check_authority()
+        return self._named.checked_locator() if self._named is not None else None
 
     def _take(self, owned: socket) -> socket:
         with self._lifetime:
@@ -147,12 +157,13 @@ def owned_mcp_supervisor(
     plan: PrivateMcpPlan,
     *,
     endpoint_path: Path | None = None,
+    named_root: Path | None = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> Generator[OwnedMcpSupervisor]:
     """Create, probe and retire one owned transport in the already-trusted isolated CLI runtime.
 
-    The caller selects the installed runtime and private registration root. Filesystem-named endpoints fail
-    closed until a platform adapter can bind and retire them without mutating substitute filesystem nodes.
+    The caller selects the installed runtime and private registration root. A short, private named root is
+    optional and can be used only at single-thread startup. Fixed caller-selected socket paths still refuse.
     Only the transport handle may be supplied to protocol code. The supervisor is never a tool or web service.
 
     Raises:
@@ -167,10 +178,12 @@ def owned_mcp_supervisor(
     if not sys.flags.isolated:
         msg = "Local MCP supervision requires the trusted isolated CLI runtime"
         raise HeinzelError(msg)
-    with owned_private_dispatch(root, plan, clock=clock) as (authority, dispatch):
+    with owned_private_dispatch(root, plan, clock=clock) as (authority, dispatch), ExitStack() as transport:
         authority.require_activation()
-        probe_local_descriptors()
-        supervisor = OwnedMcpSupervisor(plan.generation, authority, dispatch)
+        named = transport.enter_context(owned_named_generation(named_root)) if named_root is not None else None
+        if named is None:
+            probe_local_descriptors()
+        supervisor = OwnedMcpSupervisor(plan.generation, authority, dispatch, named)
         try:
             yield supervisor
         finally:

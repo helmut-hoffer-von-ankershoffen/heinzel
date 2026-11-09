@@ -27,9 +27,12 @@ Claude settings discovery and human approval have separate contracts.
   admission. Readiness requires authenticated MCP initialization, discovery and identity verification.
   The isolated activation primitive checks a real owner-verified Unix socket pair and issues each connection
   through a separate retained descriptor pair. Scope exit fences leases and shuts down the owned descriptors.
-  Filesystem-named activation refuses before binding. A future pathname adapter needs directory-anchored
-  creation, creation-time permissions, and an explicit retention policy where conditional removal is unavailable.
-  A discovery path identifies a candidate endpoint and supplies no host or private approval authority.
+  At trusted single-thread startup, a forked Unix helper can bind a fresh short generation path relative to an
+  inherited directory descriptor. Creation-time permissions and a private listener-descriptor handoff keep the
+  caller's cwd and umask unchanged. Stop closes the listener and retains its generation directory and socket
+  node. The adapter performs no pathname chmod, unlink or rename, including after failure. A discovery path is
+  only a locator. This adapter probes transport reachability. A trusted bridge is still required for private
+  admission and MCP readiness. Unsupported platforms and fixed caller-selected socket paths refuse activation.
 - Authorize lifecycle effects through a separate host capability bound to the reviewed plan and action. Trusted
   native review and explicit local CLI review use the same service. Browser and device sessions can prepare a
   plan and see authorized status. The broker admits private connections only after host review of the exact

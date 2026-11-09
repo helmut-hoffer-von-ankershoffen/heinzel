@@ -260,6 +260,17 @@ def _review_command(supervisor, instance_id):
     return exit_status.value.code
 
 
+def _assert_retired_transports(supervisor, locator, clients):
+    with pytest.raises(HeinzelError, match="no longer owns the registration"):
+        supervisor.revoke()
+    for client in clients:
+        client.settimeout(2)
+        assert client.recv(1) == b""
+    assert locator.is_socket()  # Physical retention is separate from observed listener shutdown.
+    with pytest.raises(ConnectionRefusedError), socket.socket(socket.AF_UNIX) as stale:
+        stale.connect(os.fspath(locator))
+
+
 def _run_supervised_fixture(directory, phase):
     generation = McpGeneration("fixture-registration", 3)
     now = 100.0
@@ -267,12 +278,17 @@ def _run_supervised_fixture(directory, phase):
     release = Event()
     first_admitted, second_admitted = Event(), Event()
     calls = []
+    names = directory / "names"
+    names.mkdir(mode=0o700)
     with ExitStack() as clients:
         with (
-            owned_mcp_supervisor(directory / "state", plan, clock=lambda: now) as supervisor,
+            owned_mcp_supervisor(directory / "state", plan, named_root=names, clock=lambda: now) as supervisor,
             ThreadPoolExecutor(max_workers=2) as workers,
         ):
             assert supervisor.check_transport() == generation
+            locator = supervisor.discovery_locator()
+            assert locator is not None
+            assert locator.is_socket()
             assert not supervisor.pending_review_ids()
             first, first_transport = clients.enter_context(supervisor.open_transport())
             assert not hasattr(first_transport, "review")
@@ -303,11 +319,7 @@ def _run_supervised_fixture(directory, phase):
             finally:
                 release.set()
                 supervisor.revoke()
-        with pytest.raises(HeinzelError, match="no longer owns the registration"):
-            supervisor.revoke()
-        for client in (first, second):
-            client.settimeout(2)
-            assert client.recv(1) == b""
+        _assert_retired_transports(supervisor, locator, (first, second))
         with (
             pytest.raises(HeinzelError, match="approval is invalid or unavailable"),
             owned_mcp_supervisor(directory / "state", plan, clock=lambda: now),
