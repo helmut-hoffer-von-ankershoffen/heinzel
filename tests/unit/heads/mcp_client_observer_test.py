@@ -71,6 +71,22 @@ def test_admission_rejects_unpinned_dependency(protected):
         pytest.fail("an unknown dependency must refuse before the helper starts")
 
 
+def test_completed_update_requires_fresh_inventory(protected):
+    policy_bytes = b"next reviewed policy"
+    with protected.update_lock.open("rb") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        protected.policy.path.write_bytes(policy_bytes)
+        current = replace(
+            protected,
+            policy=replace(protected.policy, sha256=hashlib.sha256(policy_bytes).hexdigest()),
+        )
+    assert current.digest != protected.digest
+    with pytest.raises(HeinzelError, match="installation cannot be verified"), protected.admitted():
+        pytest.fail("stale inventory must refuse a completed package update")
+    with current.admitted():
+        assert current.update_lock_identity == protected.update_lock_identity
+
+
 @pytest.mark.parametrize("replace_lock", [True, False])
 def test_admission_rejects_replaced_lock_and_image(protected, replace_lock):
     path = protected.update_lock if replace_lock else protected.vendor.path
@@ -129,7 +145,7 @@ def test_macos_reads_actual_acl_on_a_scratch_file(tmp_path):
 @pytest.mark.skipif(sys.platform != "darwin", reason="requires the macOS sealed system volume")
 def test_protected_system_binary_and_owner_writable_ancestry(tmp_path):
     path = tmp_path.resolve() / "native"
-    path.write_bytes(Path("/usr/bin/true").read_bytes())
+    path.write_bytes(b"unprotected fixture")
     path.chmod(0o755)
     with ExitStack() as stack:
         image = admission._open_protected(Path("/usr/bin/true"), stack)
