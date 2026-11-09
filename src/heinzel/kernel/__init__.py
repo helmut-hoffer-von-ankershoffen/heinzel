@@ -179,7 +179,15 @@ from heinzel.kernel._host_maintenance import (
     host_maintenance_gate,
     host_maintenance_lock,
 )
-from heinzel.kernel._identity import PRIVATE_WRITE, Authentication, CallIdentity, CurrentUser, Principal
+from heinzel.kernel._identity import (
+    MCP_HEINZEL_INBOX,
+    PRIVATE_MCP_HEADS,
+    PRIVATE_WRITE,
+    Authentication,
+    CallIdentity,
+    CurrentUser,
+    Principal,
+)
 from heinzel.kernel._installation import (
     CORE_DISTRIBUTION,
     EDGE_WHEEL_PREFIX,
@@ -456,12 +464,14 @@ __all__ = [
     "LOGO_ROUTE",
     "MAX_SKILL_LOAD",
     "MAX_WINDOW",
+    "MCP_HEINZEL_INBOX",
     "MCP_HTTP",
     "MCP_STDIO",
     "MODES",
     "NO_ADAPTER",
     "PREREQUISITE_CONTEXTS",
     "PREREQUISITE_READY",
+    "PRIVATE_MCP_HEADS",
     "PRIVATE_WRITE",
     "PROCESS_MAX_OUTPUT",
     "PROJECT_FILENAME",

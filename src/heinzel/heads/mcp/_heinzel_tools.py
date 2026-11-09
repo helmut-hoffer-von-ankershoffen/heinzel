@@ -26,7 +26,7 @@ async def serve_admitted_heinzel_connection(
     kernel: Kernel, dispatch: PrivateMcpDispatch, lease: PublishedMcpLease
 ) -> None:
     """Serve the MCP wire only on the exact stream already admitted by this broker."""
-    tools = dispatch.bind_heinzel_tools(kernel, lease, authentication="mcp-stdio")
+    tools = dispatch.bind_heinzel_tools(kernel, lease, authentication="mcp-private-wire")
     server = build_admitted_heinzel_server(tools)
     connection = lease.peer.connection
     with (

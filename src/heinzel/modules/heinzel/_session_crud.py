@@ -22,6 +22,7 @@ from pydantic import (
 )
 
 from heinzel import HeinzelError, JobInactive, NoticeHelper, NoticeKind, Notifications, SessionEvent, SessionWriter
+from heinzel.kernel import PRIVATE_MCP_HEADS
 from heinzel.kernel._approval import (
     ApprovalEvidence,
     ApprovalIntent,
@@ -647,6 +648,10 @@ class SessionCrud(ApprovalIssuer):
                 )
         return self.snapshot(session_id)
 
+    def require_inbox_target(self, session_id: str) -> None:
+        """Verify the scoped inbox exists without opening any retained message body."""
+        self._profile(session_id, self.repository.control_read(session_id).events)
+
     def accept(
         self, session_id: str, request: MessageRequest, *, check_active: Callable[[], None] | None = None
     ) -> MessageAccepted:
@@ -697,6 +702,14 @@ class SessionCrud(ApprovalIssuer):
             if check_active is not None:
                 check_active()
             body = immutable_body(writer, "inbox", request.model_dump(mode="json"), control=True)
+            identity = self.repository.identity
+            origin: dict[str, JsonValue] = {"origin": identity.authentication}
+            if identity.authentication in PRIVATE_MCP_HEADS:
+                origin = {
+                    "origin": "mcp-stdio",
+                    "mcp_grant": identity.credential_id,
+                    "mcp_head": identity.authentication,
+                }
             if check_active is not None:
                 check_active()
             event = writer.append(
@@ -705,7 +718,7 @@ class SessionCrud(ApprovalIssuer):
                 data={
                     "message_id": request.request_id,
                     "request_hash": digest,
-                    "origin": _ORIGIN.validate_python(self.repository.authentication, strict=True),
+                    **origin,
                     **body.model_dump(mode="json"),
                 },
             )

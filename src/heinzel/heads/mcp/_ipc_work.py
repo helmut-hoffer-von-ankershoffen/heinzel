@@ -8,13 +8,24 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
-from heinzel.heads._heinzel_tools import CheckActive, HeinzelTools, HeinzelWork
+from heinzel.heads._heinzel_tools import CheckActive, ContractEffects, HeinzelTools, HeinzelWork
 from heinzel.heads.mcp._ipc_admission import PublishedMcpLease
 from heinzel.heads.mcp._ipc_approval import HostMcpConnectionApprovals, PrivateMcpPlan
-from heinzel.kernel import CurrentUser, HeinzelError, HeinzelTarget, Kernel
+from heinzel.heads.mcp._ipc_provider import McpBackendLimit, McpContractBackend, McpProviderAllowance
+from heinzel.kernel import (
+    MCP_HEINZEL_INBOX,
+    PRIVATE_MCP_HEADS,
+    CallIdentity,
+    CurrentUser,
+    HeinzelError,
+    HeinzelTarget,
+    Kernel,
+    Principal,
+)
 from heinzel.kernel._approval import arguments_hash
+from heinzel.kernel._identity import MCP_HEINZEL_CONTRACT, PrivateMcpAuthentication
 from heinzel.kernel._logging import get_logger, step
 from heinzel.kernel._private_control import private_lock
 from heinzel.kernel._session import SessionEvent
@@ -48,6 +59,18 @@ class _HeinzelGrant:
     targets: tuple[HeinzelTarget, ...]
     scope: str
     result_root: Path
+    principal: Principal | None
+    provider: McpBackendLimit | None
+
+
+@dataclass(frozen=True, slots=True)
+class _HeinzelOrigin:
+    grant: str
+    head: PrivateMcpAuthentication
+    principal_digest: str
+
+    def fields(self) -> dict[str, JsonValue]:
+        return {"grant": self.grant, "mcp_head": self.head, "principal_digest": self.principal_digest}
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,7 +153,13 @@ class McpWorkJournal:
             return revoked or cause == "revoke"
 
     def transition(
-        self, lease: PublishedMcpLease, request: McpWorkRequest, boundary: Boundary, check: Callable[[], None]
+        self,
+        lease: PublishedMcpLease,
+        request: McpWorkRequest,
+        boundary: Boundary,
+        check: Callable[[], None],
+        *,
+        origin: _HeinzelOrigin | None = None,
     ) -> Disposition:
         """Record one exact idempotent reservation or a single ordered effect boundary.
 
@@ -151,6 +180,8 @@ class McpWorkJournal:
                         raise HeinzelError(_REFUSED)
                     return prior.disposition
                 data: dict[str, JsonValue] = {"digest": digest, "lease": lease.id}
+                if origin is not None:
+                    data["mcp_authority"] = origin.fields()
                 writer.append("mcp.reserve", key=key, data=data)
                 return "queued"
             expected = "queued" if boundary == "start" else "running"
@@ -169,34 +200,66 @@ class PrivateMcpDispatch:
         journal: McpWorkJournal,
         operations: dict[str, list[str]],
         heinzel: _HeinzelGrant,
+        provider: McpContractBackend | None,
     ) -> None:
         self._authority = authority
         self._journal = journal
         self._operations = {target: frozenset(names) for target, names in operations.items()}
         self._heinzel = heinzel
+        self._provider = provider
 
     def bind_heinzel_tools(
-        self, kernel: Kernel, lease: PublishedMcpLease, *, authentication: Literal["cli", "mcp-stdio"]
+        self, kernel: Kernel, lease: PublishedMcpLease, *, authentication: PrivateMcpAuthentication
     ) -> HeinzelTools:
-        """Bind both tool heads to this broker's exact reviewed targets and a currently published lease."""
+        """Bind both tool heads to this broker's exact reviewed targets and a currently published lease.
+
+        Raises:
+            HeinzelError: If the lease, installation principal or restricted head is invalid.
+        """
 
         def check_active() -> None:
             with self._authority.fenced(lease) as check:
                 check()
 
+        check_active()
+        user = kernel.resolve(CurrentUser)
+        principal = self._heinzel.principal
+        if authentication not in PRIVATE_MCP_HEADS or principal is None or user.owner() != principal:
+            raise HeinzelError(_REFUSED)
+        origin = _HeinzelOrigin(self._heinzel.scope, authentication, arguments_hash(principal.id))
+
         @contextmanager
-        def access() -> Generator[CheckActive]:
+        def access(target: HeinzelTarget | None) -> Generator[CheckActive]:
             check_active()
-            with kernel.resolve(CurrentUser).local(authentication):
+            permissions: frozenset[str] = (
+                frozenset()
+                if target is None
+                else frozenset(
+                    {
+                        MCP_HEINZEL_INBOX if target.kind == "personal" else MCP_HEINZEL_CONTRACT,
+                    }
+                )
+            )
+            identity = CallIdentity(
+                principal,
+                authentication,
+                origin.grant,
+                "hz-private-mcp",
+                permissions,
+                target.key if target else None,
+            )
+            with user.using(identity):
                 yield check_active
 
         def record(work: HeinzelWork, boundary: Boundary) -> Disposition:
             request = McpWorkRequest(
                 target=work.target, operation=work.operation, request_id=work.request_id, input_hash=work.input_hash
             )
-            return self.record(lease, request, boundary)
+            identity = user.context()
+            if identity.resource != work.target or identity.credential_id != origin.grant:
+                raise HeinzelError(_REFUSED)
+            return self._record(lease, request, boundary, origin=origin)
 
-        check_active()
         return HeinzelTools(
             kernel,
             self._heinzel.targets,
@@ -204,34 +267,77 @@ class PrivateMcpDispatch:
             root=self._heinzel.result_root,
             access=access,
             record=record,
+            contracts=self._contract_effects(user, principal),
         )
+
+    def _contract_effects(self, user: CurrentUser, principal: Principal) -> ContractEffects | None:
+        backend, reviewed = self._provider, self._heinzel.provider
+        if (
+            backend is None
+            or reviewed is None
+            or backend.limit.fingerprint != reviewed.fingerprint
+            or reviewed.launches > backend.limit.launches
+        ):
+            return None
+        identity = arguments_hash([principal.id, reviewed.fingerprint])
+        slot = McpProviderAllowance(
+            user.directory.parent / "mcp-provider-allowance" / identity,
+            self._heinzel.scope,
+            backend.limit.launches,
+            reviewed.launches,
+        )
+        return ContractEffects(backend.provider, slot.reserve)
 
     def record(self, lease: PublishedMcpLease, request: McpWorkRequest, boundary: Boundary) -> Disposition:
         """Record a queue, pre-effect intent or observed completion without performing any effect.
 
-        Future adapters must enforce their own provider budget and approval before reserving. They must
-        check the lease at each effect boundary and observe its cancellation event during running work.
+        Adapters bind a reviewed provider and policy before reserving model work and hold an allowed
+        slot before the effect starts. They check the lease at each effect boundary and observe its cancellation.
         Completion requires an independently durable observed result when the operation produces one.
 
         Raises:
             HeinzelError: If the operation or target is unreviewed or the current authority cannot proceed.
         """
+        if request.target.partition(":")[0] in {"personal", "contract"}:
+            raise HeinzelError(_REFUSED)
+        return self._record(lease, request, boundary)
+
+    def _record(
+        self,
+        lease: PublishedMcpLease,
+        request: McpWorkRequest,
+        boundary: Boundary,
+        *,
+        origin: _HeinzelOrigin | None = None,
+    ) -> Disposition:
         if boundary not in {"reserve", "start", "complete"}:
             raise HeinzelError(_REFUSED)
+        provenance = origin.fields() if origin is not None else {}
         with (
-            step(log, "mcp.ipc.work_transition", operation="ipc", step="work_transition", boundary=boundary),
+            step(
+                log,
+                "mcp.ipc.work_transition",
+                operation="ipc",
+                step="work_transition",
+                boundary=boundary,
+                mcp_authority=provenance,
+            ),
             self._authority.fenced(lease) as check,
         ):
             if request.operation not in self._operations.get(request.target, ()):
                 raise HeinzelError(_REFUSED)
-            result = self._journal.transition(lease, request, boundary, check)
+            result = self._journal.transition(lease, request, boundary, check, origin=origin)
             check()
             return result
 
 
 @contextmanager
 def owned_private_dispatch(
-    root: Path, plan: PrivateMcpPlan, *, clock: Callable[[], float] = time.monotonic
+    root: Path,
+    plan: PrivateMcpPlan,
+    *,
+    clock: Callable[[], float] = time.monotonic,
+    provider: McpContractBackend | None = None,
 ) -> Generator[tuple[HostMcpConnectionApprovals, PrivateMcpDispatch]]:
     """Recover work only with exclusive supervisor ownership of the trusted private root.
 
@@ -248,9 +354,15 @@ def owned_private_dispatch(
     try:
         operations = _OPERATIONS.validate_python(term_values.get("dispatch", {}), strict=True)
         targets = _HEINZEL_TARGETS.validate_python(term_values.get("heinzel_targets", []), strict=True)
-    except ValidationError:
+        raw_principal = term_values.get("heinzel_principal")
+        principal = Principal(raw_principal) if isinstance(raw_principal, str) else None
+        raw_backend = term_values.get("heinzel_backend")
+        reviewed = McpBackendLimit.model_validate(raw_backend) if raw_backend is not None else None
+    except ValueError:
         raise HeinzelError(_REFUSED) from None
-    if any(target.operation not in operations.get(target.key, ()) for target in targets):
+    if (targets and principal is None) or any(
+        target.operation not in operations.get(target.key, ()) for target in targets
+    ):
         raise HeinzelError(_REFUSED)
     scope = arguments_hash(
         [
@@ -261,7 +373,7 @@ def owned_private_dispatch(
             plan.terms_hash,
         ]
     )
-    heinzel = _HeinzelGrant(tuple(targets), scope, root / "heinzel-results")
+    heinzel = _HeinzelGrant(tuple(targets), scope, root / "heinzel-results", principal, reviewed)
     with private_lock(root / "broker.lock"):
         journal = McpWorkJournal(SessionStore(root / "work"), plan)
         revoked = journal.fence("recover")
@@ -274,6 +386,6 @@ def owned_private_dispatch(
         if revoked:
             authority.revoke()
         try:
-            yield authority, PrivateMcpDispatch(authority, journal, operations, heinzel)
+            yield authority, PrivateMcpDispatch(authority, journal, operations, heinzel, provider)
         finally:
             authority.close()

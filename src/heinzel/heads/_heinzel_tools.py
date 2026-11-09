@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Callable, Iterable
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -30,6 +30,14 @@ class HeinzelWork:
     input_hash: str
 
 
+@dataclass(frozen=True, slots=True)
+class ContractEffects:
+    """The exact pre-admitted contract backend and its durable provider slot."""
+
+    provider: HeinzelInvocations
+    reserve: Callable[[str, CheckActive], AbstractContextManager[CheckActive]]
+
+
 class HeinzelTools:
     """Run only the frozen reviewed targets through the same broker for both heads.
 
@@ -45,12 +53,15 @@ class HeinzelTools:
         *,
         scope: str,
         root: Path,
-        access: Callable[[], AbstractContextManager[CheckActive]],
+        access: Callable[[HeinzelTarget | None], AbstractContextManager[CheckActive]],
         record: Callable[[HeinzelWork, Boundary], Disposition],
+        contracts: ContractEffects | None = None,
     ) -> None:
         self._kernel = kernel
         self._targets: dict[str, HeinzelTarget] = {}
         for target in targets:
+            if target.kind == "contract" and contracts is None:
+                continue
             if target.tool_name in self._targets:
                 raise HeinzelError(_REFUSED)
             self._targets[target.tool_name] = target
@@ -58,22 +69,31 @@ class HeinzelTools:
         self._results = SessionStore(root)
         self._access = access
         self._record = record
+        self._contracts = contracts
+
+    def _provider(self, target: HeinzelTarget) -> HeinzelInvocations:
+        if target.kind == "personal":
+            return self._kernel.resolve(HeinzelInvocations)
+        if self._contracts is None:
+            raise HeinzelError(_REFUSED)
+        return self._contracts.provider
 
     def targets(self) -> tuple[HeinzelTarget, ...]:
         """List only current reviewed targets, without discovering ambient personal data."""
-        with self._access() as check_active:
+        with self._access(None) as check_active:
             check_active()
-            service = self._kernel.resolve(HeinzelInvocations)
-            current: list[HeinzelTarget] = []
-            for _, target in sorted(self._targets.items()):
-                check_active()
+        current: list[HeinzelTarget] = []
+        for _, target in sorted(self._targets.items()):
+            with self._access(target) as check_active:
                 try:
-                    service.require_current(target)
+                    self._provider(target).require_current(target)
                 except (HeinzelError, FileNotFoundError):
                     continue
+                check_active()
                 current.append(target)
+        with self._access(None) as check_active:
             check_active()
-            return tuple(current)
+        return tuple(current)
 
     def _result(self, key: str, digest: str, value: str | None = None) -> bytes:
         with self._results.writer(key, wait=True) as writer:
@@ -113,10 +133,10 @@ class HeinzelTools:
         work = HeinzelWork(target.key, target.operation, request.request_id, digest)
         key = "heinzel-" + arguments_hash([self._scope, target.key, request.request_id])
         with (
-            self._access() as check_active,
+            self._access(target) as check_active,
             step(log, "mcp.heinzel.invoke", operation=target.operation, step="invoke"),
         ):
-            service = self._kernel.resolve(HeinzelInvocations)
+            service = self._provider(target)
             check_active()
             try:
                 service.require_current(target)
@@ -128,16 +148,25 @@ class HeinzelTools:
                 if self._record(work, "reserve") != "completed":
                     raise HeinzelError(_REFUSED)
                 return retained
-            if disposition != "queued" or self._record(work, "start") != "running":
+            if disposition != "queued":
                 raise HeinzelError(_REFUSED)
             scoped_request = request.model_copy(update={"request_id": key})
-            try:
-                response = service.execute(target, scoped_request, check_active)
-            except (HeinzelError, OSError):
-                raise HeinzelError(_REFUSED) from None
-            check_active()
-            value = json.dumps(response, ensure_ascii=False, allow_nan=False, separators=(",", ":"), sort_keys=True)
-            result = self._result(key, digest, value)
-            if self._record(work, "complete") != "completed":
-                raise HeinzelError(_REFUSED)
-            return result
+            slot = (
+                self._contracts.reserve(key, check_active)
+                if target.kind == "contract" and self._contracts is not None
+                else nullcontext(check_active)
+            )
+            with slot as consume:
+                if self._record(work, "start") != "running":
+                    raise HeinzelError(_REFUSED)
+                consume()
+                try:
+                    response = service.execute(target, scoped_request, check_active)
+                except (HeinzelError, OSError):
+                    raise HeinzelError(_REFUSED) from None
+                check_active()
+                value = json.dumps(response, ensure_ascii=False, allow_nan=False, separators=(",", ":"), sort_keys=True)
+                result = self._result(key, digest, value)
+                if self._record(work, "complete") != "completed":
+                    raise HeinzelError(_REFUSED)
+                return result

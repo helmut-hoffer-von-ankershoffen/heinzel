@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pydantic import JsonValue, TypeAdapter
 
 from heinzel import CurrentUser, HeinzelError, SessionHead, SessionRead, SessionStore, SessionWriter
-from heinzel.kernel import Authentication
+from heinzel.kernel import MCP_HEINZEL_INBOX, PRIVATE_MCP_HEADS, Authentication, CallIdentity
 from heinzel.modules.heinzel._session_models import Digest, RequestId, SessionId
 
 _SESSION = TypeAdapter(SessionId)
@@ -56,9 +56,21 @@ class PersonalSessionRepository:
         """Read the actual trusted call context, without recording credentials or audience."""
         return self.current.context().authentication
 
+    @property
+    def identity(self) -> CallIdentity:
+        """Return the current restricted or ordinary owner authority without widening its scope."""
+        return self.current.context()
+
     def _store(self, namespace: str) -> SessionStore:
+        if namespace not in {"catalog", "control"}:
+            self._require_unrestricted()
         root = self.current.directory.parent / "heinzel-sessions" / self.principal_id / namespace
         return SessionStore(root, clock=self.clock)
+
+    def _require_unrestricted(self) -> None:
+        if self.authentication in PRIVATE_MCP_HEADS:
+            msg = "The reviewed private MCP grant only permits its exact inbox"
+            raise HeinzelError(msg)
 
     def _catalog(self) -> SessionRead:
         try:
@@ -68,6 +80,12 @@ class PersonalSessionRepository:
 
     def _owned(self, session_id: str) -> None:
         _SESSION.validate_python(session_id)
+        authority = self.identity
+        if authority.authentication in PRIVATE_MCP_HEADS and (
+            authority.resource != f"personal:{session_id}" or MCP_HEINZEL_INBOX not in authority.permissions
+        ):
+            msg = "The reviewed private MCP grant does not allow this inbox"
+            raise HeinzelError(msg)
         if not any(
             event.kind == "creation.reserved" and event.data.get("session_id") == session_id
             for event in self._catalog().events
@@ -81,6 +99,7 @@ class PersonalSessionRepository:
         Raises:
             HeinzelError: If the same request names a different payload or the catalog is damaged.
         """
+        self._require_unrestricted()
         _REQUEST.validate_python(request_id)
         _DIGEST.validate_python(payload_hash)
         catalog = self._store("catalog")
@@ -104,6 +123,7 @@ class PersonalSessionRepository:
         Raises:
             HeinzelError: If the owner catalog is damaged or contains invalid identities.
         """
+        self._require_unrestricted()
         events = self._catalog().events
         return tuple(
             dict.fromkeys(
@@ -193,6 +213,7 @@ class PersonalSessionRepository:
 
     def heads(self) -> list[SessionHead]:
         """Only owned agent spines; the separate catalog and inbox roots are never extra sessions."""
+        self._require_unrestricted()
         owned = {
             _SESSION.validate_python(event.data.get("session_id"))
             for event in self._catalog().events
@@ -292,6 +313,7 @@ class PersonalSessionRepository:
             HeinzelError: If the catalog is damaged or the cursor is invalid.
             FileNotFoundError: If required catalog storage disappears.
         """
+        self._require_unrestricted()
         try:
             return self._store("catalog").indexed_page("creations", position=position, anchor=anchor, limit=limit)
         except (FileNotFoundError, HeinzelError):

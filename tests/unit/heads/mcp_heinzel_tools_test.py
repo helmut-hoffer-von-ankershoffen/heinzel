@@ -4,7 +4,7 @@ import asyncio
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from threading import Event, Lock
 from typing import cast
 
@@ -14,7 +14,7 @@ from mcp import ClientSession, types
 from mcp.shared.message import SessionMessage
 
 from heinzel import Module
-from heinzel.heads._heinzel_tools import Boundary, Disposition, HeinzelTools, HeinzelWork
+from heinzel.heads._heinzel_tools import Boundary, ContractEffects, Disposition, HeinzelTools, HeinzelWork
 from heinzel.heads.cli import main as cli_main
 from heinzel.heads.mcp._heinzel_tools import build_admitted_heinzel_server
 from heinzel.kernel import CurrentUser, HeinzelError
@@ -42,7 +42,7 @@ class Broker:
             raise HeinzelError(msg)
 
     @contextmanager
-    def access(self):
+    def access(self, _target):
         yield self.check_active
 
     def record(self, work: HeinzelWork, boundary: Boundary) -> Disposition:
@@ -97,6 +97,7 @@ def scoped_tools(make_kernel, tmp_path):
             root=tmp_path / "results",
             access=broker.access,
             record=broker.record,
+            contracts=ContractEffects(provider, lambda _key, check: nullcontext(check)),
         )
 
     return tools, provider, broker
