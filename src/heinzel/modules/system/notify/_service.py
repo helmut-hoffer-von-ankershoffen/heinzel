@@ -13,12 +13,10 @@ import os
 import re
 import secrets
 import shutil
-import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from threading import Thread
 
 from heinzel import (
     Check,
@@ -37,6 +35,7 @@ from heinzel import (
 )
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.kernel._calendar_reminders import agenda_plan
+from heinzel.modules.system._desktop_opener import launch_desktop_opener
 from heinzel.modules.system.notify import _policy as policy
 from heinzel.modules.system.notify import _resolve
 from heinzel.modules.system.notify._channels import (
@@ -859,10 +858,7 @@ def _open(command: list[str]) -> None:
     if executable is None:
         msg = f"{command[0]} isn't on this machine's PATH"
         raise HeinzelError(msg)
-    child = subprocess.Popen(  # noqa: S603 - a fixed program and URL, no shell
-        [executable, *command[1:]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
-    Thread(target=child.wait, name="hz-open-reaper", daemon=True).start()
+    launch_desktop_opener([executable, *command[1:]])
 
 
 def _no_url(route: str) -> str | None:  # noqa: ARG001 - the web app has no stable address yet

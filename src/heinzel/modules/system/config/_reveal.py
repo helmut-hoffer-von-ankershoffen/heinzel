@@ -4,11 +4,11 @@ Nothing is created. A file that doesn't exist yet is shown by its nearest existi
 started detached with an argument list resolved by `shutil.which`, and reaped in the background.
 """
 
-import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from threading import Thread
+
+from heinzel.modules.system._desktop_opener import launch_desktop_opener
 
 Opener = Callable[[Sequence[str]], None]
 """Starts a file manager with this command line and returns without waiting for it."""
@@ -19,14 +19,7 @@ _SESSION = ("DISPLAY", "WAYLAND_DISPLAY")
 
 def launch(command: Sequence[str]) -> None:
     """Start `command` detached from hz and reap it without delaying the caller."""
-    child = subprocess.Popen(  # noqa: S603 - an executable resolved with shutil.which, arguments only, no shell
-        list(command),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    Thread(target=child.wait, name="hz-open-reaper", daemon=True).start()
+    launch_desktop_opener(command, detached=True)
 
 
 @dataclass(frozen=True, slots=True)

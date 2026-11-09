@@ -108,17 +108,11 @@ def test_an_opener_that_fails_to_start_says_so(config_file):
     assert "Permission denied" in done.message
 
 
-def test_launch_starts_the_command_detached_and_reaps_in_the_background(monkeypatch):
-    popen = Mock()
-    thread = Mock()
-    monkeypatch.setattr("subprocess.Popen", popen)
-    monkeypatch.setattr("heinzel.modules.system.config._reveal.Thread", thread)
+def test_launch_reserves_cleanup_for_the_detached_command(monkeypatch):
+    opener = Mock()
+    monkeypatch.setattr("heinzel.modules.system.config._reveal.launch_desktop_opener", opener)
     launch(("/usr/bin/open", "-R", "config.toml"))
-    assert popen.call_args.args == (["/usr/bin/open", "-R", "config.toml"],)
-    assert popen.call_args.kwargs["start_new_session"] is True
-    thread.assert_called_once_with(target=popen.return_value.wait, name="hz-open-reaper", daemon=True)
-    thread.return_value.start.assert_called_once_with()
-    popen.return_value.wait.assert_not_called()
+    opener.assert_called_once_with(("/usr/bin/open", "-R", "config.toml"), detached=True)
 
 
 def service(make_kernel, files, rev: Revealer) -> ConfigService:

@@ -66,21 +66,16 @@ def make(settings, clock, runner):
     return build
 
 
-def test_open_settings_reaps_the_opener_in_the_background(make, monkeypatch):
+def test_open_settings_reserves_cleanup_for_the_resolved_command(make, monkeypatch):
     service = make()
     service.platform = "darwin"
-    popen = Mock()
-    thread = Mock()
+    opener = Mock()
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr("subprocess.Popen", popen)
-    monkeypatch.setattr("heinzel.modules.system.notify._service.Thread", thread)
+    monkeypatch.setattr("heinzel.modules.system.notify._service.launch_desktop_opener", opener)
 
     assert service.open_settings().opened
 
-    assert popen.call_args.args[0][0] == "/usr/bin/open"
-    thread.assert_called_once_with(target=popen.return_value.wait, name="hz-open-reaper", daemon=True)
-    thread.return_value.start.assert_called_once_with()
-    popen.return_value.wait.assert_not_called()
+    assert opener.call_args.args[0][0] == "/usr/bin/open"
 
 
 def draft(service: NotifyService, key: str = "draft:me:weekly", **values: object):
