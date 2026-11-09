@@ -2,6 +2,7 @@
 
 import ast
 import subprocess
+import sys
 from types import SimpleNamespace
 
 import psutil
@@ -136,6 +137,48 @@ def test_startup_snapshot_identifies_public_import_work_without_returning_path(i
 def test_startup_snapshot_keeps_unknown_plugin_and_similar_source_names_private(filename):
     report = f'Timeout (0:00:04)!\n  File "/private/secret-owner/{filename}", line 19 in secret_function\n'
     assert RunningService.startup_frames(report) == [[("other", 19)]]
+
+
+def test_fixture_enables_fatal_traces_in_isolated_sdk(tmp_path):
+    prefix = tmp_path / "owned-sdk"
+    env = {"HOME": str(tmp_path), "PYTHONFAULTHANDLER": "1"}
+    subprocess.run(
+        [sys.executable, "-I", "-m", "venv", "--without-pip", str(prefix)],
+        env=env,
+        check=True,
+        timeout=10,
+    )
+    command = [
+        str(prefix / "bin/python"),
+        "-I",
+        "-c",
+        "import faulthandler; print(faulthandler.is_enabled())",
+    ]
+    assert subprocess.check_output(command, env=env, timeout=5) == b"False\n"
+    _ui_service.startup_diagnostics(prefix, tmp_path)
+    assert subprocess.check_output(command, env=env, timeout=5) == b"True\n"
+
+
+def test_early_signal_exit_reports_only_allowlisted_fatal_trace():
+    fatal_stderr = (
+        b"Fatal Python error: Segmentation fault\nCurrent thread 0x1234:\n"
+        b'  File "/private/example/site-packages/heinzel/kernel/_boot.py", line 42 in private_function\n'
+        b'  File "/private/example/site-packages/private_plugin.py", line 19 in private_function\n'
+        b"private-error-body #token=secret\n"
+    )
+    child = SimpleNamespace(poll=lambda: -11, communicate=lambda timeout: (b"", fatal_stderr))
+    fixture = running(child)
+    fixture.service.status = lambda: SimpleNamespace(ready=False)
+    with pytest.raises(pytest.fail.Exception) as failure:
+        fixture.ready()
+    message = str(failure.value)
+    assert "owned process exit=-11, signal=11" in message
+    trace = ast.literal_eval(message.split("crash trace=", 1)[1].removesuffix("."))
+    assert trace == {"error": "Segmentation fault", "frames": [("heinzel/kernel/_boot.py", 42), ("other", 19)]}
+    assert not any(
+        secret in message
+        for secret in ("/private/example", "private_plugin", "private_function", "private-error-body", "#token=")
+    )
 
 
 @pytest.mark.parametrize("returncode", [0, 75, -9])
