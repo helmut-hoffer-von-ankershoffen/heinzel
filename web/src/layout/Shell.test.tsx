@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { requestMenuAction } from "@/about/menu";
 import { answered } from "@/test/chat";
 import { config, doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
@@ -243,6 +243,60 @@ describe("Desktop menu actions", () => {
     await waitFor(() => expect(screen.getByLabelText("Your message")).toHaveFocus());
     expect(calls.some((request) => request.url.endsWith("/heinzel/new-chat"))).toBe(false);
   });
+
+  it.each([
+    { width: 640, placement: "below", chatButton: "Show chat", terminalButton: "Show terminal" },
+    { width: 1440, placement: "beside", chatButton: "Close the chat", terminalButton: "Close the terminal" },
+  ])(
+    "toggles workspace panels from the View menu with the workspace $placement",
+    async ({ width, placement, chatButton, terminalButton }) => {
+      vi.stubGlobal("innerWidth", width);
+      localStorage.setItem("hz.chat.open", "false");
+      mockApi({
+        ...answers,
+        "/api/system/config/show": {
+          ...config,
+          settings: [
+            ...config.settings,
+            {
+              section: "hz",
+              key: "features",
+              value: ["sidebar_browser"],
+              default: [],
+              source: "user",
+              env: "HZ_FEATURES",
+              description: "Preview features",
+            },
+          ],
+        },
+      });
+      const user = userEvent.setup();
+      renderAt("/doctor");
+      await screen.findByRole("button", { name: "Open the browser" });
+
+      for (const [action, name, toolbarName] of [
+        ["chat", "Chat", chatButton],
+        ["browser", "Browser", "Close the browser"],
+        ["terminal", "Terminal", terminalButton],
+      ] as const) {
+        act(() => requestMenuAction(action));
+        const panel = screen.getByRole("tabpanel", { name });
+        expect(panel.closest("[data-placement]")).toHaveAttribute("data-placement", placement);
+        act(() => requestMenuAction(action));
+        expect(panel).not.toBeInTheDocument();
+
+        act(() => requestMenuAction(action));
+        const reopened = screen.getByRole("tabpanel", { name });
+        await user.click(screen.getByRole("button", { name: toolbarName, pressed: true }));
+        if (placement === "below") {
+          expect(reopened).toBeVisible();
+          act(() => requestMenuAction(action));
+        } else {
+          expect(reopened).not.toBeInTheDocument();
+        }
+      }
+    },
+  );
 
   it("answers the View, Go and Help menu actions", async () => {
     mockApi({ ...answers, "/api/system/config/show": config });

@@ -456,22 +456,22 @@ function Layout() {
     window.addEventListener("keydown", open);
     return () => window.removeEventListener("keydown", open);
   }, [setParams]);
-  const toggleChat = () => {
-    if (beside && chatOpen && selectedPanel === "chat") setChatOpen(false);
+  const toggleChat = (canClose: boolean) => {
+    if (canClose && chatOpen && selectedPanel === "chat") setChatOpen(false);
     else {
       setChatOpen(true);
       selectPanel("chat");
     }
   };
-  const toggleBrowser = () => {
-    if (beside && browserOpen && selectedPanel === "browser") setBrowserOpen(false);
+  const toggleBrowser = (canClose: boolean) => {
+    if (canClose && browserOpen && selectedPanel === "browser") setBrowserOpen(false);
     else {
       setBrowserOpen(true);
       selectPanel("browser");
     }
   };
-  const toggleTerminal = () => {
-    if (beside && terminalOpen && selectedPanel === "terminal") {
+  const toggleTerminal = (canClose: boolean) => {
+    if (canClose && terminalOpen && selectedPanel === "terminal") {
       setTerminalOpen(false);
       setTerminalFull(false);
     } else {
@@ -479,7 +479,7 @@ function Layout() {
       selectPanel("terminal");
     }
   };
-  // The desktop app's View and Go menus call the same closures as the top bar and the sidebar.
+  // View menu toggles can close panels in either layout. The narrow top bar navigates to them.
   const menu = useRef({ toggleChat, toggleBrowser, toggleTerminal, browserEnabled });
   menu.current = { toggleChat, toggleBrowser, toggleTerminal, browserEnabled };
   useEffect(
@@ -498,10 +498,10 @@ function Layout() {
         (action) => {
           if (action === "search") setSearchOpen(true);
           else if (action === "sidebar") setNavOpen((open) => !open);
-          else if (action === "terminal") menu.current.toggleTerminal();
+          else if (action === "terminal") menu.current.toggleTerminal(true);
           else if (action === "browser") {
-            if (menu.current.browserEnabled) menu.current.toggleBrowser();
-          } else if (action === "chat") menu.current.toggleChat();
+            if (menu.current.browserEnabled) menu.current.toggleBrowser(true);
+          } else if (action === "chat") menu.current.toggleChat(true);
           else if (action === "notifications" || action === "help")
             setParams((current) => {
               const next = new URLSearchParams(current);
@@ -714,11 +714,11 @@ function Layout() {
               selectPanel("calendar");
             }}
             chatOpen={chatOpen && selectedPanel === "chat"}
-            onToggleChat={toggleChat}
+            onToggleChat={() => toggleChat(beside)}
             browserOpen={browserOpen && selectedPanel === "browser"}
-            onToggleBrowser={browserEnabled ? toggleBrowser : undefined}
+            onToggleBrowser={browserEnabled ? () => toggleBrowser(beside) : undefined}
             terminalOpen={terminalOpen && selectedPanel === "terminal"}
-            onToggleTerminal={toggleTerminal}
+            onToggleTerminal={() => toggleTerminal(beside)}
           />,
           headerHost,
         )}
