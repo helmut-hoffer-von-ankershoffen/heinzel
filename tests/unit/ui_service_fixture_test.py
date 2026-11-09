@@ -139,7 +139,8 @@ def test_startup_snapshot_keeps_unknown_plugin_and_similar_source_names_private(
     assert RunningService.startup_frames(report) == [[("other", 19)]]
 
 
-def test_fixture_enables_fatal_traces_in_isolated_sdk(tmp_path):
+@pytest.mark.parametrize("system_customizer", [False, True])
+def test_fixture_enables_fatal_traces_in_isolated_sdk(tmp_path, system_customizer):
     prefix = tmp_path / "owned-sdk"
     env = {"HOME": str(tmp_path), "PYTHONFAULTHANDLER": "1"}
     subprocess.run(
@@ -148,12 +149,16 @@ def test_fixture_enables_fatal_traces_in_isolated_sdk(tmp_path):
         check=True,
         timeout=10,
     )
-    command = [
-        str(prefix / "bin/python"),
-        "-I",
-        "-c",
-        "import faulthandler; print(faulthandler.is_enabled())",
-    ]
+    probe = "import faulthandler; print(faulthandler.is_enabled())"
+    if system_customizer:
+        # Ubuntu's Python ships sitecustomize on its standard-library path, ahead of the virtualenv.
+        system_library = tmp_path / "system-library"
+        system_library.mkdir()
+        (system_library / "sitecustomize.py").write_text("import sys\nsys._fixture_system_customizer = True\n")
+        packages = next((prefix / "lib").glob("python*/site-packages"))
+        (packages / "00-system-library.pth").write_text(f"import sys; sys.path.insert(0, {str(system_library)!r})\n")
+        probe += "; import sys; assert sys._fixture_system_customizer"
+    command = [str(prefix / "bin/python"), "-I", "-c", probe]
     assert subprocess.check_output(command, env=env, timeout=5) == b"False\n"
     _ui_service.startup_diagnostics(prefix, tmp_path)
     assert subprocess.check_output(command, env=env, timeout=5) == b"True\n"

@@ -19,11 +19,15 @@ def test_startup_diagnostics_refuse_a_shared_interpreter_directory(tmp_path):
     assert list(shared.iterdir()) == []
 
 
-def test_startup_diagnostics_preserve_existing_startup_code(tmp_path):
+@pytest.mark.parametrize(
+    "startup_name",
+    ["sitecustomize.py", "_heinzel_fixture_startup_diagnostics.py", "_heinzel_fixture_startup_diagnostics.pth"],
+)
+def test_startup_diagnostics_preserve_existing_startup_code(tmp_path, startup_name):
     prefix = tmp_path / "sdk"
     packages = prefix / "lib/python3.14/site-packages"
     packages.mkdir(parents=True)
-    target = packages / "sitecustomize.py"
+    target = packages / startup_name
     target.write_text("existing startup code")
     with pytest.raises(AssertionError, match="existing startup code"):
         startup_diagnostics(prefix, tmp_path)

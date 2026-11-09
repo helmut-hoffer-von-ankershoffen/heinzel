@@ -98,6 +98,7 @@ _STARTUP_MODULES = {
     "_bootstrap_external",
     "site.py",
     "sitecustomize.py",
+    "_heinzel_fixture_startup_diagnostics.py",
     "heinzel/__main__.py",
     "heinzel/heads/cli/__init__.py",
     "heinzel/heads/cli/_serve.py",
@@ -202,9 +203,12 @@ def startup_diagnostics(prefix, directory):
     packages = list((prefix / "lib").glob("python*/site-packages"))
     assert len(packages) == 1
     assert packages[0].resolve().is_relative_to(prefix.resolve()), "Startup diagnostics must stay in the fixture SDK."
-    target = packages[0] / "sitecustomize.py"
-    assert not target.exists(), "The fixture must not replace existing startup code."
-    assert not target.is_symlink(), "The fixture must not replace an existing startup link."
+    site = packages[0]
+    target = site / "_heinzel_fixture_startup_diagnostics.py"
+    loader = target.with_suffix(".pth")
+    for startup in (site / "sitecustomize.py", target, loader):
+        assert not startup.exists(), "The fixture must not replace existing startup code."
+        assert not startup.is_symlink(), "The fixture must not replace an existing startup link."
     destination = directory / "startup-stacks.txt"
     descriptor = destination.open("xb")
     descriptor.close()
@@ -220,6 +224,10 @@ def startup_diagnostics(prefix, directory):
     )
     with target.open("x") as handle:
         handle.write(source)
+    # The base interpreter can supply sitecustomize before the SDK on sys.path (Ubuntu's system Python does).
+    # Process the SDK's private hook alongside the other site configuration files instead.
+    with loader.open("x") as handle:
+        handle.write(f"import {target.stem}\n")
 
 
 def _sample_role(line):
@@ -359,7 +367,7 @@ class RunningService:
         cpu = self.startup_cpu()
         pending = list(islice(self.service.directory.glob(".runtime.json.*"), 4))
         result = {"cpu": cpu, "runtime_present": self.service.runtime.exists(), "pending_writes": len(pending)}
-        # A real tool replacement removes the fixture-only sitecustomize; never attribute its old stack to an exec.
+        # A real tool replacement removes the fixture-only startup hook; never attribute its old stack to an exec.
         result["startup"] = self.startup_metadata() if initial else "not-initial-startup"
         result["native"] = self.native_state()
         result["runtime_after_sample"] = self.service.runtime.exists()
