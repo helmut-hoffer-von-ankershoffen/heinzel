@@ -128,6 +128,19 @@ class Config:
         """
         return cls._read(config_files(cwd or Path.cwd()))
 
+    @classmethod
+    def for_isolated_home(cls, home: Path) -> "Config":
+        """Read the fixture's user file only if normal service reads cannot see another scope.
+
+        Raises:
+            HeinzelError: A site, project, or explicit config file exists outside the fixture user scope.
+        """
+        files = config_files(home)
+        if any(file.scope != "user" and file.exists for file in files):
+            msg = "Capture requires an isolated configuration without site, project, or explicit files"
+            raise HeinzelError(msg)
+        return cls._read(tuple(file for file in files if file.scope == "user"))
+
     def reread(self) -> "Config":
         """The same files read again now, so a long-running head sees what was written since.
 

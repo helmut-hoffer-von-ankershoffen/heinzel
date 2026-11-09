@@ -15,19 +15,21 @@ _installed_sources = SourceDiscovery(installed=True)
 _host_runtime = (email.policy, mimetypes)
 
 
-def boot(
+def boot(  # noqa: PLR0913 - startup selectors are explicit keyword arguments
     settings: Settings | None = None,
     *,
     source_discovery: "SourceDiscovery | None" = None,
     builtin_only: bool = False,
     cwd: Path | None = None,
     maintenance: bool = False,
+    config: Config | None = None,
 ) -> Kernel:
     """Discover modules and register a kernel without constructing their services.
 
     Hosts may explicitly exclude all plugin entry points and select a configuration scope for local maintenance.
     The ordinary default still discovers enabled plugins and loads configuration from the current directory.
     Explicit built-in maintenance registers disabled owners for inventory only; it constructs no feature providers.
+    An explicit config selects only the files supplied by the caller.
 
     Raises:
         ValueError: If maintenance is requested without excluding external plugins.
@@ -36,7 +38,7 @@ def boot(
         msg = "Host maintenance requires built-in-only discovery."
         raise ValueError(msg)
     source_discovery = source_discovery or _installed_sources
-    config = Config.load(cwd)
+    config = config if config is not None else Config.load(cwd)
     settings = settings or config.settings(Settings, KERNEL_SECTION)
     if maintenance:
         # Disabled feature owners must still expose their already-installed lifecycle inventory.
