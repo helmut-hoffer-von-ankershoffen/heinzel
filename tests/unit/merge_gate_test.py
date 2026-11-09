@@ -314,8 +314,9 @@ def test_the_gates_start_after_ci_and_report_the_required_check_names():
     """No gate holds a runner while CI runs, and the ruleset's merge-gate and coverage-floor still get reported."""
     workflow = yaml.safe_load((ROOT / ".github/workflows/merge-gate.yml").read_text())
     trigger = workflow[True]["workflow_run"]  # YAML reads the key `on` as True
-    assert trigger == {"workflows": ["CI"], "types": ["completed"]}
+    assert trigger == {"workflows": ["CI", "Focused CI rehearsal"], "types": ["completed"]}
     job = workflow["jobs"]["gates"]
+    assert "github.event.workflow_run.path == '.github/workflows/ci.yml'" in job["if"]
     assert job["permissions"]["checks"] == "write"
     assert "contents" not in job["permissions"] or job["permissions"]["contents"] == "read"
     runs = "\n".join(step.get("run", "") for step in job["steps"])
@@ -464,7 +465,7 @@ def test_focused_caller_rejects_a_run_from_a_different_head_repository(monkeypat
     assert "does not belong to a pull request on this protected base" in capsys.readouterr().out
 
 
-def test_focused_workflow_is_uncalled_and_read_only():
+def test_focused_completion_is_scoped_read_only_and_separate_from_legacy_gates():
     path = ".github/workflows/focused-ci-evidence.yml"
     workflow = yaml.safe_load((ROOT / path).read_text())
     assert workflow[True] == {"workflow_call": None}
@@ -477,8 +478,39 @@ def test_focused_workflow_is_uncalled_and_read_only():
     assert checkout["with"] == {"ref": "${{ github.sha }}", "persist-credentials": False}
     for name in ("FOCUSED_EVIDENCE_ADMIN_MANIFEST", "FOCUSED_EVIDENCE_ADMIN_SHA256"):
         assert collect["env"][name] == "${{ secrets." + name + " }}"
-    assert all(
-        path not in other.read_text()
-        for other in (ROOT / ".github/workflows").glob("*.yml")
-        if other.name != Path(path).name
+    gate = yaml.safe_load((ROOT / ".github/workflows/merge-gate.yml").read_text())
+    caller = gate["jobs"]["focused-evidence"]
+    assert caller["uses"] == f"./{path}"
+    assert "secrets" not in caller
+    assert set(caller["permissions"].values()) == {"read"}
+    for clause in (
+        "vars.FOCUSED_REHEARSAL_PR != ''",
+        "github.event.workflow_run.path == '.github/workflows/focused-ci-rehearsal.yml'",
+        "github.event.workflow_run.event == 'pull_request'",
+        "github.event.workflow_run.conclusion == 'success'",
+        "format('{0}', github.event.workflow_run.pull_requests[0].number) == vars.FOCUSED_REHEARSAL_PR",
+        "github.event.workflow_run.head_sha == vars.FOCUSED_REHEARSAL_HEAD",
+        "github.sha == vars.FOCUSED_REHEARSAL_BASE",
+    ):
+        assert clause in caller["if"]
+    assert "'.github/workflows/focused-ci-rehearsal.yml' && 'rehearsal-'" in gate["concurrency"]["group"]
+
+
+def test_rehearsal_has_no_secret_or_broad_test_path():
+    text = (ROOT / ".github/workflows/focused-ci-rehearsal.yml").read_text()
+    workflow = yaml.safe_load(text)
+    assert set(workflow[True]) == {"pull_request"}
+    assert workflow[True]["pull_request"]["paths"] == ["tests/unit/focused_ci_receipt_test.py"]
+    assert workflow["permissions"] == {}
+    scope, tests = (workflow["jobs"][name] for name in ("scope", "tests"))
+    assert "vars.FOCUSED_REHEARSAL_PR != ''" in scope["if"]
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in scope["if"]
+    assert scope["steps"][0]["with"]["ref"] == "${{ vars.FOCUSED_REHEARSAL_BASE }}"
+    assert tests["needs"] == "scope"
+    assert tests["steps"][0]["with"]["ref"] == "${{ github.sha }}"
+    assert (
+        tests["steps"][-1]["run"]
+        == "uv run --frozen --no-dev --group test pytest tests/unit/focused_ci_receipt_test.py -q"
     )
+    assert "secrets." not in text
+    assert "checks: write" not in text

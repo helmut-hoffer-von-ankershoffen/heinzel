@@ -51,7 +51,7 @@ its source is committed, so the file that records the approved blobs does not ne
 manifest with `repository_id`, `workflow_id`, `workflow_path`, `workflow_sha256` and `workload_app_id`
 alongside the selector digest. Review the manifest and pin its SHA-256 through an administrator-controlled
 configuration outside the tested branch. A Git commit cannot contain an allowlist that names its own SHA.
-The uncalled `focused-ci-evidence.yml` can run only from `merge-gate.yml` on `main` with a `workflow_run`
+`focused-ci-evidence.yml` can run only from `merge-gate.yml` on `main` with a `workflow_run`
 event. The job checks out the protected event SHA and reads the exact attempt from the runner's event file.
 Configure the `focused-evidence` environment with `main` as its only deployment branch and administrator
 review required. Set `FOCUSED_EVIDENCE_ADMIN_MANIFEST` and `FOCUSED_EVIDENCE_ADMIN_SHA256` as separate
@@ -67,14 +67,29 @@ unexpected jobs fail validation. It rechecks the run and pull request after coll
 an evidence result and leaves required checks unpublished. The focused coverage route `coverage --focused`
 fails closed pending an approved candidate coverage policy.
 
-## Hosted evidence still needed
+## Read-only rehearsal deployment and rollback
 
-At protected `432006f27ce2df73a80f2f69a4e162378df2c862`, the selector and read-only workflow are absent.
-The existing `focused-job.yml` runs are diagnostic dispatches. A successful dispatch cannot establish the
-required `pull_request` attempt or the protected selector bytes. After an independently reviewed bootstrap,
-one isolated PR study should run the pinned focused workload against an unchanged protected base. Collect
-that exact successful attempt from the protected caller using an approved detached manifest and an exact
-expected job list. Record the read-only receipt before evaluating any required-check publishing change.
+1. After separate approval of the bootstrap, use the resulting protected `main` SHA as the study base.
+   Prepare one same-repository draft PR that modifies only `tests/unit/focused_ci_receipt_test.py`. Review
+   the exact head, test change and workload workflow. The study adds two jobs. Existing CI retains its
+   normal triggers and requirements.
+2. Create the `focused-evidence` environment and its two secrets as specified above. Create the detached
+   manifest after the base and head exist. Pin the registered `focused-ci-rehearsal.yml` workflow ID, its
+   protected bytes, the selector bytes and the workload publisher's GitHub App ID. Use exactly the jobs
+   `Rehearsal static and security` and `Rehearsal receipt tests` in the manifest. Hash the raw diff with
+   `git diff-tree --no-commit-id -r --raw --no-abbrev --no-renames -z BASE HEAD | shasum -a 256`.
+3. Set the administrator-controlled repository variables `FOCUSED_REHEARSAL_BASE`, `FOCUSED_REHEARSAL_HEAD`
+   and `FOCUSED_REHEARSAL_DIFF_SHA256` to the reviewed values. Set `FOCUSED_REHEARSAL_PR` to the one approved
+   PR number last. Mark that draft ready to request the one `pull_request` attempt. A successful completion
+   calls the read-only evidence job. The existing required-check writer handles only `ci.yml` completions.
+4. Record the successful exact run ID and attempt, the two job results and the protected collector result.
+   If the base moves, stop the study and obtain fresh review for a new base, head and manifest before proceeding.
+5. To end or roll back the rehearsal, remove `FOCUSED_REHEARSAL_PR` first so new runs cannot enter. Let
+   any in-flight read-only jobs finish, then remove the remaining three variables and the two study secrets.
+   The rehearsal publishes no required check to revoke. Leave existing rulesets and CI configuration in place.
+
+Existing `focused-job.yml` diagnostics use `workflow_dispatch`. Those runs supply no rehearsal evidence.
+The new workload and collector have yet to run together on an approved hosted `pull_request` attempt.
 
 ## Rollout
 

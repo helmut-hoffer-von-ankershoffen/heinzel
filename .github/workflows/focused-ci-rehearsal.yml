@@ -1,0 +1,64 @@
+name: Focused CI rehearsal
+
+# With the administrator pins unset, neither job can execute.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+    paths: [tests/unit/focused_ci_receipt_test.py]
+
+permissions: {}
+
+jobs:
+  scope:
+    name: Rehearsal static and security
+    if: >-
+      vars.FOCUSED_REHEARSAL_PR != ''
+      && format('{0}', github.event.pull_request.number) == vars.FOCUSED_REHEARSAL_PR
+      && github.event.pull_request.draft == false
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.base.sha == vars.FOCUSED_REHEARSAL_BASE
+      && github.event.pull_request.head.sha == vars.FOCUSED_REHEARSAL_HEAD
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      FOCUSED_REHEARSAL_PR: ${{ vars.FOCUSED_REHEARSAL_PR }}
+      FOCUSED_REHEARSAL_BASE: ${{ vars.FOCUSED_REHEARSAL_BASE }}
+      FOCUSED_REHEARSAL_HEAD: ${{ vars.FOCUSED_REHEARSAL_HEAD }}
+      FOCUSED_REHEARSAL_DIFF_SHA256: ${{ vars.FOCUSED_REHEARSAL_DIFF_SHA256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ vars.FOCUSED_REHEARSAL_BASE }}
+          persist-credentials: false
+      - run: python3 -E -s scripts/focused_ci_rehearsal.py
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Check the exact diff and scan commits for credentials
+        shell: bash
+        run: |
+          git diff --check "$FOCUSED_REHEARSAL_BASE" "$FOCUSED_REHEARSAL_HEAD"
+          git cat-file blob "$FOCUSED_REHEARSAL_HEAD:tests/unit/focused_ci_receipt_test.py" \
+            | uv run --frozen --no-install-project ruff check --stdin-filename tests/unit/focused_ci_receipt_test.py -
+          uv run --frozen --no-install-project cz check --rev-range "$FOCUSED_REHEARSAL_BASE..$FOCUSED_REHEARSAL_HEAD"
+          uv run --quiet --script scripts/tools.py run gitleaks git --redact --exit-code 1 \
+            --log-opts="$FOCUSED_REHEARSAL_BASE..$FOCUSED_REHEARSAL_HEAD" .
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+
+  tests:
+    name: Rehearsal receipt tests
+    needs: scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv run --frozen --no-dev --group test pytest tests/unit/focused_ci_receipt_test.py -q

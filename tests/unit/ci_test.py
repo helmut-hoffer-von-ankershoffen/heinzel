@@ -92,6 +92,18 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
         "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
     },
+    "focused-ci-evidence.yml": {
+        "python3 -E -s scripts/merge_gate.py focused": "collects read-only evidence from the protected checkout",
+    },
+    "focused-ci-rehearsal.yml": {
+        "python3 -E -s scripts/focused_ci_rehearsal.py": "checks the approved Git objects from the protected checkout",
+        'git diff --check "$FOCUSED_REHEARSAL_BASE" "$FOCUSED_REHEARSAL_HEAD"': (
+            "checks the reviewed diff from protected source before running any PR code"
+        ),
+        "uv run --frozen --no-dev --group test pytest tests/unit/focused_ci_receipt_test.py -q": (
+            "runs only the independently approved receipt tests"
+        ),
+    },
     "acceptance-sharded.yml": {
         "uv python install 3.13": "the isolated acceptance study interpreter",
         '"$(uv python find 3.13)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
@@ -720,7 +732,7 @@ def test_release_docs_follow_the_successful_producer_without_recording_or_delayi
 # A script named by path needs its executable bit, which copier drops when it follows the template's symlinks into a
 # plugin's scripts/. Through an interpreter, a script runs without it.
 SCRIPT = re.compile(r"(?<![\w/.-])(?:\./)?scripts/[\w.-]+\.(?:sh|py)\b")
-INTERPRETER = re.compile(r"(?:\bbash|\bpython3?(?: -I)?|\buv run(?: -[\w-]+)*(?: --script| python3?))\s+$")
+INTERPRETER = re.compile(r"(?:\bbash|\bpython3?(?: -I| -E -s)?|\buv run(?: -[\w-]+)*(?: --script| python3?))\s+$")
 
 
 def scripts_run_by_path(run: str) -> list[str]:
@@ -739,6 +751,7 @@ def test_finds_scripts_run_by_path():
     assert scripts_run_by_path("bash scripts/x.sh && python scripts/y.py") == []
     assert scripts_run_by_path("uv run --frozen python scripts/x.py > notes.md") == []
     assert scripts_run_by_path("uv run --quiet --script scripts/x.py --json") == []
+    assert scripts_run_by_path("python3 -E -s scripts/x.py") == []
     assert scripts_run_by_path("make check  # see scripts/steps.py") == []
 
 

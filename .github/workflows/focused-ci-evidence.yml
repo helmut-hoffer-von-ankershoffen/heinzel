@@ -1,6 +1,6 @@
 name: Focused CI evidence
 
-# Dormant until a separately reviewed call from the protected merge gate is added.
+# The protected merge gate calls this only for the approved rehearsal pins.
 on:
   workflow_call:
 
@@ -11,6 +11,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_run'
       && github.ref == 'refs/heads/main'
+      && github.event.workflow_run.path == '.github/workflows/focused-ci-rehearsal.yml'
       && github.workflow_ref == format('{0}/.github/workflows/merge-gate.yml@refs/heads/main', github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
