@@ -57,11 +57,14 @@ from heinzel.kernel import (
     ProcessOutcome,
     host_maintenance_gate,
     host_maintenance_lock,
+    mcp_registration_inventory,
+    native_mcp_scope,
     private_directory,
     private_lock,
     private_read,
     private_write,
     tick_interval,
+    verify_mcp_native_inventory,
 )
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
 from heinzel.modules.system._phases import Phases
@@ -1073,11 +1076,6 @@ class DaemonService:
             yield
 
     def _require_mcp_quiescence(self, prefix: Path) -> None:
-        from heinzel.heads.mcp._ipc_registration import (  # noqa: PLC0415 - SDK mutations only
-            mcp_registration_inventory,
-            native_mcp_scope,
-            verify_mcp_native_inventory,
-        )
         from heinzel.modules.system.daemon._maintenance import DaemonManagerPort  # noqa: PLC0415 - reuse this manager
 
         if registrations := mcp_registration_inventory(prefix):

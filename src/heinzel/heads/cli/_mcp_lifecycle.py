@@ -6,8 +6,18 @@ from dataclasses import asdict
 from typing import TYPE_CHECKING, Literal, cast
 
 from heinzel.heads.mcp._ipc_lifecycle import REGISTRATION_ID, LifecycleAction
-from heinzel.heads.mcp._ipc_registration import InstalledMcpRegistry, installed_mcp_authority, native_mcp_scope
-from heinzel.kernel import HeinzelError, Kernel, MaintenanceLocks, Settings, host_maintenance_lock
+from heinzel.heads.mcp._ipc_registration import InstalledMcpRegistry, installed_mcp_authority
+from heinzel.kernel import (
+    HeinzelError,
+    HostServiceManager,
+    Installation,
+    Kernel,
+    MaintenanceLocks,
+    Settings,
+    discover,
+    host_maintenance_lock,
+    native_mcp_scope,
+)
 
 if TYPE_CHECKING:
     from heinzel.heads.mcp._ipc_lifecycle import ForegroundMcpLifecycle, ForegroundMcpStatus
@@ -38,14 +48,15 @@ def main(action: LifecycleCommand, arguments: list[str], *, host: "ForegroundMcp
 
 
 def _installed(action: LifecycleCommand, id_: str) -> int:
-    from heinzel.modules.system.daemon._maintenance import SystemHostServiceManager  # noqa: PLC0415 - installed CLI only
-
     try:
         authority = installed_mcp_authority()
     except (HeinzelError, OSError, ValueError):
         sys.stderr.write("MCP lifecycle requires a registration from the trusted installed host.\n")
         return 1
-    manager = SystemHostServiceManager(Kernel(Settings(state_dir=authority.runtime.state)), recordless=True)
+    records, errors = discover(plugins=False)
+    kernel = Kernel(Settings(state_dir=authority.runtime.state), records, errors)
+    kernel.bind(Installation, authority.sdk)
+    manager = kernel.resolve_builtin_service(HostServiceManager, "system.daemon")
     registry = InstalledMcpRegistry(authority, manager, native_mcp_scope())
     if action in {"register", "recover"}:
         registry.publish(action, id_)

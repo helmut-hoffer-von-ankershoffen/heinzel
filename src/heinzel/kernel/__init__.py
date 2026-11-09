@@ -224,6 +224,12 @@ from heinzel.kernel._lets import (
 )
 from heinzel.kernel._local_overview import CachedOverviewLet, DaemonOverview, LocalObservation, WebOverview
 from heinzel.kernel._local_web import LocalWebRuntime, PersistentWeb
+from heinzel.kernel._mcp_registry import (
+    McpRegistrationReceipt,
+    mcp_registration_inventory,
+    native_mcp_scope,
+    verify_mcp_native_inventory,
+)
 from heinzel.kernel._metadata_verifier import CoreMetadataVerifier
 from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import (
@@ -624,6 +630,7 @@ __all__ = [
     "MaintenanceLocks",
     "ManualInstall",
     "McpChatSessions",
+    "McpRegistrationReceipt",
     "McpServer",
     "Meeting",
     "Meetings",
@@ -815,6 +822,8 @@ __all__ = [
     "installation_mutation_pending",
     "jsonable",
     "link_problem",
+    "mcp_registration_inventory",
+    "native_mcp_scope",
     "operation_path",
     "owns_path",
     "parse_duration",
@@ -849,5 +858,6 @@ __all__ = [
     "user_config_dir",
     "using_tick_interval",
     "verify_integration_directory",
+    "verify_mcp_native_inventory",
     "walk",
 ]

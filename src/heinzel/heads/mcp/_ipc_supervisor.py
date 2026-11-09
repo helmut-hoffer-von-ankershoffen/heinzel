@@ -23,7 +23,7 @@ from heinzel.heads.mcp._ipc_bridge import BridgeHandshake, launch_inherited_brid
 from heinzel.heads.mcp._ipc_cli_review import review_private_mcp_from_terminal
 from heinzel.heads.mcp._ipc_descriptors import local_stream_pair, probe_local_descriptors
 from heinzel.heads.mcp._ipc_named_generation import NamedMcpGeneration, owned_named_generation
-from heinzel.heads.mcp._ipc_runtime_root import InstalledMcpRuntime, McpRuntimeLocator, mcp_runtime_locator
+from heinzel.heads.mcp._ipc_runtime_root import McpRuntimeLocator, mcp_runtime_locator
 from heinzel.heads.mcp._ipc_work import (
     Boundary,
     Disposition,
@@ -34,6 +34,7 @@ from heinzel.heads.mcp._ipc_work import (
 from heinzel.kernel import HeinzelError
 from heinzel.kernel._approval import arguments_hash
 from heinzel.kernel._logging import get_logger, step
+from heinzel.kernel._mcp_storage import InstalledMcpRuntime
 
 type ReadLocator = Callable[[socket], McpGeneration]
 log = get_logger("mcp")

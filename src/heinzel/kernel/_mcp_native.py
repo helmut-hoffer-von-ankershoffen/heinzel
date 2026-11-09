@@ -5,13 +5,13 @@ import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from heinzel.kernel import HeinzelError
 from heinzel.kernel._approval import arguments_hash
+from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._uninstall_recovery import manager_properties
 
 if TYPE_CHECKING:
-    from heinzel.heads.mcp._ipc_runtime_root import InstalledMcpRuntime
-    from heinzel.kernel import HostServiceManager
+    from heinzel.kernel._host_maintenance import HostServiceManager
+    from heinzel.kernel._mcp_storage import InstalledMcpRuntime
 
 type NativeMcpState = Literal["not-checked", "absent", "conflict", "unavailable"]
 _MAX_MANAGER_BYTES = 1_000_000

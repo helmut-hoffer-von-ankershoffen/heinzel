@@ -8,24 +8,22 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from heinzel import Config, HeinzelError, Kernel, Progress, Settings
-from heinzel.heads.mcp._ipc_registration import (
-    McpRegistrationReceipt,
-    mcp_registration_inventory,
-    native_mcp_scope,
-    verify_mcp_native_inventory,
-)
 from heinzel.kernel import (
     HostIntegrationScope,
     HostMaintenanceIntegration,
     HostServiceManager,
     Installation,
     MaintenanceLocks,
+    McpRegistrationReceipt,
     OfflineUninstall,
     ServiceLet,
     UninstallResult,
     boot,
     host_maintenance_gate,
     host_maintenance_lock,
+    mcp_registration_inventory,
+    native_mcp_scope,
+    verify_mcp_native_inventory,
 )
 from heinzel.kernel._host_maintenance import HostIntegrationRemoval
 from heinzel.kernel._installation_mutations import installation_mutation_pending

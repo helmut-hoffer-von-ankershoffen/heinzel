@@ -15,12 +15,12 @@ from heinzel.heads.mcp._ipc_approval import PrivateMcpPlan
 from heinzel.heads.mcp._ipc_child import OwnedMcpChild, close_unrelated_descriptors, require_isolated_fork
 from heinzel.heads.mcp._ipc_cli_review import review_mcp_lifecycle_from_terminal
 from heinzel.heads.mcp._ipc_descriptors import local_stream_pair, receive_exact
-from heinzel.heads.mcp._ipc_native_plan import McpNativePlan, NativeMcpState
 from heinzel.heads.mcp._ipc_peer import require_owner_peer
-from heinzel.heads.mcp._ipc_runtime_root import InstalledMcpRuntime, installation_directories
 from heinzel.heads.mcp._ipc_supervisor import owned_installed_mcp_supervisor
 from heinzel.kernel import HeinzelError, installation_mutation_pending
 from heinzel.kernel._logging import get_logger, step
+from heinzel.kernel._mcp_native import McpNativePlan, NativeMcpState
+from heinzel.kernel._mcp_storage import InstalledMcpRuntime, installation_directories
 
 if TYPE_CHECKING:
     from collections.abc import Callable

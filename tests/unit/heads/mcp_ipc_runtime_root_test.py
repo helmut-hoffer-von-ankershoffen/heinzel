@@ -26,6 +26,7 @@ from heinzel.kernel._host_maintenance import (
     host_maintenance_gate,
     host_maintenance_lock,
 )
+from heinzel.kernel._mcp_storage import InstalledMcpRuntime
 
 pytestmark = pytest.mark.unit
 
@@ -40,7 +41,7 @@ def _installation(directory):
     prefix, state = directory / "sdk", directory / "state"
     prefix.mkdir(mode=0o700)
     state.mkdir(mode=0o700)
-    return roots.InstalledMcpRuntime(prefix, state)
+    return InstalledMcpRuntime(prefix, state)
 
 
 def _plan():

@@ -20,8 +20,9 @@ from heinzel.heads.mcp import _ipc_lifecycle as lifecycle
 from heinzel.heads.mcp import _ipc_runtime_root as roots
 from heinzel.heads.mcp._ipc_admission import McpGeneration
 from heinzel.heads.mcp._ipc_approval import PrivateMcpPlan
-from heinzel.heads.mcp._ipc_native_plan import McpNativePlan
 from heinzel.kernel import HostServiceManager, host_maintenance_directory
+from heinzel.kernel._mcp_native import McpNativePlan
+from heinzel.kernel._mcp_storage import InstalledMcpRuntime
 
 pytestmark = pytest.mark.unit
 
@@ -78,7 +79,7 @@ def _exercise_installed_cli(directory, phase):
     sdk, state = directory / "sdk", directory / "state"
     sdk.mkdir(mode=0o700)
     state.mkdir(mode=0o700)
-    installation = roots.InstalledMcpRuntime(sdk, state)
+    installation = InstalledMcpRuntime(sdk, state)
     plan = PrivateMcpPlan.capture(
         McpGeneration(_REGISTRATION, 4), "fixture-only", 3, time.monotonic() + 120, {"dispatch": {}}
     )

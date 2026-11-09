@@ -23,8 +23,5 @@ class DaemonManagerPort(HostServiceManager):
 class SystemHostServiceManager(DaemonManagerPort):
     """Construction never loads accounts, providers or project configuration."""
 
-    def __init__(self, kernel: Kernel, *, recordless: bool = False) -> None:
-        service = (
-            DaemonService(kernel, kernel.settings, DaemonSettings()) if recordless else DaemonService.for_user(kernel)
-        )
-        super().__init__(service)
+    def __init__(self, kernel: Kernel) -> None:
+        super().__init__(DaemonService(kernel, kernel.settings, DaemonSettings()))

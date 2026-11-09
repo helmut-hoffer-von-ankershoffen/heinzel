@@ -15,12 +15,11 @@ from unittest import TestCase
 
 import pytest
 
-from heinzel import HeinzelError, Progress
+from heinzel import Config, HeinzelError, Progress
 from heinzel.heads import cli
 from heinzel.heads.cli import _mcp_lifecycle
 from heinzel.heads.mcp import _ipc_registration as registration
 from heinzel.heads.mcp import _ipc_runtime_root as roots
-from heinzel.heads.mcp._ipc_native_plan import MAC_LABEL_PREFIX, McpNativePlan
 from heinzel.kernel import (
     HostIntegrationScope,
     HostServiceManager,
@@ -30,7 +29,9 @@ from heinzel.kernel import (
     Settings,
     host_maintenance_directory,
     host_maintenance_lock,
+    mcp_registration_inventory,
 )
+from heinzel.kernel._mcp_native import MAC_LABEL_PREFIX, McpNativePlan
 from heinzel.modules.system.daemon import _maintenance
 from heinzel.modules.system.daemon._models import DaemonSettings
 from heinzel.modules.system.daemon._service import DaemonService
@@ -109,12 +110,12 @@ def _exercise_registration(patcher, sdk, phase, native_root):
         data = intent.read_bytes()
         assert not list(inventory.glob("*.commit"))
         with pytest.raises(HeinzelError, match="explicit recovery"):
-            registration.mcp_registration_inventory(sdk.prefix)
+            mcp_registration_inventory(sdk.prefix)
         _invoke(patcher, "recover", 0)
         assert intent.read_bytes() == data
     else:
         _invoke(patcher, "register", 0)
-    (receipt,) = registration.mcp_registration_inventory(sdk.prefix)
+    (receipt,) = mcp_registration_inventory(sdk.prefix)
     assert receipt.id == _ID
     assert receipt.fingerprint == sdk.startup_fingerprint()
     assert not native_root.exists()  # Registration and recovery never start a listener.
@@ -148,7 +149,9 @@ def _run_installed_cli(directory, phase):
             patcher.setattr(sys, "prefix", str(sdk.prefix))
             patcher.setattr(sys, "executable", str(interpreter))
             patcher.setattr(registration, "__file__", str(module))
-            patcher.setattr(_maintenance, "SystemHostServiceManager", lambda *_args, **_kwargs: _Manager())
+            manager = _Manager()
+            patcher.setattr(_maintenance.SystemHostServiceManager, "command", lambda _self, args: manager.command(args))
+            patcher.setattr(Config, "load", lambda *_args, **_kwargs: pytest.fail("Ambient config was loaded"))
             patcher.setattr(_mcp_lifecycle, "native_mcp_scope", lambda: scope)
             patcher.setattr(roots, "_locator_name", lambda: native_root.name)
             patcher.setenv("HZ_STATE_DIR", str(directory / "forged"))
