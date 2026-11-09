@@ -264,28 +264,25 @@ def _run_supervised_fixture(directory, phase):
     generation = McpGeneration("fixture-registration", 3)
     now = 100.0
     plan = PrivateMcpPlan.capture(generation, "fixture-grant", 1, 2000.0, {"dispatch": {"fixture": ["read-fixture"]}})
-    endpoint = directory / "sock"
     release = Event()
     first_admitted, second_admitted = Event(), Event()
     calls = []
-    with (
-        socket.socket(socket.AF_UNIX) as first,
-        socket.socket(socket.AF_UNIX) as second,
-    ):
+    with ExitStack() as clients:
         with (
-            owned_mcp_supervisor(endpoint, directory / "state", plan, clock=lambda: now) as supervisor,
+            owned_mcp_supervisor(directory / "state", plan, clock=lambda: now) as supervisor,
             ThreadPoolExecutor(max_workers=2) as workers,
         ):
-            assert supervisor.check_endpoint() == generation
+            assert supervisor.check_transport() == generation
             assert not supervisor.pending_review_ids()
-            transport = supervisor.transport
-            assert not hasattr(transport, "review")
-            first.connect(os.fspath(endpoint))
-            first_result = workers.submit(_fake_dispatch, transport, generation, first_admitted, release, calls)
+            first, first_transport = clients.enter_context(supervisor.open_transport())
+            assert not hasattr(first_transport, "review")
+            first_result = workers.submit(_fake_dispatch, first_transport, generation, first_admitted, release, calls)
             try:
                 (intended,) = _pending(supervisor, 1)
-                second.connect(os.fspath(endpoint))
-                second_result = workers.submit(_fake_dispatch, transport, generation, second_admitted, release, calls)
+                second, second_transport = clients.enter_context(supervisor.open_transport())
+                second_result = workers.submit(
+                    _fake_dispatch, second_transport, generation, second_admitted, release, calls
+                )
                 assert intended in _pending(supervisor, 2)
                 status = _review_command(supervisor, intended)
                 if phase == "decline":
@@ -308,14 +305,14 @@ def _run_supervised_fixture(directory, phase):
                 supervisor.revoke()
         with pytest.raises(HeinzelError, match="no longer owns the registration"):
             supervisor.revoke()
-        assert not endpoint.exists()
-        with pytest.raises(FileNotFoundError), socket.socket(socket.AF_UNIX) as late:
-            late.connect(os.fspath(endpoint))
+        for client in (first, second):
+            client.settimeout(2)
+            assert client.recv(1) == b""
         with (
             pytest.raises(HeinzelError, match="approval is invalid or unavailable"),
-            owned_mcp_supervisor(endpoint, directory / "state", plan, clock=lambda: now),
+            owned_mcp_supervisor(directory / "state", plan, clock=lambda: now),
         ):
-            pytest.fail("The revoked grant reopened its listener")
+            pytest.fail("The revoked grant reopened its transport")
     sys.stdout.write(json.dumps({"first": outcome, "second_admitted": second_admitted.is_set(), "calls": calls}))
 
 
@@ -421,8 +418,8 @@ def _run_foreign_endpoint_fixture(directory, kind):
             foreign.listen()
             foreign.settimeout(2)
         with (
-            pytest.raises(HeinzelError, match="could not establish ownership"),
-            owned_mcp_supervisor(endpoint, directory / "state", plan, clock=lambda: 100.0),
+            pytest.raises(HeinzelError, match="Named local MCP activation is unavailable"),
+            owned_mcp_supervisor(directory / "state", plan, endpoint_path=endpoint, clock=lambda: 100.0),
         ):
             pytest.fail("The supervisor adopted a socket it did not create")
         assert endpoint.stat().st_ino == identity
@@ -437,55 +434,92 @@ def _run_stop_fixture(directory):
     generation = McpGeneration("fixture-registration", 3)
     stale = McpGeneration(generation.registration_id, 2)
     plan = PrivateMcpPlan.capture(generation, "fixture-grant", 1, 2000.0, {})
-    endpoint = directory / "sock"
-    with ThreadPoolExecutor(max_workers=1) as worker, socket.socket(socket.AF_UNIX) as pending:
-        with owned_mcp_supervisor(endpoint, directory / "state", plan, clock=lambda: 100.0) as supervisor:
-            assert supervisor.check_endpoint() == generation
-            transport = supervisor.transport
-            with socket.socket(socket.AF_UNIX) as cached:
-                cached.connect(os.fspath(endpoint))
+    with ThreadPoolExecutor(max_workers=1) as worker, ExitStack() as clients:
+        with owned_mcp_supervisor(directory / "state", plan, clock=lambda: 100.0) as supervisor:
+            assert supervisor.check_transport() == generation
+            with supervisor.open_transport() as (_, transport):
                 with (
                     pytest.raises(HeinzelError, match="locator does not match"),
                     transport.admit(lambda _: stale),
                 ):
                     pytest.fail("The stale locator acquired a lease")
-            pending.settimeout(2)
-            pending.connect(os.fspath(endpoint))
-            result = worker.submit(_fake_dispatch, transport, generation, Event(), Event(), [])
+                with (
+                    pytest.raises(HeinzelError, match="already handed off or retired"),
+                    transport.admit(lambda _: generation),
+                ):
+                    pytest.fail("A refused descriptor was handed off again")
+            pending, pending_transport = clients.enter_context(supervisor.open_transport())
+            unclaimed, _ = clients.enter_context(supervisor.open_transport())
+            assert unclaimed.getsockname() == ""
+            assert not unclaimed.get_inheritable()
+            result = worker.submit(_fake_dispatch, pending_transport, generation, Event(), Event(), [])
             _pending(supervisor, 1)
         assert result.result(timeout=2) == "refused"
-        assert pending.recv(1) == b""
-        assert not endpoint.exists()
+        for client in (pending, unclaimed):
+            client.settimeout(2)
+            assert client.recv(1) == b""
         with pytest.raises(HeinzelError, match="no longer owns the registration"):
-            supervisor.check_endpoint()
-    with owned_mcp_supervisor(endpoint, directory / "state", plan, clock=lambda: 100.0) as restarted:
-        assert restarted.check_endpoint() == generation
-    assert not endpoint.exists()
+            supervisor.check_transport()
+    with owned_mcp_supervisor(directory / "state", plan, clock=lambda: 100.0) as restarted:
+        assert restarted.check_transport() == generation
 
 
-def _run_replaced_endpoint_fixture(directory):
+def _run_path_replacement_canaries(directory):
     generation = McpGeneration("fixture-registration", 3)
     plan = PrivateMcpPlan.capture(generation, "fixture-grant", 1, 2000.0, {})
-    endpoint = directory / "sock"
-    with socket.socket(socket.AF_UNIX) as replacement, ExitStack() as activation:
-        supervisor = activation.enter_context(
-            owned_mcp_supervisor(endpoint, directory / "state", plan, clock=lambda: 100.0)
-        )
-        endpoint.rename(directory / "old")
-        replacement.bind(os.fspath(endpoint))
-        endpoint.chmod(0o600)
-        replacement.listen()
-        replacement.settimeout(2)
-        identity = endpoint.stat().st_ino
-        with pytest.raises(HeinzelError, match="endpoint identity changed"):
-            supervisor.check_endpoint()
-        with pytest.raises(HeinzelError, match="socket changed before cleanup"):
-            activation.close()
-        assert endpoint.stat().st_ino == identity
-        with socket.socket(socket.AF_UNIX) as client:
-            client.connect(os.fspath(endpoint))
-            accepted, _ = replacement.accept()
-            accepted.close()
+    parent = directory / "owned"
+    parent.mkdir(mode=0o700)
+    endpoint = parent / "sock"
+    chmod = os.chmod
+    unlink = os.unlink
+    base_socket = socket.socket
+    paths = {os.fspath(endpoint), endpoint.name}
+
+    def is_endpoint(path):
+        return isinstance(path, (str, os.PathLike)) and os.fspath(path) in paths
+
+    def chmod_canary(path, *args, **kwargs):
+        if is_endpoint(path):
+            endpoint.rename(parent / "displaced")
+            endpoint.write_text("replacement file")
+            chmod(endpoint, 0o644)
+        return chmod(path, *args, **kwargs)
+
+    def unlink_canary(path, *args, **kwargs):
+        if is_endpoint(path):
+            endpoint.rename(parent / "displaced")
+            with base_socket(socket.AF_UNIX) as replacement:
+                replacement.bind(os.fspath(endpoint))
+        return unlink(path, *args, **kwargs)
+
+    class BindCanary(base_socket):
+        def bind(self, address):
+            if address in paths:
+                parent.rename(directory / "retained")
+                parent.mkdir(mode=0o700)
+            return super().bind(address)
+
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(os, "chmod", chmod_canary)
+        patcher.setattr(os, "unlink", unlink_canary)
+        patcher.setattr(socket, "socket", BindCanary)
+        with (
+            pytest.raises(HeinzelError, match="Named local MCP activation is unavailable"),
+            owned_mcp_supervisor(directory / "state", plan, endpoint_path=endpoint, clock=lambda: 100.0),
+        ):
+            pytest.fail("A pathname race reached activation")
+        assert not (directory / "retained").exists()
+        assert not endpoint.exists()
+        endpoint.write_text("original")
+        chmod(endpoint, 0o640)
+        with owned_mcp_supervisor(directory / "state", plan, clock=lambda: 100.0) as supervisor:
+            assert supervisor.check_transport() == generation
+            endpoint.rename(parent / "original")
+            endpoint.write_text("replacement")
+            chmod(endpoint, 0o644)
+        assert endpoint.read_text() == "replacement"
+        assert endpoint.stat().st_mode & 0o777 == 0o644
+        assert not (parent / "displaced").exists()
 
 
 @pytest.mark.parametrize(
@@ -494,7 +528,7 @@ def _run_replaced_endpoint_fixture(directory):
         ("_run_foreign_endpoint_fixture", ["live"]),
         ("_run_foreign_endpoint_fixture", ["stale"]),
         ("_run_stop_fixture", []),
-        ("_run_replaced_endpoint_fixture", []),
+        ("_run_path_replacement_canaries", []),
     ],
 )
 def test_owned_activation_refuses_unowned_sockets_and_retires_its_endpoint(tmp_path_factory, fixture, arguments):

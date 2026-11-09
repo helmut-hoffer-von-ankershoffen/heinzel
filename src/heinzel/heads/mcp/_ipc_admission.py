@@ -108,6 +108,53 @@ def _close_stream(connection: socket.socket) -> None:
     connection.close()
 
 
+@contextmanager
+def admit_owned_stream(
+    take: Callable[[], socket.socket],
+    verify: Callable[[], McpGeneration],
+    read_locator: Callable[[socket.socket], McpGeneration],
+    publish: Callable[[PendingMcpPeer], AbstractContextManager[PublishedMcpLease]],
+) -> Generator[PublishedMcpLease]:
+    """Verify a supervisor-owned connection and publish its lease before handing off the stream.
+
+    Raises:
+        HeinzelError: If the ownership, peer, locator or published lease fails verification.
+
+    Yields:
+        The exact active lease while the stream is owned by this handoff.
+    """
+    # Unwind the stream before the lease, even when an admission check fails.
+    with ExitStack() as leases, ExitStack() as streams:
+        with step(log, "mcp.ipc.admit_peer", operation="ipc", step="admit_peer"):
+            generation = verify()
+            connection = take()
+            streams.callback(_close_stream, connection)
+            require_owner_peer(connection, owner_uid=os.getuid())
+            verify()
+            try:
+                requested = read_locator(connection)
+            except (HeinzelError, OSError, ValueError):
+                msg = "Local MCP could not read the bootstrap locator"
+                raise HeinzelError(msg) from None
+            if requested != generation:
+                msg = "Local MCP locator does not match the supervised generation"
+                raise HeinzelError(msg)
+            _require_waiting_peer(connection)
+            pending = PendingMcpPeer(generation, connection)
+            try:
+                lease = leases.enter_context(publish(pending))
+            except (HeinzelError, OSError, ValueError):
+                msg = "Local MCP admission lease was not published"
+                raise HeinzelError(msg) from None
+            if not lease.id or lease.peer is not pending or lease.current_generation != generation:
+                msg = "Local MCP lease does not match the current generation and peer"
+                raise HeinzelError(msg)
+            verify()
+            _require_waiting_peer(connection)
+            lease.require_active()
+        yield lease
+
+
 class OwnedMcpEndpoint:
     """Keep the supervisor's original listener and its physical endpoint together."""
 
@@ -176,33 +223,9 @@ class OwnedMcpEndpoint:
         Yields:
             The published lease for the original stream, now ready for protocol handoff.
         """
-        # Unwind the stream before the lease, even when an admission check fails.
-        with ExitStack() as leases, ExitStack() as streams:
-            with step(log, "mcp.ipc.admit_peer", operation="ipc", step="admit_peer"):
-                self.verify_endpoint()
-                connection, _ = self._listener.accept()
-                streams.callback(_close_stream, connection)
-                require_owner_peer(connection, owner_uid=os.getuid())
-                self.verify_endpoint()
-                try:
-                    requested = read_locator(connection)
-                except (HeinzelError, OSError, ValueError):
-                    msg = "Local MCP could not read the bootstrap locator"
-                    raise HeinzelError(msg) from None
-                if requested != self._generation:
-                    msg = "Local MCP locator does not match the supervised generation"
-                    raise HeinzelError(msg)
-                _require_waiting_peer(connection)
-                pending = PendingMcpPeer(self._generation, connection)
-                try:
-                    lease = leases.enter_context(publish(pending))
-                except (HeinzelError, OSError, ValueError):
-                    msg = "Local MCP admission lease was not published"
-                    raise HeinzelError(msg) from None
-                if not lease.id or lease.peer is not pending or lease.current_generation != self._generation:
-                    msg = "Local MCP lease does not match the current generation and peer"
-                    raise HeinzelError(msg)
-                self.verify_endpoint()
-                _require_waiting_peer(connection)
-                lease.require_active()
+
+        def take() -> socket.socket:
+            return self._listener.accept()[0]
+
+        with admit_owned_stream(take, self.verify_endpoint, read_locator, publish) as lease:
             yield lease
