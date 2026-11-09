@@ -358,6 +358,10 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | Scaffold a plugin repository from the Heinzelmännchen template, asking for answers not given. | `hz system plugin new` | — | — | — | yes | expert |
 | Export the versioned plugin view SDK from this installation, without a core checkout. | `hz system plugin sdk` | — | — | — | yes | expert |
 | Find plugins to install: first-party ones, and community ones by querying the GitHub API. | `hz system plugin search` | `system_plugin_search` | — | `GET /api/system/plugin/search` |  | expert |
+| Set up a module's playbook without questions: its connectors, its settings, then the checklist. | `hz system plugin setup` | — | — | — | yes | expert |
+| List each connector a playbook needs, how it stands and the one next step, mostly your sign-ins. | `hz system plugin checklist` | `system_plugin_checklist` | — | `GET /api/system/plugin/checklist` |  | expert |
+| Write the connector bindings installed playbooks recommend; a binding you set is always kept. | `hz system plugin bind` | `system_plugin_bind` | — | `POST /api/system/plugin/bind` | yes | expert |
+| Undo the connector bindings setup wrote for a module; one you changed since stays as you set it. | `hz system plugin unbind` | `system_plugin_unbind` | — | `POST /api/system/plugin/unbind` | yes | expert |
 
 Settings: [`[system.plugin]`](CONFIGURATION.md#systemplugin).
 

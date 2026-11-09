@@ -98,7 +98,7 @@ entrypoints = [{{name="hz", install-path={str(binary / "hz")!r}}}]
         installed_version=None,
         warnings=[],
     )
-    monkeypatch.setattr(service, "candidate", lambda _: candidate)
+    monkeypatch.setattr(service, "candidate", lambda _spec, **_options: candidate)
     monkeypatch.setattr(service, "_git_environment", dict)
 
     def changed(action, distribution, requested):

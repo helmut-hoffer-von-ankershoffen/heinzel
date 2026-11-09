@@ -104,9 +104,24 @@ recommends-plugins = ["heinzel-google"]
 
 Entries are plugin names with an optional version range, never a URL: `hz system plugin add` says before it starts
 which required plugins it installs too, reads each from the plugin catalog (first-party, or your own GitHub owner),
-installs them first, one step each, and only offers the recommended ones. `hz system plugin repair`, which the
-automatic updater runs once per plugin version, installs required plugins an installation lacks. Neither signs in:
-your `hz system doctor` checks keep naming the sign-in step.
+installs them first, one step each, and installs the recommended ones too (`--no-with-recommended` only offers
+them). `hz system plugin repair`, which the automatic updater runs once per plugin version, installs required plugins
+an installation lacks. Neither signs in: your `hz system doctor` checks keep naming the sign-in step.
+
+A company plugin's playbook `defaults` that recommend connectors (`{"capabilities.tracker": "atlassian"}`) are written
+when it is installed (ADR 0145), if the plugin declares a layer (`module.layer(...)`): the add's last step, `bind`,
+sets each recommended binding whose connector is installed and keeps every binding the person set, or undid; layers
+that disagree bind nothing. Any other plugin's playbook binds only when the person asks (`hz system plugin bind`). `--no-bind` skips it,
+`hz system plugin unbind <module>` undoes it, `hz system plugin setup <module>` sets up a plugin installed
+earlier without a terminal, and `hz system plugin checklist --module <module>` lists what is left: one row per
+connector with its one next action, mostly the person's own sign-ins.
+
+To prove a company plugin on a clean profile, run `scripts/acme_setup_e2e.py --hz <hz>`: it adds `acme` from the
+plugin catalog under a throwaway HOME (never your live profile) and asserts `heinzel-github` and `heinzel-atlassian`
+came with it. With `--with-bindings` it puts fake `gh`, `acli` and `gws` first on PATH, asserts the six
+bindings, a checklist of sign-in rows only and a done checklist after the fake sign-ins, and that a binding set before
+stays yours. It signs in nowhere. Those steps are yours, once: `gh auth login` and `acli jira auth login --web`
+(then `acli confluence auth login --web` if you use Confluence); `hz system doctor` names whichever is still open.
 
 To prove a company plugin on a clean profile, run `scripts/acme_setup_e2e.py --hz <hz>`: it adds `acme` from the
 plugin catalog under a throwaway HOME (never your live profile) and asserts `heinzel-github` and `heinzel-atlassian`

@@ -5,12 +5,17 @@
 # ///
 """ACME setup end to end on an ISOLATED profile: add `acme` from the catalog, assert GitHub and Atlassian come too.
 
-Usage: scripts/acme_setup_e2e.py --hz /path/to/hz [--keep]
+Usage: scripts/acme_setup_e2e.py --hz /path/to/hz [--keep] [--with-bindings]
 
 Needs an `hz` whose core carries plugin dependency installs and a catalog `acme` whose pyproject declares
 `requires-plugins`. Everything happens under a throwaway HOME (state, config, uv tool store, logs); the live profile
 and its daemon are never read or touched. It signs in nowhere: `gh auth login` and `acli jira auth login --web` are
 the owner's steps, which the script prints at the end.
+
+`--with-bindings` (ADR 0145) also proves "install ACME and everything is set up": fake `gh`, `acli` and `gws`
+(tests/fixtures/connectors/fake_clis) go first on PATH; the add installs the recommended connectors too and writes
+ACME's six bindings; the checklist then holds only the person's own sign-in rows; after the fake sign-ins and the
+Jira site it is done. A second throwaway profile proves that a binding the person set before stays theirs.
 """
 
 from __future__ import annotations
@@ -31,6 +36,18 @@ LOG = logging.getLogger("acme_setup_e2e")
 EXPECTED = ("heinzel-github", "heinzel-atlassian", "heinzel-acme")
 OWNER_STEPS = ("gh auth login", "acli jira auth login --web")
 LIVE_MARKERS = ("Application Support/hz", ".local/share/hz")
+FAKE_CLIS = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "connectors" / "fake_clis"
+EXPECTED_WITH_RECOMMENDED = (*EXPECTED, "heinzel-google", "heinzel-zoom")
+ACME_BINDINGS = {
+    "code-host": "github",
+    "tracker": "atlassian",
+    "documents": "google",
+    "calendar": "google",
+    "mail": "google",
+    "meetings": "zoom",
+}
+FAKE_SIGN_INS = (("gh", "auth", "login"), ("acli", "jira", "auth", "login", "--web"), ("gws", "auth", "login"))
+FAKE_SITE = ("system", "config", "set", "atlassian.site_url", "https://fake-acme.atlassian.net")
 
 
 class SetupError(Exception):
@@ -152,22 +169,138 @@ def prove(hz: str, env: dict[str, str]) -> None:
         raise SetupError(message, str(absent))
 
 
+def run_object(hz: str, env: dict[str, str], *args: str) -> dict:
+    """`run_hz` for a command that answers one JSON object.
+
+    Raises:
+        SetupError: when it answers anything else.
+    """
+    answer = run_hz(hz, env, *args)
+    if not isinstance(answer, dict):
+        message = f"hz {' '.join(args)} did not answer an object"
+        raise SetupError(message, str(answer)[:200])
+    return answer
+
+
+def binding_states(change: dict) -> dict[str, tuple[str, str | None]]:
+    """Capability -> (state, adapter) from a confirmed add's `bindings`."""
+    return {b["capability"]: (b["state"], b.get("adapter")) for b in change.get("bindings", [])}
+
+
+def wrong_bindings(change: dict, expected: dict[str, str], kept: dict[str, str] | None = None) -> list[str]:
+    """What differs from `expected` written bindings, `kept` ones naming the person's adapter in their reason."""
+    kept = kept or {}
+    states = binding_states(change)
+    problems = [
+        f"{capability}: {states.get(capability)}"
+        for capability, adapter in expected.items()
+        if capability not in kept and states.get(capability) != ("written", adapter)
+    ]
+    reasons = {b["capability"]: b.get("reason", "") for b in change.get("bindings", [])}
+    problems += [
+        f"{capability} not kept as {theirs}: {states.get(capability)} {reasons.get(capability)}"
+        for capability, theirs in kept.items()
+        if states.get(capability, ("",))[0] != "kept" or theirs not in reasons.get(capability, "")
+    ]
+    return problems
+
+
+def not_owner_only(checklist: dict) -> list[str]:
+    """Checklist rows still open that the person isn't the only one able to do: setup should have done them."""
+    return [
+        f"{row['connector']}: {row['state']} ({row['line']})"
+        for row in checklist.get("rows", [])
+        if row["state"] != "connected" and not row["owner_only"]
+    ]
+
+
+def open_rows(checklist: dict) -> list[str]:
+    """The connectors of the checklist that aren't connected yet."""
+    return [row["connector"] for row in checklist.get("rows", []) if row["state"] != "connected"]
+
+
+def with_fakes(env: dict[str, str]) -> dict[str, str]:
+    """`env` with the fake vendor CLIs first on PATH.
+
+    Raises:
+        SetupError: when the fixtures are missing.
+    """
+    if not all((FAKE_CLIS / name).is_file() for name in ("gh", "acli", "gws")):
+        message = "fake vendor CLIs are missing"
+        raise SetupError(message, str(FAKE_CLIS))
+    return {**env, "PATH": f"{FAKE_CLIS}{os.pathsep}{env.get('PATH', '')}"}
+
+
+def prove_bindings(hz: str, env: dict[str, str]) -> None:
+    """Install ACME with its recommended connectors: bindings set, only sign-ins left, then green after them.
+
+    Raises:
+        SetupError: when a binding, a checklist row or the sign-in result is not what ADR 0145 promises.
+    """
+    change = run_object(hz, env, "system", "plugin", "add", "acme", "--confirm")
+    absent = missing(run_hz(hz, env, "system", "plugin", "list"), EXPECTED_WITH_RECOMMENDED)
+    if absent:
+        message = "the recommended connectors did not come with acme"
+        raise SetupError(message, str(absent))
+    if problems := wrong_bindings(change, ACME_BINDINGS):
+        message = "the add did not write ACME's bindings"
+        raise SetupError(message, "; ".join(problems))
+    checklist = run_object(hz, env, "system", "plugin", "checklist", "--module", "acme")
+    if leftovers := not_owner_only(checklist):
+        message = "setup left work that isn't the person's own"
+        raise SetupError(message, "; ".join(leftovers))
+    for command in FAKE_SIGN_INS:
+        subprocess.run(list(command), env=env, check=True, capture_output=True, timeout=60)  # noqa: S603 - the fakes
+    run_hz(hz, env, *FAKE_SITE)
+    checklist = run_object(hz, env, "system", "plugin", "checklist", "--module", "acme")
+    if not checklist.get("done"):
+        message = "still open after the sign-ins"
+        raise SetupError(message, str(open_rows(checklist)))
+
+
+def prove_person_wins(hz: str, env: dict[str, str]) -> None:
+    """A tracker binding the person set before ACME stays theirs.
+
+    Raises:
+        SetupError: when the add changed it.
+    """
+    run_hz(hz, env, "system", "plugin", "add", "github", "--confirm")
+    run_hz(hz, env, "system", "config", "set", "capabilities.tracker", "github")
+    change = run_object(hz, env, "system", "plugin", "add", "acme", "--confirm")
+    if problems := wrong_bindings(change, {"tracker": "atlassian"}, kept={"tracker": "github"}):
+        message = "the person's binding did not win"
+        raise SetupError(message, "; ".join(problems))
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the proof on a throwaway profile and print the owner-only steps."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--hz", required=True, help="path to the hz executable under test")
     parser.add_argument("--keep", action="store_true", help="keep the throwaway profile for inspection")
+    parser.add_argument(
+        "--with-bindings", action="store_true", help="also prove bindings, the checklist and fake sign-ins (ADR 0145)"
+    )
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    home = Path(tempfile.mkdtemp(prefix="hz-acme-e2e-"))
+    homes = [Path(tempfile.mkdtemp(prefix="hz-acme-e2e-"))]
     try:
-        prove(executable(args.hz), isolated_env(home))
+        hz = executable(args.hz)
+        if args.with_bindings:
+            prove_bindings(hz, with_fakes(isolated_env(homes[0])))
+            homes.append(Path(tempfile.mkdtemp(prefix="hz-acme-e2e-")))
+            prove_person_wins(hz, with_fakes(isolated_env(homes[1])))
+        else:
+            prove(hz, isolated_env(homes[0]))
     except SetupError as error:
         print(f"FAIL: {error}", file=sys.stderr)
         return 1
     finally:
         if not args.keep:
-            shutil.rmtree(home, ignore_errors=True)
+            for home in homes:
+                shutil.rmtree(home, ignore_errors=True)
+    if args.with_bindings:
+        print("OK: ACME set up its six bindings; after the fake sign-ins the checklist is done; yours stayed yours.")
+        return 0
     print("OK: heinzel-acme brought heinzel-github and heinzel-atlassian.")
     print("Owner-only next steps (the script never signs in): " + "; ".join(OWNER_STEPS))
     return 0

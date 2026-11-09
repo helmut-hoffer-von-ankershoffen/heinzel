@@ -3186,6 +3186,8 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `add`: (expert) Show what a plugin would install,...
+* `bind`: (expert) Write the connector bindings...
+* `checklist`: (expert) List each connector a playbook...
 * `develop`: (expert) Add the plugin in a directory on...
 * `disable`: (expert) Switch a plugin off without...
 * `docs`: (expert) Document installed plugins: what...
@@ -3199,6 +3201,8 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `repair`: (expert) Install every plugin an installed...
 * `sdk`: (expert) Export the versioned plugin view...
 * `search`: (expert) Find plugins to install:...
+* `setup`: (expert) Set up a module&#x27;s playbook...
+* `unbind`: (expert) Undo the connector bindings setup...
 
 #### `hz system plugin add`
 
@@ -3218,6 +3222,48 @@ $ hz system plugin add [OPTIONS] {spec}
 
 * `--confirm / --no-confirm`: Install it. Without it, nothing is installed: the answer shows the source, version and publisher to confirm first, because a plugin runs with your rights.  [default: no-confirm]
 * `--operation-id <str>`: Opaque receipt returned by a preview; confirms that exact candidate only once.
+* `--with-recommended / --no-with-recommended`: Also install the plugins it recommends (its connectors). Off: they are only offered. Decided by the preview: a receipt installs what its preview showed.  [default: with-recommended]
+* `--bind / --no-bind`: After installing, set the connector bindings its playbooks recommend; a binding you set is always kept, and `hz system plugin unbind &lt;module&gt;` undoes them.  [default: bind]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin bind`
+
+(expert) Write the connector bindings installed playbooks recommend; a binding you set is always kept.
+
+**Usage**:
+
+```console
+$ hz system plugin bind [OPTIONS]
+```
+
+**Options**:
+
+* `--plugin <str>`: Only the playbooks of this plugin distribution; repeat for each. Every plugin&#x27;s if omitted.
+* `--module <str>`: Only this module&#x27;s playbook.
+* `--operation-id <str>`: The plugin operation that installed it, remembered with each binding.
+* `--once / --no-once`: Consider each playbook once per version of its plugin, as an automatic repair does.  [default: no-once]
+* `--decline / --no-decline`: Write nothing; remember the playbooks as considered, so a repair leaves them.  [default: no-decline]
+* `--dry-run / --no-dry-run`: Say what it would write; write nothing.  [default: no-dry-run]
+* `--automatic / --no-automatic`: As an install or a repair asks: only company, org, site or team plugins bind, and never a binding you undid.  [default: no-automatic]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin checklist`
+
+(expert) List each connector a playbook needs, how it stands and the one next step, mostly your sign-ins.
+
+**Usage**:
+
+```console
+$ hz system plugin checklist [OPTIONS]
+```
+
+**Options**:
+
+* `--module <str>`: The module whose playbook it is; every installed playbook&#x27;s if omitted.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -3508,6 +3554,47 @@ $ hz system plugin search [OPTIONS]
 
 * `--text <str>`: Words that name or describe the plugin, e.g. `calendar`; sent to GitHub&#x27;s search. All plugins if omitted.
 * `--refresh / --no-refresh`: Ask GitHub again instead of using the answer kept for the last minute.  [default: no-refresh]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin setup`
+
+(expert) Set up a module&#x27;s playbook without questions: its connectors, its settings, then the checklist.
+
+**Usage**:
+
+```console
+$ hz system plugin setup [OPTIONS] {module}
+```
+
+**Arguments**:
+
+* `module`: The module whose playbook to set up, e.g. `acme`.  [required]
+
+**Options**:
+
+* `--answer <str>`: A playbook setting to accept, as `key=value` (the value as JSON, else text), e.g. `acme.region=lisbon`; repeat for each.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin unbind`
+
+(expert) Undo the connector bindings setup wrote for a module; one you changed since stays as you set it.
+
+**Usage**:
+
+```console
+$ hz system plugin unbind [OPTIONS] {by}
+```
+
+**Arguments**:
+
+* `by`: The module whose recommended bindings to remove, e.g. `acme`.  [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

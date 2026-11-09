@@ -1440,6 +1440,59 @@
         "title": "BackendBinding",
         "type": "object"
       },
+      "BindingResult": {
+        "description": "One capability a playbook recommends a connector for, and what setup did about it.",
+        "properties": {
+          "adapter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The connector recommended; none for a conflict between layers.",
+            "title": "Adapter"
+          },
+          "by": {
+            "description": "The module whose playbook recommends it, e.g. `acme`.",
+            "title": "By",
+            "type": "string"
+          },
+          "capability": {
+            "description": "The capability, e.g. `tracker`.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "description": "Why, in a few words, e.g. `yours: github` for a kept binding.",
+            "title": "Reason",
+            "type": "string"
+          },
+          "state": {
+            "description": "What setup did: written, kept, skipped, conflict or removed.",
+            "enum": [
+              "written",
+              "kept",
+              "skipped",
+              "conflict",
+              "removed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "adapter",
+          "state",
+          "by"
+        ],
+        "title": "BindingResult",
+        "type": "object"
+      },
       "CalendarReminderStatus": {
         "description": "Whether calendar reads are enabled and what the supervisor reports.",
         "properties": {
@@ -3486,6 +3539,29 @@
       "Check": {
         "description": "The outcome of one health check. Anything but UP must say what is wrong.",
         "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckAction"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The one action that fixes it, as data; left out if none."
+          },
+          "cause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The cause in a few words, e.g. `Nobody serves mail`, so heads group checks by cause; left out if none.",
+            "title": "Cause"
+          },
           "detail": {
             "default": "",
             "description": "What was found; required unless UP.",
@@ -3526,6 +3602,70 @@
         "title": "Check",
         "type": "object"
       },
+      "CheckAction": {
+        "description": "The one thing to do about a check, as data a head turns into its own button (ADR 0145).\n\nA web head never shows `command`: it is the same action for a terminal, where `hz system doctor` prints it.",
+        "properties": {
+          "adapter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For `bind`: the connector recommended or the only one installed, if any.",
+            "title": "Adapter"
+          },
+          "capability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For `bind`: the capability to choose a connector for.",
+            "title": "Capability"
+          },
+          "command": {
+            "default": "",
+            "description": "The same action as a command line, for a terminal only.",
+            "title": "Command",
+            "type": "string"
+          },
+          "connector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For `sign-in`, `install` and `settings`: the connector or plugin it is about.",
+            "title": "Connector"
+          },
+          "kind": {
+            "description": "What the action does.",
+            "enum": [
+              "bind",
+              "sign-in",
+              "install",
+              "settings",
+              "check"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "CheckAction",
+        "type": "object"
+      },
       "CheckReport": {
         "description": "`hz heinzel check`: every contract checked and every problem found.",
         "properties": {
@@ -3560,6 +3700,102 @@
           "diagnostics"
         ],
         "title": "CheckReport",
+        "type": "object"
+      },
+      "Checklist": {
+        "description": "What is still to do so a company's playbook is fully set up: one row per connector it names.",
+        "properties": {
+          "done": {
+            "description": "Whether every row is connected.",
+            "title": "Done",
+            "type": "boolean"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The module whose playbook it is; none for every playbook installed.",
+            "title": "Module"
+          },
+          "rows": {
+            "description": "One row per connector, in the order the playbook names them.",
+            "items": {
+              "$ref": "#/components/schemas/ChecklistRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "module",
+          "rows",
+          "done"
+        ],
+        "title": "Checklist",
+        "type": "object"
+      },
+      "ChecklistRow": {
+        "description": "One connector a company's playbook needs, how it stands, and the one next action.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/RowAction",
+            "description": "The one next action."
+          },
+          "capabilities": {
+            "description": "What the playbook has it serve, e.g. `tracker`, `documents`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "connector": {
+            "description": "The connector (adapter) name, e.g. `atlassian`.",
+            "title": "Connector",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable id of the row, `<module>:<connector>`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "line": {
+            "description": "One status line, state first, at most 60 characters.",
+            "title": "Line",
+            "type": "string"
+          },
+          "owner_only": {
+            "description": "Whether only the person can do it (a sign-in or a site of their own); setup does everything else.",
+            "title": "Owner Only",
+            "type": "boolean"
+          },
+          "state": {
+            "description": "not-installed, not-connected, needs-attention or connected.",
+            "enum": [
+              "not-installed",
+              "not-connected",
+              "needs-attention",
+              "connected"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "connector",
+          "capabilities",
+          "state",
+          "line",
+          "action",
+          "owner_only"
+        ],
+        "title": "ChecklistRow",
         "type": "object"
       },
       "ClaudeScan": {
@@ -10775,6 +11011,58 @@
         "title": "PlaybookView",
         "type": "object"
       },
+      "PluginBinding": {
+        "description": "A connector binding an installed playbook recommends, and what the add did about it (ADR 0145).",
+        "properties": {
+          "adapter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The connector recommended; none for a conflict between layers.",
+            "title": "Adapter"
+          },
+          "by": {
+            "description": "The module whose playbook recommends it, e.g. `acme`.",
+            "title": "By",
+            "type": "string"
+          },
+          "capability": {
+            "description": "The capability, e.g. `tracker`.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "description": "Why, in a few words, e.g. `yours: github`.",
+            "title": "Reason",
+            "type": "string"
+          },
+          "state": {
+            "description": "written now; kept as you set it; skipped (connector not installed, or `--no-bind`); conflict.",
+            "enum": [
+              "written",
+              "kept",
+              "skipped",
+              "conflict"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "adapter",
+          "state",
+          "by"
+        ],
+        "title": "PluginBinding",
+        "type": "object"
+      },
       "PluginCandidate": {
         "description": "What `hz system plugin add` would install: the code, where it comes from and who publishes it.",
         "properties": {
@@ -10941,6 +11229,14 @@
             ],
             "title": "Action",
             "type": "string"
+          },
+          "bindings": {
+            "description": "For a confirmed add: the connector bindings its playbooks recommend, with what the add did; `hz system plugin unbind <module>` undoes those it wrote.",
+            "items": {
+              "$ref": "#/components/schemas/PluginBinding"
+            },
+            "title": "Bindings",
+            "type": "array"
           },
           "candidate": {
             "anyOf": [
@@ -11427,7 +11723,7 @@
             "type": "string"
           },
           "required": {
-            "description": "Whether it is required (installed first) or only recommended (offered).",
+            "description": "Whether it is required (installed first) or only recommended: installed too unless the add is asked not to (`with_recommended`), then offered.",
             "title": "Required",
             "type": "boolean"
           },
@@ -11779,6 +12075,14 @@
       "PluginRepair": {
         "description": "What a repair of the installed plugins' requirements found and did, one entry per missing plugin.",
         "properties": {
+          "bindings": {
+            "description": "The connector bindings installed playbooks recommend that the repair wrote, once per version.",
+            "items": {
+              "$ref": "#/components/schemas/PluginBinding"
+            },
+            "title": "Bindings",
+            "type": "array"
+          },
           "message": {
             "description": "One line: what was repaired, or that nothing needed it.",
             "title": "Message",
@@ -13495,6 +13799,52 @@
         "title": "RollingWindowPolicy",
         "type": "object"
       },
+      "RowAction": {
+        "description": "The one thing to do next about a checklist row, as data a head turns into its own button.",
+        "properties": {
+          "capability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For `bind`: the capability to serve.",
+            "title": "Capability"
+          },
+          "command": {
+            "default": "",
+            "description": "The same action as a command line, for a terminal only.",
+            "title": "Command",
+            "type": "string"
+          },
+          "connector": {
+            "description": "The connector it is about, e.g. `github`.",
+            "title": "Connector",
+            "type": "string"
+          },
+          "kind": {
+            "description": "What it does: install, sign in, bind, open settings or check again.",
+            "enum": [
+              "install",
+              "sign-in",
+              "bind",
+              "settings",
+              "check"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "connector"
+        ],
+        "title": "RowAction",
+        "type": "object"
+      },
       "RunCommand": {
         "additionalProperties": false,
         "description": "Open the terminal with an `hz` command.",
@@ -14935,6 +15285,30 @@
           "message"
         ],
         "title": "SettingRevealed",
+        "type": "object"
+      },
+      "SetupBind": {
+        "description": "The bindings one setup wrote, kept or skipped; an undo lists those it removed.",
+        "properties": {
+          "bindings": {
+            "description": "Each recommended binding with its result, in playbook order.",
+            "items": {
+              "$ref": "#/components/schemas/BindingResult"
+            },
+            "title": "Bindings",
+            "type": "array"
+          },
+          "message": {
+            "description": "One line for a person: how many were set and kept.",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bindings",
+          "message"
+        ],
+        "title": "SetupBind",
         "type": "object"
       },
       "SetupDoc": {
@@ -28057,6 +28431,30 @@
               "description": "Opaque receipt returned by a preview; confirms that exact candidate only once.",
               "title": "Operation Id"
             }
+          },
+          {
+            "description": "Also install the plugins it recommends (its connectors). Off: they are only offered. Decided by the preview: a receipt installs what its preview showed.",
+            "in": "query",
+            "name": "with_recommended",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Also install the plugins it recommends (its connectors). Off: they are only offered. Decided by the preview: a receipt installs what its preview showed.",
+              "title": "With Recommended",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "After installing, set the connector bindings its playbooks recommend; a binding you set is always kept, and `hz system plugin unbind <module>` undoes them.",
+            "in": "query",
+            "name": "bind",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "After installing, set the connector bindings its playbooks recommend; a binding you set is always kept, and `hz system plugin unbind <module>` undoes them.",
+              "title": "Bind",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -28082,6 +28480,197 @@
           }
         },
         "summary": "Show what a plugin would install, then add it with `--confirm`; adding it again replaces it.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/bind": {
+      "post": {
+        "description": "Write the connector bindings installed playbooks recommend; a binding you set is always kept.\n\n`hz system plugin add` runs it after an install. A recommendation for a connector that isn't installed is skipped,\nand layers that disagree bind nothing until you choose.",
+        "operationId": "system_plugin_bind",
+        "parameters": [
+          {
+            "description": "Only the playbooks of this plugin distribution; repeat for each. Every plugin's if omitted.",
+            "in": "query",
+            "name": "plugin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only the playbooks of this plugin distribution; repeat for each. Every plugin's if omitted.",
+              "title": "Plugin"
+            }
+          },
+          {
+            "description": "Only this module's playbook.",
+            "in": "query",
+            "name": "module",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this module's playbook.",
+              "title": "Module"
+            }
+          },
+          {
+            "description": "The plugin operation that installed it, remembered with each binding.",
+            "in": "query",
+            "name": "operation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The plugin operation that installed it, remembered with each binding.",
+              "title": "Operation Id"
+            }
+          },
+          {
+            "description": "Consider each playbook once per version of its plugin, as an automatic repair does.",
+            "in": "query",
+            "name": "once",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Consider each playbook once per version of its plugin, as an automatic repair does.",
+              "title": "Once",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Write nothing; remember the playbooks as considered, so a repair leaves them.",
+            "in": "query",
+            "name": "decline",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Write nothing; remember the playbooks as considered, so a repair leaves them.",
+              "title": "Decline",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Say what it would write; write nothing.",
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Say what it would write; write nothing.",
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "As an install or a repair asks: only company, org, site or team plugins bind, and never a binding you undid.",
+            "in": "query",
+            "name": "automatic",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "As an install or a repair asks: only company, org, site or team plugins bind, and never a binding you undid.",
+              "title": "Automatic",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupBind"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Write the connector bindings installed playbooks recommend; a binding you set is always kept.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/checklist": {
+      "get": {
+        "description": "List each connector a playbook needs, how it stands and the one next step, mostly your sign-ins.",
+        "operationId": "system_plugin_checklist",
+        "parameters": [
+          {
+            "description": "The module whose playbook it is; every installed playbook's if omitted.",
+            "in": "query",
+            "name": "module",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The module whose playbook it is; every installed playbook's if omitted.",
+              "title": "Module"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Checklist"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List each connector a playbook needs, how it stands and the one next step, mostly your sign-ins.",
         "tags": [
           "system"
         ]
@@ -28541,6 +29130,51 @@
           }
         },
         "summary": "Find plugins to install: first-party ones, and community ones by querying the GitHub API.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/unbind": {
+      "post": {
+        "description": "Undo the connector bindings setup wrote for a module; one you changed since stays as you set it.",
+        "operationId": "system_plugin_unbind",
+        "parameters": [
+          {
+            "description": "The module whose recommended bindings to remove, e.g. `acme`.",
+            "in": "query",
+            "name": "by",
+            "required": true,
+            "schema": {
+              "description": "The module whose recommended bindings to remove, e.g. `acme`.",
+              "title": "By",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupBind"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo the connector bindings setup wrote for a module; one you changed since stays as you set it.",
         "tags": [
           "system"
         ]

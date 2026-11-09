@@ -5,7 +5,15 @@ from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 
-from heinzel.modules.system.plugin._models import PluginChange, PluginInfo, PluginNeed, PluginRepair, PluginSearch
+from heinzel.modules.system.plugin._models import (
+    PluginBinding,
+    PluginChange,
+    PluginInfo,
+    PluginNeed,
+    PluginRepair,
+    PluginSearch,
+)
+from heinzel.modules.system.plugin._setup_models import Checklist, SetupBind, SetupResult
 
 RIGHTS = (
     "Plugins run with your rights. Community plugins are not reviewed by the Heinzelmännchen maintainers; "
@@ -109,6 +117,7 @@ def render_change(change: PluginChange) -> RenderableType:
         parts.append(Text(f"✓ Installed {change.distribution or 'the plugin'}{version}.", style="green"))
         parts.append(Text("Open hz and click Restart and apply in the footer, or restart hz ui, to load it."))
         parts.extend(Text(line) for line in _brings(change))
+        parts.extend(_binding_lines(change.bindings))
     else:
         parts.append(Text(f"✓ {done[change.action]} {change.distribution or 'the plugin'}.", style="green"))
         if change.restart_required:
@@ -119,7 +128,32 @@ def render_change(change: PluginChange) -> RenderableType:
 
 def render_repair(repair: PluginRepair) -> RenderableType:
     """Each required plugin a repair installed, updated or couldn't install, then what it means."""
-    return Group(*_need_lines(repair.needs), Text(repair.message, style="bold"))
+    return Group(*_need_lines(repair.needs), *_binding_lines(repair.bindings), Text(repair.message, style="bold"))
+
+
+def _binding_lines(bindings: list[PluginBinding]) -> list[Text]:
+    """One line per recommended connector binding, with what the add did, and how to undo those it set."""
+    lines: list[Text] = []
+    for binding in bindings:
+        if binding.state == "written":
+            lines.append(
+                Text(f"✓ {binding.capability} → {binding.adapter}, as {binding.by} recommends.", style="green")
+            )
+        elif binding.state == "kept":
+            lines.append(
+                Text(
+                    f"Kept {binding.capability} ({binding.reason}); {binding.by} recommends {binding.adapter}.",
+                    style="dim",
+                )
+            )
+        elif binding.state == "conflict":
+            lines.append(Text(f"Choose who serves {binding.capability}: {binding.reason}.", style="yellow"))
+        else:
+            lines.append(Text(f"{binding.capability} → {binding.adapter}: not set ({binding.reason}).", style="dim"))
+    for by in dict.fromkeys(b.by for b in bindings if b.state == "written"):
+        lines.append(Text(f"Undo with: hz system plugin unbind {by}", style="dim"))
+        lines.append(Text(f"What is still yours to do: hz system plugin checklist --module {by}", style="dim"))
+    return lines
 
 
 def _need_lines(needs: list[PluginNeed]) -> list[Text]:
@@ -128,8 +162,9 @@ def _need_lines(needs: list[PluginNeed]) -> list[Text]:
     for need in needs:
         version = f" {need.version}" if need.version else ""
         if need.state in {"installed", "updated"}:
+            verb = "needs" if need.required else "recommends"
             text, style = (
-                f"✓ {need.state.capitalize()} {need.distribution}{version}, which {need.needed_by} needs.",
+                f"✓ {need.state.capitalize()} {need.distribution}{version}, which {need.needed_by} {verb}.",
                 "green",
             )
         elif need.state == "present":
@@ -158,3 +193,49 @@ def _brings(change: PluginChange) -> list[str]:
         lines.append(f"Adds commands: hz {info.name} --help")
     lines.extend(f"Adds the integration {capability}." for capability in info.capabilities)
     return lines
+
+
+MARKS = {
+    "connected": "[green]●[/green]",
+    "needs-attention": "[yellow]◐[/yellow]",
+    "not-connected": "○",
+    "not-installed": "○",
+}
+
+
+def render_bind(result: SetupBind) -> RenderableType:
+    """Each recommended binding with what setup did, then the one line."""
+    table = Table(title="Connector bindings")
+    for column in ("Capability", "Connector", "Result", "Why", "Recommended by"):
+        table.add_column(column, overflow="fold")
+    for binding in result.bindings:
+        table.add_row(
+            binding.capability, Text(binding.adapter or "-"), binding.state, Text(binding.reason), Text(binding.by)
+        )
+    return Group(table, Text(result.message))
+
+
+def render_checklist(checklist: Checklist) -> RenderableType:
+    """One row per connector: its state, its line and the command a terminal runs next."""
+    title = f"Finish setting up {checklist.module}" if checklist.module else "Finish setting up"
+    if checklist.done:
+        return Text(f"{checklist.module or 'Everything'} is set up.")
+    table = Table(title=title)
+    for column in ("", "Connector", "Status", "Next", "Yours"):
+        table.add_column(column, overflow="fold")
+    for row in checklist.rows:
+        command = row.action.command if row.state != "connected" else ""
+        table.add_row(
+            MARKS[row.state], Text(row.connector), Text(row.line), Text(command), "yes" if row.owner_only else ""
+        )
+    return table
+
+
+def render_result(result: SetupResult) -> RenderableType:
+    """The steps, the bindings and the checklist."""
+    steps = Table(title=f"Setting up {result.module}")
+    for column in ("Step", "Result", "Detail"):
+        steps.add_column(column, overflow="fold")
+    for item in result.steps:
+        steps.add_row(item.name, item.state, Text(item.detail))
+    return Group(steps, render_checklist(result.checklist))
