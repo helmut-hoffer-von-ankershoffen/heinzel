@@ -77,15 +77,24 @@ class ProtectedObserverInstall:
     update_lock_identity: tuple[int, int] = field(repr=False)
 
     @property
+    def control_digest(self) -> str:
+        """Bind compiled launcher configuration without requiring the launcher's own hash in its build."""
+        return arguments_hash(
+            {
+                "client": self.client.value,
+                "vendor": [str(self.vendor.path), self.vendor.sha256],
+                "policy": [str(self.policy.path), self.policy.sha256],
+                "dependencies": [[str(item.path), item.sha256] for item in self.dependencies],
+            }
+        )
+
+    @property
     def digest(self) -> str:
         """Bind every protocol exchange to the exact provisioned package and client."""
         return arguments_hash(
             {
-                "client": self.client.value,
+                "control": self.control_digest,
                 "observer": [str(self.observer.path), self.observer.sha256],
-                "vendor": [str(self.vendor.path), self.vendor.sha256],
-                "policy": [str(self.policy.path), self.policy.sha256],
-                "dependencies": [[str(item.path), item.sha256] for item in self.dependencies],
                 "update_lock": str(self.update_lock),
                 "update_lock_identity": list(self.update_lock_identity),
             }

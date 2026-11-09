@@ -62,12 +62,16 @@ class ProtectedNativeObservation:
                 "operation": "inspect",
                 "challenge": secrets.token_hex(32),
                 "installation": self.installation.digest,
+                "control": self.installation.control_digest,
                 "client": context.client.value,
                 "home": str(context.home),
                 "workspace": str(context.workspace),
                 "server": binding.name,
             }
-            encoded = json.dumps(request, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode() + b"\n"
+            encoded = (
+                json.dumps(request, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":")).encode()
+                + b"\n"
+            )
             if len(encoded) > _MAX_REQUEST:
                 raise HeinzelError(_REFUSED)
             with self.installation.admitted():

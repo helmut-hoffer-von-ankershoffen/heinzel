@@ -192,6 +192,7 @@ def _request(context):
         "operation": "inspect",
         "challenge": "fixture nonce",
         "installation": "fixture install",
+        "control": "fixture control",
         "client": context.client.value,
         "home": str(context.home),
         "workspace": str(context.workspace),
@@ -273,6 +274,8 @@ def test_bounded_probe_passes_only_read_only_args_and_a_fresh_challenge(protecte
         request = json.loads(encoded)
         assert request.keys() == _request(context).keys()
         assert request["installation"] == protected.digest
+        assert request["control"] == protected.control_digest
+        assert list(request) == sorted(request)
         assert request["server"] == binding.name
         assert request["operation"] == "inspect"
         callbacks.append(request["challenge"])
