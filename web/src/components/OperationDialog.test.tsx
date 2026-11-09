@@ -4,7 +4,14 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { daemonStatusKey } from "@/api/daemon";
 import { DAEMON_INSTALL, DAEMON_RESTART, DAEMON_UNINSTALL } from "@/lib/operationCalls";
-import { dismissOperation, requestOperation, trackOperation } from "@/lib/operationRun";
+import {
+  dismissOperation,
+  type Phase,
+  requestDrivenOperation,
+  requestOperation,
+  trackOperation,
+} from "@/lib/operationRun";
+import { NeedsAttention } from "@/lifecycle/applySteps";
 import { expectAccessible } from "@/test/render";
 import { OperationDialog } from "./OperationDialog";
 
@@ -70,7 +77,7 @@ describe("OperationDialog", () => {
     const { fetchMock } = liveStream();
     const { container } = mount();
     act(() => requestOperation(DAEMON_INSTALL));
-    const dialog = await screen.findByRole("alertdialog", {
+    const dialog = await screen.findByRole("dialog", {
       name: "Keep my Heinzelmännchen working while the app is closed.",
     });
     expect(dialog).toHaveTextContent("registers a background service that starts whenever you sign in");
@@ -79,7 +86,7 @@ describe("OperationDialog", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     await expectAccessible(container);
     await userEvent.setup().click(within(dialog).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -108,7 +115,7 @@ describe("OperationDialog", () => {
     expect(new URL(request[0].url).pathname).toBe("/api/stream/system/daemon/install");
     expect(request[0].method).toBe("POST");
 
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     await plan(live.phase);
     await live.phase("session", "running");
     expect(within(dialog).getByRole("progressbar", { name: "Steps" })).toHaveAttribute("value", "0");
@@ -134,7 +141,7 @@ describe("OperationDialog", () => {
     expect(within(dialog).queryByRole("button", { name: /Cancel|Close/ })).not.toBeInTheDocument();
     expect(dialog).toHaveTextContent("can't be stopped halfway");
     await user.keyboard("{Escape}");
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(live.fetchMock).toHaveBeenCalledOnce();
 
     for (const id of ["unit", "load", "verify"]) {
@@ -150,8 +157,8 @@ describe("OperationDialog", () => {
       expect(keys).toContain(JSON.stringify(["ui"]));
       expect(keys).toContain(JSON.stringify(daemonStatusKey));
     });
-    await user.click(within(dialog).getByRole("button", { name: "Close" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("says specifically what failed and what it did not change, and can try again", async () => {
@@ -168,7 +175,7 @@ describe("OperationDialog", () => {
     });
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Nothing was changed.");
-    const dialog = screen.getByRole("alertdialog");
+    const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText(/Checking this is your Mac's desktop session/)).toHaveTextContent("failed");
     expect(within(dialog).getByText("SSH is not the desktop")).toBeInTheDocument();
     expect(dialog).toHaveFocus();
@@ -184,7 +191,7 @@ describe("OperationDialog", () => {
     const live = liveStream();
     mount();
     act(() => requestOperation(DAEMON_UNINSTALL));
-    const dialog = await screen.findByRole("alertdialog", { name: "Stop the background service?" });
+    const dialog = await screen.findByRole("dialog", { name: "Stop the background service?" });
     expect(dialog).toHaveTextContent("Your receipts and logs stay");
     await userEvent.setup().click(within(dialog).getByRole("button", { name: "Uninstall" }));
     await live.close();
@@ -197,7 +204,7 @@ describe("OperationDialog", () => {
     mount();
     act(() => requestOperation(DAEMON_INSTALL));
     act(() => requestOperation(DAEMON_UNINSTALL));
-    expect(await screen.findByRole("alertdialog")).toHaveAttribute("data-operation", "/system/daemon/install");
+    expect(await screen.findByRole("dialog")).toHaveAttribute("data-operation", "/system/daemon/install");
   });
 
   it("shows a write the app drives with the steps it reports, and never retries it here", async () => {
@@ -225,7 +232,7 @@ describe("OperationDialog", () => {
           }),
       ).catch(() => undefined);
     });
-    const dialog = await screen.findByRole("alertdialog", { name: "Updating" });
+    const dialog = await screen.findByRole("dialog", { name: "Updating" });
     expect(dialog).toHaveAttribute("data-tracked");
     act(() =>
       report([
@@ -244,5 +251,118 @@ describe("OperationDialog", () => {
     expect(within(dialog).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
     act(() => dismissOperation());
+  });
+
+  describe("a write the app drives", () => {
+    const call = {
+      path: "/system/plugin/add",
+      method: "POST" as const,
+      query: {},
+      command: "hz system plugin add heinzel-crm --confirm",
+      summary: "Install heinzel-crm",
+      read_only: false,
+    };
+    const drive = (run: (report: (phases: Phase[]) => void) => Promise<unknown>) => ({
+      consent: ["Runs as code on this computer with your permissions.", "hz restarts and this page reloads itself."],
+      runningTitle: "Installing heinzel-crm",
+      doneTitle: "Installed heinzel-crm",
+      running: "Installing…",
+      action: "Install",
+      run,
+    });
+    const plan = (states: Phase["state"][]): Phase[] =>
+      ["preserve", "write", "restart", "wait", "reload", "check"].map((id, index) => ({
+        id,
+        label: `Step ${id}`,
+        state: states[index] ?? "pending",
+      }));
+
+    it("asks once in the dialog, then shows the same dialog's progress in place and ends with Done", async () => {
+      mount();
+      const user = userEvent.setup();
+      let report!: (phases: Phase[]) => void;
+      let finish!: () => void;
+      const run = vi.fn(
+        (tell: (phases: Phase[]) => void) =>
+          new Promise<void>((resolve) => {
+            report = tell;
+            finish = resolve;
+          }),
+      );
+      act(() => requestDrivenOperation(call, drive(run)));
+      const dialog = await screen.findByRole("dialog", { name: "Install heinzel-crm" });
+      expect(dialog).toHaveTextContent("Runs as code on this computer with your permissions.");
+      expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+      const row = within(dialog)
+        .getAllByRole("button")
+        .map((button) => button.textContent?.trim() || button.getAttribute("aria-label"));
+      expect(row).toEqual(["Close", "Cancel", "Install"]);
+      expect(run).not.toHaveBeenCalled();
+      await user.click(within(dialog).getByRole("button", { name: "Install" }));
+      expect(run).toHaveBeenCalledOnce();
+      act(() => report(plan(["done", "running"])));
+      const running = screen.getByRole("dialog", { name: "Installing heinzel-crm" });
+      expect(running).toBe(dialog);
+      expect(within(dialog).queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+      expect(within(dialog).queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+      expect(within(dialog).getByRole("button", { name: "Installing…" })).toBeDisabled();
+      expect(within(dialog).getByText("Step 2 of 6: Step write")).toBeInTheDocument();
+      expect(within(dialog).getByRole("progressbar")).toHaveAttribute("aria-valuetext", "Step 2 of 6");
+      await user.keyboard("{Escape}");
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      await act(async () => {
+        report(plan(["done", "done", "done", "done", "done", "done"]));
+        finish();
+      });
+      const done = await screen.findByRole("dialog", { name: "Installed heinzel-crm" });
+      expect(within(done).getByRole("button", { name: "Done" })).toHaveFocus();
+      await user.click(within(done).getByRole("button", { name: "Done" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    it("needs the person's attention when hz has not come back, and keeps waiting on their word", async () => {
+      mount();
+      const user = userEvent.setup();
+      const run = vi
+        .fn<(report: (phases: Phase[]) => void) => Promise<unknown>>()
+        .mockImplementationOnce(async (report) => {
+          report(plan(["done", "done", "done", "warn"]));
+          throw new NeedsAttention("hz has not come back yet.");
+        })
+        .mockImplementationOnce(async (report) => {
+          report(plan(["done", "done", "done", "done", "done", "done"]));
+        });
+      act(() => requestDrivenOperation(call, drive(run)));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Install" }));
+      const dialog = await screen.findByRole("dialog");
+      await within(dialog).findByText("hz has not come back yet.");
+      expect(
+        within(dialog)
+          .getAllByRole("status")
+          .some((status) => status.textContent?.includes("hz has not come back yet.")),
+      ).toBe(true);
+      expect(within(dialog).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+      expect(within(dialog).getByRole("button", { name: "Keep waiting" })).toHaveFocus();
+      await user.click(within(dialog).getByRole("button", { name: "Keep waiting" }));
+      expect(await screen.findByRole("dialog", { name: "Installed heinzel-crm" })).toBeInTheDocument();
+      expect(run).toHaveBeenCalledTimes(2);
+    });
+
+    it("names the failed step and offers Try again, which runs the same write again", async () => {
+      mount();
+      const user = userEvent.setup();
+      const run = vi.fn(async (report: (phases: Phase[]) => void) => {
+        report(plan(["done", "failed"]));
+        throw new Error("Could not download heinzel-crm.");
+      });
+      act(() => requestDrivenOperation(call, drive(run)));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Install" }));
+      const dialog = await screen.findByRole("dialog");
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent("Could not download heinzel-crm.");
+      expect(within(dialog).getByText(/Step write/)).toHaveTextContent("failed");
+      await user.click(within(dialog).getByRole("button", { name: "Try again" }));
+      expect(run).toHaveBeenCalledTimes(2);
+      act(() => dismissOperation());
+    });
   });
 });

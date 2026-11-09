@@ -109,7 +109,7 @@ describe("The notification test", () => {
     const opened = vi.fn();
     window.addEventListener(OPEN_TERMINAL, opened);
     await user.click(within(result).getByRole("button", { name: "Install daemon" }));
-    const confirm = await screen.findByRole("alertdialog", { name: /Keep my Heinzelmännchen working/ });
+    const confirm = await screen.findByRole("dialog", { name: /Keep my Heinzelmännchen working/ });
     expect(confirm).toHaveTextContent("hz system daemon install");
     expect(confirm).toHaveTextContent("registers a background service");
     await user.click(within(confirm).getByRole("button", { name: "Cancel" }));

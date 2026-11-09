@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { SchemaPluginCandidate, SchemaPluginChange, SchemaPluginInfo } from "@/api/client";
+import { api, unwrap } from "@/api/client";
 import {
   type PluginChangeRequest,
   pluginIdentity,
@@ -39,10 +40,16 @@ import { Button } from "@/components/ui/button";
 import { CodeInput } from "@/components/ui/code-input";
 import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
-import { mergePhase, type Phase, trackOperation } from "@/lib/operationRun";
+import {
+  type DrivenOperation,
+  type Phase,
+  requestDrivenOperation,
+  resumeDrivenOperation,
+  useOperationRun,
+} from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
-import type { RestartObservation } from "@/lifecycle/controller";
-import { RestartAndApply } from "@/lifecycle/RestartAndApply";
+import { type ApplyStepId, ApplySteps, applyWithSteps } from "@/lifecycle/applySteps";
+import { RestartApplyError, type RestartObservation } from "@/lifecycle/controller";
 import { PluginsPending } from "./PluginsPending";
 import {
   acknowledgePluginRestart,
@@ -57,15 +64,88 @@ import {
 } from "./pluginActivation";
 import { displayName } from "./settingsSections";
 
-/** A confirmed plugin install as the operation dialog shows it: the call the person confirmed on the card. */
-const installCall = (candidate: SchemaPluginCandidate) => ({
-  path: "/system/plugin/add",
-  method: "POST" as const,
-  query: {},
-  command: `hz system plugin add ${candidate.requirement} --confirm`,
-  summary: t("plugins.installing", { name: candidate.distribution ?? candidate.spec }),
-  read_only: false,
-});
+/** A plugin change as the operation dialog shows it: its title and the command it runs. */
+function callOf(pending: Pending) {
+  const name = pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name;
+  const command =
+    pending.action === "add"
+      ? `hz system plugin add ${pending.candidate.requirement} --confirm`
+      : `hz system plugin ${pending.action} ${name}`;
+  return {
+    path: `/system/plugin/${pending.action}`,
+    method: "POST" as const,
+    query: {},
+    command,
+    summary: t(`plugins.dialog.${pending.action}` as MessageKey, { name }),
+    read_only: false,
+  };
+}
+
+/** The lines the person agrees to: what runs, that hz restarts and the page reloads, that open work stays. */
+function consentOf(pending: Pending): string[] {
+  return [
+    t(`plugins.consent.${pending.action}` as MessageKey),
+    t("plugins.consent.restart"),
+    ...(pending.action === "remove" ? [] : [t("plugins.consent.kept")]),
+  ];
+}
+
+/** The dialog's words for this change while it runs and once it is done. */
+function wordsOf(pending: Pending) {
+  const name = pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name;
+  return {
+    runningTitle: t(`plugins.write.${pending.action}` as MessageKey, { name }),
+    doneTitle: t(`plugins.doneTitle.${pending.action}` as MessageKey, { name }),
+    running: t(`plugins.running.${pending.action}` as MessageKey),
+  };
+}
+
+/** The plan's words for this change: what is written and what the final check looks for (design 3). */
+function labelsOf(pending: Pending): Partial<Record<ApplyStepId, string>> {
+  const name = pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name;
+  return {
+    write: t(`plugins.write.${pending.action}` as MessageKey, { name }),
+    check: t(`plugins.check.${pending.action}` as MessageKey),
+  };
+}
+
+/** Require what the change promised in the plugins hz lists now, read fresh. */
+async function checkLoaded(pending: Pending): Promise<void> {
+  const plugins = await unwrap(api.GET("/system/plugin/list", { params: { query: { fresh: true } } }));
+  const name = pending.action === "add" ? pending.candidate.distribution : pending.name;
+  const found = plugins.find((plugin) => plugin.distribution === name || plugin.name === name);
+  const ok =
+    pending.action === "add"
+      ? found !== undefined
+      : pending.action === "remove"
+        ? found === undefined
+        : found !== undefined && found.enabled === (pending.action === "enable");
+  if (!ok) throw new Error(t("plugins.checkFailed"));
+}
+
+const FINISHING_KEY = "hz.plugin-operation.v1";
+
+/** Keep the dialog's steps across the reload, so it opens again at its final check. */
+function saveFinishing(record: { pending: Pending; phases: Phase[] }) {
+  try {
+    window.sessionStorage.setItem(FINISHING_KEY, JSON.stringify(record));
+  } catch {
+    // Without storage the reloaded page only lacks the final check's dialog; the change itself is done.
+  }
+}
+
+function takeFinishing(): { pending: Pending; phases: Phase[] } | null {
+  try {
+    const text = window.sessionStorage.getItem(FINISHING_KEY);
+    window.sessionStorage.removeItem(FINISHING_KEY);
+    if (!text) return null;
+    const record = JSON.parse(text) as { pending?: Pending; phases?: Phase[] };
+    if (!record.pending || !Array.isArray(record.phases)) return null;
+    return { pending: record.pending, phases: record.phases };
+  } catch {
+    return null;
+  }
+}
 
 type PluginKind = NonNullable<SchemaPluginInfo["kinds"]>[number];
 
@@ -370,7 +450,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [anchor, setAnchor] = useState<string | null>(null);
-  const [pluginProgress, setPluginProgress] = useState<string | null>(null);
+  const [, setPluginProgress] = useState<string | null>(null);
   const [restored] = useState(restoredPluginFlow);
   const [receiptId, setReceiptId] = useState<string | null>(restored.receiptId);
   const [restartObservation, setRestartObservation] = useState<RestartObservation | null>(restored.restartObservation);
@@ -451,7 +531,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     preview.reset();
     setPending(value);
   };
-  const confirm = async (signal: AbortSignal) => {
+  const confirm = async (signal: AbortSignal, heard: (phase: Phase) => void = () => {}) => {
     if (!pending) return false;
     if (pluginActivationBlocksChanges()) throw new Error(t("pluginsPending.restartRequired"));
     if (completed.current) return completed.current.restart_required;
@@ -478,39 +558,12 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     }
     // A lost removal response is also uncertain. Require a fresh, explicit choice after status reconciliation.
     if ("remove" in operation) attempted.current = true;
-    // An install shows its real steps in the operation dialog: installing, checking, each plugin it needs, recording.
-    const answer =
-      "add" in operation && pending.action === "add"
-        ? await trackOperation(installCall(pending.candidate), (report) => {
-            let phases: Phase[] = [];
-            return change.mutateAsync({
-              ...operation,
-              signal,
-              onProgress: setPluginProgress,
-              onPhase: (phase) => {
-                phases = mergePhase(phases, phase);
-                report(phases);
-              },
-            });
-          })
-        : await change.mutateAsync({ ...operation, signal, onProgress: setPluginProgress });
+    // The change's own steps (installing, checking, each plugin it needs, recording) join the dialog's list.
+    const answer = await change.mutateAsync({ ...operation, signal, onProgress: setPluginProgress, onPhase: heard });
     if (!answer.done) throw new Error(t("plugins.notCompleted"));
     completed.current = answer;
     pluginRestartRequired.current = answer.restart_required;
     return answer.restart_required;
-  };
-  const confirmText = () => {
-    if (!pending) return "";
-    switch (pending.action) {
-      case "add":
-        return t("plugins.confirmAdd");
-      case "remove":
-        return t("plugins.confirmRemove", { name: pending.name });
-      case "enable":
-        return t("plugins.confirmEnable", { name: pending.name });
-      case "disable":
-        return t("plugins.confirmDisable", { name: pending.name });
-    }
   };
   const actionText = (action: Pending["action"]) =>
     ({
@@ -519,112 +572,164 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       enable: t("plugins.enable"),
       disable: t("plugins.disable"),
     })[action];
+  const latest = useRef({ pending, confirm, receiptId });
+  latest.current = { pending, confirm, receiptId };
+  const restartRef = useRef(restartObservation);
+  restartRef.current = restartObservation;
+  const opened = useRef<Pending | null>(null);
+  const finished = useRef(false);
+  /** The one confirmation and the whole progress of a plugin change, in the operation dialog (ADR 0056). */
+  const drive = (value: Pending): DrivenOperation => ({
+    consent: consentOf(value),
+    ...wordsOf(value),
+    details: value.action === "add" ? <CandidateDetails candidate={value.candidate} /> : undefined,
+    action: actionText(value.action),
+    destructive: value.action === "remove",
+    run: async (report) => {
+      const steps = new ApplySteps(report, labelsOf(value));
+      const resume = value.action === "add" ? (restartRef.current ?? undefined) : undefined;
+      const release = acquirePluginChange(resume);
+      if (release === null) throw new Error(t("pluginsPending.restartRequired"));
+      try {
+        await applyWithSteps(
+          {
+            change: (signal, heard) => latest.current.confirm(signal, heard),
+            resume,
+            options: {
+              ...(value.action === "add" || value.action === "remove" ? { preserveTimeout: 20 * 60_000 } : {}),
+              ...(restartInterval ? { interval: restartInterval } : {}),
+              ...(value.action === "add"
+                ? {
+                    onObservation: (observation: RestartObservation) => {
+                      saveAddRestart(value.operationId, observation, false);
+                      setRestartObservation(observation);
+                    },
+                    onAcknowledged: (observation: RestartObservation) =>
+                      saveAddRestart(value.operationId, observation, true),
+                  }
+                : { onObservation: retainPluginRestart, onAcknowledged: acknowledgePluginRestart }),
+            },
+          },
+          steps,
+        );
+      } catch (error) {
+        if (error instanceof RestartApplyError && error.kind === "stale") {
+          if (value.action === "add") {
+            try {
+              window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
+            } catch {
+              // A kept observation is observed again on the next attempt; installing is never repeated.
+            }
+            setRestartObservation(null);
+          } else forgetPluginRestart();
+        }
+        throw error;
+      } finally {
+        release();
+      }
+      finished.current = true;
+      if (value.action === "add") {
+        try {
+          window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
+          window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
+          setReceiptId(null);
+          setRestartObservation(null);
+          setRestartBlocked(false);
+        } catch {
+          // Keeping the receipt is safe; the next visit will read the completed result.
+        }
+      } else completePluginRestart();
+      setPending(null);
+      if (value.action === "add") setTab("yours");
+      setAdding(false);
+      setSpec("");
+      if (pluginRestartRequired.current) {
+        steps.mark("reload", "running");
+        // The dialog opens again after the reload at its final check, with every step it took so far.
+        saveFinishing({ pending: value, phases: steps.list() });
+        (reload ?? (() => window.location.reload()))();
+        return;
+      }
+      steps.mark("check", "running");
+      try {
+        await checkLoaded(value);
+      } catch (error) {
+        steps.mark("check", "failed", error instanceof Error ? error.message : String(error));
+        throw error;
+      }
+      steps.mark("check", "done");
+    },
+  });
+  // Back after the reload a change asked for: the same dialog opens at its final check, with the steps it took.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once, on the page the reload opened
+  useEffect(() => {
+    const finishing = takeFinishing();
+    if (!finishing) return;
+    const { pending: value, phases } = finishing;
+    void resumeDrivenOperation(callOf(value), {
+      consent: consentOf(value),
+      ...wordsOf(value),
+      action: actionText(value.action),
+      run: async (report) => {
+        const steps = new ApplySteps(report, labelsOf(value), phases);
+        steps.mark("reload", "done");
+        steps.mark("check", "running");
+        try {
+          await checkLoaded(value);
+        } catch (error) {
+          steps.mark("check", "failed", error instanceof Error ? error.message : String(error));
+          throw error;
+        }
+        steps.mark("check", "done");
+      },
+    });
+  }, []);
+  const operationStatus = pending?.action === "add" ? operation.data?.status : undefined;
+  const run = useOperationRun();
+  // A plugin change asks once, in the dialog that then shows its progress: never an inline card, never a second
+  // question about the restart it brings.
+  useEffect(() => {
+    if (!pending || restartBlocked || opened.current === pending) return;
+    if (operationStatus === "running" || operationStatus === "unknown") return;
+    if (pending.action === "add" && !operation.data) return;
+    opened.current = pending;
+    finished.current = false;
+    const call = callOf(pending);
+    if (pending.action === "add" && restartObservation) void resumeDrivenOperation(call, drive(pending));
+    else requestDrivenOperation(call, drive(pending));
+  });
+  // Cancel (or Close after a failure) ends the change here; the receipt keeps what the server knows.
+  useEffect(() => {
+    if (run.stage !== "idle" || !opened.current) return;
+    const value = opened.current;
+    opened.current = null;
+    if (finished.current) return;
+    if (value.action === "add") {
+      setReceiptId(null);
+      setRestartObservation(null);
+    }
+    setPending(null);
+  }, [run.stage]);
   const card =
-    pending && !restartBlocked ? (
+    pending && !restartBlocked && (operationStatus === "running" || operationStatus === "unknown") ? (
       <InlineSlot>
-        <fieldset className="mb-4 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm">
-          <legend className="font-medium">{confirmText()}</legend>
-          {pending.action === "add" && <CandidateDetails candidate={pending.candidate} />}
-          <p className="mt-1 text-xs text-muted-foreground">{t("plugins.restartNote")}</p>
-          {change.error && (
-            <p role="alert" className="mt-1 text-xs text-bad">
-              {change.error.message}
+        <div className="mb-4 space-y-2 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm">
+          {operationStatus === "running" ? (
+            <p role="status" className="text-xs text-muted-foreground">
+              {t("plugins.operationRunning")}
             </p>
-          )}
-          {change.isPending && pluginProgress && (
-            <p role="status" className="mt-1 text-xs text-muted-foreground">
-              {pluginProgress}
-            </p>
-          )}
-          <div className="mt-2">
-            {pending.action === "add" && operation.data?.status === "running" ? (
-              <p role="status" className="mt-2 text-xs text-muted-foreground">
-                {t("plugins.operationRunning")}
+          ) : (
+            <>
+              <p role="alert" className="text-xs text-bad">
+                {t("plugins.operationUnknown")}
               </p>
-            ) : pending.action === "add" && operation.data?.status === "unknown" ? (
-              <div className="mt-2 space-y-2">
-                <p role="alert" className="text-xs text-bad">
-                  {t("plugins.operationUnknown")}
-                </p>
-                <p className="text-xs text-muted-foreground">{t("plugins.operationUnknownHelp")}</p>
-                <Button size="sm" variant="outline" onClick={resolveReceipt}>
-                  {resolveArmed ? t("plugins.operationResolveConfirm") : t("plugins.operationResolve")}
-                </Button>
-              </div>
-            ) : (
-              <RestartAndApply
-                target={t("plugins.title")}
-                changes={[
-                  `${actionText(pending.action)}: ${pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name}`,
-                ]}
-                preserve={confirm}
-                acquire={acquirePluginChange}
-                initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
-                onNotRestarted={() => {
-                  if (pending.action !== "add") {
-                    forgetPluginRestart();
-                    return;
-                  }
-                  try {
-                    window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
-                  } catch {
-                    // A kept observation only offers Check again after a reload; Apply stays available here.
-                  }
-                  setRestartObservation(null);
-                }}
-                destructive={pending.action === "remove"}
-                cancel={
-                  pending.action !== "add" || operation.data?.status === "previewed"
-                    ? {
-                        label: t("plugins.cancel"),
-                        disabled: change.isPending || activation.changing,
-                        onClick: () => {
-                          if (pending.action === "add") {
-                            setReceiptId(null);
-                            setRestartObservation(null);
-                          }
-                          setPending(null);
-                        },
-                      }
-                    : undefined
-                }
-                onApplied={() => {
-                  if (pending.action === "add") {
-                    try {
-                      window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
-                      window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
-                      setReceiptId(null);
-                      setRestartObservation(null);
-                      setRestartBlocked(false);
-                    } catch {
-                      // Keeping the receipt is safe; the next visit will read the completed result.
-                    }
-                  }
-                  if (pending.action !== "add") completePluginRestart();
-                  setPending(null);
-                  if (pending.action === "add") setTab("yours");
-                  setAdding(false);
-                  setSpec("");
-                  if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
-                }}
-                options={{
-                  ...(pending.action === "add" || pending.action === "remove" ? { preserveTimeout: 20 * 60_000 } : {}),
-                  ...(restartInterval ? { interval: restartInterval } : {}),
-                  ...(pending.action === "add"
-                    ? {
-                        onObservation: (observation: RestartObservation) => {
-                          saveAddRestart(pending.operationId, observation, false);
-                          setRestartObservation(observation);
-                        },
-                        onAcknowledged: (observation: RestartObservation) =>
-                          saveAddRestart(pending.operationId, observation, true),
-                      }
-                    : { onObservation: retainPluginRestart, onAcknowledged: acknowledgePluginRestart }),
-                }}
-              />
-            )}
-          </div>
-        </fieldset>
+              <p className="text-xs text-muted-foreground">{t("plugins.operationUnknownHelp")}</p>
+              <Button size="sm" variant="outline" onClick={resolveReceipt}>
+                {resolveArmed ? t("plugins.operationResolveConfirm") : t("plugins.operationResolve")}
+              </Button>
+            </>
+          )}
+        </div>
       </InlineSlot>
     ) : null;
   const slot: Slot | null = pending && anchor ? { key: anchor, node: card } : null;

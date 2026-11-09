@@ -54,7 +54,7 @@ try {
   let pane = await openFooter(/^Daemon not installed/);
   await pane.getByText("Keeps your Heinzelmännchen working while the app is closed").waitFor();
   await pane.getByRole("button", { name: "Install" }).click();
-  const dialog = page.getByRole("alertdialog", { name: "Keep my Heinzelmännchen working while the app is closed." });
+  const dialog = page.getByRole("dialog", { name: "Keep my Heinzelmännchen working while the app is closed." });
   await dialog.waitFor();
   assert.match((await dialog.textContent()) ?? "", /registers a background service/);
   await accessible(dialog);
@@ -90,7 +90,7 @@ try {
     assert.equal(await steps.getByText("Setting up desktop notifications: done").count(), 0);
     await accessible(dialog);
     await page.screenshot({ path: join(shots, `install-done-${engine}.png`) });
-    await dialog.getByRole("button", { name: "Close" }).click();
+    await dialog.getByRole("button", { name: "Done" }).click();
 
     // The footer follows the real state: starting, with the first check named, and no restart advice.
     pane = await openFooter(/^Daemon starting/);
@@ -98,10 +98,10 @@ try {
     assert.equal(await pane.getByRole("button", { name: "Restart daemon" }).count(), 0);
     assert.doesNotMatch((await pane.textContent()) ?? "", /restart|Unit records|unknown/i);
     await pane.getByRole("button", { name: "Uninstall" }).click();
-    const removal = page.getByRole("alertdialog", { name: "Stop the background service?" });
+    const removal = page.getByRole("dialog", { name: "Stop the background service?" });
     await removal.getByRole("button", { name: "Uninstall" }).click();
     await removal.getByText("Removed. Nothing starts at login any more.").waitFor();
-    await removal.getByRole("button", { name: "Close" }).click();
+    await removal.getByRole("button", { name: "Done" }).click();
     await openFooter(/^Daemon not installed/);
     assert.deepEqual(terminalRequests, []);
     console.log(JSON.stringify({ session }));

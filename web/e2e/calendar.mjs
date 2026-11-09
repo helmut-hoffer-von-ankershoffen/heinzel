@@ -170,7 +170,7 @@ for (const [name, engine] of [
         `${name}/${size}: the footer pane is still open; focus=${await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 160))}`,
       );
       await panel.getByRole("button", { name: "Set up reminder worker" }).click();
-      const confirmation = page.getByRole("alertdialog");
+      const confirmation = page.locator("[data-operation]");
       await confirmation.waitFor({ state: "visible" });
       assert.match(await confirmation.textContent(), /at every login/);
       assert.match(await confirmation.textContent(), /separate consent/);
