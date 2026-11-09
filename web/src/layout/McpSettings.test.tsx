@@ -1,8 +1,10 @@
-import { screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
+import { Providers, queryClient } from "@/App";
 import { shell } from "@/test/fixtures";
 import { mockApi, renderAt } from "@/test/render";
+import { McpSettings } from "./McpSettings";
 
 const id = "a".repeat(32);
 const handoff = `1794220000.${"b".repeat(64)}`;
@@ -149,4 +151,58 @@ it("withdraws stale actions during refresh and after failure, then reports no of
   await user.click(within(page).getByRole("button", { name: "Read status" }));
   expect(await within(page).findByText("The host offers no lifecycle actions for this registration.")).toBeVisible();
   expect(calls.filter((request) => request.method !== "GET")).toHaveLength(0);
+});
+
+it.each(["availability", "status"])("automatic %s refresh revokes a prepared action permanently", async (target) => {
+  const client = queryClient();
+  const observation = {
+    host: "observed",
+    worker: "running",
+    manager: "absent",
+    transport: "reachable",
+    mcp_readiness: "unverified",
+    client: "unverified",
+    actions: ["stop"],
+  };
+  let availability: unknown = { planning_available: true };
+  mockApi({
+    "/api/mcp/lifecycle": () => availability,
+    "/api/mcp/lifecycle/fixture": observation,
+    "/api/mcp/lifecycle/fixture/prepare": { id, action: "stop", registration: "fixture", session: "terminal", handoff },
+  });
+  render(
+    <Providers client={client}>
+      <McpSettings />
+    </Providers>,
+  );
+  const user = userEvent.setup();
+  await user.type(await screen.findByLabelText("Registration ID"), "fixture");
+  await user.click(screen.getByRole("button", { name: "Read status" }));
+  await user.click(await screen.findByRole("button", { name: "Prepare Stop" }));
+  expect(await screen.findByText("Show command for local review")).toBeVisible();
+  await act(async () => {
+    await client.refetchQueries({
+      queryKey: target === "availability" ? ["mcp", target] : ["mcp", target, "fixture"],
+      exact: true,
+    });
+  });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Prepare Stop" })).toBeVisible());
+  expect(screen.queryByText("Show command for local review")).not.toBeInTheDocument();
+  if (target === "availability") {
+    await user.click(screen.getByRole("button", { name: "Prepare Stop" }));
+    expect(await screen.findByText("Show command for local review")).toBeVisible();
+    // A later failure must also withdraw actions despite retained successful cache data.
+    availability = { status: 409, body: { error: "unavailable" } };
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["mcp", "availability"], exact: true });
+    });
+    expect(await screen.findByText("Could not read MCP status.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Prepare Stop" })).not.toBeInTheDocument();
+    availability = { planning_available: true };
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["mcp", "availability"], exact: true });
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Prepare Stop" })).toBeVisible());
+    expect(screen.queryByText("Show command for local review")).not.toBeInTheDocument();
+  }
 });

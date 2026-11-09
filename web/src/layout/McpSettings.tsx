@@ -1,5 +1,5 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { api, type SchemaMcpHandoffPlan, unwrap } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
@@ -14,26 +14,23 @@ export function McpSettings() {
     queryKey: ["mcp", "availability"],
     queryFn: ({ signal }) => unwrap(api.GET("/mcp/lifecycle", { signal, cache: "no-store" })),
   });
-  const canPlan = availability.data?.planning_available === true;
+  const hostAvailable =
+    availability.isSuccess && availability.fetchStatus === "idle" && availability.data.planning_available;
   const status = useQuery({
     queryKey: ["mcp", "status", registration],
-    enabled: canPlan && registration !== "",
+    enabled: hostAvailable && registration !== "",
     queryFn: ({ signal }) =>
       unwrap(
         api.GET("/mcp/lifecycle/{registration}", { params: { path: { registration } }, signal, cache: "no-store" }),
       ),
   });
-  const prepare = useMutation({
-    mutationFn: ({ action, registration }: { action: Action; registration: string }) =>
-      unwrap(
-        api.POST("/mcp/lifecycle/{registration}/prepare", {
-          params: { path: { registration }, query: { action } },
-          cache: "no-store",
-        }),
-      ),
-  });
-  const currentStatus = status.isSuccess && !status.isFetching;
-  const plan = currentStatus && prepare.data?.registration === registration ? prepare.data : undefined;
+  const queryClient = useQueryClient();
+  const canPlan = hostAvailable && status.isSuccess && status.fetchStatus === "idle";
+  // Counts advance even when a refresh returns identical data within the same millisecond.
+  const revision = [
+    queryClient.getQueryState(["mcp", "availability"])?.dataUpdateCount,
+    queryClient.getQueryState(["mcp", "status", registration])?.dataUpdateCount,
+  ].join(":");
   return (
     <section aria-label={t("mcpSettings.title")} className="space-y-4 text-sm">
       <h3 className="text-ui font-medium">{t("mcpSettings.title")}</h3>
@@ -50,14 +47,13 @@ export function McpSettings() {
       </section>
       {availability.isPending && <p role="status">{t("mcpSettings.loading")}</p>}
       {availability.isError && <p role="alert">{t("mcpSettings.statusError")}</p>}
-      {availability.data && !canPlan && <p role="status">{t("mcpSettings.unavailable")}</p>}
-      {canPlan && (
+      {availability.data && !hostAvailable && <p role="status">{t("mcpSettings.unavailable")}</p>}
+      {hostAvailable && (
         <>
           <form
             className="flex flex-wrap items-end gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              prepare.reset();
               if (input === registration) void status.refetch();
               else setRegistration(input);
             }}
@@ -79,7 +75,7 @@ export function McpSettings() {
           </form>
           {status.isError && <p role="alert">{t("mcpSettings.statusError")}</p>}
           {status.data?.host === "unavailable" && <p role="status">{t("mcpSettings.targetUnavailable")}</p>}
-          {currentStatus && status.data?.host === "observed" && (
+          {canPlan && status.data?.host === "observed" && (
             <>
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
                 <dt>{t("mcpSettings.manager")}</dt>
@@ -94,26 +90,67 @@ export function McpSettings() {
                 <dd>{t(`mcpSettings.state.${status.data.client}`)}</dd>
               </dl>
               {!status.data.actions?.length && <p role="status">{t("mcpSettings.noActions")}</p>}
-              <div className="flex flex-wrap gap-2">
-                {status.data.actions?.map((action) => (
-                  <Button
-                    key={action}
-                    variant="outline"
-                    size="sm"
-                    disabled={prepare.isPending}
-                    onClick={() => prepare.mutate({ action, registration })}
-                  >
-                    {t(`mcpSettings.prepare.${action}`)}
-                  </Button>
-                ))}
-              </div>
-              {prepare.isError && <p role="alert">{t("mcpSettings.planError")}</p>}
-              {plan && <LocalReview key={plan.id} plan={plan} />}
+              <PlanActions
+                key={`${registration}:${revision}`}
+                registration={registration}
+                actions={status.data.actions ?? []}
+              />
             </>
           )}
         </>
       )}
     </section>
+  );
+}
+
+function PlanActions({ registration, actions }: { registration: string; actions: Action[] }) {
+  const prepare = useMutation({
+    mutationFn: (action: Action) =>
+      unwrap(
+        api.POST("/mcp/lifecycle/{registration}/prepare", {
+          params: { path: { registration }, query: { action } },
+          cache: "no-store",
+        }),
+      ),
+  });
+  const queryClient = useQueryClient();
+  const reset = prepare.reset;
+  useEffect(
+    () =>
+      queryClient.getQueryCache().subscribe((event) => {
+        const key = event.query.queryKey;
+        if (
+          event.type === "updated" &&
+          event.action.type === "fetch" &&
+          key[0] === "mcp" &&
+          (key[1] === "availability" || (key[1] === "status" && key[2] === registration))
+        ) {
+          // Invalidate even a refresh cancelled before React renders its fetching state.
+          reset();
+        }
+      }),
+    [queryClient, registration, reset],
+  );
+  const plan =
+    prepare.data?.registration === registration && actions.includes(prepare.data.action) ? prepare.data : undefined;
+  return (
+    <>
+      <div className="flex flex-wrap gap-2">
+        {actions.map((action) => (
+          <Button
+            key={action}
+            variant="outline"
+            size="sm"
+            disabled={prepare.isPending}
+            onClick={() => prepare.mutate(action)}
+          >
+            {t(`mcpSettings.prepare.${action}`)}
+          </Button>
+        ))}
+      </div>
+      {prepare.isError && <p role="alert">{t("mcpSettings.planError")}</p>}
+      {plan && <LocalReview key={plan.id} plan={plan} />}
+    </>
   );
 }
 
