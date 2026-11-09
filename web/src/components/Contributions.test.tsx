@@ -173,6 +173,54 @@ describe("Contributions", () => {
     },
   );
 
+  it("puts a destructive default effect after the named actions and asks before running it", async () => {
+    const { calls } = mockApi({
+      ...answers,
+      "/api/system/ui/status": [
+        {
+          ...entry,
+          id: "acme:cleanup",
+          slots: { footer: true },
+          item: {
+            text: "Saved reviews",
+            icon: "git-pull-request",
+            detail: [{ text: "3 saved reviews", tone: "neutral" }],
+            effect: {
+              kind: "operation",
+              operation: "delete",
+              arguments: {},
+              call: {
+                method: "POST",
+                path: "/acme/delete",
+                query: {},
+                command: "hz acme delete",
+                summary: "Delete saved reviews?",
+                read_only: false,
+              },
+            },
+            actions: [{ label: "Open reviews", effect: { kind: "navigate", path: "/doctor" } }],
+          },
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await user.hover(await screen.findByRole("button", { name: /^Saved reviews/ }));
+    const pane = await screen.findByRole("region", { name: "Saved reviews" });
+    const row = within(pane).getByRole("group");
+    const open = within(row).getByRole("button", { name: "Open reviews" });
+    const remove = within(row).getByRole("button", { name: "Run" });
+    expect(within(row).getAllByRole("button")).toEqual([open, remove]);
+    expect(open).toHaveTextContent("Open reviews");
+    expect(remove).toHaveAttribute("data-pane-action", "icon");
+    expect(remove).toHaveClass("text-bad");
+    assertActionStructure(pane);
+
+    await user.click(remove);
+    expect(await screen.findByRole("alertdialog", { name: "Delete saved reviews?" })).toBeInTheDocument();
+    expect(calls.some((call) => new URL(call.url).pathname === "/api/stream/acme/delete")).toBe(false);
+  });
+
   it("keeps a switch's longer lines in Details instead of bullets under it", async () => {
     const call = (operation: string) => ({
       method: "POST",

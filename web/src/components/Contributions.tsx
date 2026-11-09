@@ -314,25 +314,19 @@ function FooterStatus({
   }
   const label = [item.text, item.live ? liveText(item.live, now) : ""].filter(Boolean).join(" ");
   const effect = item.effect;
-  const actions = (
-    <>
-      {effect && (
-        <PaneAction icon={effectIcon(effect)} onClick={() => run(effect)}>
-          {effectLabel(effect)}
-        </PaneAction>
-      )}
-      {ordered(item.actions ?? []).map((action) => (
-        <PaneAction
-          key={action.label}
-          icon={action.icon ? ICONS[action.icon] : effectIcon(action.effect)}
-          destructive={destroys(action.effect)}
-          onClick={() => run(action.effect)}
-        >
-          {action.label}
-        </PaneAction>
-      ))}
-    </>
-  );
+  const actions = ordered([
+    ...(effect ? [{ key: "default-effect", effect, label: effectLabel(effect), icon: null }] : []),
+    ...(item.actions ?? []).map((action) => ({ ...action, key: `action:${action.label}` })),
+  ]).map((action) => (
+    <PaneAction
+      key={action.key}
+      icon={action.icon ? ICONS[action.icon] : effectIcon(action.effect)}
+      destructive={destroys(action.effect)}
+      onClick={() => run(action.effect)}
+    >
+      {action.label}
+    </PaneAction>
+  ));
   const lines = (
     <ul>
       {(item.detail ?? []).map((line) => (
