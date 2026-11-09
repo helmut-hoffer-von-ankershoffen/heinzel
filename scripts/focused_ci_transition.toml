@@ -1,0 +1,28 @@
+# Offline transition fixtures. These entries grant no permission to merge.
+# Git diff input: git diff-tree --no-commit-id -r --raw --no-abbrev --no-renames -z BASE HEAD
+
+[source]
+selector_sha256 = "19e7ca96b401db94178cf3baaa9fbe9f404f8ecd8c478e6f91bb548a4a1c506a"
+
+[step_signal]
+base = "432006f27ce2df73a80f2f69a4e162378df2c862"
+head = "fe668ae0b2da4428665675ffabf79cafd055e4e4"
+diff_sha256 = "19a2d3ecf92c567485c1013d10fabc425c7a6e79031d3a9179f50281ebc0d465"
+jobs = [
+    "Quarantine registry",
+    "Step signal tests (ubuntu-24.04)",
+    "Step signal tests (macos-latest)",
+    "End-to-end cli (ubuntu-24.04)",
+    "End-to-end cli (macos-latest)",
+]
+
+[desktop_download_recovery]
+base = "432006f27ce2df73a80f2f69a4e162378df2c862"
+head = "73d3e8ec8857b23ea8b9fd4f80656e958dd8d008"
+diff_sha256 = "f2f09bf49891107dc5c140d8d095549e1e3db12a7d22781380274136fd3fe164"
+jobs = [
+    "Desktop download recovery tests (ubuntu-24.04)",
+    "Desktop installation regression (macos-latest)",
+    "End-to-end cli (ubuntu-24.04)",
+    "End-to-end cli (macos-latest)",
+]
