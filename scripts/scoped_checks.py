@@ -204,6 +204,13 @@ MIXED_TEST_PATHS = {
     "web": re.compile(r"web/src/(?:[\w-]+/)*[\w.-]+\.test\.tsx?", re.ASCII),
     "desktop": re.compile(r"desktop/test/(?:[\w-]+/)*[\w-]+\.test\.js", re.ASCII),
 }
+BROWSER_FIXTURES = {
+    "desktop/e2e/ui-navigation.mjs": "desktop test:navigation",
+    "web/e2e/calendar.mjs": "tests/e2e/web_ui_test.py::test_calendar_panel_on_phone_and_desktop_in_both_browsers",
+    "web/e2e/mobile-responsive.mjs": (
+        "tests/e2e/web_ui_test.py::test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable"
+    ),
+}
 PUSH_REF_FIELDS = 4  # local ref, local SHA, remote ref, remote SHA
 
 
@@ -255,13 +262,51 @@ def read_mixed_manifest(manifest: Path, *, base: str, head: str) -> dict[str, ob
     except (OSError, ValueError) as error:
         msg = "Unable to read HZ_FOCUSED_PUSH_MANIFEST as JSON."
         raise SystemExit(msg) from error
-    if not isinstance(plan, dict) or plan.keys() != {"base", "head", *MIXED_TEST_PATHS}:
-        msg = "A focused mixed manifest requires base, head, unit, integration, web and desktop fields."
+    if not isinstance(plan, dict) or plan.keys() != {"base", "head", "hosted_browser", *MIXED_TEST_PATHS}:
+        msg = "A focused mixed manifest requires base, head, hosted_browser and four test fields."
         raise SystemExit(msg)
     if plan["base"] != base or plan["head"] != head:
         msg = "A focused mixed manifest must match the exact base and head commits."
         raise SystemExit(msg)
     return plan
+
+
+def validate_browser_fixtures(plan: dict[str, object], changed: list[str], head: str) -> None:
+    """Reject unsupported fixture paths or omitted hosted obligations before any checks run.
+
+    Raises:
+        SystemExit: If the declared obligations or tracked fixtures do not match the diff.
+    """
+    fixtures = {path for path in changed if path.startswith(("web/e2e/", "desktop/e2e/", "tests/e2e/"))}
+    if fixtures - BROWSER_FIXTURES.keys():
+        msg = "A focused mixed manifest cannot select unmapped browser fixture changes."
+        raise SystemExit(msg)
+    expected_browser = {path: BROWSER_FIXTURES[path] for path in sorted(fixtures)}
+    if plan["hosted_browser"] != expected_browser:
+        msg = "A focused mixed manifest must list the exact hosted browser obligations."
+        raise SystemExit(msg)
+    if fixtures and fixtures != tracked_test_files(head, fixtures):
+        msg = "A focused mixed manifest cannot select deleted or untracked browser fixtures."
+        raise SystemExit(msg)
+
+
+def require_changed_tests(changed: list[str], targets: dict[str, list[str]]) -> None:
+    """Require whole changed tests and the script contract.
+
+    Raises:
+        SystemExit: If a required file is absent.
+    """
+    for path in changed:
+        if any(pattern.fullmatch(path) for pattern in MIXED_TEST_PATHS.values()) and not any(
+            path in entries for entries in targets.values()
+        ):
+            msg = "A focused mixed manifest must select each changed test file in full."
+            raise SystemExit(msg)
+    if {"scripts/web_build.py", "scripts/scoped_checks.py"} & set(
+        changed
+    ) and "tests/unit/scripts_test.py" not in targets["unit"]:
+        msg = "A changed script requires tests/unit/scripts_test.py."
+        raise SystemExit(msg)
 
 
 def mixed_test_targets(manifest: Path, *, base: str, head: str, changed: list[str]) -> dict[str, list[str]]:
@@ -275,6 +320,7 @@ def mixed_test_targets(manifest: Path, *, base: str, head: str, changed: list[st
         SystemExit: If the manifest is stale, incomplete or contains an unsupported test selection.
     """
     plan = read_mixed_manifest(manifest, base=base, head=head)
+    validate_browser_fixtures(plan, changed, head)
     targets = {}
     for lane, pattern in MIXED_TEST_PATHS.items():
         entries = plan[lane]
@@ -300,6 +346,7 @@ def mixed_test_targets(manifest: Path, *, base: str, head: str, changed: list[st
     if any(any(pattern.fullmatch(path) for pattern in MIXED_TEST_PATHS.values()) for path in set(changed) - files):
         msg = "A focused mixed manifest must cover every changed test file."
         raise SystemExit(msg)
+    require_changed_tests(changed, targets)
     if files != tracked_test_files(head, files):
         msg = "A focused mixed manifest can select only tracked test files at HEAD."
         raise SystemExit(msg)
@@ -313,12 +360,15 @@ def mixed_push_checks(changed: list[str], base: str, manifest: Path) -> int:
         SystemExit: If the change is outside the supported mixed push scope.
     """
     if (
-        not any(path.startswith("src/heinzel/") and path.endswith(".py") for path in changed)
+        (
+            not any(path.startswith("src/heinzel/") and path.endswith(".py") for path in changed)
+            and not any(path in BROWSER_FIXTURES for path in changed)
+        )
         or not any(path.startswith("web/src/") for path in changed)
         or bool(WEB_ROOT_FILES.intersection(changed))
         or any(
             not is_document(path)
-            and path not in {"scripts/scoped_checks.py", "web/openapi.json"}
+            and path not in {"scripts/scoped_checks.py", "scripts/web_build.py", "web/openapi.json", *BROWSER_FIXTURES}
             and not path.startswith(MIXED_SOURCE_DIRS)
             for path in changed
         )
@@ -326,6 +376,8 @@ def mixed_push_checks(changed: list[str], base: str, manifest: Path) -> int:
         msg = "A focused mixed push supports Python/web source changes without build or runtime configuration."
         raise SystemExit(msg)
     targets = mixed_test_targets(manifest, base=base, head=focused_push_head(), changed=changed)
+    for path in sorted(set(changed) & BROWSER_FIXTURES.keys()):
+        print(f"Hosted browser validation required: {path}: {BROWSER_FIXTURES[path]}", flush=True)
     # The pinned Vitest filters on paths relative to its web/ root.
     web = " ".join(path.removeprefix("web/") for path in targets["web"])
     command = [

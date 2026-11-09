@@ -314,6 +314,7 @@ def mixed_push(monkeypatch, tmp_path):
     plan = {
         "base": base,
         "head": head,
+        "hosted_browser": {},
         "unit": ["tests/unit/scoped_checks_test.py"],
         "integration": ["tests/integration/guides_test.py::test_the_guides_exist_and_cite_commands"],
         "web": ["web/src/updates/AutoUpdate.test.tsx"],
@@ -325,6 +326,72 @@ def mixed_push(monkeypatch, tmp_path):
     monkeypatch.setenv("HZ_FOCUSED_PUSH", "1")
     monkeypatch.setenv("HZ_FOCUSED_PUSH_MANIFEST", str(manifest))
     return base, plan, changed, manifest
+
+
+def test_mixed_browser_fixtures_are_reported_without_launching_browser(gate_calls, mixed_push, capsys):
+    _, calls = gate_calls
+    base, plan, changed, manifest = mixed_push
+    changed = [path for path in changed if not path.startswith("src/heinzel/")]
+    changed += ["web/e2e/calendar.mjs", "desktop/e2e/ui-navigation.mjs"]
+    plan["hosted_browser"] = {
+        path: scoped.BROWSER_FIXTURES[path] for path in changed if path in scoped.BROWSER_FIXTURES
+    }
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    assert scoped.push_checks(changed, base) == 0
+    assert "Hosted browser validation required" in capsys.readouterr().out
+    assert all("playwright" not in " ".join(command).lower() for command, _ in calls)
+    assert all("test:navigation" not in " ".join(command) for command, _ in calls)
+
+
+@pytest.mark.parametrize("fixture", ["web/e2e/unknown.mjs", "web/e2e/../e2e/calendar.mjs"])
+def test_mixed_browser_scope_rejects_unknown_paths_before_running_checks(gate_calls, mixed_push, fixture):
+    _, calls = gate_calls
+    base, plan, changed, manifest = mixed_push
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+    with pytest.raises(SystemExit, match=r"without build or runtime configuration|unmapped browser"):
+        scoped.push_checks([*changed, fixture], base)
+    assert calls == []
+
+
+def test_mixed_browser_scope_rejects_missing_hosted_obligation(gate_calls, mixed_push):
+    _, calls = gate_calls
+    base, plan, changed, manifest = mixed_push
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+    with pytest.raises(SystemExit, match="exact hosted browser obligations"):
+        scoped.push_checks([*changed, "web/e2e/calendar.mjs"], base)
+    assert calls == []
+
+
+def test_mixed_browser_scope_refuses_a_deleted_fixture(monkeypatch, gate_calls, mixed_push):
+    _, calls = gate_calls
+    base, plan, changed, manifest = mixed_push
+    path = "web/e2e/calendar.mjs"
+    plan["hosted_browser"] = {path: scoped.BROWSER_FIXTURES[path]}
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+    monkeypatch.setattr(scoped, "tracked_test_files", lambda *_: set())
+    with pytest.raises(SystemExit, match="deleted or untracked browser fixtures"):
+        scoped.push_checks([*changed, path], base)
+    assert calls == []
+
+
+def test_changed_script_requires_its_environment_contract(gate_calls, mixed_push):
+    _, calls = gate_calls
+    base, plan, changed, manifest = mixed_push
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+    with pytest.raises(SystemExit, match="changed script requires"):
+        scoped.push_checks([*changed, "scripts/web_build.py"], base)
+    assert calls == []
+
+
+def test_mixed_scope_requires_whole_changed_test_file(gate_calls, mixed_push):
+    _, calls = gate_calls
+    base, plan, changed, manifest = mixed_push
+    changed.append("tests/integration/guides_test.py")
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+    with pytest.raises(SystemExit, match="each changed test file in full"):
+        scoped.push_checks(changed, base)
+    assert calls == []
 
 
 def test_focused_mixed_push_keeps_guards_static_checks_and_explicit_test_targets(gate_calls, mixed_push):
