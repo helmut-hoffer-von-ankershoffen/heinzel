@@ -14,6 +14,7 @@ import { CodeInput } from "@/components/ui/code-input";
 import { type MessageKey, t } from "@/i18n";
 import { Branding } from "@/layout/Branding";
 import { useDark, useSelectedTheme } from "@/layout/ThemeTokens";
+import { logEvent } from "@/lib/events";
 import { installState } from "@/pwa/install";
 import {
   fadeMs,
@@ -41,21 +42,57 @@ const LINES: Record<Exclude<Phase, "error">, MessageKey> = {
 
 export type ProbeResult = { kind: "ok"; info: unknown } | { kind: "refused" } | { kind: "unreachable" };
 
+/** How long one question to hz may take. A phone on a VPN can hold a request on a dead connection without ever
+ * failing it: the splash then waited on that one request and said "Connecting" for good. A question that takes longer
+ * is given up, and the next one opens a new connection. */
+export const PROBE_TIMEOUT_MS = 5_000;
+
 /** Ask hz who it is (`/system/info`, with the token): answered, refused the token, or not there. */
-export async function probeServer(): Promise<ProbeResult> {
+export async function probeServer(timeoutMs = PROBE_TIMEOUT_MS): Promise<ProbeResult> {
+  const started = performance.now();
+  const fields = { operation: "web.splash", step: "probe" };
+  const done = (result: ProbeResult, reason?: string, error?: unknown): ProbeResult => {
+    logEvent(
+      "web.splash.probe",
+      {
+        ...fields,
+        phase: "end",
+        outcome: result.kind === "ok" ? "ok" : "error",
+        duration_ms: Math.round(performance.now() - started),
+        reason: reason ?? (result.kind === "ok" ? undefined : result.kind),
+        // A DOMException (an abort) is not an Error in every engine: its name is what tells the kind.
+        error_type:
+          typeof (error as { name?: unknown })?.name === "string" ? (error as { name: string }).name : undefined,
+      },
+      result.kind === "ok" ? "info" : "warn",
+    );
+    return result;
+  };
+  logEvent("web.splash.probe", { ...fields, phase: "start" }, "debug");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const sent = token();
-    const { data, response } = await api.GET("/system/info");
+    const { data, response } = await api.GET("/system/info", { signal: controller.signal });
     // The session token of an `hz ui` that has since restarted: the client dropped it for this browser's device token
     // (dropRefusedDevice), so ask again with that before telling a paired window to sign in. Once only: a refused
     // device token is dropped too, and nothing is left to ask with.
-    if (response.status === 401) return token() && token() !== sent ? probeServer() : { kind: "refused" };
+    if (response.status === 401) {
+      if (token() && token() !== sent) {
+        clearTimeout(timer);
+        done({ kind: "refused" }, "session-token-replaced");
+        return probeServer(timeoutMs);
+      }
+      return done({ kind: "refused" });
+    }
     // A proxy's gateway error: the hz behind it (`make web-dev`) is stopped. Any other status is hz answering, a 500
     // too: the screens say what it means.
-    if (unreachableError({ status: response.status })) return { kind: "unreachable" };
-    return { kind: "ok", info: response.ok ? data : undefined };
-  } catch {
-    return { kind: "unreachable" };
+    if (unreachableError({ status: response.status })) return done({ kind: "unreachable" }, "gateway");
+    return done({ kind: "ok", info: response.ok ? data : undefined });
+  } catch (error) {
+    return done({ kind: "unreachable" }, controller.signal.aborted ? "timeout" : "network", error);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -292,6 +329,13 @@ type Props = {
   now?: () => number;
   reload?: () => void;
 };
+/** The version the last start remembered is not hz's until hz says so: a phone that cannot reach it must not show an
+ * old build's number as if it were the one it is connecting to. */
+function forgetShownVersion() {
+  const shown = byId("splash-version");
+  if (shown) shown.textContent = "";
+}
+
 const reloadPage = () => window.location.reload();
 const clock = () => performance.now();
 
@@ -335,6 +379,7 @@ export function Splash({ store = splash, probe = probeServer, now = clock, reloa
         store.send({ type: "refused" });
         return false;
       }
+      if (!store.get().booted) forgetShownVersion();
       store.send({ type: "unreachable", at: now() });
       return polling(store.get());
     },
