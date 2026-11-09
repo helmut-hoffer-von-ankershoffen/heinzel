@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -22,6 +23,8 @@ import related_tests as scoped_related  # noqa: E402 - needs the scripts path ab
 def _without_host_gate(monkeypatch):
     """Keep dispatch tests independent of the developer's PATH."""
     monkeypatch.setattr(scoped.shutil, "which", lambda _: None)
+    monkeypatch.delenv("HZ_FOCUSED_PUSH", raising=False)
+    monkeypatch.delenv("HZ_FOCUSED_PUSH_MANIFEST", raising=False)
 
 
 @pytest.fixture
@@ -29,8 +32,11 @@ def gate_calls(monkeypatch, tmp_path):
     gate = str(tmp_path / "hz-gate")
     monkeypatch.setattr(scoped.shutil, "which", lambda _: gate)
     calls = []
+    real_run = subprocess.run
 
     def run(command, **kwargs):
+        if command[0] == "git":
+            return real_run(command, **kwargs)
         calls.append((command, kwargs))
         return subprocess.CompletedProcess(command, 0)
 
@@ -243,6 +249,177 @@ def test_a_change_no_test_reaches_still_runs_the_hooks_own_test():
     assert overrides(["docs/TEAMS.md", "scripts/__nothing_mentions_this__.py"])["UNIT_TARGETS"] == (
         "tests/unit/scoped_checks_test.py"
     )
+
+
+def test_focused_push_keeps_early_guards_and_all_related_local_units(monkeypatch, gate_calls):
+    gate, calls = gate_calls
+    changed = ["src/heinzel/heads/_desktop_release.py"]
+    safe = ["tests/unit/heads/desktop_release_progress_test.py", "tests/unit/scoped_checks_test.py"]
+    hosted = [
+        "tests/unit/heads/desktop_installation_test.py",
+        "tests/integration/desktop_framework_wrap_test.py",
+    ]
+    monkeypatch.setattr(scoped_related, "related_tests", lambda _: [hosted[0], *safe, hosted[1]])
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: changed)
+    monkeypatch.setenv("HZ_FOCUSED_PUSH", "1")
+
+    with pytest.raises(SystemExit) as done:
+        scoped.main()
+
+    assert done.value.code == 0
+    [(guard, _), (checks, _)] = calls
+    assert guard == [gate, "--timeout", "180", *scoped.early_guard_commands(changed)[0]]
+    assert checks == [
+        gate,
+        "--timeout",
+        "1800",
+        "make",
+        "check-fast",
+        "WEB_TESTS=",
+        "MANAGED_CHECK=",
+        f"FAST_TYPES={scoped.TYPES}",
+        f"UNIT_TARGETS={' '.join(safe)}",
+    ]
+    assert overrides(changed)["UNIT_TARGETS"].split() == [hosted[0], *safe, hosted[1]]
+
+
+@pytest.mark.parametrize("related", [None, [], ["tests/unit/heads/desktop_installation_test.py"]])
+def test_focused_python_push_refuses_an_unknown_or_empty_local_selection(monkeypatch, related):
+    monkeypatch.setattr(scoped_related, "related_tests", lambda _: related)
+
+    with pytest.raises(SystemExit, match="requires at least one related unit test"):
+        scoped.python_overrides(["src/heinzel/heads/_desktop_release.py"], focused=True)
+
+
+@pytest.mark.parametrize("changed", [[], ["desktop/main.ts"], ["web/src/main.tsx"]])
+def test_focused_push_refuses_routes_that_would_start_a_full_suite(monkeypatch, gate_calls, changed):
+    _, calls = gate_calls
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: changed)
+    monkeypatch.setenv("HZ_FOCUSED_PUSH", "1")
+
+    with pytest.raises(SystemExit, match="requires a Python push"):
+        scoped.main()
+
+    assert calls == []
+
+
+@pytest.fixture
+def mixed_push(monkeypatch, tmp_path):
+    base = "c" * 40
+    head = scoped.resolve_base("HEAD")
+    plan = {
+        "base": base,
+        "head": head,
+        "unit": ["tests/unit/scoped_checks_test.py"],
+        "integration": ["tests/integration/guides_test.py::test_the_guides_exist_and_cite_commands"],
+        "web": ["web/src/updates/AutoUpdate.test.tsx"],
+        "desktop": ["desktop/test/window.test.js"],
+    }
+    changed = ["src/heinzel/heads/cli/__init__.py", "web/src/updates/AutoUpdate.tsx", "desktop/src/main.js"]
+    manifest = tmp_path / "focused.json"
+    monkeypatch.setattr(scoped, "focused_push_head", lambda: head)
+    monkeypatch.setenv("HZ_FOCUSED_PUSH", "1")
+    monkeypatch.setenv("HZ_FOCUSED_PUSH_MANIFEST", str(manifest))
+    return base, plan, changed, manifest
+
+
+def test_focused_mixed_push_keeps_guards_static_checks_and_explicit_test_targets(gate_calls, mixed_push):
+    gate, calls = gate_calls
+    base, plan, changed, manifest = mixed_push
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    assert scoped.push_checks(changed, base) == 0
+
+    [(guard, _), (checks, _), (integration, _), (desktop, _)] = calls
+    assert guard == [gate, "--timeout", "180", *scoped.early_guard_commands(changed)[0]]
+    assert checks[:5] == [gate, "--timeout", "600", "make", "check-fast"]
+    assert f"FAST_TYPES={scoped.TYPES}" in checks
+    assert "UNIT_TARGETS=tests/unit/scoped_checks_test.py" in checks
+    assert any("vitest run --maxWorkers=2 src/updates/AutoUpdate.test.tsx" in arg for arg in checks)
+    managed = next(arg for arg in checks if arg.startswith("MANAGED_CHECK="))
+    assert "runtime-code.mjs --check" in managed
+    assert "biome ci ." in managed
+    assert "$(MANAGED_TYPES)" in managed
+    assert integration[3:7] == ["uv", "run", "pytest", *plan["integration"]]
+    assert desktop[3:] == [*scoped.WEB.split(), "exec", "node", "--test", "../desktop/test/window.test.js"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("base", "a" * 40, "exact base and head"),
+        ("head", "b" * 40, "exact base and head"),
+        ("unit", [], "nonempty unit"),
+        ("unit", ["tests/unit/heads/desktop_installation_test.py"], "hosted desktop"),
+        ("integration", ["tests/integration/desktop_framework_wrap_test.py::test_unsafe"], "hosted desktop"),
+        ("web", ["web/src"], "Invalid focused mixed test path"),
+        ("web", ["web/src/updates/../updates/AutoUpdate.test.tsx"], "Invalid focused mixed test path"),
+        ("web", ["web/src/updates/not_tracked.test.tsx"], "tracked test files"),
+        ("desktop", [], "nonempty desktop"),
+    ],
+)
+def test_focused_mixed_push_refuses_unsafe_manifests(gate_calls, mixed_push, field, value, message):
+    _, calls = gate_calls
+    base, plan, changed, manifest = mixed_push
+    plan[field] = value
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match=message):
+        scoped.push_checks(changed, base)
+
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        ("uv.lock", "without build or runtime configuration"),
+        ("web/vite.config.ts", "without build or runtime configuration"),
+        ("tests/unit/related_tests_test.py", "cover every changed test file"),
+    ],
+)
+def test_focused_mixed_push_refuses_uncovered_changes(gate_calls, mixed_push, extra, message):
+    _, calls = gate_calls
+    base, plan, changed, manifest = mixed_push
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match=message):
+        scoped.push_checks([*changed, extra], base)
+
+    assert calls == []
+
+
+def test_mixed_manifest_alone_leaves_default_push_selection_unchanged(monkeypatch, gate_calls, mixed_push):
+    _, calls = gate_calls
+    base, _, changed, _ = mixed_push
+    monkeypatch.delenv("HZ_FOCUSED_PUSH")
+
+    assert scoped.push_checks(changed, base) is None
+
+    assert [command[3:] for command, _ in calls] == scoped.early_guard_commands(changed)
+
+
+def test_focused_mixed_push_requires_the_manifest_head_to_be_the_only_pushed_ref(monkeypatch, tmp_path):
+    head = "a" * 40
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: head)
+    monkeypatch.setattr(scoped.subprocess, "check_output", lambda *_, **__: "")
+    refs_file = tmp_path / "refs"
+    monkeypatch.setenv("HZ_DEV_PUSH_REFS_FILE", str(refs_file))
+    ref = f"refs/heads/work {head} refs/heads/work {'0' * 40}\n"
+    refs_file.write_text(ref, encoding="utf-8")
+    assert scoped.focused_push_head() == head
+
+    refs_file.write_text(ref * 2, encoding="utf-8")
+    with pytest.raises(SystemExit, match="exactly one pushed ref"):
+        scoped.focused_push_head()
+
+    refs_file.write_text(ref.replace(head, "b" * 40), encoding="utf-8")
+    with pytest.raises(SystemExit, match="checked-out HEAD"):
+        scoped.focused_push_head()
 
 
 def test_imports_follow_the_defining_module_not_the_package_that_re_exports_it():
