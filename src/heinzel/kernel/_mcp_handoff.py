@@ -42,6 +42,23 @@ class McpLifecyclePlanning:
 
     status: "Callable[[str], McpLifecycleObservation]" = field(repr=False)
     prepare: "Callable[[McpLifecycleAction, str, int], tuple[str, McpReviewSession]]" = field(repr=False)
+    validate_install: "Callable[[str, str], None] | None" = field(default=None, repr=False, kw_only=True)
+
+    def require_current(
+        self, action: McpLifecycleAction, registration: str, handoff: str, session: McpReviewSession
+    ) -> None:
+        """Recheck a stored plan. A retained Install validator must never prepare or consume it.
+
+        Raises:
+            HeinzelError: If the handoff or current host binding does not match.
+        """
+        deadline = mcp_handoff_deadline(handoff)
+        if action == "install":
+            if self.validate_install is None or session != "terminal":
+                raise HeinzelError(_REFUSED)
+            self.validate_install(registration, handoff)
+        elif self.prepare(action, registration, deadline) != (handoff, session):
+            raise HeinzelError(_REFUSED)
 
 
 def mcp_handoff(exact: "dict[str, JsonValue]", expires_at: int) -> str:

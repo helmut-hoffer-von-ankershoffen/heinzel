@@ -84,15 +84,14 @@ class _Handoffs:
         """
         with self.lock:
             plan = self.plans.get(id_)
-        if plan is not None:
+        if plan is not None and self.kernel.provides(McpLifecyclePlanning):
             try:
-                current = _prepare(
-                    self.kernel, plan.action, plan.registration, deadline=mcp_handoff_deadline(plan.handoff)
+                self.kernel.resolve(McpLifecyclePlanning).require_current(
+                    plan.action, plan.registration, plan.handoff, plan.session
                 )
             except (HeinzelError, OSError, ValueError):
                 raise HTTPException(status_code=409, detail=_REFUSED) from None
-            if current == (plan.handoff, plan.session):
-                return plan
+            return plan
         raise HTTPException(status_code=409, detail=_REFUSED)
 
 

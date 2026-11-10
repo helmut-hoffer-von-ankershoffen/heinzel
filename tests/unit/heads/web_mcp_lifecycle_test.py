@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from heinzel.heads import web
 from heinzel.heads.web._devices import Devices
 from heinzel.kernel import Kernel, McpLifecycleObservation, McpLifecyclePlanning, Settings
-from heinzel.kernel._mcp_handoff import mcp_handoff
+from heinzel.kernel._mcp_handoff import mcp_handoff, require_mcp_handoff
 
 pytestmark = pytest.mark.unit
 _STATUS = "/api/mcp/lifecycle/fixture"
@@ -26,16 +26,19 @@ class _Planner:
 
     def prepare(self, action, registration, expires_at):
         self.calls.append((action, registration))
-        return mcp_handoff(
-            {
-                "action": action,
-                "registration": registration,
-                "grant_revision": self.revision,
-                "sdk_fingerprint": "private-fixture-sdk-fingerprint",
-                "config_preimage": "private-fixture-config-digest",
-            },
-            expires_at,
-        ), "terminal"
+        return mcp_handoff(self._exact(action, registration), expires_at), "terminal"
+
+    def validate_install(self, registration, handoff):
+        require_mcp_handoff(handoff, self._exact("install", registration))
+
+    def _exact(self, action, registration):
+        return {
+            "action": action,
+            "registration": registration,
+            "grant_revision": self.revision,
+            "sdk_fingerprint": "private-fixture-sdk-fingerprint",
+            "config_preimage": "private-fixture-config-digest",
+        }
 
 
 @pytest.fixture
@@ -66,7 +69,10 @@ def test_web_and_forged_native_headers_cannot_activate_unavailable_host(ui, capl
 def test_device_prepares_install_handoff_and_revision_or_expiry_refuses(ui, monkeypatch, caplog):
     client, kernel, devices = ui
     planner = _Planner()
-    kernel.bind(McpLifecyclePlanning, McpLifecyclePlanning(planner.status, planner.prepare))
+    kernel.bind(
+        McpLifecyclePlanning,
+        McpLifecyclePlanning(planner.status, planner.prepare, validate_install=planner.validate_install),
+    )
     _, device = devices.pair("Isolated fixture")
     headers = {"Authorization": f"Bearer {device}"}
     status = client.get(_STATUS, headers=headers)
@@ -91,7 +97,31 @@ def test_device_prepares_install_handoff_and_revision_or_expiry_refuses(ui, monk
     with monkeypatch.context() as patcher:
         patcher.setattr(time, "time", lambda: deadline)
         assert client.get(endpoint, headers=_SESSION).status_code == 409
-    assert planner.calls == [("install", "fixture")] * 3
+    assert planner.calls == [("install", "fixture")]
     events = [record for record in caplog.records if record.message == "mcp.ui.prepare_plan"]
     assert [record.phase for record in events] == ["start", "end"]
     assert events[-1].outcome == "ok"
+
+
+def test_install_lookup_without_validator_does_not_prepare_again(ui):
+    client, kernel, _ = ui
+    planner = _Planner()
+    kernel.bind(McpLifecyclePlanning, McpLifecyclePlanning(planner.status, planner.prepare))
+    prepared = client.post(_STATUS + "/prepare?action=install", headers=_SESSION)
+    assert prepared.status_code == 200
+    assert client.get("/api/mcp/handoffs/" + prepared.json()["id"], headers=_SESSION).status_code == 409
+    assert planner.calls == [("install", "fixture")]
+
+
+def test_check_lookup_preserves_stateless_revalidation(ui):
+    client, kernel, _ = ui
+    planner = _Planner()
+    kernel.bind(McpLifecyclePlanning, McpLifecyclePlanning(planner.status, planner.prepare))
+    prepared = client.post(_STATUS + "/prepare?action=check", headers=_SESSION)
+    assert prepared.status_code == 200
+    plan = prepared.json()
+    endpoint = "/api/mcp/handoffs/" + plan["id"]
+    assert client.get(endpoint, headers=_SESSION).json() == plan
+    planner.revision += 1
+    assert client.get(endpoint, headers=_SESSION).status_code == 409
+    assert planner.calls == [("check", "fixture")] * 3

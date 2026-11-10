@@ -102,6 +102,10 @@ and the original configuration's digest and file identity or proven absence. Use
 and review digest for the file and entry terms. Give `McpInstallReview.prepare` a read-only commitment view of
 those same terms. A handoff does not create or replace the workflow's pending approval. The host reserves one
 session for the exact target and refuses a second until the first is closed. Keep its handle and workflow in process.
+Settings resolves that locator through the planner's read-only Install validator. The validator rechecks the same
+pending session, grant, scope, pins, preimage and deadline. Repeated lookups preserve the session. Only local CLI
+review can claim it. Lookup refuses if the validator is unavailable or the plan changed, expired, was revoked or was
+consumed.
 
 After checking the handoff, `McpInstallReview` calls `HostClientConfigWorkflow.prepare(INSTALL)` and `review(id)`.
 The workflow's approval callback compares the pending review digest to the committed digest before displaying

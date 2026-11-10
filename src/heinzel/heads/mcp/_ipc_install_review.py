@@ -3,6 +3,7 @@
 import os
 import secrets
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import TYPE_CHECKING
@@ -17,7 +18,7 @@ from heinzel.kernel._logging import get_logger, step
 from heinzel.kernel._mcp_handoff import MCP_HANDOFF_SECONDS, mcp_handoff, require_mcp_handoff
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Generator
     from contextlib import AbstractContextManager
 
     from pydantic import JsonValue
@@ -150,6 +151,30 @@ class McpInstallReview:
             require_mcp_handoff(handoff, self._exact(registration))
             return False
 
+    def validate(self, registration: str, handoff: str) -> None:
+        """Recheck a locator for Settings without claiming or extending the terminal session.
+
+        Raises:
+            HeinzelError: If the retained plan, grant, scope or configuration changed.
+        """
+        authority = self.manual
+        if authority is None:
+            require_mcp_handoff(handoff, self._exact(registration))
+            return
+        session = self._session
+        with session.lock:
+            pending = self._pending_handoff(registration, handoff)
+        with self._current_binding(authority, pending):
+            pass
+        workflow = self._workflow(authority, lambda _: False)
+        if workflow.commitment(ClientConfigAction.INSTALL) != pending.config_digest:
+            raise HeinzelError(_UNAVAILABLE)
+        with session.lock:
+            if session.pending is not pending:
+                raise HeinzelError(_UNAVAILABLE)
+            with self._current_binding(authority, pending):
+                pass
+
     def _workflow(
         self, authority: ManualInstallAuthority, approve: "Callable[[ClientChangeReview], bool]"
     ) -> HostClientConfigWorkflow:
@@ -157,27 +182,39 @@ class McpInstallReview:
             authority.context, authority.pinned, observe=authority.observe, approve_local=approve, clock=self.clock
         )
 
-    def _require_session(
-        self, authority: ManualInstallAuthority, pending: _ManualHandoff, terminal: tuple[int, int]
-    ) -> None:
+    @contextmanager
+    def _current_binding(self, authority: ManualInstallAuthority, pending: _ManualHandoff) -> "Generator[None]":
         require_mcp_handoff(pending.token, pending.exact)
         if (
-            client_config_scope(authority.context) != pending.scope
+            self.clock() >= pending.deadline
+            or client_config_scope(authority.context) != pending.scope
             or arguments_hash(self.snapshot(pending.registration)) != pending.authority_digest
         ):
             raise HeinzelError(_UNAVAILABLE)
         # The final successful observation linearizes under this same revocation fence.
         with authority.fence(pending.authority_digest):
+            if self.clock() >= pending.deadline:
+                raise HeinzelError(_UNAVAILABLE)
+            yield
+
+    def _require_session(
+        self, authority: ManualInstallAuthority, pending: _ManualHandoff, terminal: tuple[int, int]
+    ) -> None:
+        with self._current_binding(authority, pending):
             require_local_mcp_terminal()
             if self.clock() >= pending.deadline or terminal != (os.getsid(0), os.getpgrp()):
                 raise HeinzelError(_UNAVAILABLE)
 
+    def _pending_handoff(self, registration: str, handoff: str) -> _ManualHandoff:
+        pending = self._session.pending
+        if pending is None or pending.registration != registration or pending.token != handoff:
+            raise HeinzelError(_UNAVAILABLE)
+        return pending
+
     def _review_manual(self, authority: ManualInstallAuthority, registration: str, handoff: str) -> None:
         session = self._session
         with session.lock:
-            pending = session.pending
-            if pending is None or pending.registration != registration or pending.token != handoff:
-                raise HeinzelError(_UNAVAILABLE)
+            pending = self._pending_handoff(registration, handoff)
             session.pending = None
             session.active = True
         try:
