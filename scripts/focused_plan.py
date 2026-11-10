@@ -13,6 +13,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from subprocess import CalledProcessError
 from typing import TYPE_CHECKING, Any
 
 # The isolated workflow launcher supplies only this exact checkout's modules.
@@ -70,6 +71,7 @@ MAX_DIFF = 1024 * 1024
 MAX_COVERED_FILES = 100
 RAW_FIELDS = 5
 LS_TREE_FIELDS = 2
+MERGE_FIELDS = 3
 
 
 @dataclass(frozen=True)
@@ -144,6 +146,32 @@ def raw_diff(base: str, commit: str) -> bytes:
     return git("diff-tree", "--no-commit-id", "-r", "--raw", "--no-abbrev", "--no-renames", "-z", base, commit)
 
 
+def pr_merge_base(commit: str, head: str) -> str:
+    """Read the tested base from GitHub's ordered two-parent merge."""
+    require(valid_sha(commit) and valid_sha(head), "missing exact Git identities")
+    parents = git("rev-list", "--parents", "-n", "1", commit).decode().split()
+    require(
+        len(parents) == MERGE_FIELDS and parents[0] == commit and valid_sha(parents[1]) and parents[2] == head,
+        "GitHub test merge does not bind ordered base and head",
+    )
+    return parents[1]
+
+
+def require_pr_base_ancestor(reported: str, tested: str) -> None:
+    """Allow a cached GitHub base SHA only from the tested base's history.
+
+    Raises:
+        CandidateError: The reported SHA is invalid or cannot be proved to precede the tested base.
+    """
+    require(valid_sha(reported) and valid_sha(tested), "missing exact PR base identities")
+    if reported != tested:
+        try:
+            git("merge-base", "--is-ancestor", reported, tested)
+        except CalledProcessError as exc:
+            message = "reported PR base is outside the tested main history"
+            raise CandidateError(message) from exc
+
+
 def changed_paths(raw: bytes) -> dict[str, str]:
     """Extract a complete path/status inventory. Exceptional Git changes require explicit review."""
     require(len(raw) <= MAX_DIFF and (not raw or raw.endswith(b"\0")), "unsupported focused diff")
@@ -192,6 +220,8 @@ def resolve(
     commit: str,
     manifests: str,
     dispatch_pr: dict[str, Any] | None = None,
+    *,
+    pr_base_limit: str | None = None,
 ) -> CandidatePlan | Scope:
     """Resolve only an exact released candidate or exact reviewed, bounded workload.
 
@@ -234,22 +264,26 @@ def resolve(
         ),
     )
     if isinstance(workload, FocusedPlan):
-        return _scope(source, workload, commit, plan, selection)
+        return _scope(source, workload, commit, plan, selection, pr_base_limit=pr_base_limit)
     message = "ordinary source did not resolve to a focused workload"
     raise CandidateError(message)
 
 
-def _scope(
+def _scope(  # noqa: PLR0913 - the reader separately supplies the current protected base limit
     source: WorkloadSource,
     workload: FocusedPlan,
     commit: str,
     plan: dict[str, Any],
     selection: dict[str, tuple[str, ...]],
+    *,
+    pr_base_limit: str | None = None,
 ) -> Scope:
     require(valid_sha(commit), "invalid tested checkout")
     if source.event == "pull_request":
-        parents = git("rev-list", "--parents", "-n", "1", commit).decode().split()
-        require(parents == [commit, source.base, source.head], "GitHub test merge does not bind ordered base and head")
+        require(pr_merge_base(commit, source.head) == source.base, "GitHub test merge base differs from reviewed base")
+        limit = pr_base_limit or source.base
+        require_pr_base_ancestor(source.base, limit)
+        require_pr_base_ancestor(source.payload["pull_request"]["base"]["sha"], limit)
     else:
         require(commit == source.head, "checkout differs from exact source head")
     tree = object_id(f"{commit}^{{tree}}")
@@ -313,7 +347,8 @@ def event_source(
     dispatch_pr = None
     if event == "pull_request":
         pr = payload["pull_request"]
-        head, base = pr["head"]["sha"], pr["base"]["sha"]
+        head = pr["head"]["sha"]
+        base = pr["base"]["sha"] if release_version(event, REPOSITORY, "", payload) else pr_merge_base(commit, head)
     else:
         head = commit
         base = env.get("BATCH_BASE") or payload.get("before") or head
