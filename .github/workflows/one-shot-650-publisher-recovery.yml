@@ -1,0 +1,36 @@
+# Publisher only. The root coordinator must hold queue/train and all competing base writers.
+name: One-shot 650 publisher recovery
+on:
+  push:
+    branches: [bootstrap/one-shot-650-publisher-recovery]
+permissions: {}
+concurrency:
+  group: one-shot-650-publisher-recovery
+  cancel-in-progress: false
+jobs:
+  recover:
+    if: >-
+      github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+      && github.actor == github.repository_owner
+      && github.ref == 'refs/heads/bootstrap/one-shot-650-publisher-recovery'
+      && github.workflow_sha == github.sha
+      && github.run_attempt == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REVIEWED_RECOVERY_SHA: ${{ vars.ONE_SHOT_650_RECOVERY_SHA }}
+    steps:
+      - name: Require separately reviewed recovery commit
+        run: test -n "$REVIEWED_RECOVERY_SHA" && test "$GITHUB_SHA" = "$REVIEWED_RECOVERY_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify original evidence and publish against the recovery run
+        run: python3 -I scripts/one_shot_650_recovery.py

@@ -63,7 +63,7 @@ def test_status_publisher_sets_pending_then_reads_back_each_success():
 
     states = {}
     calls = []
-    url = f"https://github.com/{publisher.REPO}/actions/runs/42"
+    url = f"https://github.com/{publisher.REPO}/actions/runs/99"
     checks = [
         {"context": context, **({"integration_id": publisher.GITHUB_ACTIONS_APP} if context != "CI OK" else {})}
         for context in publisher.CONTEXTS
@@ -99,7 +99,7 @@ def test_status_publisher_sets_pending_then_reads_back_each_success():
         patch.object(publisher, "source"),
         patch.object(publisher, "evidence"),
     ):
-        publisher.publish_statuses(42)
+        publisher.publish_statuses(42, 99, "original-reviewed-source")
     assert calls == [
         ("CI OK", "pending"),
         ("merge-gate", "pending"),
@@ -181,3 +181,36 @@ def test_invalidation_continues_if_another_invalidation_fails():
 
 def test_new_candidate_source_review_is_pinned():
     publisher.source_review()
+
+
+def test_source_resolves_merge_ref_without_pull_merge_commit_field():
+    paths = {
+        "scripts/related_tests.py",
+        "tests/unit/scoped_checks_test.py",
+        "web/e2e/chat-ready.mjs",
+        "web/e2e/device-reopen.mjs",
+        "web/e2e/generic-agent-chat.mjs",
+    }
+
+    objects = {
+        "git/ref/heads/main": {"object": {"sha": publisher.BASE}},
+        "git/ref/heads/fix/five-flakes": {"object": {"sha": publisher.HEAD}},
+        "git/ref/pull/650/merge": {"object": {"sha": "merge"}},
+        "pulls/650": {
+            "state": "open",
+            "draft": False,
+            "base": {"ref": "main", "repo": {"full_name": publisher.REPO}},
+            "head": {"ref": "fix/five-flakes", "sha": publisher.HEAD, "repo": {"full_name": publisher.REPO}},
+        },
+        f"git/commits/{publisher.HEAD}": {"tree": {"sha": publisher.TREE}},
+        f"compare/{publisher.BASE}...{publisher.HEAD}?per_page=100": {
+            "files": [{"filename": name, "status": "modified"} for name in paths]
+        },
+        "git/commits/merge": {
+            "parents": [{"sha": publisher.BASE}, {"sha": publisher.HEAD}],
+            "tree": {"sha": publisher.TREE},
+        },
+    }
+
+    with patch.object(publisher, "one", side_effect=objects.__getitem__):
+        publisher.source()

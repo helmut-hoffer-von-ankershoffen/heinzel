@@ -96,7 +96,8 @@ def source() -> None:
     require({item["filename"] for item in comparison["files"]} == expected, "changed path scope drift")
     require(all(item["status"] == "modified" for item in comparison["files"]), "changed path status drift")
 
-    merge = one(f"git/commits/{pull['merge_commit_sha']}")
+    merge_sha = one("git/ref/pull/650/merge")["object"]["sha"]
+    merge = one(f"git/commits/{merge_sha}")
     require([parent["sha"] for parent in merge["parents"]] == [BASE, HEAD], "test merge parents drift")
     require(merge["tree"]["sha"] == TREE, "test merge tree drift")
 
@@ -141,11 +142,12 @@ def verify_upload_step(job: dict[str, Any], name: str, artifact: dict[str, Any])
     require(len(records) == 1, "exact upload step does not bind artifact ID and size")
 
 
-def evidence(run_id: int) -> None:
+def evidence(run_id: int, expected_source: str | None = None) -> None:
     """Verify the exact attempt's job inventory and bounded artifact contents."""
+    source_sha = expected_source or os.environ["REVIEWED_HELPER_SHA"]
     run = one(f"actions/runs/{run_id}")
     require(run["event"] == "push" and run["head_branch"] == BRANCH, "workflow event or ref drift")
-    require(run["head_sha"] == os.environ["REVIEWED_HELPER_SHA"] and run["run_attempt"] == 1, "workflow source drift")
+    require(run["head_sha"] == source_sha and run["run_attempt"] == 1, "workflow source drift")
     require(run["path"] == ".github/workflows/focused-650.yml", "workflow path drift")
     pages = api(f"actions/runs/{run_id}/attempts/1/jobs?per_page=100")
     jobs = [job for page in pages for job in page["jobs"]]
@@ -162,7 +164,7 @@ def evidence(run_id: int) -> None:
         )
         job = matching[0]
         require(job["run_id"] == run_id and job["run_attempt"] == 1, "job run or attempt mismatch")
-        require(job["head_sha"] == os.environ["REVIEWED_HELPER_SHA"], "job source mismatch")
+        require(job["head_sha"] == source_sha, "job source mismatch")
         if name.startswith(("Focused 650 python (", "Focused 650 browser (")):
             uploads = [step for step in matching[0]["steps"] if step["name"] == "Upload exact attempt evidence"]
             require(len(uploads) == 1 and uploads[0]["conclusion"] == "success", "missing successful artifact upload")
@@ -182,7 +184,7 @@ def evidence(run_id: int) -> None:
                 artifact["workflow_run"]["id"] == run_id
                 and artifact["workflow_run"]["repository_id"] == REPOSITORY_ID
                 and artifact["workflow_run"]["head_repository_id"] == REPOSITORY_ID
-                and artifact["workflow_run"]["head_sha"] == os.environ["REVIEWED_HELPER_SHA"]
+                and artifact["workflow_run"]["head_sha"] == source_sha
                 and 0 < artifact["size_in_bytes"] < MAX_ARCHIVE_BYTES,
                 "artifact provenance or size",
             )
@@ -217,7 +219,7 @@ def evidence(run_id: int) -> None:
             )
 
 
-def publish_statuses(run_id: int) -> None:
+def publish_statuses(run_id: int, status_run_id: int | None = None, expected_source: str | None = None) -> None:
     """Publish and read back only after all evidence passes; caller must hold all base writers.
 
     Raises:
@@ -236,7 +238,7 @@ def publish_statuses(run_id: int) -> None:
     require(
         {item.get("context"): item.get("integration_id") for item in checks} == expected, "context bindings changed"
     )
-    url = f"https://github.com/{REPO}/actions/runs/{run_id}"
+    url = f"https://github.com/{REPO}/actions/runs/{status_run_id or run_id}"
 
     def write(context: str, state: str) -> None:
         description = (
@@ -281,7 +283,7 @@ def publish_statuses(run_id: int) -> None:
             write(context, "pending")
         for context in CONTEXTS:
             source()
-            evidence(run_id)
+            evidence(run_id, expected_source)
             attempted.add(context)
             write(context, "success")
         source()

@@ -58,6 +58,10 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 # plumbing. Everything else is a make target, so it runs the same way locally.
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
+    "one-shot-650-publisher-recovery.yml": {
+        'test -n "$REVIEWED_RECOVERY_SHA"': "checks the separately pinned recovery commit",
+        "python3 -I scripts/one_shot_650_recovery.py": "verifies original evidence before recovery status writes",
+    },
     "one-shot-650-update.yml": {
         'test -n "$REVIEWED_HELPER_SHA"': "checks the independently pinned Actions bootstrap SHA",
         "python3 -I scripts/one_shot_650.py": "one-shot guarded PR ref update on the isolated writer",
