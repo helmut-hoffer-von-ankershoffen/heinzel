@@ -8,6 +8,18 @@ const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
 try {
   await page.addInitScript(() => {
+    // Isolate the event path from useNotices' 30-second refetch interval. Merely
+    // waiting less than 30 seconds after recovery is insufficient: startup may
+    // already have consumed part of that interval.
+    const setInterval = window.setInterval.bind(window);
+    window.__noticePollsSuppressed = 0;
+    window.setInterval = (callback, delay, ...args) => {
+      if (delay === 30_000) {
+        window.__noticePollsSuppressed += 1;
+        return setInterval(callback, 86_400_000, ...args);
+      }
+      return setInterval(callback, delay, ...args);
+    };
     window.__noticeEvents = 0;
     window.addEventListener("hz:notices", () => { window.__noticeEvents += 1; });
   });
@@ -16,6 +28,7 @@ try {
   const widget = page.locator('[data-widget="notifications"]');
   await widget.getByText("Heinzelmännchen is degraded").waitFor();
   await widget.getByText("A newer notice").waitFor();
+  assert.ok(await page.evaluate(() => window.__noticePollsSuppressed > 0), "notice polling must be suppressed");
   await page.waitForFunction(() => window.__noticeEvents > 0);
   const beforeRecovery = await page.evaluate(() => window.__noticeEvents);
   writeFileSync(marker, "observed");
