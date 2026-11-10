@@ -126,13 +126,15 @@ def makefile() -> str:
     text = text.replace("build: web-build ## ", "build: ## ").replace("; the web app first)", ")")
     text = text.replace(" src/heinzel/heads/web/static", "")
     # Native process ownership belongs to the core; plugins carry neither its code nor build dependencies.
-    text = text.replace(" managed-backend-setup managed-backend-check", "")
+    text = text.replace(" managed-backend-setup managed-backend-static managed-backend-check", "")
     text = re.sub(
         r"\n# The managed backend has no Electron dependency;.*?\nMANAGED_TYPES := [^\n]*", "", text, flags=re.DOTALL
     )
     text = re.sub(r" \$\(MANAGED_(CHECK|TYPES)\)", "", text)
     text = text.replace("\n\t@$(MAKE) --no-print-directory managed-backend-setup", "")
-    text = re.sub(r"\n(managed-backend-setup|managed-backend-check):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(
+        r"\n(managed-backend-setup|managed-backend-static|managed-backend-check):.*?\n(?:\t.*\n)+", "\n", text
+    )
     # The native application is core-only; plugins do not carry the Electron window or Linux sandbox setup.
     electron_targets = {
         "desktop-electron-test",
@@ -230,9 +232,34 @@ def _without_core_node_selection(text: str) -> str:
     )
 
 
+def _without_focused_admission(text: str) -> str:
+    """Keep the core's candidate-only routing out of the plugin workflow."""
+    text = re.sub(r"\n  focused-tests:\n.*?(?=\n  ci-ok:)", "", text, flags=re.DOTALL)
+    text = re.sub(r"\n      - name: Require successful focused workload.*", "", text, flags=re.DOTALL) + "\n"
+    text = re.sub(
+        r"(?m)^    if: needs\.changes\.outputs\.full_release == 'true' && \((.*)\) # Core candidate-only$",
+        r"    if: \1",
+        text,
+    )
+    text = text.replace(" || needs.changes.outputs.focused_mode != '' # Core focused structural", "")
+    text = text.replace(
+        " && needs.changes.outputs.full_release == 'true' && needs.changes.outputs.core",
+        " && needs.changes.outputs.core",
+    )
+    text = text.replace(", focused-tests]", "]")
+    return text.replace(
+        "enable-cache: ${{ needs.changes.outputs.full_release == 'true' }}\n"
+        "          cache-dependency-glob: uv.lock\n"
+        "          save-cache: false",
+        "enable-cache: true\n"
+        "          cache-dependency-glob: uv.lock\n"
+        "          save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache",
+    )
+
+
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
-    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    text = _without_focused_admission((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
     # Batch admission is core queue coordination; plugins retain their complete workflow.
     text = _without_batch_admission(text)
     text = re.sub(r"(?m)^run-name:.*\n", "", text)
@@ -258,9 +285,14 @@ def ci_workflow() -> str:
     )
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
     # The web head's app (ADR 0039) and ATTRIBUTIONS.md, the notices of what it bundles: plugins have neither.
-    text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
+    text = re.sub(
+        r"\n(?:      - if: needs\.changes\.outputs\.full_release == 'true'\n        run:|      - run:) "
+        r"make test-web[^\n]*",
+        "",
+        text,
+    )
     text = _without_core_node_selection(_without_core_browser_setup(text))
-    text = re.sub(r"\n      - run: make managed-backend-[^\n]*", "", text)
+    text = re.sub(r"\n      - run: make managed-backend-[^\n]*(?:\n        if: [^\n]*)?", "", text)
     # Only the core daemon uses the host's user service manager; plugins ship no such probe.
     text = re.sub(
         r"\n      - name: Inspect the Linux user manager without starting services\n.*?(?=\n      - )",
@@ -359,7 +391,7 @@ def ci_workflow() -> str:
         '\'["ubuntu-24.04","macos-latest"]\') }}',
         "os: [ubuntu-24.04, macos-latest]",
     )
-    text = re.sub(r"\n# GitHub-hosted macOS runners.*?\n(?=jobs:)", "\n", text, flags=re.DOTALL)
+    text = re.sub(r"\n# Ordinary changes and main baselines.*?\n(?=jobs:)", "\n", text, flags=re.DOTALL)
     return text.replace(", template, build]", ", build]").replace(", changes,", ",")
 
 

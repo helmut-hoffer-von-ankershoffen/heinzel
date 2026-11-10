@@ -153,3 +153,10 @@ it("describes folders and links, progress, and a failed update with its reason",
   expect(failed.tone).toBe("bad");
   expect(failed.rows[0]).toMatchObject({ text: "Installer failed.", alert: true });
 });
+
+it("tells a failed update once, not again as the plan's message", () => {
+  const error = "uv is required to manage Heinzelmännchen's installation; it is not in /usr/bin, /bin.";
+  const shown = texts({ plan: { ...plan, message: error }, problem: error });
+  expect(shown.filter((text) => text === error)).toHaveLength(1);
+  expect(texts({ message: error, problem: error }).filter((text) => text === error)).toHaveLength(1);
+});

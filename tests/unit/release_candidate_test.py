@@ -112,7 +112,8 @@ def test_complete_genuine_full_candidate_preserves_event_source_and_wall_clock(e
     assert result["workflow_wall_seconds"] == 900
     assert result["event"] == event
     assert value == original
-    assert len(value["jobs"]) == 68
+    assert len(value["jobs"]) == 69
+    assert next(job for job in value["jobs"] if job["name"].startswith("Focused tests ("))["conclusion"] == "skipped"
     assert len([j for j in value["jobs"] if j["name"].startswith("Test (")]) == 16
     assert len([j for j in value["jobs"] if j["name"].startswith("End-to-end ")]) == 8
 
@@ -274,7 +275,10 @@ def test_verification_uses_unique_same_run_artifact_reviewed_sources_and_termina
         calls.append(path)
         mapping = {
             f"actions/runs/{RUN}": data["run"],
-            f"actions/runs/{RUN}/attempts/1/jobs?per_page=100&page=1": {"total_count": 68, "jobs": data["jobs"]},
+            f"actions/runs/{RUN}/attempts/1/jobs?per_page=100&page=1": {
+                "total_count": len(data["jobs"]),
+                "jobs": data["jobs"],
+            },
             f"actions/runs/{RUN}/artifacts?per_page=100": {
                 "total_count": 1,
                 "artifacts": [
@@ -311,7 +315,7 @@ def test_verification_uses_unique_same_run_artifact_reviewed_sources_and_termina
             candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
         return
     result = candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
-    assert result["job_count"] == 68
+    assert result["job_count"] == 69
     assert calls.count(f"actions/runs/{RUN}") == 2
 
 
@@ -333,6 +337,16 @@ def test_discovery_never_samples_a_later_green_or_retries_failed_heads(defect):
             candidate.discover(lambda _: payload, HEAD)
     else:
         assert candidate.discover(lambda _: payload, HEAD) == RUN
+
+
+def _fake_open_release_pr(tmp_path, payload, search_path):
+    fixture_bin = tmp_path / "bin"
+    fixture_bin.mkdir()
+    gh = fixture_bin / "gh"
+    gh.write_text("#!/bin/sh\ncat " + shlex.quote(str(tmp_path / "open-prs.json")) + "\n")
+    gh.chmod(0o700)
+    (tmp_path / "open-prs.json").write_text(json.dumps([payload["pull_request"]]))
+    return os.pathsep.join((str(fixture_bin), search_path))
 
 
 @pytest.mark.parametrize("event", ["pull_request", "workflow_dispatch"])
@@ -374,6 +388,7 @@ def test_recorder_binds_real_git_tree_and_exact_project_version(tmp_path, monkey
         "GITHUB_REPOSITORY": candidate.REPOSITORY,
         "GITHUB_EVENT_NAME": event,
         "GITHUB_REF_NAME": "release/v0.9.18",
+        "GITHUB_REF": f"refs/pull/{PR}/merge" if event == "pull_request" else "refs/heads/release/v0.9.18",
         "GITHUB_EVENT_PATH": str(event_path),
         "GITHUB_SHA": git("rev-parse", "HEAD"),
         "GITHUB_RUN_ID": str(RUN),
@@ -387,21 +402,19 @@ def test_recorder_binds_real_git_tree_and_exact_project_version(tmp_path, monkey
     output = tmp_path / "outputs"
     env = {key: value for key, value in os.environ.items() if key.startswith("GITHUB_")}
     env.update(
-        PATH=os.environ["PATH"],
+        PATH=_fake_open_release_pr(tmp_path, payload, os.environ["PATH"]),
         HOME=str(cold),
         UV_CACHE_DIR=str(cold / "uv"),
         UV_FROZEN="1",
         GITHUB_OUTPUT=str(output),
         GIT_CONFIG_GLOBAL=os.devnull,
     )
-    for role in ("select", "record"):
+    for script in ("scripts/release_candidate.py select", "scripts/release_candidate.py record"):
         line = next(
-            line.strip()[5:]
-            for line in workflow.splitlines()
-            if line.strip().startswith("run: ") and f"release_candidate.py {role} " in line
+            line.strip()[5:] for line in workflow.splitlines() if line.strip().startswith("run: ") and script in line
         )
         argv = shlex.split(line.replace('"$GITHUB_OUTPUT"', str(output)))
-        assert argv[:3] == ["python3", "-I", "scripts/release_candidate.py"]
+        assert argv[:2] == ["python3", "-I"]
         subprocess.run(argv, cwd=tmp_path, env=env, check=True, capture_output=True, text=True, timeout=3)
     assert output.read_text() == "full_release=true\n"
     assert json.loads((tmp_path / "reports/release-candidate.json").read_text())["tree"] == tree

@@ -72,7 +72,7 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [starlette](#starlette-190) | 1.9.0 | BSD-3-Clause |
 | [tomlkit](#tomlkit-0152) | 0.15.2 | MIT |
 | [truststore](#truststore-0105) | 0.10.5 | MIT |
-| [typer](#typer-0273) | 0.27.3 | MIT |
+| [typer](#typer-0290) | 0.29.0 | MIT |
 | [typing-extensions](#typing-extensions-4160) | 4.16.0 | PSF-2.0 |
 | [typing-inspection](#typing-inspection-044) | 0.4.4 | MIT |
 | [tzdata](#tzdata-20265) | 2026.5 | Apache-2.0 |
@@ -2783,7 +2783,7 @@ THE SOFTWARE.
 
 </details>
 
-### typer 0.27.3
+### typer 0.29.0
 
 - License: MIT
 - Homepage: <https://github.com/fastapi/typer>

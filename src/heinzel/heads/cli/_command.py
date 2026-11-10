@@ -52,7 +52,8 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
 
     The command's signature is the operation's, minus injected parameters, plus `--format` and its shorthand `--json`.
     Parameters without a default become arguments, the others options; `Field(description=...)` becomes their help
-    text. Progress goes to stderr and is silent for JSON output, so stdout always holds just the result.
+    text. Progress goes to stderr, so stdout always holds just the result. With JSON output an operation's named
+    steps go to stderr as one JSON object per `phase` event, and are left out when stderr is stdout (`2>&1`).
     `prologue` runs before text output, with the result, and `epilogue` after it; neither runs for JSON.
     """
     parameters = [
@@ -86,6 +87,7 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
         chosen = kwargs.pop(FORMAT_PARAMETER)
         as_json = kwargs.pop(JSON_PARAMETER) or (chosen or Format(kernel.settings.output_format)) is Format.JSON
         progress.enabled = not as_json
+        progress.as_json = as_json
         # On a terminal, and not for scripts (--json), operations that ask (a plugin's preview) may ask.
         kernel.bind(Prompter, ConsolePrompter(console) if has_terminal() and not as_json else Prompter())
         try:
@@ -96,7 +98,10 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
             )
             with kernel.resolve(CurrentUser).local(identity):
                 mark_presence(kernel, module)
-                result = kernel.invoke(operation, **kwargs)
+                try:
+                    result = kernel.invoke(operation, **kwargs)
+                finally:
+                    progress.finish()
         except HeinzelError as exc:
             if not as_json and _playful.allowed(kernel.settings, err_console):
                 err_console.print(_playful.glyph(), end=" ")
