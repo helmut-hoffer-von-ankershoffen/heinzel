@@ -1,7 +1,7 @@
-import { HeartPulse, RefreshCw } from "lucide-react";
-import { Link } from "react-router";
+import { HeartPulse, RefreshCw, Stethoscope } from "lucide-react";
 import { useFooterHealth } from "@/api/resources";
 import { FooterItem, type State } from "@/components/FooterItem";
+import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 
 export function HealthStatus() {
@@ -21,7 +21,21 @@ export function HealthStatus() {
     down: checks.filter((check) => check.status === "down").length,
   });
   return (
-    <FooterItem label={t("health.title")} state={state} icon={HeartPulse}>
+    <FooterItem
+      label={t("health.title")}
+      state={state}
+      icon={HeartPulse}
+      actions={
+        <>
+          <PaneAction icon={Stethoscope} to="/doctor">
+            {t("health.doctor")}
+          </PaneAction>
+          <PaneAction icon={RefreshCw} disabled={query.isFetching} onClick={() => void query.refetch()}>
+            {t("health.refresh")}
+          </PaneAction>
+        </>
+      }
+    >
       <div className="space-y-2 px-1.5 pb-1.5">
         {query.isPending ? (
           <p>{t("health.loading")}</p>
@@ -42,20 +56,6 @@ export function HealthStatus() {
           </div>
         ))}
         {problems.length > 3 && <p>{t("health.more", { count: problems.length - 3 })}</p>}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Link to="/doctor" className="underline">
-            {t("health.doctor")}
-          </Link>
-          <button
-            type="button"
-            disabled={query.isFetching}
-            onClick={() => void query.refetch()}
-            className="inline-flex min-h-6 items-center gap-1 rounded px-1 hover:bg-accent disabled:opacity-50"
-          >
-            <RefreshCw aria-hidden className="size-3" />
-            {t("health.refresh")}
-          </button>
-        </div>
       </div>
     </FooterItem>
   );

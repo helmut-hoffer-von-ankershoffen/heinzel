@@ -883,6 +883,11 @@ def test_tagged_plugins_are_announced_with_their_commits_dependencies_first_and_
     assert status.by_hand == ["heinzel-crm"]  # only what is still updated by hand
     assert status.plugins == {"heinzel-maps": "0.3.0", "heinzel-weather": "0.4.1"}  # heinzel-clock is too new
     assert status.plugins_held == [line]
+    # The Updates pane's facts sit beside the held plugins: both answered at this look, and the git-ref plugin
+    # (installed from a source) is listed among the holds the pane names.
+    assert (status.core_checked, status.plugins_checked) == (True, True)
+    assert status.checked_at is not None
+    assert [(hold.name, hold.why) for hold in status.holds] == [("heinzel-crm", "source")]
     advance(made, clock, 30)
     assert calls == {"restart": 1, "update": 1}  # hz and the plugins in one update
     news = made.applied[0]

@@ -106,10 +106,12 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    "scripts/acme_setup_e2e.py": "proves the core plugin catalog installs a company plugin with its required plugins",
     "scripts/ci_node.py": "selects Node for core's Python unit lanes; independent plugins own their CI runtime setup",
     "scripts/build.py": "prepares the core web hook and controller build group; plugin builds have no core assets",
     "scripts/release_candidate.py": "verifies full Core release-candidate CI source and exact job inventory",
     "scripts/main_batch.py": "validates only the core repository merge queue; plugin CI has no batch admissions",
+    "scripts/quarantine.py": "reads core's tests/quarantine.toml for its non-blocking lane; plugin CI has no registry",
     "scripts/merge_gate.py": "judges a public repo's SonarCloud project; a new plugin has none until it is set up",
     "scripts/merge_gate.py.lock": "the lock of scripts/merge_gate.py, which plugins don't get by default",
     ".github/workflows/merge-gate.yml": "runs scripts/merge_gate.py, which plugins don't get by default",
@@ -248,6 +250,10 @@ NOT_SETTINGS = {  # names or prefixes that aren't settings of Heinzelmännchen's
 }
 
 
+# The optional host queue reads these exact variables outside this repository.
+HOST_GATE_ENV_READS = {"HZ_GATE_HELD", "HZ_GATE_LIGHT"}
+
+
 def env_names(text: str) -> set[str]:
     """Every HZ_* name in a text."""
     return set(ENV_NAME.findall(text))
@@ -277,6 +283,7 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
         for key in type(settings).model_fields
     }
     code = [path for path in repository_files() if path.endswith(CODE_SUFFIXES)]
+    known |= HOST_GATE_ENV_READS
     known |= {name for path in code for name in env_reads((REPO / path).read_text(encoding="utf-8"))}
     used = {
         (name, path)

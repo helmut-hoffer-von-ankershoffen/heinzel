@@ -5,7 +5,7 @@
 // menu ("Set up hz", `?onboarding=`) at any time. Commands that change this machine (joining a team, installing the
 // daemon, writing a contract) are confirmed first, then typed into the terminal panel, where the CLI runs them.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronsRight, Play, X } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api, type SchemaProfile, unwrap } from "@/api/client";
@@ -13,6 +13,7 @@ import { keys, useConfig, usePlaybooks, useProfile, useSetSetting, useSetting } 
 import { runCommand } from "@/components/CommandActions";
 import { Gnome } from "@/components/Gnome";
 import { OperationDialog } from "@/components/OperationDialog";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { ThemePreviews } from "@/layout/ThemePreviews";
@@ -175,15 +176,11 @@ export function OnboardingWizard({ progress, onProgress, onClose }: Props) {
             <p className="text-ui-sm text-muted-foreground">
               {t("onboarding.position", { step: index + 1, count: STEPS.length })}
             </p>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label={t("onboarding.close")}
-              title={t("onboarding.closeHint")}
-              className="ml-auto flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <X aria-hidden className="size-(--icon)" />
-            </button>
+            <div data-pane-chrome="" className="ml-auto">
+              <PaneAction ghost icon={X} onClick={onClose} title={t("onboarding.closeHint")}>
+                {t("onboarding.close")}
+              </PaneAction>
+            </div>
           </header>
           <section aria-labelledby={`${titleId}-step`} className="min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-8">
             <h2 id={`${titleId}-step`} ref={heading} tabIndex={-1} className="text-lg font-medium focus:outline-none">
@@ -192,19 +189,24 @@ export function OnboardingWizard({ progress, onProgress, onClose }: Props) {
             <p className="mt-1 mb-5 text-sm text-muted-foreground">{t(`onboarding.${progress.step}.intro`)}</p>
             <Step id={progress.step} onClose={onClose} />
           </section>
-          <footer className="flex shrink-0 items-center gap-2 border-t border-border px-5 py-3">
-            <Button variant="ghost" disabled={index === 0} onClick={() => go(STEPS[index - 1] as StepId)}>
+          <PaneActions align="end" words="all" className="mt-0 shrink-0 px-5 py-3">
+            <PaneAction
+              key="back"
+              icon={ArrowLeft}
+              disabled={index === 0}
+              onClick={() => go(STEPS[index - 1] as StepId)}
+            >
               {t("onboarding.back")}
-            </Button>
-            <div className="ml-auto flex gap-2">
-              {!last && (
-                <Button variant="outline" onClick={skip}>
-                  {t("onboarding.skip")}
-                </Button>
-              )}
-              <Button onClick={next}>{last ? t("onboarding.finish") : t("onboarding.next")}</Button>
-            </div>
-          </footer>
+            </PaneAction>
+            {!last && (
+              <PaneAction key="skip" icon={ChevronsRight} onClick={skip}>
+                {t("onboarding.skip")}
+              </PaneAction>
+            )}
+            <PaneAction key="next" icon={last ? Check : ArrowRight} primary onClick={next}>
+              {last ? t("onboarding.finish") : t("onboarding.next")}
+            </PaneAction>
+          </PaneActions>
         </div>
       </div>
     </div>
@@ -367,17 +369,19 @@ function Confirmed({
           event.preventDefault();
           done(false);
         }}
-        className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-2"
+        className="flex flex-col gap-1 rounded-lg border border-border bg-card p-2"
       >
         <p className="text-sm">
           {t("onboarding.confirm")} <code className="font-mono text-xs">{asking}</code>
         </p>
-        <Button size="sm" autoFocus onClick={() => done(true)}>
-          {t("onboarding.run")}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => done(false)}>
-          {t("onboarding.cancel")}
-        </Button>
+        <PaneActions align="end" words="all">
+          <PaneAction key="cancel" icon={X} onClick={() => done(false)}>
+            {t("onboarding.cancel")}
+          </PaneAction>
+          <PaneAction key="run" icon={Play} primary autoFocus onClick={() => done(true)}>
+            {t("onboarding.run")}
+          </PaneAction>
+        </PaneActions>
       </fieldset>
     );
   return (

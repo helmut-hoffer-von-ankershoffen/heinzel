@@ -49,7 +49,7 @@ def test_interrupt_stops_only_owned_children_and_grandchildren(tmp_path, sent, v
     helper.write_text(
         "import os,signal,subprocess,sys,time; from pathlib import Path; "
         "signal.signal(signal.SIGTERM,signal.SIG_IGN if sys.argv[3]=='ignore' else "
-        "lambda *_: (Path(sys.argv[1], 'term-exit').write_text('term'), sys.exit(0))); "
+        "lambda *_: sys.exit(0)); "
         "subprocess.Popen([sys.executable,sys.argv[2],sys.argv[1]]); "
         "Path(sys.argv[1], 'child.tmp').write_text(str(os.getpid())); "
         "Path(sys.argv[1], 'child.tmp').replace(Path(sys.argv[1], 'child')); time.sleep(60)"

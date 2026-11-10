@@ -133,7 +133,7 @@ $ hz ai access use [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The AI access to use, one `hz ai access list` shows, e.g. `claude-code`.  [required]
+* `name <str>`: The AI access to use, one `hz ai access list` shows, e.g. `claude-code`.  [required]
 
 **Options**:
 
@@ -343,8 +343,8 @@ $ hz chat authorize-for-mcp [OPTIONS] {session} {action}
 
 **Arguments**:
 
-* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
-* `action`: The proposed action&#x27;s id, e.g. `a1`.  [required]
+* `session <str>`: The chat session&#x27;s id, from `hz chat list`.  [required]
+* `action <str>`: The proposed action&#x27;s id, e.g. `a1`.  [required]
 
 **Options**:
 
@@ -364,8 +364,8 @@ $ hz chat confirm [OPTIONS] {session} {action}
 
 **Arguments**:
 
-* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
-* `action`: The proposed action&#x27;s id, e.g. `a1`.  [required]
+* `session <str>`: The chat session&#x27;s id, from `hz chat list`.  [required]
+* `action <str>`: The proposed action&#x27;s id, e.g. `a1`.  [required]
 
 **Options**:
 
@@ -385,8 +385,8 @@ $ hz chat decline [OPTIONS] {session} {action}
 
 **Arguments**:
 
-* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
-* `action`: The proposed action&#x27;s id, e.g. `a1`.  [required]
+* `session <str>`: The chat session&#x27;s id, from `hz chat list`.  [required]
+* `action <str>`: The proposed action&#x27;s id, e.g. `a1`.  [required]
 
 **Options**:
 
@@ -440,9 +440,9 @@ $ hz chat open-check-in [OPTIONS] {session_id} {request_id} {timezone}
 
 **Arguments**:
 
-* `session_id`: The durable personal session id from `hz heinzel sessions` or the personal Heinzel page.  [required]
-* `request_id`: A stable id for opening or resuming this scoped chat.  [required]
-* `timezone`: The IANA time zone to use for this schedule preview.  [required]
+* `session_id <str>`: The durable personal session id from `hz heinzel sessions` or the personal Heinzel page.  [required]
+* `request_id <str>`: A stable id for opening or resuming this scoped chat.  [required]
+* `timezone <str>`: The IANA time zone to use for this schedule preview.  [required]
 
 **Options**:
 
@@ -462,8 +462,8 @@ $ hz chat propose-agent-contract [OPTIONS] {durable_session} {request_id}
 
 **Arguments**:
 
-* `durable_session`: The personal agent session.  [required]
-* `request_id`: The contract proposal request id.  [required]
+* `durable_session <str>`: The personal agent session.  [required]
+* `request_id <str>`: The contract proposal request id.  [required]
 
 **Options**:
 
@@ -483,8 +483,8 @@ $ hz chat propose-agent-notification [OPTIONS] {durable_session} {request_id}
 
 **Arguments**:
 
-* `durable_session`: The personal agent session.  [required]
-* `request_id`: The notification draft request id.  [required]
+* `durable_session <str>`: The personal agent session.  [required]
+* `request_id <str>`: The notification draft request id.  [required]
 
 **Options**:
 
@@ -504,8 +504,8 @@ $ hz chat propose-agent-schedule-review [OPTIONS] {durable_session} {request_id}
 
 **Arguments**:
 
-* `durable_session`: The personal agent session.  [required]
-* `request_id`: The schedule proposal request id.  [required]
+* `durable_session <str>`: The personal agent session.  [required]
+* `request_id <str>`: The schedule proposal request id.  [required]
 
 **Options**:
 
@@ -525,8 +525,8 @@ $ hz chat propose-captured-write [OPTIONS] {durable_session} {request_id}
 
 **Arguments**:
 
-* `durable_session`: Owner-scoped personal conversation.  [required]
-* `request_id`: Identity of the captured write draft.  [required]
+* `durable_session <str>`: Owner-scoped personal conversation.  [required]
+* `request_id <str>`: Identity of the captured write draft.  [required]
 
 **Options**:
 
@@ -546,8 +546,8 @@ $ hz chat propose-channel-item [OPTIONS] {durable_session} {request_id}
 
 **Arguments**:
 
-* `durable_session`: Owner-scoped personal conversation.  [required]
-* `request_id`: Identity of the channel posting draft.  [required]
+* `durable_session <str>`: Owner-scoped personal conversation.  [required]
+* `request_id <str>`: Identity of the channel posting draft.  [required]
 
 **Options**:
 
@@ -567,8 +567,8 @@ $ hz chat propose-connected-read-review [OPTIONS] {durable_session} {request_id}
 
 **Arguments**:
 
-* `durable_session`: The personal agent session.  [required]
-* `request_id`: The connected read proposal request id.  [required]
+* `durable_session <str>`: The personal agent session.  [required]
+* `request_id <str>`: The connected read proposal request id.  [required]
 
 **Options**:
 
@@ -588,8 +588,8 @@ $ hz chat propose-connected-read-set-review [OPTIONS] {durable_session} {request
 
 **Arguments**:
 
-* `durable_session`: The personal agent session.  [required]
-* `request_id`: The exact read-set review request id.  [required]
+* `durable_session <str>`: The personal agent session.  [required]
+* `request_id <str>`: The exact read-set review request id.  [required]
 
 **Options**:
 
@@ -609,8 +609,8 @@ $ hz chat propose-model-policy [OPTIONS] {durable_session} {request_id}
 
 **Arguments**:
 
-* `durable_session`: The personal agent session.  [required]
-* `request_id`: The policy proposal request id.  [required]
+* `durable_session <str>`: The personal agent session.  [required]
+* `request_id <str>`: The policy proposal request id.  [required]
 
 **Options**:
 
@@ -625,17 +625,17 @@ Stage a schedule action for review in chat; creating the proposal never changes 
 **Usage**:
 
 ```console
-$ hz chat propose-schedule-control [OPTIONS] {durable_session} {request_id} {expected_revision} {action}:<activate|pause|resume> {expected_contract_version} {expected_preview_hash}
+$ hz chat propose-schedule-control [OPTIONS] {durable_session} {request_id} {expected_revision} {action} {expected_contract_version} {expected_preview_hash}
 ```
 
 **Arguments**:
 
-* `durable_session`: The personal Heinzel whose schedule you read.  [required]
-* `request_id`: A stable id for this schedule action.  [required]
-* `expected_revision`: The schedule revision you inspected.  [required]
-* `action:<activate|pause|resume>`: The exact schedule change to review.  [required]
-* `expected_contract_version`: The contract version shown in the preview.  [required]
-* `expected_preview_hash`: The preview hash shown in the schedule details.  [required]
+* `durable_session <str>`: The personal Heinzel whose schedule you read.  [required]
+* `request_id <str>`: A stable id for this schedule action.  [required]
+* `expected_revision <int>`: The schedule revision you inspected.  [required]
+* `action <activate|pause|resume>`: The exact schedule change to review.  [required]
+* `expected_contract_version <int>`: The contract version shown in the preview.  [required]
+* `expected_preview_hash <str>`: The preview hash shown in the schedule details.  [required]
 
 **Options**:
 
@@ -655,8 +655,8 @@ $ hz chat recover [OPTIONS] {session} {action}
 
 **Arguments**:
 
-* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
-* `action`: The proposed action&#x27;s id, e.g. `a1`.  [required]
+* `session <str>`: The chat session&#x27;s id, from `hz chat list`.  [required]
+* `action <str>`: The proposed action&#x27;s id, e.g. `a1`.  [required]
 
 **Options**:
 
@@ -676,7 +676,7 @@ $ hz chat remove [OPTIONS] {session}
 
 **Arguments**:
 
-* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
+* `session <str>`: The chat session&#x27;s id, from `hz chat list`.  [required]
 
 **Options**:
 
@@ -696,8 +696,8 @@ $ hz chat send [OPTIONS] {session} {message}
 
 **Arguments**:
 
-* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
-* `message`: What to say.  [required]
+* `session <str>`: The chat session&#x27;s id, from `hz chat list`.  [required]
+* `message <str>`: What to say.  [required]
 
 **Options**:
 
@@ -721,7 +721,7 @@ $ hz chat show [OPTIONS] {session}
 
 **Arguments**:
 
-* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
+* `session <str>`: The chat session&#x27;s id, from `hz chat list`.  [required]
 
 **Options**:
 
@@ -818,9 +818,9 @@ $ hz heinzel abandon-chat-turn [OPTIONS] {session_id} {request_id} {acknowledge_
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
-* `acknowledge_uncertain`: Confirm the outcome may be unknown and no retry or undo occurs.  [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+* `acknowledge_uncertain <bool>`: Confirm the outcome may be unknown and no retry or undo occurs.  [required]
 
 **Options**:
 
@@ -840,12 +840,12 @@ $ hz heinzel amend-scheduled-agent [OPTIONS] {session_id} {request_id} {expected
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
-* `expected_revision`: The exact proposal revision inspected.  [required]
-* `contract`: Complete replacement instructions.  [required]
-* `max_usd`: Proposed per-turn USD limit; not yet enforced.  [required]
-* `timeout_seconds`: Proposed maximum seconds per turn.  [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+* `expected_revision <int>`: The exact proposal revision inspected.  [required]
+* `contract <str>`: Complete replacement instructions.  [required]
+* `max_usd <float>`: Proposed per-turn USD limit; not yet enforced.  [required]
+* `timeout_seconds <int>`: Proposed maximum seconds per turn.  [required]
 
 **Options**:
 
@@ -865,8 +865,8 @@ $ hz heinzel answer-chat [OPTIONS] {session_id} {request_id}
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
 
 **Options**:
 
@@ -886,8 +886,8 @@ $ hz heinzel approve-release-draft [OPTIONS] {session_id} {draft_key}
 
 **Arguments**:
 
-* `session_id`: [required]
-* `draft_key`: The stable host-derived release draft key.  [required]
+* `session_id <str>`: [required]
+* `draft_key <str>`: The stable host-derived release draft key.  [required]
 
 **Options**:
 
@@ -902,15 +902,15 @@ Associate a Google file locally; no access, provider ownership or permission is 
 **Usage**:
 
 ```console
-$ hz heinzel associate-artifact [OPTIONS] {session_id} {request_id} {kind}:<document|spreadsheet|presentation> {ref}
+$ hz heinzel associate-artifact [OPTIONS] {session_id} {request_id} {kind} {ref}
 ```
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
-* `kind:<document|spreadsheet|presentation>`: The claimed Google file type; not verified with the provider.  [required]
-* `ref`: Canonical Google editor URL.  [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+* `kind <document|spreadsheet|presentation>`: The claimed Google file type; not verified with the provider.  [required]
+* `ref <str>`: Canonical Google editor URL.  [required]
 
 **Options**:
 
@@ -930,9 +930,9 @@ $ hz heinzel chat [OPTIONS] {session_id} {request_id} {message}
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
-* `message`: Your message to this Heinzel, retained privately.  [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+* `message <str>`: Your message to this Heinzel, retained privately.  [required]
 
 **Options**:
 
@@ -953,8 +953,8 @@ $ hz heinzel chat-turn-state [OPTIONS] {session_id} {request_id}
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
 
 **Options**:
 
@@ -1043,7 +1043,7 @@ $ hz heinzel input-snapshot-history [OPTIONS] {session_id}
 
 **Arguments**:
 
-* `session_id`: [required]
+* `session_id <str>`: [required]
 
 **Options**:
 
@@ -1064,7 +1064,7 @@ $ hz heinzel latest-profile-proposal [OPTIONS] {session_id}
 
 **Arguments**:
 
-* `session_id`: [required]
+* `session_id <str>`: [required]
 
 **Options**:
 
@@ -1084,7 +1084,7 @@ $ hz heinzel latest-scheduled-agent-proposal [OPTIONS] {session_id}
 
 **Arguments**:
 
-* `session_id`: [required]
+* `session_id <str>`: [required]
 
 **Options**:
 
@@ -1123,13 +1123,13 @@ $ hz heinzel new [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The contract&#x27;s name: lowercase words joined by dashes, e.g. weekly-digest.  [required]
+* `name <str>`: The contract&#x27;s name: lowercase words joined by dashes, e.g. weekly-digest.  [required]
 
 **Options**:
 
 * `--team / --no-team`: Write it into the team repository&#x27;s workflows/ instead of your own directory.  [default: no-team]
 * `--template <str>`: Start from a playbook&#x27;s template contract, `&lt;module&gt;:&lt;name&gt;` (`hz heinzel playbooks` lists them), instead of the blank starter.
-* `--asset <str>`: Fill a template&#x27;s artifact placeholder as type=reference, e.g. weekly-report=doc-123 (`hz heinzel discover` finds candidates); repeat for each.
+* `--asset <list[str]>`: Fill a template&#x27;s artifact placeholder as type=reference, e.g. weekly-report=doc-123 (`hz heinzel discover` finds candidates); repeat for each.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -1146,7 +1146,7 @@ $ hz heinzel new-chat [OPTIONS] {request_id}
 
 **Arguments**:
 
-* `request_id`: [required]
+* `request_id <str>`: [required]
 
 **Options**:
 
@@ -1168,7 +1168,7 @@ $ hz heinzel personal-artifacts [OPTIONS] {session_id}
 
 **Arguments**:
 
-* `session_id`: [required]
+* `session_id <str>`: [required]
 
 **Options**:
 
@@ -1204,9 +1204,9 @@ $ hz heinzel profile [OPTIONS] {session_id} {request_id} {expected_revision}
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
-* `expected_revision`: The exact profile_revision you last read.  [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+* `expected_revision <int>`: The exact profile_revision you last read.  [required]
 
 **Options**:
 
@@ -1228,8 +1228,8 @@ $ hz heinzel propose-check-in [OPTIONS] {session_id} {request_id}
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
 
 **Options**:
 
@@ -1250,11 +1250,11 @@ $ hz heinzel propose-scheduled-agent [OPTIONS] {session_id} {request_id} {contra
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
-* `contract`: Exact instructions to preview for a future agent turn.  [required]
-* `max_usd`: Proposed per-turn USD limit; not yet enforced.  [required]
-* `timeout_seconds`: Proposed maximum seconds per turn.  [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+* `contract <str>`: Exact instructions to preview for a future agent turn.  [required]
+* `max_usd <float>`: Proposed per-turn USD limit; not yet enforced.  [required]
+* `timeout_seconds <int>`: Proposed maximum seconds per turn.  [required]
 
 **Options**:
 
@@ -1291,10 +1291,10 @@ $ hz heinzel publish-draft-workflow [OPTIONS] {session_id} {request_id} {JSON} {
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
-* `JSON`: The complete exact terms displayed at human review.  [required]
-* `approval_proof`: Private proof supplied only by the trusted in-process confirmation boundary.  [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+* `JSON <str>`: The complete exact terms displayed at human review.  [required]
+* `approval_proof <str>`: Private proof supplied only by the trusted in-process confirmation boundary.  [required]
 
 **Options**:
 
@@ -1314,7 +1314,7 @@ $ hz heinzel release-workflow [OPTIONS] {session_id}
 
 **Arguments**:
 
-* `session_id`: [required]
+* `session_id <str>`: [required]
 
 **Options**:
 
@@ -1334,8 +1334,8 @@ $ hz heinzel review-release-draft [OPTIONS] {session_id} {draft_key}
 
 **Arguments**:
 
-* `session_id`: [required]
-* `draft_key`: The stable host-derived release draft key.  [required]
+* `session_id <str>`: [required]
+* `draft_key <str>`: The stable host-derived release draft key.  [required]
 
 **Options**:
 
@@ -1355,8 +1355,8 @@ $ hz heinzel revoke-release-workflow [OPTIONS] {session_id} {request_id}
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
 
 **Options**:
 
@@ -1371,15 +1371,15 @@ Pause a schedule; activation and resume require an exact-intent approval from a 
 **Usage**:
 
 ```console
-$ hz heinzel schedule-control [OPTIONS] {session_id} {request_id} {expected_revision} {action}:<activate|pause|resume>
+$ hz heinzel schedule-control [OPTIONS] {session_id} {request_id} {expected_revision} {action}
 ```
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
-* `expected_revision`: The schedule revision you last inspected.  [required]
-* `action:<activate|pause|resume>`: Explicitly activate the proposal, pause it, or resume a paused schedule.  [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+* `expected_revision <int>`: The schedule revision you last inspected.  [required]
+* `action <activate|pause|resume>`: Explicitly activate the proposal, pause it, or resume a paused schedule.  [required]
 
 **Options**:
 
@@ -1402,8 +1402,8 @@ $ hz heinzel scheduled-agent-proposal [OPTIONS] {session_id} {request_id}
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
 
 **Options**:
 
@@ -1423,7 +1423,7 @@ $ hz heinzel sent [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
+* `name <str>`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
 
 **Options**:
 
@@ -1447,7 +1447,7 @@ $ hz heinzel session [OPTIONS] {session_id}
 
 **Arguments**:
 
-* `session_id`: [required]
+* `session_id <str>`: [required]
 
 **Options**:
 
@@ -1485,10 +1485,10 @@ $ hz heinzel share-draft-link [OPTIONS] {session_id} {request_id} {JSON} {approv
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
-* `JSON`: The complete exact terms displayed at human review.  [required]
-* `approval_proof`: Private proof supplied only by the trusted in-process confirmation boundary.  [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
+* `JSON <str>`: The complete exact terms displayed at human review.  [required]
+* `approval_proof <str>`: Private proof supplied only by the trusted in-process confirmation boundary.  [required]
 
 **Options**:
 
@@ -1508,7 +1508,7 @@ $ hz heinzel show [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
+* `name <str>`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
 
 **Options**:
 
@@ -1528,8 +1528,8 @@ $ hz heinzel skill-draft [OPTIONS] {session_id} {request_id}
 
 **Arguments**:
 
-* `session_id`: [required]
-* `request_id`: [required]
+* `session_id <str>`: [required]
+* `request_id <str>`: [required]
 
 **Options**:
 
@@ -1549,7 +1549,7 @@ $ hz heinzel skill-drafts [OPTIONS] {session_id}
 
 **Arguments**:
 
-* `session_id`: [required]
+* `session_id <str>`: [required]
 
 **Options**:
 
@@ -1571,9 +1571,9 @@ $ hz heinzel start-helper [OPTIONS] {request_id} {name} {prompt}
 
 **Arguments**:
 
-* `request_id`: [required]
-* `name`: Your Heinzel&#x27;s display name.  [required]
-* `prompt`: The exact first chat message; grants no connected access or schedule.  [required]
+* `request_id <str>`: [required]
+* `name <str>`: Your Heinzel&#x27;s display name.  [required]
+* `prompt <str>`: The exact first chat message; grants no connected access or schedule.  [required]
 
 **Options**:
 
@@ -1593,8 +1593,8 @@ $ hz heinzel start-release-workflow [OPTIONS] {request_id} {prompt}
 
 **Arguments**:
 
-* `request_id`: [required]
-* `prompt`: The exact first chat message, including name and both supplied links.  [required]
+* `request_id <str>`: [required]
+* `prompt <str>`: The exact first chat message, including name and both supplied links.  [required]
 
 **Options**:
 
@@ -1614,7 +1614,7 @@ $ hz heinzel tool-activity [OPTIONS] {session_id}
 
 **Arguments**:
 
-* `session_id`: [required]
+* `session_id <str>`: [required]
 
 **Options**:
 
@@ -1635,7 +1635,7 @@ $ hz heinzel wake [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
+* `name <str>`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
 
 **Options**:
 
@@ -1656,7 +1656,7 @@ $ hz join [OPTIONS] {URL}
 
 **Arguments**:
 
-* `URL`: The team repository&#x27;s URL, the invite: https, ssh or a local path.  [required]
+* `URL <str>`: The team repository&#x27;s URL, the invite: https, ssh or a local path.  [required]
 
 **Options**:
 
@@ -1861,9 +1861,9 @@ $ hz report approved [OPTIONS] {heinzel} {target} {by}
 
 **Arguments**:
 
-* `heinzel`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
-* `target`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
-* `by`: Who approved it, by roster handle.  [required]
+* `heinzel <str>`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
+* `target <str>`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
+* `by <str>`: Who approved it, by roster handle.  [required]
 
 **Options**:
 
@@ -1887,8 +1887,8 @@ $ hz report drafted [OPTIONS] {heinzel} {target}
 
 **Arguments**:
 
-* `heinzel`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
-* `target`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
+* `heinzel <str>`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
+* `target <str>`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
 
 **Options**:
 
@@ -1913,9 +1913,9 @@ $ hz report fell-back [OPTIONS] {heinzel} {target} {input}
 
 **Arguments**:
 
-* `heinzel`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
-* `target`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
-* `input`: The input whose stale version it used, as a target.  [required]
+* `heinzel <str>`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
+* `target <str>`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
+* `input <str>`: The input whose stale version it used, as a target.  [required]
 
 **Options**:
 
@@ -1939,7 +1939,7 @@ $ hz report heartbeat [OPTIONS] {heinzel}
 
 **Arguments**:
 
-* `heinzel`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
+* `heinzel <str>`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
 
 **Options**:
 
@@ -1961,8 +1961,8 @@ $ hz report published [OPTIONS] {heinzel} {target}
 
 **Arguments**:
 
-* `heinzel`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
-* `target`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
+* `heinzel <str>`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
+* `target <str>`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
 
 **Options**:
 
@@ -1987,8 +1987,8 @@ $ hz report read [OPTIONS] {heinzel} {target}
 
 **Arguments**:
 
-* `heinzel`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
-* `target`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
+* `heinzel <str>`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
+* `target <str>`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
 
 **Options**:
 
@@ -2030,7 +2030,7 @@ $ hz setup [OPTIONS] [MODULE]
 
 **Arguments**:
 
-* `MODULE`: Set up only this module, by qualified name (`hz setup clock`); every module when left out.
+* `MODULE <str>`: Set up only this module, by qualified name (`hz setup clock`); every module when left out.
 
 **Options**:
 
@@ -2308,7 +2308,7 @@ $ hz system config get [OPTIONS] {key}
 
 **Arguments**:
 
-* `key`: Setting as section.key, e.g. hz.log_level or example.greeting.  [required]
+* `key <str>`: Setting as section.key, e.g. hz.log_level or example.greeting.  [required]
 
 **Options**:
 
@@ -2341,12 +2341,12 @@ $ hz system config init [OPTIONS]
 **Usage**:
 
 ```console
-$ hz system config reveal [OPTIONS] {scope}:<site|user|project>
+$ hz system config reveal [OPTIONS] {scope}
 ```
 
 **Arguments**:
 
-* `scope:<site|user|project>`: Which configuration file: site, user or project.  [required]
+* `scope <site|user|project>`: Which configuration file: site, user or project.  [required]
 
 **Options**:
 
@@ -2366,7 +2366,7 @@ $ hz system config reveal-setting [OPTIONS] {key}
 
 **Arguments**:
 
-* `key`: Setting as section.key, e.g. hz.log_level or example.greeting.  [required]
+* `key <str>`: Setting as section.key, e.g. hz.log_level or example.greeting.  [required]
 
 **Options**:
 
@@ -2386,8 +2386,8 @@ $ hz system config set [OPTIONS] {key} {value}
 
 **Arguments**:
 
-* `key`: Setting as section.key, e.g. hz.log_level or example.greeting.  [required]
-* `value`: New value; TOML syntax for numbers, booleans and lists.  [required]
+* `key <str>`: Setting as section.key, e.g. hz.log_level or example.greeting.  [required]
+* `value <str>`: New value; TOML syntax for numbers, booleans and lists.  [required]
 
 **Options**:
 
@@ -2424,7 +2424,7 @@ $ hz system config unset [OPTIONS] {key}
 
 **Arguments**:
 
-* `key`: Setting as section.key, e.g. hz.log_level or example.greeting.  [required]
+* `key <str>`: Setting as section.key, e.g. hz.log_level or example.greeting.  [required]
 
 **Options**:
 
@@ -2470,7 +2470,7 @@ $ hz system connector access [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The connector, as `hz system connector list` names it, e.g. `github`.  [required]
+* `name <str>`: The connector, as `hz system connector list` names it, e.g. `github`.  [required]
 
 **Options**:
 
@@ -2491,7 +2491,7 @@ $ hz system connector cancel [OPTIONS] {flow}
 
 **Arguments**:
 
-* `flow`: The sign-in, by the id `connect` returned.  [required]
+* `flow <str>`: The sign-in, by the id `connect` returned.  [required]
 
 **Options**:
 
@@ -2511,11 +2511,11 @@ $ hz system connector connect [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The connector, as `hz system connector list` names it, e.g. `github`.  [required]
+* `name <str>`: The connector, as `hz system connector list` names it, e.g. `github`.  [required]
 
 **Options**:
 
-* `--allow <str>`: A grant to add, such as `calendar-write`, as `access` lists them; repeat for each.
+* `--allow <list[str]>`: A grant to add, such as `calendar-write`, as `access` lists them; repeat for each.
 * `--wait / --no-wait`: Wait here until it ends, opening the consent page in this machine&#x27;s browser; only where a person is told (the terminal). Elsewhere it returns at once: poll `flow`, open the page with `open`.  [default: wait]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
@@ -2533,7 +2533,7 @@ $ hz system connector disconnect [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The connector, as `hz system connector list` names it, e.g. `github`.  [required]
+* `name <str>`: The connector, as `hz system connector list` names it, e.g. `github`.  [required]
 
 **Options**:
 
@@ -2553,7 +2553,7 @@ $ hz system connector flow [OPTIONS] {flow}
 
 **Arguments**:
 
-* `flow`: The sign-in, by the id `connect` returned.  [required]
+* `flow <str>`: The sign-in, by the id `connect` returned.  [required]
 
 **Options**:
 
@@ -2589,7 +2589,7 @@ $ hz system connector open [OPTIONS] {flow}
 
 **Arguments**:
 
-* `flow`: The sign-in, by the id `connect` returned.  [required]
+* `flow <str>`: The sign-in, by the id `connect` returned.  [required]
 
 **Options**:
 
@@ -2609,7 +2609,7 @@ $ hz system connector test [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The connector, as `hz system connector list` names it, e.g. `github`.  [required]
+* `name <str>`: The connector, as `hz system connector list` names it, e.g. `github`.  [required]
 
 **Options**:
 
@@ -2665,7 +2665,7 @@ $ hz system credential remove [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: Name of the credential, as `hz system credential list` shows it.  [required]
+* `name <str>`: Name of the credential, as `hz system credential list` shows it.  [required]
 
 **Options**:
 
@@ -2686,7 +2686,7 @@ $ hz system credential set [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: Name of the credential, as `hz system credential list` shows it.  [required]
+* `name <str>`: Name of the credential, as `hz system credential list` shows it.  [required]
 
 **Options**:
 
@@ -3060,7 +3060,7 @@ $ hz system notify ack [OPTIONS] {ids}
 
 **Arguments**:
 
-* `ids`: Ids of the notices that were shown, from `list`, separated by commas.  [required]
+* `ids <str>`: Ids of the notices that were shown, from `list`, separated by commas.  [required]
 
 **Options**:
 
@@ -3196,6 +3196,7 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `operation`: (expert) Read the status and result of a...
 * `pending`: (expert) List plugins changed on this...
 * `remove`: (expert) Remove a plugin.
+* `repair`: (expert) Install every plugin an installed...
 * `sdk`: (expert) Export the versioned plugin view...
 * `search`: (expert) Find plugins to install:...
 
@@ -3211,7 +3212,7 @@ $ hz system plugin add [OPTIONS] {spec}
 
 **Arguments**:
 
-* `spec`: A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-&lt;name&gt; (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. If the repository&#x27;s distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.  [required]
+* `spec <str>`: A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-&lt;name&gt; (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. If the repository&#x27;s distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.  [required]
 
 **Options**:
 
@@ -3233,7 +3234,7 @@ $ hz system plugin develop [OPTIONS] {path}
 
 **Arguments**:
 
-* `path`: The plugin&#x27;s checkout, e.g. `.` in a repository scaffolded by `new`.  [required]
+* `path <path>`: The plugin&#x27;s checkout, e.g. `.` in a repository scaffolded by `new`.  [required]
 
 **Options**:
 
@@ -3253,7 +3254,7 @@ $ hz system plugin disable [OPTIONS] {distribution}
 
 **Arguments**:
 
-* `distribution`: Distribution name, as `hz system plugin list` shows it.  [required]
+* `distribution <str>`: Distribution name, as `hz system plugin list` shows it.  [required]
 
 **Options**:
 
@@ -3333,7 +3334,7 @@ $ hz system plugin enable [OPTIONS] {distribution}
 
 **Arguments**:
 
-* `distribution`: Distribution name, as `hz system plugin list` shows it.  [required]
+* `distribution <str>`: Distribution name, as `hz system plugin list` shows it.  [required]
 
 **Options**:
 
@@ -3386,11 +3387,11 @@ $ hz system plugin new [OPTIONS] {destination}
 
 **Arguments**:
 
-* `destination`: Directory for the new plugin repository.  [required]
+* `destination <path>`: Directory for the new plugin repository.  [required]
 
 **Options**:
 
-* `--data <str>`: Answer a template question as key=value, e.g. plugin_name=crm; repeat for each.
+* `--data <list[str]>`: Answer a template question as key=value, e.g. plugin_name=crm; repeat for each.
 * `--template <str>`: Copier template: a git URL, gh:owner/repo or a local path.  [default: gh:helmut-hoffer-von-ankershoffen/heinzel]
 * `--ref <str>`: Template version; defaults to this Heinzelmännchen&#x27;s release tag.
 * `--defaults / --no-defaults`: Use template defaults without interactive questions.  [default: no-defaults]
@@ -3412,7 +3413,7 @@ $ hz system plugin operation [OPTIONS] {operation_id}
 
 **Arguments**:
 
-* `operation_id`: Receipt id from a plugin preview.  [required]
+* `operation_id <str>`: Receipt id from a plugin preview.  [required]
 
 **Options**:
 
@@ -3448,10 +3449,27 @@ $ hz system plugin remove [OPTIONS] {distribution}
 
 **Arguments**:
 
-* `distribution`: Distribution name, as `hz system plugin list` shows it.  [required]
+* `distribution <str>`: Distribution name, as `hz system plugin list` shows it.  [required]
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin repair`
+
+(expert) Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
+
+**Usage**:
+
+```console
+$ hz system plugin repair [OPTIONS]
+```
+
+**Options**:
+
+* `--automatic / --no-automatic`: As the automatic updater asks: try each missing plugin once per version of the plugin that requires it, so a failure isn&#x27;t retried every half hour.  [default: no-automatic]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -3468,7 +3486,7 @@ $ hz system plugin sdk [OPTIONS] {destination}
 
 **Arguments**:
 
-* `destination`: New directory for the installed view SDK and TypeScript definitions.  [required]
+* `destination <path>`: New directory for the installed view SDK and TypeScript definitions.  [required]
 
 **Options**:
 
@@ -3489,6 +3507,7 @@ $ hz system plugin search [OPTIONS]
 **Options**:
 
 * `--text <str>`: Words that name or describe the plugin, e.g. `calendar`; sent to GitHub&#x27;s search. All plugins if omitted.
+* `--refresh / --no-refresh`: Ask GitHub again instead of using the answer kept for the last minute.  [default: no-refresh]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -3613,7 +3632,7 @@ $ hz system runner ask [OPTIONS] {prompt}
 
 **Arguments**:
 
-* `prompt`: What to ask: a question, or the conversation so far ending with one; nothing is kept between calls.  [required]
+* `prompt <str>`: What to ask: a question, or the conversation so far ending with one; nothing is kept between calls.  [required]
 
 **Options**:
 
@@ -3641,6 +3660,7 @@ $ hz system serve [OPTIONS] COMMAND [ARGS]...
 * `api`: (expert) Serve every operation as a REST...
 * `daemon`: (expert) Run the daemon&#x27;s tick in the...
 * `mcp`: (expert) Serve every operation as an MCP...
+* `mcp-token`: Make, list and revoke the tokens agents...
 
 #### `hz system serve api`
 
@@ -3680,7 +3700,7 @@ $ hz system serve daemon [OPTIONS]
 (expert) Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`.
 
 Raises:
-    typer.Exit: With 2 when --chat is given with another transport than stdio.
+    typer.Exit: With 2 when --chat is given with another transport than stdio, 1 when serving is refused.
 
 **Usage**:
 
@@ -3690,12 +3710,92 @@ $ hz system serve mcp [OPTIONS]
 
 **Options**:
 
-* `--transport <stdio|streamable-http>`: stdio for agents that start hz; streamable-http to share.  [default: stdio]
-* `--host <str>`: Interface for streamable-http.  [default: 127.0.0.1]
+* `--transport <stdio|streamable-http>`: stdio for agents that start hz; streamable-http to share, with a token per agent.  [default: stdio]
+* `--host <str>`: Interface for streamable-http; loopback unless --expose.  [default: 127.0.0.1]
 * `--port <int>`: Port for streamable-http.  [default: 8765]
+* `--expose`: Allow a --host other devices reach, with --allowed-host; Tailscale Serve needs neither.
+* `--allowed-host <list[str]>`: Also accept this Host: a Tailscale Serve name (port 443 implied), or name-or-ip:PORT or name-or-ip:* with --expose; repeatable.
 * `--chat SESSION`: Serve the tools of this chat session: reads run, everything else waits for your confirmation in the chat. Started by `hz chat` for its agent, over stdio only.
 * `--project <path>`: Read the configuration as if started in this directory (its hz.toml), as the chat does.
 * `--chat-tools <everyday|all|personal-check-in>`: With --chat: the everyday operations as tools (cheaper messages), or all of them.  [default: everyday]
+* `--help`: Show this message and exit.
+
+#### `hz system serve mcp-token`
+
+Make, list and revoke the tokens agents send to `hz system serve mcp --transport streamable-http`.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-token [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `create`: Make a token for one agent and print it...
+* `list`: List the tokens: id, actor, scope, expiry...
+* `revoke`: Revoke a token (or `all`); the agent&#x27;s...
+
+##### `hz system serve mcp-token create`
+
+Make a token for one agent and print it once; only its SHA-256 is kept.
+
+Raises:
+    typer.Exit: With 1 when the actor name is invalid or too many tokens exist.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-token create [OPTIONS]
+```
+
+**Options**:
+
+* `--actor <str>`: Which agent it is for, e.g. codex-desktop; logged with each call.  [required]
+* `--scope <read|write>`: read: read-only tools only; write: every tool the head serves.  [default: read]
+* `--expires DURATION`: How long it works, e.g. 30d.  [default: 90d]
+* `--json`: Print JSON.
+* `--help`: Show this message and exit.
+
+##### `hz system serve mcp-token list`
+
+List the tokens: id, actor, scope, expiry and last use; never the tokens themselves.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-token list [OPTIONS]
+```
+
+**Options**:
+
+* `--json`: Print JSON.
+* `--help`: Show this message and exit.
+
+##### `hz system serve mcp-token revoke`
+
+Revoke a token (or `all`); the agent&#x27;s next request is refused.
+
+Raises:
+    typer.Exit: With 1 when no token has that id.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-token revoke [OPTIONS] {which}
+```
+
+**Arguments**:
+
+* `which <str>`: A token id from `list`, or `all`.  [required]
+
+**Options**:
+
+* `--json`: Print JSON.
 * `--help`: Show this message and exit.
 
 ### `hz system skill`
@@ -3731,7 +3831,7 @@ $ hz system skill export [OPTIONS]
 
 **Options**:
 
-* `--name <str>`: A skill to export, e.g. explain-heinzel; repeat for each.
+* `--name <list[str]>`: A skill to export, e.g. explain-heinzel; repeat for each.
 * `--all-skills / --no-all-skills`: Export every skill in effect but your own.  [default: no-all-skills]
 * `--sync / --no-sync`: Only remove exports whose skill is gone or changed; never add one.  [default: no-sync]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
@@ -3766,7 +3866,7 @@ $ hz system skill show [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The skill, one `hz system skill list` shows, e.g. `explain-heinzel`.  [required]
+* `name <str>`: The skill, one `hz system skill list` shows, e.g. `explain-heinzel`.  [required]
 
 **Options**:
 
@@ -3786,7 +3886,7 @@ $ hz system skill unexport [OPTIONS]
 
 **Options**:
 
-* `--name <str>`: A skill to remove from the export; repeat for each.
+* `--name <list[str]>`: A skill to remove from the export; repeat for each.
 * `--all-skills / --no-all-skills`: Remove every skill hz exported.  [default: no-all-skills]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
@@ -3839,7 +3939,7 @@ $ hz system sound use [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The soundscape to play, one `hz system sound list` shows, or `off`.  [required]
+* `name <str>`: The soundscape to play, one `hz system sound list` shows, or `off`.  [required]
 
 **Options**:
 
@@ -3979,7 +4079,7 @@ $ hz system theme use [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The theme to use, one `hz system theme list` shows, e.g. `default`.  [required]
+* `name <str>`: The theme to use, one `hz system theme list` shows, e.g. `default`.  [required]
 
 **Options**:
 
@@ -4041,7 +4141,7 @@ $ hz system ui hide [OPTIONS] {item}
 
 **Arguments**:
 
-* `item`: The contribution, by id (`&lt;module&gt;:&lt;name&gt;`), e.g. `clock:primary-zone`.  [required]
+* `item <str>`: The contribution, by id (`&lt;module&gt;:&lt;name&gt;`), e.g. `clock:primary-zone`.  [required]
 
 **Options**:
 
@@ -4094,7 +4194,7 @@ $ hz system ui show [OPTIONS] {item}
 
 **Arguments**:
 
-* `item`: The contribution, by id (`&lt;module&gt;:&lt;name&gt;`), e.g. `clock:primary-zone`.  [required]
+* `item <str>`: The contribution, by id (`&lt;module&gt;:&lt;name&gt;`), e.g. `clock:primary-zone`.  [required]
 
 **Options**:
 
@@ -4221,7 +4321,7 @@ $ hz team add [OPTIONS] {handle}
 
 **Arguments**:
 
-* `handle`: Their handle: lowercase letters, digits, dashes.  [required]
+* `handle <str>`: Their handle: lowercase letters, digits, dashes.  [required]
 
 **Options**:
 
@@ -4246,7 +4346,7 @@ $ hz team adopt [OPTIONS] {path}
 
 **Arguments**:
 
-* `path`: A checkout of your team repository you already have.  [required]
+* `path <path>`: A checkout of your team repository you already have.  [required]
 
 **Options**:
 
@@ -4266,7 +4366,7 @@ $ hz team join [OPTIONS] {url}
 
 **Arguments**:
 
-* `url`: The team repository&#x27;s URL, the invite: https, ssh or a local path.  [required]
+* `url <str>`: The team repository&#x27;s URL, the invite: https, ssh or a local path.  [required]
 
 **Options**:
 
@@ -4291,7 +4391,7 @@ $ hz team new [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The team&#x27;s name: lowercase words joined by dashes, e.g. payments.  [required]
+* `name <str>`: The team&#x27;s name: lowercase words joined by dashes, e.g. payments.  [required]
 
 **Options**:
 

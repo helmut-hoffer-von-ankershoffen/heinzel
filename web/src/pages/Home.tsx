@@ -2,13 +2,14 @@
 // wide and below it when narrow, as on every screen. A card opens its screen, starts a chat about it, or goes away;
 // `?card=<id>` focuses one (a notification's link), `?chat-context=event:<id>` opens the chat about that event.
 
-import { MessageSquarePlus, X } from "lucide-react";
+import { ArrowUpRight, MessageSquarePlus, X } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { useSharedChat } from "@/chat/ChatContext";
 import { type TodayCard, useToday } from "@/chat/today";
 import { TodayWidgets } from "@/components/Contributions";
-import { Button } from "@/components/ui/button";
+import { TodayHiddenWidgets } from "@/components/HiddenWidgets";
+import { PaneAction, PaneActions, PaneChrome } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { TodayNotifications } from "@/notifications/TodayNotifications";
@@ -41,39 +42,26 @@ function Card({
       ref={ref}
       aria-current={focused || undefined}
       className={cn(
-        "flex min-w-0 flex-col gap-2 rounded-lg border-l-4 bg-card p-3 text-sm shadow-sm",
+        "relative flex min-w-0 flex-col gap-2 rounded-lg border-l-4 bg-card p-3 text-sm shadow-sm",
         TONES[card.tone],
         focused && "ring-2 ring-ring",
       )}
     >
-      <h3 className="font-semibold">{card.title}</h3>
+      <PaneChrome>
+        <PaneAction ghost icon={X} onClick={onDismiss}>
+          {t("today.dismiss", { title: card.title })}
+        </PaneAction>
+      </PaneChrome>
+      <h3 className="pr-10 font-semibold">{card.title}</h3>
       {card.detail && <p className="line-clamp-2 text-xs text-muted-foreground">{card.detail}</p>}
-      <div className="mt-auto flex flex-wrap gap-1">
-        <Button asChild size="sm" variant="outline">
-          <Link to={card.route}>{t("today.open")}</Link>
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-8"
-          onClick={onAsk}
-          disabled={busy}
-          aria-label={t("today.ask")}
-          title={t("today.ask")}
-        >
-          <MessageSquarePlus aria-hidden />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="ml-auto size-8"
-          onClick={onDismiss}
-          aria-label={t("today.dismiss", { title: card.title })}
-          title={t("today.dismiss", { title: card.title })}
-        >
-          <X aria-hidden />
-        </Button>
-      </div>
+      <PaneActions className="mt-auto">
+        <PaneAction key="open" icon={ArrowUpRight} to={card.route}>
+          {t("today.open")}
+        </PaneAction>
+        <PaneAction key="ask" icon={MessageSquarePlus} onClick={onAsk} disabled={busy}>
+          {t("today.ask")}
+        </PaneAction>
+      </PaneActions>
     </li>
   );
 }
@@ -105,6 +93,9 @@ export function Home() {
         <h1 id="today" className="sr-only">
           {t("today.title")}
         </h1>
+        <div className="mb-1 flex empty:hidden">
+          <TodayHiddenWidgets />
+        </div>
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(15rem,100%),1fr))] gap-3 empty:hidden">
           <TodayNotifications />
           {today.cards.map((card) => (

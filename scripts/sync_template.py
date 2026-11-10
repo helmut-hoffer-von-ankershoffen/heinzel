@@ -39,11 +39,18 @@ def _plugin_test_suites(text: str) -> str:
     )
 
 
+def _without_quarantine(text: str) -> str:
+    """The quarantine lane reads the core's tests/quarantine.toml; plugins have no registry."""
+    text = text.replace(" test-quarantine quarantine-check quarantine-plan", "")
+    start = text.find("\n# The quarantine lane (scripts/quarantine.py)")
+    end = text.find("\ntest-browser-deps:", start)
+    return text[:start] + text[end:] if 0 <= start < end else text
+
+
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
     text = (
-        (ROOT / "Makefile")
-        .read_text(encoding="utf-8")
+        _without_quarantine((ROOT / "Makefile").read_text(encoding="utf-8"))
         # Core-only guards read core standards, CLI guides and E2E lane inventory.
         .replace("\t@uv run --quiet --script scripts/scoped_checks.py early-fast\n", "")
         .replace('\t@uv run --quiet --script scripts/scoped_checks.py early-preflight --base "$(BASE)"\n', "")
@@ -312,6 +319,9 @@ def ci_workflow() -> str:
         "local-plugin-check",
         "core-wheel",
         "release-candidate-source",
+        "quarantine-registry",
+        "quarantine-plan",
+        "quarantine",
     }
     text = re.sub(
         r"(?m)^    needs: \[([^\n]+)\]$",

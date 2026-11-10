@@ -83,11 +83,9 @@ async function explain(page) {
   );
   note(`document ${documentState}`);
 }
-// Closing a persistent context ends the browser at once, also in the middle of the worker's install (`cache.addAll`) or
-// of the copies it keeps of the page's assets (`cache.put`). WebKit can then hold the next launch's first navigation:
-// the server answers it, the page never gets the response (beads zd4, #455; Playwright issue 42273 ties such stalls to
-// worker cache writes). A person does not quit the browser within a second of the page loading, so each step ends
-// only after the worker is active and every asset the controlled page loaded is cached: no write is cut off.
+// A controlled WebKit replay showed that closing the context interrupted a delayed worker cache write.
+// Wait for the active worker, the cached offline page, and copies of the worker-served assets observed in resource
+// timing before closing. The cause of the blank navigation in #648 (bead zd4) remains unknown.
 async function settleWorker(page) {
   await until(
     () =>
