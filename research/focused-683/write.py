@@ -42,7 +42,7 @@ def _update(helper: str) -> None:
     _require(_api(f"git/ref/{base}")["object"]["sha"] == MANIFEST["base"], "main moved before update")
     response = _api(f"git/refs/{target}", "--method", "PATCH", "-f", f"sha={HEAD}", "-F", "force=false")
     _require(response["object"]["sha"] == HEAD, "GitHub did not confirm the target ref")
-    _verify(helper, "--after-update")
+    _verify(helper, "--after-update", "--wait-test-merge")
     print(f"Observed fast-forward {original} -> {HEAD}; protected base and test merge verified")
 
 

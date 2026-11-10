@@ -38,7 +38,7 @@
     "coverage-floor",
     "merge-gate"
   ],
-  "activation": "held",
+  "activation": "ready",
   "coverage": {
     "type": "pr-affected-production-coverage/v1",
     "floor_percent": 80,
@@ -196,11 +196,13 @@
     }
   ],
   "source_review": {
-    "decision": "PENDING",
+    "decision": "GO",
     "head": "7d983e9662f58fd3af2c779c3ca1a9ccf8a70576",
     "tree": "0722838ec82ed417118ee8d388ffeec0335c330e",
     "base": "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
-    "scope": "Independent review pending for the test-only extension of the reviewed updater repair and exact helper."
+    "scope": "Exact coverage-tested candidate source and Python TOTAL coverage policy. Final activation helper independently reviewed before pinning.",
+    "reviewer": "independent Astra source and policy review",
+    "reviewed_helper": "3442d36085c0c0f0408a32513e837a06a92e7f5d"
   },
   "reviewed_repair": "e79108052f6d4071d1b0bb802c758d47c5aa3a33",
   "current_test_merge_parents": [

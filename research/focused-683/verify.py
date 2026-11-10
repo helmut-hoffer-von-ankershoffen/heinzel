@@ -9,6 +9,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -29,6 +30,8 @@ RULESET_ID = 25762292
 MAX_ARCHIVE_BYTES = 2_000_000
 MAX_MEMBER_BYTES = 5_000_000
 MAX_LOG_BYTES = 10_000_000
+TEST_MERGE_WAIT = 90
+TEST_MERGE_POLL = 3
 MEMBERS = {
     "python": {"results.xml", "pr-coverage.json", *coverage_evidence.PYTHON_RAW_FILES},
     "python315": {"results.xml"},
@@ -66,14 +69,68 @@ def _inventory(path: str, key: str) -> list[dict[str, Any]]:
     return entries
 
 
-def _source(*, before_update: bool = False) -> None:
-    base_ref, pr_ref = (MANIFEST[key].removeprefix("refs/") for key in ("base_ref", "pr_ref"))
-    original = MANIFEST["current_pr_head"]
-    expected_head = original if before_update else HEAD
+def _refs(expected_head: str) -> None:
+    base_ref, pr_ref, validation_ref = (
+        MANIFEST[key].removeprefix("refs/") for key in ("base_ref", "pr_ref", "candidate_ref")
+    )
     _require(_one(f"git/ref/{base_ref}")["object"]["sha"] == BASE, "main drift")
     _require(_one(f"git/ref/{pr_ref}")["object"]["sha"] == expected_head, "PR branch drift")
-    validation_ref = MANIFEST["candidate_ref"].removeprefix("refs/")
     _require(_one(f"git/ref/{validation_ref}")["object"]["sha"] == HEAD, "validation ref drift")
+
+
+def _pull_request(expected_head: str, *, allow_original: bool = False) -> dict[str, Any]:
+    pr = _one(f"pulls/{MANIFEST['pull_request']}")
+    _require(pr["state"] == "open" and not pr["draft"], "PR state drift")
+    _require(pr["head"]["repo"]["full_name"] == pr["base"]["repo"]["full_name"] == REPO, "PR repository drift")
+    _require(
+        (pr["head"]["sha"] == expected_head or (allow_original and pr["head"]["sha"] == MANIFEST["current_pr_head"]))
+        and f"refs/heads/{pr['head']['ref']}" == MANIFEST["pr_ref"]
+        and f"refs/heads/{pr['base']['ref']}" == MANIFEST["base_ref"],
+        "PR refs drift",
+    )
+    return pr
+
+
+def _merge_ref(*, allow_missing: bool = False) -> str | None:
+    try:
+        return _one(f"git/ref/pull/{MANIFEST['pull_request']}/merge")["object"]["sha"]
+    except subprocess.CalledProcessError as error:
+        if not allow_missing or error.returncode != 1 or b"(HTTP 404)" not in error.stderr:
+            raise
+        return None
+
+
+def _test_merge(pr: dict[str, Any], *, before_update: bool, wait: bool) -> None:
+    original = MANIFEST["current_test_merge"]
+    expected_head = MANIFEST["current_pr_head"] if before_update else HEAD
+    if before_update:
+        parents, tree = MANIFEST["current_test_merge_parents"], MANIFEST["current_test_merge_tree"]
+        _require(pr["merge_commit_sha"] == original, "old test merge SHA drift")
+    else:
+        parents, tree = [BASE, HEAD], TREE
+    deadline = time.monotonic() + TEST_MERGE_WAIT
+    timeout = "test merge did not converge; inspect the actual PR head and ref"
+    while True:
+        sha = pr["merge_commit_sha"]
+        ref = _merge_ref(allow_missing=wait)
+        _require(not wait or time.monotonic() < deadline, timeout)
+        if pr["head"]["sha"] == expected_head and sha and sha == ref and (before_update or sha != original):
+            merge = _one(f"git/commits/{sha}")
+            _require([parent["sha"] for parent in merge["parents"]] == parents, "test merge parents drift")
+            _require(merge["tree"]["sha"] == tree, "test merge tree drift")
+            return
+        _require(
+            wait and time.monotonic() < deadline, "test merge did not converge; inspect the actual PR head and ref"
+        )
+        time.sleep(TEST_MERGE_POLL)
+        _refs(HEAD)
+        pr = _pull_request(HEAD, allow_original=True)
+
+
+def _source(*, before_update: bool = False, wait_test_merge: bool = False) -> None:
+    original = MANIFEST["current_pr_head"]
+    expected_head = original if before_update else HEAD
+    _refs(expected_head)
     predecessor = _one("pulls/650")
     _require(predecessor["merged"] is True and bool(predecessor["merge_commit_sha"]), "#650 has not merged")
     predecessor_sha = predecessor["merge_commit_sha"]
@@ -83,15 +140,7 @@ def _source(*, before_update: bool = False) -> None:
             comparison["status"] == "ahead" and comparison["merge_base_commit"]["sha"] == predecessor_sha,
             "protected base does not contain #650",
         )
-    pr = _one(f"pulls/{MANIFEST['pull_request']}")
-    _require(pr["state"] == "open" and not pr["draft"], "PR state drift")
-    _require(pr["head"]["repo"]["full_name"] == pr["base"]["repo"]["full_name"] == REPO, "PR repository drift")
-    _require(
-        pr["head"]["sha"] == expected_head
-        and f"heads/{pr['head']['ref']}" == pr_ref
-        and f"heads/{pr['base']['ref']}" == base_ref,
-        "PR refs drift",
-    )
+    pr = _pull_request(expected_head, allow_original=wait_test_merge)
     candidate = _one(f"git/commits/{HEAD}")
     _require(candidate["tree"]["sha"] == TREE, "candidate tree drift")
     _require(
@@ -120,15 +169,8 @@ def _source(*, before_update: bool = False) -> None:
     )
     ancestry = _one(f"compare/{original}...{HEAD}?per_page=100")
     _require(ancestry["merge_base_commit"]["sha"] == original and ancestry["status"] == "ahead", "original PR lost")
-    merge_sha = pr["merge_commit_sha"]
-    merge = _one(f"git/commits/{merge_sha}")
-    if before_update:
-        _require(merge_sha == MANIFEST["current_test_merge"], "old test merge SHA drift")
-        parents, tree = MANIFEST["current_test_merge_parents"], MANIFEST["current_test_merge_tree"]
-    else:
-        parents, tree = [BASE, HEAD], TREE
-    _require([parent["sha"] for parent in merge["parents"]] == parents, "test merge parents drift")
-    _require(merge["tree"]["sha"] == tree, "test merge tree drift")
+    _test_merge(pr, before_update=before_update, wait=wait_test_merge)
+    _refs(expected_head)
 
 
 def _rules() -> None:
@@ -281,7 +323,9 @@ def _main() -> None:
     phase.add_argument("--evidence", type=int, metavar="RUN_ID")
     phase.add_argument("--before-update", action="store_true")
     phase.add_argument("--after-update", action="store_true")
+    parser.add_argument("--wait-test-merge", action="store_true")
     args = parser.parse_args()
+    _require(not args.wait_test_merge or args.after_update, "test merge wait is only valid after the single ref update")
     _require(MANIFEST["activation"] == "ready", "admission held pending exact final-base review")
     _require(
         MANIFEST["candidate_parents"] == [BASE, MANIFEST["coverage_test_commit"]],
@@ -299,7 +343,7 @@ def _main() -> None:
     _require(not status, "helper checkout is dirty")
     _require(set(MEMBERS) == set(MANIFEST["jobs"]), "manifest lane inventory drift")
     _rules()
-    _source(before_update=args.before_update)
+    _source(before_update=args.before_update, wait_test_merge=args.wait_test_merge)
     if args.evidence is not None:
         _require(args.evidence > 0, "invalid evidence run ID")
         _evidence(args.evidence, helper)
