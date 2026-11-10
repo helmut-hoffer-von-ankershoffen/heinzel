@@ -7,13 +7,14 @@
   "current_test_merge": "8b753b4350ade853db9c12c63443ea6601fca172",
   "current_test_merge_tree": "1678ed0295195723ae341f350f2c689dfdaa1506",
   "base_ref": "refs/heads/main",
-  "base": "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
-  "candidate": "e79108052f6d4071d1b0bb802c758d47c5aa3a33",
-  "candidate_ref": "refs/heads/validation/683-reviewed-e7910805",
+  "base": "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
+  "candidate": "a607194a5b1afdf8518be84b4562a0f33dbd5e98",
+  "candidate_ref": "refs/heads/validation/683-post650-a607194a",
   "candidate_parents": [
-    "8558755d5144280e92fe4975875dd7aee3807f51"
+    "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
+    "e79108052f6d4071d1b0bb802c758d47c5aa3a33"
   ],
-  "tree": "62896e17f50e0d9797218ae1ad6a8d02139b8e8f",
+  "tree": "b9be3c2ac3db4072b480a330c1ad81b490dd88f0",
   "changed_paths": {
     "src/heinzel/heads/install.py": "M",
     "src/heinzel/kernel/_installation.py": "M",
@@ -104,9 +105,9 @@
     },
     "sonar": {
       "os": "ubuntu-24.04",
-      "checkout": "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
+      "checkout": "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
       "pr": 683,
-      "head": "e79108052f6d4071d1b0bb802c758d47c5aa3a33"
+      "head": "a607194a5b1afdf8518be84b4562a0f33dbd5e98"
     },
     "python315": {
       "os": "ubuntu-24.04",
@@ -172,6 +173,24 @@
     }
   ],
   "source_review": {
+    "decision": "HOLD",
+    "head": "a607194a5b1afdf8518be84b4562a0f33dbd5e98",
+    "tree": "b9be3c2ac3db4072b480a330c1ad81b490dd88f0",
+    "base": "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
+    "scope": "Final-base composition. All 15 affected blobs and path statuses match the independently reviewed repair. Independent review on this pin remains required."
+  },
+  "activation_blockers": [
+    "Independently review the exact post-650 composition and bootstrap.",
+    "Publish the exact candidate to its pinned no-trigger validation ref through normal scoped hooks.",
+    "Confirm the live required ruleset and serialize protected writers before the exact PR ref update and evidence run."
+  ],
+  "reviewed_repair": "e79108052f6d4071d1b0bb802c758d47c5aa3a33",
+  "current_test_merge_parents": [
+    "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
+    "c25199bc0c9c257a2ae957b9a16153b452d8bfd3"
+  ],
+  "reviewed_repair_ref": "refs/heads/validation/683-reviewed-e7910805",
+  "reviewed_repair_review": {
     "decision": "GO",
     "historical_review_head": "8558755d5144280e92fe4975875dd7aee3807f51",
     "historical_review": "The 8558755 composition passed the initial source review. The later PATH injection and replaceable-ancestor finding supersedes that verdict.",
@@ -181,14 +200,5 @@
     "base": "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
     "scope": "Reviewed exact uv locator security repair on the provisional base. Admission bootstrap and final base remain separate.",
     "historical_blocker": "Embedded PATH separator can inject a relative segment; an absolute leaf under a world-writable ancestor can be replaced; stat errors admit the leaf."
-  },
-  "activation_blockers": [
-    "Repin to the protected base after #650 merges. Independently review the exact new composition and bootstrap.",
-    "Confirm the live required ruleset and serialize protected writers before the exact PR ref update and evidence run."
-  ],
-  "reviewed_repair": "e79108052f6d4071d1b0bb802c758d47c5aa3a33",
-  "current_test_merge_parents": [
-    "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
-    "c25199bc0c9c257a2ae957b9a16153b452d8bfd3"
-  ]
+  }
 }

@@ -1,4 +1,4 @@
-# One-shot evidence. The manifest holds execution pending the protected-base repin and review.
+# One-shot evidence. The manifest holds execution pending independent review of the protected-base composition.
 name: Focused 683 bootstrap evidence
 on:
   push:
@@ -32,14 +32,14 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: e79108052f6d4071d1b0bb802c758d47c5aa3a33
+          ref: a607194a5b1afdf8518be84b4562a0f33dbd5e98
           path: candidate
           fetch-depth: 0
           persist-credentials: false
       - if: matrix.lane == 'sonar'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: b234067b172f33db59f98c9ea38808b3d5ab9bc5
+          ref: 6443f4b8cde047954cdd4a6eb190ce6471ce123e
           path: trusted-base
           persist-credentials: false
       - uses: ./bootstrap/.github/actions/setup-uv

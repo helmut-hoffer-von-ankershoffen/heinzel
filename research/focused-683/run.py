@@ -219,7 +219,7 @@ def _main() -> None:
     if args.lane == "check":
         print("Pinned source, tree, parents and scope match")
         return
-    _require(MANIFEST["activation"] == "ready", "admission held pending the protected-base repin and review")
+    _require(MANIFEST["activation"] == "ready", "admission held pending exact final-base review")
     review = MANIFEST["source_review"]
     _require(
         review["decision"] == "GO"
