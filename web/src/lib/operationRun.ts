@@ -75,8 +75,13 @@ const subscribe = (listener: () => void) => {
 
 export const useOperationRun = (): OperationRun => useSyncExternalStore(subscribe, () => current);
 
+// A disconnected restart may still be running. Keep its outcome visible until the person explicitly closes it;
+// every entry point shares this guard, including footer contributions and already-driven writes.
+const outcomeUnconfirmed = () => current.stage === "failed" && current.outcomeUnknown === true;
+
 /** Ask the person to confirm `call`; nothing runs yet. Ignored while another write is being asked about or running. */
 export function requestOperation(call: SchemaOperationCall): boolean {
+  if (outcomeUnconfirmed()) return false;
   if (current.stage !== "idle" && current.stage !== "done" && current.stage !== "failed") return false;
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   set({ stage: "confirm", call });
@@ -106,6 +111,7 @@ export function confirmOperation(call: SchemaOperationCall): Promise<unknown> {
 
 /** Ask the person to confirm a write the app drives (`driven`); nothing runs until they choose its action. */
 export function requestDrivenOperation(call: SchemaOperationCall, driven: DrivenOperation): void {
+  if (outcomeUnconfirmed()) return;
   if (current.stage !== "idle" && current.stage !== "done" && current.stage !== "failed") return;
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   set({ stage: "confirm", call, driven });
@@ -116,7 +122,7 @@ export function requestDrivenOperation(call: SchemaOperationCall, driven: Driven
  * dialog opens in its progress view, never asking again.
  */
 export function resumeDrivenOperation(call: SchemaOperationCall, driven: DrivenOperation): Promise<void> {
-  if (current.stage === "confirm" || current.stage === "running") return Promise.resolve();
+  if (current.stage === "confirm" || current.stage === "running" || outcomeUnconfirmed()) return Promise.resolve();
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   set({ stage: "confirm", call, driven });
   return startDriven();
@@ -162,6 +168,7 @@ export function dismissOperation(): void {
 
 /** Start the confirmed write. A second call while it runs does nothing: one click starts one operation. */
 export async function startOperation(onSettled: () => void): Promise<void> {
+  if (outcomeUnconfirmed()) return;
   if (
     current.stage === "attention" ||
     ((current.stage === "confirm" || current.stage === "failed") && current.driven)
@@ -222,7 +229,8 @@ export async function trackOperation<T>(
   call: SchemaOperationCall,
   run: (report: (phases: Phase[]) => void) => Promise<T>,
 ): Promise<T> {
-  if (current.stage === "confirm" || current.stage === "running") throw new Error("Another write is running.");
+  if (current.stage === "confirm" || current.stage === "running" || outcomeUnconfirmed())
+    throw new Error("Another write is running or its outcome is unconfirmed.");
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   let phases: Phase[] = [];
   set({ stage: "running", call, phases, task: null, tracked: true });
