@@ -11,10 +11,7 @@ only `web/` runs the web checks; changes that touch neither `web/` nor `desktop/
 `make check-fast` without the web app's tests and the managed backend's check, with the type checks added and the unit
 tests narrowed to the ones related to the change (`scripts/related_tests.py`; configuration, the lockfile and
 `conftest.py` cannot be mapped and run all of them); anything else runs `make check-fast` in full. `make check-fast` by
-hand stays the full run. Set HZ_FOCUSED_PUSH=1 for a Python push from a host where the desktop tests cannot run.
-This requires a nonempty related unit selection and leaves the hosted desktop tests to CI. For explicit Python,
-web-only, or mixed Python/web selections, set HZ_FOCUSED_PUSH_MANIFEST to a reviewed JSON plan for the exact base
-and head. This local selection does not alter the required hosted checks.
+hand stays the full run. CI always runs the full gate, so nothing goes unchecked, only later.
 """
 
 import argparse
@@ -25,7 +22,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import cast
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLKIT = (
@@ -178,15 +174,6 @@ def scoped_steps(changed: list[str]) -> list[str] | None:
 
 WEB_INPUTS = ("web/", "desktop/")
 WEB_ROOT_FILES = {"pyproject.toml", "uv.lock", "Makefile", "mkdocs.yml"}
-MIXED_SOURCE_DIRS = (
-    "src/heinzel/",
-    "tests/unit/",
-    "tests/integration/",
-    "tests/fixtures/",
-    "web/src/",
-    "desktop/src/",
-    "desktop/test/",
-)
 
 
 def touches_web(changed: list[str]) -> bool:
@@ -195,285 +182,19 @@ def touches_web(changed: list[str]) -> bool:
 
 
 TYPES = '"&mypy=uv run mypy" "&pyright=uv run pyright"'
-HOSTED_DESKTOP_TESTS = {
-    "tests/unit/heads/desktop_installation_test.py",
-    "tests/integration/desktop_framework_wrap_test.py",
-}
-FOCUSED_TEST_PATHS = {
-    "unit": re.compile(r"tests/unit/(?:[\w-]+/)*[\w-]+_test\.py(?:::[\w]+)?", re.ASCII),
-    "integration": re.compile(r"tests/integration/(?:[\w-]+/)*[\w-]+_test\.py(?:::[\w]+)?", re.ASCII),
-    "web": re.compile(r"web/src/(?:[\w-]+/)*[\w.-]+\.test\.tsx?", re.ASCII),
-    "desktop": re.compile(r"desktop/test/(?:[\w-]+/)*[\w-]+\.test\.js", re.ASCII),
-}
-PYTHON_SOURCE = re.compile(r"src/heinzel/(?:[\w-]+/)*[\w-]+\.py", re.ASCII)
-SELECTOR_TEST = "tests/unit/scoped_checks_test.py"
-SELECTOR_FILES = {"scripts/scoped_checks.py", SELECTOR_TEST}
-DAEMON_BROWSER = "tests/e2e/daemon_settings_restart_test.py"
-DAEMON_DRIVER = "web/e2e/daemon-settings-restart.mjs"
-DAEMON_INTEGRATION = "tests/integration/daemon_restart_stream_test.py"
-DAEMON_WEB_TESTS = {"web/src/components/OperationDialog.test.tsx", "web/src/layout/DaemonSettings.test.tsx"}
-DAEMON_CHANGE = {
-    "web/src/api/stream.ts",
-    "web/src/components/OperationDialog.tsx",
-    "web/src/i18n.ts",
-    "web/src/layout/DaemonSettings.tsx",
-    "web/src/lib/operationRun.ts",
-    *DAEMON_WEB_TESTS,
-    DAEMON_BROWSER,
-    DAEMON_DRIVER,
-    DAEMON_INTEGRATION,
-}
-PUSH_REF_FIELDS = 4  # local ref, local SHA, remote ref, remote SHA
 
 
-def focused_push_head() -> str:
-    """Bind the manifest to the clean checkout and the one ref being pushed.
-
-    Raises:
-        SystemExit: If the checkout or push does not identify one exact committed tree.
-    """
-    head = resolve_base("HEAD")
-    dirty = subprocess.check_output(
-        ["git", "status", "--porcelain", "--untracked-files=all"],  # noqa: S607 - repository Git from PATH
-        text=True,
-        timeout=30,
-    )
-    if dirty:
-        msg = "A focused manifest push requires a clean checkout."
-        raise SystemExit(msg)
-    refs_file = os.environ.get("HZ_DEV_PUSH_REFS_FILE")
-    if not refs_file:
-        msg = "A focused manifest push requires the pre-push hook's ref list."
-        raise SystemExit(msg)
-    try:
-        refs = Path(refs_file).read_text(encoding="utf-8").splitlines()
-    except (OSError, ValueError) as error:
-        msg = "Unable to read the pushed ref list for a focused manifest push."
-        raise SystemExit(msg) from error
-    if len(refs) != 1 or len(fields := refs[0].split()) != PUSH_REF_FIELDS or fields[1] != head:
-        msg = "A focused manifest push requires exactly one pushed ref at the checked-out HEAD."
-        raise SystemExit(msg)
-    return head
-
-
-def tracked_test_files(head: str, files: set[str]) -> set[str]:
-    """Find the requested regular, tracked files, excluding symlinks and directories."""
-    listed = subprocess.check_output(  # noqa: S603 - validated revision and literal test paths after --
-        ["git", "ls-tree", "-rz", "--full-tree", head, "--", *sorted(files)],  # noqa: S607 - repository Git from PATH
-        text=True,
-        timeout=30,
-    )
-    return {entry.split("\t", 1)[1] for entry in listed.split("\0") if entry.startswith(("100644 ", "100755 "))}
-
-
-def read_focused_manifest(manifest: Path, *, base: str, head: str) -> dict[str, object]:
-    """Read a reviewed manifest for the exact commit pair.
-
-    Raises:
-        SystemExit: If the manifest is malformed or stale.
-    """
-    try:
-        plan = json.loads(manifest.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        msg = "Unable to read HZ_FOCUSED_PUSH_MANIFEST as JSON."
-        raise SystemExit(msg) from error
-    if not isinstance(plan, dict) or plan.keys() != {"base", "head", *FOCUSED_TEST_PATHS}:
-        msg = "A focused manifest requires base, head, unit, integration, web and desktop fields."
-        raise SystemExit(msg)
-    if plan["base"] != base or plan["head"] != head:
-        msg = "A focused manifest must match the exact base and head commits."
-        raise SystemExit(msg)
-    return cast("dict[str, object]", plan)
-
-
-def require_daemon_tests(targets: dict[str, list[str]], selector_units: list[str], scope: str) -> set[str]:
-    """Require the complete tests for the mapped daemon browser scenario.
-
-    Raises:
-        SystemExit: If an owning test is missing from the manifest.
-    """
-    if scope != "daemon-browser":
-        return set()
-    required = {
-        "unit": {"tests/unit/modules/daemon_service_test.py", *selector_units},
-        "integration": {DAEMON_INTEGRATION},
-        "web": DAEMON_WEB_TESTS,
-    }
-    if any(not wanted.issubset(targets[lane]) for lane, wanted in required.items()):
-        msg = "Daemon browser scope requires its full owning tests."
-        raise SystemExit(msg)
-    return {DAEMON_BROWSER, DAEMON_DRIVER}
-
-
-def focused_test_targets(
-    manifest: Path, *, base: str, head: str, changed: list[str], scope: str
-) -> dict[str, list[str]]:
-    """Load reviewed base/head SHAs and four test lists: unit, integration, web, desktop.
-
-    Paths are repository-relative and tracked at head. Python entries can name a test within a file.
-    Python pushes require unit tests and mixed pushes require web tests and Node tests for Electron shell changes.
-    Web-only pushes require web tests and run the selector's unit file if the branch changes it.
-    Review the selection alongside the diff.
-
-    Raises:
-        SystemExit: If the manifest is stale, incomplete or contains an unsupported test selection.
-    """
-    plan = read_focused_manifest(manifest, base=base, head=head)
-    targets: dict[str, list[str]] = {}
-    for lane, pattern in FOCUSED_TEST_PATHS.items():
-        entries = plan[lane]
-        if not isinstance(entries, list) or any(
-            not isinstance(path, str) or not pattern.fullmatch(path) for path in cast("list[object]", entries)
-        ):
-            msg = f"Invalid focused {scope} test path in the {lane} list."
-            raise SystemExit(msg)
-        targets[lane] = sorted(set(cast("list[str]", entries)))
-    selector_units = [SELECTOR_TEST] if SELECTOR_FILES.intersection(changed) else []
-    daemon_files = require_daemon_tests(targets, selector_units, scope)
-    if scope == "web" and (targets["integration"] or targets["desktop"] or targets["unit"] != selector_units):
-        msg = "A focused web manifest allows only web tests and the full selector unit file if changed."
-        raise SystemExit(msg)
-    if scope == "Python" and (targets["web"] or targets["desktop"]):
-        msg = "A focused Python manifest requires empty web and desktop lists."
-        raise SystemExit(msg)
-    for lane, required in (
-        ("unit", scope != "web"),
-        ("integration", any(path.startswith("tests/integration/") for path in changed)),
-        ("web", scope != "Python"),
-        ("desktop", any(path.startswith(("desktop/src/", "desktop/test/")) for path in changed)),
-    ):
-        if required and not targets[lane]:
-            msg = f"A focused manifest requires a nonempty {lane} list for this change."
-            raise SystemExit(msg)
-    files = {entry.split("::", 1)[0] for entries in targets.values() for entry in entries}
-    if files & HOSTED_DESKTOP_TESTS:
-        msg = "A focused manifest cannot select hosted desktop tests."
-        raise SystemExit(msg)
-    if any(any(pattern.fullmatch(path) for pattern in FOCUSED_TEST_PATHS.values()) for path in set(changed) - files):
-        msg = "A focused manifest must cover every changed test file."
-        raise SystemExit(msg)
-    files.update(daemon_files)
-    if files != tracked_test_files(head, files):
-        msg = "A focused manifest can select only tracked test files at HEAD."
-        raise SystemExit(msg)
-    return targets
-
-
-def python_manifest_paths(changed: list[str]) -> bool:
-    """Allow Python source, its tests, and the selector itself for staged adoption."""
-    patterns = (PYTHON_SOURCE, FOCUSED_TEST_PATHS["unit"], FOCUSED_TEST_PATHS["integration"])
-    return all(
-        path == "scripts/scoped_checks.py" or any(pattern.fullmatch(path) for pattern in patterns) for path in changed
-    )
-
-
-def daemon_browser_checks() -> int:
-    """Build the current web assets and run the mapped isolated browser test."""
-    result = run_check([*WEB.split(), "ensure"], check=False, timeout=180).returncode
-    if result:
-        return result
-    browser = ["uv", "run", "pytest", DAEMON_BROWSER, "-m", "e2e", "-n", "2", "-x", "-q"]
-    return run_check(browser, check=False, timeout=180).returncode
-
-
-def manifest_push_checks(changed: list[str], base: str, manifest: Path) -> int:  # noqa: C901, PLR0912
-    """Keep the fast gate's static checks and run the reviewed tests for a supported push.
-
-    Raises:
-        SystemExit: If the change is outside the supported manifest push scope.
-    """
-    has_web = any(path.startswith("web/src/") for path in changed)
-    has_python = any(PYTHON_SOURCE.fullmatch(path) for path in changed)
-    daemon_browser = DAEMON_CHANGE.issubset(changed) and set(changed).issubset(DAEMON_CHANGE | SELECTOR_FILES)
-    mixed = has_web and (has_python or daemon_browser)
-    web_only = has_web and not (has_python or daemon_browser)
-    if daemon_browser:
-        allowed = True
-    elif mixed:
-        allowed = all(
-            is_document(path)
-            or path in {"scripts/scoped_checks.py", "web/openapi.json"}
-            or path.startswith(MIXED_SOURCE_DIRS)
-            for path in changed
-        )
-    elif web_only:
-        allowed = all(
-            path.startswith("web/src/") or path in SELECTOR_FILES or path == "web/openapi.json" for path in changed
-        )
-    else:
-        allowed = python_manifest_paths(changed)
-    if not allowed or WEB_ROOT_FILES.intersection(changed) or not (has_python or web_only or daemon_browser):
-        msg = (
-            "Focused manifests cover Python, web, or Python/web source changes without build or runtime configuration."
-        )
-        raise SystemExit(msg)
-    scope = "daemon-browser" if daemon_browser else "mixed" if mixed else "web" if web_only else "Python"
-    targets = focused_test_targets(manifest, base=base, head=focused_push_head(), changed=changed, scope=scope)
-    # The pinned Vitest filters on paths relative to its web/ root.
-    web = " ".join(path.removeprefix("web/") for path in targets["web"])
-    web_step = f"web-tests={WEB} exec vitest run --maxWorkers=2 {web}"
-    run_early_guards(changed)
-    if web_only and not targets["unit"]:
-        steps = [f"web-prepare={WEB} prepare", *WEB_STEPS[:-1], f"&{web_step}"]
-        return run_check(
-            ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps], check=False, timeout=600
-        ).returncode
-    command = [
-        "make",
-        "check-fast",
-        f"FAST_TYPES={TYPES}",
-        f"UNIT_TARGETS={' '.join(targets['unit'])}",
-        "PYTEST_XDIST_AUTO_NUM_WORKERS=2",
-    ]
-    if mixed or web_only:
-        command += [
-            f'WEB_TESTS="{web_step}"',
-            (
-                'MANAGED_CHECK="managed-runtime=$(MANAGED) exec node tools/runtime-code.mjs --check" '
-                '"&managed-lint=$(MANAGED) exec biome ci ." $(MANAGED_TYPES)'
-            ),
-        ]
-    else:
-        command += ["WEB_TESTS=", "MANAGED_CHECK="]
-    result = run_check(command, check=False, timeout=600).returncode
-    if result:
-        return result
-    if targets["integration"]:
-        integration = ["uv", "run", "pytest", *targets["integration"], "-m", "integration and not perf"]
-        result = run_check(
-            [*integration, "-n", "2", "-x", "-q", "--session-timeout=120"], check=False, timeout=180
-        ).returncode
-        if result:
-            return result
-    if daemon_browser:
-        result = daemon_browser_checks()
-        if result:
-            return result
-    if targets["desktop"]:
-        desktop = [*WEB.split(), "exec", "node", "--test", *(f"../{path}" for path in targets["desktop"])]
-        return run_check(desktop, check=False, timeout=180).returncode
-    return 0
-
-
-def python_overrides(changed: list[str], *, focused: bool = False) -> list[str]:
+def python_overrides(changed: list[str]) -> list[str]:
     """Make variables for the pre-push run of `check-fast`: no web steps, the type checks, the related unit tests.
 
     A change that cannot be mapped to tests (configuration, the lockfile, `conftest.py`) keeps the full unit run. When
     nothing is related (a script no test mentions), only the hook's own test runs besides lint, contracts and types.
-
-    Raises:
-        SystemExit: If focused mode cannot select any related tests that can run locally.
     """
     overrides = ["WEB_TESTS=", "MANAGED_CHECK=", f"FAST_TYPES={TYPES}"]
     sys.path.insert(0, str(ROOT / "scripts"))
     from related_tests import related_tests  # noqa: PLC0415 - only the hook needs the import graph
 
     related = related_tests(changed)
-    if focused:
-        related = [path for path in related or [] if path not in HOSTED_DESKTOP_TESTS]
-        if not related:
-            msg = "HZ_FOCUSED_PUSH requires at least one related unit test that can run locally."
-            raise SystemExit(msg)
     if related is None:
         return overrides
     if not related:
@@ -523,7 +244,7 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
         }
         for path in changed
     )
-    targets: list[str] = []
+    targets = []
     if fixture:
         targets.append("tests/unit/standards_test.py::test_tests_and_template_use_only_variables_something_reads")
     if guides:
@@ -594,35 +315,130 @@ def run_early_guards(changed: list[str], *, light: bool = False) -> None:
         run_check(command, timeout=180, light=light)
 
 
-def push_checks(changed: list[str], base: str) -> int | None:
-    """Run scoped push checks, or return None for the ordinary fast gate.
+DAEMON_BROWSER = "tests/e2e/daemon_settings_restart_test.py"
+DAEMON_STREAM = "tests/integration/daemon_restart_stream_test.py"
+DAEMON_CHANGE = {
+    "web/src/api/stream.ts",
+    "web/src/components/OperationDialog.tsx",
+    "web/src/i18n.ts",
+    "web/src/layout/DaemonSettings.tsx",
+    "web/src/lib/operationRun.ts",
+    "web/src/components/OperationDialog.test.tsx",
+    "web/src/layout/DaemonSettings.test.tsx",
+    DAEMON_BROWSER,
+    "web/e2e/daemon-settings-restart.mjs",
+    DAEMON_STREAM,
+}
+SELECTOR_CHANGE = {"scripts/scoped_checks.py", "tests/unit/scoped_checks_test.py"}
+FORBIDDEN_FOCUSED_ENV = {
+    "MAKEFLAGS",
+    "MFLAGS",
+    "GNUMAKEFLAGS",
+    "UNIT_TARGETS",
+    "WEB_TESTS",
+    "FAST_TYPES",
+    "MANAGED_CHECK",
+    "PYTEST_PLUGINS",
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+    "SKIP",
+}
+DAEMON_PUSH_REF = "refs/heads/work/progress-scoped-validation"
+PUSH_REF_FIELDS = 4
+DAEMON_BLOBS = {
+    "tests/e2e/daemon_settings_restart_test.py": "3c725ed096a1c5a934cef585fc1c191002cbac7d",
+    "tests/integration/daemon_restart_stream_test.py": "3c05cc50bce709bf357b683c17a8a6db98216799",
+    "web/e2e/daemon-settings-restart.mjs": "8d5f15aeb237529eaac29cd98916e59ad86277ea",
+    "web/src/api/stream.ts": "cc3b9aed68bef612b92e73ae4931581cfaf40b9f",
+    "web/src/components/OperationDialog.test.tsx": "31d68ae46b8834f91c7bc6bb9a0c87781504c36f",
+    "web/src/components/OperationDialog.tsx": "d0c7464fb492f0914512c7f8de9f9729d82f33d3",
+    "web/src/i18n.ts": "5283c9c880444619c254909f870280a3398d1596",
+    "web/src/layout/DaemonSettings.test.tsx": "0c79d92455002944e1cf9396014bb3c7cfc8934b",
+    "web/src/layout/DaemonSettings.tsx": "872832aba0b251e61170051f7c6c69ab5db4f3da",
+    "web/src/lib/operationRun.ts": "f688f7cb5e06a5cbcdf5daf3f321646b3be7cb71",
+}
+
+
+def daemon_progress_push(changed: list[str], base: str) -> int:  # noqa: C901
+    """Run fixed owning checks only for the reviewed daemon-progress file set.
 
     Raises:
-        SystemExit: If a focused push cannot use the related Python unit checks.
+        SystemExit: If the checkout, push ref, environment or file set is not the expected one.
     """
-    steps = scoped_steps(changed)
-    python_scope = (
-        bool(changed) and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed)
-    )
-    focused = os.environ.get("HZ_FOCUSED_PUSH") == "1"
-    if focused and (manifest := os.environ.get("HZ_FOCUSED_PUSH_MANIFEST")) is not None:
-        return manifest_push_checks(changed, base, Path(manifest))
-    if focused and (steps or not python_scope):
-        msg = "HZ_FOCUSED_PUSH requires a Python push with a related unit selection."
+    if set(changed) not in (DAEMON_CHANGE, DAEMON_CHANGE | SELECTOR_CHANGE):
+        msg = "Unsupported daemon progress change set"
         raise SystemExit(msg)
-    light = bool(changed) and all(is_document(path) for path in changed)
-    run_early_guards(changed, light=light)
-    if steps:
-        command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
-        return run_check(command, check=False, timeout=600, light=light).returncode
-    if python_scope:
-        # The generated client is still checked by web-lint.
-        command = ["make", "check-fast", *python_overrides(changed, focused=focused)]
-        return run_check(command, check=False, timeout=1800).returncode
-    return None
+    if FORBIDDEN_FOCUSED_ENV.intersection(os.environ):
+        msg = "Unsupported inherited test or Make configuration"
+        raise SystemExit(msg)
+    gate = shutil.which("hz-gate")
+    expected_path = str(Path(gate).resolve().parent / "pytest_plugins") if gate and sys.platform == "darwin" else ""
+    expected_opts = "-p hz_gate_native_gui" if expected_path else ""
+    if os.environ.get("PYTHONPATH", "") != expected_path or os.environ.get("PYTEST_ADDOPTS", "") != expected_opts:
+        msg = "Unexpected pytest gate configuration"
+        raise SystemExit(msg)
+    head = resolve_base("HEAD")
+    if subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=all"], text=True, timeout=30):  # noqa: S607
+        msg = "Focused push requires a clean checkout"
+        raise SystemExit(msg)
+    try:
+        lines = Path(os.environ["HZ_DEV_PUSH_REFS_FILE"]).read_text(encoding="utf-8").splitlines()
+    except (KeyError, OSError, ValueError) as error:
+        msg = "Focused push requires the hook ref list"
+        raise SystemExit(msg) from error
+    if (
+        len(lines) != 1
+        or len(fields := lines[0].split()) != PUSH_REF_FIELDS
+        or fields[1] != head
+        or fields[0] != DAEMON_PUSH_REF
+        or fields[2] != DAEMON_PUSH_REF
+    ):
+        msg = "Focused push requires the single checked-out head"
+        raise SystemExit(msg)
+    files = DAEMON_CHANGE | (SELECTOR_CHANGE & set(changed))
+    listing = subprocess.check_output(["git", "ls-tree", "-rz", "--full-tree", head, "--", *sorted(files)], timeout=30)  # noqa: S603, S607
+    rows = [row for row in listing.split(b"\0") if row]
+    regular = {row.split(b"\t", 1)[1].decode() for row in rows if row.startswith((b"100644 ", b"100755 "))}
+    blobs = {row.split(b"\t", 1)[1].decode(): row.split(b"\t", 1)[0].split()[2].decode() for row in rows}
+    flags = subprocess.check_output(["git", "ls-files", "-v", "-z"], timeout=30).split(b"\0")  # noqa: S607
+    if any(row and not row.startswith(b"H ") for row in flags):
+        msg = "Focused push requires a normal index"
+        raise SystemExit(msg)
+    ancestry = subprocess.run(["git", "merge-base", "--is-ancestor", base, head], check=False, timeout=30)  # noqa: S603, S607
+    if (
+        regular != files
+        or any(blobs.get(path) != blob for path, blob in DAEMON_BLOBS.items())
+        or any(Path(path).is_symlink() or not Path(path).is_file() for path in files)
+        or resolve_base("origin/main") != base
+        or ancestry.returncode
+    ):
+        msg = "Focused push requires tracked regular files and the exact main base"
+        raise SystemExit(msg)
+    unit = "tests/unit/modules/daemon_service_test.py"
+    if SELECTOR_CHANGE.issubset(changed):
+        unit += " tests/unit/scoped_checks_test.py tests/unit/scripts_test.py"
+    web = "src/components/OperationDialog.test.tsx src/layout/DaemonSettings.test.tsx"
+    steps = [
+        [
+            "make",
+            "check-fast",
+            f"FAST_TYPES={TYPES}",
+            f"UNIT_TARGETS={unit}",
+            "PYTEST_XDIST_AUTO_NUM_WORKERS=2",
+            f'WEB_TESTS="web-tests={WEB} exec vitest run --maxWorkers=2 {web}"',
+        ],
+        ["uv", "run", "pytest", DAEMON_STREAM, "-m", "integration and not perf", "-n", "2", "-x", "-q"],
+        [*WEB.split(), "build"],
+        ["uv", "run", "pytest", DAEMON_BROWSER, "-m", "e2e", "-n", "2", "-x", "-q"],
+    ]
+    run_early_guards(changed)
+    for command in steps:
+        result = run_check(command, check=False, timeout=600).returncode
+        if result:
+            return result
+    return 0
 
 
-def main() -> None:
+def main() -> None:  # noqa: C901
     """Preserve core checks and common policies while selecting independent owning plugin work."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=MODES)
@@ -643,8 +459,20 @@ def main() -> None:
     base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if args.mode == "push":
         changed = sorted({*changed, *changed_paths("fast", base)})
-        if (status := push_checks(changed, base)) is not None:
-            sys.exit(status)
+        if os.environ.get("HZ_DAEMON_PROGRESS_PUSH") == "1":
+            sys.exit(daemon_progress_push(changed, base))
+        light = bool(changed) and all(is_document(path) for path in changed)
+        run_early_guards(changed, light=light)
+        steps = scoped_steps(changed)
+        if steps:
+            command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
+            done = run_check(command, check=False, timeout=600, light=light)
+            sys.exit(done.returncode)
+        if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
+            # Python, scripts, tests and documents: everything of the fast gate but the web app's tests and the managed
+            # backend's check, which read nothing of it (the generated client is still checked by web-lint).
+            command = ["make", "check-fast", *python_overrides(changed)]
+            sys.exit(run_check(command, check=False, timeout=1800).returncode)
         args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):
         run_check(
