@@ -1,7 +1,10 @@
 """The protected judge binds coverage evidence to an immutable original upload."""
 
+import base64
+import gzip
 import hashlib
 import io
+import json
 import zipfile
 from pathlib import Path
 from subprocess import CalledProcessError
@@ -351,8 +354,15 @@ def test_protected_reader_only_excludes_authentic_neutral_advisory(
         ("missing-artifact", "artifact lane inventory"),
     ],
 )
-def test_protected_reader_verifies_complete_attempt(focused_gate, first_attempt, monkeypatch, defect, error):
+@pytest.mark.parametrize("transport", ["legacy", "slot"])
+def test_protected_reader_verifies_complete_attempt(  # noqa: PLR0913, PLR0917 - independent evidence and transport cases
+    focused_gate, first_attempt, monkeypatch, defect, error, transport
+):
     gate, run, manifest, lane, rows, logs, _git_rows = first_attempt
+    from scripts.focused_plan import encode_slot
+
+    slots = (encode_slot(json.loads(manifest)),) if transport == "slot" else ()
+    manifest = "{}" if slots else manifest
     jobs_path = f"actions/runs/{run}/attempts/1/jobs?per_page=100&page=1"
     artifacts_path = f"actions/runs/{run}/artifacts?per_page=100"
     if defect in {"pending-api-checks", "lookalike-real-job", "duplicate-api-row"}:
@@ -373,9 +383,9 @@ def test_protected_reader_verifies_complete_attempt(focused_gate, first_attempt,
     monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
     if error:
         with pytest.raises(focused_gate.CandidateError, match=error):
-            focused_gate.verify(gate, run, manifest, logs.__getitem__)
+            focused_gate.verify(gate, run, manifest, logs.__getitem__, slots=slots)
     else:
-        assert focused_gate.verify(gate, run, manifest, logs.__getitem__) == (
+        assert focused_gate.verify(gate, run, manifest, logs.__getitem__, slots=slots) == (
             "Python coverage: not applicable to the reviewed scope"
         )
 
@@ -486,12 +496,17 @@ def test_protected_reader_rechecks_live_source_and_attempt(focused_gate, first_a
 
 
 @pytest.mark.parametrize("defect", ["none", "unrelated-base", "wrong-parent", "wrong-tree", "bad-digest", "moved-main"])
+@pytest.mark.parametrize("transport", ["legacy", "slot"])
 def test_focused_reader_authenticates_original_artifact_before_accepting_ancestor_base(  # noqa: C901 - independent drift cases
-    focused_gate, first_attempt, monkeypatch, defect
+    focused_gate, first_attempt, monkeypatch, defect, transport
 ):
     from scripts import focused_plan
 
     gate, run_id, manifest, _lane, rows, logs, git_rows = first_attempt
+    from scripts.focused_plan import encode_slot
+
+    slots = (encode_slot(json.loads(manifest)),) if transport == "slot" else ()
+    manifest = "{}" if slots else manifest
     old = rows["git/ref/heads/main"]["object"]["sha"]
     current, current_merge = "f" * 40, "1" * 40
     original_merge = "c" * 40
@@ -539,9 +554,300 @@ def test_focused_reader_authenticates_original_artifact_before_accepting_ancesto
     monkeypatch.setattr(type(gate), "github", github)
     if defect == "none":
         assert (
-            focused_gate.verify(gate, run_id, manifest, logs.__getitem__)
+            focused_gate.verify(gate, run_id, manifest, logs.__getitem__, slots=slots)
             == "Python coverage: not applicable to the reviewed scope"
         )
     else:
         with pytest.raises(focused_gate.CandidateError, match=r".+"):
-            focused_gate.verify(gate, run_id, manifest, logs.__getitem__)
+            focused_gate.verify(gate, run_id, manifest, logs.__getitem__, slots=slots)
+
+
+KEY = "pull_request:" + "a" * 40
+PAIR = {KEY: {"schema": 1}, "push-tree:" + "b" * 40: {"schema": 1}}
+EMPTY = ("", "", "", "")
+
+
+@pytest.fixture
+def registry(monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2]))
+    from scripts import focused_plan
+
+    return focused_plan
+
+
+def _envelope(raw, **changes):
+    envelope = {
+        "schema": 1,
+        "codec": "gzip+base64",
+        "bytes": len(raw),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "data": base64.b64encode(gzip.compress(raw, mtime=0)).decode(),
+    }
+    return json.dumps(envelope | changes)
+
+
+@pytest.mark.parametrize("position", range(4))
+def test_slots_preserve_legacy_and_original_manifest_digest(registry, position):
+    legacy = '{ "push:' + "c" * 40 + '": {"schema":1} }'
+    original = legacy
+    slots = list(EMPTY)
+    slots[position] = registry.encode_slot(PAIR)
+    combined = registry.plan_registry(legacy, tuple(slots))
+    assert combined == json.loads(legacy) | PAIR
+    assert legacy == original
+    assert registry.registry_bytes(combined[KEY]) == registry.registry_bytes(PAIR[KEY])
+    assert registry.selected_registry(legacy, tuple(slots), KEY) == registry.registry_bytes({KEY: PAIR[KEY]}).decode()
+    assert registry.registry_slots(dict(zip(registry.SLOT_VARIABLES, slots, strict=True))) == tuple(slots)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"schema": True},
+        {"schema": 2},
+        {"codec": "zlib"},
+        {"bytes": True},
+        {"bytes": -1},
+        {"bytes": 1048577},
+        {"bytes": 1},
+        {"sha256": "0" * 64},
+        {"data": "!!"},
+        {"extra": 1},
+        {"data": "é"},
+    ],
+)
+def test_envelope_rejects_invalid_contract(registry, changes):
+    with pytest.raises(registry.CandidateError):
+        registry.decode_slot(_envelope(b"{}", **changes))
+
+
+@pytest.mark.parametrize("suffix", [b"junk", gzip.compress(b"{}", mtime=0)])
+def test_one_complete_gzip_member_is_required(registry, suffix):
+    data = base64.b64encode(gzip.compress(b"{}", mtime=0) + suffix).decode()
+    with pytest.raises(registry.CandidateError, match="stream"):
+        registry.decode_slot(_envelope(b"{}", data=data))
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [b'{"same":1,"same":2}', b'{"x":NaN}', b'{"x":Infinity}', b'"not-an-object"', b"\xff", b"{ }", b'{"bad":{}}'],
+)
+def test_decoded_registry_is_strict_canonical_json(registry, raw):
+    with pytest.raises(registry.CandidateError):
+        registry.decode_slot(_envelope(raw))
+
+
+def test_duplicate_envelope_and_nested_manifest_keys_are_rejected(registry):
+    encoded = _envelope(b"{}")
+    with pytest.raises(registry.CandidateError):
+        registry.decode_slot(encoded[:-1] + ', "schema":1}')
+    with pytest.raises(registry.CandidateError):
+        registry.decode_slot(_envelope(("{" + json.dumps(KEY) + ':{"schema":1,"schema":1}}').encode()))
+
+
+def test_bomb_truncation_and_transport_limits_fail_closed(registry):
+    bomb = b" " * (registry.MAX_SLOT_DECODED + 1)
+    with pytest.raises(registry.CandidateError, match="stream"):
+        registry.decode_slot(_envelope(bomb, bytes=2))
+    truncated = base64.b64encode(gzip.compress(b"{}", mtime=0)[:-1]).decode()
+    with pytest.raises(registry.CandidateError, match="stream"):
+        registry.decode_slot(_envelope(b"{}", data=truncated))
+    with pytest.raises(registry.CandidateError, match="encoded limit"):
+        registry.decode_slot(" " * (registry.MAX_SLOT + 1))
+    with pytest.raises(registry.CandidateError, match="supported size"):
+        registry.plan_registry(" " * (registry.MAX_PLAN + 1), EMPTY)
+    with pytest.raises(registry.CandidateError, match="too many"):
+        registry.plan_registry("{}", (*EMPTY, ""))
+    with pytest.raises(registry.CandidateError, match="original plan limit"):
+        registry.decode_slot(_envelope(registry.registry_bytes({KEY: {"padding": "x" * registry.MAX_PLAN}})))
+    entries = {f"push-tree:{i:040x}": {} for i in range(registry.MAX_SLOT_ENTRIES + 1)}
+    with pytest.raises(registry.CandidateError, match="too many entries"):
+        registry.decode_slot(_envelope(registry.registry_bytes(entries)))
+
+
+def test_conflicts_fail_even_when_unused_and_boolean_is_not_integer(registry):
+    first = registry.encode_slot(PAIR)
+    same = registry.plan_registry(json.dumps(PAIR), (first,))
+    assert same == PAIR
+    conflict = registry.encode_slot({KEY: {"schema": True}})
+    with pytest.raises(registry.CandidateError, match="conflicting"):
+        registry.selected_registry(json.dumps(PAIR), (conflict,), "push:" + "d" * 40)
+    with pytest.raises(registry.CandidateError, match="conflicting"):
+        registry.plan_registry("{}", (first, conflict))
+
+
+def test_pair_append_preserves_all_history_and_is_idempotent(registry):
+    historical = {"push-tree:" + "c" * 40: {"schema": 1}}
+    slots = (registry.encode_slot(historical), "", "", "")
+    result = registry.append_slot("{}", slots, PAIR)
+    assert result is not None
+    index, encoded = result
+    assert index == 0
+    assert registry.decode_slot(encoded) == historical | PAIR
+    updated = (encoded, *slots[1:])
+    assert registry.append_slot("{}", updated, PAIR) is None
+    assert registry.decode_slot(slots[0]) == historical
+    with pytest.raises(registry.CandidateError, match="replace"):
+        registry.append_slot("{}", updated, {KEY: {"schema": 2}})
+    with pytest.raises(registry.CandidateError, match="partially"):
+        registry.append_slot(json.dumps({KEY: PAIR[KEY]}), EMPTY, PAIR)
+
+
+def test_full_slots_cannot_evict_or_split_an_admission_pair(registry):
+    full = {f"push-tree:{i:040x}": {} for i in range(registry.MAX_SLOT_ENTRIES - 1)}
+    encoded = registry.encode_slot(full)
+    slots = (encoded, "", "", "")
+    result = registry.append_slot("{}", slots, PAIR)
+    assert result is not None
+    assert result[0] == 1
+    assert registry.decode_slot(result[1]) == PAIR
+    with pytest.raises(registry.CandidateError, match="all focused registry slots are full"):
+        registry.append_slot("{}", (encoded,) * 4, PAIR)
+
+
+def test_actual_ci_and_protected_gate_inject_all_four_optional_slots(registry):
+    root = Path(__file__).resolve().parents[2]
+    for file, readers in (("ci.yml", 2), ("merge-gate.yml", 1)):
+        text = (root / ".github/workflows" / file).read_text()
+        assert text.count("FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}") == readers
+        for name in registry.SLOT_VARIABLES:
+            assert text.count(f"{name}: ${{{{ vars.{name} }}}}") == readers
+
+
+@pytest.fixture
+def source_manifest(registry, monkeypatch):
+    base, head, merge, tree, blob = (digit * 40 for digit in "abcde")
+    path = "src/heinzel/new.py"
+    diff = f":000000 100644 {'0' * 40} {blob} A\0{path}\0".encode()
+    payload = {
+        "pull_request": {
+            "number": 5,
+            "base": {"sha": base, "ref": "main", "repo": {"full_name": registry.REPOSITORY}},
+            "head": {"sha": head},
+        }
+    }
+    source = registry.WorkloadSource(
+        "pull_request", registry.REPOSITORY, "refs/pull/5/merge", payload, base, head, diff
+    )
+    manifest = {
+        "schema": 1,
+        "event": "pull_request",
+        "ref": registry.PREOPEN_PR_REF,
+        "base": base,
+        "head": head,
+        "tree": tree,
+        "diff_sha256": hashlib.sha256(diff).hexdigest(),
+        "changed": {path: "A"},
+        "mode": "pr-scoped",
+        "config_blob": blob,
+        "execution": dict.fromkeys(registry.PROTECTED_FILES, blob),
+        "production": {path: blob},
+        "selection": {"python": ["tests/unit/new_test.py"]},
+        "case_sha256": {"python": "f" * 64},
+    }
+    monkeypatch.setattr(registry, "git_blob", lambda *_args: blob)
+    monkeypatch.setattr(registry, "object_id", lambda _ref: tree)
+    monkeypatch.setattr(registry, "git", lambda *_args: f"{merge} {base} {head}".encode())
+    return source, manifest, merge
+
+
+@pytest.mark.parametrize(
+    "defect", ["none", "production", "execution", "case_sha256", "diff_sha256", "tree", "config_blob", "base"]
+)
+def test_slot_transport_cannot_bypass_original_source_or_coverage_contract(registry, source_manifest, defect):
+    source, manifest, commit = source_manifest
+    key = f"pull_request:{source.head}"
+    original = registry.resolve(source, commit, json.dumps({key: manifest}))
+    if defect in {"production", "execution", "case_sha256"}:
+        manifest[defect] = {}
+    elif defect != "none":
+        manifest[defect] = "0" * (64 if defect == "diff_sha256" else 40)
+    slots = (registry.encode_slot({key: manifest}),)
+    if defect == "none":
+        assert registry.resolve(source, commit, "{}", slots=slots) == original
+    else:
+        with pytest.raises(registry.CandidateError):
+            registry.resolve(source, commit, "{}", slots=slots)
+
+
+def test_release_candidate_remains_independent_of_broken_slots(registry, source_manifest):
+    source, _manifest, commit = source_manifest
+    pr = source.payload["pull_request"]
+    pr.update(title="chore(release): v0.9.37", state="open", draft=False)
+    pr["head"].update(ref="release/v0.9.37", repo={"full_name": registry.REPOSITORY})
+    assert isinstance(registry.resolve(source, commit, "not-json", slots=("broken",)), registry.CandidatePlan)
+
+
+def test_main_tree_lookup_preserves_digest_and_exact_head_precedence(registry, source_manifest):
+    from dataclasses import replace
+
+    source, manifest, _commit = source_manifest
+    source = replace(source, event="push", ref="refs/heads/main", payload={})
+    manifest.update(event="push", ref=source.ref)
+    del manifest["head"]
+    tree_key = f"push-tree:{manifest['tree']}"
+    encoded = registry.encode_slot({tree_key: manifest})
+    scope = registry.resolve(source, source.head, "{}", slots=(encoded,))
+    assert scope.manifest_digest == hashlib.sha256(registry.registry_bytes(manifest)).hexdigest()
+    bad = manifest | {"head": source.head, "base": "0" * 40}
+    with pytest.raises(registry.CandidateError):
+        registry.resolve(source, source.head, json.dumps({f"push:{source.head}": bad}), slots=(encoded,))
+
+
+@pytest.mark.parametrize("defect", ["none", "changed-case", "changed-config"])
+def test_protected_main_reader_uses_slots_without_weakening_evidence(focused_gate, first_attempt, monkeypatch, defect):
+    from scripts import focused_coverage, focused_plan
+
+    gate, run_id, manifest, lane, rows, logs, git_rows = first_attempt
+    plan = next(iter(json.loads(manifest).values()))
+    base, head, tree = plan["base"], plan["head"], plan["tree"]
+    plan.update(event="push", ref="refs/heads/main")
+    del plan["head"]
+    run = rows[f"actions/runs/{run_id}"]
+    run.update(event="push", head_branch="main", head_repository={"full_name": gate.repo})
+    rows["git/ref/heads/main"] = {"object": {"sha": head}}
+    rows[f"actions/workflows/{focused_gate.CI_WORKFLOW_ID}/runs?head_sha={head}&event=push&per_page=1"] = {
+        "workflow_runs": [run]
+    }
+    jobs = rows[f"actions/runs/{run_id}/attempts/1/jobs?per_page=100&page=1"]
+    jobs["jobs"] = [job for job in jobs["jobs"] if job["name"] not in focused_gate.PR_JOBS]
+    jobs["total_count"] = len(jobs["jobs"])
+    diff = git_rows[("diff-tree", "--no-commit-id", "-r", "--raw", "--no-abbrev", "--no-renames", "-z", base, "c" * 40)]
+    git_rows.update(
+        {
+            ("fetch", "--no-tags", "origin", "refs/heads/main"): b"",
+            ("rev-parse", "FETCH_HEAD"): head.encode(),
+            ("merge-base", base, head): base.encode(),
+            ("diff-tree", "--no-commit-id", "-r", "--raw", "--no-abbrev", "--no-renames", "-z", base, head): diff,
+        }
+    )
+    source = focused_plan.WorkloadSource("push", gate.repo, "refs/heads/main", {}, base, head, diff)
+    registry = {f"push-tree:{tree}": plan}
+    scope = focused_plan.resolve(source, head, json.dumps(registry))
+    junit = b'<testsuite><testcase classname="test_unit" name="test_case"/></testsuite>'
+    report = focused_coverage.canonical(focused_coverage.evidence(scope, "python", run_id, 1, {"junit.xml": junit}))
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("evidence.json", report)
+        archive.writestr("junit.xml", junit)
+    content = output.getvalue()
+    artifact = rows[f"actions/runs/{run_id}/artifacts?per_page=100"]["artifacts"][0]
+    artifact.update(size_in_bytes=len(content), digest=f"sha256:{hashlib.sha256(content).hexdigest()}")
+    logs[f"actions/artifacts/{artifact['id']}/zip"] = content
+    logs[f"actions/jobs/{lane['id']}/steps/6/logs"] = (
+        f"Artifact {artifact['name']} has been successfully uploaded! "
+        f"Final size is {len(content)} bytes. Artifact ID is {artifact['id']}\n"
+    ).encode()
+    if defect == "changed-case":
+        plan["case_sha256"]["python"] = "0" * 64
+    elif defect == "changed-config":
+        plan["config_blob"] = "0" * 40
+    monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
+    slots = (focused_plan.encode_slot(registry),)
+    if defect == "none":
+        result = focused_gate.verify_main(gate, run_id, base, "{}", logs.__getitem__, slots=slots)
+        assert result["manifest_sha256"] == scope.manifest_digest
+        assert result["tree"] == tree
+    else:
+        with pytest.raises(focused_gate.CandidateError):
+            focused_gate.verify_main(gate, run_id, base, "{}", logs.__getitem__, slots=slots)
