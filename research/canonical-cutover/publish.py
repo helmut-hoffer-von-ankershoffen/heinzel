@@ -13,6 +13,10 @@ from typing import Any
 REPO = "helmut-hoffer-von-ankershoffen/heinzel"
 REF = "refs/heads/bootstrap/one-shot-canonical-focused-publish"
 CI_WORKFLOW = 394704163
+LEGACY_WORKFLOW = 403912077
+LEGACY_RUN = 42805237969
+# Independently authenticated in the original protected run's Report step log.
+LEGACY_CHECKS = {"merge-gate": 129792615223, "coverage-floor": 129792620528}
 ACTIONS_APP = 15368
 REPOSITORY_ID = 1431672693
 RULESET_ID = 25762292
@@ -98,10 +102,11 @@ def _identity() -> tuple[str, str]:
 
 
 def _check_identity(check: dict[str, Any], head: str, name: str, url: str, external: str) -> None:
+    own_url = f"https://github.com/{REPO}/runs/{check['id']}"
     _require(
         check["name"] == name
         and check["head_sha"] == head
-        and check["details_url"] == url
+        and check["details_url"] in {url, own_url}
         and check["external_id"] == external
         and check["app"]["id"] == ACTIONS_APP,
         "new Check Run does not bind the exact Actions app and verdict source",
@@ -141,9 +146,13 @@ def _finish(check_id: int, head: str, name: str, description: str, provenance: t
         "-f",
         "conclusion=success",
         "-f",
+        f"details_url={url}",
+        "-f",
+        f"external_id={external}",
+        "-f",
         "output[title]=Canonical focused cutover",
         "-f",
-        f"output[summary]={description}",
+        f"output[summary]={description}\nPublisher: {url}\nEvidence identity: {external}",
     )
     _check_identity(check, head, name, url, external)
     _require(
@@ -159,8 +168,7 @@ def _finish(check_id: int, head: str, name: str, description: str, provenance: t
 
 
 def _legacy_completed(head: str) -> None:
-    runs = []
-    for name in ("merge-gate", "coverage-floor"):
+    for name, identifier in LEGACY_CHECKS.items():
         checks = _api(f"commits/{head}/check-runs?check_name={name}&per_page={CHECK_PAGE_LIMIT}")
         _require(len(checks["check_runs"]) == checks["total_count"] <= CHECK_PAGE_LIMIT, "legacy checks truncated")
         selected = [
@@ -168,22 +176,42 @@ def _legacy_completed(head: str) -> None:
             for row in checks["check_runs"]
             if row["name"] == name and row["app"]["id"] == ACTIONS_APP and row["head_sha"] == head
         ]
-        _require(len(selected) == 1 and selected[0]["status"] == "completed", "wait for exact legacy checks to finish")
-        link = re.fullmatch(
-            rf"https://github\.com/{re.escape(REPO)}/actions/runs/([1-9][0-9]*)", selected[0]["details_url"]
+        _require(
+            len(selected) == 1
+            and selected[0]["id"] == identifier
+            and selected[0]["status"] == "completed"
+            and selected[0]["details_url"] == f"https://github.com/{REPO}/runs/{identifier}",
+            "wait for exact reviewed legacy checks to finish",
         )
-        _require(link is not None, "legacy check lacks a canonical workflow URL")
-        if link is not None:
-            runs.append(link[1])
-    _require(len(set(runs)) == 1, "legacy check verdicts were reported by different runs")
-    run = _api(f"actions/runs/{runs[0]}")
+        direct = _api(f"check-runs/{identifier}")
+        _require(
+            direct["id"] == identifier
+            and direct["name"] == name
+            and direct["head_sha"] == head
+            and direct["app"]["id"] == ACTIONS_APP
+            and direct["status"] == "completed"
+            and direct["conclusion"] == ("failure" if name == "merge-gate" else "success")
+            and direct["details_url"] == f"https://github.com/{REPO}/runs/{identifier}",
+            "reviewed legacy verdict identity changed",
+        )
+    run = _api(f"actions/runs/{LEGACY_RUN}")
     _require(
-        run["path"] == ".github/workflows/merge-gate.yml"
+        run["id"] == LEGACY_RUN
+        and run["workflow_id"] == LEGACY_WORKFLOW
+        and run["path"] == ".github/workflows/merge-gate.yml"
         and run["event"] == "workflow_run"
         and run["repository"]["id"] == REPOSITORY_ID
-        and run["status"] == "completed",
+        and run["head_sha"] == os.environ["EXPECTED_BASE"]
+        and run["head_branch"] == "main"
+        and run["run_attempt"] == 1
+        and run["status"] == "completed"
+        and run["conclusion"] == "failure",
         "wait for the protected legacy workflow to finish",
     )
+    latest = _api(
+        f"actions/workflows/{LEGACY_WORKFLOW}/runs?event=workflow_run&head_sha={os.environ['EXPECTED_BASE']}&per_page=1"
+    )["workflow_runs"]
+    _require(len(latest) == 1 and latest[0]["id"] == LEGACY_RUN, "legacy workflow was superseded")
 
 
 def _publish(head: str, source: str) -> None:
