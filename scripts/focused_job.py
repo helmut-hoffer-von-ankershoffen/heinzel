@@ -14,11 +14,13 @@ environment only, are validated here, and become argument lists: nothing is pass
                       Up to 10 space-separated ids; an id is a path with an optional `::name[param]`.
     FOCUSED_REPEAT    1-60: run the selection that many times in this one job (default 1). pytest and e2e ids repeat
                       inside ONE pytest process, the whole selection per round in its own order, so a test that only
-                      fails on its second execution in a process shows; vitest files repeat as separate runs.
+                      fails on its second execution in a process shows. A parametrized repeat takes one exact node;
+                      vitest files repeat as separate runs.
     FOCUSED_STRESS    true: keep every CPU busy with burner processes while the selection runs (timing flakes)
     FOCUSED_OUT       where the JUnit report, screenshots and tally.json go (default focused-artifacts), uploaded
 
-Prints `FOCUSED TALLY k/n green` (rounds without a failure); stops starting rounds near the job's deadline.
+Prints `FOCUSED TALLY k/n green`; stops starting rounds near the job's deadline.
+An exact parametrized round is green only when the call passes and setup and teardown complete successfully.
 
 Usage: uv run --no-build --quiet --script scripts/focused_job.py [--check]
     --check   validate the inputs and print the plan, run nothing
@@ -32,7 +34,12 @@ import re
 import subprocess
 import sys
 import time
+from enum import Enum, auto
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 KINDS = ("e2e", "pytest", "vitest")
@@ -89,6 +96,17 @@ def repeat_count(kind: str, value: str) -> int:
     return int(value)
 
 
+def _pytest_ids(selector: str, prefix: str, kind: str, repeat: int) -> list[str]:
+    ids = _paths(selector, prefix, kind)
+    if repeat > 1 and "[" in selector:
+        if len(ids) != 1 or selector.count("[") != 1 or not selector.endswith("]"):
+            problem = "a parametrized repeat takes one complete test id ending in [param]"
+            raise SelectorError(kind, problem)
+        # Pytest adds round IDs during collection, so ask it to collect the function and filter the result.
+        return [selector.split("[", 1)[0]]
+    return ids
+
+
 def plan(kind: str, selector: str, out: Path, repeat: int = 1) -> list[list[str]]:
     """The commands that run the selection, in order (the last one is the selection itself).
 
@@ -98,17 +116,17 @@ def plan(kind: str, selector: str, out: Path, repeat: int = 1) -> list[list[str]
     selector = selector.strip()
     junit = f"--junitxml={out / 'junit.xml'}"
     plugin = ["-p", "focused_job"] if repeat > 1 else []
-    if kind in ("e2e", "pytest") and repeat > 1 and ("[" in selector or selector in LANES):
-        problem = "repeat takes test ids without a [param] part (a lane or a parametrized case runs once)"
+    if kind in ("e2e", "pytest") and repeat > 1 and selector in LANES:
+        problem = "repeat takes test ids (a lane runs once)"
         raise SelectorError(kind, problem)
     if kind == "e2e":
         if selector in LANES:
             return [["make", "test-e2e", f"SUITE={selector}"]]
-        ids = _paths(selector, "tests/e2e/", kind)
+        ids = _pytest_ids(selector, "tests/e2e/", kind, repeat)
         pytest = ["uv", "run", "pytest", "-m", "e2e", *SERIAL, *plugin]
         return [["make", "e2e-prepare"], [*pytest, junit, *ids]]
     if kind == "pytest":
-        ids = _paths(selector, "tests/", kind)
+        ids = _pytest_ids(selector, "tests/", kind, repeat)
         sync = ["uv", "sync", "--frozen", "--no-build", "--no-dev", "--group", "test"]
         pytest = ["uv", "run", "--no-sync", "pytest", *SERIAL, *plugin]
         return [sync, [*pytest, junit, *ids]]
@@ -123,7 +141,12 @@ def plan(kind: str, selector: str, out: Path, repeat: int = 1) -> list[list[str]
 
 # The pytest plugin (`-p focused_job`): every selected test runs FOCUSED_REPEAT times in this one process, round by
 # round in collection order, and each round's outcome goes to tally.json.
-_ROUNDS: dict[int, bool] = {}
+class _ExactRound(Enum):
+    STARTED = auto()
+    CALL_PASSED = auto()
+
+
+_ROUNDS: dict[int, bool | _ExactRound] = {}
 _START = time.monotonic()
 
 
@@ -131,36 +154,105 @@ def _rounds() -> int:
     return int(os.environ.get("FOCUSED_REPEAT") or "1")
 
 
+def _param_repeat_node() -> str:
+    selector = os.environ.get("FOCUSED_SELECTOR", "").strip()
+    return selector if _rounds() > 1 and "[" in selector else ""
+
+
+def _round_prefix() -> str:
+    # The input grammar excludes @, so a real parameter ID cannot be mistaken for this synthetic round.
+    return "@round" if _param_repeat_node() else "round"
+
+
 def pytest_generate_tests(metafunc: object) -> None:
     """Run every selected test once per round."""
     if _rounds() > 1:
+        prefix = _round_prefix()
         metafunc.fixturenames.append("focused_round")  # type: ignore[attr-defined]
-        metafunc.parametrize("focused_round", range(_rounds()), ids=lambda r: f"round{r + 1}")  # type: ignore[attr-defined]
+        metafunc.parametrize("focused_round", range(_rounds()), ids=lambda r: f"{prefix}{r + 1}")  # type: ignore[attr-defined]
 
 
-def pytest_collection_modifyitems(items: list[object]) -> None:
+def _item_round(item: object) -> int:
+    return getattr(getattr(item, "callspec", None), "params", {}).get("focused_round", 0)
+
+
+def _matches_param_round(nodeid: str, node: str, param: str, label: str) -> bool:
+    base, _, ids = nodeid.removesuffix("]").partition("[")
+    parts = ids.split("-")
+    if base != node or label not in parts:
+        return False
+    # Pytest joins IDs in parametrization order. Preserve the original IDs around the synthetic round.
+    parts.remove(label)
+    return "-".join(parts) == param
+
+
+def _select_param_rounds(config: "pytest.Config", items: list["pytest.Item"], selector: str) -> None:
+    import pytest  # noqa: PLC0415 - only the plugin side needs pytest
+
+    node, param = selector[:-1].split("[", 1)
+    path, _, names = node.partition("::")
+    node = f"{Path(path).as_posix()}::{names}"
+    prefix = _round_prefix()
+    selected: list[pytest.Item] = []
+    deselected: list[pytest.Item] = []
+    for item in items:
+        label = f"{prefix}{_item_round(item) + 1}"
+        if _matches_param_round(item.nodeid, node, param, label):
+            selected.append(item)
+        else:
+            deselected.append(item)
+    if [_item_round(item) for item in selected] != list(range(_rounds())):
+        message = f"expected one case per round for {selector!r}"
+        raise pytest.UsageError(message)
+    items[:] = selected
+    config.hook.pytest_deselected(items=deselected)
+
+
+def pytest_collection_modifyitems(config: "pytest.Config", items: list["pytest.Item"]) -> None:
     """Order by round, keeping collection order within a round: the selection runs whole, N times."""
-    items.sort(key=lambda item: getattr(getattr(item, "callspec", None), "params", {}).get("focused_round", 0))
+    items.sort(key=_item_round)
+    if selector := _param_repeat_node():
+        _select_param_rounds(config, items, selector)
 
 
-def pytest_runtest_setup(item: object) -> None:
-    """Start no new round after the deadline; what ran is tallied."""
-    rnd = getattr(getattr(item, "callspec", None), "params", {}).get("focused_round", 0)
+def _start_round(rnd: int, outcome: bool | _ExactRound = True) -> None:
     if rnd not in _ROUNDS and time.monotonic() - _START > DEADLINE:
         import pytest  # noqa: PLC0415 - only the plugin side needs pytest
 
         pytest.exit(f"focused repeat stopped at the deadline after {len(_ROUNDS)} rounds", returncode=1)
-    _ROUNDS.setdefault(rnd, True)
+    _ROUNDS.setdefault(rnd, outcome)
 
 
-def pytest_runtest_logreport(report: object) -> None:
-    """A failed setup, call or teardown marks its round red."""
-    if getattr(report, "failed", False):
-        _ROUNDS[_round_of(report)] = False
+def pytest_runtest_setup(item: object) -> None:
+    """Start no new round after the deadline; what ran is tallied."""
+    _start_round(_item_round(item))
 
 
-def _round_of(report: object) -> int:
-    match = re.search(r"[\[-]round(\d+)[\]-]", getattr(report, "nodeid", ""))
+def pytest_runtest_logstart(nodeid: str) -> None:
+    """Book an exact case before setup can skip or fail it."""
+    if _param_repeat_node():
+        _start_round(_round_of(nodeid), _ExactRound.STARTED)
+
+
+def _record_exact_report(rnd: int, report: "pytest.TestReport") -> None:
+    if not report.passed or hasattr(report, "wasxfail"):
+        _ROUNDS[rnd] = False
+    elif report.when == "call" and _ROUNDS.get(rnd) is _ExactRound.STARTED:
+        _ROUNDS[rnd] = _ExactRound.CALL_PASSED
+    elif report.when == "teardown":
+        _ROUNDS[rnd] = _ROUNDS.get(rnd) is _ExactRound.CALL_PASSED
+
+
+def pytest_runtest_logreport(report: "pytest.TestReport") -> None:
+    """Require a plain pass for exact rounds and preserve legacy failure accounting."""
+    if _param_repeat_node():
+        _record_exact_report(_round_of(report.nodeid), report)
+    elif report.failed:
+        _ROUNDS[_round_of(report.nodeid)] = False
+
+
+def _round_of(nodeid: str) -> int:
+    match = re.search(rf"[\[-]{_round_prefix()}(\d+)[\]-]", nodeid)
     return int(match[1]) - 1 if match else 0
 
 
@@ -169,7 +261,7 @@ def pytest_sessionfinish(session: object) -> None:
     del session
     out = Path(os.environ.get("FOCUSED_OUT") or "focused-artifacts")
     out.mkdir(parents=True, exist_ok=True)
-    green = sum(_ROUNDS.values())
+    green = sum(outcome is True for outcome in _ROUNDS.values())
     (out / "tally.json").write_text(json.dumps({"rounds": len(_ROUNDS), "green": green, "asked": _rounds()}))
 
 
@@ -205,6 +297,8 @@ def _tally(out: Path, kind: str, repeat: int, counted: tuple[int, int], code: in
     if repeat > 1 and tally.exists():
         written = json.loads(tally.read_text())
         return written["rounds"], written["green"]
+    if _param_repeat_node():
+        return 0, 0
     return 1, int(code == 0)
 
 
