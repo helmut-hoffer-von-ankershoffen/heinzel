@@ -1,12 +1,26 @@
-import { AudioLines, BarChart3, Layers, Mic, MicOff, MonitorSpeaker, Sparkles, Speaker } from "lucide-react";
+import {
+  AudioLines,
+  BarChart3,
+  Check,
+  CircleDot,
+  Mic,
+  MicOff,
+  MonitorSpeaker,
+  Sparkles,
+  Speaker,
+  Users,
+} from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FooterItem, type State } from "@/components/FooterItem";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
+import type { HeinzelLook } from "@/components/heinzel";
 import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { type Segment, SegmentedControl } from "@/components/ui/segmented";
 import { t } from "@/i18n";
 import { Switch } from "@/layout/SettingControls";
+import { cn } from "@/lib/utils";
 import {
   BANDS,
   bandEdges,
@@ -22,8 +36,11 @@ import { type CapturedAudio, captureAudio, captureMicrophone, hasDesktopAudio, s
 import { useOwnAudio } from "./own";
 import { Analysis, bandRanges } from "./viz/analysis";
 import { watchTheme } from "./viz/color";
+import { drawHalo } from "./viz/halo";
 import { drawRail } from "./viz/rail";
-import { setMaster, setShown, shownOf, styleOn, useVizSettings, type VizShown } from "./viz/settings";
+import { STYLES, setMaster, setStyle, styleOn, useVizSettings, type VizStyle } from "./viz/settings";
+import { useVizStage } from "./viz/stage";
+import { createSwarm, drawSwarm, stepSwarm, swarmSettled } from "./viz/swarm";
 import { readVizTheme } from "./viz/theme";
 
 export { spectrumLevel } from "./aurora";
@@ -53,6 +70,14 @@ function remember(source: Source) {
     // the choice just isn't remembered
   }
 }
+
+/** The Heinzel who listens inside the Halo, and the three who play along in the Swarm (bass, mids, treble). */
+const LISTENER: HeinzelLook = { age: "young", hat: "teal", shirt: "rose", build: "slim" };
+const CREW: HeinzelLook[] = [
+  { age: "grown", hat: "red", shirt: "green" },
+  { age: "young", hat: "rust", shirt: "blue" },
+  { age: "old", hat: "purple", shirt: "slate", build: "slim" },
+];
 
 const FELL_BACK = "Shared audio is not offered by this browser, so Heinzel listens with the microphone.";
 const UNSHARED_KEY = "hz.audio.unshared";
@@ -86,6 +111,17 @@ function systemBroken(error: unknown) {
  * (Safari, Chrome, Firefox) is WebKit without getDisplayMedia; a browser that has it but refused it as unsupported is
  * remembered for the session, so the choice is not offered again.
  */
+/** Whether this device can listen with a microphone: getUserMedia exists, and only in a secure context (https or
+ * localhost), where browsers offer it at all. */
+export function canListen(): boolean {
+  return Boolean(globalThis.isSecureContext) && typeof navigator.mediaDevices?.getUserMedia === "function";
+}
+
+/** Whether the page can draw a style at all: every style paints on a 2D canvas. */
+export function canDraw(): boolean {
+  return typeof HTMLCanvasElement !== "undefined" && typeof HTMLCanvasElement.prototype.getContext === "function";
+}
+
 export function canShareAudio(): boolean {
   if (typeof navigator.mediaDevices?.getDisplayMedia !== "function") return false;
   try {
@@ -141,6 +177,8 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
    */
   const [system, setSystem] = useState<boolean | null>(() => (hasDesktopAudio() ? null : false));
   const systemOnly = system === true;
+  const [listenable] = useState(canListen);
+  const [drawable] = useState(canDraw);
   const [notice, setNotice] = useState("");
   const [hasSignal, setHasSignal] = useState(false);
   const current = useRef<CapturedAudio | null>(null);
@@ -149,7 +187,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const resumed = useRef(false);
   const auroraCanvas = useRef<HTMLCanvasElement>(null);
   const railCanvas = useRef<HTMLCanvasElement>(null);
+  const haloCanvas = useRef<HTMLCanvasElement>(null);
+  const haloBust = useRef<HTMLDivElement>(null);
+  const swarmCanvas = useRef<HTMLCanvasElement>(null);
+  const swarmFigures = useRef<(HTMLDivElement | null)[]>([]);
   const masterId = useId();
+  const rootElement = useRef<HTMLDivElement>(null);
   const stop = useCallback(() => {
     generation.current += 1;
     request.current?.abort();
@@ -240,6 +283,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       }
       if (source === "system" ? !systemOnly : systemOnly) return;
       if (source === "tab" && !canShareAudio()) {
+        // The pressed choice leaves the pane; if its whole group goes with it, keep the keyboard on the trigger.
+        const root = rootElement.current;
+        requestAnimationFrame(() => {
+          if (!document.activeElement || document.activeElement === document.body)
+            root?.querySelector<HTMLButtonElement>("button")?.focus();
+        });
         setSharing(false);
         setNotice("Shared audio is not offered by this browser.");
         return;
@@ -288,6 +337,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       !enabled ||
       !settings.master ||
       !framed ||
+      !listenable ||
       session ||
       requesting ||
       remembered !== "mic" ||
@@ -307,20 +357,32 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     return () => {
       cancelled = true;
     };
-  }, [enabled, settings.master, framed, session, requesting, remembered, system, start]);
+  }, [enabled, settings.master, framed, listenable, session, requesting, remembered, system, start]);
   const ownAnalyser = own.mode === "analysed" ? own.analyser : null;
   const analyser = session?.analyser ?? ownAnalyser;
   const microphone = session?.label === "Microphone";
+  const stage = useVizStage();
+  const stageElement = stage?.playful ? stage.element : null;
   const railOn = styleOn(settings, "spectrum");
   const auroraOn = styleOn(settings, "aurora");
+  // The Heinzel styles stand in the sidebar's gap above the player, only while the Heinzels play along.
+  const haloOn = styleOn(settings, "halo") && stageElement !== null;
+  const swarmOn = styleOn(settings, "swarm") && stageElement !== null;
   const drawing = Boolean(analyser) && (railOn || auroraOn);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new sidebar stage remounts the Heinzel canvases
   useEffect(() => {
-    if (!analyser || (!railOn && !auroraOn)) return;
+    if (!analyser || (!railOn && !auroraOn && !haloOn && !swarmOn)) return;
     const rail = railOn ? railCanvas.current : null;
     const sky = auroraOn ? auroraCanvas.current : null;
+    const ring = haloOn ? haloCanvas.current : null;
+    const crowd = swarmOn ? swarmCanvas.current : null;
     const railContext = rail?.getContext("2d") ?? null;
     const skyContext = sky?.getContext("2d") ?? null;
-    if (!railContext && !skyContext) return;
+    const ringContext = ring?.getContext("2d") ?? null;
+    const crowdContext = crowd?.getContext("2d") ?? null;
+    if (!railContext && !skyContext && !ringContext && !crowdContext) return;
+    const swarm = createSwarm(Date.now() | 0);
+    const figures = () => swarmFigures.current.filter((figure): figure is HTMLDivElement => figure !== null);
     const freq = new Uint8Array(analyser.frequencyBinCount);
     const time = typeof analyser.getByteTimeDomainData === "function" ? new Uint8Array(analyser.fftSize || 2048) : null;
     const sampleRate = analyser.context?.sampleRate ?? 48000;
@@ -338,6 +400,34 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     let railSize = { width: 0, height: 0 };
     let skySize = { width: 0, height: 0 };
     let resting = false;
+    let ringSize = { width: 0, height: 0 };
+    let crowdSize = { width: 0, height: 0 };
+    const fitted = (
+      element: HTMLCanvasElement,
+      context: CanvasRenderingContext2D,
+      size: { width: number; height: number },
+    ) =>
+      size.width !== Math.max(1, element.clientWidth) || size.height !== Math.max(1, element.clientHeight)
+        ? sizeOf(element, context)
+        : size;
+    const drawHeinzels = (dt: number, reduced: boolean) => {
+      if (ring && ringContext) {
+        ringSize = fitted(ring, ringContext, ringSize);
+        const scale = drawHalo(ringContext, analysis, theme, ringSize.width, ringSize.height, reduced);
+        if (haloBust.current) haloBust.current.style.transform = scale === 1 ? "" : `scale(${scale.toFixed(3)})`;
+      }
+      if (crowd && crowdContext) {
+        crowdSize = fitted(crowd, crowdContext, crowdSize);
+        const moves = stepSwarm(swarm, analysis, dt, reduced);
+        const standing = figures();
+        standing.forEach((figure, index) => {
+          const move = moves[index] ?? "none";
+          figure.style.transform = move === "none" ? "" : move;
+        });
+        const centres = standing.map((figure) => figure.offsetLeft + figure.offsetWidth / 2);
+        drawSwarm(crowdContext, swarm, analysis, theme, crowdSize.width, crowdSize.height, centres, dt, reduced);
+      }
+    };
     const sizeOf = (element: HTMLCanvasElement, context: CanvasRenderingContext2D) => {
       const width = Math.max(1, element.clientWidth);
       const height = Math.max(1, element.clientHeight);
@@ -388,6 +478,8 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       }
       resting = true;
       analysis.rest();
+      swarm.sparks = [];
+      drawHeinzels(0, true);
       publish();
       if (rail && railContext) {
         railSize = sizeOf(rail, railContext);
@@ -437,7 +529,8 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         });
         drawAurora(skyContext, aurora, palette, skySize.width, skySize.height);
       }
-      const settled = !sky || isSettled(aurora);
+      drawHeinzels(dt, slow);
+      const settled = (!sky || isSettled(aurora)) && (!crowd || swarmSettled(swarm));
       if (settled && analysis.quiet && now - lastSound > 1500) sleep();
       else frame = requestAnimationFrame(paint);
     };
@@ -455,6 +548,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       palette = readPalette();
       theme = readVizTheme();
       if (resting && rail && railContext) drawRail(railContext, analysis, theme, railSize.width, railSize.height, true);
+      if (resting) drawHeinzels(0, true);
     });
     document.addEventListener("visibilitychange", visibility);
     visibility();
@@ -464,7 +558,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, [analyser, microphone, railOn, auroraOn]);
+  }, [analyser, microphone, railOn, auroraOn, haloOn, swarmOn, stageElement]);
   if (!enabled) return null;
   const workspaceAudio =
     (window as Window & { heinzelDesktop?: { workspaceAudio?: boolean } }).heinzelDesktop?.workspaceAudio === true;
@@ -475,8 +569,17 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   let state: State = "off";
   let triggerLabel = "Audio visualizer";
   let controlWord = "Audio";
+  // A choice this device cannot take is not shown at all (design/README.md, Choices): every style needs a canvas, the
+  // Halo and the Swarm also the sidebar stage (playful on); a source needs its browser API.
+  const offeredStyles = STYLES.filter(
+    (style) => drawable && ((style !== "halo" && style !== "swarm") || stageElement !== null),
+  );
+  const nothingShown = !offeredStyles.some((style) => settings.styles[style]);
   if (!settings.master) {
     status = "Audio visualisation is off.";
+    controlWord = "Off";
+  } else if (nothingShown) {
+    status = "Nothing shown: every style is off.";
     controlWord = "Off";
   } else if (requesting) {
     status = "Waiting for the browser to allow audio.";
@@ -496,11 +599,12 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     triggerLabel = "Audio sharing active";
     controlWord = "On";
   } else if (framed) {
+    const picks = [listenable && "Microphone", sharing && "Shared audio"].filter(Boolean).join(" or ");
     status = systemOnly
       ? "Off. Music in a player frame shows once you allow system audio."
-      : sharing
-        ? "Off. Music in a player frame shows once you pick Microphone or Shared audio."
-        : "Off. Music in a player frame shows once you pick Microphone.";
+      : picks
+        ? `Off. Music in a player frame shows once you pick ${picks}.`
+        : "Music in a player frame cannot be seen in this browser; Heinzel's own sound still shows.";
     state = "warn";
     controlWord = "Share";
   }
@@ -510,20 +614,22 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     triggerLabel = "Audio sharing problem";
     controlWord = "Retry";
   }
-  const shown: VizShown | null = shownOf(settings);
-  const showSegments: Segment<VizShown>[] = [
-    { value: "spectrum", label: "Spectrum", icon: BarChart3 },
-    { value: "aurora", label: "Aurora", icon: Sparkles },
-    { value: "both", label: "Both", icon: Layers },
-  ];
+  const styleToggles = (
+    [
+      { style: "spectrum", label: "Spectrum", icon: BarChart3 },
+      { style: "aurora", label: "Aurora", icon: Sparkles },
+      { style: "halo", label: "Halo", icon: CircleDot },
+      { style: "swarm", label: "Swarm", icon: Users },
+    ] satisfies { style: VizStyle; label: string; icon: typeof BarChart3 }[]
+  ).filter(({ style }) => offeredStyles.includes(style));
   const sourceSegments: Segment<Source>[] = [
     { value: "off", label: "Off", icon: MicOff },
-    { value: "mic", label: "Microphone", icon: Mic },
+    ...(listenable ? [{ value: "mic" as const, label: "Microphone", icon: Mic }] : []),
     ...(sharing ? [{ value: "tab" as const, label: sharedWord, icon: MonitorSpeaker }] : []),
   ];
   const mark = { ok: "text-ok", warn: "text-warn", bad: "text-bad", off: "text-muted-foreground" }[state] ?? "";
   return (
-    <div className="flex h-full min-h-0 flex-col items-center text-muted-foreground">
+    <div ref={rootElement} className="flex h-full min-h-0 flex-col items-center text-muted-foreground">
       <FooterItem
         label="Audio visualizer"
         paneName="Audio visualizer controls"
@@ -557,9 +663,42 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         <div className="space-y-3 px-1.5 pb-1">
           {settings.master && (
             <>
-              <SegmentedControl legend="Show" segments={showSegments} value={shown} onSelect={setShown} selectOnArrow />
-              {/* With system audio the one source, there is no Listen to choice: the action row asks (again). */}
-              {!systemOnly && system === false && (
+              {/* Independent styles, any of them on (design/README.md, Choices): native checkboxes as chips, 2-up, no
+                  shared track, so they read as pick-any beside the pick-one source below. */}
+              {styleToggles.length > 0 && (
+                <fieldset className="m-0 min-w-0 border-0 p-0">
+                  <legend className="mb-1 text-xs text-muted-foreground">Show</legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    {styleToggles.map(({ style, label, icon: Icon }) => {
+                      const on = settings.styles[style];
+                      return (
+                        <label
+                          key={style}
+                          className={cn(
+                            "flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-xs",
+                            "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring",
+                            on
+                              ? "border-transparent bg-primary font-medium text-primary-foreground"
+                              : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={on}
+                            onChange={(event) => setStyle(style, event.target.checked)}
+                          />
+                          <Icon aria-hidden className="size-4 shrink-0" />
+                          <span className="min-w-0 flex-1 truncate">{label}</span>
+                          <Check aria-hidden className={cn("size-3.5 shrink-0", !on && "invisible")} />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              )}
+              {/* Off is always there; with no source this browser can take, there is nothing to choose. */}
+              {!systemOnly && system === false && sourceSegments.length > 1 && (
                 <SegmentedControl
                   legend="Listen to"
                   segments={sourceSegments}
@@ -575,10 +714,9 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             <span aria-hidden className={mark}>
               ●
             </span>
-            <output
-              aria-live="polite"
-              className={state === "bad" ? "break-words text-bad" : "break-words text-foreground"}
-            >
+            {/* The mark carries the state colour; the words stay foreground, which keeps 4.5:1 on the dark popover
+                where color-bad text does not (4.3:1). */}
+            <output aria-live="polite" className="break-words text-foreground">
               {status}
             </output>
           </p>
@@ -587,9 +725,13 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             {t(
               systemOnly
                 ? "audio.visualizerHelpSystem"
-                : sharing
+                : sharing && listenable
                   ? "audio.visualizerHelp"
-                  : "audio.visualizerHelpMicrophone",
+                  : sharing
+                    ? "audio.visualizerHelpShared"
+                    : listenable
+                      ? "audio.visualizerHelpMicrophone"
+                      : "audio.visualizerHelpOwn",
             )}
           </p>
           <div className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground">
@@ -624,6 +766,43 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           />,
           document.body,
         )}
+      {analyser &&
+        stageElement &&
+        (haloOn || swarmOn) &&
+        createPortal(
+          <div aria-hidden className="flex h-20 items-end gap-1 px-2 pb-1">
+            {haloOn && (
+              <div className="relative size-20 shrink-0">
+                <canvas ref={haloCanvas} data-testid="audio-halo" className="absolute inset-0 size-full" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div ref={haloBust} className="size-9 overflow-hidden rounded-full will-change-transform">
+                    <HeinzelAvatar view="bust" {...LISTENER} className="size-full" />
+                  </div>
+                </div>
+              </div>
+            )}
+            {swarmOn && (
+              <div className="relative h-20 min-w-0 flex-1">
+                <canvas ref={swarmCanvas} data-testid="audio-swarm" className="absolute inset-0 size-full" />
+                <div className="absolute inset-x-0 bottom-0 flex justify-around">
+                  {CREW.map((look, index) => (
+                    <div
+                      key={look.hat}
+                      ref={(element) => {
+                        swarmFigures.current[index] = element;
+                      }}
+                      data-swarm-figure
+                      className="h-14 w-8 origin-bottom will-change-transform"
+                    >
+                      <HeinzelAvatar view="full" {...look} className="size-full" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>,
+          stageElement,
+        )}
       {settings.master && framed && !session && !requesting && systemOnly && (
         <SourcePrompt
           remembered="system"
@@ -633,15 +812,21 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
           onMic={null}
         />
       )}
-      {settings.master && framed && !session && !requesting && system === false && remembered !== "off" && (
-        <SourcePrompt
-          remembered={remembered}
-          retry={false}
-          onTab={sharing ? () => choose("tab") : null}
-          onSystem={null}
-          onMic={() => choose("mic")}
-        />
-      )}
+      {settings.master &&
+        framed &&
+        !session &&
+        !requesting &&
+        system === false &&
+        (listenable || sharing) &&
+        remembered !== "off" && (
+          <SourcePrompt
+            remembered={remembered}
+            retry={false}
+            onTab={sharing ? () => choose("tab") : null}
+            onSystem={null}
+            onMic={listenable ? () => choose("mic") : null}
+          />
+        )}
     </div>
   );
 }
@@ -663,7 +848,7 @@ function SourcePrompt({
   onTab: (() => void) | null;
   /** The desktop app's exact system sound: where it exists it is the only source offered. */
   onSystem: (() => void) | null;
-  /** Null where system audio is the only source. */
+  /** Null when the microphone API is unavailable or system audio is the only source. */
   onMic: (() => void) | null;
 }) {
   const [dismissed, setDismissed] = useState(false);
