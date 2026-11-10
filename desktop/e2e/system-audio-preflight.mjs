@@ -12,7 +12,7 @@ import { requireOwnedExit } from "./system-audio-receipt.mjs";
 if (process.env.CI !== "true" || process.env.GITHUB_ACTIONS !== "true" ||
     process.env.RUNNER_ENVIRONMENT !== "github-hosted" ||
     process.env.FOCUSED_SELECTOR !== "tests/e2e/native_system_audio_test.py::test_native_system_audio_capture_free_preflight" ||
-    process.env.HZ_DISPOSABLE_NATIVE_CI !== "1" ||
+    process.env.NATIVE_AUDIO_DISPOSABLE_CI !== "1" ||
     process.platform !== "darwin" || process.arch !== "arm64") {
   throw new Error("This fixture only runs on an explicitly disposable macOS ARM CI runner.");
 }

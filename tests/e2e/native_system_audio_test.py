@@ -184,7 +184,7 @@ def test_native_system_audio_capture_free_preflight():
     """Only a disposable macOS ARM host may launch the isolated native fixture."""
     _require_hosted()
     _prepare_desktop()
-    environment = {**os.environ, "HZ_DISPOSABLE_NATIVE_CI": "1"}
+    environment = {**os.environ, "NATIVE_AUDIO_DISPOSABLE_CI": "1"}
     result = _run_owned_group(
         [sys.executable, "scripts/web_build.py", "exec", "node", "../desktop/e2e/system-audio-preflight.mjs"],
         environment,
