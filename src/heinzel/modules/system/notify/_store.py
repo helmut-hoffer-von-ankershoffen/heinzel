@@ -19,7 +19,7 @@ from pathlib import Path
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
-from heinzel import Notice
+from heinzel import CapabilityState, Notice, ResolveWhen
 from heinzel.modules.system.notify._models import Archived, Recovered
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,35 @@ MAX_AGE = timedelta(days=30)
 PRIVATE_DIR = 0o700
 PRIVATE_FILE = 0o600
 _NOTICES = TypeAdapter(list[Notice])
+_CONDITION_OPERATION = "system.notify:condition_v1"
+
+
+def _stored_notice(notice: Notice) -> Notice:
+    """Keep new check conditions inside a condition understood by older strict stores."""
+    condition = notice.resolve_when
+    if condition is None or condition.checks_up is None:
+        return notice
+    payload = condition.model_dump_json(exclude_none=True)
+    envelope = ResolveWhen(capability=CapabilityState(operation=_CONDITION_OPERATION, field="payload", equals=payload))
+    return notice.model_copy(update={"resolve_when": envelope})
+
+
+def _loaded_notice(notice: Notice) -> Notice:
+    condition = notice.resolve_when
+    capability = condition.capability if condition is not None else None
+    if capability is None or capability.operation != _CONDITION_OPERATION or capability.field != "payload":
+        return notice
+    if not isinstance(capability.equals, str):
+        return notice
+    try:
+        decoded = ResolveWhen.model_validate_json(capability.equals)
+    except (ValidationError, ValueError):
+        return notice
+    if decoded.checks_up is None:
+        return notice
+    return notice.model_copy(update={"resolve_when": decoded})
+
+
 INTEGRITY_UNAVAILABLE = "Durable notification history cannot be verified; preserve the store and its replay evidence."
 INTEGRITY_LEGACY = (
     "Durable notification history cannot be verified: a legacy notice list replaced its replay keys; "
@@ -82,7 +111,7 @@ def _decode_state(text: str | bytes, *, strict: bool, expiring: bool = False) ->
             msg = "legacy notification list lost replay keys"
             # Only the plain durable marker has a supported recovery; deadline-scoped receipts need a backup.
             raise (ValueError if expiring else LegacyListError)(msg)
-        return _State(notices=_NOTICES.validate_python(value))
+        return _State(notices=[_loaded_notice(notice) for notice in _NOTICES.validate_python(value)])
     state = _State.model_validate(value)
     if strict and not {"notices", "durable_keys"} <= state.model_fields_set:
         msg = "durable notification state lacks explicit notices or replay keys"
@@ -94,6 +123,7 @@ def _decode_state(text: str | bytes, *, strict: bool, expiring: bool = False) ->
     ):
         msg = "expiring notification state lacks replay evidence"
         raise ValueError(msg)
+    state.notices = [_loaded_notice(notice) for notice in state.notices]
     return state
 
 
@@ -238,15 +268,16 @@ class Store:
 
     def _write_state(self, now: datetime, state: _State, *, durable: bool = False) -> None:
         state.notices = [notice for notice in state.notices if now - notice.at <= MAX_AGE][-MAX_NOTICES:]
+        stored = state.model_copy(update={"notices": [_stored_notice(notice) for notice in state.notices]})
         payload = (
-            state.model_dump_json(
+            stored.model_dump_json(
                 indent=1,
                 exclude=None
                 if self._expiring.exists() or state.expiring_watermark is not None
                 else {"expiring_keys", "expiring_watermark"},
             )
             if durable or self._durable.exists() or state.durable_keys
-            else _NOTICES.dump_json(state.notices, indent=1).decode()
+            else _NOTICES.dump_json(stored.notices, indent=1).decode()
         )
         _write_private(self.path, payload + "\n")
 

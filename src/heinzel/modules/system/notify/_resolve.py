@@ -85,6 +85,9 @@ def holds(
             return None
         reasons.append(f"hz {installed} is installed")
     if (capability := when.capability) is not None:
+        # Unrecognised or damaged on-disk envelopes must never resolve via a capability probe.
+        if capability.operation.startswith("system.notify:condition_v"):
+            return None
         if probe is None or probe(capability) is not True:
             return None
         reasons.append(f"{capability.operation} reports {capability.field} = {capability.equals!r}")

@@ -85,6 +85,72 @@ def test_ordinary_conditions_are_compatible_with_older_store_readers(service):
     OlderCondition.model_validate(raw[0]["resolve_when"])
 
 
+@pytest.mark.parametrize("durable", [False, True])
+def test_check_condition_survives_legacy_reader_and_writer(service, clock, durable):
+    class OlderCondition(BaseModel, extra="forbid"):
+        installed_version_at_least: str | None = None
+        capability: CapabilityState | None = None
+        plugins_installed: tuple[str, ...] | None = None
+
+    condition = ResolveWhen(
+        checks_up=["sample: first", "another: second"],
+        capability=CapabilityState(operation="sample:status", field="ready", equals=True),
+        installed_version_at_least="0.9.28",
+        plugins_installed=("example",),
+    )
+    notice = service.emit(
+        NoticeKind.DOCTOR,
+        "degraded",
+        "",
+        route="/doctor",
+        command="hz system doctor",
+        key="arbitrary",
+        resolve_when=condition,
+    )
+    assert notice
+    if durable:
+        service.store.change_once(clock(), "receipt", lambda notices: None)
+    raw = json.loads(service.store.path.read_text())
+    notices = raw["notices"] if durable else raw
+    old = OlderCondition.model_validate(notices[0]["resolve_when"])
+    assert old.capability.operation == "system.notify:condition_v1"
+    # An older acknowledgement rewrites the strict, known schema.
+    notices[0]["resolve_when"] = old.model_dump(mode="json")
+    notices[0]["delivered_by"] = "web"
+    service.store.path.write_text(json.dumps(raw))
+    restored = service.store.read()[0]
+    assert restored.resolve_when == condition
+    assert restored.delivered_by == "web"
+    if durable:
+        assert service.store.has_once("receipt")
+
+
+@pytest.mark.parametrize(
+    ("operation", "payload"),
+    [
+        ("system.notify:condition_v1", "not-json"),
+        ("system.notify:condition_v2", '{"checks_up":["sample: first"]}'),
+        ("system.notify:condition_v1", '{"checks_up":[]}'),
+    ],
+)
+def test_unknown_or_invalid_condition_envelope_is_preserved_and_never_resolves(service, operation, payload):
+    when = ResolveWhen(capability=CapabilityState(operation=operation, field="payload", equals=payload))
+    notice = service.emit(
+        NoticeKind.DOCTOR,
+        "degraded",
+        "",
+        route="/doctor",
+        command="hz system doctor",
+        key="arbitrary",
+        resolve_when=when,
+    )
+    assert notice
+    assert service.store.read()[0].resolve_when == when
+    assert _resolve.holds(when, "999.0", lambda capability: True) is None
+    service.store.change(service._clock(), lambda notices: None)
+    assert service.store.read()[0].resolve_when == when
+
+
 def test_background_health_resolution_respects_consent_and_hourly_limit(service, clock):
     calls = []
     service.problems = lambda: calls.append(1) or {"sample: network"}
