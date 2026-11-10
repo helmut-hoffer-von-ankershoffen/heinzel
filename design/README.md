@@ -58,6 +58,8 @@ follows from it:
   is asked for first, the old one stopped only once the new one runs. Segmented controls and switches are content, so
   a pane made of them has no action row. Example: the Audio pane is Show (Spectrum | Aurora | Both) and Listen to
   (Off | Microphone | Shared audio) segmented controls, a live status line, one privacy line and the master switch.
+  In the desktop app where system audio exists it is the only source: no Listen to, and one primary action row
+  [Use system audio] (Try again after a decline); if it fails for another reason the Listen to choices return.
 - **Audio visualizations follow the theme (2026-11-07).** The Spectrum rail and the Aurora take every hue from the live
   theme tokens (`color-primary`, `color-ok`, `color-warn`) in any CSS colour notation, re-read the moment the mode,
   theme or its daypart variant changes; no colour is written in `web/src/audio` (`choices-standards.test.ts`). The
@@ -133,7 +135,7 @@ card, a dialog, a panel, a page, a settings section, a toast) places its actions
 | System health pane | Check summary; divider; [🩺 Open Doctor] [⟳] |
 | Updates pane | Status lines, automatic-updates switch; divider; [⬇ Update now] [⟳] |
 | Daemon pane (plugin) | Status lines; divider; [⚡ Restart daemon] [📄] [⏱] [⚠] (red) |
-| Audio visualizer pane | Segmented Show and Listen to, status, master switch; no action row (all content) |
+| Audio visualizer pane | Segmented Show and Listen to, status, master switch; no action row. Desktop with system audio: Show, status, switch; divider; [Use system audio] |
 | Today card | title row with [x] Dismiss; body; divider; [↗ Open] [💬] |
 | Operation dialog | title row with [x]; question; divider; right: [Cancel] [Install] |
 | Plugins list row | ghost [⏻] [🗑] (red); Remove opens a confirming dialog |

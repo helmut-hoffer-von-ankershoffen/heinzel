@@ -31,8 +31,9 @@ test("the window spreads the platform options and relays full screen to the web"
 function loadPreload(platform) {
   const exposed = {};
   const listeners = new Map();
+  const invoked = [];
   const ipcRenderer = {
-    invoke: () => Promise.resolve(null),
+    invoke: (...args) => { invoked.push(args); return Promise.resolve(null); },
     on: (channel, listener) => listeners.set(channel, listener),
     removeListener: (channel, listener) => { if (listeners.get(channel) === listener) listeners.delete(channel); },
   };
@@ -41,7 +42,7 @@ function loadPreload(platform) {
     require: (name) => { assert.equal(name, "electron"); return { contextBridge, ipcRenderer }; },
     globalThis: { navigator: { platform } },
   });
-  return { bridge: exposed.heinzelDesktop, listeners };
+  return { bridge: exposed.heinzelDesktop, listeners, invoked };
 }
 
 test("the bridge exposes frozen macOS insets and none elsewhere", () => {
@@ -61,4 +62,12 @@ test("onFullscreen delivers a boolean and unsubscribes", () => {
   stop();
   assert.equal(listeners.has("hz:fullscreen"), false);
   assert.deepEqual(seen, [true, false]);
+});
+
+test("the audio bridge asks main for system loopback and arms only known sources", () => {
+  const { bridge, invoked } = loadPreload("MacIntel");
+  void bridge.systemAudio();
+  for (const source of ["system", "workspace", "screen", undefined]) void bridge.audioSource(source);
+  assert.deepEqual(invoked, [["hz:system-audio"], ["hz:audio-source", "system"], ["hz:audio-source", "workspace"],
+    ["hz:audio-source", "workspace"], ["hz:audio-source", "workspace"]]);
 });
