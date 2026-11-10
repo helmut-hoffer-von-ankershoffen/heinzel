@@ -87,12 +87,14 @@ Claude settings discovery and human approval have separate contracts.
   in the SDK maintenance inventory even with the feature disabled. Require writer exclusion for automatic client
   config changes. Where that proof is unavailable, review a manual change and verify native effective config.
 
-### Foreground manual Install fixture
+**Foreground manual Install fixture.**
 
 Use `hz system mcp review-install REGISTRATION_ID --handoff PLAN` before discovery. The isolated fixture injects
 `McpInstallReview` through the existing trusted CLI startup argument and uses the same foreground controlling
 terminal for review, instructions and confirmation. Keep the review-only result contract. The new manual session
-requires its own host-supplied workflow. The production entry point supplies neither this workflow nor a planner.
+requires its own host-supplied workflow.
+
+The production entry point supplies neither this workflow nor a planner.
 The registration and handoff are locators. CLI arguments, environment, owner UID and project settings confer no
 host authority. Cursor remains unavailable pending proof of native effective configuration.
 
@@ -100,24 +102,32 @@ The host selects one client, user profile and workspace from its retained regist
 identities, the registration and generation, the install grant and revision, SDK and bridge pins, the exact entry,
 and the original configuration's digest and file identity or proven absence. Use the existing workflow's plan
 and review digest for the file and entry terms. Give `McpInstallReview.prepare` a read-only commitment view of
-those same terms. A handoff does not create or replace the workflow's pending approval. The host reserves one
+those same terms. A handoff does not create or replace the workflow's pending approval.
+
+The host reserves one
 session for the exact target and refuses a second until the first is closed. Keep its handle and workflow in process.
 Settings resolves that locator through the planner's read-only Install validator. The validator rechecks the same
-pending session, grant, scope, pins, preimage and deadline. Repeated lookups preserve the session. Only local CLI
+pending session, grant, scope, pins, preimage and deadline.
+
+Repeated lookups preserve the session. Only local CLI
 review can claim it. Lookup refuses if the validator is unavailable or the plan changed, expired, was revoked or was
 consumed.
 
 After checking the handoff, `McpInstallReview` calls `HostClientConfigWorkflow.prepare(INSTALL)` and `review(id)`.
 The workflow's approval callback compares the pending review digest to the committed digest before displaying
 the exact plan with the pinned terminal reviewer. Recheck the handoff, host binding and preimage before and
-after approval. Show only the approved entry, insertion point and destination on that terminal. At this point
+after approval. Show only the approved entry, insertion point and destination on that terminal.
+
+At this point
 the configuration is still `not-applied`. The workflow and CLI perform no file writes or vendor launches.
 
 After the separate manual edit, an explicit confirmation in the same session calls `verify(id)` once. It must
 prove the exact entry, unchanged unrelated settings and trusted native selection from the expected scope. Bind
 the session to a fixed monotonic deadline no later than the handoff expiry or the workflow's own deadlines.
 Recheck terminal ownership and current registration, grant and pins around review and verification. Fence
-publication of the verification result against grant revocation with the same host authority. Expiry, decline,
+publication of the verification result against grant revocation with the same host authority.
+
+Expiry, decline,
 interruption, EOF, lost terminal or failed verification consumes the session. Discard approval without writing
 or undoing the manual edit. Success reports `configuration=verified` and `mcp_readiness=unverified`. This proof
 does not start a worker, grant a lease or verify a vendor connection.
@@ -138,7 +148,9 @@ clients require a pinned bridge and a reviewed config adapter for each supported
 The private composition retains three independent boundaries. The bounded catalog probe serves empty
 discovery on an admitted bridge; it does not select or delegate to the broker's individual-Heinzel tool
 server. That server requires its own admitted lease and reviewed dispatch grant. Lifecycle and Install
-handoffs do not issue either capability. The dormant native observer and managed-preference prototype
+handoffs do not issue either capability.
+
+The dormant native observer and managed-preference prototype
 do not supply protected installation inventory or a client configuration writer. Connecting these paths
 requires an independently reviewed host composition with exact registration, grant and client provenance;
 merging their implementations does not activate them or establish packaged client acceptance.
@@ -155,12 +167,15 @@ On macOS it obtains the per-user temporary directory through `confstr` with `_CS
 On Linux it selects `/run/user/<uid>`. It verifies physical ancestry with no-follow directory opens,
 selects a fresh directory by parent descriptor, and retains its descriptor for creation-only operations.
 The `mkdir` and `open` steps cannot prove creation provenance against another process under the same UID.
+
 The opened directory is locator storage only. Environment overrides and project paths supply no authority. The adapter refuses named
 activation when the OS root is unavailable or when the final root exceeds 86
 filesystem-encoded bytes. The adapter reserves the remaining 17 bytes of the 103-byte socket pathname limit.
+
 Before publishing the supervisor, the adapter commits a single observation of locator storage and the retained
 listener under the SDK maintenance authority outside the SDK. A failed commit retires the listener and leaves
 any uncertain receipt for inspection. Activation never adopts a prior receipt or grants cleanup rights from one.
+
 The foreground adapter holds the SDK lock until shutdown. An observed change to a retained anchor or current
 receipt retires the supervisor. Native manager integration will register the stop and recovery hooks before
 allowing concurrent managed activation and maintenance. Retired and failed nodes remain on disk for reviewed cleanup.
@@ -169,7 +184,9 @@ The foreground registration plan derives the native unit name from the selected 
 The installed CLI uses `HostServiceManager` and the OS user's definition namespace for read-only collision
 detection. Intent and commit records bind the dormant registration to SDK continuity and the retained SDK
 maintenance lock identity. Standard update, refresh and uninstall check this inventory under the SDK lock.
-An active foreground worker blocks maintenance. An incomplete registration blocks SDK changes until explicit
+An active foreground worker blocks maintenance.
+
+An incomplete registration blocks SDK changes until explicit
 recovery, and a changed SDK never adopts a prior activation. Uninstall retains dormant receipts and checks the
 native namespace in standalone recovery. Durable lifecycle action receipts, native unit publication,
 manager-owned bootstrap and recovery, and protected native review and apply remain prerequisites for persistent
@@ -179,10 +196,14 @@ Standard SDK mutation and rollback enroll the selected ordinary profile before w
 package files. The SDK inventory retains the identities of the profile and its daemon and snapshot directories.
 MCP activation checks pending markers across the enrolled profiles, including after a writer exits before
 changing SDK bytes. Recovery still uses the ordinary profile's existing authority. An unknown or replaced
-inventory entry keeps activation fenced. MCP requires a complete assessment from a trusted host authority.
+inventory entry keeps activation fenced.
+
+MCP requires a complete assessment from a trusted host authority.
 The authority can report complete, incomplete or recovery required. Observed pending work still fences a complete
 assessment. The ordinary installer, update and recovery paths enroll their selected profiles and leave completeness
-to the host. A missing host authority keeps the installed CLI fenced. Local receipts, directory creation and
+to the host. A missing host authority keeps the installed CLI fenced.
+
+Local receipts, directory creation and
 caller configuration confer no completeness. Positive foreground tests supply a fixture authority explicitly.
 
 Production acceptance requires protected provisioning and a broker that mediates all SDK writers, including
