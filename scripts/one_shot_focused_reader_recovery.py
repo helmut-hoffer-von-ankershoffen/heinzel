@@ -26,6 +26,8 @@ WORKFLOW = ".github/workflows/one-shot-focused-reader-recovery.yml"
 RULESET = 25762292
 CI_WORKFLOW_ID = 394704163
 ACTIONS_APP_ID = 15368
+ORPHAN_695 = 129856829308
+ORPHAN_PR = 695
 type Target = tuple[int, str, str, str, str, int, int, int, int, int]
 TARGETS = (
     (
@@ -103,7 +105,7 @@ def only_recovery_run() -> None:
     )
 
 
-def current(target: Target, owned_check_id: int | None = None) -> None:
+def current(target: Target, owned_check_id: int | None = None, *, allow_pending_orphan: bool = False) -> None:
     """Recheck the PR, original evidence, current main and ruleset."""
     only_recovery_run()
     number, head, branch, merge, tree, run_id, suite, protected_suite, failed_check, green_check = target
@@ -140,11 +142,24 @@ def current(target: Target, owned_check_id: int | None = None) -> None:
         for item in latest["check_runs"]
         if item.get("name") == "coverage-floor" and item.get("app", {}).get("id") == ACTIONS_APP_ID
     ]
+    expected = owned_check_id if owned_check_id is not None else failed_check
+    # Accept the historical orphan only after its exact identity has been invalidated.
+    if owned_check_id is None and number == ORPHAN_PR and len(required) == 1 and required[0].get("id") == ORPHAN_695:
+        orphan = api(f"check-runs/{ORPHAN_695}")
+        if allow_pending_orphan and orphan.get("status") == "in_progress":
+            orphan_identity(orphan, target, "in_progress", None)
+        else:
+            orphan_identity(orphan, target, "completed", "failure")
+        expected = ORPHAN_695
     require(
         latest["total_count"] == len(latest["check_runs"])
         and len(required) == 1
-        and required[0]["id"] == (owned_check_id if owned_check_id is not None else failed_check)
-        and (owned_check_id is not None or required[0]["conclusion"] == "failure"),
+        and required[0]["id"] == expected
+        and (
+            owned_check_id is not None
+            or required[0]["conclusion"] == "failure"
+            or (allow_pending_orphan and expected == ORPHAN_695 and required[0]["conclusion"] is None)
+        ),
         "latest required coverage check changed",
     )
     require(api("git/ref/heads/main")["object"]["sha"] == CURRENT_MAIN, "main moved")
@@ -188,7 +203,91 @@ def current(target: Target, owned_check_id: int | None = None) -> None:
     )
 
 
-def publish(target: Target, check_id: int | None, state: str, url: str) -> int:
+def external_id(target: Target) -> str:
+    """Identify this exact run and target without relying on a mutable details URL."""
+    return (
+        f"focused-recovery:{os.environ['GITHUB_RUN_ID']}:{os.environ['GITHUB_RUN_ATTEMPT']}:"
+        f"{target[0]}:{os.environ['RECOVERY_SHA']}"
+    )
+
+
+def valid_url(url: str, actual_id: int, expected_url: str) -> bool:
+    """Accept only the run URL or GitHub's canonical URL for this exact check."""
+    return url in {expected_url, f"https://github.com/{REPO}/runs/{actual_id}"}
+
+
+def orphan_identity(check: dict[str, Any], target: Target, status: str, conclusion: str | None) -> None:
+    """Authenticate the one historical pre-external-ID orphan before any mutation."""
+    require(
+        target[0] == ORPHAN_PR
+        and check.get("id") == ORPHAN_695
+        and check.get("name") == "coverage-floor"
+        and check.get("head_sha") == target[1]
+        and check.get("app", {}).get("id") == ACTIONS_APP_ID
+        and check.get("check_suite", {}).get("id") == target[7]
+        and check.get("status") == status
+        and check.get("conclusion") == conclusion
+        and check.get("external_id") == ""
+        and check.get("details_url") == f"https://github.com/{REPO}/runs/{ORPHAN_695}",
+        "historical orphan identity differs",
+    )
+
+
+def invalidate_historical_orphan(target: Target) -> None:
+    """Invalidate the uniquely pinned orphan; never touch original checks."""
+    old = api(f"check-runs/{ORPHAN_695}")
+    if old.get("status") == "completed" and old.get("conclusion") == "failure":
+        orphan_identity(old, target, "completed", "failure")
+        return
+    orphan_identity(old, target, "in_progress", None)
+    response = json.loads(
+        run(
+            [
+                "gh",
+                "api",
+                "--method",
+                "PATCH",
+                f"repos/{REPO}/check-runs/{ORPHAN_695}",
+                "-f",
+                "status=completed",
+                "-f",
+                "conclusion=failure",
+                "-f",
+                "output[title]=Recovery invalidated",
+                "-f",
+                "output[summary]=Prior recovery did not complete",
+            ]
+        )
+    )
+    orphan_identity(response, target, "completed", "failure")
+    orphan_identity(api(f"check-runs/{ORPHAN_695}"), target, "completed", "failure")
+
+
+def cleanup_historical_orphan() -> None:
+    """Perform the separately requested fixed-ID repair under the approved host and hold."""
+    host()
+    target = selected_target()
+    require(target[0] == ORPHAN_PR, "historical orphan applies only to PR 695")
+    current(target, allow_pending_orphan=True)
+    require(api("git/ref/heads/main")["object"]["sha"] == CURRENT_MAIN, "main moved")
+    require(api(f"git/ref/heads/{target[2]}")["object"]["sha"] == target[1], "head moved")
+    original = api(f"check-runs/{target[8]}")
+    require(
+        original.get("id") == target[8]
+        and original.get("head_sha") == target[1]
+        and original.get("name") == "coverage-floor"
+        and original.get("app", {}).get("id") == ACTIONS_APP_ID
+        and original.get("check_suite", {}).get("id") == target[7]
+        and original.get("status") == "completed"
+        and original.get("conclusion") == "failure",
+        "original protected check changed",
+    )
+    invalidate_historical_orphan(target)
+    require(api("git/ref/heads/main")["object"]["sha"] == CURRENT_MAIN, "main moved")
+    require(api(f"git/ref/heads/{target[2]}")["object"]["sha"] == target[1], "head moved")
+
+
+def publish(target: Target, check_id: int | None, state: str, url: str, created: list[int] | None = None) -> int:
     """Publish the genuine coverage judge outcome as an Actions check run."""
     head = target[1]
     require(state in {"pending", "success", "failure"}, "unexpected check state")
@@ -208,11 +307,24 @@ def publish(target: Target, check_id: int | None, state: str, url: str) -> int:
             "status=in_progress",
             "-f",
             f"details_url={url}",
+            "-f",
+            f"external_id={external_id(target)}",
         ]
     else:
         require(
             check_id not in {target[8], target[9]} and check_id > 0,
             "refusing to modify original checks",
+        )
+        existing = api(f"check-runs/{check_id}")
+        require(
+            existing.get("id") == check_id
+            and existing.get("name") == "coverage-floor"
+            and existing.get("head_sha") == head
+            and existing.get("app", {}).get("id") == ACTIONS_APP_ID
+            and existing.get("external_id") == external_id(target)
+            and type(existing.get("check_suite", {}).get("id")) is int
+            and valid_url(existing.get("details_url", ""), check_id, url),
+            "check ownership differs",
         )
         require(state != "pending", "an existing check cannot be recreated")
         args = [
@@ -232,6 +344,14 @@ def publish(target: Target, check_id: int | None, state: str, url: str) -> int:
         ]
     response = json.loads(run(args))
     actual_id = response["id"]
+    if (
+        created is not None
+        and check_id is None
+        and type(actual_id) is int
+        and actual_id > 0
+        and actual_id not in {target[8], target[9]}
+    ):
+        created.append(actual_id)
     require(
         type(actual_id) is int
         and actual_id > 0
@@ -248,7 +368,8 @@ def publish(target: Target, check_id: int | None, state: str, url: str) -> int:
         and type(response["check_suite"]["id"]) is int
         and response["status"] == expected_status
         and response["conclusion"] == expected_conclusion
-        and response["details_url"] == url,
+        and response.get("external_id") == external_id(target)
+        and valid_url(response["details_url"], actual_id, url),
         "check publication identity differs",
     )
     suite = api(f"check-suites/{response['check_suite']['id']}")
@@ -267,7 +388,8 @@ def publish(target: Target, check_id: int | None, state: str, url: str) -> int:
         and latest["check_suite"]["id"] == response["check_suite"]["id"]
         and latest["status"] == expected_status
         and latest["conclusion"] == expected_conclusion
-        and latest["details_url"] == url,
+        and latest.get("external_id") == external_id(target)
+        and valid_url(latest["details_url"], actual_id, url),
         "check readback differs",
     )
     if state == "success":
@@ -333,7 +455,7 @@ def cleanup() -> None:
     head = target[1]
     page = api(f"commits/{head}/check-runs?check_name=coverage-floor&filter=all&per_page=100")
     require(page["total_count"] == len(page["check_runs"]), "incomplete cleanup check inventory")
-    rows = [row for row in page["check_runs"] if row.get("details_url") == target_url]
+    rows = [row for row in page["check_runs"] if row.get("external_id") == external_id(target)]
     require(len(rows) <= 1, "ambiguous recovery-owned checks")
     if not rows:
         print("No recovery-owned check exists", flush=True)
@@ -363,10 +485,13 @@ def main(protected: Path, reader: Path) -> None:
     root_commit(reader, READER, READER_TREE)
     target = selected_target()
     check_plan(target[1], env["FOCUSED_CI_PLANS"])
+    if target[0] == ORPHAN_PR:
+        cleanup_historical_orphan()
     current(target)
     number, head, _, _, _, ci_run, _, _, _, _ = target
     current(target)
     check_id = None
+    created: list[int] = []
     try:
         # Sonar is rechecked, but its existing passing check is preserved.
         judge_env = {
@@ -386,11 +511,13 @@ def main(protected: Path, reader: Path) -> None:
             )
             print(f"coverage-floor: {verdict}", flush=True)
             current(target)
-            check_id = publish(target, None, "pending", target_url)
+            check_id = publish(target, None, "pending", target_url, created)
             current(target, check_id)
             publish(target, check_id, "success", target_url)
             current(target, check_id)
     except Exception as original:
+        if check_id is None and created:
+            check_id = created[0]
         if check_id is not None:
             try:
                 publish(target, check_id, "failure", target_url)
@@ -404,5 +531,7 @@ def main(protected: Path, reader: Path) -> None:
 if __name__ == "__main__":
     if sys.argv[1:] == ["--cleanup"]:
         cleanup()
+    elif sys.argv[1:] == ["--cleanup-orphan-695"]:
+        cleanup_historical_orphan()
     else:
         main(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())

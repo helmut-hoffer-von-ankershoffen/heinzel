@@ -72,6 +72,7 @@ class RecoveryTests(unittest.TestCase):
             mock.patch.object(m, "root_commit"),
             mock.patch.object(m, "only_recovery_run"),
             mock.patch.object(m, "check_plan"),
+            mock.patch.object(m, "cleanup_historical_orphan"),
             mock.patch.object(m, "current"),
             mock.patch.object(m, "run", side_effect=execute),
             mock.patch.object(m, "publish", side_effect=lambda head, ctx, state, url: calls.append((ctx, state))),
@@ -97,10 +98,11 @@ class RecoveryTests(unittest.TestCase):
             mock.patch.object(m, "root_commit"),
             mock.patch.object(m, "only_recovery_run"),
             mock.patch.object(m, "check_plan"),
+            mock.patch.object(m, "cleanup_historical_orphan"),
             mock.patch.object(m, "current", side_effect=current),
             mock.patch.object(m, "run", return_value="pass"),
             mock.patch.object(
-                m, "publish", side_effect=lambda head, ctx, state, url: (calls.append((ctx, state)), 789)[1]
+                m, "publish", side_effect=lambda head, ctx, state, url, *rest: (calls.append((ctx, state)), 789)[1]
             ),
             pytest.raises(ValueError, match="main moved"),
         ):
@@ -125,6 +127,7 @@ def test_second_recovery_run_fails_closed(monkeypatch):
 
 
 def test_check_readback_requires_same_id(monkeypatch):
+    monkeypatch.setattr(os, "environ", dict(ENV))
     head = m.TARGETS[0][1]
     response = {
         "id": 1,
@@ -133,6 +136,7 @@ def test_check_readback_requires_same_id(monkeypatch):
         "status": "in_progress",
         "conclusion": None,
         "details_url": "test",
+        "external_id": f"focused-recovery:99:1:695:{SHA}",
         "app": {"id": m.ACTIONS_APP_ID},
         "check_suite": {"id": m.TARGETS[0][6]},
     }
@@ -152,9 +156,9 @@ def test_check_readback_requires_same_id(monkeypatch):
 
 @pytest.mark.parametrize("target_index", [0, 1])
 @pytest.mark.parametrize(
-    "defect", [None, "base", "head", "parents", "run", "rules", "protected_suite", "already_green"]
+    "defect", [None, "base", "head", "parents", "run", "rules", "protected_suite", "already_green", "orphan_pending"]
 )
-def test_current_rejects_identity_or_policy_drift(monkeypatch, defect, target_index):
+def test_current_rejects_identity_or_policy_drift(monkeypatch, defect, target_index):  # noqa: C901, PLR0912
     target = m.TARGETS[target_index]
     number, head, branch, merge, tree, run_id, suite, protected_suite, failed, green = target
     repo = {"full_name": m.REPO}
@@ -233,9 +237,32 @@ def test_current_rejects_identity_or_policy_drift(monkeypatch, defect, target_in
         data[f"commits/{head}/check-runs?check_name=coverage-floor&filter=latest&per_page=100"]["check_runs"][0][
             "conclusion"
         ] = "success"
+    elif defect == "orphan_pending":
+        data[f"commits/{head}/check-runs?check_name=coverage-floor&filter=latest&per_page=100"]["check_runs"][0].update(
+            id=m.ORPHAN_695, conclusion=None
+        )
+        data[f"check-runs/{m.ORPHAN_695}"] = {
+            "id": m.ORPHAN_695,
+            "name": "coverage-floor",
+            "head_sha": head,
+            "app": {"id": m.ACTIONS_APP_ID},
+            "check_suite": {"id": protected_suite},
+            "status": "in_progress",
+            "conclusion": None,
+            "external_id": "",
+            "details_url": f"https://github.com/{m.REPO}/runs/{m.ORPHAN_695}",
+        }
     monkeypatch.setattr(m, "only_recovery_run", lambda: None)
     monkeypatch.setattr(m, "api", lambda path: data[path])
-    if defect is None:
+    if defect == "orphan_pending":
+        if target_index == 0:
+            m.current(target, allow_pending_orphan=True)
+            with pytest.raises(ValueError, match="orphan identity"):
+                m.current(target)
+        else:
+            with pytest.raises(ValueError, match="latest required"):
+                m.current(target, allow_pending_orphan=True)
+    elif defect is None:
         m.current(target)
     else:
         with pytest.raises(ValueError, match=r"moved|changed"):
@@ -266,8 +293,9 @@ def test_cleanup_only_invalidates_owned_check(monkeypatch):
         "app": {"id": m.ACTIONS_APP_ID},
         "check_suite": {"id": m.TARGETS[0][6]},
         "details_url": target_url,
+        "external_id": f"focused-recovery:99:1:695:{SHA}",
     }
-    monkeypatch.setenv("RECOVERY_TARGET", "695")
+    monkeypatch.setattr(os, "environ", dict(ENV))
     monkeypatch.setattr(m, "host", lambda: target_url)
     monkeypatch.setattr(m, "api", lambda _: {"total_count": 1, "check_runs": [row]})
     post = mock.Mock()
@@ -278,4 +306,131 @@ def test_cleanup_only_invalidates_owned_check(monkeypatch):
     post.reset_mock()
     with pytest.raises(ValueError, match="ownership"):
         m.cleanup()
+    post.assert_not_called()
+
+
+def test_github_canonical_check_url_is_bound_to_exact_id():
+    url = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/runs/99"
+    assert m.valid_url(url, 123, url)
+    assert m.valid_url(f"https://github.com/{m.REPO}/runs/123", 123, url)
+    assert not m.valid_url(f"https://github.com/{m.REPO}/runs/124", 123, url)
+    assert not m.valid_url(f"https://evil.example/{m.REPO}/runs/123", 123, url)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("id", 123),
+        ("head_sha", "bad"),
+        ("status", "completed"),
+        ("external_id", "other"),
+        ("details_url", "https://evil.example/"),
+    ],
+)
+def test_historical_orphan_refuses_impostors(field, value):
+    row = {
+        "id": m.ORPHAN_695,
+        "name": "coverage-floor",
+        "head_sha": m.TARGETS[0][1],
+        "app": {"id": m.ACTIONS_APP_ID},
+        "check_suite": {"id": m.TARGETS[0][7]},
+        "status": "in_progress",
+        "conclusion": None,
+        "external_id": "",
+        "details_url": f"https://github.com/{m.REPO}/runs/{m.ORPHAN_695}",
+    }
+    row[field] = value
+    with pytest.raises(ValueError, match="orphan identity"):
+        m.orphan_identity(row, m.TARGETS[0], "in_progress", None)
+
+
+def test_lost_post_response_cleanup_finds_external_id(monkeypatch):
+    monkeypatch.setattr(os, "environ", dict(ENV))
+    target = m.TARGETS[0]
+    row = {
+        "id": 999,
+        "name": "coverage-floor",
+        "head_sha": target[1],
+        "app": {"id": m.ACTIONS_APP_ID},
+        "check_suite": {"id": target[7]},
+        "external_id": m.external_id(target),
+        "details_url": f"https://github.com/{m.REPO}/runs/999",
+    }
+    monkeypatch.setattr(m, "host", lambda: "run")
+    monkeypatch.setattr(m, "api", lambda _: {"total_count": 1, "check_runs": [row]})
+    post = mock.Mock()
+    monkeypatch.setattr(m, "publish", post)
+    m.cleanup()
+    post.assert_called_once_with(target, 999, "failure", "run")
+
+
+def test_untrusted_response_id_retained_before_validation(monkeypatch):
+    monkeypatch.setattr(os, "environ", dict(ENV))
+    monkeypatch.setattr(
+        m,
+        "run",
+        lambda *_: json.dumps(
+            {
+                "id": 999,
+                "name": "wrong",
+                "head_sha": m.TARGETS[0][1],
+                "app": {"id": m.ACTIONS_APP_ID},
+                "check_suite": {"id": 1},
+                "status": "in_progress",
+                "conclusion": None,
+                "external_id": m.external_id(m.TARGETS[0]),
+                "details_url": "bad",
+            }
+        ),
+    )
+    created = []
+    with pytest.raises(ValueError, match="publication identity"):
+        m.publish(m.TARGETS[0], None, "pending", "run", created)
+    assert created == [999]
+
+
+def test_exact_historical_orphan_only_patches_pinned_id(monkeypatch):
+    target = m.TARGETS[0]
+    row = {
+        "id": m.ORPHAN_695,
+        "name": "coverage-floor",
+        "head_sha": target[1],
+        "app": {"id": m.ACTIONS_APP_ID},
+        "check_suite": {"id": target[7]},
+        "status": "in_progress",
+        "conclusion": None,
+        "external_id": "",
+        "details_url": f"https://github.com/{m.REPO}/runs/{m.ORPHAN_695}",
+    }
+    completed = {**row, "status": "completed", "conclusion": "failure"}
+    reads = iter([row, completed])
+    monkeypatch.setattr(m, "api", lambda _: next(reads))
+    patch = mock.Mock(return_value=json.dumps(completed))
+    monkeypatch.setattr(m, "run", patch)
+    m.invalidate_historical_orphan(target)
+    args = patch.call_args.args[0]
+    assert f"repos/{m.REPO}/check-runs/{m.ORPHAN_695}" in args
+    assert all(str(original) not in " ".join(args) for original in (target[8], target[9]))
+
+
+def test_foreign_check_is_never_patched(monkeypatch):
+    monkeypatch.setattr(os, "environ", dict(ENV))
+    target = m.TARGETS[0]
+    monkeypatch.setattr(
+        m,
+        "api",
+        lambda _: {
+            "id": 999,
+            "name": "coverage-floor",
+            "head_sha": target[1],
+            "app": {"id": m.ACTIONS_APP_ID},
+            "check_suite": {"id": target[7]},
+            "external_id": "foreign",
+            "details_url": f"https://github.com/{m.REPO}/runs/999",
+        },
+    )
+    post = mock.Mock()
+    monkeypatch.setattr(m, "run", post)
+    with pytest.raises(ValueError, match="ownership differs"):
+        m.publish(target, 999, "failure", "run")
     post.assert_not_called()
