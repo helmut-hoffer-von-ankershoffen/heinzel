@@ -231,5 +231,57 @@
     "tests/integration/ui_service_test.py",
     "tests/unit/heads/install_test.py",
     "tests/unit/kernel/installation_test.py"
-  ]
+  ],
+  "recovery": {
+    "original_run": 42798384171,
+    "original_workflow": 413147730,
+    "original_helper": "772aefe7bdbe9faaa4173f53fb7415231b088af2",
+    "original_jobs": {
+      "macos": {
+        "job": 129769293187,
+        "artifact": 13755157457,
+        "digest": "sha256:99d909944095c369596fddbb9f37f1f7c5601f81ee7d90d00dc995c2e56978ff"
+      },
+      "security": {
+        "job": 129769293659,
+        "artifact": 13755113054,
+        "digest": "sha256:2e272cc8c91a8e657883b22d95f1548badaa1b407e58a0094b4c2f18883bd72c"
+      },
+      "sonar": {
+        "job": 129769293734,
+        "artifact": 13753918650,
+        "digest": "sha256:f06c60252249f98cb90e090653371a1367d0e1e2d4794f8b758a9836b4421ee8"
+      },
+      "web": {
+        "job": 129769293763,
+        "artifact": 13755247916,
+        "digest": "sha256:2dbddf74ed1ac3e22bee862d5a23b5ac57de963b13042a4082e5c179c150982a"
+      },
+      "python315": {
+        "job": 129769293804,
+        "failure_step": 7,
+        "markers": [
+          "error: Distribution `pyyaml==6.0.3 @ registry+https://pypi.org/simple` can't be installed",
+          "marked as `--no-build` but has no binary distribution"
+        ]
+      },
+      "structural": {
+        "job": 129769293984,
+        "failure_step": 7,
+        "markers": [
+          "\u2717 zizmor",
+          "error: invalid value '' for '--github-token <GITHUB_TOKEN>': GitHub token cannot be empty"
+        ]
+      },
+      "python": {
+        "job": 129769295777,
+        "artifact": 13753594334,
+        "digest": "sha256:c58e44b50e8bfd70f42a1cb281b3c43afe719e1144dd3eaee0d2fbe29f10abf9"
+      }
+    },
+    "lanes": [
+      "python315",
+      "structural"
+    ]
+  }
 }

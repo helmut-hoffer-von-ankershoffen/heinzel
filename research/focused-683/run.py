@@ -142,12 +142,19 @@ def _test_platform(out: Path, lane: str) -> None:
     )
 
 
-def _sonar_refs() -> None:
-    base_ref, pr_ref = (MANIFEST[key] for key in ("base_ref", "pr_ref"))
-    refs = _git("ls-remote", f"https://github.com/{MANIFEST['repository']}.git", base_ref, pr_ref).splitlines()
+def _live_refs() -> None:
+    base_ref, pr_ref, validation_ref = (MANIFEST[key] for key in ("base_ref", "pr_ref", "candidate_ref"))
+    refs = _git(
+        "ls-remote", f"https://github.com/{MANIFEST['repository']}.git", base_ref, pr_ref, validation_ref
+    ).splitlines()
     _require(
-        set(refs) == {f"{MANIFEST['base']}\t{base_ref}", f"{MANIFEST['candidate']}\t{pr_ref}"},
-        "protected base or actual PR ref drifted during Sonar evidence",
+        set(refs)
+        == {
+            f"{MANIFEST['base']}\t{base_ref}",
+            f"{MANIFEST['candidate']}\t{pr_ref}",
+            f"{MANIFEST['candidate']}\t{validation_ref}",
+        },
+        "protected base, PR head or validation ref drifted during evidence collection",
     )
 
 
@@ -158,7 +165,7 @@ def _test_sonar() -> None:
     env = os.environ.copy()
     token = env.pop("FOCUSED_SONAR_TOKEN", "")
     _require(bool(token), "missing read-only GitHub token for Sonar")
-    _sonar_refs()
+    _live_refs()
     subprocess.run(
         ("uv", "run", "--no-build", "--frozen", "--script", "scripts/merge_gate.py", "sonar"),
         cwd=trusted,
@@ -170,7 +177,7 @@ def _test_sonar() -> None:
             "PR_HEAD_SHA": MANIFEST["candidate"],
         },
     )
-    _sonar_refs()
+    _live_refs()
 
 
 def _test_web(out: Path) -> None:
@@ -224,12 +231,14 @@ def _main() -> None:
     _require(
         os.environ.get("GITHUB_ACTIONS") == "true"
         and os.environ.get("GITHUB_EVENT_NAME") == "push"
-        and os.environ.get("GITHUB_REF") == "refs/heads/bootstrap/one-shot-683"
+        and os.environ.get("GITHUB_REF") == "refs/heads/bootstrap/one-shot-683-recovery"
+        and args.lane in MANIFEST["recovery"]["lanes"]
         and os.environ.get("GITHUB_REPOSITORY") == MANIFEST["repository"]
         and os.environ.get("GITHUB_RUN_ATTEMPT") == "1"
         and helper == os.environ["GITHUB_SHA"] == os.environ["GITHUB_WORKFLOW_SHA"],
         "expected an independently pinned first-attempt Actions job",
     )
+    _live_refs()
     out = Path(os.environ["RUNNER_TEMP"]) / "focused-683"
     out.mkdir()
     identity = {
@@ -272,6 +281,7 @@ def _main() -> None:
         evidence = coverage_evidence.evidence(MANIFEST, identity, lambda name: (out / name).read_bytes())
         (out / "pr-coverage.json").write_text(json.dumps(evidence, sort_keys=True) + "\n")
     _source()
+    _live_refs()
 
 
 if __name__ == "__main__":

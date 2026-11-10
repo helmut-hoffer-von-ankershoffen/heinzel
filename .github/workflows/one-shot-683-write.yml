@@ -38,7 +38,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_683_HELPER_SHA }}
-      FOCUSED_EVIDENCE_RUN_ID: ${{ vars.ONE_SHOT_683_EVIDENCE_RUN_ID }}
+      FOCUSED_RECOVERY_RUN_ID: ${{ vars.ONE_SHOT_683_RECOVERY_RUN_ID }}
     steps:
       - name: Require independently pinned bootstrap source
         run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"

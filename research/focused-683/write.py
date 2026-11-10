@@ -48,7 +48,7 @@ def _update(helper: str) -> None:
 
 def _status(context: str, state: str, url: str) -> None:
     description = {
-        "CI OK": "Exact #683 PR checks and affected Python coverage >=90%",
+        "CI OK": "Exact #683 PR checks from original and setup recovery runs",
         "merge-gate": "Exact #683 Sonar and security evidence",
         "coverage-floor": "Exact #683 PR-scoped affected Python coverage floor >=80%",
     }[context]
@@ -88,10 +88,17 @@ def _status(context: str, state: str, url: str) -> None:
 
 
 def _publish(helper: str) -> None:
-    run = os.environ.get("FOCUSED_EVIDENCE_RUN_ID", "")
-    _require(bool(re.fullmatch(r"[1-9][0-9]{0,19}", run)), "missing pinned focused evidence run")
-    _verify(helper, "--evidence", run)
-    url = f"https://github.com/{REPO}/actions/runs/{run}"
+    run = os.environ.get("FOCUSED_RECOVERY_RUN_ID", "")
+    _require(bool(re.fullmatch(r"[1-9][0-9]{0,19}", run)), "missing pinned focused recovery run")
+    _verify(helper, "--recovery-evidence", run)
+    actions = f"https://github.com/{REPO}/actions/runs"
+    original = MANIFEST["recovery"]["original_run"]
+    url = f"{actions}/{os.environ['GITHUB_RUN_ID']}"
+    with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
+        summary.write(
+            f"[Original run]({actions}/{original}) supplied five passing lanes and retains two setup failures. "
+            f"[Setup recovery]({actions}/{run}) supplied the two missing lanes.\n"
+        )
     attempted = []
     try:
         for context in CONTEXTS:

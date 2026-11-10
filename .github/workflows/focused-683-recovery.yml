@@ -1,0 +1,56 @@
+# A separate push run repairs only the two failed setup lanes. The original attempt remains terminal.
+name: Focused 683 setup recovery
+on:
+  push:
+    branches: [bootstrap/one-shot-683-recovery]
+permissions: {}
+concurrency:
+  group: one-shot-683-recovery
+  cancel-in-progress: false
+jobs:
+  focused:
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.ref == 'refs/heads/bootstrap/one-shot-683-recovery' && github.run_attempt == '1'
+    name: Focused 683 ${{ matrix.lane }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [python315, structural]
+    env:
+      REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_683_HELPER_SHA }}
+      UV_FROZEN: "1"
+    steps:
+      - name: Require independently pinned bootstrap source
+        run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: bootstrap
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 7d983e9662f58fd3af2c779c3ca1a9ccf8a70576
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./bootstrap/.github/actions/setup-uv
+        with:
+          enable-cache: false
+          save-cache: false
+          python-version: "3.14.8"
+      - name: Verify source and run evidence lane
+        env:
+          LANE: ${{ matrix.lane }}
+          CONFIDENTIAL_TERMS: ${{ matrix.lane == 'structural' && secrets.CONFIDENTIAL_TERMS || '' }}
+        working-directory: candidate
+        run: python3 -I "$GITHUB_WORKSPACE/bootstrap/research/focused-683/run.py" "$LANE"
+      - name: Upload exact attempt evidence
+        if: success()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: focused-683-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/focused-683/
+          if-no-files-found: error
+          retention-days: 7

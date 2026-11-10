@@ -1,6 +1,6 @@
 # This read-only verifier uses fixed GitHub API paths and reports evidence counts.
 # ruff: noqa: INP001, S603, S607, T201
-"""Verify the exact seven-job #683 attempt before the separately owned status writer."""
+"""Verify the original and setup recovery evidence before the #683 status writer."""
 
 import argparse
 import hashlib
@@ -25,6 +25,7 @@ BASE = MANIFEST["base"]
 HEAD = MANIFEST["candidate"]
 TREE = MANIFEST["tree"]
 BRANCH = "bootstrap/one-shot-683"
+RECOVERY_BRANCH = "bootstrap/one-shot-683-recovery"
 REPOSITORY_ID = 1431672693
 RULESET_ID = 25762292
 MAX_ARCHIVE_BYTES = 2_000_000
@@ -52,6 +53,9 @@ def _api(path: str, *, binary: bool = False) -> Any:  # noqa: ANN401 - GitHub re
     # PR snapshots need merge_commit_sha, which the 2026 REST version removed.
     version = "2022-11-28" if path.startswith("pulls/") else "2026-03-10"
     command = ["gh", "api", "-H", f"X-GitHub-Api-Version: {version}", f"repos/{REPO}/{path}"]
+    if binary and path.endswith("/logs"):
+        # Capture raw colored job logs for validation without emitting control characters.
+        command.append("--allow-escape-sequences")
     if not binary:
         command.extend(("--paginate", "--slurp"))
     response = subprocess.run(command, check=True, capture_output=True, timeout=60).stdout
@@ -282,24 +286,52 @@ def _artifact(artifact: dict[str, Any], lane: str, run_id: int, helper: str) -> 
             coverage_evidence.verify(MANIFEST, identity, archive.read)
 
 
-def _evidence(run_id: int, helper: str) -> None:
+def _failed_setup(job: dict[str, Any], pin: dict[str, Any]) -> None:
+    number = pin["failure_step"]
+    failed = [step for step in job["steps"] if step["conclusion"] == "failure"]
+    uploads = [step for step in job["steps"] if step["name"] == "Upload exact attempt evidence"]
+    _require(
+        len(failed) == len(uploads) == 1
+        and failed[0]["name"] == "Verify source and run evidence lane"
+        and failed[0]["status"] == "completed"
+        and failed[0]["number"] == number
+        and uploads[0]["conclusion"] == "skipped",
+        "original failed setup step inventory changed",
+    )
+    log = _api(f"actions/jobs/{job['id']}/steps/{number}/logs", binary=True)
+    _require(
+        len(log) < MAX_LOG_BYTES and all(marker.encode() in log for marker in pin["markers"]),
+        "original failure no longer matches its reviewed setup diagnosis",
+    )
+
+
+def _run_evidence(run_id: int, helper: str, *, recovery: bool) -> None:
+    plan = MANIFEST["recovery"]
+    repaired = set(plan["lanes"])
+    lanes = repaired if recovery else set(MEMBERS)
+    failed = set() if recovery else repaired
+    pins = {} if recovery else plan["original_jobs"]
+    branch = RECOVERY_BRANCH if recovery else BRANCH
+    path = ".github/workflows/focused-683-recovery.yml" if recovery else ".github/workflows/focused-683.yml"
     run = _one(f"actions/runs/{run_id}")
     _require(
-        run["event"] == "push"
-        and run["head_branch"] == BRANCH
+        run["id"] == run_id
+        and run["event"] == "push"
+        and run["head_branch"] == branch
         and run["run_attempt"] == 1
         and run["head_sha"] == helper
-        and run["path"] == ".github/workflows/focused-683.yml"
+        and run["path"] == path
         and run["status"] == "completed"
-        and run["conclusion"] == "success"
+        and run["conclusion"] == ("success" if recovery else "failure")
+        and (recovery or run["workflow_id"] == plan["original_workflow"])
         and run["repository"]["id"] == run["head_repository"]["id"] == REPOSITORY_ID
         and run["actor"]["login"] == run["triggering_actor"]["login"] == REPO.split("/")[0],
         "unexpected evidence workflow, source, attempt or result",
     )
     jobs = _inventory(f"actions/runs/{run_id}/attempts/1/jobs?per_page=100", "jobs")
     artifacts = _inventory(f"actions/runs/{run_id}/artifacts?per_page=100", "artifacts")
-    _require(len(jobs) == len(artifacts) == len(MEMBERS), "unexpected jobs or artifacts")
-    for lane in MEMBERS:
+    _require(len(jobs) == len(lanes) and len(artifacts) == len(lanes - failed), "unexpected jobs or artifacts")
+    for lane in sorted(lanes):
         matching = [job for job in jobs if job["name"] == f"Focused 683 {lane}"]
         _require(len(matching) == 1, f"missing or duplicate {lane} job")
         job = matching[0]
@@ -308,21 +340,45 @@ def _evidence(run_id: int, helper: str) -> None:
             and job["run_attempt"] == 1
             and job["head_sha"] == helper
             and job["status"] == "completed"
-            and job["conclusion"] == "success",
+            and type(job["runner_id"]) is int
+            and job["runner_id"] > 0
+            and job["conclusion"] == ("failure" if lane in failed else "success")
+            and (recovery or job["id"] == pins[lane]["job"]),
             f"{lane} job evidence incomplete",
         )
+        if lane in failed:
+            _failed_setup(job, pins[lane])
+            continue
         name = f"focused-683-{lane}-{run_id}-1"
         matching = [item for item in artifacts if item["name"] == name]
         _require(len(matching) == 1, f"missing or duplicate {lane} artifact")
-        _upload(job, matching[0])
-        _artifact(matching[0], lane, run_id, helper)
+        artifact = matching[0]
+        _require(
+            recovery or (artifact["id"], artifact["digest"]) == (pins[lane]["artifact"], pins[lane]["digest"]),
+            f"{lane} original artifact changed",
+        )
+        _upload(job, artifact)
+        _artifact(artifact, lane, run_id, helper)
+
+
+def _evidence(recovery_run: int, helper: str) -> None:
+    plan = MANIFEST["recovery"]
+    _require(
+        set(plan["original_jobs"]) == set(MEMBERS)
+        and plan["lanes"] == ["python315", "structural"]
+        and recovery_run > plan["original_run"]
+        and helper != plan["original_helper"],
+        "invalid original or recovery evidence pin",
+    )
+    _run_evidence(plan["original_run"], plan["original_helper"], recovery=False)
+    _run_evidence(recovery_run, helper, recovery=True)
 
 
 def _main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("reviewed_helper_sha")
     phase = parser.add_mutually_exclusive_group(required=True)
-    phase.add_argument("--evidence", type=int, metavar="RUN_ID")
+    phase.add_argument("--recovery-evidence", type=int, metavar="RECOVERY_RUN_ID")
     phase.add_argument("--before-update", action="store_true")
     phase.add_argument("--after-update", action="store_true")
     parser.add_argument("--wait-test-merge", action="store_true")
@@ -346,12 +402,11 @@ def _main() -> None:
     _require(set(MEMBERS) == set(MANIFEST["jobs"]), "manifest lane inventory drift")
     _rules()
     _source(before_update=args.before_update, wait_test_merge=args.wait_test_merge)
-    if args.evidence is not None:
-        _require(args.evidence > 0, "invalid evidence run ID")
-        _evidence(args.evidence, helper)
+    if args.recovery_evidence is not None:
+        _evidence(args.recovery_evidence, helper)
         _source()
         _rules()
-        print("Exact #683 evidence verified")
+        print("Exact #683 evidence verified across original and setup recovery runs")
     else:
         print("Pinned #683 source and required rules verified")
 

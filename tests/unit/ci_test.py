@@ -203,6 +203,14 @@ EXACT_NOT_MAKE = {
             "binds read-only focused evidence to the reviewed source, run and lane"
         ),
     },
+    "focused-683-recovery.yml": {
+        'test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"': (
+            "checks the independently pinned bootstrap before checkout"
+        ),
+        'python3 -I "$GITHUB_WORKSPACE/bootstrap/research/focused-683/run.py" "$LANE"': (
+            "binds read-only focused evidence to the reviewed source, run and lane"
+        ),
+    },
     "one-shot-683-write.yml": {
         'test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"': (
             "checks the independently pinned bootstrap before checkout"
@@ -280,6 +288,16 @@ def test_focused_683_runner_environment_scopes_github_token_to_sonar():
     assert all("GITHUB_TOKEN" not in scope.get("env", {}) for scope in (workflow, job, runner))
     assert runner["env"]["FOCUSED_SONAR_TOKEN"] == "${{ matrix.lane == 'sonar' && github.token || '' }}"
     assert job["permissions"] == {"contents": "read", "pull-requests": "read"}
+
+
+def test_focused_683_setup_recovery_has_only_two_read_only_lanes():
+    workflow = yaml.safe_load((REPO / ".github/workflows/focused-683-recovery.yml").read_text())
+    assert workflow[True] == {"push": {"branches": ["bootstrap/one-shot-683-recovery"]}}
+    job = workflow["jobs"]["focused"]
+    assert job["strategy"]["matrix"]["lane"] == ["python315", "structural"]
+    assert job["permissions"] == {"contents": "read"}
+    runner = next(step for step in job["steps"] if "/research/focused-683/run.py" in step.get("run", ""))
+    assert all("GITHUB_TOKEN" not in scope.get("env", {}) for scope in (workflow, job, runner))
 
 
 def test_every_main_commit_and_release_pr_run_completes_while_other_pull_requests_cancel_superseded_runs():

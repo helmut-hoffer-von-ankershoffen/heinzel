@@ -60,7 +60,7 @@ class FocusedRunnerTest(unittest.TestCase):
             patch.dict(os.environ, {"GITHUB_WORKSPACE": "/fixture", "FOCUSED_SONAR_TOKEN": "stub"}, clear=True),
             patch.object(run.subprocess, "check_output", return_value=run.MANIFEST["base"]),
             patch.object(run.subprocess, "run") as command,
-            patch.object(run, "_sonar_refs") as refs,
+            patch.object(run, "_live_refs") as refs,
         ):
             run._test_sonar()
             self.assertNotIn("GITHUB_TOKEN", os.environ)
