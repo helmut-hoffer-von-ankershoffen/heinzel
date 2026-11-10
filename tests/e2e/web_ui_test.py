@@ -973,6 +973,15 @@ def test_settings_search_font_floor_precedes_focus_for_phone_input_modes(environ
 
 
 @pytest.mark.timeout(600)
+def test_local_chatgpt_sign_in_fits_phone_viewports(environment, tmp_path):
+    """Exercise the real Settings UI in both browsers with a fictional sign-in response."""
+    env, _recorded = environment
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run([*run, "exec", "playwright-core", "install", "webkit"], cwd=REPO, check=True, timeout=600)
+    assert drive_ui_script(env, tmp_path, "chatgpt-sign-in.mjs") == {"engines": ["chromium", "webkit"]}
+
+
+@pytest.mark.timeout(600)
 def test_phone_pages_never_pan_sideways(environment, tmp_path):
     """On 375 and 390 px touch viewports no main page, panel or dialog scrolls or pans horizontally."""
     env, _recorded = environment

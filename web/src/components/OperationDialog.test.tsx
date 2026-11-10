@@ -6,9 +6,13 @@ import { daemonStatusKey } from "@/api/daemon";
 import { DAEMON_INSTALL, DAEMON_RESTART, DAEMON_UNINSTALL } from "@/lib/operationCalls";
 import {
   dismissOperation,
+  getRun,
+  OperationRecoveryRequired,
   type Phase,
+  recoverOperation,
   requestDrivenOperation,
   requestOperation,
+  startOperation,
   trackOperation,
 } from "@/lib/operationRun";
 import { NeedsAttention } from "@/lifecycle/applySteps";
@@ -363,6 +367,33 @@ describe("OperationDialog", () => {
       await user.click(within(dialog).getByRole("button", { name: "Try again" }));
       expect(run).toHaveBeenCalledTimes(2);
       act(() => dismissOperation());
+    });
+
+    it("keeps recovery bound to its visible outcome and requires confirmation before running", async () => {
+      const run = vi.fn(async () => undefined);
+      const clear = vi.fn();
+      const blocked = new OperationRecoveryRequired("Installation outcome unknown", {
+        message: "Installation outcome unknown",
+        help: "Check whether the operation finished.",
+        action: "Resolve",
+        confirm: "I checked",
+        clear,
+      });
+      requestDrivenOperation(call, drive(run), blocked);
+      const outcome = getRun();
+      if (outcome.stage !== "failed") throw new Error("Expected a blocked installation");
+      await startOperation(vi.fn());
+      expect(run).not.toHaveBeenCalled();
+      dismissOperation();
+      requestDrivenOperation(call, drive(run), blocked);
+      recoverOperation(outcome);
+      expect(clear).not.toHaveBeenCalled();
+      const current = getRun();
+      if (current.stage !== "failed") throw new Error("Expected a blocked installation");
+      recoverOperation(current);
+      expect(clear).toHaveBeenCalledOnce();
+      expect(getRun().stage).toBe("confirm");
+      expect(run).not.toHaveBeenCalled();
     });
   });
 });

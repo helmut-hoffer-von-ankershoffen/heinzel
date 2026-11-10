@@ -28,13 +28,30 @@ export type DrivenOperation = {
   /** Run it, telling the whole list of steps each time one changes. A failed run may be started again. */
   run: (report: (phases: Phase[]) => void) => Promise<unknown>;
 };
+/** A failed write that needs a person to reconcile its outcome before they can confirm it again. */
+export class OperationRecoveryRequired extends Error {
+  constructor(
+    message: string,
+    readonly recovery: { message: string; help: string; action: string; confirm: string; clear: () => void },
+  ) {
+    super(message);
+  }
+}
 type Driven = { driven?: DrivenOperation };
+type FailedRun = {
+  stage: "failed";
+  call: SchemaOperationCall;
+  phases: Phase[];
+  error: string;
+  tracked?: true;
+  recovery?: OperationRecoveryRequired["recovery"];
+} & Driven;
 export type OperationRun =
   | { stage: "idle" }
   | ({ stage: "confirm"; call: SchemaOperationCall } & Driven)
   | ({ stage: "running"; call: SchemaOperationCall; phases: Phase[]; task: string | null; tracked?: true } & Driven)
   | ({ stage: "done"; call: SchemaOperationCall; phases: Phase[]; result: unknown; tracked?: true } & Driven)
-  | ({ stage: "failed"; call: SchemaOperationCall; phases: Phase[]; error: string; tracked?: true } & Driven)
+  | FailedRun
   | ({ stage: "attention"; call: SchemaOperationCall; phases: Phase[]; error: string; tracked: true } & Driven);
 
 /** What a head reports for one step; anything else in a `phase` event is ignored. */
@@ -98,10 +115,30 @@ export function confirmOperation(call: SchemaOperationCall): Promise<unknown> {
 }
 
 /** Ask the person to confirm a write the app drives (`driven`); nothing runs until they choose its action. */
-export function requestDrivenOperation(call: SchemaOperationCall, driven: DrivenOperation): void {
+export function requestDrivenOperation(
+  call: SchemaOperationCall,
+  driven: DrivenOperation,
+  blocked?: OperationRecoveryRequired,
+): void {
   if (current.stage !== "idle" && current.stage !== "done" && current.stage !== "failed") return;
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  set({ stage: "confirm", call, driven });
+  set(
+    blocked
+      ? { stage: "failed", call, driven, phases: [], error: blocked.message, tracked: true, recovery: blocked.recovery }
+      : { stage: "confirm", call, driven },
+  );
+}
+
+/** Clear the recovery receipt belonging to the visible outcome, then ask again before sending any write. */
+export function recoverOperation(expected: FailedRun): void {
+  if (current !== expected || !expected.recovery) return;
+  try {
+    expected.recovery.clear();
+  } catch (error) {
+    set({ ...expected, error: error instanceof Error ? error.message : String(error) });
+    return;
+  }
+  set({ stage: "confirm", call: expected.call, driven: expected.driven });
 }
 
 /**
@@ -138,8 +175,11 @@ async function startDriven(): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     // Nothing is known to be wrong when hz has not come back yet: the person decides to keep waiting.
     const attention = error instanceof Error && (error as { attention?: boolean }).attention === true;
-    if (stillRunning(call))
-      set({ stage: attention ? "attention" : "failed", call, phases, error: message, tracked: true, driven });
+    if (stillRunning(call)) {
+      const outcome = { call, phases, error: message, tracked: true as const, driven };
+      if (error instanceof OperationRecoveryRequired) set({ stage: "failed", ...outcome, recovery: error.recovery });
+      else set({ stage: attention ? "attention" : "failed", ...outcome });
+    }
   }
 }
 
@@ -155,6 +195,7 @@ export function dismissOperation(): void {
 
 /** Start the confirmed write. A second call while it runs does nothing: one click starts one operation. */
 export async function startOperation(onSettled: () => void): Promise<void> {
+  if (current.stage === "failed" && current.recovery) return;
   if (
     current.stage === "attention" ||
     ((current.stage === "confirm" || current.stage === "failed") && current.driven)
@@ -231,7 +272,7 @@ const settle = (phases: Phase[]): Phase[] =>
     phase.state === "running" || phase.state === "pending" ? { ...phase, state: "skipped" } : phase,
   );
 
-/** The state now, for tests. */
+/** The current snapshot, for comparing a dialog action with the run that displayed it. */
 export const getRun = (): OperationRun => current;
 
 /** Reset for tests. */

@@ -66,6 +66,18 @@ def test_reviewed_tree_can_be_provisioned_before_pr_number_and_merge_sha_exist(f
     assert scope.workload.ref == "refs/pull/5/merge"
 
 
+def test_only_canonical_python_lane_accepts_the_expanded_selection(focused_plan, git_objects):
+    ids = [f"tests/unit/ci_test.py::test_case_{i}" for i in range(33)]
+    assert focused_plan._selections({"selection": {"python": ids[:32]}}, MERGE)["python"] == tuple(ids[:32])
+    with pytest.raises(focused_plan.CandidateError, match="broad focused lane python"):
+        focused_plan._selections({"selection": {"python": ids}}, MERGE)
+    for lane in ("python312", "python315", "macos", "macos-notifier", "web", "managed", "browser", "macos-browser"):
+        with pytest.raises(focused_plan.CandidateError, match="broad focused lane"):
+            focused_plan._selections({"selection": {lane: ids[:11]}}, MERGE)
+    with pytest.raises(focused_plan.CandidateError, match="duplicate selection"):
+        focused_plan._selections({"selection": {"python": ids[:31] + ids[:1]}}, MERGE)
+
+
 @pytest.mark.parametrize(
     "defect", ["tree", "parents", "commit", "production", "ref", "base", "diff_sha256", "execution"]
 )
