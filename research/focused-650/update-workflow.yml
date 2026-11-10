@@ -1,7 +1,8 @@
 # Review draft only: external queue/train/base-writer serialization is a hard precondition.
 name: One-shot 650 ref update
 on:
-  workflow_dispatch:
+  push:
+    branches: [bootstrap/one-shot-650-update]
 permissions: {}
 concurrency:
   group: one-shot-650-ref

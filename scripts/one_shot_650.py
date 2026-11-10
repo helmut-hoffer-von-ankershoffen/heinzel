@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """One-shot fast-forward draft; queue/train and all base writers must be held externally."""
 
 import json
@@ -46,12 +50,15 @@ def main() -> None:
     if (
         os.environ.get("GITHUB_REPOSITORY") != REPO
         or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"
+        or os.environ.get("GITHUB_REF") != "refs/heads/bootstrap/one-shot-650-update"
         or os.environ.get("GITHUB_ACTOR") != "helmut-hoffer-von-ankershoffen"
         or not os.environ.get("REVIEWED_HELPER_SHA")
         or os.environ.get("GITHUB_SHA") != os.environ["REVIEWED_HELPER_SHA"]
     ):
         msg = "unreviewed helper or unexpected execution context"
         raise ValueError(msg)
+    msg = "ref update held until writer serialization is independently enforced"
+    raise ValueError(msg)
     snapshot(OLD)
     comparison = api(f"compare/{OLD}...{NEW}")
     if comparison.get("status") != "ahead" or comparison.get("base_commit", {}).get("sha") != OLD:

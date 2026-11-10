@@ -42,20 +42,22 @@ class TestUpdateRef:
         env = {
             "GITHUB_REPOSITORY": updater.REPO,
             "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_REF": "refs/heads/bootstrap/one-shot-650-update",
             "GITHUB_ACTOR": "helmut-hoffer-von-ankershoffen",
             "GITHUB_SHA": "reviewed",
             "REVIEWED_HELPER_SHA": "reviewed",
         }
         with patch.dict(os.environ, env, clear=True), patch.object(updater, "api", api):
             if drift:
-                with pytest.raises(ValueError, match="drift"):
+                with pytest.raises(ValueError, match="held until writer serialization"):
                     updater.main()
             else:
                 updater.main()
         return state["writes"]
 
-    def test_fast_forward(self):
-        assert self.exercise() == [("--method", "PATCH", "-f", f"sha={updater.NEW}", "-F", "force=false")]
+    def test_update_is_held_until_serialization_is_enforced(self):
+        with pytest.raises(ValueError, match="held until writer serialization"):
+            self.exercise()
 
-    def test_drift_never_writes(self):
+    def test_hold_prevents_write_when_base_drifts(self):
         assert self.exercise(drift=True) == []
