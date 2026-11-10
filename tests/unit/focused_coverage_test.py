@@ -194,10 +194,12 @@ def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
         "PYTHONPATH": os.pathsep.join((str(REPO), str(tmp_path))),
         "COVERAGE_FILE": str(tmp_path / ".coverage"),
         "PYTEST_ADDOPTS": "",
+        # The disposable probe needs real xdist, not unrelated installed pytest plugins.
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
     }
     run = [sys.executable, "-m", "coverage"]
     subprocess.run(
-        [*run, "run", f"--rcfile={config}", "-m", "pytest", "-n", "2", "-q", str(probe)],
+        [*run, "run", f"--rcfile={config}", "-m", "pytest", "-p", "xdist.plugin", "-n", "2", "-q", str(probe)],
         cwd=tmp_path,
         env=env,
         check=True,
