@@ -57,7 +57,7 @@ def daemon_state(kernel: Kernel) -> DaemonState | None:
     )
 
 
-def _report(kernel: Kernel) -> tuple[Status, list[str]] | None:
+def _report(kernel: Kernel) -> tuple[Status, list[str], set[str]] | None:
     """Doctor's status and the checks that aren't up (`<module>: <check>`); None if it can't run.
 
     It runs through the kernel: modules don't import each other.
@@ -75,11 +75,17 @@ def _report(kernel: Kernel) -> tuple[Status, list[str]] | None:
         for check in checks
         if check.status is not Status.UP and qualname != "system.notify"
     )
-    return report.status, problems
+    up = {
+        f"{qualname}: {check.name}"
+        for qualname, checks in report.checks.items()
+        for check in checks
+        if check.status is Status.UP and qualname != "system.notify"
+    }
+    return report.status, problems, up
 
 
 def doctor_problems(kernel: Kernel) -> set[str] | None:
-    """The checks that aren't up now, for a doctor notice's `checks_up`; None if doctor can't tell."""
+    """The checks explicitly up now, for a doctor notice's `checks_up`; None if doctor can't tell."""
     try:
         found = _report(kernel)
     except Exception as exc:  # noqa: BLE001 - any doctor failure resolves nothing; logged with its traceback
@@ -94,7 +100,7 @@ def doctor_problems(kernel: Kernel) -> set[str] | None:
             error_type=type(exc).__name__,
         )
         return None
-    return None if found is None else set(found[1])
+    return None if found is None else found[2]
 
 
 def _doctor(kernel: Kernel, notifications: Notifications) -> int:
@@ -102,7 +108,7 @@ def _doctor(kernel: Kernel, notifications: Notifications) -> int:
     found = _report(kernel)
     if found is None:
         return 0
-    status, problems = found
+    status, problems, _ = found
     if status is Status.UP or not problems:
         return 0
     down = status is Status.DOWN

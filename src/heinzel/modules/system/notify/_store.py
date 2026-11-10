@@ -40,7 +40,7 @@ _CONDITION_OPERATION = "system.notify:condition_v1"
 def _stored_notice(notice: Notice) -> Notice:
     """Keep new check conditions inside a condition understood by older strict stores."""
     condition = notice.resolve_when
-    if condition is None or condition.checks_up is None:
+    if condition is None or (condition.checks_up is None and condition.plugins_installed is None):
         return notice
     payload = condition.model_dump_json(exclude_none=True)
     envelope = ResolveWhen(capability=CapabilityState(operation=_CONDITION_OPERATION, field="payload", equals=payload))
@@ -49,8 +49,18 @@ def _stored_notice(notice: Notice) -> Notice:
 
 def _loaded_notice(notice: Notice) -> Notice:
     condition = notice.resolve_when
-    capability = condition.capability if condition is not None else None
-    if capability is None or capability.operation != _CONDITION_OPERATION or capability.field != "payload":
+    if (
+        condition is None
+        or (capability := condition.capability) is None
+        or capability.operation != _CONDITION_OPERATION
+        or capability.field != "payload"
+    ):
+        return notice
+    if (
+        condition.installed_version_at_least is not None
+        or condition.plugins_installed is not None
+        or condition.checks_up is not None
+    ):
         return notice
     if not isinstance(capability.equals, str):
         return notice
@@ -58,7 +68,7 @@ def _loaded_notice(notice: Notice) -> Notice:
         decoded = ResolveWhen.model_validate_json(capability.equals)
     except (ValidationError, ValueError):
         return notice
-    if decoded.checks_up is None:
+    if decoded.checks_up is None and decoded.plugins_installed is None:
         return notice
     return notice.model_copy(update={"resolve_when": decoded})
 

@@ -112,6 +112,7 @@ class ResolveWhen(BaseModel):
     )
     plugins_installed: tuple[Annotated[str, StringConstraints(pattern=DISTRIBUTION)], ...] | None = Field(
         default=None,
+        exclude_if=lambda value: value is None,
         min_length=1,
         max_length=16,
         description="Holds once every plugin distribution named is installed on this machine (on disk).",

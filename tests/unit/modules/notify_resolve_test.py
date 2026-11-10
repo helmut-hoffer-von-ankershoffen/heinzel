@@ -153,7 +153,7 @@ def test_unknown_or_invalid_condition_envelope_is_preserved_and_never_resolves(s
 
 def test_background_health_resolution_respects_consent_and_hourly_limit(service, clock):
     calls = []
-    service.problems = lambda: calls.append(1) or {"sample: network"}
+    service.problems = lambda: calls.append(1) or set()
     assert doctor(service, ["sample: network"])
     service.settings = service.settings.model_copy(update={"doctor": False})
     service.post_native()
@@ -333,7 +333,7 @@ def doctor(service: NotifyService, problems: list[str], *, condition: bool = Tru
 
 @pytest.mark.parametrize("condition", [True, False], ids=["with condition", "recorded before conditions"])
 def test_a_doctor_notice_disappears_once_its_checks_are_up_again(service, condition):
-    failing: set[str] | None = {"system.credential: weather/api-key", "org: calendar"}
+    failing: set[str] | None = {"org: calendar"}
     asked: list[int] = []
 
     def problems() -> set[str] | None:
@@ -347,7 +347,7 @@ def test_a_doctor_notice_disappears_once_its_checks_are_up_again(service, condit
     assert service.resolve() == 0
     failing = None  # doctor can't tell: nothing resolves
     assert service.resolve() == 0
-    failing = {"org: calendar"}  # another check is still degraded; the named one is up
+    failing = {"system.credential: weather/api-key"}  # only explicitly UP checks resolve
     asked.clear()
     assert service.resolve() == 1
     assert asked == [1]
@@ -383,13 +383,13 @@ def test_provider_exception_does_not_resolve_its_named_check(service, make_kerne
 
 
 def test_a_recurring_fault_creates_a_new_visible_notice(service):
-    failing = {"sample: network"}
+    failing: set[str] = set()
     service.problems = lambda: failing
     first = doctor(service, ["sample: network"])
     assert first is not None
-    failing.clear()
-    assert service.resolve() == 1
     failing.add("sample: network")
+    assert service.resolve() == 1
+    failing.clear()
     second = doctor(service, ["sample: network"])
     assert second is not None
     assert second.id != first.id
@@ -421,7 +421,7 @@ def test_plugin_and_doctor_conditions_compose_without_extra_doctor_probes(servic
     assert asked == []  # disk-only conditions still hide immediately
     assert service.resolve() == 1  # the plugin is installed, but doctor cannot answer
     assert asked == [1]  # two unresolved doctor notices share the unavailable result
-    failing = set()
+    failing = {"org: calendar", "system.daemon: jobs"}
     assert service.resolve() == 2
     assert asked == [1, 1]
     failing = {"org: calendar", "system.daemon: jobs"}
@@ -435,7 +435,7 @@ def test_the_doctor_watcher_attaches_its_checks_as_the_condition(service, make_k
 
     monkeypatch.setattr(
         "heinzel.modules.system.notify._watch._report",
-        lambda kernel: (Health.DEGRADED, ["system.credential: weather/api-key"]),
+        lambda kernel: (Health.DEGRADED, ["system.credential: weather/api-key"], set()),
     )
     assert watch(make_kernel(), service, {NoticeKind.DOCTOR}) == 1
     (notice,) = service.listing(50).notices
@@ -496,17 +496,17 @@ def test_a_malformed_doctor_key_never_resolves(key):
 def test_the_doctor_watcher_reports_nothing_without_a_failing_check(service, make_kernel, monkeypatch, status):
     from heinzel import Status as Health
 
-    monkeypatch.setattr("heinzel.modules.system.notify._watch._report", lambda kernel: (Health(status), []))
+    monkeypatch.setattr("heinzel.modules.system.notify._watch._report", lambda kernel: (Health(status), [], set()))
     assert watch(make_kernel(), service, {NoticeKind.DOCTOR}) == 0
     assert service.listing(50).notices == []
 
 
 def test_resolving_a_doctor_notice_logs_one_structured_event(service, caplog):
-    failing: set[str] = {"system.daemon: jobs"}
+    failing: set[str] = set()
     service.problems = lambda: failing
     notice = doctor(service, ["system.daemon: jobs"])
     assert notice is not None
-    failing = set()
+    failing = {"system.daemon: jobs"}
     with caplog.at_level("INFO", logger="heinzel.system.notify"):
         assert service.resolve() == 1
         assert service.resolve() == 0  # already resolved: no second event
@@ -533,3 +533,55 @@ def test_a_failing_doctor_probe_resolves_nothing_and_logs_the_error(service, mak
     assert event.outcome == "error"
     assert event.error_type == "RuntimeError"
     assert event.exc_info is not None
+
+
+def test_noncanonical_envelope_with_sibling_is_never_decoded_or_resolved(service):
+    payload = ResolveWhen(checks_up=["sample: network"]).model_dump_json(exclude_none=True)
+    when = ResolveWhen(
+        capability=CapabilityState(operation="system.notify:condition_v1", field="payload", equals=payload),
+        installed_version_at_least="0.9.28",
+    )
+    notice = service.emit(
+        NoticeKind.DOCTOR, "degraded", "", route="/doctor", command="hz system doctor", key="mixed", resolve_when=when
+    )
+    assert notice
+    assert service.store.read()[0].resolve_when == when
+    assert _resolve.holds(when, "999.0", lambda capability: True, lambda: {"sample: network"}) is None
+
+
+def test_missing_provider_or_check_does_not_resolve_notice(service, make_kernel):
+    from heinzel import Check, Status
+    from heinzel.modules.system.doctor import module as doctor_module
+    from heinzel.modules.system.notify._watch import doctor_problems
+
+    provider = Module("sample", "Sample health provider.")
+    reported = {"name": "other"}
+
+    @provider.health
+    def health() -> list[Check]:
+        return [Check(name=reported["name"], status=Status.UP, detail="connected")]
+
+    missing = make_kernel(system__doctor=doctor_module)
+    service.problems = lambda: doctor_problems(missing)
+    assert doctor(service, ["sample: network"])
+    assert service.resolve() == 0
+    present = make_kernel(system__doctor=doctor_module, sample=provider)
+    service.problems = lambda: doctor_problems(present)
+    assert service.resolve() == 0
+    reported["name"] = "network"
+    assert service.resolve() == 1
+
+
+def test_plugin_only_condition_uses_legacy_compatible_envelope(service):
+    class OldCondition(BaseModel, extra="forbid"):
+        installed_version_at_least: str | None = None
+        capability: CapabilityState | None = None
+
+    when = ResolveWhen(plugins_installed=("example",))
+    assert service.emit(NoticeKind.PLUGIN, "needed", "", route="/", command="hz", key="plugin-only", resolve_when=when)
+    raw = json.loads(service.store.path.read_text())
+    old = OldCondition.model_validate(raw[0]["resolve_when"])
+    assert old.capability.operation == "system.notify:condition_v1"
+    raw[0]["resolve_when"] = old.model_dump(mode="json")
+    service.store.path.write_text(json.dumps(raw))
+    assert service.store.read()[0].resolve_when == when

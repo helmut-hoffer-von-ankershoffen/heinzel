@@ -25,7 +25,7 @@ DOCTOR_KEY = "doctor:"
 CapabilityProbe = Callable[[CapabilityState], bool | None]
 """Whether a capability is in the state named; None when it can't tell, which never resolves a notice."""
 ProblemsProbe = Callable[[], set[str] | None]
-"""The health checks that aren't up now (`<module>: <check>`); None when doctor can't tell, which resolves nothing."""
+"""The checks explicitly up (`<module>: <check>`); None when doctor cannot tell, which resolves nothing."""
 
 
 def installed_version() -> str:
@@ -96,11 +96,9 @@ def holds(
             return None
         reasons.append(f"{', '.join(plugins)} {'is' if len(plugins) == 1 else 'are'} installed")
     if (checks := when.checks_up) is not None:
-        failing = problems() if problems is not None else None
-        # Doctor represents an exception from a provider as `<module>: checks` DOWN.  Its individual
-        # checks are unknown, not UP, until the provider answers again.
-        provider_failures = {f"{check.partition(': ')[0]}: checks" for check in checks}
-        if failing is None or failing & (set(checks) | provider_failures):
+        up = problems() if problems is not None else None
+        # Absence, including a failed or removed provider, is unknown rather than healthy.
+        if up is None or not set(checks) <= up:
             return None
         reasons.append(f"{', '.join(checks)} {'is' if len(checks) == 1 else 'are'} up again")
     return "; ".join(reasons) or None
