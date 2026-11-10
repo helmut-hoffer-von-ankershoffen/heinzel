@@ -4,12 +4,14 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { shellBuild } from "./src/pwa/shellBuild";
 
 const api = process.env.HZ_API_PORT;
 const vite = "http://localhost:5173";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  // shellBuild stamps public/sw.js with the build's id: a new build is a new worker with a fresh shell cache.
+  plugins: [react(), tailwindcss(), shellBuild()],
   resolve: { alias: { "@": new URL("./src", import.meta.url).pathname } },
   build: {
     outDir: "../src/heinzel/heads/web/static",
