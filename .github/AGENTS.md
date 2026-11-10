@@ -16,18 +16,19 @@ native, browser, Electron and release-acceptance coverage and its limits. Linux 
 
 Constraints per workflow:
 
-- `ci.yml`: `CI OK` gates merging. PR portable tests run on Linux with Python oldest and newest plus real
-  `macOS smoke`. Native/platform and unknown changes retain macOS setup, end-to-end and Electron checks, with failures
-  blocking. The full matrix runs on main, daily and dispatch; every scheduled macOS job blocks `CI OK`, except the
-  quarantine lane: `Quarantine (<os>)` runs only the tests in `tests/quarantine.toml` (at most 8, each at most 7 days,
-  with a bead), retries and reports them, and is not in `CI OK`; the required `Quarantine registry` job fails on an
-  entry past its `until`. Never add another job outside `CI OK`. A failing cheap check cancels the rest of
-  a same-repository pull request's run as soon as it completes; fork PRs finish normally with read-only tokens. Every main
-  commit keeps its own CI run, and a release PR's (head `release/*`) run is never cancelled. Explicit queue proofs may
-  delegate intermediate commits to one uncancellable final full run with the aggregate base. Unknown proof runs full CI; admissions never claim CI OK or full-suite greens.
-- `merge-gate.yml`: runs on `workflow_run` once a PR's CI finishes (no runner held while CI runs) from the default
-  branch, never checks out PR code, and reports the required `merge-gate` and `coverage-floor` check runs on the PR
-  head; a gate that did not pass or did not run fails closed.
+- `ci.yml`: `CI OK` gates merging. Ordinary PRs, main pushes, schedules and noncandidate dispatches require an
+  independently reviewed focused scope for the exact tested tree. A missing scope fails closed and asks for a reviewed
+  manifest. The full Python, browser, native, build and coverage matrix runs only for a canonical release candidate.
+  A failing cheap check still cancels same-repository PR runs. Fork jobs keep read-only permissions. Main pushes keep
+  individual runs and a canonical release PR run is never cancelled by a newer event. Batch proof may delegate
+  intermediate commits to the final focused integration run with the exact aggregate base. The required
+  `Quarantine registry` job rejects expired entries. The candidate's separate advisory quarantine lane still runs.
+- `merge-gate.yml`: the protected default-branch workflow runs after PR CI completes. It fetches candidate Git objects
+  as data and never checks them out or executes them. It reports the required `merge-gate` and `coverage-floor` contexts.
+  Sonar's current PR and project quality gates and all three A ratings still apply. Scoped Python coverage preserves
+  the 90 percent report threshold and 80 percent floor over executable statements and branches in all reviewed
+  affected production files. This includes files that never ran. Whole-project coverage remains a release-candidate
+  gate. A web-only production change has separate owning tests and no Python percentage.
 - `update-prs.yml`: core keeps tested PR heads for the merge queue; plugin repositories update behind branches and
   approve the resulting CI runs. Closed code-scanning threads are resolved in both.
 - `acceptance.yml`: `contents: read`, no secrets, publishes nothing; uploads `result.json`, which promotion reads. A
@@ -48,3 +49,35 @@ Constraints per workflow:
 - `fuzz.yml`: core only. `claude-review.yml`: opt-in (`vars.CLAUDE_REVIEW`).
 - `docs.yml`: deploys to GitHub Pages when the repository is public or `vars.DOCS_PAGES` is `true`, else keeps an
   artifact (ADR 0082).
+
+
+### Reviewed focused plans
+
+`FOCUSED_CI_PLANS` is the administrator-controlled, size-bounded JSON registry. Publish an entry only after
+independent source and scope review. Its key is `<event>:<head>`. Its value has these fields.
+
+- `schema` is 1. `event`, `ref`, `base`, `head` and `tree` bind the exact workload. Before opening a PR, use
+  `refs/pull/*/merge` as its planning ref and compute the expected tree with `git merge-tree --write-tree BASE HEAD`.
+  CI independently binds the real PR number and test merge with ordered parents `[base, head]`. Evidence records
+  the actual tested merge commit. Provide an optional exact `commit` only when the GitHub merge SHA already exists.
+- `diff_sha256` is the SHA-256 of `git diff-tree --no-commit-id -r --raw --no-abbrev --no-renames -z BASE TREE`.
+  `changed` is its complete path-to-status map. Rename halves are reviewed as deletion and addition.
+- `production` maps every changed and explicitly affected covered Python file to its Git blob ID in that tree.
+  `mode` is `pr-scoped` when that map is nonempty, or `python-coverage-not-applicable` for a separately
+  reviewed scope with no applicable Python coverage. `config_blob` is the tested `pyproject.toml` Git blob.
+- `execution` maps the producer inputs in `scripts/focused_plan.py` to exact tested Git blobs. `selection` maps the
+  supported lane names to owning test files or exact node IDs. `case_sha256` maps each lane to the digest of the
+  compact sorted JSON array of its expected JUnit `[classname, name]` pairs. Review affected integration and
+  native boundaries separately from the Python coverage denominator.
+
+Run `python3 -I scripts/focused_plan.py --suggest BASE` in the checkout to get the advisory affected-selector
+result. The selector's full or broad recommendations request an explicit bounded plan. They never schedule tests.
+The protected judge replays the detached plan and checks the actual first attempt, job suite, uploaded artifact
+identity and digest, exact case inventory, and source opportunities. The administrator provisions
+`FOCUSED_CI_STORAGE_HOSTS` as the exact comma-separated artifact redirect hosts. A redirect never carries the API
+token. The focused integration verifier takes the expected aggregate base from the queue and emits
+`focused-main/v1` evidence for the exact current main run. The queue still checks that base and the tested PR source.
+
+The existing release source policy reviews and pins the candidate workflow and recorder before candidate use.
+The canonical path also needs hosted qualification of job identities, artifact reads, required checks and queue
+freshness before activation.
