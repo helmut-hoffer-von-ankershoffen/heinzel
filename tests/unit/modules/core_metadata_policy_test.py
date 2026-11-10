@@ -22,7 +22,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.mark.parametrize("count", [12, 240])
 def test_large_installed_module_catalog_stays_discoverable_within_chat_budget(
-    make_kernel, tmp_path, count, record_property
+    make_kernel, tmp_path, count, record_testsuite_property
 ):
     class Calendar:
         def events(self, window):
@@ -41,7 +41,8 @@ def test_large_installed_module_catalog_stays_discoverable_within_chat_budget(
     ordinary = [row.model_dump(mode="json") for row in service.modules()]
     ordinary_bytes = len(json.dumps(ordinary, ensure_ascii=False, separators=(",", ":")).encode())
     assert ordinary_bytes > 16_000
-    record_property("administrative_result_bytes", ordinary_bytes)
+    # Suite properties support xUnit2; include the catalog size to identify each case.
+    record_testsuite_property(f"administrative_result_bytes[{count}]", ordinary_bytes)
     current = CurrentUser(tmp_path / "identity")
     kernel.bind(CurrentUser, current)
     with current.local("cli"):
@@ -71,8 +72,8 @@ def test_large_installed_module_catalog_stays_discoverable_within_chat_budget(
             text = catalog.invoke(grant, "system:modules", {}, turn_writer=writer)
             assert len(text.encode("utf-8")) <= 16_000
             result = json.loads(text)
-            record_property("chat_result_bytes", len(text.encode("utf-8")))
-            record_property("omitted_modules", result["omitted_modules"])
+            record_testsuite_property(f"chat_result_bytes[{count}]", len(text.encode("utf-8")))
+            record_testsuite_property(f"omitted_modules[{count}]", result["omitted_modules"])
             assert result["total_modules"] == len(ordinary)
             assert len(result["modules"]) + result["omitted_modules"] == len(ordinary)
             assert result["full_listing"] == "hz system modules --json"
