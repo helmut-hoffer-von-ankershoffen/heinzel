@@ -1,10 +1,13 @@
 """A partial or forged batch must never suppress a full main suite."""
 
 import importlib.util
+import sys
 from copy import deepcopy
 from pathlib import Path
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 SPEC = importlib.util.spec_from_file_location(
     "main_batch", Path(__file__).resolve().parents[2] / "scripts/main_batch.py"
@@ -15,6 +18,44 @@ batch = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(batch)
 pytestmark = pytest.mark.unit
 BASE, FIRST, FINAL = "a" * 40, "b" * 40, "c" * 40
+
+
+def test_release_delegation_uses_verified_candidate_and_fails_closed(monkeypatch):
+    head, tree = "d" * 40, "e" * 40
+    rows = {
+        f"commits/{FINAL}": {
+            "sha": FINAL,
+            "commit": {"message": "chore(release): v0.9.35 (#693)", "tree": {"sha": tree}},
+        },
+        f"commits/{FINAL}/pulls?per_page=100": [{"number": 693, "merge_commit_sha": FINAL}],
+        "pulls/693": {"title": "chore(release): v0.9.35", "head": {"sha": head}},
+        f"commits/{head}/check-runs?check_name=coverage-floor&per_page=100": {
+            "total_count": 1,
+            "check_runs": [
+                {
+                    "name": "coverage-floor",
+                    "head_sha": head,
+                    "status": "completed",
+                    "conclusion": "success",
+                    "app": {"id": 15368},
+                }
+            ],
+        },
+    }
+    seen = []
+    monkeypatch.setattr(batch.release_candidate, "discover", lambda get, h: 99)
+
+    def verify(_get, _download, expected, pins):
+        seen.append((expected, pins))
+        return {"base": BASE}
+
+    monkeypatch.setattr(batch.release_candidate, "verify", verify)
+    result = batch.release_proof_for(FINAL, rows.__getitem__, lambda _: b"", batch.RELEASE_PINS)
+    assert result == {"run": 99, "base": BASE, "head": head, "tree": tree, "pr": 693}
+    assert seen[0][0].merged_sha == FINAL
+    rows[f"commits/{head}/check-runs?check_name=coverage-floor&per_page=100"]["check_runs"][0]["conclusion"] = "failure"
+    with pytest.raises(batch.release_candidate.CandidateError):
+        batch.release_proof_for(FINAL, rows.__getitem__, lambda _: b"", batch.RELEASE_PINS)
 
 
 @pytest.fixture

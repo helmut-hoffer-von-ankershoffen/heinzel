@@ -70,6 +70,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --no-build --script scripts/main_batch.py": "read-only bounded admission of an explicit main batch",
         "echo 'The validated aggregate base": "records that the final run consumed the aggregate base",
         'echo "Full CI is recorded': "links the intermediate admission to its exact final run",
+        'echo "Full release candidate CI is recorded': (
+            "links the verified release candidate without claiming a full main run"
+        ),
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
             "the secret must be configured in this repo"
         ),

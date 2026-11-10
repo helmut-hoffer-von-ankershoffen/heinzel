@@ -37,6 +37,7 @@ DIGEST = re.compile(r"[0-9a-f]{64}")
 MAX_JOBS = 1000
 MAX_PROOF = 64 * 1024
 CONSUMERS = ("atlassian", "clock", "example", "github", "google", "resource", "tailscale", "theme", "weather", "zoom")
+LEGACY_WORKFLOW = "2ab124821108a4c6795627d33e70e871b1ee93e5f6f5ff8b57e331c98e1779ef"
 
 
 class CandidateError(ValueError):
@@ -61,6 +62,7 @@ class ExpectedCandidate:
     pr_number: int
     head: str
     tree: str
+    merged_sha: str | None = None
 
 
 def command(argv: list[str]) -> bytes:
@@ -164,7 +166,7 @@ def record(root: Path) -> dict[str, Any]:
     }
 
 
-def expected_jobs(event: str) -> dict[str, str]:
+def expected_jobs(event: str, *, release_delegation: bool = True) -> dict[str, str]:
     """Name the complete reviewed full-candidate workload, including all twelve Python and eight E2E cells."""
     require(event in ("pull_request", "workflow_dispatch"), "unsupported candidate event")
     success = {
@@ -210,6 +212,8 @@ def expected_jobs(event: str) -> dict[str, str]:
             for name in ("commits", "dependency-review", "secrets", "audit", "setup", "lint")
         ],
     }
+    if release_delegation:
+        skipped.add("Release candidate delegated to ${{ needs.admission.outputs.run }}")
     (success if event == "pull_request" else skipped).update(("Conventional commits", "Dependency review"))
     return dict.fromkeys(success, "success") | dict.fromkeys(skipped, "skipped")
 
@@ -325,11 +329,26 @@ def validate(evidence: dict[str, Any], expected: ExpectedCandidate, approved_sou
     require(run.get("head_sha") == expected_head, "candidate run is not the exact expected head")
     require(
         pr.get("number") == expected.pr_number
-        and pr.get("state") == "open"
         and pr.get("draft") is False
         and pr.get("head", {}).get("sha") == expected_head,
-        "release PR is no longer the expected open head",
+        "release PR head changed",
     )
+    if expected.merged_sha is None:
+        require(pr.get("state") == "open", "release PR is no longer open")
+    else:
+        merged = evidence.get("merge", {})
+        require(
+            event == "pull_request"
+            and valid_sha(expected.merged_sha)
+            and pr.get("state") == "closed"
+            and pr.get("merged") is True
+            and pr.get("merged_at")
+            and pr.get("merge_commit_sha") == expected.merged_sha
+            and merged.get("sha") == expected.merged_sha
+            and [parent.get("sha") for parent in merged.get("parents", [])] == [proof.get("base")]
+            and merged.get("commit", {}).get("tree", {}).get("sha") == expected_tree,
+            "merged release identity, parent or tree differs",
+        )
     version = release_version("pull_request", REPOSITORY, "", {"pull_request": pr})
     require(version and run.get("head_branch") == f"release/v{version}", "candidate branch/title is not canonical")
     require(
@@ -366,7 +385,7 @@ def validate(evidence: dict[str, Any], expected: ExpectedCandidate, approved_sou
             "dispatch source differs from the exact release head",
         )
     jobs = quarantine_lane(jobs, run["id"], expected_head)
-    inventory = expected_jobs(event)
+    inventory = expected_jobs(event, release_delegation=approved_sources[WORKFLOW] != LEGACY_WORKFLOW)
     require(
         len(jobs) == len(inventory) and {job.get("name") for job in jobs} == set(inventory),
         "missing, extra or short-matrix candidate jobs",
@@ -512,8 +531,11 @@ def verify(
             "executed CI source differs from independent review",
         )
     require(get(f"actions/runs/{run_id}") == run, "candidate run changed during evidence collection")
+    evidence = {"run": run, "jobs": inventory, "proof": proof, "pr": pr, "source": source, "head": head}
+    if expected.merged_sha is not None:
+        evidence["merge"] = get(f"commits/{expected.merged_sha}")
     return validate(
-        {"run": run, "jobs": inventory, "proof": proof, "pr": pr, "source": source, "head": head},
+        evidence,
         expected,
         approved_sources,
     )

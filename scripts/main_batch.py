@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlsplit
 
+import release_candidate
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -33,6 +35,105 @@ SHA = re.compile(r"[0-9a-f]{40}")
 MIN_BATCH, MAX_BATCH, MEMBER_FIELDS, MAX_URL = 2, 5, 2, 1800
 INTENT_SECONDS = 180
 GRACE_SECONDS = 5
+PULL_PAGE_LIMIT = 100
+ACTIONS_APP_ID = 15368
+RELEASE_PINS = {
+    ".github/workflows/ci.yml": "2ab124821108a4c6795627d33e70e871b1ee93e5f6f5ff8b57e331c98e1779ef",
+    "scripts/release_candidate.py": "49c2b354fb84aa6139dc801243082e04275fa4d9b63c278cc7121b76a08149ca",
+}
+
+
+def _candidate_job_reader(get: Callable[[str], Any]) -> Callable[[str], Any]:
+    """Exclude only the Actions app's API-posted aggregate checks after complete job pagination."""
+    pattern = re.compile(r"actions/runs/([1-9][0-9]*)/attempts/1/jobs\?per_page=100&page=([1-9][0-9]*)")
+
+    def read(path: str) -> Any:  # noqa: ANN401
+        match = pattern.fullmatch(path)
+        if not match:
+            return get(path)
+        release_candidate.require(match.group(2) == "1", "unexpected filtered job page")
+        run_id = int(match.group(1))
+        jobs = release_candidate.job_inventory(get, run_id)
+
+        def api_check(job: dict[str, Any]) -> bool:
+            return (
+                job.get("name") in {"merge-gate", "coverage-floor"}
+                and type(job.get("id")) is int
+                and job.get("runner_id") is None
+                and job.get("runner_name") is None
+                and job.get("steps") == []
+                and job.get("labels") == []
+                and job.get("run_id") == run_id
+                and job.get("html_url") == f"https://github.com/{REPOSITORY}/runs/{job['id']}"
+                and "/actions/runs/" not in str(job.get("check_run_url", ""))
+            )
+
+        rows = [job for job in jobs if not api_check(job)]
+        return {"total_count": len(rows), "jobs": rows}
+
+    return read
+
+
+def release_proof_for(
+    sha: str, get: Callable[[str], Any], download: Callable[[int], bytes], approved_sources: dict[str, str]
+) -> dict[str, Any] | None:
+    """Return candidate evidence for a canonical merged release; recognized invalid releases fail closed."""
+    release_candidate.require(bool(SHA.fullmatch(sha)), "invalid main commit")
+    merge = get(f"commits/{sha}")
+    release_candidate.require(isinstance(merge, dict) and merge.get("sha") == sha, "main commit unavailable")
+    message = merge.get("commit", {}).get("message", "").split("\n", 1)[0]
+    associated = get(f"commits/{sha}/pulls?per_page=100")
+    release_candidate.require(
+        isinstance(associated, list) and len(associated) < PULL_PAGE_LIMIT, "ambiguous associated pull requests"
+    )
+    if not message.startswith("chore(release): v"):
+        release_candidate.require(
+            not any(
+                str(pr.get("title", "")).startswith("chore(release): v") and pr.get("merge_commit_sha") == sha
+                for pr in associated
+            ),
+            "recognized release has a noncanonical merge message",
+        )
+        return None
+    matched = re.fullmatch(
+        r"chore\(release\): v((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)) \(#([1-9][0-9]*)\)", message
+    )
+    release_candidate.require(matched, "recognized release has no canonical PR identity")
+    number = int(matched[2])
+    release_candidate.require(
+        len(associated) == 1 and associated[0].get("number") == number and associated[0].get("merge_commit_sha") == sha,
+        "release merge PR association differs",
+    )
+    pr = get(f"pulls/{number}")
+    release_candidate.require(pr.get("title") == f"chore(release): v{matched[1]}", "release PR title differs")
+    head = pr.get("head", {}).get("sha")
+    tree = merge.get("commit", {}).get("tree", {}).get("sha")
+    release_candidate.require(
+        release_candidate.valid_sha(head) and release_candidate.valid_sha(tree), "release identity missing"
+    )
+    checks = get(f"commits/{head}/check-runs?check_name=coverage-floor&per_page=100")
+    release_candidate.require(
+        isinstance(checks, dict) and checks.get("total_count") == 1 and len(checks.get("check_runs", [])) == 1,
+        "coverage floor evidence missing or ambiguous",
+    )
+    check = checks["check_runs"][0]
+    release_candidate.require(
+        check.get("name") == "coverage-floor"
+        and check.get("head_sha") == head
+        and check.get("status") == "completed"
+        and check.get("conclusion") == "success"
+        and check.get("app", {}).get("id") == ACTIONS_APP_ID,
+        "coverage floor did not pass on release head",
+    )
+    reader = _candidate_job_reader(get)
+    run_id = release_candidate.discover(reader, head)
+    proof = release_candidate.verify(
+        reader,
+        download,
+        release_candidate.ExpectedCandidate(run_id, number, head, tree, merged_sha=sha),
+        approved_sources,
+    )
+    return {"run": run_id, "base": proof["base"], "head": head, "tree": tree, "pr": number}
 
 
 def proof_url(base: str, prs: list[list[int | str]], run_id: int) -> str:
@@ -354,7 +455,20 @@ def main() -> None:
             )
             return json.loads(done.stdout)
 
-        result = admit(os.environ["GITHUB_SHA"], get, seconds=180)
+        def download(artifact_id: int) -> bytes:
+            return subprocess.run(  # noqa: S603
+                ["gh", "api", f"repos/{REPOSITORY}/actions/artifacts/{artifact_id}/zip"],  # noqa: S607
+                capture_output=True,
+                check=True,
+                timeout=max(0.001, min(30, deadline - time.monotonic())),
+            ).stdout
+
+        release = release_proof_for(os.environ["GITHUB_SHA"], get, download, RELEASE_PINS)
+        result = (
+            {"full": False, "base": release["base"], "run": release["run"], "kind": "release"}
+            if release
+            else admit(os.environ["GITHUB_SHA"], get, seconds=180)
+        )
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as handle:
         for key, value in result.items():
             print(f"{key}={str(value).lower() if isinstance(value, bool) else value}", file=handle)

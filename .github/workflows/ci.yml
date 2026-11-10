@@ -38,12 +38,14 @@ jobs:
     permissions:
       contents: read
       actions: read
+      checks: read
       statuses: read
       pull-requests: read
     outputs:
       full: ${{ steps.batch.outputs.full }}
       base: ${{ steps.batch.outputs.base }}
       run: ${{ steps.batch.outputs.run }}
+      kind: ${{ steps.batch.outputs.kind }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,7 +75,7 @@ jobs:
       contents: read
     name: Main batch delegated to ${{ needs.admission.outputs.run }}
     needs: admission
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.admission.outputs.full == 'false'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.admission.outputs.full == 'false' && needs.admission.outputs.kind != 'release'
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
@@ -81,6 +83,20 @@ jobs:
         env:
           FINAL_RUN: ${{ needs.admission.outputs.run }}
         run: echo "Full CI is recorded by final main run $FINAL_RUN" >> "$GITHUB_STEP_SUMMARY"
+
+  release-delegated:
+    permissions:
+      contents: read
+    name: Release candidate delegated to ${{ needs.admission.outputs.run }}
+    needs: admission
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.admission.outputs.full == 'false' && needs.admission.outputs.kind == 'release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Record the independently verified release candidate
+        env:
+          CANDIDATE_RUN: ${{ needs.admission.outputs.run }}
+        run: echo "Full release candidate CI is recorded by run $CANDIDATE_RUN; this is not a full main CI run." >> "$GITHUB_STEP_SUMMARY"
 
   changes:
     permissions:

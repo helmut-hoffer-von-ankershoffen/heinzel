@@ -101,6 +101,21 @@ def validate(value):
     return candidate.validate(value, candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), PINS)
 
 
+def test_merged_release_mode_binds_real_merge_parent_and_tree():
+    value = evidence()
+    value["pr"].update(state="closed", merged=True, merged_at="2026-01-01T01:00:00Z", merge_commit_sha=MERGE)
+    value["merge"] = {"sha": MERGE, "parents": [{"sha": BASE}], "commit": {"tree": {"sha": TREE}}}
+    expected = candidate.ExpectedCandidate(RUN, PR, HEAD, TREE, merged_sha=MERGE)
+    assert candidate.validate(value, expected, PINS)["run_id"] == RUN
+    for key, invalid in (("parents", []), ("sha", HEAD), ("commit", {"tree": {"sha": HEAD}})):
+        altered = copy.deepcopy(value)
+        altered["merge"][key] = invalid
+        with pytest.raises(candidate.CandidateError):
+            candidate.validate(altered, expected, PINS)
+    with pytest.raises(candidate.CandidateError):
+        validate(value)  # the existing open-PR verifier must not accept merged evidence
+
+
 @pytest.mark.parametrize("event", ["pull_request", "workflow_dispatch"])
 def test_complete_genuine_full_candidate_preserves_event_source_and_wall_clock(event):
     value = evidence(event)
@@ -112,7 +127,7 @@ def test_complete_genuine_full_candidate_preserves_event_source_and_wall_clock(e
     assert result["workflow_wall_seconds"] == 900
     assert result["event"] == event
     assert value == original
-    assert len(value["jobs"]) == 68
+    assert len(value["jobs"]) == 69
     assert len([j for j in value["jobs"] if j["name"].startswith("Test (")]) == 16
     assert len([j for j in value["jobs"] if j["name"].startswith("End-to-end ")]) == 8
 
@@ -274,7 +289,10 @@ def test_verification_uses_unique_same_run_artifact_reviewed_sources_and_termina
         calls.append(path)
         mapping = {
             f"actions/runs/{RUN}": data["run"],
-            f"actions/runs/{RUN}/attempts/1/jobs?per_page=100&page=1": {"total_count": 68, "jobs": data["jobs"]},
+            f"actions/runs/{RUN}/attempts/1/jobs?per_page=100&page=1": {
+                "total_count": len(data["jobs"]),
+                "jobs": data["jobs"],
+            },
             f"actions/runs/{RUN}/artifacts?per_page=100": {
                 "total_count": 1,
                 "artifacts": [
@@ -311,7 +329,7 @@ def test_verification_uses_unique_same_run_artifact_reviewed_sources_and_termina
             candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
         return
     result = candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
-    assert result["job_count"] == 68
+    assert result["job_count"] == len(data["jobs"])
     assert calls.count(f"actions/runs/{RUN}") == 2
 
 
