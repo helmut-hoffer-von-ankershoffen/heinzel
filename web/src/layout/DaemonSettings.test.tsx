@@ -30,6 +30,7 @@ function show(
   restartFails = false,
   restarted = true,
   expert = false,
+  restartResponse: unknown = undefined,
 ) {
   let status = { ...running, ...initial };
   const { calls } = mockApi({
@@ -61,6 +62,7 @@ function show(
     },
     "/api/system/daemon/restart": () => {
       if (restartFails) return { status: 400, body: { error: "previous handover cannot be verified" } };
+      if (restartResponse !== undefined) return restartResponse;
       if (restarted) status = { ...status, loaded: true, installed_version: "2.0.0", version_mismatch: false };
       return { restarted, version: "2.0.0", interval_minutes: restarted ? 5 : null };
     },
@@ -283,6 +285,15 @@ describe("Daemon Settings", () => {
     );
     await user.click(await screen.findByRole("button", { name: "Restart" }));
     expect(await screen.findByText("The daemon was not restarted. Install it and try again.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Restart requested. If the service is active, its next tick will confirm the version."),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([null, false, 0, "unexpected"])("reports an unknown restart result for %s", async (response) => {
+    const { user } = show({ loaded: false }, false, false, true, false, response);
+    await user.click(await screen.findByRole("button", { name: "Restart" }));
+    expect(await screen.findByText("The restart result is unavailable. Check the daemon status.")).toBeInTheDocument();
     expect(
       screen.queryByText("Restart requested. If the service is active, its next tick will confirm the version."),
     ).not.toBeInTheDocument();
