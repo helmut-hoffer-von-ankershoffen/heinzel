@@ -186,6 +186,13 @@ MIXED_SOURCE_DIRS = (
     "desktop/src/",
     "desktop/test/",
 )
+MIXED_DESKTOP_CI_TESTS = {"desktop/ci/bundle-icon.mjs": "desktop/test/bundle-icon.test.js"}
+MIXED_HOSTED_BROWSER_TESTS = {
+    "web/e2e/device-reopen.mjs": (
+        "tests/e2e/web_ui_test.py::test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts",
+        "tests/e2e/web_ui_test.py::test_the_apps_own_restart_keeps_a_paired_browser_signed_in",
+    ),
+}
 
 
 def touches_web(changed: list[str]) -> bool:
@@ -244,8 +251,10 @@ def tracked_test_files(head: str, files: set[str]) -> set[str]:
     return {entry.split("\t", 1)[1] for entry in listed.split("\0") if entry.startswith(("100644 ", "100755 "))}
 
 
-def read_mixed_manifest(manifest: Path, *, base: str, head: str) -> dict[str, object]:
-    """Read a reviewed manifest for the exact commit pair.
+def read_mixed_manifest(
+    manifest: Path, *, base: str, head: str, hosted_browser: dict[str, list[str]]
+) -> dict[str, object]:
+    """Read a reviewed manifest for the exact commits and any mapped hosted browser obligations.
 
     Raises:
         SystemExit: If the manifest is malformed or stale.
@@ -255,11 +264,17 @@ def read_mixed_manifest(manifest: Path, *, base: str, head: str) -> dict[str, ob
     except (OSError, ValueError) as error:
         msg = "Unable to read HZ_FOCUSED_PUSH_MANIFEST as JSON."
         raise SystemExit(msg) from error
-    if not isinstance(plan, dict) or plan.keys() != {"base", "head", *MIXED_TEST_PATHS}:
-        msg = "A focused mixed manifest requires base, head, unit, integration, web and desktop fields."
+    fields = {"base", "head", *MIXED_TEST_PATHS}
+    if hosted_browser:
+        fields.add("hosted_browser")
+    if not isinstance(plan, dict) or plan.keys() != fields:
+        msg = f"A focused mixed manifest requires these fields: {', '.join(sorted(fields))}."
         raise SystemExit(msg)
     if plan["base"] != base or plan["head"] != head:
         msg = "A focused mixed manifest must match the exact base and head commits."
+        raise SystemExit(msg)
+    if hosted_browser and plan["hosted_browser"] != hosted_browser:
+        msg = "A focused mixed manifest must list the exact hosted browser obligations."
         raise SystemExit(msg)
     return plan
 
@@ -274,7 +289,8 @@ def mixed_test_targets(manifest: Path, *, base: str, head: str, changed: list[st
     Raises:
         SystemExit: If the manifest is stale, incomplete or contains an unsupported test selection.
     """
-    plan = read_mixed_manifest(manifest, base=base, head=head)
+    hosted_browser = {path: list(tests) for path, tests in MIXED_HOSTED_BROWSER_TESTS.items() if path in changed}
+    plan = read_mixed_manifest(manifest, base=base, head=head, hosted_browser=hosted_browser)
     targets = {}
     for lane, pattern in MIXED_TEST_PATHS.items():
         entries = plan[lane]
@@ -300,8 +316,14 @@ def mixed_test_targets(manifest: Path, *, base: str, head: str, changed: list[st
     if any(any(pattern.fullmatch(path) for pattern in MIXED_TEST_PATHS.values()) for path in set(changed) - files):
         msg = "A focused mixed manifest must cover every changed test file."
         raise SystemExit(msg)
+    required_desktop = {test for path, test in MIXED_DESKTOP_CI_TESTS.items() if path in changed}
+    if missing := required_desktop.difference(targets["desktop"]):
+        msg = f"A focused mixed manifest must include these desktop packaging tests: {', '.join(sorted(missing))}."
+        raise SystemExit(msg)
+    files.update(hosted_browser)
+    files.update(set(changed) & MIXED_DESKTOP_CI_TESTS.keys())
     if files != tracked_test_files(head, files):
-        msg = "A focused mixed manifest can select only tracked test files at HEAD."
+        msg = "A focused mixed manifest can select only tracked test files and mapped fixtures at HEAD."
         raise SystemExit(msg)
     return targets
 
@@ -312,20 +334,30 @@ def mixed_push_checks(changed: list[str], base: str, manifest: Path) -> int:
     Raises:
         SystemExit: If the change is outside the supported mixed push scope.
     """
+    python = any(path.startswith("src/heinzel/") and path.endswith(".py") for path in changed)
+    desktop_browser = any(path.startswith("desktop/src/") for path in changed) and any(
+        path in MIXED_HOSTED_BROWSER_TESTS for path in changed
+    )
     if (
-        not any(path.startswith("src/heinzel/") and path.endswith(".py") for path in changed)
+        not (python or desktop_browser)
         or not any(path.startswith("web/src/") for path in changed)
         or bool(WEB_ROOT_FILES.intersection(changed))
         or any(
             not is_document(path)
             and path not in {"scripts/scoped_checks.py", "web/openapi.json"}
+            and path not in MIXED_DESKTOP_CI_TESTS
+            and path not in MIXED_HOSTED_BROWSER_TESTS
             and not path.startswith(MIXED_SOURCE_DIRS)
             for path in changed
         )
     ):
-        msg = "A focused mixed push supports Python/web source changes without build or runtime configuration."
+        msg = "A focused mixed push requires approved source changes without build or runtime configuration."
         raise SystemExit(msg)
     targets = mixed_test_targets(manifest, base=base, head=focused_push_head(), changed=changed)
+    for path in sorted(set(changed) & MIXED_HOSTED_BROWSER_TESTS.keys()):
+        print(
+            f"Hosted browser validation required for {path}: {', '.join(MIXED_HOSTED_BROWSER_TESTS[path])}", flush=True
+        )
     # The pinned Vitest filters on paths relative to its web/ root.
     web = " ".join(path.removeprefix("web/") for path in targets["web"])
     command = [

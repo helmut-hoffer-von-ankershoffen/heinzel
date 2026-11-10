@@ -348,6 +348,80 @@ def test_focused_mixed_push_keeps_guards_static_checks_and_explicit_test_targets
     assert desktop[3:] == [*scoped.WEB.split(), "exec", "node", "--test", "../desktop/test/window.test.js"]
 
 
+@pytest.fixture
+def audio_mixed_push(mixed_push):
+    base, plan, _, manifest = mixed_push
+    plan.update(
+        integration=[],
+        web=["web/src/audio/AudioVisualizer.test.tsx", "web/src/audio/capture.test.ts"],
+        desktop=["desktop/test/bundle-icon.test.js", "desktop/test/workspace-audio.test.js"],
+        hosted_browser={
+            "web/e2e/device-reopen.mjs": [
+                "tests/e2e/web_ui_test.py::test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts",
+                "tests/e2e/web_ui_test.py::test_the_apps_own_restart_keeps_a_paired_browser_signed_in",
+            ]
+        },
+    )
+    changed = [
+        "desktop/ci/bundle-icon.mjs",
+        "desktop/src/workspace-audio.js",
+        "tests/unit/scoped_checks_test.py",
+        "web/e2e/device-reopen.mjs",
+        "web/src/audio/capture.ts",
+    ]
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+    return base, plan, changed, manifest
+
+
+def test_focused_desktop_web_push_records_browser_obligations_without_running_them(
+    gate_calls, audio_mixed_push, capsys
+):
+    gate, calls = gate_calls
+    base, plan, changed, _ = audio_mixed_push
+
+    assert scoped.push_checks(changed, base) == 0
+
+    [(guard, _), (checks, _), (desktop, _)] = calls
+    assert guard == [gate, "--timeout", "180", *scoped.early_guard_commands(changed)[0]]
+    assert checks[:5] == [gate, "--timeout", "600", "make", "check-fast"]
+    assert f"FAST_TYPES={scoped.TYPES}" in checks
+    assert "UNIT_TARGETS=tests/unit/scoped_checks_test.py" in checks
+    assert any(
+        "vitest run --maxWorkers=2 src/audio/AudioVisualizer.test.tsx src/audio/capture.test.ts" in arg
+        for arg in checks
+    )
+    assert desktop[3:] == [*scoped.WEB.split(), "exec", "node", "--test", *(f"../{path}" for path in plan["desktop"])]
+    output = capsys.readouterr().out
+    assert all(selector in output for selector in plan["hosted_browser"]["web/e2e/device-reopen.mjs"])
+
+
+@pytest.mark.parametrize("field", ["hosted_browser", "desktop"])
+def test_focused_desktop_web_refuses_missing_browser_or_packaging_proof(gate_calls, audio_mixed_push, field):
+    _, calls = gate_calls
+    base, plan, changed, manifest = audio_mixed_push
+    if field == "hosted_browser":
+        plan[field]["web/e2e/device-reopen.mjs"].pop()
+        error = "exact hosted browser obligations"
+    else:
+        plan[field].remove("desktop/test/bundle-icon.test.js")
+        error = "include these desktop packaging tests"
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match=error):
+        scoped.push_checks(changed, base)
+
+    assert calls == []
+
+
+@pytest.mark.parametrize("extra", ["desktop/ci/foreign.mjs", "web/e2e/foreign.mjs"])
+def test_focused_desktop_web_refuses_unmapped_fixtures(gate_calls, audio_mixed_push, extra):
+    _, calls = gate_calls
+    base, _, changed, _ = audio_mixed_push
+    with pytest.raises(SystemExit, match="without build or runtime configuration"):
+        scoped.push_checks([*changed, extra], base)
+    assert calls == []
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
