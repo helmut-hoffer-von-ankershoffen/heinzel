@@ -164,6 +164,17 @@ def test_verifier_requires_both_invocation_bindings(monkeypatch, tmp_path):
     reply(invocation, "wrong")
     with pytest.raises(release.HeinzelError, match="provenance"):
         release._verify("gh", tmp_path / "asset", tmp_path / "proof", _core())
+    reply("wrong", invocation)
+    with pytest.raises(release.HeinzelError, match="provenance"):
+        release._verify("gh", tmp_path / "asset", tmp_path / "proof", _core())
+    split = entry(invocation, "wrong") + entry("wrong", invocation)
+    monkeypatch.setattr(
+        release,
+        "_run_gh",
+        lambda *_: subprocess.CompletedProcess([], 0, json.dumps(split).encode(), b""),
+    )
+    with pytest.raises(release.HeinzelError, match="provenance"):
+        release._verify("gh", tmp_path / "asset", tmp_path / "proof", _core())
 
 
 @pytest.fixture
