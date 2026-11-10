@@ -3660,6 +3660,7 @@ $ hz system serve [OPTIONS] COMMAND [ARGS]...
 * `api`: (expert) Serve every operation as a REST...
 * `daemon`: (expert) Run the daemon&#x27;s tick in the...
 * `mcp`: (expert) Serve every operation as an MCP...
+* `mcp-check`: (expert) Authenticate and initialize a...
 * `mcp-token`: Make, list and revoke the tokens agents...
 
 #### `hz system serve api`
@@ -3718,6 +3719,25 @@ $ hz system serve mcp [OPTIONS]
 * `--chat SESSION`: Serve the tools of this chat session: reads run, everything else waits for your confirmation in the chat. Started by `hz chat` for its agent, over stdio only.
 * `--project <path>`: Read the configuration as if started in this directory (its hz.toml), as the chat does.
 * `--chat-tools <everyday|all|personal-check-in>`: With --chat: the everyday operations as tools (cheaper messages), or all of them.  [default: everyday]
+* `--help`: Show this message and exit.
+
+#### `hz system serve mcp-check`
+
+(expert) Authenticate and initialize a loopback MCP endpoint; this does not prove worker ownership.
+
+Raises:
+    typer.Exit: If the token, endpoint or MCP initialization is unavailable.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-check [OPTIONS]
+```
+
+**Options**:
+
+* `--url <str>`: Loopback HTTP MCP endpoint, including /mcp.  [required]
+* `--token-stdin`: Read the bearer from standard input.
 * `--help`: Show this message and exit.
 
 #### `hz system serve mcp-token`
