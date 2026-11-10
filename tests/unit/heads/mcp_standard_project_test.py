@@ -18,7 +18,6 @@ pytestmark = pytest.mark.unit
 )
 def test_explicit_install_creates_only_selected_project_file(make_kernel, tmp_path, client, relative):
     destination = tmp_path / relative
-    destination.parent.mkdir(exist_ok=True)
     unrelated = tmp_path / "unrelated.json"
     unrelated.write_text('{"keep": true}')
     result = CliRunner().invoke(

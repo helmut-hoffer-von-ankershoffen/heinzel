@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+from contextlib import suppress
 from enum import StrEnum
 from pathlib import Path
 
@@ -47,6 +48,10 @@ def install_project(client: StandardClient, project: Path) -> Path:
         child = None
         try:
             directory = os.open(project, flags)
+            if folder:
+                # The subsequent no-follow open validates an existing entry.
+                with suppress(FileExistsError):
+                    os.mkdir(folder, 0o700, dir_fd=directory)
             child = os.open(folder, flags, dir_fd=directory) if folder else os.dup(directory)
             descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=child)
             with os.fdopen(descriptor, "wb") as output:
