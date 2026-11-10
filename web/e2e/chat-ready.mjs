@@ -33,17 +33,67 @@ export async function revealChat(page) {
   await page.getByRole("tabpanel", { name: "Chat", exact: true }).waitFor();
 }
 
-/** From the app's first load to the first message of a new Heinzel, with setup closed and Chat shown. */
-export async function startChatJourney(page, url) {
+// The first-run wizard opens when the profile answers, which a loaded runner can delay past any fixed pause; and while
+// the splash or the wizard covers the app, #root is inert: a press on the composer's buttons then lands and does
+// nothing (bead f67s). So wait for the profile's answer, close the wizard and see it gone, and wait until the app takes
+// input again before the first press.
+export async function openAppWithSetupClosed(page, url) {
+  const profileAnswered = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === "/api/org/show" && response.ok(),
+    { timeout: 30000 },
+  );
   await page.goto(url.href);
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
-  const setup = page.getByRole("dialog");
-  await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
-  if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
+  await profileAnswered;
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const setup = page.getByRole("dialog", { name: "Set up hz" });
+  if (await setup.isVisible()) {
+    await setup.getByRole("button", { name: "Close setup" }).click();
+    await setup.waitFor({ state: "hidden", timeout: 15000 });
+  }
+  await appTakesInput(page);
+}
+
+/** Neither the splash nor a dialog holds the app inert. */
+export async function appTakesInput(page) {
+  await page.waitForFunction(
+    () => {
+      const root = document.getElementById("root");
+      return root !== null && !root.hasAttribute("inert") && document.getElementById("splash")?.hidden !== false;
+    },
+    null,
+    { timeout: 15000 },
+  );
+}
+
+/** Type the first message into the new-chat composer and press Create: the press must send the creation request. */
+export async function createHeinzelWith(page, text) {
   if (!(await page.getByLabel("Your message").isVisible()))
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
-  await page.getByLabel("Your message").fill("Read my selected source.");
+  const composer = page.getByLabel("Your message");
+  await composer.fill(text);
+  assert.equal(await composer.inputValue(), text, "The composer did not take the first message");
+  await appTakesInput(page);
+  const sent = page.waitForRequest(
+    (request) => request.method() === "POST" && new URL(request.url()).pathname === "/api/heinzel/new-chat",
+    { timeout: 15000 },
+  );
   await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
+  await sent.catch(async () => {
+    const state = await page.evaluate(() => ({
+      rootInert: document.getElementById("root")?.hasAttribute("inert") ?? null,
+      splashShown: document.getElementById("splash")?.hidden === false,
+      dialogs: [...document.querySelectorAll('[role="dialog"]')].map((d) => d.getAttribute("aria-label") ?? d.id),
+      alerts: [...document.querySelectorAll('[role="alert"]')].map((a) => a.textContent.slice(0, 120)),
+    }));
+    throw new Error(`Create a Heinzel sent no creation request: ${JSON.stringify(state)}`);
+  });
+}
+
+/** From the app's first load to the first message of a new Heinzel, with setup closed and Chat shown. */
+export async function startChatJourney(page, url) {
+  await openAppWithSetupClosed(page, url);
+  await createHeinzelWith(page, "Read my selected source.");
 }
 
 /** A grant survives a reload as approved, then is revoked, and the review panel still fits the phone. */
