@@ -23,6 +23,7 @@ HEAD = "7d983e9662f58fd3af2c779c3ca1a9ccf8a70576"
 BASE = "6443f4b8cde047954cdd4a6eb190ce6471ce123e"
 TREE = "0722838ec82ed417118ee8d388ffeec0335c330e"
 PR_NUMBER = 683
+PUBLISHER_RUN_ID = 42801566747
 RECOVERY_RUN_ID = 42801046287
 RECOVERY_SHA = "ad3b8961cd44596f0bc0b5a9e1a965f5772e6589"
 REPOSITORY_ID = 1431672693
@@ -180,11 +181,7 @@ def validate_evidence() -> None:
     verifier._rules()  # noqa: SLF001
     verifier._source()  # noqa: SLF001
     verifier._evidence(RECOVERY_RUN_ID, RECOVERY_SHA)  # noqa: SLF001
-    publisher_text = os.environ.get("PUBLISHER_RUN_ID", "")
-    if not publisher_text.isascii() or not publisher_text.isdecimal() or not publisher_text or publisher_text[0] == "0":
-        msg = "missing exact publisher run ID"
-        raise ValueError(msg)
-    publisher_id = int(publisher_text)
+    publisher_id = PUBLISHER_RUN_ID
     run = one(f"actions/runs/{publisher_id}")
     if not (
         run.get("id") == publisher_id
@@ -262,7 +259,11 @@ def main() -> None:
             msg = "merge occurred but main moved afterward; stop and investigate"
             raise ValueError(msg)
         print(f"Observed main and squash parent: {result['sha']} {BASE}")
-        print("Resulting main still requires independently observed focused validation; do not mark complete.")
+        print(
+            "Resulting main still requires focused validation on the observed SHA: "
+            "tests/unit/kernel/uv_locate_test.py, tests/integration/update_uv_minimal_path_test.py, "
+            "web/src/updates/updateState.test.ts; do not mark complete until observed."
+        )
     else:
         print("Exact PR and genuine required check runs validated")
 
