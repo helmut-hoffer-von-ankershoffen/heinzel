@@ -6,6 +6,10 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 Find uv in its install dirs under launchd's minimal PATH; Name the worker's shell cache after the build; Bind operation confirmation to its current receipt; Verify original focused runs after main advances; and 4 more.
 
+### 🛡️ Security
+
+- **security:** Sanitize native notifier warnings ([#709](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/709)) ([a0ab479](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/a0ab479d77293852b1469d80df64172edc3d8d81))
+
 ### ✨ Features
 
 - **web:** Move YouTube action into player header ([#700](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/700)) ([c6e1f23](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/c6e1f239c36c02580c0eb0b2933c84361fbac6a8))
@@ -25,6 +29,7 @@ Find uv in its install dirs under launchd's minimal PATH; Name the worker's shel
 ### 🧪 Testing
 
 - Fix five flaky and slow tests at their cause ([#650](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/650)) ([6443f4b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/6443f4b8cde047954cdd4a6eb190ce6471ce123e))
+- **heads:** Use loopback MCP test server ([#708](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/708)) ([f71de1d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f71de1dca85fbbbef2a79f3f023e7cb35d9034f6))
 
 ### 🏗️ Build and CI
 

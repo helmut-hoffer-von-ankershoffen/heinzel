@@ -33,9 +33,11 @@ from heinzel import (
     ResolveWhen,
     Settings,
     Status,
+    clean_text,
 )
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.kernel._calendar_reminders import agenda_plan
+from heinzel.kernel._logging import log_event
 from heinzel.modules.system.notify import _policy as policy
 from heinzel.modules.system.notify import _resolve
 from heinzel.modules.system.notify._channels import (
@@ -75,6 +77,7 @@ STRAY_EVERY = timedelta(days=1)
 """How often the daemon asks macOS to forget copies of Heinzel Notifier it met at other paths (it takes seconds)."""
 STALE = timedelta(hours=12)
 """A notice that waited longer than this to be shown doesn't pop up any more; it stays in the list."""
+MAX_LOG_PROBLEM = 280
 
 
 def _calendar_keys(kernel: Kernel, now: datetime) -> set[str]:
@@ -522,7 +525,14 @@ class NotifyService(Notifications):
                     thread=notice.route,
                 )
             ) is not None:
-                logger.warning("couldn't show notice %s: %s", notice.id, problem)
+                log_event(
+                    logger,
+                    "notify.native.post",
+                    level=logging.WARNING,
+                    outcome="error",
+                    notice_id=notice.id,
+                    problem=" ".join(clean_text(problem).split())[:MAX_LOG_PROBLEM],
+                )
                 self._release(claimed[index:])  # the next would fail the same way; they wait for the next tick
                 break
             posted += 1
