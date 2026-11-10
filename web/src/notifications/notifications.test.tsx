@@ -114,9 +114,14 @@ describe("desktop notifications", () => {
     installNotification();
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15");
     mockApi(shell);
+    const user = userEvent.setup();
     renderSettings();
     expect(await screen.findByRole("switch", { name: "Notify me in this browser" })).toBeDisabled();
-    expect(screen.getByText(/Keep hz open to receive notices/)).toBeInTheDocument();
+    expect(screen.getByText("Share → Add to Home Screen, open its icon, allow alerts.")).toBeVisible();
+    const backgroundHelp = screen.getByText("Keep Heinzel open. Background alerts are unavailable.");
+    expect(backgroundHelp).not.toBeVisible();
+    await user.click(screen.getByText("Details"));
+    expect(backgroundHelp).toBeVisible();
     expect(await setDesktop(true)).toBe("install");
     expect(FakeNotification.requestPermission).not.toHaveBeenCalled();
   });
