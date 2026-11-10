@@ -26,6 +26,7 @@ def test_desktop_install_materializes_electron_without_launch(monkeypatch):
     run = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
     monkeypatch.setattr(fixture, "_run_owned_group", run)
     monkeypatch.setenv("ELECTRON_SKIP_BINARY_DOWNLOAD", "1")
+    monkeypatch.setattr(fixture, "_require_hosted", lambda: None)
     fixture._prepare_desktop()
     commands = [call.args[0] for call in run.call_args_list]
     assert commands[0][-2:] == ["install", "--frozen-lockfile"]
@@ -36,7 +37,7 @@ def test_desktop_install_materializes_electron_without_launch(monkeypatch):
 
 
 def test_launch_failure_never_signals_an_unowned_group(monkeypatch):
-    monkeypatch.setattr(fixture, "_require_process_containment", lambda: None)
+    monkeypatch.setattr(fixture, "_require_hosted", lambda: None)
     monkeypatch.setattr(fixture.subprocess, "Popen", Mock(side_effect=OSError("launch failed")))
     kill = Mock()
     monkeypatch.setattr(fixture.os, "killpg", kill)
@@ -52,7 +53,7 @@ def test_failure_terminates_real_tree_and_reaps_controller(
     tmp_path, monkeypatch, controller_exits, deny_group, detach_session
 ):
     # Exercise best-effort cleanup only; this is not containment evidence.
-    monkeypatch.setattr(fixture, "_require_process_containment", lambda: None)
+    monkeypatch.setattr(fixture, "_require_hosted", lambda: None)
     record = tmp_path / "descendant"
     # The grandchild leaves the controller group (or session) and ignores TERM.
     descendant = (
@@ -119,12 +120,28 @@ def test_denied_process_cleanup_fails_closed_but_reaps_direct_child(monkeypatch)
     child.wait.assert_called_once_with(timeout=2)
 
 
-@pytest.mark.parametrize("operation", ["immediate-setsid-orphan", "setup", "native"])
-def test_unprovable_containment_refuses_before_any_spawn(monkeypatch, operation):
+@pytest.mark.parametrize(
+    "field", ["CI", "GITHUB_ACTIONS", "RUNNER_ENVIRONMENT", "FOCUSED_SELECTOR", "system", "machine"]
+)
+@pytest.mark.parametrize("operation", ["setup", "native"])
+def test_wrong_host_refuses_before_any_spawn(monkeypatch, field, operation):
+    for name, value in {
+        "CI": "true",
+        "GITHUB_ACTIONS": "true",
+        "RUNNER_ENVIRONMENT": "github-hosted",
+        "FOCUSED_SELECTOR": fixture.SELECTOR,
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(fixture.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(fixture.platform, "machine", lambda: "arm64")
+    if field in ("system", "machine"):
+        monkeypatch.setattr(fixture.platform, field, lambda: "wrong")
+    else:
+        monkeypatch.setenv(field, "wrong")
     launch = Mock()
     monkeypatch.setattr(fixture.subprocess, "Popen", launch)
-    action = fixture._prepare_desktop if operation == "setup" else lambda: fixture._run_owned_group([operation], {})
-    with pytest.raises(RuntimeError, match="race-free process containment is unavailable"):
+    action = fixture._prepare_desktop if operation == "setup" else lambda: fixture._run_owned_group(["native"], {})
+    with pytest.raises(RuntimeError, match="requires the selected disposable"):
         action()
     launch.assert_not_called()
 
@@ -165,14 +182,7 @@ def test_immediate_orphan_is_not_discoverable_by_session_polling(monkeypatch):
     fixture._refresh_owned_tree(90123, known)
     assert known == {}
     orphan.children.assert_not_called()
-    launch = Mock()
-    monkeypatch.setattr(fixture.subprocess, "Popen", launch)
-    with pytest.raises(RuntimeError, match="containment is unavailable"):
-        fixture._run_owned_group(
-            [sys.executable, "-c", "import os,time; os.fork() and os._exit(0); os.setsid(); time.sleep(60)"],
-            {},
-        )
-    launch.assert_not_called()
+    # This limitation is bounded by the disposable VM, not claimed as local containment.
 
 
 def test_discovery_error_is_not_erased_when_known_process_stops(monkeypatch):

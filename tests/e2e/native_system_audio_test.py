@@ -110,19 +110,30 @@ def _stop_owned_tree(child, known):
         raise RuntimeError(message) from (errors[0] if errors else None)
 
 
-def _require_process_containment():
-    """Fail before spawn: polling cannot own a child that immediately orphans."""
-    # setsid + parent exit can happen between any two process snapshots. A new
-    # session and remembered psutil identities do not close that race on macOS.
-    # Keep setup and native launch disabled until an OS-enforced ownership
-    # boundary can be established before any child executes.
-    message = "Native preflight disabled: race-free process containment is unavailable"
-    raise RuntimeError(message)
+SELECTOR = "tests/e2e/native_system_audio_test.py::test_native_system_audio_capture_free_preflight"
+
+
+def _require_hosted():
+    """Prevent accidental local or self-hosted execution before any setup or launch.
+
+    This is an admission guard, not an adversarial sandbox. Process discovery is
+    observational; the disposable GitHub VM is the outer containment boundary.
+    """
+    if (
+        os.environ.get("CI") != "true"
+        or os.environ.get("GITHUB_ACTIONS") != "true"
+        or os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted"
+        or os.environ.get("FOCUSED_SELECTOR") != SELECTOR
+        or platform.system() != "Darwin"
+        or platform.machine() != "arm64"
+    ):
+        message = "Native preflight requires the selected disposable macOS ARM hosted job"
+        raise RuntimeError(message)
 
 
 def _run_owned_group(command, environment, *, timeout=90):
     """Own setup and controller descendants through launch errors and timeouts."""
-    _require_process_containment()
+    _require_hosted()
     child = subprocess.Popen(
         command,
         cwd=REPO,
@@ -156,6 +167,7 @@ def _run_owned_group(command, environment, *, timeout=90):
 
 def _prepare_desktop():
     """Provision the locked runtime explicitly; pnpm may disable install scripts."""
+    _require_hosted()
     commands = (
         ["pnpm", "--dir", "../desktop", "install", "--frozen-lockfile"],
         ["pnpm", "--dir", "../desktop", "exec", "node", "node_modules/electron/install.js"],
@@ -170,16 +182,7 @@ def _prepare_desktop():
 
 def test_native_system_audio_capture_free_preflight():
     """Only a disposable macOS ARM host may launch the isolated native fixture."""
-    if (
-        os.environ.get("CI") != "true"
-        or os.environ.get("GITHUB_ACTIONS") != "true"
-        or os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted"
-        or os.environ.get("FOCUSED_SELECTOR")
-        != "tests/e2e/native_system_audio_test.py::test_native_system_audio_capture_free_preflight"
-        or platform.system() != "Darwin"
-    ):
-        pytest.skip("requires explicitly selected disposable macOS hosted CI")
-    assert platform.machine() == "arm64"
+    _require_hosted()
     _prepare_desktop()
     environment = {**os.environ, "HZ_DISPOSABLE_NATIVE_CI": "1"}
     result = _run_owned_group(

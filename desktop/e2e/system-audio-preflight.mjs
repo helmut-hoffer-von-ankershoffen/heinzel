@@ -7,8 +7,12 @@ import { tmpdir } from "node:os";
 import { delimiter, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cleanupHarness, withTimeout } from "./harness-cleanup.mjs";
+import { requireOwnedExit } from "./system-audio-receipt.mjs";
 
-if (process.env.CI !== "true" || process.env.HZ_DISPOSABLE_NATIVE_CI !== "1" ||
+if (process.env.CI !== "true" || process.env.GITHUB_ACTIONS !== "true" ||
+    process.env.RUNNER_ENVIRONMENT !== "github-hosted" ||
+    process.env.FOCUSED_SELECTOR !== "tests/e2e/native_system_audio_test.py::test_native_system_audio_capture_free_preflight" ||
+    process.env.HZ_DISPOSABLE_NATIVE_CI !== "1" ||
     process.platform !== "darwin" || process.arch !== "arm64") {
   throw new Error("This fixture only runs on an explicitly disposable macOS ARM CI runner.");
 }
@@ -56,7 +60,13 @@ try {
     await cleanupHarness({ app, electronProcess: child, launchAttempted, root,
       loadPid: async () => Number(await readFile(join(root, "owned-pid"), "utf8")),
       processExists: (pid) => { try { process.kill(pid, 0); return true; } catch (error) { if (error.code === "ESRCH") return false; throw error; } },
-      remove: (path) => rm(path, { recursive: true, force: true }), timeoutMs: 10000 });
+      remove: async (path) => {
+        // The bootstrap observes the exact child exit; absence of a PID alone is insufficient.
+        if (app) {
+          await requireOwnedExit(root);
+        }
+        await rm(path, { recursive: true, force: true });
+      }, timeoutMs: 10000 });
   } finally {
     if (server.listening) { server.closeAllConnections(); await new Promise((resolveClose) => server.close(resolveClose)); }
   }
