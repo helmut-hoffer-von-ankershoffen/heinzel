@@ -15,6 +15,7 @@ try {
     "lost-response",
     "same-dialog-loss",
     "restart-observation",
+    "restart-reload",
   ]) {
     console.log(`dismissal: ${dismissal}`);
     const context = await browser.newContext({ ...(phone ? devices["iPhone 15"] : {}), serviceWorkers: "block" });
@@ -89,7 +90,7 @@ try {
     });
     await page.route("**/api/lifecycle/verify", (route) => {
       verifications += 1;
-      if (dismissal === "restart-observation" && verifications === 1)
+      if ((dismissal === "restart-observation" || dismissal === "restart-reload") && verifications === 1)
         return route.fulfill({ status: 400, json: { error: "Fictional verification refused" } });
       return route.fulfill({
         json: {
@@ -178,8 +179,21 @@ try {
       await context.close();
       continue;
     }
-    if (dismissal === "restart-observation") {
+    if (dismissal === "restart-observation" || dismissal === "restart-reload") {
       await dialog.getByRole("alert").getByText("Fictional verification refused").waitFor();
+      if (dismissal === "restart-reload") {
+        await page.reload();
+        await page.locator("#splash").waitFor({ state: "hidden" });
+        await setup.click();
+        await dialog.getByText("The server cannot confirm how this installation ended. Do not retry it yet.").waitFor();
+        assert.equal(await add.count(), 0);
+        assert.equal(await dialog.getByRole("button", { name: "Try again" }).count(), 0);
+        assert.equal(installs, 1);
+        assert.equal(restarts, 1);
+        assert.notEqual(await page.evaluate(() => sessionStorage.getItem("hz.plugin-activation.v1")), null);
+        await context.close();
+        continue;
+      }
       await dialog.getByRole("button", { name: "Try again" }).click();
     }
     await dialog.getByText("Applied", { exact: true }).waitFor();
