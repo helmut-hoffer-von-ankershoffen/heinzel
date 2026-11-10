@@ -3247,12 +3247,12 @@ $ hz system plugin add [OPTIONS] {spec}
 **Usage**:
 
 ```console
-$ hz system plugin add-extra [OPTIONS] {extra}:<openai|anthropic>
+$ hz system plugin add-extra [OPTIONS] {extra}
 ```
 
 **Arguments**:
 
-* `extra:<openai|anthropic>`: The optional client of hz itself: `openai` (Model API, ChatGPT plan) or `anthropic`.  [required]
+* `extra <openai|anthropic>`: The optional client of hz itself: `openai` (Model API, ChatGPT plan) or `anthropic`.  [required]
 
 **Options**:
 
