@@ -17,6 +17,7 @@ import textwrap
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request, urlopen
 
@@ -986,9 +987,12 @@ def gallery_profile_preflight(backend_env, tmp_path, denied):
         [sys.executable, "-m", "heinzel", "ui", "--port", "0", "--no-browser"],
         cwd=REPO,
         env=neutral_env,
-        stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
     )
-    neutral_output = MobileServerOutput(neutral_ui)
+    # --no-browser prints the owned URL to stdout; merge diagnostics into the
+    # same pipe so the bounded reader drains the exact startup channel.
+    neutral_output = MobileServerOutput(SimpleNamespace(stderr=neutral_ui.stdout, poll=neutral_ui.poll))
     try:
         neutral_address = urlsplit(neutral_output.wait_url())
         assert neutral_address.scheme == "http"
@@ -1002,8 +1006,8 @@ def gallery_profile_preflight(backend_env, tmp_path, denied):
         neutral_ui.terminate()
         neutral_ui.wait(30)
         neutral_output.close()
-        if neutral_ui.stderr is not None:
-            neutral_ui.stderr.close()
+        if neutral_ui.stdout is not None:
+            neutral_ui.stdout.close()
     assert not Path(neutral_env["HZ_GALLERY_DENIAL_LOG"]).exists(), "Neutral UI attempted an outbound request"
 
 
