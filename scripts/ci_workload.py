@@ -61,6 +61,7 @@ def plan_workload(
     The caller supplies the authenticated Actions context with the full ref,
     independently resolved Git objects and detached policy. The exact selector
     uses `git diff-tree --no-commit-id -r --raw --no-abbrev --no-renames -z BASE HEAD`.
+    The focused resolver verifies the reported PR base against the tested base's Git history.
     Dispatch has no PR payload, so a candidate dispatch requires the
     independently resolved open release PR for this exact source.
     A plan is scheduling input. Required checks and candidate verification still
@@ -91,7 +92,9 @@ def plan_workload(
             and ref == f"refs/pull/{number}/merge"
             and isinstance(pr_base, dict)
             and isinstance(pr_head, dict)
-            and pr_base.get("sha") == base
+            and valid_sha(pr_base.get("sha"))
+            and pr_base.get("ref") == "main"
+            and pr_base.get("repo", {}).get("full_name") == repository
             and pr_head.get("sha") == head,
             "pull request event differs from the exact ref and source",
         )

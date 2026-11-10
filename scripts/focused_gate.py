@@ -26,6 +26,7 @@ from scripts.focused_plan import (
     git,
     git_blob,
     raw_diff,
+    require_pr_base_ancestor,
     resolve,
     web_production,
 )
@@ -81,8 +82,8 @@ def _positive(value: object) -> bool:
     return type(value) is int and value > 0
 
 
-def pull_identity(gate: Gate, head: str) -> tuple[dict[str, Any], str]:
-    """Read current PR and resolve its actual merge ref independently of the event body."""
+def pull_identity(gate: Gate, head: str) -> tuple[dict[str, Any], str, str]:
+    """Read the current PR, its actual merge ref and protected main independently."""
     number = int(gate.pr)
     pr = gate.github(f"pulls/{number}")
     base = gate.github("git/ref/heads/main")["object"]["sha"]
@@ -92,7 +93,7 @@ def pull_identity(gate: Gate, head: str) -> tuple[dict[str, Any], str]:
         and pr["draft"] is False
         and pr["base"]["repo"]["full_name"] == REPOSITORY
         and pr["base"]["ref"] == "main"
-        and pr["base"]["sha"] == base
+        and valid_sha(pr["base"]["sha"])
         and pr["head"]["sha"] == head
         and valid_sha(base)
         and valid_sha(head),
@@ -105,7 +106,7 @@ def pull_identity(gate: Gate, head: str) -> tuple[dict[str, Any], str]:
         "missing current GitHub test merge",
     )
     require(pr.get("merge_commit_sha") in (None, fields[0]), "GitHub test merge changed")
-    return pr, fields[0]
+    return pr, fields[0], base
 
 
 def _authenticated_run(gate: Gate, run_id: int, *, candidate_composite: bool = False) -> dict[str, Any]:
@@ -147,16 +148,19 @@ def _authenticated_run(gate: Gate, run_id: int, *, candidate_composite: bool = F
     return run
 
 
-def _pr_source(gate: Gate, run: dict[str, Any], snapshot: tuple[dict[str, Any], str]) -> GateSource:
-    pr, merge = snapshot
+def _pr_source(
+    gate: Gate, run: dict[str, Any], snapshot: tuple[dict[str, Any], str, str], *, candidate: bool
+) -> GateSource:
+    pr, merge, base = snapshot
     event = run["event"]
-    head, base = gate.head, pr["base"]["sha"]
+    head = gate.head
     require(
         event in ("pull_request", "workflow_dispatch")
         and run["head_repository"]["id"] == pr["head"]["repo"]["id"]
         and run["head_branch"] == pr["head"]["ref"],
         "run does not belong to this pull request",
     )
+    require(not candidate or pr["base"]["sha"] == base, "release PR or protected base changed")
     if event == "pull_request":
         ref = f"refs/pull/{gate.pr}/merge"
         associated = run["pull_requests"]
@@ -165,18 +169,24 @@ def _pr_source(gate: Gate, run: dict[str, Any], snapshot: tuple[dict[str, Any], 
             or (
                 len(associated) == 1
                 and associated[0]["number"] == pr["number"]
-                and associated[0]["base"]["sha"] == base
                 and associated[0]["head"]["sha"] == head
             ),
-            "workflow run association does not bind the exact PR base and head",
+            "workflow run association does not bind the exact PR and head",
         )
         git("fetch", "--no-tags", "origin", ref)
         require(git("rev-parse", "FETCH_HEAD").decode().strip() == merge, "GitHub test merge moved during fetch")
+        if associated:
+            reported = associated[0]["base"]
+            if candidate:
+                require(reported["sha"] == base, "release workflow run association does not bind the exact PR base")
+            else:
+                require(
+                    reported["ref"] == pr["base"]["ref"] and reported["repo"]["id"] == pr["base"]["repo"]["id"],
+                    "workflow run association does not target protected main",
+                )
+                require_pr_base_ancestor(reported["sha"], base)
     else:
-        require(
-            release_version("pull_request", REPOSITORY, "", {"pull_request": pr}),
-            "ordinary pull requests require their original PR CI run",
-        )
+        require(candidate, "ordinary pull requests require their original PR CI run")
         ref, merge = f"refs/heads/{pr['head']['ref']}", head
         git("fetch", "--no-tags", "origin", head)
     payload = {"pull_request": pr}
@@ -361,7 +371,7 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes])
     snapshot = pull_identity(gate, gate.head)
     candidate = bool(release_version("pull_request", REPOSITORY, "", {"pull_request": snapshot[0]}))
     run = _authenticated_run(gate, run_id, candidate_composite=candidate)
-    source = _pr_source(gate, run, snapshot)
+    source = _pr_source(gate, run, snapshot, candidate=candidate)
     scope = resolve(source.source, source.commit, manifest, source.source.payload["pull_request"])
     if not isinstance(scope, Scope):
         jobs = [job for job in jobs_for(gate, source) if job["name"] == "Coverage"]
@@ -392,13 +402,16 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes])
             if any(web_production(path) for path in scope.changed)
             else "Python coverage: not applicable to the reviewed scope"
         )
-    current, merge = pull_identity(gate, gate.head)
+    current, merge, main = pull_identity(gate, gate.head)
     require(
-        current["base"]["sha"] == source.source.base
+        main == source.source.base
+        and (not candidate or current["base"]["sha"] == main)
         and (source.source.event != "pull_request" or merge == source.commit)
         and _authenticated_run(gate, run_id, candidate_composite=candidate) == run,
         "source or workflow attempt changed during verification",
     )
+    if not candidate:
+        require_pr_base_ancestor(current["base"]["sha"], main)
     return verdict
 
 
