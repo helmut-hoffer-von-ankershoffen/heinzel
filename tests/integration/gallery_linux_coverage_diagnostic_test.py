@@ -11,8 +11,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts import focused_coverage, focused_job, focused_plan
-
 pytestmark = [pytest.mark.integration, pytest.mark.timeout(240)]
 
 PRODUCTION = {
@@ -40,7 +38,10 @@ SELECTION = [
 ]
 
 
-def test_capture_unchanged_linux_focused_coverage():
+def test_capture_unchanged_linux_focused_coverage(monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2]))
+    from scripts import focused_coverage, focused_job, focused_plan
+
     assert sys.platform == "linux"
     assert {path: focused_plan.git_blob("HEAD", path) for path in PRODUCTION} == PRODUCTION
     assert focused_plan.git_blob("HEAD", "pyproject.toml") == CONFIG
