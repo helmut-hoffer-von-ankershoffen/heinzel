@@ -163,6 +163,10 @@ def current(target: Target, owned_check_id: int | None = None, *, allow_pending_
         "latest required coverage check changed",
     )
     require(api("git/ref/heads/main")["object"]["sha"] == CURRENT_MAIN, "main moved")
+    require(
+        api("git/ref/heads/bootstrap/one-shot-focused-reader-recovery")["object"]["sha"] == os.environ["RECOVERY_SHA"],
+        "recovery ref moved",
+    )
     require(api(f"git/ref/heads/{branch}")["object"]["sha"] == head, "head ref moved")
     commit = api(f"git/commits/{merge}")
     require(

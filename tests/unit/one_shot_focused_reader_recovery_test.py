@@ -156,9 +156,22 @@ def test_check_readback_requires_same_id(monkeypatch):
 
 @pytest.mark.parametrize("target_index", [0, 1])
 @pytest.mark.parametrize(
-    "defect", [None, "base", "head", "parents", "run", "rules", "protected_suite", "already_green", "orphan_pending"]
+    "defect",
+    [
+        None,
+        "base",
+        "head",
+        "parents",
+        "run",
+        "rules",
+        "protected_suite",
+        "already_green",
+        "orphan_pending",
+        "recovery_ref",
+    ],
 )
 def test_current_rejects_identity_or_policy_drift(monkeypatch, defect, target_index):  # noqa: C901, PLR0912
+    monkeypatch.setenv("RECOVERY_SHA", SHA)
     target = m.TARGETS[target_index]
     number, head, branch, merge, tree, run_id, suite, protected_suite, failed, green = target
     repo = {"full_name": m.REPO}
@@ -173,6 +186,7 @@ def test_current_rejects_identity_or_policy_drift(monkeypatch, defect, target_in
             "merge_commit_sha": merge,
         },
         "git/ref/heads/main": {"object": {"sha": m.CURRENT_MAIN}},
+        "git/ref/heads/bootstrap/one-shot-focused-reader-recovery": {"object": {"sha": SHA}},
         f"git/ref/heads/{branch}": {"object": {"sha": head}},
         f"git/commits/{merge}": {"sha": merge, "tree": {"sha": tree}, "parents": [{"sha": m.BASE}, {"sha": head}]},
         f"actions/runs/{run_id}": {
@@ -223,6 +237,8 @@ def test_current_rejects_identity_or_policy_drift(monkeypatch, defect, target_in
         }
     if defect == "base":
         data["git/ref/heads/main"]["object"]["sha"] = "b" * 40
+    elif defect == "recovery_ref":
+        data["git/ref/heads/bootstrap/one-shot-focused-reader-recovery"]["object"]["sha"] = "b" * 40
     elif defect == "head":
         data[f"git/ref/heads/{branch}"]["object"]["sha"] = "b" * 40
     elif defect == "parents":
@@ -434,3 +450,24 @@ def test_foreign_check_is_never_patched(monkeypatch):
     with pytest.raises(ValueError, match="ownership differs"):
         m.publish(target, 999, "failure", "run")
     post.assert_not_called()
+
+
+def test_main_invalidates_id_retained_before_post_validation(monkeypatch):
+    monkeypatch.setattr(os, "environ", dict(ENV))
+    for name in ("root_commit", "only_recovery_run", "check_plan", "current", "cleanup_historical_orphan"):
+        monkeypatch.setattr(m, name, lambda *args, **kwargs: None)
+    monkeypatch.setattr(m, "run", lambda *args, **kwargs: "pass")
+    calls = []
+
+    def publish(_target, check_id, state, _url, created=None):
+        calls.append((check_id, state))
+        if state == "pending":
+            created.append(999)
+            message = "malformed response"
+            raise ValueError(message)
+        return check_id
+
+    monkeypatch.setattr(m, "publish", publish)
+    with pytest.raises(ValueError, match="malformed response"):
+        m.main(Path(), Path())
+    assert calls == [(None, "pending"), (999, "failure")]
