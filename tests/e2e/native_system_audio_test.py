@@ -41,13 +41,18 @@ def _refresh_owned_tree(session, known):
 
 def _signal_owned_tree(child, known, requested, errors):
     """Try both group and identity-checked process signals before checking exit."""
-    _refresh_owned_tree(child.pid, known)
+    try:
+        _refresh_owned_tree(child.pid, known)
+    except (OSError, psutil.Error) as error:
+        # Discovery failure must not prevent cleanup of identities already retained.
+        errors.append(error)
     try:
         os.killpg(child.pid, requested)
     except ProcessLookupError:
         pass
-    except PermissionError as error:
-        errors.append(error)
+    except PermissionError:
+        # Per-identity signaling below remains available when group signaling is denied.
+        pass
     # A detached group, or a denied killpg, still needs per-process termination.
     for process in reversed(list(known.values())):
         try:
@@ -58,31 +63,66 @@ def _signal_owned_tree(child, known, requested, errors):
             errors.append(error)
 
 
+def _remaining_owned(session, known, errors):
+    """Retain inaccessible identities as alive and preserve discovery errors."""
+    remaining = []
+    for process in known.values():
+        try:
+            if process.is_running():
+                remaining.append(process)
+        except psutil.Error as error:
+            errors.append(error)
+            remaining.append(process)
+    try:
+        remaining.extend(_session_members(session))
+    except (OSError, psutil.Error) as error:
+        errors.append(error)
+    return remaining
+
+
 def _stop_owned_tree(child, known):
-    """Escalate and verify every owned member; EPERM never means it has gone."""
+    """Attempt all known cleanup even when discovery fails; retain that failure."""
     errors = []
+    stopped = False
     try:
         for requested in (signal.SIGTERM, signal.SIGKILL):
             _signal_owned_tree(child, known, requested, errors)
             deadline = time.monotonic() + 2
             while time.monotonic() < deadline:
-                child.poll()  # Reap promptly even if a grandchild ignores SIGTERM.
-                remaining = [process for process in known.values() if process.is_running()]
-                remaining.extend(_session_members(child.pid))
+                child.poll()
+                remaining = _remaining_owned(child.pid, known, errors)
                 if not remaining:
-                    return
+                    stopped = True
+                    break
                 time.sleep(0.02)
-        message = "Owned native test process tree did not stop"
-        raise RuntimeError(message) from (errors[-1] if errors else None)
+            if stopped:
+                break
     finally:
-        # Always attempt direct-child reaping, including enumeration or signaling failures.
-        if child.poll() is None:
-            child.kill()
-        child.wait(timeout=2)
+        # Direct-child failure must not replace an earlier discovery failure.
+        try:
+            if child.poll() is None:
+                child.kill()
+            child.wait(timeout=2)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            errors.append(error)
+    if errors or not stopped:
+        message = "Owned native test process tree did not stop or could not be verified"
+        raise RuntimeError(message) from (errors[0] if errors else None)
+
+
+def _require_process_containment():
+    """Fail before spawn: polling cannot own a child that immediately orphans."""
+    # setsid + parent exit can happen between any two process snapshots. A new
+    # session and remembered psutil identities do not close that race on macOS.
+    # Keep setup and native launch disabled until an OS-enforced ownership
+    # boundary can be established before any child executes.
+    message = "Native preflight disabled: race-free process containment is unavailable"
+    raise RuntimeError(message)
 
 
 def _run_owned_group(command, environment, *, timeout=90):
     """Own setup and controller descendants through launch errors and timeouts."""
+    _require_process_containment()
     child = subprocess.Popen(
         command,
         cwd=REPO,

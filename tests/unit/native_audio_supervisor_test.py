@@ -36,6 +36,7 @@ def test_desktop_install_materializes_electron_without_launch(monkeypatch):
 
 
 def test_launch_failure_never_signals_an_unowned_group(monkeypatch):
+    monkeypatch.setattr(fixture, "_require_process_containment", lambda: None)
     monkeypatch.setattr(fixture.subprocess, "Popen", Mock(side_effect=OSError("launch failed")))
     kill = Mock()
     monkeypatch.setattr(fixture.os, "killpg", kill)
@@ -50,6 +51,8 @@ def test_launch_failure_never_signals_an_unowned_group(monkeypatch):
 def test_failure_terminates_real_tree_and_reaps_controller(
     tmp_path, monkeypatch, controller_exits, deny_group, detach_session
 ):
+    # Exercise best-effort cleanup only; this is not containment evidence.
+    monkeypatch.setattr(fixture, "_require_process_containment", lambda: None)
     record = tmp_path / "descendant"
     # The grandchild leaves the controller group (or session) and ignores TERM.
     descendant = (
@@ -113,4 +116,76 @@ def test_denied_process_cleanup_fails_closed_but_reaps_direct_child(monkeypatch)
     with pytest.raises(RuntimeError, match="process tree did not stop"):
         fixture._stop_owned_tree(child, {})
     assert process.send_signal.call_args_list == [((signal.SIGTERM,),), ((signal.SIGKILL,),)]
+    child.wait.assert_called_once_with(timeout=2)
+
+
+@pytest.mark.parametrize("operation", ["immediate-setsid-orphan", "setup", "native"])
+def test_unprovable_containment_refuses_before_any_spawn(monkeypatch, operation):
+    launch = Mock()
+    monkeypatch.setattr(fixture.subprocess, "Popen", launch)
+    action = fixture._prepare_desktop if operation == "setup" else lambda: fixture._run_owned_group([operation], {})
+    with pytest.raises(RuntimeError, match="race-free process containment is unavailable"):
+        action()
+    launch.assert_not_called()
+
+
+@pytest.mark.parametrize("failure_site", ["refresh", "session", "identity"])
+def test_discovery_failure_still_signals_known_descendant_and_preserves_error(monkeypatch, failure_site):
+    child = Mock(pid=90123)
+    child.poll.return_value = 7
+    process = Mock(pid=90124)
+    process.is_running.return_value = True
+    process.children.return_value = []
+    failure = psutil.AccessDenied(process.pid)
+    monkeypatch.setattr(fixture, "_refresh_owned_tree", Mock())
+    monkeypatch.setattr(fixture, "_session_members", Mock(return_value=[]))
+    if failure_site == "refresh":
+        fixture._refresh_owned_tree.side_effect = failure
+    elif failure_site == "session":
+        fixture._session_members.side_effect = failure
+    else:
+        process.is_running.side_effect = failure
+    monkeypatch.setattr(fixture.os, "killpg", Mock())
+    ticks = iter([0, 0, 3, 3, 3, 6])
+    monkeypatch.setattr(fixture.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(fixture.time, "sleep", Mock())
+    with pytest.raises(RuntimeError, match="could not be verified") as result:
+        fixture._stop_owned_tree(child, {process.pid: process})
+    assert result.value.__cause__ is failure
+    assert process.send_signal.call_args_list == [((signal.SIGTERM,),), ((signal.SIGKILL,),)]
+    child.wait.assert_called_once_with(timeout=2)
+
+
+def test_immediate_orphan_is_not_discoverable_by_session_polling(monkeypatch):
+    orphan = Mock(pid=90124)
+    monkeypatch.setattr(fixture.psutil, "process_iter", lambda: [orphan])
+    # The child already called setsid and its parent exited before the first poll.
+    monkeypatch.setattr(fixture.os, "getsid", lambda _: orphan.pid)
+    known = {}
+    fixture._refresh_owned_tree(90123, known)
+    assert known == {}
+    orphan.children.assert_not_called()
+    launch = Mock()
+    monkeypatch.setattr(fixture.subprocess, "Popen", launch)
+    with pytest.raises(RuntimeError, match="containment is unavailable"):
+        fixture._run_owned_group(
+            [sys.executable, "-c", "import os,time; os.fork() and os._exit(0); os.setsid(); time.sleep(60)"],
+            {},
+        )
+    launch.assert_not_called()
+
+
+def test_discovery_error_is_not_erased_when_known_process_stops(monkeypatch):
+    child = Mock(pid=90123)
+    child.poll.return_value = 7
+    process = Mock(pid=90124)
+    process.is_running.return_value = False
+    failure = psutil.AccessDenied(90125)
+    monkeypatch.setattr(fixture, "_refresh_owned_tree", Mock(side_effect=failure))
+    monkeypatch.setattr(fixture, "_session_members", Mock(return_value=[]))
+    monkeypatch.setattr(fixture.os, "killpg", Mock())
+    with pytest.raises(RuntimeError, match="could not be verified") as result:
+        fixture._stop_owned_tree(child, {process.pid: process})
+    assert result.value.__cause__ is failure
+    process.send_signal.assert_called_once_with(signal.SIGTERM)
     child.wait.assert_called_once_with(timeout=2)
