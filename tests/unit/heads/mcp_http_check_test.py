@@ -20,6 +20,7 @@ from heinzel.heads._mcp_tokens import McpTokens
 from heinzel.heads.cli import build
 from heinzel.heads.mcp._http_check import check_http
 from heinzel.kernel._logging import record_fields
+from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.unit
 
@@ -181,7 +182,7 @@ def test_probe_launch_failure_is_reported_without_child_diagnostics(monkeypatch,
 
 @pytest.mark.parametrize("mode", ["redirect", "redirect-path", "invalid-json"])
 def test_reflected_token_never_reaches_cli_or_sdk_logs(make_kernel, caplog, capfd, mode):
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from http.server import BaseHTTPRequestHandler
 
     secret = "hzmcp_fictional_reflection_test"
     requests: list[str] = []
@@ -211,7 +212,7 @@ def test_reflected_token_never_reaches_cli_or_sdk_logs(make_kernel, caplog, capf
         def log_message(self, format, *args):  # noqa: A002 - standard library callback signature
             pass
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Reflect)
+    server = LoopbackThreadingHTTPServer(("127.0.0.1", 0), Reflect)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     caplog.set_level(logging.DEBUG)
