@@ -104,6 +104,21 @@ describe("OperationDialog", () => {
     expect(failed).not.toHaveTextContent("handover");
   });
 
+  it.each([
+    [true, "Restart requested. If the service is active, its next tick will confirm the version."],
+    [false, "The daemon was not restarted. Install it and try again."],
+    [null, "The restart result is unavailable. Check the daemon status."],
+  ])("reports the streamed restart outcome %s accurately", async (restarted, message) => {
+    const live = liveStream();
+    mount();
+    act(() => requestOperation(DAEMON_RESTART));
+    expect(await screen.findByText("Restarting the daemon…", { selector: "output" })).toBeInTheDocument();
+    await live.end("result", { data: restarted === null ? {} : { restarted } });
+    expect(await screen.findByRole("status")).toHaveTextContent(message);
+    expect(screen.queryByText("The daemon restarted.")).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Done" }));
+  });
+
   it("shows the real steps as they happen, starts once however often it is clicked, and cannot be cancelled", async () => {
     const live = liveStream();
     const { invalidate } = mount();

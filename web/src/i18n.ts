@@ -119,8 +119,9 @@ const en = {
   "daemon.unsupported": "The daemon needs launchd or systemd on this machine.",
   "daemon.mismatch": "The background service is still running an older version. Restart it to use the installed one.",
   "daemon.restarting": "Restarting the daemon…",
-  "daemon.restarted": "Restart requested. The next service tick will confirm the version.",
+  "daemon.restarted": "Restart requested. If the service is active, its next tick will confirm the version.",
   "daemon.notRestarted": "The daemon was not restarted. Install it and try again.",
+  "daemon.restartUnknown": "The restart result is unavailable. Check the daemon status.",
   "daemon.restartFailed": "The daemon could not restart. Try again in a moment.",
   "daemon.install": "Install",
   "daemon.uninstall": "Uninstall",
@@ -525,7 +526,6 @@ const en = {
   "op.daemon.install.running": "Installing the background service",
   "op.daemon.install.done": "Installed. Its first check comes within 5 minutes.",
   "op.daemon.restart.running": "Restarting the daemon…",
-  "op.daemon.restart.done": "The daemon restarted.",
   "op.daemon.restart.failed": "The daemon could not restart. Try again in a moment.",
   "op.daemon.uninstall.title": "Stop the background service?",
   "op.daemon.uninstall.consent":

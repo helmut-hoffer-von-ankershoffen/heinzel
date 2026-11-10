@@ -245,7 +245,9 @@ describe("Daemon Settings", () => {
     await user.click(screen.getByRole("button", { name: "Restart" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(await screen.findByText("2.0.0")).toBeInTheDocument();
-    expect(screen.getByText("Restart requested. The next service tick will confirm the version.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Restart requested. If the service is active, its next tick will confirm the version."),
+    ).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });
 
@@ -259,7 +261,7 @@ describe("Daemon Settings", () => {
     await user.click(screen.getByRole("button", { name: "Restart" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(
-      await screen.findByText("Restart requested. The next service tick will confirm the version."),
+      await screen.findByText("Restart requested. If the service is active, its next tick will confirm the version."),
     ).toBeInTheDocument();
   });
 
@@ -282,7 +284,7 @@ describe("Daemon Settings", () => {
     await user.click(await screen.findByRole("button", { name: "Restart" }));
     expect(await screen.findByText("The daemon was not restarted. Install it and try again.")).toBeInTheDocument();
     expect(
-      screen.queryByText("Restart requested. The next service tick will confirm the version."),
+      screen.queryByText("Restart requested. If the service is active, its next tick will confirm the version."),
     ).not.toBeInTheDocument();
   });
 
