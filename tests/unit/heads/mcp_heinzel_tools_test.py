@@ -5,6 +5,7 @@ import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
+from io import StringIO
 from threading import Event, Lock
 from typing import cast
 
@@ -89,10 +90,10 @@ def scoped_tools(make_kernel, tmp_path):
     module.service(HeinzelInvocations, lambda: provider)
     kernel = make_kernel(example=module)
 
-    def tools():
+    def tools(targets=None):
         return HeinzelTools(
             kernel,
-            [_PERSONAL, _CONTRACT],
+            [_PERSONAL, _CONTRACT] if targets is None else targets,
             scope="grant-revision-1",
             root=tmp_path / "results",
             access=broker.access,
@@ -147,6 +148,62 @@ def test_mcp_and_cli_share_durable_identity_and_exact_result(scoped_tools, monke
     assert len(provider.calls) == 1
     assert json.loads(retained)["request_id"] == provider.calls[0][1]
     assert broker.work[(_PERSONAL.key, "same-1")][1] == "completed"
+
+
+def test_each_reviewed_target_has_one_mcp_and_cli_identity(scoped_tools, monkeypatch, capsys):
+    tools, provider, _broker = scoped_tools
+    targets = [
+        _PERSONAL,
+        HeinzelTarget(kind="personal", identity="hz-" + "1" * 26),
+        _CONTRACT,
+        HeinzelTarget(kind="contract", identity="me:daily", source_digest=_DIGEST),
+    ]
+    names = {target.tool_name for target in targets}
+    assert len(names) == len(targets)
+    for number, target in enumerate(targets):
+        request_id = f"each-{number}"
+        arguments = {"request_id": request_id}
+        if target.kind == "personal":
+            arguments["message"] = "Fictional request"
+        listed, response = asyncio.run(_mcp_round_trip(tools(targets), target.tool_name, arguments))
+        assert {item.name for item in listed.tools} == names
+        assert not response.is_error
+        retained = cast("types.TextContent", response.content[0]).text
+        cli = ["hz", "system", "mcp", "tools", "invoke", target.key, "--request-id", request_id]
+        if target.kind == "personal":
+            cli += ["--message-stdin"]
+            monkeypatch.setattr(sys, "stdin", StringIO("Fictional request"))
+        monkeypatch.setattr(sys, "argv", cli)
+        with pytest.raises(SystemExit) as finished:
+            cli_main(private_heinzel_tools=tools(targets))
+        assert finished.value.code == 0
+        assert capsys.readouterr().out == retained
+    assert [call[0] for call in provider.calls] == [target.key for target in targets]
+
+
+def test_cli_lists_only_reviewed_targets_with_usable_keys(scoped_tools, monkeypatch, capsys):
+    tools, _provider, _broker = scoped_tools
+    monkeypatch.setattr(sys, "argv", ["hz", "system", "mcp", "tools", "list"])
+    with pytest.raises(SystemExit) as finished:
+        cli_main(private_heinzel_tools=tools())
+    assert finished.value.code == 0
+    items = json.loads(capsys.readouterr().out)
+    assert {item["key"]: item["name"] for item in items} == {
+        _PERSONAL.key: _PERSONAL.tool_name,
+        _CONTRACT.key: _CONTRACT.tool_name,
+    }
+
+
+def test_cli_target_key_never_grants_an_unreviewed_or_stale_target(scoped_tools, monkeypatch, capsys):
+    tools, provider, _broker = scoped_tools
+    provider.stale.add(_CONTRACT.key)
+    for key in (_CONTRACT.key, "contract:me:unreviewed"):
+        monkeypatch.setattr(sys, "argv", ["hz", "system", "mcp", "tools", "invoke", key, "--request-id", "x"])
+        with pytest.raises(SystemExit) as finished:
+            cli_main(private_heinzel_tools=tools())
+        assert finished.value.code == 1
+        assert "unavailable" in capsys.readouterr().err
+    assert not provider.calls
 
 
 def test_private_discovery_and_dispatch_refuse_stale_target_and_revoked_lease(scoped_tools):
@@ -210,6 +267,67 @@ def test_standalone_cli_does_not_boot_an_unapproved_project(monkeypatch, capsys)
         cli_main()
     assert refused.value.code == 1
     assert "unavailable" in capsys.readouterr().err
+
+
+def test_cli_reads_a_personal_message_from_stdin_without_putting_it_in_arguments(scoped_tools, monkeypatch, capsys):
+    tools, provider, _broker = scoped_tools
+    message = "A fictional private message"
+    _, response = asyncio.run(
+        _mcp_round_trip(tools(), _PERSONAL.tool_name, {"request_id": "stdin-1", "message": message})
+    )
+    assert not response.is_error
+    retained = cast("types.TextContent", response.content[0]).text
+    monkeypatch.setattr(sys, "stdin", StringIO(message))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["hz", "system", "mcp", "tools", "invoke", _PERSONAL.tool_name, "--request-id", "stdin-1", "--message-stdin"],
+    )
+    with pytest.raises(SystemExit) as finished:
+        cli_main(private_heinzel_tools=tools())
+    assert finished.value.code == 0
+    assert len(provider.calls) == 1
+    assert provider.calls[0][2] == message
+    assert message not in " ".join(sys.argv)
+    output = capsys.readouterr().out
+    assert output == retained
+    assert message not in output
+
+
+def test_cli_refuses_oversized_stdin_before_invoking_the_provider(scoped_tools, monkeypatch, capsys):
+    tools, provider, _broker = scoped_tools
+    monkeypatch.setattr(sys, "stdin", StringIO("x" * 32001))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["hz", "system", "mcp", "tools", "invoke", _PERSONAL.tool_name, "--request-id", "stdin-2", "--message-stdin"],
+    )
+    with pytest.raises(SystemExit) as finished:
+        cli_main(private_heinzel_tools=tools())
+    assert finished.value.code == 1
+    assert not provider.calls
+    assert "unavailable" in capsys.readouterr().err
+
+
+def test_cli_sanitizes_stdin_decode_failures(scoped_tools, monkeypatch, capsys):
+    tools, provider, _broker = scoped_tools
+
+    class InvalidInput:
+        def read(self, _limit):
+            encoding = "utf-8"
+            raise UnicodeDecodeError(encoding, b"private\xff", 7, 8, "bad byte")
+
+    monkeypatch.setattr(sys, "stdin", InvalidInput())
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["hz", "system", "mcp", "tools", "invoke", _PERSONAL.tool_name, "--request-id", "stdin-3", "--message-stdin"],
+    )
+    with pytest.raises(SystemExit) as finished:
+        cli_main(private_heinzel_tools=tools())
+    assert finished.value.code == 1
+    assert not provider.calls
+    assert "private" not in capsys.readouterr().err
 
 
 def test_stable_names_distinguish_namespaces_and_ignore_revisions():

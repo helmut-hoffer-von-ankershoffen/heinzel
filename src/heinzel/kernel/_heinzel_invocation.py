@@ -15,6 +15,7 @@ _PERSONAL = re.compile(r"hz-[0-9A-HJKMNP-TV-Z]{26}")
 _CONTRACT = re.compile(r"(?:me|team):[a-z](?:-?[a-z0-9])*")
 _MAX_CONTRACT_NAME = 64
 _HASH = re.compile(r"sha256:[0-9a-f]{64}")
+MAX_MESSAGE_LENGTH = 32000
 
 
 class HeinzelTarget(BaseModel):
@@ -66,7 +67,7 @@ class HeinzelInput(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
     request_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
-    message: str | None = Field(default=None, min_length=1, max_length=32000)
+    message: str | None = Field(default=None, min_length=1, max_length=MAX_MESSAGE_LENGTH)
 
 
 class HeinzelInvocations(ServiceContract):
