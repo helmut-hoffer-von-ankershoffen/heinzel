@@ -49,7 +49,9 @@ def _require(condition: bool, message: str) -> None:
 
 
 def _api(path: str, *, binary: bool = False) -> Any:  # noqa: ANN401 - GitHub returns either JSON or bytes
-    command = ["gh", "api", "-H", "X-GitHub-Api-Version: 2026-03-10", f"repos/{REPO}/{path}"]
+    # PR snapshots need merge_commit_sha, which the 2026 REST version removed.
+    version = "2022-11-28" if path.startswith("pulls/") else "2026-03-10"
+    command = ["gh", "api", "-H", f"X-GitHub-Api-Version: {version}", f"repos/{REPO}/{path}"]
     if not binary:
         command.extend(("--paginate", "--slurp"))
     response = subprocess.run(command, check=True, capture_output=True, timeout=60).stdout

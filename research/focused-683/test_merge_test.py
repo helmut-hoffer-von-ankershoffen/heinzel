@@ -66,6 +66,16 @@ class TestMergeReadback(unittest.TestCase):
         ):
             verify._test_merge(pr, before_update=False, wait=True)
 
+    def test_pr_snapshot_uses_rest_version_with_merge_sha(self) -> None:
+        """Preserve merge_commit_sha while retaining the current step-log API."""
+        with patch.object(verify.subprocess, "run") as api:
+            api.return_value.stdout = b"[]"
+            verify._api("pulls/683")
+            verify._api("pulls/650")
+            verify._api("actions/jobs/1/steps/2/logs", binary=True)
+        versions = [item.args[0][3] for item in api.call_args_list]
+        self.assertEqual(versions, ["X-GitHub-Api-Version: 2022-11-28"] * 2 + ["X-GitHub-Api-Version: 2026-03-10"])
+
     def test_accepted_update_is_never_replayed_after_readback_failure(self) -> None:
         """An inconclusive readback leaves the accepted ref update for inspection."""
         responses = [{"object": {"sha": sha}} for sha in (ORIGINAL, verify.BASE, verify.HEAD)]
