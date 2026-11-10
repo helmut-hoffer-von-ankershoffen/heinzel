@@ -66,6 +66,7 @@ describe("explicit ephemeral audio capture", () => {
   });
 
   it("refuses a display with no audio and releases its video", async () => {
+    context.resume.mockReturnValue(new Promise<void>(() => {}));
     choose.mockResolvedValue({ ...shared, getAudioTracks: () => [] });
     await expect(captureAudio(new AbortController().signal)).rejects.toThrow("No audio was shared");
     expect(video.stop).toHaveBeenCalledOnce();
@@ -82,6 +83,17 @@ describe("explicit ephemeral audio capture", () => {
     ended.readyState = "ended";
     resume();
     await expect(pending).rejects.toThrow("No audio was shared");
+    expect(ended.stop).toHaveBeenCalledOnce();
+    expect(video.stop).toHaveBeenCalledOnce();
+    expect(context.close).toHaveBeenCalledOnce();
+    expect(source.connect).not.toHaveBeenCalled();
+  });
+
+  it("rejects an already-ended audio track without waiting for activation", async () => {
+    context.resume.mockReturnValue(new Promise<void>(() => {}));
+    const ended = { ...track("audio"), readyState: "ended" };
+    choose.mockResolvedValue({ getTracks: () => [ended, video], getAudioTracks: () => [ended] });
+    await expect(captureAudio(new AbortController().signal, true)).rejects.toThrow("No audio was shared");
     expect(ended.stop).toHaveBeenCalledOnce();
     expect(video.stop).toHaveBeenCalledOnce();
     expect(context.close).toHaveBeenCalledOnce();
