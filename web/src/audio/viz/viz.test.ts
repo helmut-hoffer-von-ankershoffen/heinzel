@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { readPalette } from "../aurora";
 import { Analysis, bandRanges, VIZ_BANDS } from "./analysis";
 import { watchTheme } from "./color";
+import { drawHalo, HALO_RAYS, haloBand } from "./halo";
 import { drawRail, railLayout } from "./rail";
 import { DEFAULT_SETTINGS, parseSettings, styleOn } from "./settings";
+import { createSwarm, drawSwarm, stepSwarm, swarmSettled } from "./swarm";
 import { readVizTheme } from "./theme";
 
 const theme = { a: { r: 166, g: 64, b: 40 }, b: { r: 31, g: 116, b: 68 }, c: { r: 183, g: 132, b: 28 }, dark: false };
@@ -147,7 +149,8 @@ describe("settings", () => {
     expect(parseSettings(null)).toEqual(DEFAULT_SETTINGS);
     expect(parseSettings("not json")).toEqual(DEFAULT_SETTINGS);
     const stored = parseSettings(JSON.stringify({ master: true, styles: { aurora: false } }));
-    expect(stored.styles).toEqual({ spectrum: true, aurora: false });
+    // A choice stored before Halo and Swarm existed keeps them on, as the default.
+    expect(stored.styles).toEqual({ spectrum: true, aurora: false, halo: true, swarm: true });
     expect(styleOn(stored, "aurora")).toBe(false);
     expect(styleOn(parseSettings(JSON.stringify({ master: false })), "spectrum")).toBe(false);
   });
@@ -177,5 +180,93 @@ describe("theme colours", () => {
       root.classList.remove("dark");
       for (const name of ["--color-primary", "--color-ok", "--color-warn"]) root.style.removeProperty(name);
     }
+  });
+});
+
+describe("halo", () => {
+  const ctx = () =>
+    ({
+      clearRect: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      arc: vi.fn(),
+      globalAlpha: 1,
+      lineWidth: 1,
+      lineCap: "butt",
+      strokeStyle: "",
+    }) as unknown as CanvasRenderingContext2D;
+
+  it("puts bass at the bottom and treble at the top, mirrored", () => {
+    expect(haloBand(0)).toBe(VIZ_BANDS - 1);
+    expect(haloBand(HALO_RAYS / 2)).toBe(0);
+    expect(haloBand(HALO_RAYS / 4)).toBe(haloBand((HALO_RAYS * 3) / 4));
+  });
+
+  it("is a still ring when quiet, grows its rays with the sound and pulses at most 5 % on a beat", () => {
+    const a = analysis();
+    const still = ctx();
+    expect(drawHalo(still, a, theme, 80, 80, false)).toBe(1);
+    const quietLength = Math.hypot(
+      Number(vi.mocked(still.lineTo).mock.calls[0]?.[0]) - Number(vi.mocked(still.moveTo).mock.calls[0]?.[0]),
+      Number(vi.mocked(still.lineTo).mock.calls[0]?.[1]) - Number(vi.mocked(still.moveTo).mock.calls[0]?.[1]),
+    );
+    for (let index = 0; index < 4; index += 1) a.step(new Uint8Array(1024).fill(255), null, 1000 + index * 33, 0.033);
+    const loud = ctx();
+    const scale = drawHalo(loud, a, theme, 80, 80, false);
+    expect(scale).toBeGreaterThanOrEqual(1);
+    expect(scale).toBeLessThanOrEqual(1.05);
+    const loudLength = Math.hypot(
+      Number(vi.mocked(loud.lineTo).mock.calls[0]?.[0]) - Number(vi.mocked(loud.moveTo).mock.calls[0]?.[0]),
+      Number(vi.mocked(loud.lineTo).mock.calls[0]?.[1]) - Number(vi.mocked(loud.moveTo).mock.calls[0]?.[1]),
+    );
+    expect(loudLength).toBeGreaterThan(quietLength * 3);
+    expect(vi.mocked(loud.lineTo)).toHaveBeenCalledTimes(HALO_RAYS);
+    expect(drawHalo(ctx(), a, theme, 80, 80, true)).toBe(1);
+  });
+});
+
+describe("swarm", () => {
+  const ctx = () =>
+    ({
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      beginPath: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+      globalAlpha: 1,
+      globalCompositeOperation: "source-over",
+      fillStyle: "",
+    }) as unknown as CanvasRenderingContext2D;
+
+  it("stands still when quiet or under reduced motion, and moves with the bands when loud", () => {
+    const a = analysis();
+    const state = createSwarm(7);
+    expect(stepSwarm(state, a, 0.033, false)).toEqual(["none", "none", "none"]);
+    for (let index = 0; index < 4; index += 1) a.step(new Uint8Array(1024).fill(255), null, 1000 + index * 33, 0.033);
+    expect(stepSwarm(state, a, 0.033, false).every((move) => move !== "none")).toBe(true);
+    expect(stepSwarm(state, a, 0.033, true)).toEqual(["none", "none", "none"]);
+  });
+
+  it("bursts sparks on a beat, never under reduced motion, caps them and lets them settle", () => {
+    const a = analysis();
+    for (let frame = 0; frame < 3; frame += 1) a.step(new Uint8Array(1024), null, frame * 33, 0.033);
+    const bass = new Uint8Array(1024);
+    bass.fill(255, 0, 40);
+    a.step(bass, null, 1000, 0.033);
+    expect(a.beatEvent).toBe(true);
+    const state = createSwarm(3);
+    drawSwarm(ctx(), state, a, theme, 200, 80, [40, 100, 160], 0.033, true);
+    expect(state.sparks).toHaveLength(0);
+    for (let burst = 0; burst < 5; burst += 1) drawSwarm(ctx(), state, a, theme, 200, 80, [40, 100, 160], 0.033, false);
+    expect(state.sparks.length).toBeGreaterThan(0);
+    expect(state.sparks.length).toBeLessThanOrEqual(40);
+    a.rest();
+    for (let index = 0; index < 120 && state.sparks.length; index += 1)
+      drawSwarm(ctx(), state, a, theme, 200, 80, [40, 100, 160], 0.05, false);
+    stepSwarm(state, a, 0.05, false);
+    expect(swarmSettled(state)).toBe(true);
   });
 });
