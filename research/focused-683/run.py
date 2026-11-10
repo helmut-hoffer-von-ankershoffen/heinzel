@@ -6,10 +6,14 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import coverage_evidence  # noqa: E402 - only the reviewed helper directory is added under -I
+
 MANIFEST = json.loads((HERE / "manifest.json").read_text())
 WEB = ("uv", "run", "--no-sync", "--no-build", "--frozen", "--quiet", "python", "scripts/web_build.py")
 
@@ -34,17 +38,15 @@ def _source() -> None:
     subprocess.run(("git", "merge-base", "--is-ancestor", MANIFEST["current_pr_head"], head), check=True)
     changed = _git("diff", "--no-renames", "--name-status", base, head).splitlines()
     _require(changed == [f"{kind}\t{path}" for path, kind in MANIFEST["changed_paths"].items()], "scope drift")
-    production = {path for path in MANIFEST["changed_paths"] if path.startswith("src/heinzel/")}
-    _require(production == set(MANIFEST["coverage"]["python_files"]), "incomplete Python production coverage scope")
-    web = {path for path in MANIFEST["changed_paths"] if path.startswith("web/src/") and not path.endswith(".test.ts")}
-    _require(web == {MANIFEST["coverage"]["web_file"]}, "incomplete web production coverage scope")
+    for files in coverage_evidence.scope(MANIFEST).values():
+        for path in files:
+            _git("cat-file", "-e", f"{head}:{path}")
     _require(not _git("status", "--porcelain"), "candidate checkout is dirty")
 
 
 def _test_python(out: Path) -> None:
     job = MANIFEST["jobs"]["python"]
-    files = MANIFEST["coverage"]["python_files"]
-    include = "--include=" + ",".join(files)
+    files = coverage_evidence.scope(MANIFEST)["python"]
     report = out / "python-coverage.json"
     junit = out / "results.xml"
     env = {**os.environ, "COVERAGE_FILE": str(out.parent / "coverage-data")}
@@ -67,27 +69,26 @@ def _test_python(out: Path) -> None:
     )
     cases = list(ET.parse(junit).iter("testcase"))  # noqa: S314 - local pytest output from pinned source
     actual = sorted(f"{case.attrib['classname'].replace('.', '/')}.py::{case.attrib['name']}" for case in cases)
-    _require(actual == (HERE / "python-collection.txt").read_text().splitlines(), "unexpected Python case inventory")
+    _require(
+        bool(actual) and actual == (HERE / "python-collection.txt").read_text().splitlines(),
+        "unexpected Python case inventory",
+    )
     _require(
         all(case.find(tag) is None for case in cases for tag in ("skipped", "failure", "error")),
         "Python cases contain skips, failures or errors",
     )
     _run(*coverage, "combine", env=env)
-    _run(*coverage, "json", "--fail-under=0", include, "-o", str(report), env=env)
-    data = json.loads(report.read_text())
-    _require(data["meta"]["branch_coverage"] and set(data["files"]) == set(files), "unexpected Python coverage scope")
-    for path, stats in data["files"].items():
-        summary = stats["summary"]
-        _require(summary["num_statements"] > 0, f"empty Python coverage scope: {path}")
-        _threshold(
-            summary["covered_lines"] + summary["covered_branches"],
-            summary["num_statements"] + summary["num_branches"],
-            path,
-        )
-    summary = data["totals"]
-    covered = summary["covered_lines"] + summary["covered_branches"]
-    total = summary["num_statements"] + summary["num_branches"]
-    _threshold(covered, total, "Python statements and branches")
+    _run(*coverage, "json", "--fail-under=0", "-o", str(report), *files, env=env)
+    _run(
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        str(HERE / "coverage_source.py"),
+        str(out / "python-opportunities.json"),
+        *files,
+        env=env,
+    )
 
 
 def _test_platform(out: Path, lane: str) -> None:
@@ -128,12 +129,6 @@ def _test_platform(out: Path, lane: str) -> None:
     )
 
 
-def _threshold(covered: int, total: int, scope: str) -> None:
-    _require(total > 0 and 0 <= covered <= total, f"{scope}: invalid coverage counters")
-    print(f"{scope}: {covered}/{total} = {100 * covered / total:.2f}%")
-    _require(100 * covered >= MANIFEST["coverage"]["minimum_percent"] * total, f"{scope}: coverage below 80%")
-
-
 def _sonar_refs() -> None:
     base_ref, pr_ref = (MANIFEST[key] for key in ("base_ref", "pr_ref"))
     refs = _git("ls-remote", f"https://github.com/{MANIFEST['repository']}.git", base_ref, pr_ref).splitlines()
@@ -155,7 +150,7 @@ def _test_web(out: Path) -> None:
     link.parent.mkdir(exist_ok=True)
     link.symlink_to(provider / "node_modules/@vitest/coverage-v8")
     web_root = Path("web").resolve()
-    web_path = Path(MANIFEST["coverage"]["web_file"])
+    web_paths = [Path(path).relative_to("web") for path in coverage_evidence.scope(MANIFEST)["web"]]
     report = out / "web-results.json"
     coverage = out / "web-coverage"
     selectors = MANIFEST["jobs"]["web"]["selectors"]
@@ -170,7 +165,7 @@ def _test_web(out: Path) -> None:
         f"--outputFile={report}",
         "--coverage.enabled",
         "--coverage.provider=v8",
-        f"--coverage.include={web_path.relative_to('web')}",
+        *(f"--coverage.include={path}" for path in web_paths),
         "--coverage.reporter=json-summary",
         "--coverage.reporter=json",
         f"--coverage.reportsDirectory={coverage}",
@@ -183,32 +178,11 @@ def _test_web(out: Path) -> None:
     )
     cases = suites[0]["assertionResults"]
     _require(
-        sorted(case["fullName"] for case in cases) == (HERE / "web-collection.txt").read_text().splitlines()
+        bool(cases)
+        and sorted(case["fullName"] for case in cases) == (HERE / "web-collection.txt").read_text().splitlines()
         and all(case["status"] == "passed" for case in cases),
         "unexpected web case inventory or status",
     )
-    counts = json.loads((coverage / "coverage-summary.json").read_text())
-    key = str(web_path.resolve())
-    _require(set(counts) == {"total", key}, "unexpected web coverage scope")
-    raw = json.loads((coverage / "coverage-final.json").read_text())
-    _require(set(raw) == {key} and raw[key]["path"] == key, "raw web coverage source mismatch")
-    mapped = raw[key]
-    statements = mapped["s"]
-    branches = [hits for hit_counts in mapped["b"].values() for hits in hit_counts]
-    _require(set(statements) == set(mapped["statementMap"]), "missing mapped web statements")
-    _require(set(mapped["b"]) == set(mapped["branchMap"]), "missing mapped web branches")
-    covered_statements = sum(hits > 0 for hits in statements.values())
-    covered_branches = sum(hits > 0 for hits in branches)
-    _require(
-        counts[key]["statements"]["covered"] == covered_statements
-        and counts[key]["statements"]["total"] == len(statements)
-        and counts[key]["branches"]["covered"] == covered_branches
-        and counts[key]["branches"]["total"] == len(branches),
-        "web coverage summary differs from source-mapped counters",
-    )
-    lines = counts[key]["lines"]
-    _threshold(lines["covered"], lines["total"], "Web source lines")
-    _threshold(covered_statements + covered_branches, len(statements) + len(branches), "Web statements and branches")
 
 
 def _main() -> None:
@@ -239,20 +213,16 @@ def _main() -> None:
     )
     out = Path(os.environ["RUNNER_TEMP"]) / "focused-683"
     out.mkdir()
-    (out / "identity.json").write_text(
-        json.dumps(
-            {
-                "base": MANIFEST["base"],
-                "head": MANIFEST["candidate"],
-                "tree": MANIFEST["tree"],
-                "helper": helper,
-                "lane": args.lane,
-                "run": os.environ["GITHUB_RUN_ID"],
-                "attempt": "1",
-            }
-        )
-        + "\n"
-    )
+    identity = {
+        "base": MANIFEST["base"],
+        "head": MANIFEST["candidate"],
+        "tree": MANIFEST["tree"],
+        "helper": helper,
+        "lane": args.lane,
+        "run": os.environ["GITHUB_RUN_ID"],
+        "attempt": "1",
+    }
+    (out / "identity.json").write_text(json.dumps(identity) + "\n")
     if args.lane == "python":
         _test_python(out)
     elif args.lane in ("python315", "macos"):
@@ -293,6 +263,9 @@ def _main() -> None:
             },
         )
         _sonar_refs()
+    if args.lane in coverage_evidence.RAW_FILES:
+        evidence = coverage_evidence.evidence(MANIFEST, identity, lambda name: (out / name).read_bytes())
+        (out / "pr-coverage.json").write_text(json.dumps(evidence, sort_keys=True) + "\n")
     _source()
 
 

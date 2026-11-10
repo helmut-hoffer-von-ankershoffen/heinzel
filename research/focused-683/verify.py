@@ -8,12 +8,16 @@ import io
 import json
 import re
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import coverage_evidence  # noqa: E402 - only the reviewed helper directory is added under -I
+
 MANIFEST = json.loads((HERE / "manifest.json").read_text())
 REPO = MANIFEST["repository"]
 BASE = MANIFEST["base"]
@@ -26,10 +30,10 @@ MAX_ARCHIVE_BYTES = 2_000_000
 MAX_MEMBER_BYTES = 5_000_000
 MAX_LOG_BYTES = 10_000_000
 MEMBERS = {
-    "python": {"results.xml", "python-coverage.json"},
+    "python": {"results.xml", "pr-coverage.json", *coverage_evidence.RAW_FILES["python"]},
     "python315": {"results.xml"},
     "macos": {"results.xml"},
-    "web": {"web-results.json", "web-coverage/coverage-summary.json", "web-coverage/coverage-final.json"},
+    "web": {"web-results.json", "pr-coverage.json", *coverage_evidence.RAW_FILES["web"]},
     "structural": set(),
     "security": set(),
     "sonar": set(),
@@ -101,6 +105,7 @@ def _source(*, before_update: bool = False) -> None:
         == {path: statuses[status] for path, status in MANIFEST["changed_paths"].items()},
         "candidate paths drift",
     )
+    coverage_evidence.scope(MANIFEST)
     ancestry = _one(f"compare/{original}...{HEAD}?per_page=100")
     _require(ancestry["merge_base_commit"]["sha"] == original and ancestry["status"] == "ahead", "original PR lost")
     merge_sha = pr["merge_commit_sha"]
@@ -130,91 +135,17 @@ def _rules() -> None:
     )
 
 
-def _floor(covered: int, total: int, scope: str) -> None:
-    floor = MANIFEST["coverage"]["minimum_percent"]
-    _require(total > 0 and 0 <= covered <= total and 100 * covered >= floor * total, f"coverage failed: {scope}")
-    print(f"{scope}: {covered}/{total} ({100 * covered / total:.2f}%)")
-
-
-def _python(archive: zipfile.ZipFile) -> None:
-    data = json.loads(archive.read("python-coverage.json"))
-    files = data["files"]
-    _require(
-        data["meta"]["branch_coverage"] is True and set(files) == set(MANIFEST["coverage"]["python_files"]),
-        "Python scope",
-    )
-    covered = total = 0
-    for path, report in files.items():
-        lines, missing = set(report["executed_lines"]), set(report["missing_lines"])
-        branches = {tuple(arc) for arc in report["executed_branches"]}
-        missing_branches = {tuple(arc) for arc in report["missing_branches"]}
-        _require(lines and not lines & missing and not branches & missing_branches, f"invalid Python counters: {path}")
-        summary = report["summary"]
-        _require(
-            (len(lines), len(lines) + len(missing), len(branches), len(branches) + len(missing_branches))
-            == (
-                summary["covered_lines"],
-                summary["num_statements"],
-                summary["covered_branches"],
-                summary["num_branches"],
-            ),
-            f"Python summary differs from measured locations: {path}",
-        )
-        measured = len(lines) + len(branches)
-        opportunities = measured + len(missing) + len(missing_branches)
-        _floor(measured, opportunities, path)
-        covered += measured
-        total += opportunities
-    _floor(covered, total, "All affected Python production files")
-
-
 def _web(archive: zipfile.ZipFile) -> None:
     suites = json.loads(archive.read("web-results.json"))["testResults"]
     path = MANIFEST["jobs"]["web"]["selectors"][0]
     _require(len(suites) == 1 and suites[0]["name"].endswith(f"/web/{path}"), "unexpected Vitest suite")
     cases = suites[0]["assertionResults"]
     _require(
-        suites[0]["status"] == "passed"
+        bool(cases)
+        and suites[0]["status"] == "passed"
         and all(case["status"] == "passed" for case in cases)
         and sorted(case["fullName"] for case in cases) == (HERE / "web-collection.txt").read_text().splitlines(),
         "Vitest inventory or outcome differs",
-    )
-    raw = json.loads(archive.read("web-coverage/coverage-final.json"))
-    summaries = json.loads(archive.read("web-coverage/coverage-summary.json"))
-    _require(len(raw) == 1, "unexpected raw Vitest coverage scope")
-    key, report = next(iter(raw.items()))
-    _require(
-        key == report["path"]
-        and key.endswith("/" + MANIFEST["coverage"]["web_file"])
-        and set(summaries) == {key, "total"},
-        "unexpected covered TypeScript path",
-    )
-    statements = report["s"]
-    branches = report["b"]
-    _require(
-        set(statements) == set(report["statementMap"]) and set(branches) == set(report["branchMap"]),
-        "incomplete Vitest source map",
-    )
-    statement_lines = {report["statementMap"][node]["start"]["line"] for node in statements}
-    covered_lines = {report["statementMap"][node]["start"]["line"] for node, hits in statements.items() if hits > 0}
-    branch_hits = [hits for counts in branches.values() for hits in counts]
-    covered_statements = sum(hits > 0 for hits in statements.values())
-    covered_branches = sum(hits > 0 for hits in branch_hits)
-    for metric, counts in {
-        "lines": (len(covered_lines), len(statement_lines)),
-        "statements": (covered_statements, len(statements)),
-        "branches": (covered_branches, len(branch_hits)),
-    }.items():
-        for scope in (key, "total"):
-            summary = summaries[scope][metric]
-            _require(
-                (summary["covered"], summary["total"]) == counts, f"Vitest {metric} summary differs from source map"
-            )
-    _floor(len(covered_lines), len(statement_lines), "TypeScript source lines")
-    _floor(
-        covered_statements + covered_branches,
-        len(statements) + len(branch_hits),
-        "TypeScript statements and branches",
     )
 
 
@@ -227,7 +158,7 @@ def _cases(archive: zipfile.ZipFile, lane: str) -> None:
         else sorted(MANIFEST["jobs"][lane]["selectors"])
     )
     actual = sorted(f"{case.attrib['classname'].replace('.', '/')}.py::{case.attrib['name']}" for case in cases)
-    _require(actual == expected, f"{lane} case inventory differs")
+    _require(bool(actual) and actual == expected, f"{lane} case inventory differs")
     _require(
         all(case.find(tag) is None for case in cases for tag in ("skipped", "failure", "error")),
         f"{lane} case did not pass",
@@ -291,8 +222,8 @@ def _artifact(artifact: dict[str, Any], lane: str, run_id: int, helper: str) -> 
             _web(archive)
         if lane in {"python", "python315", "macos"}:
             _cases(archive, lane)
-        if lane == "python":
-            _python(archive)
+        if lane in coverage_evidence.RAW_FILES:
+            coverage_evidence.verify(MANIFEST, identity, archive.read)
 
 
 def _evidence(run_id: int, helper: str) -> None:

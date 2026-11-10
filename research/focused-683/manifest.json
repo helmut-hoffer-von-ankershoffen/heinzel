@@ -37,9 +37,11 @@
     "coverage-floor",
     "merge-gate"
   ],
-  "activation": "ready",
+  "activation": "held",
   "coverage": {
-    "minimum_percent": 80,
+    "type": "pr-affected-production-coverage/v1",
+    "floor_percent": 80,
+    "threshold_percent": 90,
     "python_files": [
       "src/heinzel/heads/install.py",
       "src/heinzel/kernel/_installation.py",
@@ -47,7 +49,21 @@
       "src/heinzel/modules/system/doctor/__init__.py",
       "src/heinzel/modules/ui/_service.py"
     ],
-    "web_file": "web/src/updates/updateState.ts"
+    "web_files": [
+      "web/src/updates/updateState.ts"
+    ],
+    "source_shape_sha256": {
+      "python": {
+        "src/heinzel/heads/install.py": "4be69f6797a4aa59dfa7020cfc9ea1cfd6cdad7d3ddd09f1ca1400378cdd5b0d",
+        "src/heinzel/kernel/_installation.py": "88970f4a811a71e054afe96ad025427fe48cdde85e04aa7ed915662da599deee",
+        "src/heinzel/kernel/_uv_locate.py": "a3f47f487852b20a092ea268dd9c4d9a72356da05e05915340e888f75d8cd781",
+        "src/heinzel/modules/system/doctor/__init__.py": "73ed8e6f87164450fec666658cae671c85725c764889c4f0bfae11f0762cbe92",
+        "src/heinzel/modules/ui/_service.py": "3bb9cd5c68367b7482dd91a437e75a6674003e5a83e8294b3e21d870edd1938f"
+      },
+      "web": {
+        "web/src/updates/updateState.ts": "f5769b6c2e643f3493acb628ecca8f2a50986d192b5c6a45dd628352e173a6fd"
+      }
+    }
   },
   "jobs": {
     "python": {
