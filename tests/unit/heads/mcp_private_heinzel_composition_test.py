@@ -180,10 +180,21 @@ def _cli_invoke(tools, request_id, monkeypatch, capsys):
     return finished.value.code, capsys.readouterr().out
 
 
-def _exercise_inherited_tool_bridge(directory):
+def _exercise_inherited_tool_bridge(directory, phase):  # noqa: C901, PLR0915 - keep ownership and teardown in one scope
     """Exercise a private synthetic tool through the owned bridge, without a vendor process."""
     kernel = Kernel(Settings(state_dir=directory / "profile"), [])
     provider = SyntheticProvider(kernel.resolve(CurrentUser))
+    rejected = []
+    if phase == "provider-failure":
+
+        def reject_provider(target, request, check_active):
+            provider.require_current(target)
+            check_active()
+            rejected.append(request.request_id)
+            msg = "Synthetic provider refused"
+            raise HeinzelError(msg)
+
+        provider.execute = reject_provider
     kernel.bind(HeinzelInvocations, provider)
     plan = _plan("bridge", principal=provider.current.owner().id)
     marker = b"fixture-admitted\n"
@@ -219,20 +230,40 @@ def _exercise_inherited_tool_bridge(directory):
                         supervisor._authority.pending_reviews, timeout=_TIMEOUT
                     )
                     (review,) = supervisor._authority.pending_reviews()
-                    supervisor._authority.approve(review)
-                with front.makefile("rb") as wire:
-                    assert wire.readline() == marker
-                    _initialize(front, wire)
-                    listed = _rpc(front, wire, "tools/list", 2)
-                    assert [tool["name"] for tool in listed["tools"]] == [_TARGET.tool_name]
-                    result = _mcp_invoke(front, wire, "bridge-call")
-                    recorded = json.loads(result["content"][0]["text"])["request_id"]
-                    assert provider.calls == [(recorded, "mcp-private-wire")]
+                    if phase == "admission-failure":
+                        # The bridge refuses all client bytes before exact admission.
+                        front.sendall(b"unapproved input")
+                    elif phase != "review-failure":
+                        supervisor._authority.approve(review)
+                if phase == "review-failure":
                     supervisor.revoke()
-                    assert wire.readline() == b""
-                running.result(timeout=_TIMEOUT)
-                with pytest.raises(HeinzelError), transport.admit():
-                    pytest.fail("A revoked bridge was admitted again")
+                if phase in {"review-failure", "admission-failure"}:
+                    with pytest.raises(HeinzelError):
+                        running.result(timeout=_TIMEOUT)
+                    assert provider.calls == []
+                    assert front.recv(1) == b""
+                    supervisor.revoke()
+                    with pytest.raises(HeinzelError), transport.admit():
+                        pytest.fail("A failed connection was admitted again")
+                else:
+                    with front.makefile("rb") as wire:
+                        assert wire.readline() == marker
+                        _initialize(front, wire)
+                        listed = _rpc(front, wire, "tools/list", 2)
+                        assert [tool["name"] for tool in listed["tools"]] == [_TARGET.tool_name]
+                        result = _mcp_invoke(front, wire, "bridge-call")
+                        if phase == "provider-failure":
+                            assert result["isError"]
+                            assert len(rejected) == 1
+                            assert provider.calls == []
+                        else:
+                            recorded = json.loads(result["content"][0]["text"])["request_id"]
+                            assert provider.calls == [(recorded, "mcp-private-wire")]
+                        supervisor.revoke()
+                        assert wire.readline() == b""
+                    running.result(timeout=_TIMEOUT)
+                    with pytest.raises(HeinzelError), transport.admit():
+                        pytest.fail("A revoked bridge was admitted again")
             finally:
                 supervisor.revoke()
                 with suppress(OSError):
@@ -242,7 +273,8 @@ def _exercise_inherited_tool_bridge(directory):
             os.waitpid(reaped[0], os.WNOHANG)
 
 
-def test_owned_bridge_serves_only_approved_synthetic_heinzel_then_revokes(tmp_path):
+@pytest.mark.parametrize("phase", ["success", "review-failure", "admission-failure", "provider-failure"])
+def test_owned_bridge_serves_only_approved_synthetic_heinzel_then_revokes(tmp_path, phase):
     run = subprocess.run(
         [
             sys.executable,
@@ -250,10 +282,11 @@ def test_owned_bridge_serves_only_approved_synthetic_heinzel_then_revokes(tmp_pa
             "-c",
             (
                 "import runpy,sys; from pathlib import Path; "
-                "runpy.run_path(sys.argv[1])['_exercise_inherited_tool_bridge'](Path(sys.argv[2]))"
+                "runpy.run_path(sys.argv[1])['_exercise_inherited_tool_bridge'](Path(sys.argv[2]),sys.argv[3])"
             ),
             __file__,
             str(tmp_path),
+            phase,
         ],
         capture_output=True,
         text=True,
