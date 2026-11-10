@@ -1228,23 +1228,9 @@ function GalleryContents({ spec }: { spec: string }) {
         const shots = gallery.screenshots ?? [];
         const shot = shots[selected] ?? shots[0];
         return (
-          <div className="min-w-0 space-y-3">
+          <div data-plugin-gallery-content className="min-w-0 space-y-3">
             {shot ? (
               <>
-                <figure className="min-w-0">
-                  <PublicMediaLink href={shot.url} label={t("plugins.fullSizeFor", { caption: shot.caption })}>
-                    <img
-                      src={shot.url}
-                      alt={shot.caption}
-                      referrerPolicy="no-referrer"
-                      className="max-h-96 w-full rounded-md border border-border object-contain"
-                    />
-                  </PublicMediaLink>
-                  <figcaption className="mt-2 break-words text-sm text-muted-foreground">
-                    <span className="mr-2 font-medium">{shot.surface.toUpperCase()}</span>
-                    {shot.caption}
-                  </figcaption>
-                </figure>
                 <fieldset className="flex min-w-0 flex-wrap gap-2">
                   <legend className="sr-only">{t("plugins.chooseScreenshot")}</legend>
                   {shots.map((image, index) => (
@@ -1270,6 +1256,32 @@ function GalleryContents({ spec }: { spec: string }) {
                     </button>
                   ))}
                 </fieldset>
+                <figure className="min-w-0">
+                  <PublicMediaLink href={shot.url} label={t("plugins.fullSizeFor", { caption: shot.caption })}>
+                    <img
+                      src={shot.url}
+                      alt={shot.caption}
+                      referrerPolicy="no-referrer"
+                      className="max-h-[35dvh] w-full rounded-md border border-border object-contain"
+                      onLoad={(event) => {
+                        const image = event.currentTarget;
+                        const content = image.closest<HTMLElement>("[data-plugin-gallery-content]");
+                        const pane = image.closest<HTMLElement>("[data-settings-content]");
+                        if (
+                          content &&
+                          pane &&
+                          image.getBoundingClientRect().bottom > pane.getBoundingClientRect().bottom
+                        ) {
+                          pane.scrollTop += content.getBoundingClientRect().top - pane.getBoundingClientRect().top - 8;
+                        }
+                      }}
+                    />
+                  </PublicMediaLink>
+                  <figcaption className="mt-2 break-words text-sm text-muted-foreground">
+                    <span className="mr-2 font-medium">{shot.surface.toUpperCase()}</span>
+                    {shot.caption}
+                  </figcaption>
+                </figure>
               </>
             ) : (
               <p className="text-sm text-muted-foreground">{t("plugins.noScreenshots")}</p>

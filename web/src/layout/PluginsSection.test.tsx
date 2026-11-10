@@ -1192,6 +1192,30 @@ const GALLERY = {
 };
 
 describe("PluginGallery", () => {
+  it("brings a clipped preview into the settings pane without moving keyboard focus", async () => {
+    serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
+    const user = userEvent.setup();
+    const { container } = render(
+      <Providers client={queryClient()}>
+        <div data-settings-content>
+          <PluginGallery spec="harbor" name="Harbor" />
+        </div>
+      </Providers>,
+    );
+    const open = screen.getByRole("button", { name: "Screenshots for Harbor" });
+    await user.click(open);
+    const image = await screen.findByRole("img", { name: "Harbor in the app" });
+    const pane = container.querySelector<HTMLElement>("[data-settings-content]");
+    const content = container.querySelector<HTMLElement>("[data-plugin-gallery-content]");
+    if (!pane || !content) throw new Error("Gallery fixture is missing its settings pane");
+    vi.spyOn(pane, "getBoundingClientRect").mockReturnValue({ top: 80, bottom: 380 } as DOMRect);
+    vi.spyOn(content, "getBoundingClientRect").mockReturnValue({ top: 330 } as DOMRect);
+    vi.spyOn(image, "getBoundingClientRect").mockReturnValue({ bottom: 500 } as DOMRect);
+    fireEvent.load(image);
+    expect(pane.scrollTop).toBe(242);
+    expect(open).toHaveFocus();
+  });
+
   it("loads no metadata or images until opened, switches UI/CLI captures and keeps sound external", async () => {
     const calls = serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
     const user = userEvent.setup();

@@ -79,12 +79,26 @@ export async function exercisePluginGallery(page, requests, shots, name) {
   await button.click();
   const gallery = dialog.getByRole("region", { name: "Screenshot gallery: Harbor", exact: true });
   await gallery.getByRole("img", { name: "Harbor UI preview", exact: true }).evaluate((element) => element.decode());
+  const visiblePreview = async (caption) => {
+    await page.waitForFunction((text) => {
+      const image = [...document.querySelectorAll("[data-plugin-gallery-content] img")].find(
+        (item) => item.alt === text,
+      );
+      const pane = image?.closest("[data-settings-content]");
+      if (!image || !pane) return false;
+      const picture = image.getBoundingClientRect();
+      const viewport = pane.getBoundingClientRect();
+      return picture.height > 0 && picture.top >= viewport.top && picture.bottom <= viewport.bottom;
+    }, caption);
+  };
+  await visiblePreview("Harbor UI preview");
   await page.screenshot({ path: join(shots, `${name}-plugin-gallery-ui.png`) });
   const cli = gallery.getByRole("button", { name: "CLI: Harbor CLI preview", exact: true });
   await cli.focus();
   await page.keyboard.press("Enter");
   const selected = gallery.getByRole("img", { name: "Harbor CLI preview", exact: true });
   await selected.evaluate((element) => element.decode());
+  await visiblePreview("Harbor CLI preview");
   assert.equal(
     await gallery
       .getByText("Screenshots remain available. Soundscape discovery is incomplete in this fixture.", { exact: true })
