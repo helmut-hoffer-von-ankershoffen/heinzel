@@ -15,7 +15,7 @@ from heinzel.modules.system.notify._store import MAX_NOTICES, Store
 
 pytestmark = pytest.mark.unit
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "notify_v0929"
-# Exact files from v0.9.29, peeled commit f034fb410ac801562c1afff68f62a19cec26a.
+# Exact files from v0.9.29, peeled commit f034fb410ac801562c1afff68f62a19cec9ec26a.
 HASHES = {
     "notifications.py.txt": "65ebaa9b2d49885b93062ba3411031ab5e8e2db7be153483f5fddfbd535cce57",
     "store.py.txt": "8143f2e7d169271cf253e97f84694071e3824d556a41d72de2bce87eecdd9353",
