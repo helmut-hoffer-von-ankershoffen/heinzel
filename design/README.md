@@ -174,7 +174,7 @@ top-right on one card and bottom-left on the next; a wizard that puts Next befor
 - `web/src/test/links-standards.test.ts` fails on a link tag (`a`, `Link`, `NavLink`, `role="link"`) in a file that is
   not listed, on any link look (`underline`, `text-primary`, `variant="link"`) on a control, and on `data-prose-link`
   outside prose. Its list of files only shrinks; a row marked `CONVERT` leaves it with its conversion.
-- `web/src/lib/pane-actions-standards.test.ts` fails on a hand-drawn `border-t`
+- `web/src/lib/paneActionsStandards.test.ts` fails on a hand-drawn `border-t`
   row, a right-aligned button row outside `PaneActions`, an icon button without a name, a raw `<button>` outside the
   listed kinds (switch, tab, menu row, nav) and an unlisted `freeform` container.
 - The mobile browser sweep opens every footer pane, one dialog and one Today card at phone width on Chromium and
