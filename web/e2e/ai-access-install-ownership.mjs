@@ -91,7 +91,14 @@ try {
     await page.locator("#splash").waitFor({ state: "hidden" });
     await page.getByRole("button", { name: "Set up ChatGPT plan" }).click();
     let dialog = page.getByRole("dialog", { name: "Set up ChatGPT plan" });
-    await dialog.getByRole("button", { name: "Add and restart" }).click();
+    const add = dialog.getByRole("button", { name: "Add and restart" });
+    if (dismissal === "close") {
+      // Two callbacks in one turn must still acquire only one owner before React renders the disabled state.
+      await add.evaluate((button) => {
+        button.click();
+        button.click();
+      });
+    } else await add.click();
     await started;
     if (dismissal === "close" || dismissal === "failure") await dialog.getByRole("button", { name: "Close" }).click();
     if (dismissal === "escape") {
