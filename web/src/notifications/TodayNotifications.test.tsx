@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 describe("Today's notifications", () => {
-  it("drop a notice once the server resolves it, without anyone marking it read", async () => {
+  it.each(["hz:notice", "hz:notices"])("drops a resolved notice on %s without marking it read", async (event) => {
     let resolved = false;
     mockApi({
       "/api/system/notify/list": () => ({ notices: resolved ? [] : [release], waiting: 0, native: "" }),
@@ -48,7 +48,7 @@ describe("Today's notifications", () => {
     expect(screen.getByRole("heading", { name: /notifications/i })).toBeVisible();
 
     resolved = true; // installed >= announced: the list no longer carries it
-    window.dispatchEvent(new Event("hz:notice"));
+    window.dispatchEvent(new Event(event));
     await waitFor(() => expect(screen.queryByRole("link", { name: /hz 0\.9\.28 is available/ })).toBeNull());
     expect(screen.queryByRole("heading", { name: /notifications/i })).toBeNull();
     expect(localStorage.getItem("hz.notify.seen")).toBeNull(); // read stays the person's own action
