@@ -1,6 +1,7 @@
 import { Check, Download, Pause, Play, RefreshCw, RotateCw, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { type DaemonAction, useChangeDaemon, useDaemonStatus } from "@/api/daemon";
+import { useExpert } from "@/api/queries";
 import { Loaded } from "@/components/common";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
@@ -11,6 +12,7 @@ type Action = DaemonAction;
 export function DaemonSettings() {
   const status = useDaemonStatus();
   const change = useChangeDaemon();
+  const expert = useExpert();
   const [pending, setPending] = useState<Action | null>(null);
   const label = (action: Action) => t(`daemon.${action}`);
   const ask = (action: Action) => {
@@ -109,6 +111,9 @@ export function DaemonSettings() {
                   </PaneAction>
                 )}
               </PaneActions>
+              {expert.data?.expert && supported && daemon.installed && (
+                <code className="block break-all text-muted-foreground">hz system daemon restart</code>
+              )}
             </>
           );
         }}

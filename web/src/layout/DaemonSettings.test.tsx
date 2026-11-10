@@ -24,9 +24,16 @@ const running: SchemaDaemonStatus = {
   last_tick: null,
 };
 
-function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false, restartFails = false, restarted = true) {
+function show(
+  initial: Partial<SchemaDaemonStatus> = {},
+  failed = false,
+  restartFails = false,
+  restarted = true,
+  expert = false,
+) {
   let status = { ...running, ...initial };
   const { calls } = mockApi({
+    "/api/system/expert": { expert },
     "/api/system/daemon/status": () => status,
     "/api/system/daemon/install": () => {
       status = { ...status, installed: true, loaded: true, version: "1.2.3" };
@@ -254,6 +261,15 @@ describe("Daemon Settings", () => {
     expect(
       await screen.findByText("Restart requested. The next service tick will confirm the version."),
     ).toBeInTheDocument();
+  });
+
+  it.each([false, true])("shows the restart command only in expert mode=%s", async (expert) => {
+    show({}, false, false, true, expert);
+    await screen.findByText("Last service tick version");
+    if (expert) expect(await screen.findByText("hz system daemon restart")).toBeInTheDocument();
+    else {
+      await waitFor(() => expect(screen.queryByText("hz system daemon restart")).not.toBeInTheDocument());
+    }
   });
 
   it("does not claim a restart when the daemon is no longer installed", async () => {
