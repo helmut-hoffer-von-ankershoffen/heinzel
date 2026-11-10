@@ -1058,6 +1058,8 @@ def test_plugin_gallery_is_lazy_accessible_and_responsive_in_both_engines(enviro
     denied.unlink()
 
     gallery_profile_preflight(backend_env, tmp_path, denied)
+    if os.environ.get("HZ_GALLERY_PREFLIGHT_ONLY") == "1":
+        pytest.skip("Non-capture fixture preflight only; gallery assertions were not run")
     initialized.unlink()
     ui = subprocess.Popen(
         [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=backend_env, stderr=subprocess.PIPE
