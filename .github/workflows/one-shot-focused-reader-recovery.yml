@@ -1,0 +1,110 @@
+# Requires exact independent security review and activation by the coordinator.
+name: One-shot focused reader recovery
+on:
+  push:
+    branches: [bootstrap/one-shot-focused-reader-recovery]
+permissions: {}
+concurrency:
+  group: one-shot-focused-reader-recovery
+  cancel-in-progress: false
+jobs:
+  recover:
+    if: >-
+      github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+      && github.actor == github.repository_owner
+      && github.ref == 'refs/heads/bootstrap/one-shot-focused-reader-recovery'
+      && github.sha == vars.ONE_SHOT_FOCUSED_READER_RECOVERY_SHA
+      && github.workflow_sha == github.sha
+      && github.run_attempt == '1'
+      && vars.ONE_SHOT_FOCUSED_READER_WRITER_HOLD == 'a155fadd467a79115faf677c839da38cce0fb8b8'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      checks: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: recovery
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 85f8f31cebd9456430b62f4be7c96f1305905b72
+          path: protected
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 5e93b82dff56cf19436905c3fd81737343917ee4
+          path: reviewed-reader
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./protected/.github/actions/setup-uv
+        with:
+          python-version: "3.14.8"
+          enable-cache: false
+          save-cache: false
+      - name: Rejudge original evidence and report actual outcomes
+        working-directory: recovery
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_SHA: ${{ vars.ONE_SHOT_FOCUSED_READER_RECOVERY_SHA }}
+          RECOVERY_WRITER_HOLD: ${{ vars.ONE_SHOT_FOCUSED_READER_WRITER_HOLD }}
+          RECOVERY_TARGET: ${{ vars.ONE_SHOT_FOCUSED_READER_TARGET }}
+          FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
+          UV_PYTHON: '3.14.8'
+          UV_NO_BUILD: '1'
+          UV_FROZEN: '1'
+        run: uv run --script scripts/one_shot_focused_reader_recovery.py ../protected ../reviewed-reader
+
+  cleanup:
+    needs: recover
+    if: >-
+      always() && needs.recover.result != 'success'
+      && github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+      && github.actor == github.repository_owner
+      && github.ref == 'refs/heads/bootstrap/one-shot-focused-reader-recovery'
+      && github.sha == vars.ONE_SHOT_FOCUSED_READER_RECOVERY_SHA
+      && github.workflow_sha == github.sha
+      && github.run_attempt == '1'
+      && vars.ONE_SHOT_FOCUSED_READER_WRITER_HOLD == 'a155fadd467a79115faf677c839da38cce0fb8b8'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      checks: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: recovery
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 85f8f31cebd9456430b62f4be7c96f1305905b72
+          path: protected
+          persist-credentials: false
+      - uses: ./protected/.github/actions/setup-uv
+        with:
+          python-version: "3.14.8"
+          enable-cache: false
+          save-cache: false
+      - name: Invalidate only the owned check from this recovery run
+        working-directory: recovery
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_SHA: ${{ vars.ONE_SHOT_FOCUSED_READER_RECOVERY_SHA }}
+          RECOVERY_WRITER_HOLD: ${{ vars.ONE_SHOT_FOCUSED_READER_WRITER_HOLD }}
+          RECOVERY_TARGET: ${{ vars.ONE_SHOT_FOCUSED_READER_TARGET }}
+          UV_PYTHON: '3.14.8'
+          UV_NO_BUILD: '1'
+          UV_FROZEN: '1'
+        run: uv run --script scripts/one_shot_focused_reader_recovery.py --cleanup
