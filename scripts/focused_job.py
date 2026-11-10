@@ -17,6 +17,7 @@ environment only, are validated here, and become argument lists: nothing is pass
                       fails on its second execution in a process shows; vitest files repeat as separate runs.
     FOCUSED_STRESS    true: keep every CPU busy with burner processes while the selection runs (timing flakes)
     FOCUSED_OUT       where the JUnit report, screenshots and tally.json go (default focused-artifacts), uploaded
+    FOCUSED_PYTHON315_FACTORY  1: branch-only reproduction of the original service-factory tests on CPython 3.15.2.
 
 Prints `FOCUSED TALLY k/n green` (rounds without a failure); stops starting rounds near the job's deadline.
 
@@ -44,6 +45,29 @@ DEADLINE = 1020  # seconds into the run: start no new round after this, so the t
 TOKEN = re.compile(r"\w[\w./]{0,199}(::\w{1,120}(\[[\w.,=+-]{1,80}\])?){0,2}", re.ASCII)
 SERIAL = ("-n", "0", "-q", "-p", "no:cacheprovider", "--session-timeout=900")  # one selection, no worker noise
 TIMEOUT = 1080  # under the job's 20 minutes, so the report and screenshots are still written and uploaded
+PYTHON315_FACTORY_CASES = (
+    (
+        "tests/integration/ui_service_test.py::"
+        "test_real_user_factory_binds_profile_and_refuses_process_behavior_before_manager_calls[darwin]"
+    ),
+    (
+        "tests/integration/ui_service_test.py::"
+        "test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loading_a_job[darwin]"
+    ),
+)
+PYTHON315_PYTEST = """
+import sys
+
+if sys.platform != 'linux' or sys.implementation.name != 'cpython' or sys.version_info[:3] != (3, 15, 2):
+    raise SystemExit(f'Expected Linux CPython 3.15.2, got {sys.platform}: {sys.version}')
+if sys.version_info.releaselevel != 'final':
+    raise SystemExit(f'Expected final CPython 3.15.2, got {sys.version}')
+print(f'Factory pytest interpreter: {sys.version.split()[0]} {sys.executable}', flush=True)
+
+import pytest
+
+raise SystemExit(pytest.main(sys.argv[1:]))
+"""
 
 
 class SelectorError(ValueError):
@@ -119,6 +143,25 @@ def plan(kind: str, selector: str, out: Path, repeat: int = 1) -> list[list[str]
         return [[*web, *report, *(token.removeprefix("web/") for token in ids)]]
     problem = f"kind must be one of {', '.join(KINDS)}"
     raise SelectorError(kind or "(none)", problem)
+
+
+def python315_factory_plan(
+    kind: str, selector: str, repeat: int, stress: bool, commands: list[list[str]]
+) -> list[list[str]]:
+    """Reuse the original integration cell's PyYAML preparation for its two failing cases.
+
+    Raises:
+        SelectorError: If the request differs from the two original tests.
+    """
+    if kind != "pytest" or tuple(selector.split()) != PYTHON315_FACTORY_CASES or repeat != 1 or stress:
+        problem = "Python 3.15.2 study requires the two original factory tests, once, without stress"
+        raise SelectorError(kind, problem)
+    sync, pytest_command = commands
+    return [
+        [*sync, "--no-install-package", "pyyaml"],
+        ["bash", "scripts/bootstrap-pyyaml.sh"],
+        [*pytest_command[:3], "python", "-c", PYTHON315_PYTEST, *pytest_command[4:]],
+    ]
 
 
 # The pytest plugin (`-p focused_job`): every selected test runs FOCUSED_REPEAT times in this one process, round by
@@ -217,6 +260,8 @@ def main(argv: list[str]) -> int:
     try:
         repeat = repeat_count(kind, os.environ.get("FOCUSED_REPEAT", "1"))
         commands = plan(kind, selector, out, repeat)
+        if os.environ.get("FOCUSED_PYTHON315_FACTORY") == "1":
+            commands = python315_factory_plan(kind, selector, repeat, stress, commands)
     except SelectorError as error:
         print(f"::error::{error}")
         return 2

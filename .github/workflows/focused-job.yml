@@ -1,6 +1,7 @@
 # One focused test selection on one hosted runner, dispatched by hand (management tool `hz-ci-one dispatch`).
 # A failure that only shows on a hosted runner gets checked in minutes instead of a full CI cycle. This is a
 # diagnostic: it gates nothing, publishes nothing, and is no CI OK, acceptance or release evidence.
+# Branch-only reproduction of the two original Ubuntu Python 3.15.2 service-factory failures.
 name: Focused job
 run-name: "Focused ${{ inputs.kind }} on ${{ inputs.os }}: ${{ inputs.ref }}"
 on:
@@ -45,14 +46,17 @@ defaults:
 jobs:
   focused:
     name: Focused ${{ inputs.kind }} (${{ inputs.os }})
-    runs-on: ${{ inputs.os }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
     env:
       UV_FROZEN: "1"
+      UV_PYTHON: "3.15.2"
       FORCE_COLOR: "1"
       FOCUSED_REF: ${{ inputs.ref }}
+      FOCUSED_OS: ${{ inputs.os }}
+      FOCUSED_PYTHON315_FACTORY: "1"
       FOCUSED_KIND: ${{ inputs.kind }}
       FOCUSED_SELECTOR: ${{ inputs.selector }}
       FOCUSED_REPEAT: ${{ inputs.repeat }}
@@ -64,6 +68,7 @@ jobs:
       - name: Refuse a ref other than the branch this was dispatched on
         run: |
           [[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]] || { echo "::error::dispatch with --ref equal to the ref input"; exit 2; }
+          [[ "$GITHUB_REF_NAME" == validation/uv-683-python315 && "$FOCUSED_OS" == ubuntu-24.04 ]] || { echo '::error::this study requires its validation branch on Ubuntu 24.04'; exit 2; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # the install-from-git end-to-end tests clone this repository
@@ -73,6 +78,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
           save-cache: false # a dispatched diagnostic never writes the cache main and pull requests read
+          python-version: "3.15.2"
       - name: Validate the selection before installing anything
         run: uv run --no-build --quiet --script scripts/focused_job.py --check
       - name: Reuse the browsers this lockfile's Playwright installs
@@ -88,10 +94,6 @@ jobs:
         run: make test-browser-deps
       - name: Run the selection
         run: uv run --no-build --quiet --script scripts/focused_job.py
-        env:
-          # read-only (contents: read), as in ci.yml's end-to-end job: the tests ask GitHub's API, which rate-limits
-          # shared runners' unauthenticated requests; hz sends the token to api.github.com only (ADR 0031)
-          GITHUB_TOKEN: ${{ github.token }}
       - name: Keep the report, tally, screenshots and logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
