@@ -26,7 +26,6 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_650_MERGE_HELPER_SHA }}
-      RECOVERY_RUN_ID: ${{ vars.ONE_SHOT_650_RECOVERY_RUN_ID }}
     steps:
       - name: Require the independently reviewed workflow commit
         run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"
@@ -48,7 +47,6 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_650_MERGE_HELPER_SHA }}
-      RECOVERY_RUN_ID: ${{ vars.ONE_SHOT_650_RECOVERY_RUN_ID }}
     steps:
       - name: Require the independently reviewed workflow commit
         run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"

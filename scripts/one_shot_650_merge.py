@@ -22,6 +22,7 @@ BASE = "de5ebbb5b471a477c2c875e4e1effc501d021642"
 TREE = "d7aca1ead0f18deab1c836d2cc0aaf124cc473c6"
 RUN = 42784687184
 RUN_SHA = "acdc3aa5320091e7273f0f2791e999fc3e188fd6"
+RECOVERY_RUN_ID = 42787744206
 RECOVERY_SHA = "1b858cb31a115ce5d7402dfa23a6cd7aee7e2321"
 REPOSITORY_ID = 1431672693
 PUBLISHER = "Focused 650 protected publisher"
@@ -94,14 +95,10 @@ def validate() -> None:
     if [p.get("sha") for p in merge.get("parents", [])] != [BASE, HEAD] or merge.get("tree", {}).get("sha") != TREE:
         msg_0 = "test merge changed"
         raise ValueError(msg_0)
-    recovery_id = os.environ.get("RECOVERY_RUN_ID", "")
-    if not recovery_id.isascii() or not recovery_id.isdecimal() or int(recovery_id) <= 0 or int(recovery_id) == RUN:
-        msg = "invalid externally pinned recovery run ID"
-        raise ValueError(msg)
-    validate_evidence(int(recovery_id))
+    validate_evidence()
 
 
-def validate_evidence(recovery_id: int) -> None:
+def validate_evidence() -> None:
     """Verify the completed focused run, rules and statuses.
 
     Raises:
@@ -139,9 +136,9 @@ def validate_evidence(recovery_id: int) -> None:
     ):
         msg = "focused jobs not all successful"
         raise ValueError(msg)
-    recovery = one(f"actions/runs/{recovery_id}")
+    recovery = one(f"actions/runs/{RECOVERY_RUN_ID}")
     if not (
-        recovery.get("id") == recovery_id
+        recovery.get("id") == RECOVERY_RUN_ID
         and recovery.get("head_sha") == RECOVERY_SHA
         and recovery.get("head_branch") == "bootstrap/one-shot-650-publisher-recovery"
         and recovery.get("event") == "push"
@@ -154,7 +151,7 @@ def validate_evidence(recovery_id: int) -> None:
     ):
         msg = "recovery run identity or verdict changed"
         raise ValueError(msg)
-    pages = api(f"actions/runs/{recovery_id}/attempts/1/jobs?per_page=100")
+    pages = api(f"actions/runs/{RECOVERY_RUN_ID}/attempts/1/jobs?per_page=100")
     jobs = [job for page in pages for job in page["jobs"]]
     if not (
         len(jobs) == 1
@@ -162,7 +159,7 @@ def validate_evidence(recovery_id: int) -> None:
         and jobs[0]["name"] == "recover"
         and jobs[0]["status"] == "completed"
         and jobs[0]["conclusion"] == "success"
-        and jobs[0]["run_id"] == recovery_id
+        and jobs[0]["run_id"] == RECOVERY_RUN_ID
         and jobs[0]["run_attempt"] == 1
         and jobs[0]["head_sha"] == RECOVERY_SHA
     ):
@@ -189,7 +186,7 @@ def validate_evidence(recovery_id: int) -> None:
         if (
             not matches
             or matches[0].get("state") != "success"
-            or matches[0].get("target_url") != f"https://github.com/{REPO}/actions/runs/{recovery_id}"
+            or matches[0].get("target_url") != f"https://github.com/{REPO}/actions/runs/{RECOVERY_RUN_ID}"
             or (matches[0].get("creator") or {}).get("id") != ACTIONS_BOT_ID
         ):
             msg = f"missing or untrusted status: {name}"

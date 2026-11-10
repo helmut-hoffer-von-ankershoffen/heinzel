@@ -43,7 +43,7 @@ def test_merge_uses_head_bound_normal_squash(monkeypatch):
 
 @pytest.fixture
 def evidence(monkeypatch):
-    recovery_id = 123456789
+    recovery_id = mod.RECOVERY_RUN_ID
     original = {
         "id": mod.RUN,
         "repository": {"id": mod.REPOSITORY_ID},
@@ -131,7 +131,7 @@ def evidence(monkeypatch):
 
 
 def test_accepts_exact_original_and_recovery_evidence(evidence):
-    mod.validate_evidence(evidence[0])
+    mod.validate_evidence()
 
 
 @pytest.mark.parametrize(
@@ -147,7 +147,7 @@ def test_accepts_exact_original_and_recovery_evidence(evidence):
     ],
 )
 def test_refuses_changed_evidence(evidence, mutation):
-    recovery_id, _, recovery, original_jobs, recovery_jobs, statuses = evidence
+    _, _, recovery, original_jobs, recovery_jobs, statuses = evidence
     if mutation == "original_validation_failed":
         next(job for job in original_jobs if job["name"] != mod.PUBLISHER)["conclusion"] = "failure"
     elif mutation == "original_publisher_success":
@@ -163,7 +163,7 @@ def test_refuses_changed_evidence(evidence, mutation):
     else:
         statuses[0]["state"] = "failure"
     with pytest.raises(ValueError, match=r"focused jobs|recovery run|recovery job|untrusted status"):
-        mod.validate_evidence(recovery_id)
+        mod.validate_evidence()
 
 
 def test_validate_reads_test_merge_ref_without_pr_merge_sha(monkeypatch):
@@ -171,7 +171,6 @@ def test_validate_reads_test_merge_ref_without_pr_merge_sha(monkeypatch):
     monkeypatch.setenv("GITHUB_REF", "refs/heads/bootstrap/one-shot-650-merge")
     monkeypatch.setenv("GITHUB_SHA", "a" * 40)
     monkeypatch.setenv("REVIEWED_HELPER_SHA", "a" * 40)
-    monkeypatch.setenv("RECOVERY_RUN_ID", "123456789")
     objects = {
         "pulls/650": {
             "state": "open",
@@ -188,9 +187,9 @@ def test_validate_reads_test_merge_ref_without_pr_merge_sha(monkeypatch):
     }
     monkeypatch.setattr(mod, "one", lambda path: objects[path])
     validated = []
-    monkeypatch.setattr(mod, "validate_evidence", validated.append)
+    monkeypatch.setattr(mod, "validate_evidence", lambda: validated.append(mod.RECOVERY_RUN_ID))
     mod.validate()
-    assert validated == [123456789]
+    assert validated == [42787744206]
     objects["git/commits/merge-oid"]["parents"].reverse()
     with pytest.raises(ValueError, match="test merge changed"):
         mod.validate()
