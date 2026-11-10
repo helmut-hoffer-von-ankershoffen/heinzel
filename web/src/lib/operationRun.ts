@@ -128,8 +128,8 @@ export function requestDrivenOperation(call: SchemaOperationCall, driven: Driven
  * Show a driven write that is already under way, e.g. one resumed at its restart after the page reloaded: the
  * dialog opens in its progress view, never asking again.
  */
-export function resumeDrivenOperation(call: SchemaOperationCall, driven: DrivenOperation): Promise<void> {
-  if (current.stage !== "idle") return Promise.resolve();
+export function resumeDrivenOperation(call: SchemaOperationCall, driven: DrivenOperation): Promise<void> | null {
+  if (current.stage !== "idle") return null;
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   set({ stage: "confirm", call, driven });
   return startDriven();

@@ -330,7 +330,9 @@ describe("PluginsSection", () => {
     );
     const beforeClose = 1;
     const closeButtons = await screen.findAllByRole("button", { name: stage === "done" ? "Done" : "Close" });
-    await userEvent.setup().click(closeButtons[closeButtons.length - 1]);
+    const closeButton = closeButtons[closeButtons.length - 1];
+    if (!closeButton) throw new Error("Missing close button");
+    await userEvent.setup().click(closeButton);
     await waitFor(() => expect(sessionStorage.getItem(key)).toBeNull());
     expect(await screen.findByRole("dialog", { name: /Removed heinzel-clock/ })).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/list")).toHaveLength(
@@ -731,6 +733,72 @@ describe("PluginsSection", () => {
     expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(0);
     expect(calls.filter((call) => new URL(call.url).searchParams.get("confirm") === "true")).toHaveLength(0);
   });
+
+  it.each(["done", "attention"])(
+    "retains a restored restart receipt until an unrelated %s result closes",
+    async (stage) => {
+      const operationId = "previous-operation";
+      sessionStorage.setItem("hz.token", "test-token");
+      if (stage === "done") {
+        await act(async () => {
+          await trackOperation(DAEMON_INSTALL, async () => ({ installed: true }));
+        });
+      } else {
+        act(() => {
+          requestDrivenOperation(DAEMON_INSTALL, {
+            consent: [],
+            runningTitle: "Installing",
+            doneTitle: "Installed",
+            running: "Installing",
+            action: "Install",
+            run: async () => {
+              throw new NeedsAttention("Still waiting");
+            },
+          });
+        });
+        await act(async () => {
+          await startOperation(() => {});
+        });
+      }
+      sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+      const key = "hz.plugin-add-restart.v1";
+      const saved = JSON.stringify({
+        operation_id: operationId,
+        acknowledged: true,
+        observation: { retired: ["old"], version: "0.9.23", settings: [] },
+      });
+      sessionStorage.setItem(key, saved);
+      const calls = serve((url) => {
+        if (url.pathname === "/api/system/plugin/operation")
+          return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
+        if (url.pathname === "/api/lifecycle")
+          return { body: { instance: "replacement", version: "0.9.23", restartable: true } };
+        if (url.pathname === "/api/lifecycle/verify")
+          return { body: { instance: "replacement", version: "0.9.23", matches: true, mismatched: [] } };
+        return base(url);
+      });
+      const reload = vi.fn();
+      show({ reload, restartInterval: 1 });
+      await waitFor(() =>
+        expect(calls.some((request) => new URL(request.url).pathname === "/api/system/plugin/operation")).toBe(true),
+      );
+      expect(sessionStorage.getItem(key)).toBe(saved);
+      expect(getRun().stage).toBe(stage);
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/lifecycle/verify")).toHaveLength(0);
+      if (stage === "attention") {
+        await userEvent.setup().click(await screen.findByRole("button", { name: "Keep waiting" }));
+        await waitFor(() => expect(getRun().stage).toBe("attention"));
+        expect(sessionStorage.getItem(key)).toBe(saved);
+      }
+      const close = await screen.findAllByRole("button", { name: stage === "done" ? "Done" : "Close" });
+      const closeButton = close[close.length - 1];
+      if (!closeButton) throw new Error("Missing close button");
+      await userEvent.setup().click(closeButton);
+      await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/lifecycle/verify")).toHaveLength(1);
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
+    },
+  );
 
   it("shows what a spec would install first, and installs the pinned requirement only on confirm", async () => {
     const calls = serve((url) => {

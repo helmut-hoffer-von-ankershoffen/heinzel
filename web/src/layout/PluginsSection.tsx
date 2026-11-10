@@ -704,11 +704,15 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     if (!pending || restartBlocked || opened.current === pending) return;
     if (operationStatus === "running" || operationStatus === "unknown") return;
     if (pending.action === "add" && !operation.data) return;
+    const call = callOf(pending);
+    if (pending.action === "add" && restartObservation) {
+      // A confirmed receipt must survive another result until the store actually accepts its resumption.
+      if (resumeDrivenOperation(call, drive(pending)) === null) return;
+    } else {
+      requestDrivenOperation(call, drive(pending));
+    }
     opened.current = pending;
     finished.current = false;
-    const call = callOf(pending);
-    if (pending.action === "add" && restartObservation) void resumeDrivenOperation(call, drive(pending));
-    else requestDrivenOperation(call, drive(pending));
   });
   // Cancel (or Close after a failure) ends the change here; the receipt keeps what the server knows.
   useEffect(() => {
