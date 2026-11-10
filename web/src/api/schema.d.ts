@@ -8636,6 +8636,38 @@ export interface components {
             platform: string;
         };
         /**
+         * InstalledPlugin
+         * @description An installed plugin distribution.
+         */
+        InstalledPlugin: {
+            /**
+             * Installed
+             * @description The day this version was installed here; none if unknown.
+             */
+            installed: string | null;
+            /**
+             * Name
+             * @description Distribution name.
+             */
+            name: string;
+            /**
+             * Repository
+             * @description Source repository, from its Project-URL metadata; none if it names none.
+             */
+            repository: string | null;
+            /**
+             * Source
+             * @description Where it was installed from: an index (PyPI), a git repository or a path.
+             * @enum {string}
+             */
+            source: "PyPI" | "git" | "path";
+            /**
+             * Version
+             * @description Installed version.
+             */
+            version: string;
+        };
+        /**
          * InstalledSkill
          * @description A skill copied into an agent's skill directory.
          */
@@ -13942,6 +13974,17 @@ export interface components {
          */
         SystemInfo: {
             /**
+             * Installation
+             * @description Whether hz runs from a uv tool environment or from another Python environment.
+             * @enum {string}
+             */
+            installation: "uv tool" | "environment";
+            /**
+             * Installed
+             * @description The day this Heinzelmännchen version was installed here; none if unknown.
+             */
+            installed: string | null;
+            /**
              * Latest Release
              * @description Latest release last seen by `hz system release` or the CLI's hourly check, from the cache; none if never asked.
              */
@@ -13963,6 +14006,11 @@ export interface components {
             plugin_errors: {
                 [key: string]: string;
             };
+            /**
+             * Plugins
+             * @description Every installed plugin distribution, built-ins excluded.
+             */
+            plugins: components["schemas"]["InstalledPlugin"][];
             /**
              * Python Executable
              * @description Path of the Python interpreter running hz.
@@ -16651,6 +16699,7 @@ export type SchemaIndexedHistoryPage = components['schemas']['IndexedHistoryPage
 export type SchemaInputSnapshotPage = components['schemas']['InputSnapshotPage'];
 export type SchemaInputSnapshotView = components['schemas']['InputSnapshotView'];
 export type SchemaInstalled = components['schemas']['Installed'];
+export type SchemaInstalledPlugin = components['schemas']['InstalledPlugin'];
 export type SchemaInstalledSkill = components['schemas']['InstalledSkill'];
 export type SchemaItemNotificationPolicy = components['schemas']['ItemNotificationPolicy'];
 export type SchemaJobDoc = components['schemas']['JobDoc'];

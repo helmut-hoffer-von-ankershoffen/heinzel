@@ -22,6 +22,20 @@ class ModuleInfo(BaseModel):
     lets: dict[str, list[str]] = Field(description="Names of the advertised lets, by kind.")
 
 
+class InstalledPlugin(BaseModel):
+    """An installed plugin distribution."""
+
+    name: str = Field(description="Distribution name.")
+    version: str = Field(description="Installed version.")
+    source: Literal["PyPI", "git", "path"] = Field(
+        description="Where it was installed from: an index (PyPI), a git repository or a path."
+    )
+    repository: str | None = Field(
+        description="Source repository, from its Project-URL metadata; none if it names none."
+    )
+    installed: dt.date | None = Field(description="The day this version was installed here; none if unknown.")
+
+
 class SystemInfo(BaseModel):
     """The state of this Heinzelmännchen installation."""
 
@@ -30,8 +44,15 @@ class SystemInfo(BaseModel):
     python_version: str = Field(description="Version of the Python running hz.")
     python_executable: str = Field(description="Path of the Python interpreter running hz.")
     platform: str = Field(description="Operating system and architecture.")
+    installed: dt.date | None = Field(
+        description="The day this Heinzelmännchen version was installed here; none if unknown."
+    )
+    installation: Literal["uv tool", "environment"] = Field(
+        description="Whether hz runs from a uv tool environment or from another Python environment."
+    )
     settings: dict[str, Any] = Field(description="Kernel settings in effect, by name.")
     modules: list[ModuleInfo] = Field(description="Every registered module.")
+    plugins: list[InstalledPlugin] = Field(description="Every installed plugin distribution, built-ins excluded.")
     plugin_errors: dict[str, str] = Field(description="Plugins that failed to load, by entry point name.")
     sections: dict[str, Any] = Field(description="Sections contributed by modules, by qualified module name.")
     latest_release: str | None = Field(
