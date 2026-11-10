@@ -190,6 +190,12 @@ def test_validate_reads_test_merge_ref_without_pr_merge_sha(monkeypatch):
     monkeypatch.setattr(mod, "validate_evidence", lambda: validated.append(mod.RECOVERY_RUN_ID))
     mod.validate()
     assert validated == [42787744206]
+    objects["pulls/650"]["mergeable_state"] = "unstable"
+    mod.validate()
+    objects["pulls/650"]["mergeable_state"] = "blocked"
+    with pytest.raises(ValueError, match="pull request"):
+        mod.validate()
+    objects["pulls/650"]["mergeable_state"] = "clean"
     objects["git/commits/merge-oid"]["parents"].reverse()
     with pytest.raises(ValueError, match="test merge changed"):
         mod.validate()

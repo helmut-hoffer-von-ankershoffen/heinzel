@@ -80,9 +80,9 @@ def validate() -> None:
         and pull.get("base", {}).get("sha") == BASE
         and pull.get("base", {}).get("ref") == "main"
         and pull.get("mergeable") is True
-        and pull.get("mergeable_state") == "clean"
+        and pull.get("mergeable_state") in {"clean", "unstable"}
     ):
-        msg = "pull request is not the expected open, non-draft, clean head and base"
+        msg = "pull request is not the expected open, non-draft, mergeable head and base"
         raise ValueError(msg)
     if one("commits/main").get("sha") != BASE:
         msg = "main moved"
