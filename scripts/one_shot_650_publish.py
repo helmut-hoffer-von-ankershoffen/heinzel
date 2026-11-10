@@ -29,6 +29,8 @@ MAX_LOG_BYTES = 10_000_000
 EXPECTED_MEMBERS = {"identity.txt", "results.xml"}
 CONTEXTS = ("merge-gate", "coverage-floor", "CI OK")
 GITHUB_ACTIONS_APP = 15368
+GITHUB_ACTIONS_BOT = 41898282
+REPOSITORY_ID = 1431672693
 EXPECTED_JOBS = {
     *(
         f"Focused 650 {suite} ({os_name})"
@@ -43,7 +45,7 @@ EXPECTED_JOBS = {
 
 def api(path: str, *, binary: bool = False) -> Any:  # noqa: ANN401
     """Fetch from GitHub with pagination; binary is only for an artifact archive."""
-    command = ["gh", "api", f"repos/{REPO}/{path}"]
+    command = ["gh", "api", "-H", "X-GitHub-Api-Version: 2026-03-10", f"repos/{REPO}/{path}"]
     if not binary:
         command.extend(["--paginate", "--slurp"])
     result = subprocess.run(command, check=True, capture_output=True)  # noqa: S603
@@ -118,6 +120,23 @@ def source_review() -> None:
     )
 
 
+def verify_upload_step(job: dict[str, Any], name: str, artifact: dict[str, Any]) -> None:
+    """Bind an artifact to its exact successful job step's authenticated log."""
+    steps = [step for step in job["steps"] if step["name"] == "Upload exact attempt evidence"]
+    require(len(steps) == 1 and steps[0]["conclusion"] == "success", "missing successful upload step")
+    number = steps[0]["number"]
+    require(type(number) is int and number > 0, "invalid upload step number")
+    require(sum(step["number"] == number for step in job["steps"]) == 1, "duplicate upload step number")
+    log = api(f"actions/jobs/{job['id']}/steps/{number}/logs", binary=True)
+    require(len(log) < MAX_LOG_BYTES, "oversized upload step log")
+    pattern = re.compile(
+        rf"(?:[0-9T:.Z-]+ )?Artifact {re.escape(name)} has been successfully uploaded! "
+        rf"Final size is {artifact['size_in_bytes']} bytes\. Artifact ID is {artifact['id']}"
+    )
+    records = [line for line in log.decode("utf-8-sig").splitlines() if pattern.fullmatch(line)]
+    require(len(records) == 1, "exact upload step does not bind artifact ID and size")
+
+
 def evidence(run_id: int) -> None:
     """Verify the exact attempt's job inventory and bounded artifact contents."""
     run = one(f"actions/runs/{run_id}")
@@ -154,17 +173,11 @@ def evidence(run_id: int) -> None:
             artifact = found[0]
             job_name = f"Focused 650 {suite} ({os_name})"
             job = next(item for item in jobs if item["name"] == job_name)
-            log = api(f"actions/jobs/{job['id']}/logs", binary=True)
-            require(len(log) < MAX_LOG_BYTES, "oversized upload log")
-            text = log.decode("utf-8", errors="replace")
-            pattern = (
-                rf"{re.escape(name)}.*?successfully uploaded! Final size is "
-                rf"{artifact['size_in_bytes']} bytes\. Artifact ID is {artifact['id']}\b"
-            )
-            require(re.search(pattern, text, re.DOTALL) is not None, "artifact ID and size missing from job log")
+            verify_upload_step(job, name, artifact)
             require(
                 artifact["workflow_run"]["id"] == run_id
-                and artifact["workflow_run"]["repository_id"] == one("")["id"]
+                and artifact["workflow_run"]["repository_id"] == REPOSITORY_ID
+                and artifact["workflow_run"]["head_repository_id"] == REPOSITORY_ID
                 and artifact["workflow_run"]["head_sha"] == os.environ["REVIEWED_HELPER_SHA"]
                 and 0 < artifact["size_in_bytes"] < MAX_ARCHIVE_BYTES,
                 "artifact provenance or size",
@@ -226,6 +239,11 @@ def publish_statuses(run_id: int) -> None:
     url = f"https://github.com/{REPO}/actions/runs/{run_id}"
 
     def write(context: str, state: str) -> None:
+        description = (
+            "No app production changes; structural evidence"
+            if context == "coverage-floor"
+            else "Exact reviewed focused 650 evidence"
+        )
         command = [
             "gh",
             "api",
@@ -239,28 +257,40 @@ def publish_statuses(run_id: int) -> None:
             "-f",
             f"target_url={url}",
             "-f",
-            "description=Exact reviewed focused 650 evidence",
+            f"description={description}",
         ]
         response = json.loads(subprocess.run(command, check=True, capture_output=True).stdout)  # noqa: S603
         require(response.get("context") == context and response.get("state") == state, "status write not confirmed")
         require(response.get("target_url") == url, "status write URL mismatch")
-        statuses = one(f"commits/{HEAD}/status?per_page=100")["statuses"]
+        status_pages = api(f"commits/{HEAD}/statuses?per_page=100")
+        statuses = [status for page in status_pages for status in page]
         matching = [status for status in statuses if status.get("context") == context]
-        require(bool(matching) and matching[0].get("state") == state, "status readback mismatch")
-        require(matching[0].get("target_url") == url, "status readback URL mismatch")
-        require(matching[0].get("creator", {}).get("login") == "github-actions[bot]", "status creator mismatch")
+        require(bool(matching) and matching[0].get("id") == response.get("id"), "status readback ID mismatch")
+        require(matching[0].get("state") == state and matching[0].get("target_url") == url, "status readback mismatch")
+        creator = matching[0].get("creator") or {}
+        require(
+            creator.get("login") == "github-actions[bot]" and creator.get("id") == GITHUB_ACTIONS_BOT,
+            "status creator mismatch",
+        )
 
-    for context in ("CI OK", "merge-gate", "coverage-floor"):
-        write(context, "pending")
+    attempted: set[str] = set()
     try:
+        for context in ("CI OK", "merge-gate", "coverage-floor"):
+            attempted.add(context)
+            write(context, "pending")
         for context in CONTEXTS:
             source()
             evidence(run_id)
+            attempted.add(context)
             write(context, "success")
         source()
-    except (ValueError, OSError, subprocess.CalledProcessError):
-        for context in CONTEXTS:
-            write(context, "failure")
+    except (ValueError, OSError, subprocess.CalledProcessError, KeyError, json.JSONDecodeError):
+        for context in ("CI OK", "merge-gate", "coverage-floor"):
+            if context in attempted:
+                try:
+                    write(context, "failure")
+                except (ValueError, OSError, subprocess.CalledProcessError, KeyError, json.JSONDecodeError) as error:
+                    print(f"Status invalidation failed for {context}: {error}")
         raise
 
 

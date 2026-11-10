@@ -73,16 +73,18 @@ def test_status_publisher_sets_pending_then_reads_back_each_success():
         context = next(arg.removeprefix("context=") for arg in command if arg.startswith("context="))
         calls.append((context, state))
         states[context] = {
+            "id": len(calls),
             "context": context,
             "state": state,
             "target_url": url,
-            "creator": {"login": "github-actions[bot]"},
+            "creator": {"login": "github-actions[bot]", "id": publisher.GITHUB_ACTIONS_BOT},
         }
         return SimpleNamespace(stdout=json.dumps(states[context]).encode())
 
     with (
-        patch.object(publisher, "api", return_value=rules),
-        patch.object(publisher, "one", side_effect=lambda _path: {"statuses": list(states.values())}),
+        patch.object(
+            publisher, "api", side_effect=lambda path: rules if path.startswith("rules/") else [list(states.values())]
+        ),
         patch.object(publisher.subprocess, "run", side_effect=run),
         patch.object(publisher, "source"),
         patch.object(publisher, "evidence"),
@@ -96,3 +98,59 @@ def test_status_publisher_sets_pending_then_reads_back_each_success():
         ("coverage-floor", "success"),
         ("CI OK", "success"),
     ]
+
+
+def test_exact_upload_step_binds_artifact_id_and_size():
+    job = {"id": 9, "steps": [{"number": 7, "name": "Upload exact attempt evidence", "conclusion": "success"}]}
+    artifact = {"id": 42, "size_in_bytes": 123}
+    line = (
+        b"2026-11-10T07:21:12.0071119Z Artifact focused has been successfully uploaded! "
+        b"Final size is 123 bytes. Artifact ID is 42\n"
+    )
+    with patch.object(publisher, "api", return_value=line) as read:
+        publisher.verify_upload_step(job, "focused", artifact)
+    read.assert_called_once_with("actions/jobs/9/steps/7/logs", binary=True)
+    with patch.object(publisher, "api", return_value=line + line), pytest.raises(ValueError, match="exact upload"):
+        publisher.verify_upload_step(job, "focused", artifact)
+
+
+def test_invalidation_continues_if_another_invalidation_fails():
+    import json
+    import subprocess
+    from types import SimpleNamespace
+
+    states = {}
+    calls = []
+    url = f"https://github.com/{publisher.REPO}/actions/runs/42"
+    checks = [
+        {"context": name, **({"integration_id": publisher.GITHUB_ACTIONS_APP} if name != "CI OK" else {})}
+        for name in publisher.CONTEXTS
+    ]
+    rules = [[{"type": "required_status_checks", "parameters": {"required_status_checks": checks}}]]
+
+    def run(command, **_kwargs):
+        state = next(arg.removeprefix("state=") for arg in command if arg.startswith("state="))
+        context = next(arg.removeprefix("context=") for arg in command if arg.startswith("context="))
+        calls.append((context, state))
+        if (context, state) in {("merge-gate", "success"), ("CI OK", "failure")}:
+            raise subprocess.CalledProcessError(1, command)
+        states[context] = {
+            "id": len(calls),
+            "context": context,
+            "state": state,
+            "target_url": url,
+            "creator": {"login": "github-actions[bot]", "id": publisher.GITHUB_ACTIONS_BOT},
+        }
+        return SimpleNamespace(stdout=json.dumps(states[context]).encode())
+
+    with (
+        patch.object(
+            publisher, "api", side_effect=lambda path: rules if path.startswith("rules/") else [list(states.values())]
+        ),
+        patch.object(publisher.subprocess, "run", side_effect=run),
+        patch.object(publisher, "source"),
+        patch.object(publisher, "evidence"),
+        pytest.raises(subprocess.CalledProcessError),
+    ):
+        publisher.publish_statuses(42)
+    assert calls[-3:] == [("CI OK", "failure"), ("merge-gate", "failure"), ("coverage-floor", "failure")]
