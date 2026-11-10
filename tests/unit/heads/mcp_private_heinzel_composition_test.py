@@ -8,6 +8,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, suppress
+from io import StringIO
 from queue import Queue
 from threading import Event
 
@@ -551,3 +552,91 @@ def test_real_inbox_retains_exact_restricted_provenance(make_kernel, tmp_path, m
     logged = [record_fields(record) for record in caplog.records if record.getMessage() == "mcp.ipc.work_transition"]
     assert len(logged) == 6
     assert all(event["mcp_authority"] == expected for event in logged)
+
+
+def test_each_reviewed_fictional_inbox_is_addressable_by_mcp_and_cli(make_kernel, tmp_path, monkeypatch, capsys):
+    """The real inbox provider sees only reviewed synthetic targets; the CLI retry cannot duplicate an MCP call."""
+    kernel = make_kernel(builtins=True)
+    current = kernel.resolve(CurrentUser)
+    sessions = kernel.resolve(SessionCrud)
+    with current.local("cli"):
+        created = [sessions.new_chat(f"create-{number}", f"Fictional {number}") for number in range(3)]
+    targets = [HeinzelTarget(kind="personal", identity=session.session_id) for session in created]
+    reviewed, outside = targets[:2], targets[2]
+    plan = PrivateMcpPlan.capture(
+        McpGeneration("fictional", 1),
+        "grant-fictional",
+        2,
+        time.monotonic() + 60,
+        {
+            "dispatch": {target.key: [target.operation] for target in reviewed},
+            "heinzel_targets": [target.model_dump(mode="json") for target in reviewed],
+            "heinzel_principal": current.owner().id,
+        },
+    )
+    root = tmp_path.resolve() / "fictional"
+    with owned_private_dispatch(root, plan) as (authority, dispatch):
+
+        def serve(lease):
+            anyio.run(serve_admitted_heinzel_connection, kernel, dispatch, lease)
+
+        with (
+            _approved_connection(plan, authority, serve) as (client, _),
+            client.makefile("rb") as wire,
+            _approved_connection(plan, authority) as (_, cli_lease),
+        ):
+            _initialize(client, wire)
+            listed = _rpc(client, wire, "tools/list", 2)
+            assert {tool["name"] for tool in listed["tools"]} == {target.tool_name for target in reviewed}
+            assert _mcp_invoke(client, wire, "outside", target=outside)["isError"]
+            tools = dispatch.bind_heinzel_tools(kernel, cli_lease, authentication="mcp-private-cli")
+            for number, target in enumerate(reviewed):
+                request_id = f"fictional-{number}"
+                result = _mcp_invoke(client, wire, request_id, target=target)
+                assert not result.get("isError", False)
+                retained = result["content"][0]["text"]
+                monkeypatch.setattr(sys, "stdin", StringIO("Probe"))
+                monkeypatch.setattr(
+                    sys,
+                    "argv",
+                    [
+                        "hz",
+                        "system",
+                        "mcp",
+                        "tools",
+                        "invoke",
+                        target.key,
+                        "--request-id",
+                        request_id,
+                        "--message-stdin",
+                    ],
+                )
+                with pytest.raises(SystemExit) as exited:
+                    cli_main(private_heinzel_tools=tools)
+                assert exited.value.code == 0
+                assert capsys.readouterr().out == retained
+                # A different request is a genuine CLI invocation, not just a replay of the MCP result.
+                monkeypatch.setattr(sys, "stdin", StringIO("CLI probe"))
+                monkeypatch.setattr(
+                    sys,
+                    "argv",
+                    [
+                        "hz",
+                        "system",
+                        "mcp",
+                        "tools",
+                        "invoke",
+                        target.key,
+                        "--request-id",
+                        f"cli-{number}",
+                        "--message-stdin",
+                    ],
+                )
+                with pytest.raises(SystemExit) as invoked:
+                    cli_main(private_heinzel_tools=tools)
+                assert invoked.value.code == 0
+                cli_result = json.loads(capsys.readouterr().out)
+                assert cli_result["session_id"] == target.identity
+                assert cli_result["request_id"] != json.loads(retained)["request_id"]
+    with current.local("cli"):
+        assert [len(sessions.snapshot(session.session_id).messages) for session in created] == [2, 2, 0]
