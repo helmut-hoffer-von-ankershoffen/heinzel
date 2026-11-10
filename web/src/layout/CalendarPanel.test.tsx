@@ -7,6 +7,7 @@ import * as browser from "@/lib/browser";
 import { shell } from "@/test/fixtures";
 import { eventStream, expectAccessible, mockApi, renderAt } from "@/test/render";
 import { CalendarPanel } from "./CalendarPanel";
+import "./agendaModel.cases";
 
 afterEach(() => {
   vi.useRealTimers();

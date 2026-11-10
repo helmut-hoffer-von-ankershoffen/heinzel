@@ -482,6 +482,8 @@ def test_mixed_scope_requires_whole_changed_test_file(gate_calls, mixed_push):
 def test_focused_mixed_push_keeps_guards_static_checks_and_explicit_test_targets(gate_calls, mixed_push):
     gate, calls = gate_calls
     base, plan, changed, manifest = mixed_push
+    changed += ["desktop/ci/bundle-icon.mjs", "desktop/ci/runtime-inventory.mjs"]
+    plan["desktop"] += ["desktop/test/bundle-icon.test.js", "desktop/test/package-inventory.test.js"]
     manifest.write_text(json.dumps(plan), encoding="utf-8")
 
     assert scoped.push_checks(changed, base) == 0
@@ -497,7 +499,34 @@ def test_focused_mixed_push_keeps_guards_static_checks_and_explicit_test_targets
     assert "biome ci ." in managed
     assert "$(MANAGED_TYPES)" in managed
     assert integration[3:7] == ["uv", "run", "pytest", *plan["integration"]]
-    assert desktop[3:] == [*scoped.WEB.split(), "exec", "node", "--test", "../desktop/test/window.test.js"]
+    assert desktop[3:] == [
+        *scoped.WEB.split(),
+        "exec",
+        "node",
+        "--test",
+        "../desktop/test/bundle-icon.test.js",
+        "../desktop/test/package-inventory.test.js",
+        "../desktop/test/window.test.js",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("source", "test"),
+    [
+        ("desktop/ci/bundle-icon.mjs", "desktop/test/bundle-icon.test.js"),
+        ("desktop/ci/runtime-inventory.mjs", "desktop/test/package-inventory.test.js"),
+    ],
+)
+def test_focused_mixed_push_requires_each_packaging_helpers_own_test(gate_calls, mixed_push, source, test):
+    _, calls = gate_calls
+    base, plan, changed, manifest = mixed_push
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="must include these desktop packaging tests") as error:
+        scoped.push_checks([*changed, source], base)
+
+    assert test in str(error.value)
+    assert calls == []
 
 
 @pytest.mark.parametrize(
@@ -531,6 +560,7 @@ def test_focused_mixed_push_refuses_unsafe_manifests(gate_calls, mixed_push, fie
     [
         ("uv.lock", "without build or runtime configuration"),
         ("web/vite.config.ts", "without build or runtime configuration"),
+        ("desktop/ci/package.mjs", "without build or runtime configuration"),
         ("tests/unit/related_tests_test.py", "cover every changed test file"),
     ],
 )

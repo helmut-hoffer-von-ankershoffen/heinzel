@@ -36,7 +36,7 @@ follows from it:
   button takes them there. Every pane has exactly one primary action, an icon button with tooltip and aria-label
   for a simple action (Copy, Open) or icon+text for a verb that changes something (Restart hz); never a text link.
   Copy from a backend `message` is never shown raw: the contract carries a short `status`/`problem` (<= 60) and the
-  long `explanation` separately, and the kernel validates the short fields. `web/src/test/copy-standards.test.ts`
+  long `explanation` separately, and the kernel validates the short fields. `web/src/test/copyStandards.test.ts`
   checks the English catalogue for banned words and checks the length of the pane namespaces and Calendar status keys
   listed in the test. Every allowlist entry needs a reason. Contribution toggle tests check the rendered status line.
   Review inline copy, other rendered controls, and backend text against the same standard.
