@@ -20,6 +20,13 @@ import {
 import { CopyCommand } from "@/components/common";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { type MessageKey, t } from "@/i18n";
+import {
+  acknowledgePluginRestart,
+  acquirePluginChange,
+  completePluginRestart,
+  retainPluginRestart,
+  usePluginActivation,
+} from "@/layout/pluginActivation";
 import { cn } from "@/lib/utils";
 import { type ApplyPhase, restartAndApply } from "@/lifecycle/controller";
 
@@ -196,7 +203,12 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        onKeyDown={(event) => event.key === "Escape" && onClose()}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            onClose();
+          }
+        }}
         onMouseDown={(event) => event.stopPropagation()}
         className="flex w-[min(32rem,100%)] flex-col rounded-xl border border-border bg-popover p-4 shadow-2xl"
       >
@@ -345,10 +357,14 @@ const PHASE: Record<ApplyPhase, MessageKey> = {
 /** Adding an optional client of hz itself: confirm, install it through hz's own pinned path, restart, reload, check. */
 function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose: () => void }) {
   const client = useQueryClient();
+  const activation = usePluginActivation();
   const [phase, setPhase] = useState<ApplyPhase | null>(null);
   const [error, setError] = useState<string | null>(null);
   const extra = option.client ?? "";
   const run = async () => {
+    // The owner outlives this dialog. A second dialog cannot report a no-op as complete while the first still restarts.
+    const release = acquirePluginChange();
+    if (!release) return;
     setError(null);
     try {
       await restartAndApply(
@@ -364,26 +380,34 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
             return result.restart_required;
           },
         },
-        { onPhase: setPhase, preserveTimeout: 10 * 60_000 },
+        {
+          onPhase: setPhase,
+          onObservation: retainPluginRestart,
+          onAcknowledged: acknowledgePluginRestart,
+          preserveTimeout: 10 * 60_000,
+        },
       );
+      completePluginRestart();
       // A concurrent install can make this request a successful no-op, with no restart phases emitted.
       setPhase("applied");
       await client.invalidateQueries({ queryKey: ["ai"] });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      release();
     }
   };
-  const running = phase !== null && phase !== "applied" && error === null;
+  const running = activation.changing || (phase !== null && phase !== "applied" && error === null);
   return (
     <>
       <p className="text-sm">{t("aiAccess.client.confirm", { needs: option.needs })}</p>
       <p className="text-ui-sm text-muted-foreground">{t("aiAccess.client.why")}</p>
-      {phase && (
+      {(phase || activation.changing) && (
         <p role="status" className={cn("text-sm", phase === "applied" ? "text-ok" : "text-muted-foreground")}>
-          {t(PHASE[phase])}
+          {t(PHASE[phase ?? "preserving"])}
         </p>
       )}
-      {error && <p className="text-sm text-bad">{error}</p>}
+      {(error || activation.error) && <p className="text-sm text-bad">{error || activation.error}</p>}
       <PaneActions align="end" words="all">
         <PaneAction key="cancel" icon={X} type="button" disabled={running} onClick={onClose}>
           {t("lifecycle.cancel")}
@@ -393,7 +417,14 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
           icon={Download}
           primary
           type="button"
-          disabled={running || phase === "applied" || !extra}
+          disabled={
+            running ||
+            activation.blocked ||
+            activation.pending ||
+            !!activation.observation ||
+            phase === "applied" ||
+            !extra
+          }
           onClick={() => void run()}
         >
           {t("aiAccess.client.add")}
