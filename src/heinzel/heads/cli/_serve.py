@@ -299,10 +299,16 @@ def _add_mcp_check(serve: typer.Typer, footer: str | None, err_console: Console)
     def mcp_check(
         url: Annotated[str, typer.Option(help="Loopback HTTP MCP endpoint, including /mcp.")],
         token_stdin: Annotated[
-            bool, typer.Option("--token-stdin", help="Read the bearer from standard input.")
+            bool,
+            typer.Option(
+                "--token-stdin",
+                help="Read the bearer from standard input; the network timeout starts after input arrives.",
+            ),
         ] = False,
     ) -> None:
         """Authenticate and initialize a loopback MCP endpoint; this does not prove worker ownership.
+
+        Input waits for a line or EOF; the network check then has a ten-second limit.
 
         Raises:
             typer.Exit: If the token, endpoint or MCP initialization is unavailable.

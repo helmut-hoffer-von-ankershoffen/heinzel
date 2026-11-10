@@ -3725,6 +3725,8 @@ $ hz system serve mcp [OPTIONS]
 
 (expert) Authenticate and initialize a loopback MCP endpoint; this does not prove worker ownership.
 
+Input waits for a line or EOF; the network check then has a ten-second limit.
+
 Raises:
     typer.Exit: If the token, endpoint or MCP initialization is unavailable.
 
@@ -3737,7 +3739,7 @@ $ hz system serve mcp-check [OPTIONS]
 **Options**:
 
 * `--url <str>`: Loopback HTTP MCP endpoint, including /mcp.  [required]
-* `--token-stdin`: Read the bearer from standard input.
+* `--token-stdin`: Read the bearer from standard input; the network timeout starts after input arrives.
 * `--help`: Show this message and exit.
 
 #### `hz system serve mcp-token`

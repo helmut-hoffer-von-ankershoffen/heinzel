@@ -92,3 +92,52 @@ def test_cli_reads_token_only_from_stdin_and_reports_ownership_unverified(endpoi
     )
     assert bad.exit_code != 0
     assert "hzmcp_wrong" not in bad.output
+
+
+@pytest.mark.parametrize("mode", ["redirect", "invalid-json"])
+def test_reflected_token_never_reaches_cli_or_sdk_logs(make_kernel, caplog, capfd, mode):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    secret = "hzmcp_fictional_reflection_test"
+    requests: list[str] = []
+
+    class Reflect(BaseHTTPRequestHandler):
+        def do_POST(self):
+            requests.append(self.path)
+            if mode == "redirect":
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/mcp?reflected={secret}")
+                body = b""
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                body = secret.encode()
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):  # noqa: A002 - standard library callback signature
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Reflect)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    caplog.set_level(logging.DEBUG)
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/mcp"
+        result = CliRunner().invoke(
+            build(make_kernel(builtins=True)),
+            ["system", "serve", "mcp-check", "--url", url, "--token-stdin"],
+            input=secret,
+        )
+        assert result.exit_code != 0
+        assert requests
+        assert secret not in result.output
+        assert secret not in caplog.text
+        captured = capfd.readouterr()
+        assert secret not in captured.out + captured.err
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(5)
+        assert not thread.is_alive()
