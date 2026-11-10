@@ -144,3 +144,61 @@ def test_in_use_recognizes_owned_and_translocated_paths(monkeypatch, tmp_path):
             lambda *_args, output=output, **_kwargs: subprocess.CompletedProcess([], 0, output + b"\n"),
         )
         assert desktop._in_use(bundle) is expected
+
+
+def test_atomic_rename_uses_exclusive_or_swap_and_propagates_os_error(monkeypatch, tmp_path):
+    """Exercise the native adapter without loading macOS libraries or moving an app."""
+    calls = []
+
+    class Rename:
+        result = 0
+
+        def __call__(self, source, target, flags):
+            calls.append((source, target, flags))
+            return self.result
+
+    rename = Rename()
+    library = type("Library", (), {"renamex_np": rename})()
+    monkeypatch.setattr(desktop.ctypes, "CDLL", lambda *_args, **_kwargs: library)
+    monkeypatch.setattr(desktop.ctypes, "get_errno", lambda: 17)
+    source, target = tmp_path / "source", tmp_path / "target"
+    desktop._rename(source, target)
+    desktop._rename(source, target, swap=True)
+    assert calls == [
+        (os.fsencode(source), os.fsencode(target), desktop._RENAME_EXCL),
+        (os.fsencode(source), os.fsencode(target), desktop._RENAME_SWAP),
+    ]
+    rename.result = 1
+    with pytest.raises(FileExistsError) as error:
+        desktop._rename(source, target)
+    assert error.value.errno == 17
+    assert not source.exists()
+    assert not target.exists()
+
+
+@pytest.mark.parametrize(
+    ("system", "architecture", "allowed"),
+    [("darwin", "arm64", True), ("darwin", "x86_64", False), ("linux", "arm64", False)],
+)
+def test_platform_guard_accepts_only_arm_macos(monkeypatch, system, architecture, allowed):
+    monkeypatch.setattr(desktop.sys, "platform", system)
+    monkeypatch.setattr(desktop.platform, "machine", lambda: architecture)
+    if allowed:
+        desktop._check_platform()
+    else:
+        with pytest.raises(desktop.DesktopInstallationError, match="Apple silicon"):
+            desktop._check_platform()
+
+
+def test_identity_rejects_symlinks_and_hardlinks_without_following_them(tmp_path):
+    original = tmp_path / "owned"
+    original.write_text("fictional")
+    sym = tmp_path / "symbolic"
+    sym.symlink_to(original)
+    with pytest.raises(desktop.DesktopInstallationError):
+        desktop._identity(sym)
+    hard = tmp_path / "hard"
+    os.link(original, hard)
+    with pytest.raises(desktop.DesktopInstallationError):
+        desktop._identity(hard)
+    assert original.read_text() == "fictional"
