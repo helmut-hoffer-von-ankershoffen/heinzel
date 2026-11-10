@@ -79,6 +79,15 @@ class PluginUpdate(BaseModel):
     )
     reason: str | None = Field(default=None, description="Why it failed, and what became of it.")
     next: list[str] = Field(default_factory=list, description="Commands that bring a failed plugin back.")
+    pinned: str | None = Field(
+        default=None,
+        description="The tag, commit, file or exact version its install spec pins it to, so an update cannot move "
+        "it; none if it follows a branch or the package index.",
+    )
+    checked: bool = Field(
+        default=True,
+        description="Whether the update asked for its newest version; false when the plugin update stopped before it.",
+    )
 
 
 class ChannelReport(BaseModel):
@@ -87,6 +96,15 @@ class ChannelReport(BaseModel):
     channel: str = Field(description="The channel followed now: stable, edge or main.")
     changed: bool = Field(description="Whether this call switched the channel.")
     statement: str = Field(description="What the switch changes; said before anything happens.")
+
+
+class AutomaticUpdates(BaseModel):
+    """The automatic-updates setting, as an update run by hand reports it."""
+
+    enabled: bool = Field(description="The setting `auto_update`: whether hz updates itself and its plugins.")
+    check_every_minutes: int = Field(description="How often the web server checks for the newest stable release.")
+    core_min_age_hours: int = Field(description="How old a stable release of hz must be before it is installed.")
+    plugin_min_age_hours: int = Field(description="How old a plugin's release must be before it is installed.")
 
 
 class UpdateResult(BaseModel):
@@ -109,6 +127,10 @@ class UpdateResult(BaseModel):
         default_factory=list[PluginUpdate],
         description="What happened to each installed plugin: upgraded together with hz, unchanged or failed. A plugin "
         "that doesn't allow the new hz never blocks it.",
+    )
+    automatic: AutomaticUpdates | None = Field(
+        default=None,
+        description="Whether automatic updates are on and what they install, so a run by hand says why it was needed.",
     )
     heads: list[HeadRefresh] = Field(
         default_factory=list[HeadRefresh],
