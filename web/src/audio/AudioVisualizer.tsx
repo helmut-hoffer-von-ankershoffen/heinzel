@@ -565,6 +565,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const sharedWord = workspaceAudio ? "Workspace audio" : "Shared audio";
   const looped = session?.label === "System audio";
   const listening: Source = session ? (microphone ? "mic" : looped ? "system" : "tab") : "off";
+  const listeningTo = microphone ? "the microphone" : looped ? "system audio" : sharedWord.toLowerCase();
   let status = "Off. Heinzel's own sound still shows.";
   let state: State = "off";
   let triggerLabel = "Audio visualizer";
@@ -578,19 +579,26 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   if (!settings.master) {
     status = "Audio visualisation is off.";
     controlWord = "Off";
-  } else if (nothingShown) {
-    status = "Nothing shown: every style is off.";
-    controlWord = "Off";
   } else if (requesting) {
-    status = "Waiting for the browser to allow audio.";
+    const requested =
+      requesting === "mic" ? "microphone" : requesting === "system" ? "system audio" : sharedWord.toLowerCase();
+    status = session
+      ? `Listening to ${listeningTo}; waiting for ${requested}.`
+      : `Waiting for the browser to allow ${requested}.`;
     triggerLabel = "Audio request";
     controlWord = "Wait";
   } else if (session) {
-    const what = microphone ? "the microphone" : looped ? "system audio" : sharedWord.toLowerCase();
-    status = hasSignal ? `Visualizing ${what}` : `Listening to ${what}. Waiting for sound.`;
+    status = nothingShown
+      ? `Listening to ${listeningTo}. All styles are off.`
+      : hasSignal
+        ? `Visualizing ${listeningTo}`
+        : `Listening to ${listeningTo}. Waiting for sound.`;
     state = hasSignal ? "ok" : "warn";
     triggerLabel = "Audio sharing active";
     controlWord = "On";
+  } else if (nothingShown) {
+    status = "Nothing shown: every style is off.";
+    controlWord = "Off";
   } else if (ownAnalyser) {
     status = hasSignal
       ? `Visualizing ${own.mode === "analysed" ? own.label : "Heinzel's sound"}`
@@ -609,7 +617,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     controlWord = "Share";
   }
   if (problem && settings.master) {
-    status = problem;
+    status = session ? `${problem} Still listening to ${listeningTo}.` : problem;
     state = "bad";
     triggerLabel = "Audio sharing problem";
     controlWord = "Retry";

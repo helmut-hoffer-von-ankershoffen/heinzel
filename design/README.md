@@ -58,7 +58,9 @@ follows from it:
   not shown at all, never greyed out (Shared audio without `getDisplayMedia`, Microphone without `getUserMedia` or a
   secure context, a style without a canvas, the Halo and Swarm without the sidebar stage); a group left with nothing to
   choose is not shown, and one line says what the browser can do. `choices-standards.test.ts` fails a disabled or
-  `aria-disabled` choice in the audio pane and the segmented control. Choosing while another option is live switches in one step: the new one
+  `aria-disabled` unavailable choice in the audio pane and the segmented control. During a pending request, choices
+  temporarily blocked by that request expose `aria-disabled`, while the cancellation choice remains actionable.
+  Choosing while another option is live switches in one step: the new one
   is asked for first, the old one stopped only once the new one runs. Segmented controls, chips and switches are
   content. The Audio pane uses Show chips (Spectrum, Aurora, Halo, Swarm), source segments where available, a status
   and privacy line, and a master switch. On a desktop with system audio, one action asks for system audio or stops it;

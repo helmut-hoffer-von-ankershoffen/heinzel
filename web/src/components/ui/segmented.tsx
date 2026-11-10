@@ -89,6 +89,7 @@ export function SegmentedControl<T extends string>({
               type="button"
               role="radio"
               aria-checked={checked}
+              aria-disabled={busy && segment.value !== allowWhileBusy ? true : undefined}
               tabIndex={index === focusable ? 0 : -1}
               onKeyDown={(event) => move(event, index)}
               onClick={() => {

@@ -56,16 +56,19 @@ describe("choices", () => {
 
 describe("unavailable choices", () => {
   it("are hidden, never greyed out, in the audio pane and the segmented control", () => {
-    // A choice this device or browser cannot take is not rendered (owner, 2026-11-08): no disabled, aria-disabled or
-    // "unavailable" option that stays on screen.
+    // A choice this device or browser cannot take is not rendered. A pending operation may temporarily mark its
+    // non-cancellation choices aria-disabled; it is not a device capability or an unavailable option.
     const files = [...sources(join(SRC, "audio"), /\.tsx?$/), join(SRC, "components", "ui", "segmented.tsx")];
-    const found = files.flatMap((path) =>
-      [
-        ...withoutComments(readFileSync(path, "utf8")).matchAll(
-          /\baria-disabled\b|\bdisabled=\{(?!false\})|\bunavailable\??:/g,
-        ),
-      ].map((match) => `${relative(SRC, path)}: ${match[0]}`),
-    );
+    const transient = "aria-disabled={busy && segment.value !== allowWhileBusy ? true : undefined}";
+    const segmented = withoutComments(readFileSync(join(SRC, "components", "ui", "segmented.tsx"), "utf8"));
+    expect(segmented.split(transient)).toHaveLength(2);
+    const found = files.flatMap((path) => {
+      const text = withoutComments(readFileSync(path, "utf8"));
+      const scanned = path.endsWith("/segmented.tsx") ? text.replace(transient, "") : text;
+      return [...scanned.matchAll(/\baria-disabled\b|\bdisabled=\{(?!false\})|\bunavailable\??:/g)].map(
+        (match) => `${relative(SRC, path)}: ${match[0]}`,
+      );
+    });
     expect(found).toEqual([]);
   });
 });

@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AudioVisualizer, spectrumLevel } from "./AudioVisualizer";
 import { captureAudio, captureMicrophone, systemAudioAvailable } from "./capture";
@@ -66,6 +67,123 @@ afterEach(() => {
 });
 
 describe("AudioVisualizer", () => {
+  it.each([
+    ["Microphone", "the microphone"],
+    ["Shared audio", "shared audio"],
+  ])("discloses active %s when every style is off", async (choice, description) => {
+    if (choice === "Microphone") vi.mocked(captureMicrophone).mockResolvedValueOnce(listening);
+    else vi.mocked(captureAudio).mockResolvedValueOnce(captured);
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(source(choice));
+    await waitFor(() => expect(source(choice)).toHaveAttribute("aria-checked", "true"));
+    act(() => {
+      for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(`Listening to ${description}`);
+    expect(screen.getByRole("button", { name: /^Audio sharing active/ })).toBeVisible();
+  });
+
+  it("discloses system capture when every style is off", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    vi.mocked(captureAudio).mockResolvedValueOnce({ ...captured, label: "System audio" });
+    try {
+      render(<AudioVisualizer />);
+      open();
+      fireEvent.click(await waitFor(() => pane().getByRole("button", { name: "Use system audio" })));
+      await waitFor(() => expect(pane().getByRole("button", { name: "Stop listening" })).toBeVisible());
+      act(() => {
+        for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
+      });
+      expect(screen.getByRole("status")).toHaveTextContent("Listening to system audio");
+      expect(screen.getByRole("button", { name: /^Audio sharing active/ })).toBeVisible();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("discloses a pending request with all styles off and keeps Off available by keyboard", async () => {
+    const user = userEvent.setup();
+    vi.mocked(captureAudio).mockImplementationOnce(() => new Promise(() => undefined));
+    render(<AudioVisualizer />);
+    open();
+    act(() => {
+      for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
+    });
+    fireEvent.click(source("Shared audio"));
+    const signal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
+    expect(screen.getByRole("status")).toHaveTextContent("Waiting for the browser to allow shared audio");
+    expect(source("Shared audio")).toHaveAttribute("aria-disabled", "true");
+    expect(source("Microphone")).toHaveAttribute("aria-disabled", "true");
+    expect(source("Off")).not.toHaveAttribute("aria-disabled");
+    fireEvent.click(source("Microphone"));
+    expect(captureMicrophone).not.toHaveBeenCalled();
+    source("Shared audio").focus();
+    fireEvent.keyDown(source("Shared audio"), { key: "ArrowRight" });
+    expect(source("Off")).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(signal?.aborted).toBe(true);
+    expect(source("Off")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Nothing shown: every style is off.");
+  });
+
+  it("discloses pending microphone capture when all styles are off", () => {
+    vi.mocked(captureMicrophone).mockImplementationOnce(() => new Promise(() => undefined));
+    render(<AudioVisualizer />);
+    open();
+    act(() => {
+      for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
+    });
+    fireEvent.click(source("Microphone"));
+    expect(screen.getByRole("status")).toHaveTextContent("Waiting for the browser to allow microphone");
+    expect(source("Microphone")).toHaveAttribute("aria-disabled", "true");
+    expect(source("Off")).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("discloses pending system capture when all styles are off and allows cancellation", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    vi.mocked(captureAudio).mockImplementationOnce(() => new Promise(() => undefined));
+    try {
+      render(<AudioVisualizer />);
+      open();
+      act(() => {
+        for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
+      });
+      fireEvent.click(await waitFor(() => pane().getByRole("button", { name: "Use system audio" })));
+      const signal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
+      expect(screen.getByRole("status")).toHaveTextContent("Waiting for the browser to allow system audio");
+      fireEvent.click(pane().getByRole("button", { name: "Stop listening" }));
+      expect(signal?.aborted).toBe(true);
+      expect(screen.getByRole("status")).toHaveTextContent("Nothing shown: every style is off.");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps the active microphone disclosed during and after a refused switch", async () => {
+    vi.mocked(captureMicrophone).mockResolvedValueOnce(listening);
+    let reject: (error: Error) => void = () => {};
+    vi.mocked(captureAudio).mockImplementationOnce(
+      () =>
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(source("Microphone"));
+    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    act(() => {
+      for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
+    });
+    fireEvent.click(source("Shared audio"));
+    expect(screen.getByRole("status")).toHaveTextContent("Listening to the microphone; waiting for shared audio");
+    await act(async () => reject(new DOMException("Denied", "NotAllowedError")));
+    expect(screen.getByRole("status")).toHaveTextContent("Still listening to the microphone");
+    expect(micStop).not.toHaveBeenCalled();
+  });
   it("paints a full-window, click-through aurora from the real analyser and sleeps when the sound stops", async () => {
     let loud = true;
     vi.mocked(captureAudio).mockResolvedValue({
