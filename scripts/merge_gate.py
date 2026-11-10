@@ -52,6 +52,10 @@ TOTAL = re.compile(r"\d{1,3}(?:\.\d+)?")
 REDIRECTS = (301, 302, 303, 307, 308)
 MAX_PERCENT = 100
 RUN_URL = re.compile(r"/actions/runs/(\d+)")
+EVIDENCE_API = re.compile(
+    r"https://api\.github\.com/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/(?:artifacts/[1-9][0-9]*/zip|jobs/[1-9][0-9]*/steps/[1-9][0-9]*/logs)"
+)
+EVIDENCE_HOST = re.compile(r"productionresultssa[0-9]+\.blob\.core\.windows\.net")
 
 
 class UnavailableError(Exception):
@@ -63,6 +67,62 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
     def redirect_request(self, *_args: object, **_kwargs: object) -> None:
         """Follow nothing."""
+
+
+def fetch_evidence(url: str, token: str, *, limit: int) -> bytes:
+    """Read bounded evidence via GitHub's authenticated, single-hop delegation.
+
+    Raises:
+        UnavailableError: The source, delegation, response or transport is invalid.
+    """
+    if not EVIDENCE_API.fullmatch(url) or not token or limit <= 0:
+        message = "invalid GitHub evidence request"
+        raise UnavailableError(message)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
+    request = urllib.request.Request(  # noqa: S310 - exact GitHub API URL checked above
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2026-03-10",
+        },
+    )
+    try:
+        try:
+            reply = opener.open(request, timeout=30)
+        except urllib.error.HTTPError as error:
+            location = error.headers.get("Location") if error.code in REDIRECTS else None
+            error.close()
+            try:
+                target = urllib.parse.urlsplit(location or "")
+                valid = (
+                    target.scheme == "https"
+                    and target.username is None
+                    and target.password is None
+                    and target.port in (None, 443)
+                    and "#" not in (location or "")
+                    and EVIDENCE_HOST.fullmatch(target.hostname or "") is not None
+                )
+            except ValueError:
+                valid = False
+            if not valid:
+                message = "invalid GitHub evidence delegation"
+                raise UnavailableError(message) from error
+            reply = opener.open(urllib.request.Request(location), timeout=30)  # noqa: S310 - verified delegation
+        with reply:
+            body = bytes(reply.read(limit + 1))
+        if len(body) > limit:
+            message = "GitHub evidence exceeded its byte limit"
+            raise UnavailableError(message)
+    except urllib.error.HTTPError as error:
+        error.close()
+        message = "GitHub evidence transport failed"
+        raise UnavailableError(message) from error
+    except OSError as error:
+        message = "GitHub evidence transport failed"
+        raise UnavailableError(message) from error
+    else:
+        return body
 
 
 def fetch(

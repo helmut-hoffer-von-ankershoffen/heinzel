@@ -300,6 +300,86 @@ def test_a_redirect_drops_the_token(monkeypatch):
     assert seen == [("https://api/zip", "Bearer t"), ("https://storage/zip", None)]
 
 
+@pytest.mark.parametrize(
+    "target",
+    [
+        "http://productionresultssa3.blob.core.windows.net/a",
+        "https://productionresultssa.blob.core.windows.net/a",
+        "https://productionresultssa3.blob.core.windows.net.evil.example/a",
+        "https://productionresultssa3.blob.core.windows.net@evil.example/a",
+        "https://user@productionresultssa3.blob.core.windows.net/a",
+        "https://productionresultssa3.blob.core.windows.net:444/a",
+        "https://productionresultssa3.blob.core.windows.net/a#fragment",
+        "https://productionresultssa3.blob.core.windows.net/a#",
+    ],
+)
+def test_evidence_rejects_untrusted_delegation(monkeypatch, target):
+    class Opener:
+        def open(self, request, timeout):
+            raise urllib.error.HTTPError(request.full_url, 302, "", {"Location": target}, io.BytesIO())
+
+    monkeypatch.setattr(merge_gate.urllib.request, "build_opener", lambda *_: Opener())
+    with pytest.raises(merge_gate.UnavailableError, match="delegation"):
+        merge_gate.fetch_evidence("https://api.github.com/repos/a/b/actions/artifacts/1/zip", "secret", limit=10)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://api.github.com.evil/repos/a/b/actions/artifacts/1/zip",
+        "https://api.github.com/repos/a/b/actions/artifacts/1/zip?next=evil",
+        "https://api.github.com/repos/a/b/actions/runs/1/logs",
+        "https://productionresultssa3.blob.core.windows.net/a",
+    ],
+)
+def test_evidence_refuses_non_api_evidence_origin(url):
+    with pytest.raises(merge_gate.UnavailableError, match="request"):
+        merge_gate.fetch_evidence(url, "secret", limit=10)
+
+
+@pytest.mark.parametrize("result", ["ok", "redirect", "oversize"])
+def test_evidence_single_hop_drops_credentials_and_disables_proxy(monkeypatch, result):
+    seen = []
+
+    class Reply(io.BytesIO):
+        pass
+
+    class Opener:
+        def open(self, request, timeout):
+            seen.append(request)
+            if len(seen) == 1:
+                raise urllib.error.HTTPError(
+                    request.full_url,
+                    302,
+                    "",
+                    {"Location": "https://productionresultssa3.blob.core.windows.net/a?sig=temporary"},
+                    io.BytesIO(),
+                )
+            if result == "redirect":
+                raise urllib.error.HTTPError(
+                    request.full_url, 302, "", {"Location": "https://evil.example"}, io.BytesIO()
+                )
+            return Reply(b"123456" if result == "oversize" else b"123")
+
+    def opener(*handlers):
+        assert isinstance(handlers[0], merge_gate.urllib.request.ProxyHandler)
+        assert handlers[0].proxies == {}
+        assert handlers[1] is merge_gate.NoRedirect
+        return Opener()
+
+    monkeypatch.setattr(merge_gate.urllib.request, "build_opener", opener)
+    url = "https://api.github.com/repos/a/b/actions/jobs/1/steps/2/logs"
+    if result == "ok":
+        assert merge_gate.fetch_evidence(url, "secret", limit=3) == b"123"
+    else:
+        with pytest.raises(merge_gate.UnavailableError):
+            merge_gate.fetch_evidence(url, "secret", limit=3)
+    assert len(seen) == 2
+    assert seen[0].get_header("Authorization") == "Bearer secret"
+    assert seen[1].get_header("Authorization") is None
+    assert seen[1].get_header("Cookie") is None
+
+
 def test_the_workflow_never_checks_out_the_pull_request():
     text = (ROOT / ".github/workflows/merge-gate.yml").read_text()
     workflow = yaml.safe_load(text)

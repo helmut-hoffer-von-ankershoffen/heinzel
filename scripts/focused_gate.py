@@ -29,7 +29,7 @@ from scripts.focused_plan import (
     resolve,
     web_production,
 )
-from scripts.merge_gate import ARTIFACT, GITHUB, Gate, fetch, red_below, whole_total
+from scripts.merge_gate import ARTIFACT, GITHUB, Gate, fetch_evidence, red_below, whole_total
 from scripts.release_candidate import (
     REPOSITORY,
     WORKFLOW,
@@ -455,17 +455,10 @@ def main() -> None:
     """Run from the protected merge gate, with the workload Git tree fetched as data."""
     gate = Gate(REPOSITORY, os.environ.get("PR_NUMBER", ""), os.environ["PR_HEAD_SHA"], os.environ["GITHUB_TOKEN"])
 
-    storage = frozenset(filter(None, os.environ.get("FOCUSED_CI_STORAGE_HOSTS", "").split(",")))
-
     def read(path: str) -> bytes:
         url = f"{GITHUB}/repos/{REPOSITORY}/{path}"
         limit = MAX_UPLOAD_LOG if path.endswith("/logs") else MAX_ARCHIVE
-        headers = {
-            "Authorization": f"Bearer {gate.token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2026-03-10",
-        }
-        return fetch(url, headers, limit=limit, storage_hosts=storage)
+        return fetch_evidence(url, gate.token, limit=limit)
 
     run = int(os.environ["CI_RUN_ID"])
     manifests = os.environ.get(PLAN_VARIABLE, "")

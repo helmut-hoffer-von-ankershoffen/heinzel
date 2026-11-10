@@ -76,9 +76,9 @@ An entry has these fields.
 Run `python3 -I scripts/focused_plan.py --suggest BASE` in the checkout to get the advisory affected-selector
 result. The selector's full or broad recommendations request an explicit bounded plan. They never schedule tests.
 The protected judge replays the detached plan and checks the actual first attempt, job suite, uploaded artifact
-identity and digest, exact case inventory, and source opportunities. The administrator provisions
-`FOCUSED_CI_STORAGE_HOSTS` as the exact comma-separated artifact redirect hosts. A redirect never carries the API
-token. The focused integration verifier takes the expected aggregate base from the queue and emits
+identity and digest, exact case inventory, and source opportunities. The protected evidence reader accepts a single
+authenticated GitHub API delegation to numeric production-results storage, without forwarding credentials or proxies.
+The focused integration verifier takes the expected aggregate base from the queue and emits
 `focused-main/v1` evidence for the exact current main run. The queue still checks that base and the tested PR source.
 
 The existing release source policy reviews and pins the candidate workflow and recorder before candidate use.
