@@ -20,6 +20,8 @@ from scripts.ci_workload import WorkloadSource
 from scripts.focused_coverage import MAX_FILE, REPORT, canonical, config_policy, evidence, parse
 from scripts.focused_plan import (
     ARTIFACT_PREFIX,
+    LANES,
+    MAX_PLAN,
     PLAN_VARIABLE,
     PROTECTED_FILES,
     Scope,
@@ -28,6 +30,7 @@ from scripts.focused_plan import (
     raw_diff,
     require_pr_base_ancestor,
     resolve,
+    unique_object,
     web_production,
 )
 from scripts.merge_gate import ARTIFACT, GITHUB, Gate, fetch_evidence, red_below, whole_total
@@ -396,13 +399,72 @@ def _verify_config(scope: Scope) -> None:
     )
 
 
+def _tested_source_after_main_moves(
+    gate: Gate, source: GateSource, manifest: str, current_main: str, read: Callable[[str], bytes]
+) -> GateSource:
+    """Recover only an artifact-authenticated candidate; the detached plan still judges it."""
+    require(len(manifest.encode()) <= MAX_PLAN, "focused plan registry exceeds its supported size")
+    registry = json.loads(manifest or "{}", object_pairs_hook=unique_object)
+    plan = registry.get(f"pull_request:{source.source.head}") if isinstance(registry, dict) else None
+    require(isinstance(plan, dict) and isinstance(plan.get("selection"), dict), "missing reviewed focused plan")
+    lanes = plan["selection"]
+    require(lanes and set(lanes) <= set(LANES), "invalid focused lane inventory")
+    base = plan.get("base")
+    require(valid_sha(base), "invalid reviewed tested base")
+    git("fetch", "--no-tags", "origin", base)
+    require_pr_base_ancestor(base, current_main)
+    jobs = jobs_for(gate, source)
+    names = {job["name"]: job for job in jobs}
+    expected = STATIC_JOBS | PR_JOBS | {f"Focused tests ({lane})" for lane in lanes}
+    require(
+        len(names) == len(jobs) and {n for n, j in names.items() if j["conclusion"] != "skipped"} == expected,
+        "focused workload job inventory is missing, unexpected or skipped",
+    )
+    for name in sorted(expected):
+        _check(gate, source, names[name])
+    artifacts = _artifact_inventory(gate, source.run["id"])
+    by_lane = {lane: f"{ARTIFACT_PREFIX}-{lane}-{source.run['id']}-1" for lane in lanes}
+    require(set(artifacts) == set(by_lane.values()), "focused artifact lane inventory mismatch")
+    commits = set()
+    for lane, name in by_lane.items():
+        files = _artifact(read, names[f"Focused tests ({lane})"], artifacts[name], name)
+        commits.add(parse(files[REPORT]).get("commit"))
+    require(len(commits) == 1, "focused artifacts disagree on tested commit")
+    commit = commits.pop()
+    require(valid_sha(commit), "invalid artifact tested commit")
+    git("fetch", "--no-tags", "origin", commit)
+    require(git("rev-parse", "FETCH_HEAD").decode().strip() == commit, "tested commit fetch changed")
+    recovered = WorkloadSource(
+        source.source.event,
+        source.source.repository,
+        source.source.ref,
+        source.source.payload,
+        base,
+        source.source.head,
+        raw_diff(base, commit),
+    )
+    return GateSource(source.run, recovered, commit)
+
+
 def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes]) -> str:
     """Return a typed verdict for the completed original CI attempt, without publishing checks."""
     snapshot = pull_identity(gate, gate.head)
     candidate = bool(release_version("pull_request", REPOSITORY, "", {"pull_request": snapshot[0]}))
     run = _authenticated_run(gate, run_id, candidate_composite=candidate)
     source = _pr_source(gate, run, snapshot, candidate=candidate)
-    scope = resolve(source.source, source.commit, manifest, source.source.payload["pull_request"])
+    if (
+        not candidate
+        and json.loads(manifest, object_pairs_hook=unique_object).get(f"pull_request:{gate.head}", {}).get("base")
+        != snapshot[2]
+    ):
+        source = _tested_source_after_main_moves(gate, source, manifest, snapshot[2], read)
+    scope = resolve(
+        source.source,
+        source.commit,
+        manifest,
+        source.source.payload["pull_request"],
+        pr_base_limit=None if candidate else snapshot[2],
+    )
     if not isinstance(scope, Scope):
         jobs = [job for job in jobs_for(gate, source) if job["name"] == "Coverage"]
         require(len(jobs) == 1, "canonical candidate requires the exact Coverage job")
@@ -434,13 +496,15 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes])
         )
     current, merge, main = pull_identity(gate, gate.head)
     require(
-        main == source.source.base
+        main == snapshot[2]
         and (not candidate or current["base"]["sha"] == main)
-        and (source.source.event != "pull_request" or merge == source.commit)
+        and (source.source.event != "pull_request" or merge == snapshot[1])
+        and (not candidate or source.source.event != "pull_request" or merge == source.commit)
         and _authenticated_run(gate, run_id, candidate_composite=candidate) == run,
         "source or workflow attempt changed during verification",
     )
     if not candidate:
+        require_pr_base_ancestor(source.source.base, main)
         require_pr_base_ancestor(current["base"]["sha"], main)
     return verdict
 

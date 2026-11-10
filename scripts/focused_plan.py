@@ -220,6 +220,8 @@ def resolve(
     commit: str,
     manifests: str,
     dispatch_pr: dict[str, Any] | None = None,
+    *,
+    pr_base_limit: str | None = None,
 ) -> CandidatePlan | Scope:
     """Resolve only an exact released candidate or exact reviewed, bounded workload.
 
@@ -262,22 +264,26 @@ def resolve(
         ),
     )
     if isinstance(workload, FocusedPlan):
-        return _scope(source, workload, commit, plan, selection)
+        return _scope(source, workload, commit, plan, selection, pr_base_limit=pr_base_limit)
     message = "ordinary source did not resolve to a focused workload"
     raise CandidateError(message)
 
 
-def _scope(
+def _scope(  # noqa: PLR0913 - the reader separately supplies the current protected base limit
     source: WorkloadSource,
     workload: FocusedPlan,
     commit: str,
     plan: dict[str, Any],
     selection: dict[str, tuple[str, ...]],
+    *,
+    pr_base_limit: str | None = None,
 ) -> Scope:
     require(valid_sha(commit), "invalid tested checkout")
     if source.event == "pull_request":
         require(pr_merge_base(commit, source.head) == source.base, "GitHub test merge base differs from reviewed base")
-        require_pr_base_ancestor(source.payload["pull_request"]["base"]["sha"], source.base)
+        limit = pr_base_limit or source.base
+        require_pr_base_ancestor(source.base, limit)
+        require_pr_base_ancestor(source.payload["pull_request"]["base"]["sha"], limit)
     else:
         require(commit == source.head, "checkout differs from exact source head")
     tree = object_id(f"{commit}^{{tree}}")

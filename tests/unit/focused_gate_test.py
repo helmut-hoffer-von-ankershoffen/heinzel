@@ -483,3 +483,65 @@ def test_protected_reader_rechecks_live_source_and_attempt(focused_gate, first_a
     monkeypatch.setattr(type(gate), "github", github)
     with pytest.raises(focused_gate.CandidateError, match=error):
         focused_gate.verify(gate, run, manifest, logs.__getitem__)
+
+
+@pytest.mark.parametrize("defect", ["none", "unrelated-base", "wrong-parent", "wrong-tree", "bad-digest", "moved-main"])
+def test_focused_reader_authenticates_original_artifact_before_accepting_ancestor_base(  # noqa: C901 - independent drift cases
+    focused_gate, first_attempt, monkeypatch, defect
+):
+    from scripts import focused_plan
+
+    gate, run_id, manifest, _lane, rows, logs, git_rows = first_attempt
+    old = rows["git/ref/heads/main"]["object"]["sha"]
+    current, current_merge = "f" * 40, "1" * 40
+    original_merge = "c" * 40
+    ref = f"refs/pull/{gate.pr}/merge"
+    rows["git/ref/heads/main"]["object"]["sha"] = current
+    git_rows[("ls-remote", "--exit-code", "origin", ref)] = f"{current_merge} {ref}".encode()
+    git_rows[
+        ("diff-tree", "--no-commit-id", "-r", "--raw", "--no-abbrev", "--no-renames", "-z", current, current_merge)
+    ] = b"current"
+    git_rows[("merge-base", "--is-ancestor", old, current)] = b""
+    git_rows[("fetch", "--no-tags", "origin", old)] = b""
+    git_rows[("fetch", "--no-tags", "origin", original_merge)] = b""
+    if defect == "unrelated-base":
+        key = ("merge-base", "--is-ancestor", old, current)
+        git_rows[key] = CalledProcessError(1, key)
+    elif defect == "wrong-parent":
+        git_rows[("rev-list", "--parents", "-n", "1", original_merge)] = (
+            f"{original_merge} {current} {gate.head}".encode()
+        )
+    elif defect == "wrong-tree":
+        monkeypatch.setattr(focused_plan, "object_id", lambda _ref: "2" * 40)
+    elif defect == "bad-digest":
+        rows[f"actions/runs/{run_id}/artifacts?per_page=100"]["artifacts"][0]["digest"] = "sha256:" + "0" * 64
+    state = {"fetched": current_merge, "main_reads": 0}
+
+    def git(*args):
+        if args[:3] == ("fetch", "--no-tags", "origin"):
+            state["fetched"] = current_merge if args[3] == ref else args[3]
+        if args == ("rev-parse", "FETCH_HEAD"):
+            return state["fetched"].encode()
+        value = git_rows[args]
+        if isinstance(value, CalledProcessError):
+            raise value
+        return value
+
+    def github(_gate, path):
+        if path == "git/ref/heads/main":
+            state["main_reads"] += 1
+            if defect == "moved-main" and state["main_reads"] > 1:
+                return {"object": {"sha": "3" * 40}}
+        return rows[path]
+
+    monkeypatch.setattr(focused_gate, "git", git)
+    monkeypatch.setattr(focused_plan, "git", git)
+    monkeypatch.setattr(type(gate), "github", github)
+    if defect == "none":
+        assert (
+            focused_gate.verify(gate, run_id, manifest, logs.__getitem__)
+            == "Python coverage: not applicable to the reviewed scope"
+        )
+    else:
+        with pytest.raises(focused_gate.CandidateError, match=r".+"):
+            focused_gate.verify(gate, run_id, manifest, logs.__getitem__)
