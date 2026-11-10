@@ -13,7 +13,7 @@ import { createWorkspaceAudio } from "./workspace-audio.js";
 import { initializeDesktopIdentity } from "./identity.js";
 import { refreshAfterQuit, shouldRefresh, stopWithReport } from "./shutdown.js";
 import { installSignalQuit } from "./signal-quit.js";
-import { guardUiNavigation, openProductUi } from "./ui-navigation.js";
+import { guardUiNavigation, handleExternalActions, openProductUi } from "./ui-navigation.js";
 import { windowOptions } from "./window-options.js";
 
 const identityReady = initializeDesktopIdentity(app, dialog);
@@ -83,6 +83,7 @@ const instance = createInstanceLifecycle({
       window.on("enter-full-screen", () => window.webContents.send("hz:fullscreen", true));
       window.on("leave-full-screen", () => window.webContents.send("hz:fullscreen", false));
       guardUiNavigation(window.webContents, connection);
+      handleExternalActions(window.webContents, () => (stopping || quitting ? null : connection), (url) => shell.openExternal(url));
       window.on("closed", () => { audio.revoke(); windowPermissions.revoke(); if (!quitting) app.quit(); });
     },
   }),

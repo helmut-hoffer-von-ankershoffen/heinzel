@@ -706,7 +706,24 @@ try {
     const updatePane = await footerPane(page, "@updates", "Updates");
     await assertContained(page, updatePane, `${spec.name}: update pane`);
     await updatePane.getByText(/^Heinzel 0\.7\.30 is up to date · checked /).waitFor();
-    await updatePane.getByRole("button", { name: "Manually update…", exact: true }).waitFor();
+    const updateActions = updatePane.locator("[data-pane-actions]");
+    const manualUpdate = updateActions.getByRole("button", { name: "Manually update…", exact: true });
+    await manualUpdate.and(updateActions.locator("[data-pane-action]")).waitFor();
+    // A theme may reduce its spacing token. Check the 44 px pane-action floor on the real update row.
+    const previousSpacing = await updateActions.evaluate((row) => {
+      const value = row.style.getPropertyValue("--spacing");
+      const priority = row.style.getPropertyPriority("--spacing");
+      row.style.setProperty("--spacing", "3px");
+      return { value, priority };
+    });
+    try {
+      await assertOneActionRow(updatePane, `${spec.name}: update pane with compact spacing`);
+    } finally {
+      await updateActions.evaluate(
+        (row, { value, priority }) => row.style.setProperty("--spacing", value, priority),
+        previousSpacing,
+      );
+    }
     await updatePane.getByText(/^Last installed:/).waitFor();
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
     await dismissFooterPane(page);
@@ -1478,11 +1495,15 @@ try {
       (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube-nocookie.com/embed/"),
       "private player choice must restore the privacy-enhanced origin",
     );
+    // The private-player switch remounts Help. Open it, then tap Help again before using the header link.
     await playbackHelp.tap();
-    const [youtubePage] = await Promise.all([
-      soundPage.waitForEvent("popup"),
-      player.getByRole("link", { name: "Open on YouTube" }).tap(),
-    ]);
+    await player.getByRole("region", { name: "Playback or sign-in trouble?" }).waitFor();
+    await player.getByRole("button", { name: /Playback or sign-in trouble\?/, expanded: true }).waitFor();
+    await playbackHelp.tap();
+    await player.getByRole("button", { name: /Playback or sign-in trouble\?/, expanded: false }).waitFor();
+    const openYouTube = player.getByRole("link", { name: "Open on YouTube" });
+    await assertTouchTarget(openYouTube, "Open on YouTube", "short-landscape");
+    const [youtubePage] = await Promise.all([soundPage.waitForEvent("popup"), openYouTube.tap()]);
     await youtubePage.waitForURL("https://www.youtube.com/watch**");
     assert.equal(new URL(youtubePage.url()).searchParams.get("v"), sound.stream.video);
     await player.waitFor({ state: "detached" });

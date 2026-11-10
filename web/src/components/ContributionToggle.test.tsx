@@ -64,6 +64,17 @@ afterEach(() => {
 });
 
 describe("generic provider toggle", () => {
+  it.each([
+    [{}, ""],
+    [{ checked: true, status: "Ready" }, "Ready"],
+    [{ requested: true, problem: "Sign in first" }, "Sign in first"],
+  ] satisfies [Partial<ContributionToggleControl>, string][])("renders one status line for %j", (changes, status) => {
+    const { container } = show(control(changes));
+    const note = screen.getByRole("status");
+    expect(note.textContent).toBe(status);
+    expect(container.querySelectorAll('[role="status"], [role="alert"]')).toHaveLength(1);
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-describedby", note.id);
+  });
   it.each([true, false])("shows the live switch state as visible text (%s)", (checked) => {
     show(control({ checked, requested: checked }));
     expect(screen.getByRole("switch", { name: "Share this service" })).toHaveAttribute("aria-checked", String(checked));

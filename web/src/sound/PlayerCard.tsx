@@ -7,8 +7,9 @@
 import { ExternalLink, GripHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { PaneAction, PaneActions } from "@/components/PaneActions";
+import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
+import { usesNativeExternalLinks } from "@/lib/externalActions";
 import { clampToWindow } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { watchViewport } from "@/lib/viewport";
@@ -21,7 +22,7 @@ const HEADER = 44;
 const DRAG_PX = 6;
 const STEP = 16;
 
-type Props = { title: string; watchUrl: string; host: string; children: ReactNode };
+type Props = { title: string; watchUrl: string | null; host: string; children: ReactNode };
 
 export function PlayerCard({ title, watchUrl, host, children }: Props) {
   const pref = useDockPref();
@@ -29,11 +30,19 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
   const docked = pref.docked && slot !== null;
   const compact = docked && slot?.dataset.soundCompact === "true";
   const card = useRef<HTMLElement>(null);
+  const native = usesNativeExternalLinks();
   const drag = useRef<{ x: number; y: number; left: number; top: number; moved: boolean } | null>(null);
   // While dragging: how far the card is from where it began.
   const [offset, setOffset] = useState<{ dx: number; dy: number } | null>(null);
   // Docked: where the dock slot is now; the card is laid over it.
   const [at, setAt] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const element = card.current;
+    if (!native || compact || !element) return;
+    element.addEventListener("hz:external-opened", stop);
+    return () => element.removeEventListener("hz:external-opened", stop);
+  }, [native, compact]);
 
   useLayoutEffect(() => {
     if (!docked || !slot) {
@@ -224,17 +233,23 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
               </PaneAction>
             )
           )}
+          {watchUrl && (
+            <PaneAction
+              ghost
+              icon={ExternalLink}
+              href={watchUrl}
+              externalAction="watch-video"
+              onClick={native ? undefined : stop}
+            >
+              {t("sound.openOn", { host })}
+            </PaneAction>
+          )}
           <PaneAction ghost icon={X} onClick={stop}>
             {t("sound.close")}
           </PaneAction>
         </div>
       </header>
       {children}
-      <PaneActions className="mx-3 mb-2">
-        <PaneAction icon={ExternalLink} href={watchUrl} onClick={stop}>
-          {t("sound.openOn", { host })}
-        </PaneAction>
-      </PaneActions>
     </section>
   );
   return createPortal(body, document.body);

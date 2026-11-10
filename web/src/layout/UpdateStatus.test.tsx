@@ -321,6 +321,7 @@ it.each([plan, { ...plan, phase: "off", enabled: false }, { status: 503, body: {
     expect(screen.queryByText(/up to date/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
     const manual = screen.getByRole("button", { name: "Manually update…" });
+    expect(manual).toHaveClass("pointer-coarse:min-h-[44px]", "pointer-coarse:min-w-[44px]");
     // Switches stay in the body; the action sits in the bottom row under the divider (design/README.md).
     expect(manual.closest("[data-pane-actions]")).toHaveClass("border-t");
     for (const toggle of screen.queryAllByRole("switch")) expect(toggle.closest("[data-pane-actions]")).toBeNull();
