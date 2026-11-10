@@ -22,6 +22,9 @@ BASE = "de5ebbb5b471a477c2c875e4e1effc501d021642"
 TREE = "d7aca1ead0f18deab1c836d2cc0aaf124cc473c6"
 RUN = 42784687184
 RUN_SHA = "acdc3aa5320091e7273f0f2791e999fc3e188fd6"
+RECOVERY_SHA = "1b858cb31a115ce5d7402dfa23a6cd7aee7e2321"
+REPOSITORY_ID = 1431672693
+PUBLISHER = "Focused 650 protected publisher"
 RULESET_ID = 25762292
 ACTIONS_BOT_ID = 41898282
 CONTEXTS = {"CI OK": None, "merge-gate": 15368, "coverage-floor": 15368}
@@ -30,7 +33,7 @@ JOBS = {
     "Focused 650 structural",
     "Focused 650 security",
     "Focused 650 Sonar",
-    "Focused 650 protected publisher",
+    PUBLISHER,
 }
 
 
@@ -90,10 +93,14 @@ def validate() -> None:
     if [p.get("sha") for p in merge.get("parents", [])] != [BASE, HEAD] or merge.get("tree", {}).get("sha") != TREE:
         msg_0 = "test merge changed"
         raise ValueError(msg_0)
-    validate_evidence()
+    recovery_id = os.environ.get("RECOVERY_RUN_ID", "")
+    if not recovery_id.isascii() or not recovery_id.isdecimal() or int(recovery_id) <= 0 or int(recovery_id) == RUN:
+        msg = "invalid externally pinned recovery run ID"
+        raise ValueError(msg)
+    validate_evidence(int(recovery_id))
 
 
-def validate_evidence() -> None:
+def validate_evidence(recovery_id: int) -> None:
     """Verify the completed focused run, rules and statuses.
 
     Raises:
@@ -101,13 +108,16 @@ def validate_evidence() -> None:
     """
     run = one(f"actions/runs/{RUN}")
     if not (
-        run.get("head_sha") == RUN_SHA
+        run.get("id") == RUN
+        and (run.get("repository") or {}).get("id") == REPOSITORY_ID
+        and (run.get("actor") or {}).get("login") == "helmut-hoffer-von-ankershoffen"
+        and run.get("head_sha") == RUN_SHA
         and run.get("head_branch") == "bootstrap/one-shot-650"
         and run.get("event") == "push"
         and run.get("path") == ".github/workflows/focused-650.yml"
         and run.get("run_attempt") == 1
         and run.get("status") == "completed"
-        and run.get("conclusion") == "success"
+        and run.get("conclusion") == "failure"
     ):
         msg = "focused run not successful"
         raise ValueError(msg)
@@ -119,7 +129,7 @@ def validate_evidence() -> None:
         and {j["name"] for j in jobs} == JOBS
         and all(
             j["status"] == "completed"
-            and j["conclusion"] == "success"
+            and j["conclusion"] == ("failure" if j["name"] == PUBLISHER else "success")
             and j["run_id"] == RUN
             and j["run_attempt"] == 1
             and j["head_sha"] == RUN_SHA
@@ -127,6 +137,35 @@ def validate_evidence() -> None:
         )
     ):
         msg = "focused jobs not all successful"
+        raise ValueError(msg)
+    recovery = one(f"actions/runs/{recovery_id}")
+    if not (
+        recovery.get("id") == recovery_id
+        and recovery.get("head_sha") == RECOVERY_SHA
+        and recovery.get("head_branch") == "bootstrap/one-shot-650-publisher-recovery"
+        and recovery.get("event") == "push"
+        and recovery.get("path") == ".github/workflows/one-shot-650-publisher-recovery.yml"
+        and recovery.get("run_attempt") == 1
+        and recovery.get("status") == "completed"
+        and recovery.get("conclusion") == "success"
+        and (recovery.get("repository") or {}).get("id") == REPOSITORY_ID
+        and (recovery.get("actor") or {}).get("login") == "helmut-hoffer-von-ankershoffen"
+    ):
+        msg = "recovery run identity or verdict changed"
+        raise ValueError(msg)
+    pages = api(f"actions/runs/{recovery_id}/attempts/1/jobs?per_page=100")
+    jobs = [job for page in pages for job in page["jobs"]]
+    if not (
+        len(jobs) == 1
+        and all(page["total_count"] == len(jobs) for page in pages)
+        and jobs[0]["name"] == "recover"
+        and jobs[0]["status"] == "completed"
+        and jobs[0]["conclusion"] == "success"
+        and jobs[0]["run_id"] == recovery_id
+        and jobs[0]["run_attempt"] == 1
+        and jobs[0]["head_sha"] == RECOVERY_SHA
+    ):
+        msg = "recovery job inventory or verdict changed"
         raise ValueError(msg)
     rules = api("rules/branches/main?per_page=100")
     required = [r for page in rules for r in page if r.get("type") == "required_status_checks"]
@@ -149,7 +188,7 @@ def validate_evidence() -> None:
         if (
             not matches
             or matches[0].get("state") != "success"
-            or matches[0].get("target_url") != f"https://github.com/{REPO}/actions/runs/{RUN}"
+            or matches[0].get("target_url") != f"https://github.com/{REPO}/actions/runs/{recovery_id}"
             or (matches[0].get("creator") or {}).get("id") != ACTIONS_BOT_ID
         ):
             msg = f"missing or untrusted status: {name}"
