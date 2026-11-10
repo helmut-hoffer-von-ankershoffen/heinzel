@@ -3,13 +3,25 @@
 // test button that runs `hz ai access test` only when pressed, since a live check may cost a little. Picking an option
 // applies at once: the running hz takes up the agent runner before its next call, so nothing asks for a restart.
 // Commands are for people who want them: only inside each card's Details.
-import { FlaskConical, Settings2, X } from "lucide-react";
-import { useId, useState } from "react";
-import type { SchemaAccessOption, SchemaAccessTestReport } from "@/api/client";
-import { useAiAccess, useSetAiAccess, useSetSetting, useTestAiAccess } from "@/api/queries";
+import { useQueryClient } from "@tanstack/react-query";
+import { Download, FlaskConical, RotateCw, Settings2, Trash2, X } from "lucide-react";
+import { type ReactNode, useId, useState } from "react";
+import type { SchemaAccessOption, SchemaAccessTestReport, SchemaExtraChange } from "@/api/client";
+import { api, unwrap } from "@/api/client";
+import {
+  useAiAccess,
+  useAiKey,
+  useRemoveAiKey,
+  useSetAiAccess,
+  useSetAiKey,
+  useSetSetting,
+  useTestAiAccess,
+} from "@/api/queries";
+import { CopyCommand } from "@/components/common";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { type ApplyPhase, restartAndApply } from "@/lifecycle/controller";
 
 type Tone = "ok" | "idle" | "warn" | "bad";
 const tone: Record<SchemaAccessOption["status"], Tone> = {
@@ -90,7 +102,7 @@ export function statusLine(option: SchemaAccessOption): string {
 function Option({ option, busy, testing, result, onSelect, onTest, onSetUp }: OptionProps) {
   const detailId = useId();
   const usable = option.status !== "needs setup" && option.status !== "error";
-  const settable = option.setup === "model" || option.setup === "gateway";
+  const settable = option.setup != null;
   return (
     <div
       data-option={option.name}
@@ -171,22 +183,9 @@ const FIELDS: Record<"model" | "gateway", { key: string; label: MessageKey; plac
   ],
 };
 
-function SetUpDialog({ option, onClose }: { option: SchemaAccessOption; onClose: () => void }) {
+/** One small dialog over the settings: a title, a close button and its content. */
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const titleId = useId();
-  const listId = useId();
-  const save = useSetSetting();
-  const check = useTestAiAccess();
-  const kind = option.setup === "gateway" ? "gateway" : "model";
-  const fields = FIELDS[kind];
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [saved, setSaved] = useState(false);
-  const store = async () => {
-    for (const field of fields) {
-      const value = values[field.key]?.trim();
-      if (value) await save.mutateAsync({ key: field.key, value });
-    }
-    setSaved(true);
-  };
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click on the backdrop closes it; Escape and the close button do for keyboards
     <div
@@ -203,7 +202,7 @@ function SetUpDialog({ option, onClose }: { option: SchemaAccessOption; onClose:
       >
         <header className="flex items-center">
           <h2 id={titleId} className="text-ui font-medium">
-            {t("aiAccess.setUpOne", { title: option.title })}
+            {title}
           </h2>
           <div data-pane-chrome="" className="ml-auto">
             <PaneAction ghost icon={X} onClick={onClose}>
@@ -211,55 +210,225 @@ function SetUpDialog({ option, onClose }: { option: SchemaAccessOption; onClose:
             </PaneAction>
           </div>
         </header>
-        <form
-          className="mt-3 flex flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void store();
-          }}
-        >
-          {fields.map((field, index) => (
-            <label key={field.key} className="flex flex-col gap-1 text-sm">
-              {t(field.label)}
-              <input
-                // biome-ignore lint/a11y/noAutofocus: the dialog opens to type its first field
-                autoFocus={index === 0}
-                list={field.list ? listId : undefined}
-                value={values[field.key] ?? ""}
-                placeholder={field.placeholder}
-                onChange={(event) => setValues({ ...values, [field.key]: event.target.value })}
-                className="rounded-md border border-border bg-background px-2 py-1 font-mono text-ui-sm"
-              />
-            </label>
-          ))}
-          {kind === "model" && (
-            <datalist id={listId}>
-              {SUGGESTED_MODELS.map((model) => (
-                <option key={model} value={model} />
-              ))}
-            </datalist>
-          )}
-          {kind === "model" && <p className="text-ui-sm text-muted-foreground">{t("aiAccess.setup.keyNote")}</p>}
-          {save.error && <p className="text-sm text-bad">{save.error.message}</p>}
-          {saved && !save.error && <p className="text-sm text-ok">{t("aiAccess.setup.saved")}</p>}
-          {check.data && <TestResult result={check.data} />}
-          {check.error && <p className="text-sm text-bad">{check.error.message}</p>}
-          <PaneActions align="end" words="all">
-            <PaneAction
-              key="test"
-              icon={FlaskConical}
-              type="button"
-              disabled={!saved || check.isPending}
-              onClick={() => check.mutate(option.name)}
-            >
-              {check.isPending ? t("aiAccess.testing") : t("aiAccess.test")}
-            </PaneAction>
-            <PaneAction key="save" icon={Settings2} primary type="submit" disabled={save.isPending}>
-              {t("aiAccess.setup.save")}
-            </PaneAction>
-          </PaneActions>
-        </form>
+        <div className="mt-3 flex flex-col gap-3">{children}</div>
       </div>
     </div>
+  );
+}
+
+function SetUpDialog({ option, onClose }: { option: SchemaAccessOption; onClose: () => void }) {
+  const title = t("aiAccess.setUpOne", { title: option.title });
+  return (
+    <Modal title={title} onClose={onClose}>
+      {option.setup === "client" ? (
+        <ClientSetup option={option} onClose={onClose} />
+      ) : option.setup === "sign-in" ? (
+        <SignInSetup option={option} />
+      ) : (
+        <FormSetup option={option} />
+      )}
+    </Modal>
+  );
+}
+
+/** Model and gateway settings, and for the Model API its key, which goes only to the credentials store. */
+function FormSetup({ option }: { option: SchemaAccessOption }) {
+  const listId = useId();
+  const save = useSetSetting();
+  const check = useTestAiAccess();
+  const kind = option.setup === "gateway" ? "gateway" : "model";
+  const fields = FIELDS[kind];
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState(false);
+  const [secret, setSecret] = useState("");
+  const keyState = useAiKey();
+  const storeKey = useSetAiKey();
+  const removeKey = useRemoveAiKey();
+  const store = async () => {
+    for (const field of fields) {
+      const value = values[field.key]?.trim();
+      if (value) await save.mutateAsync({ key: field.key, value });
+    }
+    if (kind === "model" && secret.trim()) {
+      await storeKey.mutateAsync(secret.trim());
+      setSecret(""); // gone from the page as soon as it is kept
+    }
+    setSaved(true);
+  };
+  const error = save.error ?? storeKey.error ?? removeKey.error;
+  return (
+    <form
+      className="flex flex-col gap-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void store().catch(() => undefined);
+      }}
+    >
+      {fields.map((field, index) => (
+        <label key={field.key} className="flex flex-col gap-1 text-sm">
+          {t(field.label)}
+          <input
+            // biome-ignore lint/a11y/noAutofocus: the dialog opens to type its first field
+            autoFocus={index === 0}
+            list={field.list ? listId : undefined}
+            value={values[field.key] ?? ""}
+            placeholder={field.placeholder}
+            onChange={(event) => setValues({ ...values, [field.key]: event.target.value })}
+            className="rounded-md border border-border bg-background px-2 py-1 font-mono text-ui-sm"
+          />
+        </label>
+      ))}
+      {kind === "model" && (
+        <>
+          <datalist id={listId}>
+            {SUGGESTED_MODELS.map((model) => (
+              <option key={model} value={model} />
+            ))}
+          </datalist>
+          <label className="flex flex-col gap-1 text-sm">
+            {t("aiAccess.setup.key")}
+            <input
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={secret}
+              placeholder={keyState.data?.stored ? t("aiAccess.setup.keyStored") : ""}
+              onChange={(event) => setSecret(event.target.value)}
+              className="rounded-md border border-border bg-background px-2 py-1 font-mono text-ui-sm"
+            />
+          </label>
+          <p className="flex items-center gap-2 text-ui-sm text-muted-foreground">
+            <span data-key-state="">
+              {keyState.data?.stored ? t("aiAccess.setup.keyKept") : t("aiAccess.setup.keyNote")}
+            </span>
+            {keyState.data?.stored && (
+              <span data-pane-chrome="">
+                <PaneAction ghost icon={Trash2} type="button" onClick={() => removeKey.mutate()}>
+                  {t("aiAccess.setup.removeKey")}
+                </PaneAction>
+              </span>
+            )}
+          </p>
+        </>
+      )}
+      {error && <p className="text-sm text-bad">{error.message}</p>}
+      {saved && !error && <p className="text-sm text-ok">{t("aiAccess.setup.saved")}</p>}
+      {check.data && <TestResult result={check.data} />}
+      {check.error && <p className="text-sm text-bad">{check.error.message}</p>}
+      <PaneActions align="end" words="all">
+        <PaneAction
+          key="test"
+          icon={FlaskConical}
+          type="button"
+          disabled={!saved || check.isPending}
+          onClick={() => check.mutate(option.name)}
+        >
+          {check.isPending ? t("aiAccess.testing") : t("aiAccess.test")}
+        </PaneAction>
+        <PaneAction key="save" icon={Settings2} primary type="submit" disabled={save.isPending || storeKey.isPending}>
+          {t("aiAccess.setup.save")}
+        </PaneAction>
+      </PaneActions>
+    </form>
+  );
+}
+
+const PHASE: Record<ApplyPhase, MessageKey> = {
+  checking: "lifecycle.phase.checking",
+  preserving: "lifecycle.phase.preserving",
+  restarting: "lifecycle.phase.restarting",
+  reconnecting: "lifecycle.phase.reconnecting",
+  verifying: "lifecycle.phase.verifying",
+  applied: "lifecycle.phase.applied",
+};
+
+/** Adding an optional client of hz itself: confirm, install it through hz's own pinned path, restart, reload, check. */
+function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose: () => void }) {
+  const client = useQueryClient();
+  const [phase, setPhase] = useState<ApplyPhase | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const extra = option.client ?? "";
+  const run = async () => {
+    setError(null);
+    try {
+      await restartAndApply(
+        {
+          confirmed: true,
+          // The install runs before the restart, so the restarted hz loads the new client.
+          preserve: async () => {
+            const result = await unwrap(
+              api.POST("/system/plugin/add-extra", {
+                params: { query: { extra: extra as SchemaExtraChange["extra"] } },
+              }),
+            );
+            return result.restart_required;
+          },
+        },
+        { onPhase: setPhase, preserveTimeout: 10 * 60_000 },
+      );
+      await client.invalidateQueries({ queryKey: ["ai"] });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    }
+  };
+  const running = phase !== null && phase !== "applied" && error === null;
+  return (
+    <>
+      <p className="text-sm">{t("aiAccess.client.confirm", { needs: option.needs })}</p>
+      <p className="text-ui-sm text-muted-foreground">{t("aiAccess.client.why")}</p>
+      {phase && (
+        <p role="status" className={cn("text-sm", phase === "applied" ? "text-ok" : "text-muted-foreground")}>
+          {t(PHASE[phase])}
+        </p>
+      )}
+      {error && <p className="text-sm text-bad">{error}</p>}
+      <PaneActions align="end" words="all">
+        <PaneAction key="cancel" icon={X} type="button" disabled={running} onClick={onClose}>
+          {t("lifecycle.cancel")}
+        </PaneAction>
+        <PaneAction
+          key="add"
+          icon={Download}
+          primary
+          type="button"
+          disabled={running || phase === "applied" || !extra}
+          onClick={() => void run()}
+        >
+          {t("aiAccess.client.add")}
+        </PaneAction>
+      </PaneActions>
+    </>
+  );
+}
+
+/** A sign-in is the person's own, in their browser: hz never types credentials; it checks again when asked. */
+function SignInSetup({ option }: { option: SchemaAccessOption }) {
+  const access = useAiAccess();
+  const current = access.data?.options.find((item) => item.name === option.name) ?? option;
+  return (
+    <>
+      <p className="text-sm">{t("aiAccess.signIn.step", { title: option.title })}</p>
+      <p data-status-line="" className="text-ui-sm text-muted-foreground">
+        {statusLine(current)}
+      </p>
+      {current.fix && (
+        <details className="text-ui-sm text-muted-foreground">
+          <summary className="cursor-pointer select-none">{t("aiAccess.details")}</summary>
+          <p className="mt-1">{t("aiAccess.signIn.details")}</p>
+          <CopyCommand command={current.fix} />
+        </details>
+      )}
+      <PaneActions align="end" words="all">
+        <PaneAction
+          key="again"
+          icon={RotateCw}
+          type="button"
+          disabled={access.isFetching}
+          onClick={() => access.refetch()}
+        >
+          {t("lifecycle.checkAgain")}
+        </PaneAction>
+      </PaneActions>
+    </>
   );
 }
