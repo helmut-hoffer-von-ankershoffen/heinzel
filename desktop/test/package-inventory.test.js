@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from "node:f
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { createPackage, getRawHeader, uncacheAll } from "@electron/asar";
 import { captureRuntime, RUNTIME_FILES, verifyRuntime } from "../ci/runtime-inventory.mjs";
 
@@ -26,6 +27,10 @@ async function archive(root, stage, label) {
   await createPackage(stage, target);
   return target;
 }
+
+test("captures the runtime inventory from the desktop checkout", async () => {
+  await captureRuntime(fileURLToPath(new URL("../", import.meta.url)));
+});
 
 test("accepts only the exact source and generated package metadata", async (t) => {
   const { root, project, stage } = await setup(t);
