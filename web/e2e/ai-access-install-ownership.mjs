@@ -5,7 +5,7 @@ import { chromium } from "playwright-core";
 const [url] = process.argv.slice(2);
 const browser = await chromium.launch();
 try {
-  for (const dismissal of ["close", "escape", "backdrop"]) {
+  for (const dismissal of ["close", "escape", "backdrop", "failure"]) {
     console.log(`dismissal: ${dismissal}`);
     const context = await browser.newContext({ serviceWorkers: "block" });
     const page = await context.newPage();
@@ -58,6 +58,7 @@ try {
       installs += 1;
       installStarted();
       await pending;
+      if (dismissal === "failure") return route.fulfill({ status: 500, json: { error: "Fictional install failed" } });
       await route.fulfill({ json: { extra: "openai", done: true, restart_required: true } });
     });
     await page.route("**/api/lifecycle", (route) =>
@@ -92,7 +93,7 @@ try {
     let dialog = page.getByRole("dialog", { name: "Set up ChatGPT plan" });
     await dialog.getByRole("button", { name: "Add and restart" }).click();
     await started;
-    if (dismissal === "close") await dialog.getByRole("button", { name: "Close" }).click();
+    if (dismissal === "close" || dismissal === "failure") await dialog.getByRole("button", { name: "Close" }).click();
     if (dismissal === "escape") {
       await dialog.getByRole("button", { name: "Close" }).focus();
       await page.keyboard.press("Escape");
@@ -109,6 +110,13 @@ try {
     assert.equal(await dialog.getByText("Applied").count(), 0, dismissal);
     assert.equal(installs, 1, dismissal);
     releaseInstall();
+    if (dismissal === "failure") {
+      await dialog.getByText("Fictional install failed").waitFor();
+      assert.equal(await dialog.getByRole("button", { name: "Add and restart" }).isEnabled(), true);
+      assert.equal(restarts, 0);
+      await context.close();
+      continue;
+    }
     await Promise.race([
       restartDone,
       new Promise((_, reject) => setTimeout(() => reject(new Error("no restart")), 15_000)),
@@ -124,4 +132,4 @@ try {
 } finally {
   await browser.close();
 }
-console.log("three dismissal paths passed");
+console.log("three dismissal paths passed; failure remained visible");

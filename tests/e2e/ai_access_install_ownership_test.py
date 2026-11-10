@@ -19,7 +19,8 @@ def test_client_install_survives_dialog_close_and_reopen(environment, tmp_path):
     env = {key: value for key, value in fixture_env.items() if key.startswith("HZ_") or key in {"PATH", "PYTHONPATH"}}
     env["HOME"] = str(tmp_path)
     env["BROWSER"] = "/usr/bin/false"
-    env["PLAYWRIGHT_BROWSERS_PATH"] = str(Path.home() / "Library" / "Caches" / "ms-playwright")
+    cache = "Library/Caches/ms-playwright" if sys.platform == "darwin" else ".cache/ms-playwright"
+    env["PLAYWRIGHT_BROWSERS_PATH"] = str(Path.home() / cache)
     web_build.ensure_built()
     server = subprocess.Popen(
         [sys.executable, "-m", "heinzel", "ui", "serve", "--port", "0", "--no-browser"],

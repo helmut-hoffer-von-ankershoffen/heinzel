@@ -5,7 +5,7 @@
 // Commands are for people who want them: only inside each card's Details.
 import { useQueryClient } from "@tanstack/react-query";
 import { Download, FlaskConical, RotateCw, Settings2, Trash2, X } from "lucide-react";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useId, useState, useSyncExternalStore } from "react";
 import type { SchemaAccessOption, SchemaAccessTestReport, SchemaExtraChange } from "@/api/client";
 import { api, unwrap } from "@/api/client";
 import {
@@ -354,18 +354,32 @@ const PHASE: Record<ApplyPhase, MessageKey> = {
   applied: "lifecycle.phase.applied",
 };
 
+// An install can finish after its initiating dialog unmounts; keep its error for the next dialog in this page.
+let clientInstallError: string | null = null;
+const clientInstallListeners = new Set<() => void>();
+function setClientInstallError(error: string | null) {
+  clientInstallError = error;
+  for (const listener of clientInstallListeners) listener();
+}
+function subscribeClientInstallError(listener: () => void) {
+  clientInstallListeners.add(listener);
+  return () => {
+    clientInstallListeners.delete(listener);
+  };
+}
+
 /** Adding an optional client of hz itself: confirm, install it through hz's own pinned path, restart, reload, check. */
 function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose: () => void }) {
   const client = useQueryClient();
   const activation = usePluginActivation();
   const [phase, setPhase] = useState<ApplyPhase | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const error = useSyncExternalStore(subscribeClientInstallError, () => clientInstallError);
   const extra = option.client ?? "";
   const run = async () => {
     // The owner outlives this dialog. A second dialog cannot report a no-op as complete while the first still restarts.
     const release = acquirePluginChange();
     if (!release) return;
-    setError(null);
+    setClientInstallError(null);
     try {
       await restartAndApply(
         {
@@ -392,7 +406,7 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
       setPhase("applied");
       await client.invalidateQueries({ queryKey: ["ai"] });
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setClientInstallError(failure instanceof Error ? failure.message : String(failure));
     } finally {
       release();
     }
