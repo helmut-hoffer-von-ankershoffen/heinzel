@@ -1,0 +1,56 @@
+# One initial push of an independently reviewed synthetic diagnostic; no PR or release trigger.
+name: MCP isolated rendered fixture
+on:
+  push:
+    branches: [bootstrap/mcp-settings-fixture-4pih]
+permissions: {}
+concurrency:
+  group: mcp-settings-fixture-4pih
+  cancel-in-progress: false
+jobs:
+  fixture:
+    if: >-
+      github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+      && github.actor == github.repository_owner
+      && github.event.created == true
+      && github.workflow_sha == github.sha
+      && github.run_attempt == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      REVIEWED_SHA: ${{ vars.MCP_SETTINGS_FIXTURE_REVIEWED_SHA }}
+      WORKFLOW_SHA: ${{ github.workflow_sha }}
+      PUSH_CREATED: ${{ github.event.created }}
+    steps:
+      - name: Require exact reviewed first-push source
+        run: |
+          [[ "$GITHUB_EVENT_NAME" == push ]] || exit 1
+          [[ "$GITHUB_REPOSITORY" == helmut-hoffer-von-ankershoffen/heinzel ]] || exit 1
+          [[ "$GITHUB_ACTOR" == helmut-hoffer-von-ankershoffen ]] || exit 1
+          [[ "$GITHUB_REF" == refs/heads/bootstrap/mcp-settings-fixture-4pih ]] || exit 1
+          [[ "$PUSH_CREATED" == true && "$GITHUB_RUN_ATTEMPT" == 1 ]] || exit 1
+          [[ "$REVIEWED_SHA" =~ ^[0-9a-f]{40}$ && "$REVIEWED_SHA" == "$GITHUB_SHA" && "$WORKFLOW_SHA" == "$GITHUB_SHA" ]] || exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check out the separately reviewed MCP product source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ff85f84818fca13645789602fd2337af1ca27d49
+          path: mcp-source
+          persist-credentials: false
+      - name: Check exact checkout and run isolated fixture
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C mcp-source rev-parse HEAD)" = ff85f84818fca13645789602fd2337af1ca27d49
+          .github/mcp-fixture/host.sh
+      - name: Preserve evidence even after failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mcp-isolated-${{ github.run_id }}-${{ github.run_attempt }}
+          path: mcp-fixture-artifacts/
+          if-no-files-found: warn
+          retention-days: 7

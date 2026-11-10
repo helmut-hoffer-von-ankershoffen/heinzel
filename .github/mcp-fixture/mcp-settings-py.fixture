@@ -1,0 +1,144 @@
+"""Rendered MCP Settings against the authenticated web head and fictional host planning."""
+
+import hashlib
+import os
+import sys
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from importlib.metadata import entry_points
+from pathlib import Path
+
+import pytest
+from pydantic import JsonValue
+
+from heinzel import Config, Kernel, Settings
+from heinzel.heads import web
+from heinzel.heads.mcp._client_config import ClientBridgeBinding, ClientConfigContext, McpClient
+from heinzel.heads.mcp._client_config_files import PinnedClientBridge
+from heinzel.heads.mcp._client_config_native import NativeInspection
+from heinzel.heads.mcp._ipc_install_review import ManualInstallAuthority, McpInstallReview
+from heinzel.kernel import HeinzelError, McpLifecycleAction, McpLifecycleObservation, McpLifecyclePlanning
+from heinzel.kernel._approval import arguments_hash
+from heinzel.kernel._mcp_handoff import McpReviewSession, mcp_handoff
+from tests.e2e._browser_result import check_browser, require_browser, wait_browser
+from tests.e2e._mounted import MountedServer
+from tests.e2e.docs_test import GuardedCommand
+
+pytestmark = pytest.mark.e2e
+ROOT = Path(__file__).resolve().parents[2]
+_DORMANT = "fixture-dormant"
+_OWNED = "fixture-owned"
+_BASELINE = '{"fixture": true}\n'
+
+
+def _install_fixture(root: Path) -> tuple[McpInstallReview, Path]:
+    context = ClientConfigContext(McpClient.CLAUDE, root / "home", root / "workspace")
+    context.path.parent.mkdir(parents=True)
+    context.workspace.mkdir()
+    context.path.write_text(_BASELINE)
+    binding = ClientBridgeBinding(_DORMANT, root / "interpreter", root / "bridge.py")
+    binding.interpreter.write_bytes(b"inert interpreter fixture")
+    binding.interpreter.chmod(0o700)
+    binding.bridge.write_bytes(b"inert bridge fixture")
+    pinned = PinnedClientBridge(
+        binding,
+        hashlib.sha256(binding.interpreter.read_bytes()).hexdigest(),
+        hashlib.sha256(binding.bridge.read_bytes()).hexdigest(),
+    )
+
+    def observe(target: ClientConfigContext, bridge: ClientBridgeBinding) -> NativeInspection:
+        assert target == context
+        assert bridge == binding
+        absent = f'No MCP server named "{bridge.name}". Run `claude mcp add` to add one.'
+        return NativeInspection(1, absent, "", context=target)
+
+    def snapshot(registration: str) -> dict[str, JsonValue]:
+        assert registration == _DORMANT
+        return {"generation": 1, "grant": "fixture-only", "grant_revision": 1, "sdk_fingerprint": "a" * 64}
+
+    @contextmanager
+    def fence(expected: str) -> Iterator[None]:
+        assert expected == arguments_hash(snapshot(_DORMANT))
+        yield
+
+    return McpInstallReview(snapshot, manual=ManualInstallAuthority(context, pinned, observe, fence)), context.path
+
+
+class _Planner:
+    def __init__(self, reviewer: McpInstallReview) -> None:
+        self.reviewer = reviewer
+        self.prepared_installs: list[str] = []
+        self.checked_installs: list[str] = []
+
+    def status(self, registration: str) -> McpLifecycleObservation:
+        if registration == _DORMANT:
+            return McpLifecycleObservation(host="observed", worker="stopped", actions=("start", "install"))
+        if registration == _OWNED:
+            return McpLifecycleObservation(host="observed", worker="running", actions=("check", "stop"))
+        return McpLifecycleObservation()
+
+    def prepare(self, action: McpLifecycleAction, registration: str, expires_at: int) -> tuple[str, McpReviewSession]:
+        if action not in self.status(registration).actions:
+            msg = "Unavailable fixture action"
+            raise HeinzelError(msg)
+        if action == "install":
+            value = self.reviewer.prepare(registration, expires_at)
+            self.prepared_installs.append(value)
+            return value, "terminal"
+        session = "owning-session" if registration == _OWNED else "terminal"
+        return mcp_handoff({"action": action, "registration": registration, "session": session}, expires_at), session
+
+    def validate_install(self, registration: str, value: str) -> None:
+        self.reviewer.validate(registration, value)
+        self.checked_installs.append(value)
+
+
+def test_mounted_mcp_settings_copy_preserves_the_retained_install(
+    make_kernel: Callable[..., Kernel], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert not entry_points(group="heinzel.modules"), "MCP Settings requires a core-only environment"
+    assert (web.STATIC / "index.html").is_file(), "Build the web app offline before running this journey"
+    cache_dir = "Library/Caches/ms-playwright" if sys.platform == "darwin" else ".cache/ms-playwright"
+    browser_cache = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", Path.home() / cache_dir))
+    assert browser_cache.is_absolute()
+    assert browser_cache.is_dir()
+
+    home = tmp_path / "browser-home"
+    home.mkdir()
+    browser_tmp = tmp_path / "browser-tmp"
+    browser_tmp.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("HZ_PLUGINS_ENABLED", "false")
+    settings = Settings(auto_update=False)
+    config = Config(
+        files=(), data={"org": {"name": "Mira Example", "handle": "mira", "role": "engineer", "timezone": "UTC"}}
+    )
+    kernel = make_kernel(builtins=True, settings_=settings, config=config)
+    reviewer, target = _install_fixture(tmp_path / "fictional-client")
+    planner = _Planner(reviewer)
+    planning = McpLifecyclePlanning(planner.status, planner.prepare, validate_install=planner.validate_install)
+    kernel.bind(McpLifecyclePlanning, planning)
+
+    with MountedServer(kernel, monkeypatch) as server:
+        command = ["node", "web/e2e/mcp-settings.mjs", server.url]
+        guarded = GuardedCommand(
+            command,
+            cwd=ROOT,
+            env={
+                "PATH": os.environ["PATH"],
+                "HOME": str(home),
+                "PLAYWRIGHT_BROWSERS_PATH": str(browser_cache),
+                "TMPDIR": str(browser_tmp),
+            },
+        )
+        try:
+            result = require_browser(wait_browser(guarded, 80))
+        finally:
+            guarded.stop()
+        stderr = guarded.capture.text("stderr").replace(server.token, "<redacted-session>")
+        check_browser(result, stderr)
+
+    (handoff,) = planner.prepared_installs
+    assert planner.checked_installs == [handoff, handoff]
+    reviewer.validate(_DORMANT, handoff)
+    assert target.read_text() == _BASELINE

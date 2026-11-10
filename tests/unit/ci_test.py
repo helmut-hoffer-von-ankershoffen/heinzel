@@ -88,6 +88,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "for check in merge-gate coverage-floor": "reports the gates as check runs on the pull request's head",
         "for check in MERGE_GATE COVERAGE_FLOOR": "completes both check runs, failing closed",
     },
+    "mcp-isolated.yml": {
+        '[[ "$GITHUB_EVENT_NAME" == push ]]': "binds the first helper push to the independently reviewed commit",
+        'test "$(git rev-parse HEAD)"': "runs the one isolated rendered MCP diagnostic at the reviewed checkout",
+    },
     "focused-job.yml": {
         '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
         "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
