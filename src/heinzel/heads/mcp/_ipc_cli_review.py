@@ -5,6 +5,7 @@ import os
 import socket
 import stat
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 
 _REVIEWER = Path(__file__).absolute().with_name("_ipc_terminal_reviewer.py")
 # Part of the trusted installed SDK. A source change must deliberately update this pin.
-_REVIEWER_SHA256 = "700c0800c0f24644493b06a37a0b8909ae508cb8dc625840d8e6928a1501d086"
+_REVIEWER_SHA256 = "bbbec0a81676085c9591439adaa5b3cef86e6540089fe2fd80ce4b59468dd50c"
 _MAX_SOURCE = 64 * 1024
 _REFUSED = "The pinned local MCP reviewer is unavailable"
 log = get_logger("mcp")
@@ -48,7 +49,7 @@ def _verified_source(path: Path, digest: str) -> bytes:
     return content
 
 
-def _load_installed_reviewer() -> "Callable[[socket.socket], bool]":
+def _load_installed_reviewer() -> "Callable[[socket.socket, float | None], bool]":
     with step(log, "mcp.ipc.load_reviewer", operation="ipc", step="load_reviewer"):
         if not sys.flags.isolated:
             raise HeinzelError(_REFUSED)
@@ -57,7 +58,7 @@ def _load_installed_reviewer() -> "Callable[[socket.socket], bool]":
             namespace: dict[str, object] = {"__name__": "_owned_mcp_terminal_reviewer"}
             code = compile(source, "<owned MCP terminal reviewer>", "exec")
             exec(code, namespace)  # noqa: S102 - these exact immutable bytes match the trusted installed digest
-            return cast("Callable[[socket.socket], bool]", namespace["review"])
+            return cast("Callable[[socket.socket, float | None], bool]", namespace["review"])
         except (OSError, KeyError, SyntaxError, ValueError):
             raise HeinzelError(_REFUSED) from None
 
@@ -72,7 +73,7 @@ def run_cli_host_reviewer(channel: socket.socket) -> bool:
         HeinzelError: If the current runtime is unisolated or the pinned reviewer cannot be loaded.
     """
     with channel:
-        return _load_installed_reviewer()(channel)
+        return _load_installed_reviewer()(channel, None)
 
 
 def review_private_mcp_from_terminal(authority: HostMcpConnectionApprovals, instance_id: str) -> None:
@@ -80,9 +81,9 @@ def review_private_mcp_from_terminal(authority: HostMcpConnectionApprovals, inst
     _review_exact(host_review_channel(authority, instance_id))
 
 
-def review_mcp_lifecycle_from_terminal(exact: "dict[str, JsonValue]") -> None:
+def review_mcp_lifecycle_from_terminal(exact: "dict[str, JsonValue]", *, deadline: float | None = None) -> None:
     """Approve one action on the host terminal before the bound lifecycle effect."""
-    _review_exact(exact_host_review_channel(exact, lambda: None))
+    _review_exact(exact_host_review_channel(exact, lambda: None, deadline=deadline), deadline=deadline)
 
 
 def require_local_mcp_terminal() -> None:
@@ -106,10 +107,15 @@ def require_local_mcp_terminal() -> None:
         raise HeinzelError(refused)
 
 
-def _review_exact(channel: "AbstractContextManager[tuple[socket.socket, Callable[[], None]]]") -> None:
+def _review_exact(
+    channel: "AbstractContextManager[tuple[socket.socket, Callable[[], None]]]", *, deadline: float | None = None
+) -> None:
     review = _load_installed_reviewer()
     with channel as (reviewer, serve), ThreadPoolExecutor(max_workers=1) as executor:
         broker_result = executor.submit(serve)
         with reviewer:
-            review(reviewer)
-        broker_result.result()
+            review(reviewer, deadline)
+        try:
+            broker_result.result(timeout=None if deadline is None else max(0, deadline - time.monotonic()))
+        except TimeoutError:
+            raise HeinzelError(_REFUSED) from None

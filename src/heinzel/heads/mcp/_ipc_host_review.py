@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from pydantic import JsonValue
 
 _LIMIT = 16 * 1024
+_REVIEW_SECONDS = 60
 _REFUSED = "Local MCP host review was declined or unavailable"
 log = get_logger("mcp")
 
@@ -58,7 +59,7 @@ def host_review_channel(
 
 @contextmanager
 def exact_host_review_channel(
-    exact: "dict[str, JsonValue]", approve: Callable[[], None]
+    exact: "dict[str, JsonValue]", approve: Callable[[], None], *, deadline: float | None = None
 ) -> Generator[tuple[socket.socket, Callable[[], None]]]:
     """Offer one exact action over a private descriptor from the trusted host.
 
@@ -79,11 +80,14 @@ def exact_host_review_channel(
 
         def serve() -> None:
             with broker, step(log, "mcp.ipc.host_review", operation="ipc", step="host_review"):
-                deadline = time.monotonic() + 60
-                broker.settimeout(60)
+                now = time.monotonic()
+                end = now + _REVIEW_SECONDS if deadline is None else min(now + _REVIEW_SECONDS, deadline)
+                if end <= now:
+                    raise HeinzelError(_REFUSED)
+                broker.settimeout(end - now)
                 try:
                     broker.sendall(offer)
-                    if receive_exact(broker, len(accepted), deadline) != accepted:
+                    if receive_exact(broker, len(accepted), end) != accepted or time.monotonic() >= end:
                         raise HeinzelError(_REFUSED)
                 except OSError:
                     raise HeinzelError(_REFUSED) from None

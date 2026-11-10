@@ -270,8 +270,18 @@ def _exercise_manual_install(directory, phase):
         patcher.setattr(cli, "boot", forbidden_boot)
         handoff = _prepare_manual_fixture(reviewer, phase)
         patcher.setattr(sys, "argv", ["hz", "system", "mcp", "review-install", _REGISTRATION, "--handoff", handoff])
-        assert _invoke_manual_install(reviewer) == (0 if phase in {"manual-claude", "manual-codex"} else 1)
-        assert _invoke_manual_install(reviewer) == 1
+        _check_manual_invocations(reviewer, directory, phase, handoff)
+
+
+def _check_manual_invocations(reviewer, directory, phase, handoff):
+    if phase == "manual-silent-expiry":
+        pending = reviewer._session.pending
+        assert pending is not None
+        (directory / "handoff-deadline").write_text(str(pending.deadline))
+    assert _invoke_manual_install(reviewer) == (0 if phase in {"manual-claude", "manual-codex"} else 1)
+    assert _invoke_manual_install(reviewer) == 1
+    if phase == "manual-silent-expiry":
+        assert reviewer.prepare(_REGISTRATION, int(time.time()) + 120) != handoff
 
 
 def _invoke_manual_install(reviewer):
@@ -281,7 +291,7 @@ def _invoke_manual_install(reviewer):
 
 
 def _prepare_manual_fixture(reviewer, phase):
-    expiry = int(time.time()) + 120
+    expiry = int(time.time()) + (3 if phase == "manual-silent-expiry" else 120)
     if phase in {"manual-collision", "manual-cursor"}:
         with pytest.raises(HeinzelError):
             reviewer.prepare(_REGISTRATION, expiry)
@@ -526,6 +536,23 @@ def _complete_manual_fixture(terminal, context, approved, baseline, phase):
     if phase == "manual-expired":
         (context.home.parent / "expire-session").touch()
     os.write(terminal, answer)
+
+
+def test_silent_manual_confirmation_exits_at_the_retained_deadline(short_socket_root):
+    phase = "manual-silent-expiry"
+    with _installed_terminal(short_socket_root, phase) as (terminal, process):
+        approved, answer = _manual_prompt(terminal, "manual-install")
+        os.write(terminal, answer)
+        confirm, _ = _manual_prompt(terminal, "verify-manual-edit")
+        assert confirm["session"] == approved["session"]
+        deadline = float((short_socket_root / "handoff-deadline").read_text())
+        # Keep the PTY open and silent. No input, hangup or injected clock can end this wait.
+        stdout, stderr = process.communicate(timeout=max(0, deadline - time.monotonic()) + 1)
+        assert process.returncode == 0, stderr.decode()
+    assert time.monotonic() >= deadline
+    assert stdout == b""
+    assert stderr.count(b"The local MCP Install review was declined or unavailable.") == 2
+    assert _manual_target(short_socket_root, phase).path.read_text() == '{"fixture": true}\n'
 
 
 def test_native_manager_preflight_observes_only_exact_namespace():

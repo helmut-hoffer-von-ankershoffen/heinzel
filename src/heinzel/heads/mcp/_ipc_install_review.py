@@ -197,7 +197,8 @@ class McpInstallReview:
                 raise HeinzelError(_UNAVAILABLE)
             review_mcp_lifecycle_from_terminal(
                 pending.exact
-                | {"server": review.server_name, "command": review.command, "args": list(review.arguments)}
+                | {"server": review.server_name, "command": review.command, "args": list(review.arguments)},
+                deadline=pending.deadline,
             )
             self._require_session(authority, pending, terminal)
             return True
@@ -220,7 +221,8 @@ class McpInstallReview:
                 "table": edit.table,
                 "server": edit.server_name,
                 "entry": edit.install_snippet,
-            }
+            },
+            deadline=pending.deadline,
         )
         self._require_session(authority, pending, terminal)
         workflow.verify(identifier)

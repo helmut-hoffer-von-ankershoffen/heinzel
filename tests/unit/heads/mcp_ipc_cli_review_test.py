@@ -27,6 +27,7 @@ from heinzel.heads.mcp._ipc_bridge import BridgeHandshake
 from heinzel.heads.mcp._ipc_catalog_probe import CATALOG_FRAME_LIMIT, CATALOG_PROTOCOL_VERSION
 from heinzel.heads.mcp._ipc_cli_review import _REVIEWER, _REVIEWER_SHA256
 from heinzel.heads.mcp._ipc_descriptors import receive_exact
+from heinzel.heads.mcp._ipc_host_review import exact_host_review_channel
 from heinzel.heads.mcp._ipc_supervisor import owned_mcp_supervisor
 from heinzel.heads.mcp._ipc_work import McpWorkRequest
 from heinzel.kernel._approval import arguments_hash
@@ -61,6 +62,20 @@ raise SystemExit(0 if accepted else 1)
 
 def test_installed_pin_matches_the_bundled_reviewer():
     assert hashlib.sha256(_REVIEWER.read_bytes()).hexdigest() == _REVIEWER_SHA256
+
+
+def test_host_review_stops_waiting_for_a_silent_open_peer_at_the_deadline():
+    approved = Event()
+    deadline = time.monotonic() + 0.1
+    with (
+        ThreadPoolExecutor(max_workers=1) as executor,
+        exact_host_review_channel({"action": "install"}, approved.set, deadline=deadline) as (_, serve),
+    ):
+        result = executor.submit(serve)
+        with pytest.raises(HeinzelError, match="declined or unavailable"):
+            result.result(timeout=1)
+    assert time.monotonic() >= deadline
+    assert not approved.is_set()
 
 
 @pytest.fixture

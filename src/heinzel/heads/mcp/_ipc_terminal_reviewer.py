@@ -83,7 +83,7 @@ def _confirm(terminal: int, channel: int, deadline: float) -> bool:
     )
 
 
-def review(control: socket.socket) -> bool:
+def review(control: socket.socket, deadline: float | None = None) -> bool:
     """Use only the broker's unnamed socket and a live foreground controlling terminal."""
     try:
         if (
@@ -93,14 +93,16 @@ def review(control: socket.socket) -> bool:
             or control.getpeername() != ""
         ):
             return False
-        deadline = time.monotonic() + _REVIEW_SECONDS
+        end = time.monotonic() + _REVIEW_SECONDS
+        if deadline is not None:
+            end = min(end, deadline)
         terminal = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC | os.O_NONBLOCK)
         try:
             if not os.isatty(terminal) or os.tcgetpgrp(terminal) != os.getpgrp():
                 return False
             descriptor = control.fileno()
             os.set_blocking(descriptor, False)
-            return _confirm(terminal, descriptor, deadline)
+            return _confirm(terminal, descriptor, end)
         finally:
             os.close(terminal)
     except (OSError, OverflowError, RecursionError, ValueError):
