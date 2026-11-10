@@ -585,3 +585,20 @@ def test_plugin_only_condition_uses_legacy_compatible_envelope(service):
     raw[0]["resolve_when"] = old.model_dump(mode="json")
     service.store.path.write_text(json.dumps(raw))
     assert service.store.read()[0].resolve_when == when
+
+
+def test_conflicting_check_names_do_not_resolve_notice(service, make_kernel):
+    from heinzel import Check, Status
+    from heinzel.modules.system.doctor import module as doctor_module
+    from heinzel.modules.system.notify._watch import doctor_problems
+
+    provider = Module("sample", "Sample health provider.")
+
+    @provider.health
+    def health() -> list[Check]:
+        return [Check(name="network", status=status, detail="test") for status in (Status.UP, Status.DOWN)]
+
+    kernel = make_kernel(system__doctor=doctor_module, sample=provider)
+    service.problems = lambda: doctor_problems(kernel)
+    assert doctor(service, ["sample: network"])
+    assert service.resolve() == 0
