@@ -15,7 +15,7 @@ from heinzel.modules.system.notify._store import MAX_NOTICES, Store
 
 pytestmark = pytest.mark.unit
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "notify_v0929"
-# Exact files from v0.9.29, commit bf2ac7fa40770f18d1aed143d030d8d61e028ecf.
+# Exact files from v0.9.29, peeled commit f034fb410ac801562c1afff68f62a19cec26a.
 HASHES = {
     "notifications.py.txt": "65ebaa9b2d49885b93062ba3411031ab5e8e2db7be153483f5fddfbd535cce57",
     "store.py.txt": "8143f2e7d169271cf253e97f84694071e3824d556a41d72de2bce87eecdd9353",
@@ -131,3 +131,16 @@ def test_pruning_retains_surviving_envelopes_and_replay_receipt(tmp_path):
     assert store.has_once("receipt")
     assert store.change_once(now, "receipt", lambda rows: rows.clear())
     assert len(store.read()) == MAX_NOTICES
+
+
+def test_age_pruning_removes_only_stale_envelope_below_capacity(tmp_path):
+    now = datetime.now(UTC)
+    store = Store(tmp_path)
+    condition = ResolveWhen(checks_up=["sample: network"])
+    stale = notice(now - timedelta(days=31), "stale", condition)
+    fresh = notice(now, "fresh", condition)
+    assert store.change_once(now, "receipt", lambda rows: rows.extend([stale, fresh]))
+    restored = store.read()
+    assert len(restored) < MAX_NOTICES
+    assert [(item.key, item.resolve_when) for item in restored] == [("fresh", condition)]
+    assert store.has_once("receipt")
