@@ -6,11 +6,15 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import gzip
 import hashlib
 import json
 import os
 import re
 import sys
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from subprocess import CalledProcessError
@@ -67,11 +71,168 @@ PROTECTED_FILES = (
     "uv.lock",
 )
 MAX_PLAN = 48 * 1024
+SLOT_VARIABLES = tuple(f"FOCUSED_CI_PLANS_V2_{index}" for index in range(4))
+MAX_SLOT = 40_000
+MAX_SLOT_DECODED = 1024 * 1024
+MAX_SLOT_ENTRIES = 256
+REGISTRY_KEY = re.compile(r"(?:pull_request|push|push-tree):[0-9a-f]{40}")
 MAX_DIFF = 1024 * 1024
 MAX_COVERED_FILES = 100
 RAW_FIELDS = 5
 LS_TREE_FIELDS = 2
 MERGE_FIELDS = 3
+
+
+def registry_bytes(value: Any) -> bytes:  # noqa: ANN401 - canonical JSON boundary
+    """Serialize without changing the original manifest's canonical digest."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+
+
+def _registry_json(raw: str | bytes) -> dict[str, Any]:
+    """Reject ambiguous, non-finite, malformed or excessively nested JSON.
+
+    Raises:
+        CandidateError: The registry is not an unambiguous JSON object.
+    """
+    try:
+        value = json.loads(raw, object_pairs_hook=unique_object)
+        require(isinstance(value, dict), "focused registry must be an object")
+        registry_bytes(value)  # Reject NaN/Infinity even in an unselected entry.
+    except (ValueError, UnicodeError, RecursionError) as exc:
+        message = "invalid focused registry JSON"
+        raise CandidateError(message) from exc
+    return value
+
+
+def _slot_entries(registry: dict[str, Any]) -> None:
+    require(len(registry) <= MAX_SLOT_ENTRIES, "focused slot has too many entries")
+    for key, plan in registry.items():
+        require(
+            bool(REGISTRY_KEY.fullmatch(key)) and isinstance(plan, dict),
+            "invalid focused slot entry",
+        )
+        require(len(registry_bytes({key: plan})) <= MAX_PLAN, "focused slot entry exceeds the original plan limit")
+
+
+def decode_slot(value: str) -> dict[str, Any]:
+    """Decode one bounded, complete gzip member without allocating unbounded output.
+
+    Raises:
+        CandidateError: The slot is malformed or exceeds a transport bound.
+    """
+    require(len(value.encode()) <= MAX_SLOT, "focused slot exceeds its encoded limit")
+    if not value:
+        return {}
+    envelope = _registry_json(value)
+    require(
+        set(envelope) == {"schema", "codec", "bytes", "sha256", "data"}
+        and type(envelope["schema"]) is int
+        and envelope["schema"] == 1
+        and envelope["codec"] == "gzip+base64"
+        and type(envelope["bytes"]) is int
+        and 0 < envelope["bytes"] <= MAX_SLOT_DECODED
+        and isinstance(envelope["sha256"], str)
+        and DIGEST.fullmatch(envelope["sha256"])
+        and isinstance(envelope["data"], str),
+        "invalid focused slot envelope",
+    )
+    try:
+        compressed = base64.b64decode(envelope["data"], validate=True)
+        decoder = zlib.decompressobj(wbits=31)
+        raw = decoder.decompress(compressed, envelope["bytes"] + 1)
+    except (ValueError, binascii.Error, zlib.error) as exc:
+        message = "invalid focused slot compression"
+        raise CandidateError(message) from exc
+    require(
+        len(raw) == envelope["bytes"]
+        and decoder.eof
+        and not decoder.unused_data
+        and not decoder.unconsumed_tail
+        and hashlib.sha256(raw).hexdigest() == envelope["sha256"],
+        "focused slot length, stream or digest mismatch",
+    )
+    registry = _registry_json(raw)
+    require(raw == registry_bytes(registry), "focused slot JSON must be canonical")
+    _slot_entries(registry)
+    return registry
+
+
+def encode_slot(registry: dict[str, Any]) -> str:
+    """Prepare deterministic transport bytes; this does not authorize any manifest."""
+    _slot_entries(registry)
+    raw = registry_bytes(registry)
+    require(len(raw) <= MAX_SLOT_DECODED, "focused slot exceeds its decoded limit")
+    value = registry_bytes(
+        {
+            "schema": 1,
+            "codec": "gzip+base64",
+            "bytes": len(raw),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "data": base64.b64encode(gzip.compress(raw, compresslevel=9, mtime=0)).decode("ascii"),
+        }
+    ).decode()
+    require(len(value.encode()) <= MAX_SLOT, "focused slot exceeds its encoded limit")
+    return value
+
+
+def registry_slots(env: dict[str, str]) -> tuple[str, ...]:
+    """Read only the four fixed optional transport variables."""
+    return tuple(env.get(name, "") for name in SLOT_VARIABLES)
+
+
+def plan_registry(legacy: str, slots: tuple[str, ...] = ()) -> dict[str, Any]:
+    """Read all transports, refusing conflicting duplicates even when unselected."""
+    require(len(legacy.encode()) <= MAX_PLAN, "focused plan registry exceeds its supported size")
+    require(len(slots) <= len(SLOT_VARIABLES), "too many focused registry slots")
+    registry = _registry_json(legacy or "{}")
+    for slot in slots:
+        for key, plan in decode_slot(slot).items():
+            require(
+                key not in registry or registry_bytes(registry[key]) == registry_bytes(plan),
+                "conflicting focused registry entries",
+            )
+            registry[key] = plan
+    return registry
+
+
+def selected_registry(legacy: str, slots: tuple[str, ...], key: str) -> str:
+    """Keep the protected judge's exact PR lookup bounded by the original plan limit."""
+    registry = plan_registry(legacy, slots)
+    selected = registry_bytes({key: registry[key]} if key in registry else {}).decode()
+    require(len(selected.encode()) <= MAX_PLAN, "focused slot entry exceeds the original plan limit")
+    return selected
+
+
+def append_slot(legacy: str, slots: tuple[str, ...], additions: dict[str, Any]) -> tuple[int, str] | None:
+    """Propose one append-only variable update, keeping an admission pair atomic.
+
+    Callers must first validate every manifest against trusted source, then reread
+    all inputs under their writer lock and verify exact readback after one write.
+    No registry or remote state is changed here.
+
+    Raises:
+        CandidateError: Inputs conflict, are incomplete or exhaust bounded storage.
+    """
+    require(len(slots) == len(SLOT_VARIABLES) and bool(additions), "incomplete focused append inputs")
+    _slot_entries(additions)
+    current = plan_registry(legacy, slots)
+    for key, plan in additions.items():
+        require(
+            key not in current or registry_bytes(current[key]) == registry_bytes(plan),
+            "focused append cannot replace an existing manifest",
+        )
+    if all(key in current for key in additions):
+        return None
+    require(not any(key in current for key in additions), "focused admission is only partially present")
+    for index, slot in enumerate(slots):
+        proposed = {**decode_slot(slot), **additions}
+        try:
+            encoded = encode_slot(proposed)
+        except CandidateError:
+            continue
+        return index, encoded
+    message = "all focused registry slots are full; existing proofs cannot be removed or moved"
+    raise CandidateError(message)
 
 
 @dataclass(frozen=True)
@@ -216,13 +377,14 @@ def _selections(plan: dict[str, Any], commit: str) -> dict[str, tuple[str, ...]]
     return selected
 
 
-def resolve(
+def resolve(  # noqa: PLR0913 - independent source, dispatch, base and transport boundaries
     source: WorkloadSource,
     commit: str,
     manifests: str,
     dispatch_pr: dict[str, Any] | None = None,
     *,
     pr_base_limit: str | None = None,
+    slots: tuple[str, ...] = (),
 ) -> CandidatePlan | Scope:
     """Resolve only an exact released candidate or exact reviewed, bounded workload.
 
@@ -237,9 +399,7 @@ def resolve(
         message = "canonical candidate source did not resolve to the full inventory"
         raise CandidateError(message)
     require(valid_sha(commit), "missing exact tested checkout")
-    require(len(manifests.encode()) <= MAX_PLAN, "focused plan registry exceeds its supported size")
-    registry = json.loads(manifests or "{}", object_pairs_hook=unique_object)
-    require(isinstance(registry, dict), "invalid reviewed focused plan registry")
+    registry = plan_registry(manifests, slots)
     plan = registry.get(f"{source.event}:{source.head}")
     preplanned_main = plan is None and source.event == "push" and source.ref == "refs/heads/main"
     if preplanned_main:
@@ -368,7 +528,9 @@ def current_scope() -> CandidatePlan | Scope:
         return json.loads(command(["gh", "api", f"repos/{REPOSITORY}/{path}"]))
 
     source, commit, dispatch_pr = event_source(dict(os.environ), get)
-    return resolve(source, commit, os.environ.get(PLAN_VARIABLE, ""), dispatch_pr)
+    return resolve(
+        source, commit, os.environ.get(PLAN_VARIABLE, ""), dispatch_pr, slots=registry_slots(dict(os.environ))
+    )
 
 
 def main() -> None:
