@@ -31,7 +31,7 @@ jobs:
       - name: Checkout reviewed candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 37ea58445ac9ac73f9b698de3bd852a2821e8501
+          ref: 9f26091bbf84ef7141fea0b0454008a6344b84d9
           path: candidate
           fetch-depth: 0
           persist-credentials: false
@@ -76,7 +76,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           path: candidate
-          ref: 37ea58445ac9ac73f9b698de3bd852a2821e8501
+          ref: 9f26091bbf84ef7141fea0b0454008a6344b84d9
           persist-credentials: false
       - uses: ./bootstrap/.github/actions/setup-uv
         with:
@@ -115,7 +115,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           path: candidate
-          ref: 37ea58445ac9ac73f9b698de3bd852a2821e8501
+          ref: 9f26091bbf84ef7141fea0b0454008a6344b84d9
           fetch-depth: 0
           persist-credentials: false
       - uses: ./bootstrap/.github/actions/setup-uv
@@ -135,7 +135,7 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ github.token }}
       PR_NUMBER: '650'
-      PR_HEAD_SHA: 37ea58445ac9ac73f9b698de3bd852a2821e8501
+      PR_HEAD_SHA: 9f26091bbf84ef7141fea0b0454008a6344b84d9
     steps:
       - name: Require independently pinned bootstrap source
         env:
@@ -143,7 +143,7 @@ jobs:
         run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: b234067b172f33db59f98c9ea38808b3d5ab9bc5
+          ref: de5ebbb5b471a477c2c875e4e1effc501d021642
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
       - run: uv run --no-build --frozen --script scripts/merge_gate.py sonar

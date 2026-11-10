@@ -11,11 +11,13 @@ import sys
 from typing import Any
 
 REPO = "helmut-hoffer-von-ankershoffen/heinzel"
-BASE = "b234067b172f33db59f98c9ea38808b3d5ab9bc5"
+BASE = "de5ebbb5b471a477c2c875e4e1effc501d021642"
 OLD = "da281f90d4d1abeffd38a3d7430817e21cfa3d4a"
-NEW = "37ea58445ac9ac73f9b698de3bd852a2821e8501"
+NEW = "9f26091bbf84ef7141fea0b0454008a6344b84d9"
 BRANCH = "fix/five-flakes"
-TREE = "0f14c4c296ab267b89eef6eec59e28644d01d68b"
+TREE = "d7aca1ead0f18deab1c836d2cc0aaf124cc473c6"
+OLD_MERGE = "58f030da103cd1c66c423b1a80a42dee43d09176"
+OLD_MERGE_BASE = "b234067b172f33db59f98c9ea38808b3d5ab9bc5"
 
 
 def api(path: str, *args: str) -> Any:  # noqa: ANN401
@@ -50,7 +52,9 @@ def snapshot(expected: str) -> dict[str, Any]:
         msg = "candidate tree drift; stop"
         raise ValueError(msg)
     merge = api(f"git/commits/{pr['merge_commit_sha']}")
-    if [parent["sha"] for parent in merge["parents"]] != [BASE, expected]:
+    parents = [parent["sha"] for parent in merge["parents"]]
+    stale_known = expected == OLD and pr["merge_commit_sha"] == OLD_MERGE and parents == [OLD_MERGE_BASE, OLD]
+    if parents != [BASE, expected] and not stale_known:
         msg = "test merge parent drift; stop"
         raise ValueError(msg)
     if expected == NEW and merge["tree"]["sha"] != TREE:

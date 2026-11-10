@@ -46,6 +46,7 @@ def test_publication_stays_held_after_successful_verification(monkeypatch):
     }.items():
         monkeypatch.setenv(key, value)
     with (
+        patch.object(publisher, "source_review"),
         patch.object(publisher, "source") as source_check,
         patch.object(publisher, "evidence") as evidence_check,
         pytest.raises(ValueError, match="publication held"),
@@ -175,3 +176,7 @@ def test_invalidation_continues_if_another_invalidation_fails():
     ):
         publisher.publish_statuses(42)
     assert calls[-3:] == [("CI OK", "failure"), ("merge-gate", "failure"), ("coverage-floor", "failure")]
+
+
+def test_new_candidate_source_review_is_pinned():
+    publisher.source_review()

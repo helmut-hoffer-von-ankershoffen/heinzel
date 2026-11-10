@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Execute only in an isolated disposable checkout of the reviewed candidate. No publication authority.
 set -euo pipefail
-base=b234067b172f33db59f98c9ea38808b3d5ab9bc5
-head=37ea58445ac9ac73f9b698de3bd852a2821e8501
-tree=0f14c4c296ab267b89eef6eec59e28644d01d68b
+base=de5ebbb5b471a477c2c875e4e1effc501d021642
+head=9f26091bbf84ef7141fea0b0454008a6344b84d9
+tree=d7aca1ead0f18deab1c836d2cc0aaf124cc473c6
 [[ $(git rev-parse HEAD) == "$head" && $(git rev-parse HEAD^{tree}) == "$tree" ]]
 expected=$'scripts/related_tests.py\ntests/unit/scoped_checks_test.py\nweb/e2e/chat-ready.mjs\nweb/e2e/device-reopen.mjs\nweb/e2e/generic-agent-chat.mjs'
 [[ $(git diff --name-only --no-renames "$base" "$head") == "$expected" ]]

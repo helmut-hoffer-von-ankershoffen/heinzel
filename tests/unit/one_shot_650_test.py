@@ -85,3 +85,27 @@ def test_snapshot_rejects_test_merge_with_moved_base():
 
     with patch.object(updater, "api", side_effect=api), pytest.raises(ValueError, match="test merge parent drift"):
         updater.snapshot(updater.OLD)
+
+
+def test_old_exact_merge_is_only_stale_merge_accepted_before_update():
+    def api(path, *_args):
+        if path == "git/ref/heads/main":
+            return {"object": {"sha": updater.BASE}}
+        if path == f"git/ref/heads/{updater.BRANCH}":
+            return {"object": {"sha": updater.OLD}}
+        if path == "pulls/650":
+            return {
+                "state": "open",
+                "draft": False,
+                "merge_commit_sha": updater.OLD_MERGE,
+                "base": {"ref": "main", "repo": {"full_name": updater.REPO}},
+                "head": {"sha": updater.OLD, "ref": updater.BRANCH, "repo": {"full_name": updater.REPO}},
+            }
+        if path == f"git/commits/{updater.NEW}":
+            return {"tree": {"sha": updater.TREE}}
+        if path == f"git/commits/{updater.OLD_MERGE}":
+            return {"parents": [{"sha": updater.OLD_MERGE_BASE}, {"sha": updater.OLD}], "tree": {"sha": "old"}}
+        raise AssertionError(path)
+
+    with patch.object(updater, "api", side_effect=api):
+        assert updater.snapshot(updater.OLD)["merge_commit_sha"] == updater.OLD_MERGE
