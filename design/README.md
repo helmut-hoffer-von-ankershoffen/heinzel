@@ -107,7 +107,8 @@ card, a dialog, a panel, a page, a settings section, a toast) places its actions
 4. **Dialogs answer a question**, so their row is right-aligned and every action keeps its words: Cancel (outline)
    first, the committing action (filled) last, red when it destroys something. Inline confirmations follow the same
    order. A destructive action anywhere else is a red icon that opens such a dialog.
-5. **One look.** Buttons are 32px high (44px on touch), icon-only buttons as wide as high, 16px icons, 6px apart.
+5. **One look.** Buttons are 32px high, with a 44px minimum target on touch-capable devices and at phone viewport sizes.
+   Icon-only buttons are as wide as high, with 16px icons and 6px gaps.
    Content actions are outlined; the one `primary` per container is filled; chrome and list-row actions are ghost.
    A disabled action is the same button dimmed. Pages put at most two outlined icon+words actions in their header.
 6. **No links as actions.** A text link exists only inside running text (see Links below). `to=` navigates inside
