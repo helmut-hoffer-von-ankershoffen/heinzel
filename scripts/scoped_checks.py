@@ -425,6 +425,10 @@ def daemon_progress_push(changed: list[str], base: str) -> int:  # noqa: C901
             f"UNIT_TARGETS={unit}",
             "PYTEST_XDIST_AUTO_NUM_WORKERS=2",
             f'WEB_TESTS="web-tests={WEB} exec vitest run --maxWorkers=2 {web}"',
+            (
+                'MANAGED_CHECK="managed-runtime=$(MANAGED) exec node tools/runtime-code.mjs --check" '
+                '"&managed-lint=$(MANAGED) exec biome ci ." $(MANAGED_TYPES)'
+            ),
         ],
         ["uv", "run", "pytest", DAEMON_STREAM, "-m", "integration and not perf", "-n", "2", "-x", "-q"],
         [*WEB.split(), "build"],

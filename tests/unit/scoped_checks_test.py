@@ -274,6 +274,10 @@ def test_daemon_progress_push_runs_fixed_checks_and_rejects_unmapped_or_bypassed
     assert any(scoped.DAEMON_BROWSER in call for call in calls)
     assert [*scoped.WEB.split(), "build"] in calls
     assert any("OperationDialog.test.tsx" in str(call) and "DaemonSettings.test.tsx" in str(call) for call in calls)
+    managed = next(arg for call in calls if isinstance(call, list) for arg in call if arg.startswith("MANAGED_CHECK="))
+    assert "runtime-code.mjs --check" in managed
+    assert "biome ci ." in managed
+    assert "$(MANAGED_TYPES)" in managed
     for name, value in (("PYTEST_ADDOPTS", "--collect-only"), ("MAKEFLAGS", "-n"), ("SKIP", "check-fast")):
         monkeypatch.setenv(name, value)
         with pytest.raises(SystemExit):
