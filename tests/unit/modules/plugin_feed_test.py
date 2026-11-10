@@ -377,3 +377,97 @@ def test_conditional_github_cache_never_crosses_credential_identities(monkeypatc
         )
     assert [etag for _, etag in sent] == [None, None, None, '"e1"']
     assert all("Bearer" not in key for key in _github._CONDITIONAL)
+
+
+def test_public_catalog_revalidates_without_forwarding_credentials_or_following_redirects(tmp_path, monkeypatch):
+    """A real conditional catalog request retains the cached catalog on 304 without carrying GitHub credentials."""
+    monkeypatch.setenv("GH_TOKEN", "fictional-private-token")
+    monkeypatch.setattr(_feed, "_fetch", fetch_catalog)
+    seen = []
+    payload = json.dumps(document(entry())).encode()
+
+    class CatalogResponse(Reply):
+        status = 200
+
+    class Opener:
+        def open(self, request, timeout):
+            seen.append(request)
+            assert request.get_method() == "GET"
+            assert request.get_header("Authorization") is None
+            assert timeout == _feed.TIMEOUT
+            if len(seen) == 2:
+                assert request.get_header("If-none-match") == '"v1"'
+                raise http_error(304, {})
+            return CatalogResponse(payload, {"ETag": '"v1"'})
+
+    def opener(*handlers):
+        assert handlers == (_feed._NoRedirects,)
+        return Opener()
+
+    monkeypatch.setattr(urllib.request, "build_opener", opener)
+    url = "https://heinzel.team/catalog.json"
+    assert load_feed(url, tmp_path, now=100)[0]["name"] == "heinzel-harbor"
+    assert load_feed(url, tmp_path, now=1000)[0]["name"] == "heinzel-harbor"
+    assert len(seen) == 2
+    assert _feed._NoRedirects().redirect_request(None, None, 302, "Found", {}, "https://evil.example/") is None
+
+
+def test_catalog_rejects_oversized_or_redirected_responses_without_caching(tmp_path, monkeypatch):
+    """Untrusted catalog content cannot be cached after exceeding its limit or asking for a redirect."""
+
+    class CatalogResponse(Reply):
+        status = 200
+
+    class Opener:
+        def __init__(self, answer):
+            self.answer = answer
+
+        def open(self, request, timeout):
+            if isinstance(self.answer, Exception):
+                raise self.answer
+            return CatalogResponse(self.answer)
+
+    monkeypatch.setattr(_feed, "_fetch", fetch_catalog)
+    monkeypatch.setattr(_feed, "MAX_FEED", 8)
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *args: Opener(b"012345678"))
+    with pytest.raises(ValueError, match="too large"):
+        load_feed("https://heinzel.team/catalog.json", tmp_path, now=1)
+    assert not (tmp_path / "plugin-catalog" / "feed.json").exists()
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *args: Opener(http_error(302, {})))
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        load_feed("https://heinzel.team/catalog.json", tmp_path, now=2)
+    assert caught.value.code == 302
+    caught.value.close()
+    assert not (tmp_path / "plugin-catalog" / "feed.json").exists()
+
+
+def test_public_raw_metadata_is_anonymous_bounded_and_treats_not_found_as_unavailable(monkeypatch):
+    """A pinned public preview reads only bounded anonymous data and maps missing files to an absent preview."""
+    monkeypatch.setenv("GITHUB_TOKEN", "fictional-private-token")
+    seen = []
+
+    class Opener:
+        def open(self, request, timeout):
+            seen.append((request.get_method(), request.full_url, request.get_header("Authorization")))
+            assert timeout == _feed.TIMEOUT
+            if request.full_url.endswith("missing.toml"):
+                raise http_error(404, {})
+            if request.full_url.endswith("oversize.toml"):
+                return Reply(b"12345")
+            if request.get_method() == "HEAD":
+                return Reply(b"", {"Content-Length": "5", "Content-Type": "image/png; charset=binary"})
+            return Reply(b"hello")
+
+    def opener(*handlers):
+        assert handlers == (_feed._NoRedirects,)
+        return Opener()
+
+    monkeypatch.setattr(urllib.request, "build_opener", opener)
+    assert _feed.raw_text(RAW + "pyproject.toml", 5) == "hello"
+    assert _feed.raw_image_size(RAW + "docs/ui.png") == (5, "image/png")
+    with pytest.raises(LookupError):
+        _feed.raw_text(RAW + "missing.toml", 5)
+    with pytest.raises(ValueError, match="larger than its limit"):
+        _feed.raw_text(RAW + "oversize.toml", 4)
+    assert [method for method, _, _ in seen] == ["GET", "HEAD", "GET", "GET"]
+    assert all(authority is None for _, _, authority in seen)
