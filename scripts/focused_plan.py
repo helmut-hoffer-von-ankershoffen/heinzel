@@ -55,12 +55,16 @@ PROTECTED_FILES = (
     ".github/workflows/ci.yml",
     ".github/actions/setup-uv/action.yml",
     ".github/actions/setup-uv/uv-manifest.json",
+    "scripts/bootstrap-pyyaml.sh",
     "scripts/ci_workload.py",
     "scripts/focused_plan.py",
     "scripts/focused_job.py",
     "scripts/focused_coverage.py",
     "scripts/focused_coverage.py.lock",
+    "scripts/pyyaml-build-requirements.txt",
     "scripts/release_candidate.py",
+    "scripts/tools.py",
+    "scripts/tools.toml",
     "uv.lock",
 )
 MAX_PLAN = 48 * 1024

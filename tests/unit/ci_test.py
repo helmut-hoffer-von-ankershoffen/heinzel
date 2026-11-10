@@ -72,6 +72,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
             "selects the same signed primary Ubuntu archive as Docs before browser dependency installation"
         ),
         "uv run --no-build --script scripts/main_batch.py": "read-only bounded admission of an explicit main batch",
+        "uv run --no-build --script scripts/tools.py install actionlint": "prepares the pinned workflow linter",
         "echo 'The validated aggregate base": "records that the final run consumed the aggregate base",
         'echo "Integration CI is recorded': "links the intermediate admission to its exact final run",
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
@@ -273,6 +274,20 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
     assert runs["make managed-backend-check"] == "needs.changes.outputs.full_release == 'true'"
     for name in ("Makefile", ".github/workflows/ci.yml.jinja"):
         assert "managed-backend" not in (REPO / "template" / name).read_text()
+
+
+def test_core_prefetches_the_pinned_workflow_linter_with_only_read_access():
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    job = workflow["jobs"]["lint"]
+    steps = job["steps"]
+    [download] = [step for step in steps if step.get("name") == "Prepare the pinned workflow linter"]
+    [lint] = [step for step in steps if step.get("run") == "make lint"]
+    assert download["run"] == "uv run --no-build --script scripts/tools.py install actionlint"
+    assert download["env"] == {"GH_TOKEN": "${{ github.token }}"}
+    assert job["permissions"] == {"contents": "read"}
+    assert steps.index(download) < steps.index(lint)
+    assert {"GH_TOKEN", "GITHUB_TOKEN"}.isdisjoint(lint["env"])
+    assert "Prepare the pinned workflow linter" not in _template_sync_module().ci_workflow()
 
 
 @pytest.mark.parametrize(("event", "batch_base"), [("pull_request", False), ("push", False), ("push", True)])

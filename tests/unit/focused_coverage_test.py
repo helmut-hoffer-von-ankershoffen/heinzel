@@ -134,3 +134,32 @@ def test_managed_runner_compiles_but_executes_only_the_selected_test(coverage, t
         f"--test-reporter-destination={tmp_path / coverage.JUNIT}",
         "build/test/backend.test.js",
     ]
+
+
+def test_python315_bootstraps_pyyaml_before_the_selected_tests(coverage, scope, monkeypatch, tmp_path):
+    from dataclasses import replace
+
+    junit = b'<testsuite><testcase classname="test_unit" name="test_case"/></testsuite>'
+    scope = replace(
+        scope,
+        selection={"python315": ("tests/unit/focused_coverage_test.py",)},
+        case_digests={"python315": coverage.cases_digest(junit)},
+    )
+    out = tmp_path / "evidence"
+    calls = []
+
+    def execute(args, env):
+        calls.append((args, env["UV_PYTHON"]))
+        if "pytest" in args:
+            (out / coverage.JUNIT).write_bytes(junit)
+
+    monkeypatch.setenv("UV_PYTHON", "3.14")
+    monkeypatch.setattr(coverage, "_execute", execute)
+    coverage.run_lane(scope, "python315", out, 123, 1)
+    sync, bootstrap, tests = [command for command, _python in calls]
+    assert sync[:2] == ["uv", "sync"]
+    assert "--no-build" in sync
+    assert "--no-install-package=pyyaml" in sync
+    assert bootstrap == ["bash", "scripts/bootstrap-pyyaml.sh"]
+    assert tests[-1] == "tests/unit/focused_coverage_test.py"
+    assert {python for _, python in calls} == {"3.15"}

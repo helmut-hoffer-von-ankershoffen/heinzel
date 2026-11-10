@@ -274,6 +274,7 @@ def run_lane(scope: Scope, lane: str, out: Path, run: int, attempt: int) -> None
     env = {key: os.environ[key] for key in ENV_KEYS if key in os.environ}
     env.update(UV_FROZEN="1", HZ_SCREENSHOTS=str(out.parent / "screenshots"))
     if lane == "python315":
+        env["UV_PYTHON"] = LANES[lane][1]
         commands[0].append("--no-install-package=pyyaml")
         commands.insert(1, ["bash", "scripts/bootstrap-pyyaml.sh"])
     if lane == "macos-notifier":
