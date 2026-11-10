@@ -152,6 +152,7 @@ test("a chosen system source loops back system audio with the own frame as video
   assert.equal(f.controller.choose(f.sender, "system"), true);
   f.start(); await settled();
   assert.equal(f.prompts[0].options.title, "Share system audio?");
+  assert.match(f.prompts[0].options.detail, /workspace is briefly shared as video, then video is stopped/);
   assert.equal(f.prompts[0].options.defaultId, 0);
   f.reply(1); await settled();
   assert.deepEqual(f.responses, [{ video: f.frame, audio: "loopback" }]);

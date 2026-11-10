@@ -9,7 +9,7 @@ const CONSENT = Object.freeze({
 const SYSTEM_CONSENT = Object.freeze({
   type: "question", title: "Share system audio?",
   message: "Allow the visualizer to analyse all sound this computer plays?",
-  detail: "This includes other apps. No picture and no microphone are captured. Audio stays in this window and is never recorded. Stop sharing in the visualizer to end capture.",
+  detail: "This includes other apps. To request audio, this workspace is briefly shared as video, then video is stopped. No microphone is captured. Audio stays in this window and is never recorded. Stop sharing in the visualizer to end capture.",
   buttons: Object.freeze(["Don't allow", "Share system audio"]), defaultId: 0, cancelId: 0, noLink: true,
 });
 // An armed source choice is consumed by the next display request of the same window, or expires.

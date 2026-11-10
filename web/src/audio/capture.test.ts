@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureAudio, captureMicrophone, systemAudioAvailable } from "./capture";
 
 function track(kind: "audio" | "video") {
-  return { kind, label: `${kind} source`, stop: vi.fn() };
+  return { kind, label: `${kind} source`, readyState: "live", stop: vi.fn() };
 }
 
 const audio = track("audio");
@@ -70,6 +70,22 @@ describe("explicit ephemeral audio capture", () => {
     await expect(captureAudio(new AbortController().signal)).rejects.toThrow("No audio was shared");
     expect(video.stop).toHaveBeenCalledOnce();
     expect(context.close).toHaveBeenCalledOnce();
+  });
+
+  it("rejects and releases an audio track that ends before activation", async () => {
+    let resume!: () => void;
+    context.resume.mockReturnValue(new Promise<void>((resolve) => (resume = resolve)));
+    const ended = track("audio");
+    choose.mockResolvedValue({ getTracks: () => [ended, video], getAudioTracks: () => [ended] });
+    const pending = captureAudio(new AbortController().signal, true);
+    await Promise.resolve();
+    ended.readyState = "ended";
+    resume();
+    await expect(pending).rejects.toThrow("No audio was shared");
+    expect(ended.stop).toHaveBeenCalledOnce();
+    expect(video.stop).toHaveBeenCalledOnce();
+    expect(context.close).toHaveBeenCalledOnce();
+    expect(source.connect).not.toHaveBeenCalled();
   });
 
   it("stops video before waiting for audio activation", async () => {

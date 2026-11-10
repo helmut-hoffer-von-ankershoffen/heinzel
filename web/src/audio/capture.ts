@@ -91,13 +91,14 @@ export async function captureAudio(signal: AbortSignal, system = false): Promise
     // The chooser requires video, but analysis needs only audio. Never retain screen imagery.
     for (const track of stream.getTracks()) if (track.kind === "video") stopTrack(track);
     if (signal.aborted || closed) throw new DOMException("Capture cancelled", "AbortError");
-    const tracks = stream.getAudioTracks();
+    if (!(await resumed)) throw new Error("Audio could not start. Stop sharing, then try again.");
+    if (signal.aborted || closed) throw new DOMException("Capture cancelled", "AbortError");
+    // A returned track may already have ended, including when the OS could not provide system audio.
+    const tracks = stream.getAudioTracks().filter((track) => track.readyState === "live");
     if (!tracks.length)
       throw new Error(
         `No audio was shared. Your browser or operating system may not offer audio for this source.${system ? "" : " Choose a tab with Share audio, or stop sharing."}`,
       );
-    if (!(await resumed)) throw new Error("Audio could not start. Stop sharing, then try again.");
-    if (signal.aborted || closed) throw new DOMException("Capture cancelled", "AbortError");
     source = context.createMediaStreamSource(new MediaStream(tracks));
     analyser = context.createAnalyser();
     analyser.fftSize = 1024;
