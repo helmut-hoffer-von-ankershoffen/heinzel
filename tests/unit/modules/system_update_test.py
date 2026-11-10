@@ -370,7 +370,7 @@ def test_plugin_revision_stays_independent_of_the_core_release(tmp_path):
 
 
 def test_a_private_git_plugin_is_fetched_with_the_gh_login(tmp_path, monkeypatch):
-    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/gh" if name == "gh" else None)
+    monkeypatch.setattr("shutil.which", lambda name, **_: "/usr/bin/gh" if name == "gh" else None)
     uv = FakeUv("0.2.0")
     UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv), FakeReleases("0.4.0")).update(
         current="0.2.0"
@@ -643,7 +643,7 @@ def test_failed_plugin_refresh_restores_removed_tool_in_same_scope(tmp_path):
 
 @pytest.mark.parametrize("plugin_refresh", [False, True])
 def test_private_git_recovery_reuses_original_helper_environment(tmp_path, monkeypatch, plugin_refresh):
-    monkeypatch.setattr("shutil.which", lambda name: "/fixture/gh" if name == "gh" else None)
+    monkeypatch.setattr("shutil.which", lambda name, **_: "/fixture/gh" if name == "gh" else None)
     monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_TOKEN", "fictional-token")
     uv = FakeUv("0.4.0" if plugin_refresh else "0.2.0")
     uv.failures, uv.hz_starts = ["network down"], False
