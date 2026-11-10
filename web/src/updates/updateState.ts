@@ -88,7 +88,8 @@ export function describe(input: Inputs): View {
 
   // What is being installed, or was just installed or refused.
   if (applying) rows.push({ id: "applying", tone: "warn", text: input.phase ?? t("updates.applying"), busy: true });
-  else if (input.message ?? plan?.message)
+  else if ((input.message ?? plan?.message) && (input.message ?? plan?.message) !== input.problem)
+    // The failure is told once, in the problem row below, not again as the plan's message.
     rows.push({ id: "message", tone: "off", text: (input.message ?? plan?.message) as string });
   if (input.problem) rows.push({ id: "problem", tone: "bad", text: input.problem, alert: true });
 
