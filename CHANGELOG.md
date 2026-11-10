@@ -30,6 +30,7 @@ Find uv in its install dirs under launchd's minimal PATH; Name the worker's shel
 
 - Fix five flaky and slow tests at their cause ([#650](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/650)) ([6443f4b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/6443f4b8cde047954cdd4a6eb190ce6471ce123e))
 - **heads:** Use loopback MCP test server ([#708](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/708)) ([f71de1d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f71de1dca85fbbbef2a79f3f023e7cb35d9034f6))
+- **system:** Ratchet the notifier logging allowlist ([#710](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/710)) ([38965c9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/38965c991ba9ec2f6e2d394f3b15abae5be55224))
 
 ### 🏗️ Build and CI
 
