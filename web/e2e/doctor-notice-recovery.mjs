@@ -17,8 +17,10 @@ try {
   await widget.getByText("Heinzelmännchen is degraded").waitFor();
   await widget.getByText("A newer notice").waitFor();
   await page.waitForFunction(() => window.__noticeEvents > 0);
+  const beforeRecovery = await page.evaluate(() => window.__noticeEvents);
   writeFileSync(marker, "observed");
-  await widget.getByText("Heinzelmännchen is degraded").waitFor({ state: "hidden", timeout: 30000 });
+  await page.waitForFunction((before) => window.__noticeEvents > before, beforeRecovery, { timeout: 10000 });
+  await widget.getByText("Heinzelmännchen is degraded").waitFor({ state: "hidden", timeout: 10000 });
   assert.equal(await widget.getByText("A newer notice").isVisible(), true);
   console.log(JSON.stringify({ resolved: true }));
 } finally {

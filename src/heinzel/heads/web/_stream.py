@@ -73,7 +73,7 @@ async def _events(  # noqa: PLR0913 - all but the request and the service by key
         `changed` when the visible list changes; with `popups`, each due notice once as `notice`; a ping now and then.
     """
     sent: set[str] = set()
-    visible: tuple[str, ...] = ()
+    visible: tuple[str, ...] | None = None
     started = last_ping = clock()
     yield "retry: 3000\n\n"
     with stopping.watch() as stopped:
@@ -81,7 +81,7 @@ async def _events(  # noqa: PLR0913 - all but the request and the service by key
             if popups:
                 await run_in_threadpool(notifications.watched)
             due = await run_in_threadpool(notifications.due) if popups else []
-            recent = await run_in_threadpool(notifications.recent, 50)
+            recent = await run_in_threadpool(notifications.recent, 200)
             for notice in due:
                 if notice.id not in sent:
                     sent.add(notice.id)
