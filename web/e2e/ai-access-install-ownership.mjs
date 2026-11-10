@@ -61,7 +61,7 @@ try {
       if (dismissal === "failure") return route.fulfill({ status: 500, json: { error: "Fictional install failed" } });
       if (dismissal === "lost-response" && installs === 1) return route.abort("connectionreset");
       if (dismissal === "lost-response")
-        return route.fulfill({ json: { extra: "openai", done: false, restart_required: true } });
+        return route.fulfill({ json: { extra: "openai", done: false, restart_required: false } });
       await route.fulfill({ json: { extra: "openai", done: true, restart_required: true } });
     });
     await page.route("**/api/lifecycle", (route) =>

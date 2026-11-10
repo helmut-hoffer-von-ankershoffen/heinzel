@@ -402,13 +402,14 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
             } catch {
               throw new Error(t("plugins.receiptStorageUnavailable"));
             }
-            const result = await unwrap(
+            await unwrap(
               api.POST("/system/plugin/add-extra", {
                 params: { query: { extra: extra as SchemaExtraChange["extra"] } },
                 signal,
               }),
             );
-            return result.restart_required;
+            // Older servers may report a receipt-only no-op even when this process has not loaded the client.
+            return true;
           },
         },
         {
@@ -420,7 +421,6 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
       );
       completePluginRestart();
       window.sessionStorage.removeItem(CLIENT_INSTALL_PENDING);
-      // A concurrent install can make this request a successful no-op, with no restart phases emitted.
       setPhase("applied");
       await client.invalidateQueries({ queryKey: ["ai"] });
     } catch (failure) {
