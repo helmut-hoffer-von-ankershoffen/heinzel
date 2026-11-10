@@ -147,20 +147,10 @@ def _sonar_refs() -> None:
 
 
 def _test_web(out: Path) -> None:
-    provider = out.parent / "coverage-provider"
-    provider.mkdir()
-    for name in ("package.json", "pnpm-lock.yaml"):
-        (provider / name).write_bytes((HERE / "coverage-provider" / name).read_bytes())
     _run("uv", "sync", "--frozen", "--no-build", "--only-group", "build")
     _run(*WEB, "prepare")
-    _run(*WEB, "pnpm", "--dir", str(provider), "install", "--frozen-lockfile", "--ignore-scripts")
-    link = Path("web/node_modules/@vitest/coverage-v8")
-    link.parent.mkdir(exist_ok=True)
-    link.symlink_to(provider / "node_modules/@vitest/coverage-v8")
     web_root = Path("web").resolve()
-    web_paths = [Path(path).relative_to("web") for path in coverage_evidence.scope(MANIFEST)["web"]]
     report = out / "web-results.json"
-    coverage = out / "web-coverage"
     selectors = MANIFEST["jobs"]["web"]["selectors"]
     _run(
         *WEB,
@@ -171,12 +161,6 @@ def _test_web(out: Path) -> None:
         "--maxWorkers=2",
         "--reporter=json",
         f"--outputFile={report}",
-        "--coverage.enabled",
-        "--coverage.provider=v8",
-        *(f"--coverage.include={path}" for path in web_paths),
-        "--coverage.reporter=json-summary",
-        "--coverage.reporter=json",
-        f"--coverage.reportsDirectory={coverage}",
     )
     data = json.loads(report.read_text())
     suites = data["testResults"]
@@ -271,7 +255,7 @@ def _main() -> None:
             },
         )
         _sonar_refs()
-    if args.lane in coverage_evidence.RAW_FILES:
+    if args.lane == "python":
         evidence = coverage_evidence.evidence(MANIFEST, identity, lambda name: (out / name).read_bytes())
         (out / "pr-coverage.json").write_text(json.dumps(evidence, sort_keys=True) + "\n")
     _source()

@@ -10,10 +10,8 @@ EVIDENCE_TYPE = "pr-affected-production-coverage/v1"
 COVERAGE_FLOOR = 80
 FOCUSED_THRESHOLD = 90
 BRANCH_ENDPOINTS = 2
-RAW_FILES = {
-    "python": ("python-coverage.json", "python-opportunities.json"),
-    "web": ("web-coverage/coverage-final.json", "web-coverage/coverage-summary.json"),
-}
+PYTHON_RAW_FILES = ("python-coverage.json", "python-opportunities.json")
+WEB_RAW_FILES = ("web-coverage/coverage-final.json", "web-coverage/coverage-summary.json")
 
 
 def require(condition: bool, message: str) -> None:
@@ -53,13 +51,12 @@ def scope(manifest: dict[str, Any]) -> dict[str, list[str]]:
     return files
 
 
-def threshold(covered: int, total: int, label: str, minimum: int) -> None:
+def _threshold(covered: int, total: int, label: str, minimum: int) -> None:
     """Compare exact opportunity counts without rounding."""
     require(
         total > 0 and 0 <= covered <= total and 100 * covered >= minimum * total,
         f"{label}: {covered}/{total} below {minimum}% or invalid",
     )
-    print(f"{label}: {covered}/{total} ({100 * covered / total:.2f}%)")
 
 
 def _lines(values: list[int]) -> set[int]:
@@ -78,9 +75,9 @@ def _branches(values: list[list[int]]) -> set[tuple[int, ...]]:
     return arcs
 
 
-def _python(raw: dict[str, bytes], shapes: dict[str, str]) -> dict[str, dict[str, tuple[int, int]]]:
-    data = json.loads(raw["python-coverage.json"])
-    inventory = json.loads(raw["python-opportunities.json"])
+def _python(
+    data: dict[str, Any], inventory: dict[str, Any], shapes: dict[str, str]
+) -> dict[str, dict[str, tuple[int, int]]]:
     files = data["files"]
     require(data["meta"]["branch_coverage"] is True and set(files) == set(inventory) == set(shapes), "Python scope")
     metrics = {}
@@ -185,28 +182,50 @@ def source_digest(shape: dict[str, Any]) -> str:
 
 def evidence(manifest: dict[str, Any], identity: dict[str, Any], read: Callable[[str], bytes]) -> dict[str, Any]:
     """Recompute typed coverage evidence from reviewed scope and raw measurements."""
-    lane = identity["lane"]
+    require(identity["lane"] == "python", "PR coverage evidence requires the Python lane")
     scope(manifest)
-    shapes = manifest["coverage"]["source_shape_sha256"][lane]
-    raw = {name: read(name) for name in RAW_FILES[lane]}
-    metrics = (_python if lane == "python" else _web)(raw, shapes)
-    combined = {}
+    shapes = manifest["coverage"]["source_shape_sha256"]["python"]
+    raw = {name: read(name) for name in PYTHON_RAW_FILES}
+    data = json.loads(raw["python-coverage.json"])
+    metrics = _python(data, json.loads(raw["python-opportunities.json"]), shapes)
+    statements = _sum(counts["statements"] for counts in metrics.values())
+    branches = _sum(counts["branches"] for counts in metrics.values())
+    totals = data["totals"]
+    expected = dict(
+        zip(
+            ("covered_lines", "num_statements", "covered_branches", "num_branches"),
+            (*statements, *branches),
+            strict=True,
+        )
+    )
+    require(
+        all(type(totals[key]) is int and totals[key] == count for key, count in expected.items()),
+        "Coverage.py TOTAL differs from affected production opportunity counts",
+    )
     for path, counts in metrics.items():
-        combined[path] = _sum((counts["statements"], counts["branches"]))
-        threshold(*combined[path], path, COVERAGE_FLOOR)
-        if lane == "web":
-            threshold(*counts["lines"], f"{path} source lines", COVERAGE_FLOOR)
-    aggregate = _sum(combined.values())
-    threshold(*aggregate, f"All affected {lane} statements and branches", FOCUSED_THRESHOLD)
+        covered, total = _sum((counts["statements"], counts["branches"]))
+        print(f"{path}: {covered}/{total} statements and branches")
+    covered, total = _sum((statements, branches))
+    label = "Affected Python coverage.py TOTAL"
+    _threshold(covered, total, label, COVERAGE_FLOOR)
+    _threshold(covered, total, label, FOCUSED_THRESHOLD)
+    print(f"{label}: {covered}/{total} ({100 * covered / total:.2f}%)")
     return {
         "type": EVIDENCE_TYPE,
         "identity": identity,
         "floor_percent": COVERAGE_FLOOR,
         "threshold_percent": FOCUSED_THRESHOLD,
         "files": metrics,
-        "aggregate_statements_and_branches": aggregate,
+        "aggregate_statements_and_branches": (covered, total),
         "raw_sha256": {name: hashlib.sha256(blob).hexdigest() for name, blob in raw.items()},
     }
+
+
+def web_diagnostics(manifest: dict[str, Any], read: Callable[[str], bytes]) -> dict[str, dict[str, tuple[int, int]]]:
+    """Read optional web coverage counters separately from admission."""
+    scope(manifest)
+    shapes = manifest["coverage"]["source_shape_sha256"]["web"]
+    return _web({name: read(name) for name in WEB_RAW_FILES}, shapes)
 
 
 def verify(manifest: dict[str, Any], identity: dict[str, Any], read: Callable[[str], bytes]) -> None:

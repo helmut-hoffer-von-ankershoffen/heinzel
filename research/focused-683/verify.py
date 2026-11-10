@@ -30,10 +30,10 @@ MAX_ARCHIVE_BYTES = 2_000_000
 MAX_MEMBER_BYTES = 5_000_000
 MAX_LOG_BYTES = 10_000_000
 MEMBERS = {
-    "python": {"results.xml", "pr-coverage.json", *coverage_evidence.RAW_FILES["python"]},
+    "python": {"results.xml", "pr-coverage.json", *coverage_evidence.PYTHON_RAW_FILES},
     "python315": {"results.xml"},
     "macos": {"results.xml"},
-    "web": {"web-results.json", "pr-coverage.json", *coverage_evidence.RAW_FILES["web"]},
+    "web": {"web-results.json"},
     "structural": set(),
     "security": set(),
     "sonar": set(),
@@ -234,7 +234,7 @@ def _artifact(artifact: dict[str, Any], lane: str, run_id: int, helper: str) -> 
             _web(archive)
         if lane in {"python", "python315", "macos"}:
             _cases(archive, lane)
-        if lane in coverage_evidence.RAW_FILES:
+        if lane == "python":
             coverage_evidence.verify(MANIFEST, identity, archive.read)
 
 

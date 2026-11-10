@@ -60,7 +60,11 @@ class CoverageEvidenceTest(unittest.TestCase):
             "branches": {"covered": 1, "total": 2},
         }
         self.data = {
-            "python-coverage.json": {"meta": {"branch_coverage": True}, "files": {self.python: self.report}},
+            "python-coverage.json": {
+                "meta": {"branch_coverage": True},
+                "files": {self.python: self.report},
+                "totals": self.summary,
+            },
             "python-opportunities.json": {self.python: self.shape},
             "web-coverage/coverage-final.json": {self.web_key: self.web_report},
             "web-coverage/coverage-summary.json": {self.web_key: web_summary, "total": web_summary},
@@ -108,17 +112,55 @@ class CoverageEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "unexpected Python source opportunities"):
             policy.evidence(self.manifest, self.identity, self.read)
 
-    def test_web_cannot_drop_an_uncovered_alternative(self) -> None:
-        """Require one nonnegative integer count per mapped alternative."""
-        self.identity["lane"] = "web"
+    def test_aggregate_can_pass_with_an_unimported_file(self) -> None:
+        """Apply thresholds to TOTAL while recording zero hits for a new file."""
+        path = "src/heinzel/new.py"
+        shape = {"statements": [1], "branches": []}
+        self.manifest["changed_paths"][path] = "A"
+        coverage = self.manifest["coverage"]
+        coverage["python_files"].append(path)
+        coverage["source_shape_sha256"]["python"][path] = policy.source_digest(shape)
+        self.data["python-opportunities.json"][path] = shape
+        self.report["executed_lines"].append(18)
+        self.report["missing_lines"].clear()
+        self.summary["covered_lines"] = 18
+        self.data["python-coverage.json"]["files"][path] = {
+            "executed_lines": [],
+            "missing_lines": [1],
+            "executed_branches": [],
+            "missing_branches": [],
+            "summary": {"covered_lines": 0, "num_statements": 1, "covered_branches": 0, "num_branches": 0},
+        }
+        self.data["python-coverage.json"]["totals"] = self.summary | {"num_statements": 19}
         evidence = policy.evidence(self.manifest, self.identity, self.read)
-        self.assertEqual(evidence["aggregate_statements_and_branches"], (9, 10))
+        self.assertEqual(evidence["files"][path]["statements"], (0, 1))
+        self.assertEqual(evidence["aggregate_statements_and_branches"], (19, 21))
+
+    def test_mismatched_coverage_py_total_is_rejected(self) -> None:
+        """Reject a TOTAL that differs from the complete per-file opportunities."""
+        self.data["python-coverage.json"]["totals"] = self.summary | {"num_branches": 1}
+        with self.assertRaisesRegex(SystemExit, "Coverage.py TOTAL differs"):
+            policy.evidence(self.manifest, self.identity, self.read)
+
+    def test_web_coverage_is_optional_and_has_no_threshold(self) -> None:
+        """Report even zero web hits separately from the Python gate."""
+        self.web_report["s"] = dict.fromkeys(self.web_report["s"], 0)
+        self.web_report["b"]["0"] = [0, 0]
+        for metric in self.data["web-coverage/coverage-summary.json"]["total"].values():
+            metric["covered"] = 0
+        diagnostic = policy.web_diagnostics(self.manifest, self.read)
+        self.assertEqual(diagnostic[self.web], {"lines": (0, 8), "statements": (0, 8), "branches": (0, 2)})
+        with self.assertRaisesRegex(SystemExit, "requires the Python lane"):
+            policy.evidence(self.manifest, self.identity | {"lane": "web"}, self.read)
+
+    def test_web_cannot_drop_an_uncovered_alternative(self) -> None:
+        """Require one nonnegative integer count per mapped alternative when reading diagnostics."""
         self.web_report["b"]["0"] = [2]
         with self.assertRaisesRegex(SystemExit, "incomplete Vitest source map"):
-            policy.evidence(self.manifest, self.identity, self.read)
+            policy.web_diagnostics(self.manifest, self.read)
         self.web_report["b"]["0"] = [2, True]
         with self.assertRaisesRegex(SystemExit, "invalid Vitest hit counters"):
-            policy.evidence(self.manifest, self.identity, self.read)
+            policy.web_diagnostics(self.manifest, self.read)
 
     def test_publisher_rejects_stale_or_other_evidence_type(self) -> None:
         """Keep the PR-scoped artifact tied to its exact source, attempt and measurements."""

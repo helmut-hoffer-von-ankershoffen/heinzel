@@ -48,9 +48,9 @@ def _update(helper: str) -> None:
 
 def _status(context: str, state: str, url: str) -> None:
     description = {
-        "CI OK": "Exact #683 PR checks and affected-production coverage >=90%",
+        "CI OK": "Exact #683 PR checks and affected Python coverage >=90%",
         "merge-gate": "Exact #683 Sonar and security evidence",
-        "coverage-floor": "Exact #683 PR-scoped affected-production coverage floor >=80%",
+        "coverage-floor": "Exact #683 PR-scoped affected Python coverage floor >=80%",
     }[context]
     response = _api(
         f"statuses/{HEAD}",
