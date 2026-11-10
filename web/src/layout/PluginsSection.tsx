@@ -716,7 +716,9 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   });
   // Cancel (or Close after a failure) ends the change here; the receipt keeps what the server knows.
   useEffect(() => {
-    if (run.stage !== "idle" || !opened.current) return;
+    // A preceding effect may have resumed a receipt after this render's idle snapshot.
+    // Only clean up if the store is still idle, not when that new operation is running.
+    if (run.stage !== "idle" || getRun().stage !== "idle" || !opened.current) return;
     const value = opened.current;
     opened.current = null;
     if (finished.current) return;
