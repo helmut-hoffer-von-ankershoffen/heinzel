@@ -8,6 +8,14 @@ import { McpSettings } from "./McpSettings";
 
 const id = "a".repeat(32);
 const handoff = `1794220000.${"b".repeat(64)}`;
+const unobservedStatus = {
+  host: "observed",
+  worker: "unobserved",
+  manager: "not-checked",
+  transport: "not-checked",
+  mcp_readiness: "unverified",
+  client: "unverified",
+};
 
 it("reports the missing installed host without showing action buttons", async () => {
   mockApi({ ...shell, "/api/mcp/lifecycle": { planning_available: false } });
@@ -67,15 +75,7 @@ it("leaves the optional browser command behind an explicit disclosure and descri
   mockApi({
     ...shell,
     "/api/mcp/lifecycle": { planning_available: true },
-    "/api/mcp/lifecycle/fixture": {
-      host: "observed",
-      worker: "unobserved",
-      manager: "not-checked",
-      transport: "not-checked",
-      mcp_readiness: "unverified",
-      client: "unverified",
-      actions: ["install"],
-    },
+    "/api/mcp/lifecycle/fixture": { ...unobservedStatus, actions: ["install"] },
     "/api/mcp/lifecycle/fixture/prepare": {
       id,
       action: "install",
@@ -96,6 +96,37 @@ it("leaves the optional browser command behind an explicit disclosure and descri
   await user.click(disclosure);
   expect(disclosure.closest("details")).toHaveAttribute("open");
   expect(within(page).getByText(`hz system mcp review-install fixture --handoff ${handoff}`)).toBeVisible();
+});
+
+it.each([
+  { action: "install", label: "Install", session: "owning-session", desktop: false },
+  { action: "install", label: "Install", session: "owning-session", desktop: true },
+  { action: "start", label: "Start", session: "owning-session", desktop: false },
+  { action: "stop", label: "Stop", session: "terminal", desktop: false },
+])("rejects $action in $session with desktop bridge $desktop", async ({ action, label, session, desktop }) => {
+  const mcpHandoff = vi.fn(async () => true);
+  if (desktop) vi.stubGlobal("heinzelDesktop", { mcpHandoff });
+  try {
+    const { calls } = mockApi({
+      ...shell,
+      "/api/mcp/lifecycle": { planning_available: true },
+      "/api/mcp/lifecycle/fixture": { ...unobservedStatus, actions: [action] },
+      "/api/mcp/lifecycle/fixture/prepare": { id, action, registration: "fixture", session, handoff },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=mcp-connections");
+    const page = await screen.findByRole("region", { name: "MCP connections" });
+    await user.type(await within(page).findByLabelText("Registration ID"), "fixture");
+    await user.click(within(page).getByRole("button", { name: "Read status" }));
+    await user.click(await within(page).findByRole("button", { name: `Prepare ${label}` }));
+    expect(await within(page).findByRole("alert")).toHaveTextContent("The MCP plan is unavailable or has changed.");
+    expect(within(page).queryByText("Show command for local review")).not.toBeInTheDocument();
+    expect(within(page).queryByRole("button", { name: "Open terminal handoff" })).not.toBeInTheDocument();
+    expect(mcpHandoff).not.toHaveBeenCalled();
+    expect(calls.filter((request) => request.method === "POST" && request.url.includes("/api/mcp/"))).toHaveLength(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 it.each([false, true])("keeps every client connection unverified with host availability %s", async (planning) => {
@@ -168,7 +199,13 @@ it.each(["availability", "status"])("automatic %s refresh revokes a prepared act
   mockApi({
     "/api/mcp/lifecycle": () => availability,
     "/api/mcp/lifecycle/fixture": observation,
-    "/api/mcp/lifecycle/fixture/prepare": { id, action: "stop", registration: "fixture", session: "terminal", handoff },
+    "/api/mcp/lifecycle/fixture/prepare": {
+      id,
+      action: "stop",
+      registration: "fixture",
+      session: "owning-session",
+      handoff,
+    },
   });
   render(
     <Providers client={client}>

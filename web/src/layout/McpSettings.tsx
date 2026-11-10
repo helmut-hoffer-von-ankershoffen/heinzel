@@ -156,17 +156,24 @@ function PlanActions({ registration, actions }: { registration: string; actions:
 
 function LocalReview({ plan }: { plan: SchemaMcpHandoffPlan }) {
   const [outcome, setOutcome] = useState<"copying" | "copied" | "error" | null>(null);
+  const { action, session } = plan;
+  const owning = session === "owning-session";
+  // Match the session and action combinations accepted by the desktop handoff.
+  const supported = owning
+    ? action === "check" || action === "stop"
+    : session === "terminal" && (action === "start" || action === "check" || action === "install");
+  if (!supported) return <p role="alert">{t("mcpSettings.planError")}</p>;
+
   const desktop = (window as Window & { heinzelDesktop?: { mcpHandoff?: (id: string) => Promise<boolean> } })
     .heinzelDesktop;
-  const owning = plan.session === "owning-session";
-  const operation = plan.action === "install" ? "review-install" : plan.action;
+  const operation = action === "install" ? "review-install" : action;
   const command = owning
-    ? `${plan.action} --handoff ${plan.handoff}`
+    ? `${action} --handoff ${plan.handoff}`
     : `hz system mcp ${operation} ${plan.registration} --handoff ${plan.handoff}`;
   return (
     <div className="space-y-2">
       <p>{t(owning ? "mcpSettings.owningReview" : "mcpSettings.localReview")}</p>
-      {plan.action === "install" && <p>{t("mcpSettings.installReviewOnly")}</p>}
+      {action === "install" && <p>{t("mcpSettings.installReviewOnly")}</p>}
       {desktop?.mcpHandoff ? (
         <Button
           size="sm"
