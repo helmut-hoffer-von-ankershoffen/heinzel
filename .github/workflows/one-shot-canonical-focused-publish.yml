@@ -1,0 +1,97 @@
+# Temporary publisher for the first canonical CI PR. Never runs test workloads.
+name: Canonical focused CI cutover publisher
+on:
+  push:
+    branches: [bootstrap/one-shot-canonical-focused-publish]
+permissions: {}
+concurrency:
+  group: one-shot-canonical-focused-publish
+  cancel-in-progress: false
+env:
+  APPROVED_HELPER: ${{ vars.ONE_SHOT_CANONICAL_PUBLISHER_SHA }}
+  PR_NUMBER: "694"
+  PR_HEAD_SHA: 12b555217681fd3837509dea0ebf3b2c986e22c3
+  EXPECTED_BASE: 647820c605f7f606f3c6166e725fd4be32fb7ace
+  EXPECTED_TREE: 97a4d13cefb520ef3cb7479528b294e1cfcd3200
+  CI_RUN_ID: "42804797993"
+jobs:
+  judge:
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.run_attempt == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
+    outputs:
+      verdict: ${{ steps.focused.outputs.verdict }}
+      source: ${{ steps.source.outputs.source }}
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Require exact independently approved helper
+        run: test -n "$APPROVED_HELPER" && test "$APPROVED_HELPER" = "$GITHUB_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: helper
+          persist-credentials: false
+      - id: source
+        name: Bind the actual PR, run and ordinary merge tree
+        run: python3 -I helper/research/canonical-cutover/publish.py check
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 12b555217681fd3837509dea0ebf3b2c986e22c3
+          path: reviewed
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 647820c605f7f606f3c6166e725fd4be32fb7ace
+          path: protected-base
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
+          save-cache: false
+      - id: focused
+        name: Verify the actual native CI attempt and typed focused evidence
+        working-directory: reviewed
+        env:
+          FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
+          FOCUSED_CI_STORAGE_HOSTS: ${{ vars.FOCUSED_CI_STORAGE_HOSTS }}
+          PYTHONPATH: .
+          UV_PYTHON: "3.14.8"
+        run: |
+          test "$(git rev-parse HEAD)" = "$PR_HEAD_SHA"
+          uv run --no-build --frozen --script scripts/focused_gate.py
+      - name: Genuine exact PR and protected main Sonar ratings
+        working-directory: protected-base
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_BASE"
+          uv run --no-build --frozen --script scripts/merge_gate.py sonar
+  publish:
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.run_attempt == '1'
+    needs: judge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      checks: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      APPROVED_SOURCE: ${{ needs.judge.outputs.source }}
+      COVERAGE_VERDICT: ${{ needs.judge.outputs.verdict }}
+    steps:
+      - name: Require exact independently approved helper
+        run: test -n "$APPROVED_HELPER" && test "$APPROVED_HELPER" = "$GITHUB_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Report the genuine Sonar and typed coverage contexts
+        run: python3 -I research/canonical-cutover/publish.py publish
