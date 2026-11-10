@@ -169,7 +169,7 @@ def test_each_reviewed_target_has_one_mcp_and_cli_identity(scoped_tools, monkeyp
         assert {item.name for item in listed.tools} == names
         assert not response.is_error
         retained = cast("types.TextContent", response.content[0]).text
-        cli = ["hz", "system", "mcp", "tools", "invoke", target.tool_name, "--request-id", request_id]
+        cli = ["hz", "system", "mcp", "tools", "invoke", target.key, "--request-id", request_id]
         if target.kind == "personal":
             cli += ["--message-stdin"]
             monkeypatch.setattr(sys, "stdin", StringIO("Fictional request"))
@@ -179,6 +179,31 @@ def test_each_reviewed_target_has_one_mcp_and_cli_identity(scoped_tools, monkeyp
         assert finished.value.code == 0
         assert capsys.readouterr().out == retained
     assert [call[0] for call in provider.calls] == [target.key for target in targets]
+
+
+def test_cli_lists_only_reviewed_targets_with_usable_keys(scoped_tools, monkeypatch, capsys):
+    tools, _provider, _broker = scoped_tools
+    monkeypatch.setattr(sys, "argv", ["hz", "system", "mcp", "tools", "list"])
+    with pytest.raises(SystemExit) as finished:
+        cli_main(private_heinzel_tools=tools())
+    assert finished.value.code == 0
+    items = json.loads(capsys.readouterr().out)
+    assert {item["key"]: item["name"] for item in items} == {
+        _PERSONAL.key: _PERSONAL.tool_name,
+        _CONTRACT.key: _CONTRACT.tool_name,
+    }
+
+
+def test_cli_target_key_never_grants_an_unreviewed_or_stale_target(scoped_tools, monkeypatch, capsys):
+    tools, provider, _broker = scoped_tools
+    provider.stale.add(_CONTRACT.key)
+    for key in (_CONTRACT.key, "contract:me:unreviewed"):
+        monkeypatch.setattr(sys, "argv", ["hz", "system", "mcp", "tools", "invoke", key, "--request-id", "x"])
+        with pytest.raises(SystemExit) as finished:
+            cli_main(private_heinzel_tools=tools())
+        assert finished.value.code == 1
+        assert "unavailable" in capsys.readouterr().err
+    assert not provider.calls
 
 
 def test_private_discovery_and_dispatch_refuse_stale_target_and_revoked_lease(scoped_tools):
