@@ -5,11 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from scripts import focused_coverage as coverage
-from scripts.ci_workload import FocusedPlan
-from scripts.focused_plan import Scope
-from scripts.release_candidate import CandidateError
-
 pytestmark = pytest.mark.unit
 PRODUCTION = "src/heinzel/new.py"
 ALREADY_USED = "src/heinzel/existing.py"
@@ -26,7 +21,18 @@ def _row(lines, missing, branches=(), missing_branches=()):
 
 
 @pytest.fixture
-def scope(monkeypatch):
+def coverage(monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2]))
+    from scripts import focused_coverage
+
+    return focused_coverage
+
+
+@pytest.fixture
+def scope(coverage, monkeypatch):
+    from scripts.ci_workload import FocusedPlan
+    from scripts.focused_plan import Scope
+
     source = {
         "a": b"def choose(flag):\n    if flag:\n        return 1\n    return 0\n",
         "b": b"answer = 42\n",
@@ -36,7 +42,7 @@ def scope(monkeypatch):
     return Scope(workload, "d", "e", {}, {PRODUCTION: "a", ALREADY_USED: "b"}, "c", {}, {"python": ()}, {}, "d")
 
 
-def test_never_imported_new_source_retains_every_statement_and_branch(scope):
+def test_never_imported_new_source_retains_every_statement_and_branch(coverage, scope):
     measured = {
         PRODUCTION: _row([], [1, 2, 3, 4], missing_branches=[[2, 3], [2, 4]]),
         ALREADY_USED: _row([1], []),
@@ -47,25 +53,25 @@ def test_never_imported_new_source_retains_every_statement_and_branch(scope):
     counts = coverage.coverage_counts(scope, CONFIG, report, enforce=False)
     assert counts["files"][PRODUCTION] == {"statements": (0, 4), "branches": (0, 2)}
     assert (counts["covered"], counts["total"]) == (1, 7)
-    with pytest.raises(CandidateError, match="80% floor"):
+    with pytest.raises(ValueError, match="80% floor"):
         coverage.coverage_counts(scope, CONFIG, report)
 
 
-def test_missing_branch_opportunities_and_missing_files_cannot_pass(scope):
+def test_missing_branch_opportunities_and_missing_files_cannot_pass(coverage, scope):
     incomplete = {
         PRODUCTION: _row([1, 2, 3, 4], [], branches=[[2, 3]]),
         ALREADY_USED: _row([1], []),
     }
     report = {"meta": {"branch_coverage": True, "version": coverage.COVERAGE_VERSION}, "files": incomplete}
-    with pytest.raises(CandidateError, match="incomplete or overlapping branches"):
+    with pytest.raises(ValueError, match="incomplete or overlapping branches"):
         coverage.coverage_counts(scope, CONFIG, coverage.canonical(report))
     del incomplete[PRODUCTION]
-    with pytest.raises(CandidateError, match="incomplete branch scope"):
+    with pytest.raises(ValueError, match="incomplete branch scope"):
         coverage.coverage_counts(scope, CONFIG, coverage.canonical(report))
 
 
 @pytest.mark.parametrize(("covered", "passes"), [(8, False), (8999, False), (9000, True)])
-def test_coverage_uses_unrounded_aggregate_and_retains_90_percent(scope, monkeypatch, covered, passes):
+def test_coverage_uses_unrounded_aggregate_and_retains_90_percent(coverage, scope, monkeypatch, covered, passes):
     all_lines = list(range(1, 10001))
     rows = {PRODUCTION: _row([], all_lines), ALREADY_USED: _row([], [])}
     monkeypatch.setattr(coverage, "source_opportunities", lambda *_args: rows)
@@ -75,11 +81,11 @@ def test_coverage_uses_unrounded_aggregate_and_retains_90_percent(scope, monkeyp
         assert coverage.coverage_counts(scope, CONFIG, data)["covered"] == covered
     else:
         threshold = "80% floor" if covered == 8 else "90% report threshold"
-        with pytest.raises(CandidateError, match=threshold):
+        with pytest.raises(ValueError, match=threshold):
             coverage.coverage_counts(scope, CONFIG, data)
 
 
-def test_producer_reports_unimported_module_from_real_branch_data(scope, monkeypatch, tmp_path):
+def test_producer_reports_unimported_module_from_real_branch_data(coverage, scope, monkeypatch, tmp_path):
     import subprocess
     import sys
 
@@ -117,7 +123,7 @@ def test_producer_reports_unimported_module_from_real_branch_data(scope, monkeyp
     assert rows[ALREADY_USED]["executed_lines"] == [1]
 
 
-def test_managed_runner_compiles_but_executes_only_the_selected_test(tmp_path):
+def test_managed_runner_compiles_but_executes_only_the_selected_test(coverage, tmp_path):
     commands = coverage._managed_commands(("desktop/managed/test/backend.test.ts",), tmp_path)
     assert commands[0] == ["make", "managed-backend-setup"]
     assert commands[1][-4:] == ["exec", "tsc", "--project", "."]

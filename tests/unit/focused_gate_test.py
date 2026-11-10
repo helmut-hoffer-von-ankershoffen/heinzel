@@ -3,13 +3,19 @@
 import hashlib
 import io
 import zipfile
+from pathlib import Path
 
 import pytest
 
-from scripts import focused_gate
-from scripts.release_candidate import CandidateError
-
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture
+def focused_gate(monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2]))
+    from scripts import focused_gate
+
+    return focused_gate
 
 
 def _archive(*names):
@@ -23,7 +29,7 @@ def _archive(*names):
 @pytest.mark.parametrize(
     "defect", ["none", "wrong-id", "wrong-hash", "expired", "skipped", "wrong-name", "extra-entry"]
 )
-def test_focused_artifact_is_bound_to_its_successful_upload_and_digest(defect):
+def test_focused_artifact_is_bound_to_its_successful_upload_and_digest(focused_gate, defect):
     run, job_id, artifact_id = 123, 456, 789
     name = f"focused-pr-evidence-python-{run}-1"
     steps = [{"name": focused_gate.UPLOAD_NAME, "number": 6, "status": "completed", "conclusion": "success"}]
@@ -58,11 +64,11 @@ def test_focused_artifact_is_bound_to_its_successful_upload_and_digest(defect):
     if defect == "none":
         assert set(focused_gate._artifact(read, job, artifact, name)) == set(entries)
     else:
-        with pytest.raises(CandidateError, match=r".+"):
+        with pytest.raises(focused_gate.CandidateError, match=r".+"):
             focused_gate._artifact(read, job, artifact, name)
 
 
-def test_candidate_composite_still_binds_original_attempt_without_allowing_a_focused_rerun(monkeypatch):
+def test_candidate_composite_still_binds_original_attempt_without_allowing_a_focused_rerun(focused_gate, monkeypatch):
     from scripts import merge_gate
     from scripts.release_candidate import REPOSITORY, WORKFLOW
 
@@ -90,19 +96,18 @@ def test_candidate_composite_still_binds_original_attempt_without_allowing_a_foc
 
     monkeypatch.setattr(merge_gate.Gate, "github", github)
     gate = merge_gate.Gate(REPOSITORY, head=head)
-    with pytest.raises(CandidateError, match="successful original attempt"):
+    with pytest.raises(focused_gate.CandidateError, match="successful original attempt"):
         focused_gate._authenticated_run(gate, 123)
     assert focused_gate._authenticated_run(gate, 123, candidate_composite=True) == live
     original["head_sha"] = "b" * 40
-    with pytest.raises(CandidateError, match="canonical CI workflow"):
+    with pytest.raises(focused_gate.CandidateError, match="canonical CI workflow"):
         focused_gate._authenticated_run(gate, 123, candidate_composite=True)
 
 
 @pytest.fixture
-def first_attempt(monkeypatch):
+def first_attempt(focused_gate, monkeypatch):
     """A complete successful PR attempt with independent Git and GitHub observations."""
     import json
-    from pathlib import Path
 
     from scripts import focused_coverage, focused_plan, merge_gate
     from scripts.ci_workload import WorkloadSource
@@ -250,7 +255,9 @@ def first_attempt(monkeypatch):
         ("changed-head", "PR or protected base changed"),
     ],
 )
-def test_protected_reader_verifies_complete_attempt_and_rechecks_live_source(first_attempt, monkeypatch, defect, error):
+def test_protected_reader_verifies_complete_attempt_and_rechecks_live_source(
+    focused_gate, first_attempt, monkeypatch, defect, error
+):
     gate, run, manifest, lane, rows, logs = first_attempt
     jobs_path = f"actions/runs/{run}/attempts/1/jobs?per_page=100&page=1"
     artifacts_path = f"actions/runs/{run}/artifacts?per_page=100"
@@ -281,5 +288,5 @@ def test_protected_reader_verifies_complete_attempt_and_rechecks_live_source(fir
             "Python coverage: not applicable to the reviewed scope"
         )
     else:
-        with pytest.raises(CandidateError, match=error):
+        with pytest.raises(focused_gate.CandidateError, match=error):
             focused_gate.verify(gate, run, manifest, logs.__getitem__)
