@@ -114,7 +114,9 @@ export function DaemonSettings() {
         }}
       </Loaded>
       {change.isPending && change.variables === "restart" && <p role="status">{t("daemon.restarting")}</p>}
-      {change.isSuccess && change.variables === "restart" && <p role="status">{t("daemon.restarted")}</p>}
+      {change.isSuccess && change.variables === "restart" && "restarted" in change.data && (
+        <p role="status">{t(change.data.restarted ? "daemon.restarted" : "daemon.notRestarted")}</p>
+      )}
       {change.error && (
         <p role="alert" className="text-bad">
           {change.variables === "restart" ? t("daemon.restartFailed") : change.error.message}

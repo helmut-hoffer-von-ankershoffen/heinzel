@@ -24,7 +24,7 @@ const running: SchemaDaemonStatus = {
   last_tick: null,
 };
 
-function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false, restartFails = false) {
+function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false, restartFails = false, restarted = true) {
   let status = { ...running, ...initial };
   const { calls } = mockApi({
     "/api/system/daemon/status": () => status,
@@ -54,8 +54,8 @@ function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false, restart
     },
     "/api/system/daemon/restart": () => {
       if (restartFails) return { status: 400, body: { error: "previous handover cannot be verified" } };
-      status = { ...status, loaded: true, installed_version: "2.0.0", version_mismatch: false };
-      return { restarted: true, version: "2.0.0", interval_minutes: 5 };
+      if (restarted) status = { ...status, loaded: true, installed_version: "2.0.0", version_mismatch: false };
+      return { restarted, version: "2.0.0", interval_minutes: restarted ? 5 : null };
     },
   });
   const view = render(
@@ -238,7 +238,7 @@ describe("Daemon Settings", () => {
     await user.click(screen.getByRole("button", { name: "Restart" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(await screen.findByText("2.0.0")).toBeInTheDocument();
-    expect(screen.getByText("The daemon restarted.")).toBeInTheDocument();
+    expect(screen.getByText("Restart requested. The next service tick will confirm the version.")).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });
 
@@ -251,7 +251,23 @@ describe("Daemon Settings", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Restart" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(await screen.findByText("The daemon restarted.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Restart requested. The next service tick will confirm the version."),
+    ).toBeInTheDocument();
+  });
+
+  it("does not claim a restart when the daemon is no longer installed", async () => {
+    const { user } = show(
+      { version: "1.0.0", installed_version: "2.0.0", version_mismatch: true },
+      false,
+      false,
+      false,
+    );
+    await user.click(await screen.findByRole("button", { name: "Restart" }));
+    expect(await screen.findByText("The daemon was not restarted. Install it and try again.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Restart requested. The next service tick will confirm the version."),
+    ).not.toBeInTheDocument();
   });
 
   it("says in plain words that a restart did not work, without the technical reason", async () => {
