@@ -20,6 +20,7 @@ REPO = "helmut-hoffer-von-ankershoffen/heinzel"
 HEAD = "9f26091bbf84ef7141fea0b0454008a6344b84d9"
 BASE = "de5ebbb5b471a477c2c875e4e1effc501d021642"
 TREE = "d7aca1ead0f18deab1c836d2cc0aaf124cc473c6"
+PR_NUMBER = 650
 RUN = 42784687184
 RUN_SHA = "acdc3aa5320091e7273f0f2791e999fc3e188fd6"
 RECOVERY_RUN_ID = 42787744206
@@ -28,6 +29,11 @@ REPOSITORY_ID = 1431672693
 PUBLISHER = "Focused 650 protected publisher"
 RULESET_ID = 25762292
 ACTIONS_BOT_ID = 41898282
+UNSTABLE_SUITES = {
+    115870420608: (42784538911, ".github/workflows/ci.yml"),
+    115870420632: (42784538910, ".github/workflows/claude-review.yml"),
+    115870420654: (42784538923, ".github/workflows/codeql.yml"),
+}
 CONTEXTS = {"CI OK": None, "merge-gate": 15368, "coverage-floor": 15368}
 JOBS = {
     *(f"Focused 650 {suite} ({os})" for suite in ("python", "browser") for os in ("ubuntu-24.04", "macos-latest")),
@@ -96,6 +102,74 @@ def validate() -> None:
         msg_0 = "test merge changed"
         raise ValueError(msg_0)
     validate_evidence()
+    if pull["mergeable_state"] == "unstable":
+        validate_unstable()
+
+
+def exact_pull_association(item: dict[str, Any]) -> bool:
+    """Match the observed PR, source head and base association."""
+    return any(
+        pr.get("number") == PR_NUMBER
+        and (pr.get("head") or {}).get("sha") == HEAD
+        and (pr.get("base") or {}).get("sha") == BASE
+        for pr in item.get("pull_requests", [])
+    )
+
+
+def validate_unstable() -> None:
+    """Allow only the observed PR-associated action-required suites with no jobs.
+
+    Raises:
+        ValueError: A suite or its run differs from the observed condition.
+    """
+    pages = api(f"commits/{HEAD}/check-suites?per_page=100")
+    suites = [suite for page in pages for suite in page["check_suites"]]
+    if not pages or not all(page["total_count"] == len(suites) for page in pages):
+        msg = "incomplete check suite inventory"
+        raise ValueError(msg)
+    relevant = [
+        s
+        for s in suites
+        if any(pr.get("number") == PR_NUMBER for pr in s.get("pull_requests", []))
+        and (s.get("status") != "completed" or s.get("conclusion") != "success")
+    ]
+    if len(relevant) != len(UNSTABLE_SUITES) or {s["id"] for s in relevant} != set(UNSTABLE_SUITES):
+        msg = "unexpected PR-associated abnormal suite"
+        raise ValueError(msg)
+    for suite in relevant:
+        run_id, workflow = UNSTABLE_SUITES[suite["id"]]
+        if not (
+            suite.get("head_sha") == HEAD
+            and suite.get("status") == "completed"
+            and suite.get("conclusion") == "action_required"
+            and (suite.get("app") or {}).get("slug") == "github-actions"
+            and suite.get("latest_check_runs_count") == 0
+            and exact_pull_association(suite)
+        ):
+            msg = "unexpected action-required suite identity"
+            raise ValueError(msg)
+        run = one(f"actions/runs/{run_id}")
+        if not (
+            run.get("id") == run_id
+            and run.get("check_suite_id") == suite["id"]
+            and run.get("head_sha") == HEAD
+            and run.get("event") == "pull_request"
+            and run.get("path") == workflow
+            and run.get("run_attempt") == 1
+            and run.get("status") == "completed"
+            and run.get("conclusion") == "action_required"
+            and (run.get("repository") or {}).get("id") == REPOSITORY_ID
+            and (run.get("head_repository") or {}).get("id") == REPOSITORY_ID
+            and exact_pull_association(run)
+            and (run.get("actor") or {}).get("id") == ACTIONS_BOT_ID
+            and (run.get("triggering_actor") or {}).get("id") == ACTIONS_BOT_ID
+        ):
+            msg = "unexpected action-required run identity"
+            raise ValueError(msg)
+        jobs = api(f"actions/runs/{run_id}/attempts/1/jobs?per_page=100")
+        if not jobs or any(page.get("total_count") != 0 or page.get("jobs") != [] for page in jobs):
+            msg = "action-required run acquired jobs"
+            raise ValueError(msg)
 
 
 def validate_evidence() -> None:
@@ -252,6 +326,15 @@ def one_merge() -> dict[str, Any]:
 if __name__ == "__main__":
     try:
         main()
-    except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
+    except subprocess.CalledProcessError as exc:
+        detail = str(exc.stderr or "")
+        for key in ("GH_TOKEN", "GITHUB_TOKEN"):
+            token = os.environ.get(key, "")
+            if token:
+                detail = detail.replace(token, "[redacted]")
+        detail = detail[:2000] or f"exit code {exc.returncode}"
+        print(f"Refused: GitHub command failed: {detail}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except (OSError, ValueError, KeyError) as exc:
         print(f"Refused: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

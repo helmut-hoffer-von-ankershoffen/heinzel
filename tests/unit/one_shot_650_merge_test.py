@@ -191,7 +191,9 @@ def test_validate_reads_test_merge_ref_without_pr_merge_sha(monkeypatch):
     mod.validate()
     assert validated == [42787744206]
     objects["pulls/650"]["mergeable_state"] = "unstable"
+    monkeypatch.setattr(mod, "validate_unstable", lambda: validated.append("unstable"))
     mod.validate()
+    assert validated[-1] == "unstable"
     objects["pulls/650"]["mergeable_state"] = "blocked"
     with pytest.raises(ValueError, match="pull request"):
         mod.validate()
@@ -199,3 +201,79 @@ def test_validate_reads_test_merge_ref_without_pr_merge_sha(monkeypatch):
     objects["git/commits/merge-oid"]["parents"].reverse()
     with pytest.raises(ValueError, match="test merge changed"):
         mod.validate()
+
+
+@pytest.fixture
+def unstable(monkeypatch):
+    suites = [
+        {
+            "id": suite,
+            "head_sha": mod.HEAD,
+            "status": "completed",
+            "conclusion": "action_required",
+            "app": {"slug": "github-actions"},
+            "latest_check_runs_count": 0,
+            "pull_requests": [{"number": 650, "head": {"sha": mod.HEAD}, "base": {"sha": mod.BASE}}],
+        }
+        for suite in mod.UNSTABLE_SUITES
+    ]
+    runs = {
+        run: {
+            "id": run,
+            "check_suite_id": suite,
+            "head_sha": mod.HEAD,
+            "event": "pull_request",
+            "path": path,
+            "run_attempt": 1,
+            "status": "completed",
+            "conclusion": "action_required",
+            "repository": {"id": mod.REPOSITORY_ID},
+            "head_repository": {"id": mod.REPOSITORY_ID},
+            "actor": {"id": mod.ACTIONS_BOT_ID},
+            "triggering_actor": {"id": mod.ACTIONS_BOT_ID},
+            "pull_requests": [{"number": 650, "head": {"sha": mod.HEAD}, "base": {"sha": mod.BASE}}],
+        }
+        for suite, (run, path) in mod.UNSTABLE_SUITES.items()
+    }
+    jobs = {run: [] for run in runs}
+
+    def api(path):
+        if path.startswith("commits/"):
+            return [{"total_count": len(suites), "check_suites": suites}]
+        for run, run_value in runs.items():
+            if path == f"actions/runs/{run}":
+                return [run_value]
+            if path == f"actions/runs/{run}/attempts/1/jobs?per_page=100":
+                return [{"total_count": len(jobs[run]), "jobs": jobs[run]}]
+        pytest.fail(f"unexpected API path {path}")
+
+    monkeypatch.setattr(mod, "api", api)
+    return suites, runs, jobs
+
+
+def test_accepts_exact_zero_job_unstable_suites(unstable):
+    mod.validate_unstable()
+
+
+@pytest.mark.parametrize("mutation", ["extra_suite", "suite_verdict", "run_head", "run_attempt", "job_acquired"])
+def test_refuses_changed_unstable_suites(unstable, mutation):
+    suites, runs, jobs = unstable
+    run = next(iter(runs))
+    if mutation == "extra_suite":
+        suites.append(
+            {
+                "id": 999,
+                "pull_requests": [{"number": 650, "head": {"sha": mod.HEAD}, "base": {"sha": mod.BASE}}],
+                "status": "queued",
+            }
+        )
+    elif mutation == "suite_verdict":
+        suites[0]["conclusion"] = "failure"
+    elif mutation == "run_head":
+        runs[run]["head_sha"] = "0" * 40
+    elif mutation == "run_attempt":
+        runs[run]["run_attempt"] = 2
+    else:
+        jobs[run].append({"id": 1})
+    with pytest.raises(ValueError, match=r"suite|run"):
+        mod.validate_unstable()
