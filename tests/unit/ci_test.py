@@ -88,6 +88,11 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "for check in merge-gate coverage-floor": "reports the gates as check runs on the pull request's head",
         "for check in MERGE_GATE COVERAGE_FLOOR": "completes both check runs, failing closed",
     },
+    "checks-status-recovery.yml": {
+        "python3 -I scripts/recover_pr692_statuses.py ../protected-main": (
+            "runs the one-shot GitHub status publisher with an independently pinned protected-main checkout"
+        ),
+    },
     "focused-job.yml": {
         '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
         "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",

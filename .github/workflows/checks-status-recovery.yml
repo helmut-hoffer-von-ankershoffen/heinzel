@@ -1,0 +1,44 @@
+name: PR 692 status recovery
+
+on:
+  push:
+    branches: [repair/checks-status-recovery]
+
+permissions: {}
+
+concurrency:
+  group: pr-692-status-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: >-
+      github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+      && github.actor == github.repository_owner
+      && github.sha == vars.CORE_692_STATUS_RECOVERY_SHA
+      && github.workflow_sha == github.sha
+      && github.run_attempt == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: recovery
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 432006f27ce2df73a80f2f69a4e162378df2c862
+          path: protected-main
+          persist-credentials: false
+      - name: Recheck the reviewed source and publish the two gate statuses
+        working-directory: recovery
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RECOVERY_SHA: ${{ vars.CORE_692_STATUS_RECOVERY_SHA }}
+        run: python3 -I scripts/recover_pr692_statuses.py ../protected-main
