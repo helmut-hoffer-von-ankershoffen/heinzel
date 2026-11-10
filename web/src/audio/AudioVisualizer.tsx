@@ -135,6 +135,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
    */
   const start = useCallback(async (kind: "mic" | "tab") => {
     const revision = ++generation.current;
+    const replacing = current.current !== null;
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
@@ -163,8 +164,9 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         // Offered but not supported here: stop offering it and listen with the microphone instead, in one line.
         markUnshared();
         setSharing(false);
-        setNotice(FELL_BACK);
-        if (!current.current) void start("mic");
+        const fallback = !current.current && !replacing;
+        setNotice(fallback ? FELL_BACK : "Shared audio is not offered by this browser.");
+        if (fallback) void start("mic");
         return;
       }
       setProblem(captureProblem(error));

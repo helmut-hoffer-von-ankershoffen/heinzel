@@ -285,6 +285,7 @@ describe("AudioVisualizer", () => {
 
   it("keeps a replacement request alive when the old source ends", async () => {
     const track = new EventTarget();
+    const addListener = vi.spyOn(track, "addEventListener");
     Object.assign(track, { readyState: "live" });
     vi.mocked(captureMicrophone).mockResolvedValueOnce({
       ...listening,
@@ -296,14 +297,36 @@ describe("AudioVisualizer", () => {
     open();
     fireEvent.click(source("Microphone"));
     await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    const staleEnded = addListener.mock.calls.find(([event]) => event === "ended")?.[1] as EventListener;
     fireEvent.click(source("Shared audio"));
     const replacementSignal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
     act(() => track.dispatchEvent(new Event("ended")));
     expect(replacementSignal?.aborted).toBe(false);
     await act(async () => grant(captured));
     expect(source("Shared audio")).toHaveAttribute("aria-checked", "true");
-    act(() => track.dispatchEvent(new Event("ended")));
+    act(() => staleEnded(new Event("ended")));
     expect(stop).not.toHaveBeenCalled();
+  });
+
+  it("does not restart an ended microphone when replacement sharing is unsupported", async () => {
+    const track = new EventTarget();
+    Object.assign(track, { readyState: "live" });
+    vi.mocked(captureMicrophone).mockResolvedValueOnce({
+      ...listening,
+      stream: { getTracks: () => [track], getAudioTracks: () => [track] },
+    } as unknown as typeof listening);
+    let reject: (error: Error) => void = () => undefined;
+    vi.mocked(captureAudio).mockImplementationOnce(() => new Promise((_, fail) => (reject = fail)));
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(source("Microphone"));
+    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    fireEvent.click(source("Shared audio"));
+    act(() => track.dispatchEvent(new Event("ended")));
+    await act(async () => reject(new DOMException("Not supported", "NotSupportedError")));
+    expect(captureMicrophone).toHaveBeenCalledOnce();
+    expect(source("Off")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText("Shared audio is not offered by this browser.")).toBeVisible();
   });
 
   it("stops the microphone with Off, remembers Off, and never restarts it by itself", async () => {
