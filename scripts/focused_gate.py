@@ -61,6 +61,7 @@ STATIC_JOBS = {
     "CI OK",
 }
 PR_JOBS = {"Conventional commits", "Dependency review"}
+API_CHECKS = {"merge-gate", "coverage-floor"}
 UPLOAD = re.compile(
     r"(?:[0-9T:.Z-]+ )?Artifact (focused-pr-evidence-[a-z0-9-]+|coverage-total) has been successfully uploaded! "
     r"Final size is ([1-9][0-9]{0,9}) bytes\. Artifact ID is ([1-9][0-9]{0,19})"
@@ -182,26 +183,44 @@ def _pr_source(gate: Gate, run: dict[str, Any], snapshot: tuple[dict[str, Any], 
     return GateSource(run, WorkloadSource(event, REPOSITORY, ref, payload, base, head, raw_diff(base, merge)), merge)
 
 
+def _is_published_check(job: dict[str, Any], run_id: int) -> bool:
+    # GitHub can list API-created checks on the PR head alongside Actions jobs.
+    # Match their exact runner-less shape, as the release evidence reader does.
+    url = job.get("html_url")
+    return (
+        _positive(job.get("id"))
+        and job.get("name") in API_CHECKS
+        and job.get("runner_id") is None
+        and job.get("runner_name") is None
+        and job.get("steps") == []
+        and job.get("labels") == []
+        and job.get("run_id") == run_id
+        and url == f"https://github.com/{REPOSITORY}/runs/{job['id']}"
+        and f"/actions/runs/{run_id}/job/" not in str(job.get("check_run_url", "")) + str(url)
+    )
+
+
 def jobs_for(gate: Gate, source: GateSource) -> list[dict[str, Any]]:
     """Bind each job to the original attempt, exact source and genuine Actions suite."""
     run = source.run
     suite = gate.github(f"check-suites/{run['check_suite_id']}")
+    # A pending API check can change the suite's aggregate. The original Actions
+    # attempt and its individual workload checks supply execution conclusions.
     require(
         suite["id"] == run["check_suite_id"]
         and suite["app"]["id"] == ACTIONS_APP_ID
-        and suite["head_sha"] == source.source.head
-        and suite["status"] == "completed"
-        and suite["conclusion"] == "success",
+        and suite["head_sha"] == source.source.head,
         "unexpected GitHub Actions check suite",
     )
-    jobs = job_inventory(gate.github, run["id"])
+    raw_jobs = job_inventory(gate.github, run["id"])
+    jobs = [job for job in raw_jobs if not _is_published_check(job, run["id"])]
     for job in jobs:
         require(
             _positive(job["id"])
-            and job["run_id"] == run["id"]
-            and job["run_attempt"] == 1
-            and job["head_sha"] == source.source.head
-            and job["status"] == "completed",
+            and job.get("run_id") == run["id"]
+            and job.get("run_attempt") == 1
+            and job.get("head_sha") == source.source.head
+            and job.get("status") == "completed",
             "job identity or attempt mismatch",
         )
     return jobs

@@ -243,10 +243,35 @@ def first_attempt(focused_gate, monkeypatch):
     return merge_gate.Gate(REPOSITORY, pr=str(number), head=head), run_id, manifest, lane, rows, logs
 
 
+def _appended_checks(repo, run, lane, defect):
+    rows = [
+        {
+            "id": check_id,
+            "name": name,
+            "run_id": run,
+            "html_url": f"https://github.com/{repo}/runs/{check_id}",
+            "runner_id": None,
+            "runner_name": None,
+            "steps": [],
+            "labels": [],
+            "status": "in_progress",
+        }
+        for check_id, name in ((801, "merge-gate"), (802, "coverage-floor"))
+    ]
+    if defect == "lookalike-real-job":
+        rows[1] = lane | {"id": 802, "name": "coverage-floor"}
+    elif defect == "duplicate-api-row":
+        rows.append(rows[1])
+    return rows
+
+
 @pytest.mark.parametrize(
     ("defect", "error"),
     [
         ("none", ""),
+        ("pending-api-checks", ""),
+        ("lookalike-real-job", "workload job inventory"),
+        ("duplicate-api-row", "duplicate candidate job IDs"),
         ("wrong-job-attempt", "job identity or attempt"),
         ("wrong-job-app", "authentic successful execution"),
         ("missing-lane", "workload job inventory"),
@@ -261,7 +286,12 @@ def test_protected_reader_verifies_complete_attempt_and_rechecks_live_source(
     gate, run, manifest, lane, rows, logs = first_attempt
     jobs_path = f"actions/runs/{run}/attempts/1/jobs?per_page=100&page=1"
     artifacts_path = f"actions/runs/{run}/artifacts?per_page=100"
-    if defect == "wrong-job-attempt":
+    if defect in {"pending-api-checks", "lookalike-real-job", "duplicate-api-row"}:
+        suite_id = rows[f"actions/runs/{run}"]["check_suite_id"]
+        rows[f"check-suites/{suite_id}"].update(status="in_progress", conclusion=None)
+        rows[jobs_path]["jobs"].extend(_appended_checks(gate.repo, run, lane, defect))
+        rows[jobs_path]["total_count"] = len(rows[jobs_path]["jobs"])
+    elif defect == "wrong-job-attempt":
         lane["run_attempt"] = 2
     elif defect == "wrong-job-app":
         rows[f"check-runs/{lane['id']}"]["app"] = {"id": 1}
@@ -283,7 +313,7 @@ def test_protected_reader_verifies_complete_attempt_and_rechecks_live_source(
         return row
 
     monkeypatch.setattr(type(gate), "github", github)
-    if defect == "none":
+    if not error:
         assert focused_gate.verify(gate, run, manifest, logs.__getitem__) == (
             "Python coverage: not applicable to the reviewed scope"
         )
