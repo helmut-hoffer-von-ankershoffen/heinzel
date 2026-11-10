@@ -53,3 +53,46 @@ def test_publication_stays_held_after_successful_verification(monkeypatch):
         publisher.main()
     assert source_check.call_count == 2
     evidence_check.assert_called_once_with(42)
+
+
+def test_status_publisher_sets_pending_then_reads_back_each_success():
+    import json
+    from types import SimpleNamespace
+
+    states = {}
+    calls = []
+    url = f"https://github.com/{publisher.REPO}/actions/runs/42"
+    checks = [
+        {"context": context, **({"integration_id": publisher.GITHUB_ACTIONS_APP} if context != "CI OK" else {})}
+        for context in publisher.CONTEXTS
+    ]
+    rules = [[{"type": "required_status_checks", "parameters": {"required_status_checks": checks}}]]
+
+    def run(command, **_kwargs):
+        state = next(arg.removeprefix("state=") for arg in command if arg.startswith("state="))
+        context = next(arg.removeprefix("context=") for arg in command if arg.startswith("context="))
+        calls.append((context, state))
+        states[context] = {
+            "context": context,
+            "state": state,
+            "target_url": url,
+            "creator": {"login": "github-actions[bot]"},
+        }
+        return SimpleNamespace(stdout=json.dumps(states[context]).encode())
+
+    with (
+        patch.object(publisher, "api", return_value=rules),
+        patch.object(publisher, "one", side_effect=lambda _path: {"statuses": list(states.values())}),
+        patch.object(publisher.subprocess, "run", side_effect=run),
+        patch.object(publisher, "source"),
+        patch.object(publisher, "evidence"),
+    ):
+        publisher.publish_statuses(42)
+    assert calls == [
+        ("CI OK", "pending"),
+        ("merge-gate", "pending"),
+        ("coverage-floor", "pending"),
+        ("merge-gate", "success"),
+        ("coverage-floor", "success"),
+        ("CI OK", "success"),
+    ]

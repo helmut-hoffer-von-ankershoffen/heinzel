@@ -7,7 +7,7 @@ on:
 permissions: {}
 jobs:
   focused:
-    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.run_attempt == '1'
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.run_attempt == '1'
     name: Focused 650 ${{ matrix.suite }} (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -58,7 +58,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   structural:
-    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.run_attempt == '1'
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.run_attempt == '1'
     name: Focused 650 structural
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -97,7 +97,7 @@ jobs:
       - working-directory: candidate
         run: make quarantine-check
   security:
-    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.run_attempt == '1'
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.run_attempt == '1'
     name: Focused 650 security
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -125,7 +125,7 @@ jobs:
       - working-directory: candidate
         run: make secrets
   sonar:
-    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.run_attempt == '1'
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.run_attempt == '1'
     name: Focused 650 Sonar
     runs-on: ubuntu-24.04
     timeout-minutes: 35

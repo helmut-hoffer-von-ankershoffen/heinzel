@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "head": "37ea58445ac9ac73f9b698de3bd852a2821e8501",
+  "base": "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
+  "tree": "0f14c4c296ab267b89eef6eec59e28644d01d68b",
+  "reviewer": "independent-policy-review",
+  "decision": "GO",
+  "scope": "candidate source and import-selection repair; no workflow, status publisher or hosted verification"
+}

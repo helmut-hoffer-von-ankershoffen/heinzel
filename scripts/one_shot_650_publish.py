@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import subprocess
 import xml.etree.ElementTree as ET
 import zipfile
@@ -24,6 +25,10 @@ BRANCH = "bootstrap/one-shot-650"
 ROOT = Path(__file__).resolve().parents[1]
 MAX_ARCHIVE_BYTES = 2_000_000
 MAX_MEMBER_BYTES = 1_000_000
+MAX_LOG_BYTES = 10_000_000
+EXPECTED_MEMBERS = {"identity.txt", "results.xml"}
+CONTEXTS = ("merge-gate", "coverage-floor", "CI OK")
+GITHUB_ACTIONS_APP = 15368
 EXPECTED_JOBS = {
     *(
         f"Focused 650 {suite} ({os_name})"
@@ -71,6 +76,7 @@ def require(condition: bool, message: str) -> None:
 def source() -> None:
     """Recheck main, pull request and current test-merge identity."""
     require(one("git/ref/heads/main")["object"]["sha"] == BASE, "main drift")
+    require(one("git/ref/heads/fix/five-flakes")["object"]["sha"] == HEAD, "PR branch ref drift")
     pull = one("pulls/650")
     require(pull["state"] == "open" and not pull["draft"] and pull["base"]["ref"] == "main", "PR state drift")
     require(pull["head"]["sha"] == HEAD and pull["head"]["ref"] == "fix/five-flakes", "PR head drift")
@@ -92,6 +98,26 @@ def source() -> None:
     require(merge["tree"]["sha"] == TREE, "test merge tree drift")
 
 
+def source_review() -> None:
+    """Check the review receipt carried by the independently pinned bootstrap source."""
+    receipt = json.loads((ROOT / "research/focused-650/source-review.json").read_text())
+    require(
+        receipt
+        == {
+            "schema": 1,
+            "head": HEAD,
+            "base": BASE,
+            "tree": TREE,
+            "reviewer": "independent-policy-review",
+            "decision": "GO",
+            "scope": (
+                "candidate source and import-selection repair; no workflow, status publisher or hosted verification"
+            ),
+        },
+        "source review receipt mismatch",
+    )
+
+
 def evidence(run_id: int) -> None:
     """Verify the exact attempt's job inventory and bounded artifact contents."""
     run = one(f"actions/runs/{run_id}")
@@ -111,6 +137,9 @@ def evidence(run_id: int) -> None:
             len(matching) == 1 and matching[0]["status"] == "completed" and matching[0]["conclusion"] == "success",
             f"missing successful job: {name}",
         )
+        job = matching[0]
+        require(job["run_id"] == run_id and job["run_attempt"] == 1, "job run or attempt mismatch")
+        require(job["head_sha"] == os.environ["REVIEWED_HELPER_SHA"], "job source mismatch")
         if name.startswith(("Focused 650 python (", "Focused 650 browser (")):
             uploads = [step for step in matching[0]["steps"] if step["name"] == "Upload exact attempt evidence"]
             require(len(uploads) == 1 and uploads[0]["conclusion"] == "success", "missing successful artifact upload")
@@ -123,8 +152,21 @@ def evidence(run_id: int) -> None:
             found = [item for item in artifacts if item["name"] == name and not item["expired"]]
             require(len(found) == 1, f"missing or duplicate artifact: {name}")
             artifact = found[0]
+            job_name = f"Focused 650 {suite} ({os_name})"
+            job = next(item for item in jobs if item["name"] == job_name)
+            log = api(f"actions/jobs/{job['id']}/logs", binary=True)
+            require(len(log) < MAX_LOG_BYTES, "oversized upload log")
+            text = log.decode("utf-8", errors="replace")
+            pattern = (
+                rf"{re.escape(name)}.*?successfully uploaded! Final size is "
+                rf"{artifact['size_in_bytes']} bytes\. Artifact ID is {artifact['id']}\b"
+            )
+            require(re.search(pattern, text, re.DOTALL) is not None, "artifact ID and size missing from job log")
             require(
-                artifact["workflow_run"]["id"] == run_id and 0 < artifact["size_in_bytes"] < MAX_ARCHIVE_BYTES,
+                artifact["workflow_run"]["id"] == run_id
+                and artifact["workflow_run"]["repository_id"] == one("")["id"]
+                and artifact["workflow_run"]["head_sha"] == os.environ["REVIEWED_HELPER_SHA"]
+                and 0 < artifact["size_in_bytes"] < MAX_ARCHIVE_BYTES,
                 "artifact provenance or size",
             )
             archive = api(f"actions/artifacts/{artifact['id']}/zip", binary=True)
@@ -132,11 +174,16 @@ def evidence(run_id: int) -> None:
                 artifact.get("digest") == "sha256:" + hashlib.sha256(archive).hexdigest(), "artifact digest mismatch"
             )
             with zipfile.ZipFile(io.BytesIO(archive)) as zipped:
-                require(set(zipped.namelist()) == {"identity.txt", "results.xml"}, "artifact files mismatch")
+                names = zipped.namelist()
+                require(
+                    len(names) == len(EXPECTED_MEMBERS) and set(names) == EXPECTED_MEMBERS, "artifact files mismatch"
+                )
                 require(
                     all(item.file_size < MAX_MEMBER_BYTES for item in zipped.infolist()), "oversized artifact content"
                 )
-                identity = dict(line.split("=", 1) for line in zipped.read("identity.txt").decode().splitlines())
+                identity_lines = [line.split("=", 1) for line in zipped.read("identity.txt").decode().splitlines()]
+                identity = dict(identity_lines)
+                require(len(identity) == len(identity_lines), "duplicate identity key")
                 require(
                     identity
                     == {"base": BASE, "head": HEAD, "tree": TREE, "run": str(run_id), "attempt": "1", "job": "focused"},
@@ -150,6 +197,71 @@ def evidence(run_id: int) -> None:
                 all(not any(case.find(tag) is not None for tag in ("skipped", "failure", "error")) for case in cases),
                 "test skipped or failed",
             )
+
+
+def publish_statuses(run_id: int) -> None:
+    """Publish and read back only after all evidence passes; caller must hold all base writers.
+
+    Raises:
+        ValueError: A required context or status readback did not match.
+        OSError: The GitHub client could not start.
+        subprocess.CalledProcessError: GitHub rejected a request.
+    """
+    rules = api("rules/branches/main?per_page=100")
+    checks = [
+        check
+        for page in rules
+        for rule in page
+        if rule.get("type") == "required_status_checks"
+        for check in rule.get("parameters", {}).get("required_status_checks", [])
+    ]
+    for context in CONTEXTS:
+        matching = [check for check in checks if check.get("context") == context]
+        require(bool(matching), f"required context missing: {context}")
+        if context != "CI OK":
+            require(
+                all(item.get("integration_id") == GITHUB_ACTIONS_APP for item in matching),
+                "required app binding changed",
+            )
+    url = f"https://github.com/{REPO}/actions/runs/{run_id}"
+
+    def write(context: str, state: str) -> None:
+        command = [
+            "gh",
+            "api",
+            "--method",
+            "POST",
+            f"repos/{REPO}/statuses/{HEAD}",
+            "-f",
+            f"state={state}",
+            "-f",
+            f"context={context}",
+            "-f",
+            f"target_url={url}",
+            "-f",
+            "description=Exact reviewed focused 650 evidence",
+        ]
+        response = json.loads(subprocess.run(command, check=True, capture_output=True).stdout)  # noqa: S603
+        require(response.get("context") == context and response.get("state") == state, "status write not confirmed")
+        require(response.get("target_url") == url, "status write URL mismatch")
+        statuses = one(f"commits/{HEAD}/status?per_page=100")["statuses"]
+        matching = [status for status in statuses if status.get("context") == context]
+        require(bool(matching) and matching[0].get("state") == state, "status readback mismatch")
+        require(matching[0].get("target_url") == url, "status readback URL mismatch")
+        require(matching[0].get("creator", {}).get("login") == "github-actions[bot]", "status creator mismatch")
+
+    for context in ("CI OK", "merge-gate", "coverage-floor"):
+        write(context, "pending")
+    try:
+        for context in CONTEXTS:
+            source()
+            evidence(run_id)
+            write(context, "success")
+        source()
+    except (ValueError, OSError, subprocess.CalledProcessError):
+        for context in CONTEXTS:
+            write(context, "failure")
+        raise
 
 
 def main() -> None:
@@ -173,6 +285,7 @@ def main() -> None:
         "unreviewed helper",
     )
     run_id = int(os.environ["GITHUB_RUN_ID"])
+    source_review()
     source()
     evidence(run_id)
     source()

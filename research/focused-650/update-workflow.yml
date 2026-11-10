@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   update:
-    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.run_attempt == '1'
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
