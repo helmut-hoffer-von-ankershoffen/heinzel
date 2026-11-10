@@ -286,6 +286,68 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PluginsSection", () => {
+  it("does not reopen an admitted restored receipt when Settings remounts and it is cancelled", async () => {
+    const operationId = "previous-operation";
+    sessionStorage.setItem("hz.token", "test-token");
+    sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/operation")
+        return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
+      return base(url);
+    });
+    const first = show();
+    await dialog(/Install heinzel-crm/);
+    const originalRun = getRun();
+    first.unmount();
+    show();
+    await waitFor(() =>
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/operation")).toHaveLength(
+        2,
+      ),
+    );
+    expect(getRun()).toBe(originalRun);
+    const user = userEvent.setup();
+    await user.click(within(await dialog(/Install heinzel-crm/)).getByRole("button", { name: "Cancel" }));
+    expect(getRun().stage).toBe("idle");
+    expect(screen.queryByRole("dialog", { name: /Install heinzel-crm/ })).not.toBeInTheDocument();
+    expect(sessionStorage.getItem("hz.plugin-add-operation.v1")).toBe(operationId);
+  });
+  it("does not reopen when cancellation precedes the remounted receipt response", async () => {
+    const operationId = "previous-operation";
+    sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/operation")
+        return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
+      return base(url);
+    });
+    const first = show();
+    await dialog(/Install heinzel-crm/);
+    first.unmount();
+    const fetchReceipt = globalThis.fetch;
+    let releaseReceipt!: () => void;
+    const receiptReady = new Promise<void>((resolve) => {
+      releaseReceipt = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        if (new URL(request.url).pathname === "/api/system/plugin/operation") await receiptReady;
+        return fetchReceipt(request);
+      }),
+    );
+    show();
+    const user = userEvent.setup();
+    await user.click(within(await dialog(/Install heinzel-crm/)).getByRole("button", { name: "Cancel" }));
+    releaseReceipt();
+    await waitFor(() =>
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/operation")).toHaveLength(
+        2,
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole("dialog", { name: /Install heinzel-crm/ })).not.toBeInTheDocument();
+    expect(sessionStorage.getItem("hz.plugin-add-operation.v1")).toBe(operationId);
+  });
   it.each(["done", "attention"])("keeps a saved check until an unrelated %s result is closed", async (stage) => {
     const calls = serve((url) => {
       if (url.pathname === "/api/system/plugin/list") return { body: [] };

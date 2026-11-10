@@ -47,6 +47,7 @@ import {
   requestDrivenOperation,
   resumeDrivenOperation,
   useOperationRun,
+  wasDrivenOperationDismissed,
 } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
 import { type ApplyStepId, ApplySteps, applyWithSteps } from "@/lifecycle/applySteps";
@@ -585,6 +586,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   const finished = useRef(false);
   /** The one confirmation and the whole progress of a plugin change, in the operation dialog (ADR 0056). */
   const drive = (value: Pending): DrivenOperation => ({
+    ...(value.action === "add" ? { identity: `plugin-add:${value.operationId}` } : {}),
     consent: consentOf(value),
     ...wordsOf(value),
     details: value.action === "add" ? <CandidateDetails candidate={value.candidate} /> : undefined,
@@ -708,6 +710,23 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     if (restartBlocked || opened.current) return;
     if (operationStatus === "running" || operationStatus === "unknown") return;
     if (pending.action === "add" && !operation.data) return;
+    if (pending.action === "add" && wasDrivenOperationDismissed(`plugin-add:${pending.operationId}`)) {
+      setReceiptId(null);
+      setRestartObservation(null);
+      setPending(null);
+      return;
+    }
+    // A restored receipt may already own the dialog opened by an earlier mount. Remember that ownership so
+    // Cancel closes it instead of this mount treating the same receipt as a new deferred request.
+    const currentRun = getRun();
+    if (
+      pending.action === "add" &&
+      currentRun.stage !== "idle" &&
+      currentRun.driven?.identity === `plugin-add:${pending.operationId}`
+    ) {
+      opened.current = pending;
+      return;
+    }
     const call = callOf(pending);
     if (pending.action === "add" && restartObservation) {
       // A confirmed receipt must survive another result until the store actually accepts its resumption.

@@ -13,6 +13,8 @@ export type Phase = { id: string; label: string; state: PhaseState; detail?: str
  * dialog asks with `consent`, `details` and `action`, then runs `run`, which reports every step it takes.
  */
 export type DrivenOperation = {
+  /** Stable identity for reconnecting a restored write to its existing dialog across component remounts. */
+  identity?: string;
   /** What it does and what follows from it, one short line each, shown above the buttons. */
   consent: string[];
   /** The title while it runs and once it is done, e.g. Installing heinzel-x and Installed heinzel-x. */
@@ -61,6 +63,7 @@ export function mergePhase(phases: Phase[], phase: Phase): Phase[] {
 }
 
 let current: OperationRun = { stage: "idle" };
+const dismissedDrivenIdentities = new Set<string>();
 let opener: HTMLElement | null = null;
 const listeners = new Set<() => void>();
 const set = (next: OperationRun) => {
@@ -75,6 +78,9 @@ const subscribe = (listener: () => void) => {
 };
 
 export const useOperationRun = (): OperationRun => useSyncExternalStore(subscribe, () => current);
+
+/** A dismissed receipt must not be reoffered by a component remount in the same page. */
+export const wasDrivenOperationDismissed = (identity: string): boolean => dismissedDrivenIdentities.has(identity);
 
 // A disconnected restart may still be running. Keep its outcome visible until the person explicitly closes it;
 // every entry point shares this guard, including footer contributions and already-driven writes.
@@ -167,6 +173,7 @@ async function startDriven(): Promise<void> {
 /** Close the confirmation, or the outcome; a running operation can't be closed, it can't be stopped safely. */
 export function dismissOperation(): void {
   if (current.stage === "running") return;
+  if (current.stage !== "idle" && current.driven?.identity) dismissedDrivenIdentities.add(current.driven.identity);
   set({ stage: "idle" });
   // The focus goes back to the button that asked.
   const back = opener;
@@ -268,6 +275,7 @@ export const getRun = (): OperationRun => current;
 
 /** Reset for tests. */
 export function resetOperationRun(): void {
+  dismissedDrivenIdentities.clear();
   set({ stage: "idle" });
 }
 
