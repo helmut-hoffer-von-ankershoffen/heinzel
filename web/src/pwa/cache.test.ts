@@ -76,6 +76,16 @@ it("finds the cached icon whatever version query the page asks with, and never a
   expect(down("http://localhost/manifest.webmanifest?hz-probe=1")).toBeUndefined();
 });
 
+it("leaves OAuth callbacks and completion pages to the network without consulting the cache", () => {
+  const match = vi.fn(async () => "cached-page");
+  const fetcher = vi.fn(async () => "worker-response");
+  const dispatch = worker(match, fetcher);
+  expect(dispatch("http://localhost/auth/callback?code=fixture&state=fixture", "navigate")).toBeUndefined();
+  expect(dispatch("http://localhost/auth/chatgpt-finished", "navigate")).toBeUndefined();
+  expect(match).not.toHaveBeenCalled();
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
 it("precaches the offline page and the retry script, not the app's page", () => {
   const source = readFileSync(resolve("public/sw.js"), "utf8");
   expect(source).toContain('const OFFLINE = "/offline.html"');
