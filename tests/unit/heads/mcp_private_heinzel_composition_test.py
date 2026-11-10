@@ -1,7 +1,9 @@
 """The owned Unix peer, real MCP wire and private CLI using one durable grant journal."""
 
 import json
+import os
 import socket
+import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -14,13 +16,25 @@ import pytest
 
 from heinzel import Module
 from heinzel.heads.cli import main as cli_main
+from heinzel.heads.mcp import _ipc_bridge
 from heinzel.heads.mcp._heinzel_tools import serve_admitted_heinzel_connection
 from heinzel.heads.mcp._ipc_admission import McpGeneration, admit_owned_stream
 from heinzel.heads.mcp._ipc_approval import PrivateMcpPlan
+from heinzel.heads.mcp._ipc_bridge import BridgeHandshake
 from heinzel.heads.mcp._ipc_descriptors import local_stream_pair
 from heinzel.heads.mcp._ipc_provider import McpBackendLimit, McpContractBackend
+from heinzel.heads.mcp._ipc_supervisor import owned_mcp_supervisor
 from heinzel.heads.mcp._ipc_work import McpWorkJournal, McpWorkRequest, owned_private_dispatch
-from heinzel.kernel import MCP_HEINZEL_INBOX, CurrentUser, HeinzelError, HeinzelInput, HeinzelInvocations, HeinzelTarget
+from heinzel.kernel import (
+    MCP_HEINZEL_INBOX,
+    CurrentUser,
+    HeinzelError,
+    HeinzelInput,
+    HeinzelInvocations,
+    HeinzelTarget,
+    Kernel,
+    Settings,
+)
 from heinzel.kernel._approval import arguments_hash
 from heinzel.kernel._identity import MCP_HEINZEL_CONTRACT
 from heinzel.kernel._logging import record_fields
@@ -164,6 +178,89 @@ def _cli_invoke(tools, request_id, monkeypatch, capsys):
     with pytest.raises(SystemExit) as finished:
         cli_main(private_heinzel_tools=tools)
     return finished.value.code, capsys.readouterr().out
+
+
+def _exercise_inherited_tool_bridge(directory):
+    """Exercise a private synthetic tool through the owned bridge, without a vendor process."""
+    kernel = Kernel(Settings(state_dir=directory / "profile"), [])
+    provider = SyntheticProvider(kernel.resolve(CurrentUser))
+    kernel.bind(HeinzelInvocations, provider)
+    plan = _plan("bridge", principal=provider.current.owner().id)
+    marker = b"fixture-admitted\n"
+    acknowledge = BridgeHandshake.acknowledge
+    retire = _ipc_bridge.OwnedMcpChild.retire
+    reaped = []
+
+    def fixture_ack(handshake, channel):
+        acknowledge(handshake, channel)
+        channel.sendall(marker)
+
+    def fixture_retire(child, *args):
+        retire(child, *args)
+        reaped.append(child.pid)
+
+    def serve(transport, dispatch):
+        with transport.admit() as lease:
+            anyio.run(serve_admitted_heinzel_connection, kernel, dispatch, lease)
+
+    with (
+        pytest.MonkeyPatch.context() as patcher,
+        owned_mcp_supervisor(directory / "state", plan) as supervisor,
+    ):
+        patcher.setattr(BridgeHandshake, "acknowledge", fixture_ack)
+        patcher.setattr(_ipc_bridge.OwnedMcpChild, "retire", fixture_retire)
+        # Fork the owned bridge before starting any test worker threads.
+        with supervisor.launch_bridge() as (front, transport), ThreadPoolExecutor(max_workers=1) as workers:
+            front.settimeout(_TIMEOUT)
+            running = workers.submit(serve, transport, supervisor._dispatch)
+            try:
+                with supervisor._authority._changed:
+                    assert supervisor._authority._changed.wait_for(
+                        supervisor._authority.pending_reviews, timeout=_TIMEOUT
+                    )
+                    (review,) = supervisor._authority.pending_reviews()
+                    supervisor._authority.approve(review)
+                with front.makefile("rb") as wire:
+                    assert wire.readline() == marker
+                    _initialize(front, wire)
+                    listed = _rpc(front, wire, "tools/list", 2)
+                    assert [tool["name"] for tool in listed["tools"]] == [_TARGET.tool_name]
+                    result = _mcp_invoke(front, wire, "bridge-call")
+                    recorded = json.loads(result["content"][0]["text"])["request_id"]
+                    assert provider.calls == [(recorded, "mcp-private-wire")]
+                    supervisor.revoke()
+                    assert wire.readline() == b""
+                running.result(timeout=_TIMEOUT)
+                with pytest.raises(HeinzelError), transport.admit():
+                    pytest.fail("A revoked bridge was admitted again")
+            finally:
+                supervisor.revoke()
+                with suppress(OSError):
+                    front.shutdown(socket.SHUT_RDWR)
+        assert len(reaped) == 1
+        with pytest.raises(ChildProcessError):
+            os.waitpid(reaped[0], os.WNOHANG)
+
+
+def test_owned_bridge_serves_only_approved_synthetic_heinzel_then_revokes(tmp_path):
+    run = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            (
+                "import runpy,sys; from pathlib import Path; "
+                "runpy.run_path(sys.argv[1])['_exercise_inherited_tool_bridge'](Path(sys.argv[2]))"
+            ),
+            __file__,
+            str(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    assert run.returncode == 0, run.stderr
 
 
 def test_protocol_and_cli_share_durable_results_across_leases_and_broker_restart(
