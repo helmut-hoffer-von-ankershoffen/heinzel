@@ -31,6 +31,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 LOG = logging.getLogger("acme_setup_e2e")
 EXPECTED = ("heinzel-github", "heinzel-atlassian", "heinzel-acme")
@@ -169,7 +170,7 @@ def prove(hz: str, env: dict[str, str]) -> None:
         raise SetupError(message, str(absent))
 
 
-def run_object(hz: str, env: dict[str, str], *args: str) -> dict:
+def run_object(hz: str, env: dict[str, str], *args: str) -> dict[str, Any]:
     """`run_hz` for a command that answers one JSON object.
 
     Raises:
@@ -182,12 +183,12 @@ def run_object(hz: str, env: dict[str, str], *args: str) -> dict:
     return answer
 
 
-def binding_states(change: dict) -> dict[str, tuple[str, str | None]]:
+def binding_states(change: dict[str, Any]) -> dict[str, tuple[str, str | None]]:
     """Capability -> (state, adapter) from a confirmed add's `bindings`."""
     return {b["capability"]: (b["state"], b.get("adapter")) for b in change.get("bindings", [])}
 
 
-def wrong_bindings(change: dict, expected: dict[str, str], kept: dict[str, str] | None = None) -> list[str]:
+def wrong_bindings(change: dict[str, Any], expected: dict[str, str], kept: dict[str, str] | None = None) -> list[str]:
     """What differs from `expected` written bindings, `kept` ones naming the person's adapter in their reason."""
     kept = kept or {}
     states = binding_states(change)
@@ -205,7 +206,7 @@ def wrong_bindings(change: dict, expected: dict[str, str], kept: dict[str, str] 
     return problems
 
 
-def not_owner_only(checklist: dict) -> list[str]:
+def not_owner_only(checklist: dict[str, Any]) -> list[str]:
     """Checklist rows still open that the person isn't the only one able to do: setup should have done them."""
     return [
         f"{row['connector']}: {row['state']} ({row['line']})"
@@ -214,7 +215,7 @@ def not_owner_only(checklist: dict) -> list[str]:
     ]
 
 
-def open_rows(checklist: dict) -> list[str]:
+def open_rows(checklist: dict[str, Any]) -> list[str]:
     """The connectors of the checklist that aren't connected yet."""
     return [row["connector"] for row in checklist.get("rows", []) if row["state"] != "connected"]
 
