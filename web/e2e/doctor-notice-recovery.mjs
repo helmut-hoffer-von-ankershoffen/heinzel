@@ -15,10 +15,11 @@ try {
   await page.getByRole("heading", { name: "Today" }).waitFor();
   const widget = page.locator('[data-widget="notifications"]');
   await widget.getByText("Heinzelmännchen is degraded").waitFor();
+  await widget.getByText("A newer notice").waitFor();
   await page.waitForFunction(() => window.__noticeEvents > 0);
   writeFileSync(marker, "observed");
-  await widget.waitFor({ state: "hidden", timeout: 30000 });
-  assert.equal(await widget.count(), 0);
+  await widget.getByText("Heinzelmännchen is degraded").waitFor({ state: "hidden", timeout: 30000 });
+  assert.equal(await widget.getByText("A newer notice").isVisible(), true);
   console.log(JSON.stringify({ resolved: true }));
 } finally {
   await browser.close();

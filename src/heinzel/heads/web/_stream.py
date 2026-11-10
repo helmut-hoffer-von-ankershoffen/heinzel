@@ -70,10 +70,10 @@ async def _events(  # noqa: PLR0913 - all but the request and the service by key
     """The events of one stream, until it is old, its tab goes away or the server stops.
 
     Yields:
-        `changed` when the latest notice changed; with `popups`, each due notice once as `notice`; a ping now and then.
+        `changed` when the visible list changes; with `popups`, each due notice once as `notice`; a ping now and then.
     """
     sent: set[str] = set()
-    latest: str | None = None
+    visible: tuple[str, ...] = ()
     started = last_ping = clock()
     yield "retry: 3000\n\n"
     with stopping.watch() as stopped:
@@ -81,14 +81,15 @@ async def _events(  # noqa: PLR0913 - all but the request and the service by key
             if popups:
                 await run_in_threadpool(notifications.watched)
             due = await run_in_threadpool(notifications.due) if popups else []
-            recent = await run_in_threadpool(notifications.recent, 1)
+            recent = await run_in_threadpool(notifications.recent, 50)
             for notice in due:
                 if notice.id not in sent:
                     sent.add(notice.id)
                     yield _event("notice", notice.model_dump_json())
             newest = recent[0].id if recent else None
-            if newest != latest:
-                latest = newest
+            current = tuple(notice.id for notice in recent)
+            if current != visible:
+                visible = current
                 yield _event("changed", json.dumps({"latest": newest}))
             if once or clock() - started > LIFETIME_SECONDS or await request.is_disconnected():
                 return

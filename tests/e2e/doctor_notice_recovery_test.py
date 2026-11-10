@@ -53,6 +53,7 @@ def test_doctor_notice_resolves_in_mounted_browser(make_kernel, tmp_path, monkey
     notice = service.listing(50).notices[0]
     assert notice.resolve_when
     assert notice.resolve_when.checks_up == ["fixture: network"]
+    assert service.emit(NoticeKind.DRAFT, "A newer notice", route="/", command="hz", key="fixture:newer", urgent=True)
 
     class RecordedServer(uvicorn.Server):
         instances: ClassVar[list[uvicorn.Server]] = []
@@ -110,8 +111,9 @@ def test_doctor_notice_resolves_in_mounted_browser(make_kernel, tmp_path, monkey
         assert json.loads(run.stdout.strip().splitlines()[-1])["resolved"] is True
         worker.join(5)
         assert resolved == [1]
-        assert service.listing(50).notices == []
-        assert service.listing(50, resolved=True).notices[0].resolved == "fixture: network is up again"
+        assert [item.title for item in service.listing(50).notices] == ["A newer notice"]
+        history = service.listing(50, resolved=True).notices
+        assert next(item for item in history if item.id == notice.id).resolved == "fixture: network is up again"
     finally:
         if RecordedServer.instances:
             RecordedServer.instances[0].should_exit = True
