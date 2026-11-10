@@ -295,6 +295,25 @@ describe("OperationDialog", () => {
     },
   );
 
+  it.each([null, 7, "unknown"])("keeps the footer from repeating a restart with unknown result %s", async (result) => {
+    const live = liveStream();
+    sessionStorage.setItem("hz.token", "test-token");
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter>
+          <FooterRestart />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Footer restart" }));
+    await live.end("result", { data: result });
+    expect(await screen.findByText("The restart result is unavailable. Check the daemon status.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Footer restart" }));
+    expect(live.fetchMock).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Done" }));
+  });
+
   it("shows a write the app drives with the steps it reports, and never retries it here", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

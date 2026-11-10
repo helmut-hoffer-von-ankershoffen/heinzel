@@ -4,6 +4,7 @@
 import { type ReactNode, useEffect, useId, useSyncExternalStore } from "react";
 import type { SchemaOperationCall } from "@/api/client";
 import { stream } from "@/api/stream";
+import { daemonRestartResult } from "@/lib/daemonRestart";
 
 export type PhaseState = "pending" | "running" | "done" | "warn" | "skipped" | "failed";
 export type Phase = { id: string; label: string; state: PhaseState; detail?: string };
@@ -77,7 +78,13 @@ export const useOperationRun = (): OperationRun => useSyncExternalStore(subscrib
 
 // A disconnected restart may still be running. Keep its outcome visible until the person explicitly closes it;
 // every entry point shares this guard, including footer contributions and already-driven writes.
-const outcomeUnconfirmed = () => current.stage === "failed" && current.outcomeUnknown === true;
+export const restartOutcomeUnconfirmed = (run: OperationRun): boolean =>
+  (run.stage === "failed" && run.outcomeUnknown === true) ||
+  (run.stage === "done" &&
+    run.call.path === "/system/daemon/restart" &&
+    daemonRestartResult(run.result) === "daemon.restartUnknown");
+
+const outcomeUnconfirmed = () => restartOutcomeUnconfirmed(current);
 
 /** Ask the person to confirm `call`; nothing runs yet. Ignored while another write is being asked about or running. */
 export function requestOperation(call: SchemaOperationCall): boolean {
@@ -122,7 +129,7 @@ export function requestDrivenOperation(call: SchemaOperationCall, driven: Driven
  * dialog opens in its progress view, never asking again.
  */
 export function resumeDrivenOperation(call: SchemaOperationCall, driven: DrivenOperation): Promise<void> {
-  if (current.stage === "confirm" || current.stage === "running" || outcomeUnconfirmed()) return Promise.resolve();
+  if (current.stage !== "idle") return Promise.resolve();
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   set({ stage: "confirm", call, driven });
   return startDriven();

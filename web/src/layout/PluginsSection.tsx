@@ -674,12 +674,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     if (!finishingFromPreviousPage.current) return;
     // Read the store at effect time: another entry point can change it after this render.
     const currentRun = getRun();
-    if (
-      currentRun.stage === "confirm" ||
-      currentRun.stage === "running" ||
-      (currentRun.stage === "failed" && currentRun.outcomeUnknown)
-    )
-      return;
+    if (currentRun.stage !== "idle") return;
     finishingFromPreviousPage.current = false;
     const finishing = takeFinishing();
     if (!finishing) return;

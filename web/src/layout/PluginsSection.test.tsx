@@ -3,8 +3,16 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { OperationDialog } from "@/components/OperationDialog";
-import { DAEMON_RESTART } from "@/lib/operationCalls";
-import { getRun, requestOperation, resetOperationRun, startOperation } from "@/lib/operationRun";
+import { DAEMON_INSTALL, DAEMON_RESTART } from "@/lib/operationCalls";
+import {
+  getRun,
+  requestDrivenOperation,
+  requestOperation,
+  resetOperationRun,
+  startOperation,
+  trackOperation,
+} from "@/lib/operationRun";
+import { NeedsAttention } from "@/lifecycle/applySteps";
 import { expectAccessible } from "@/test/render";
 import { CandidateDetails, ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
 
@@ -278,6 +286,57 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PluginsSection", () => {
+  it.each(["done", "attention"])("keeps a saved check until an unrelated %s result is closed", async (stage) => {
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/list") return { body: [] };
+      return base(url);
+    });
+    sessionStorage.setItem("hz.token", "test-token");
+    if (stage === "done") {
+      await act(async () => {
+        await trackOperation(DAEMON_INSTALL, async () => ({ installed: true }));
+      });
+    } else {
+      act(() =>
+        requestDrivenOperation(DAEMON_INSTALL, {
+          consent: [],
+          runningTitle: "Installing",
+          doneTitle: "Installed",
+          running: "Installing",
+          action: "Install",
+          run: async () => {
+            throw new NeedsAttention("Still waiting");
+          },
+        }),
+      );
+      await act(async () => {
+        await startOperation(() => {});
+      });
+    }
+    expect(getRun().stage).toBe(stage);
+    const key = "hz.plugin-operation.v1";
+    const saved = JSON.stringify({ pending: { action: "remove", name: "heinzel-clock" }, phases: [] });
+    sessionStorage.setItem(key, saved);
+    show();
+    expect(sessionStorage.getItem(key)).toBe(saved);
+    expect(getRun().stage).toBe(stage);
+    if (stage === "attention") {
+      await userEvent.setup().click(await screen.findByRole("button", { name: "Keep waiting" }));
+      await waitFor(() => expect(getRun().stage).toBe("attention"));
+      expect(sessionStorage.getItem(key)).toBe(saved);
+    }
+    await waitFor(() =>
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/list")).toHaveLength(1),
+    );
+    const beforeClose = 1;
+    const closeButtons = await screen.findAllByRole("button", { name: stage === "done" ? "Done" : "Close" });
+    await userEvent.setup().click(closeButtons[closeButtons.length - 1]);
+    await waitFor(() => expect(sessionStorage.getItem(key)).toBeNull());
+    expect(await screen.findByRole("dialog", { name: /Removed heinzel-clock/ })).toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/list")).toHaveLength(
+      beforeClose + 1,
+    );
+  });
   it("preserves a saved final check until an unconfirmed restart is closed", async () => {
     const calls = serve((url) => {
       if (url.pathname === "/api/stream/system/daemon/restart") throw new Error("connection lost");

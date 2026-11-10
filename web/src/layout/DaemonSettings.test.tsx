@@ -453,9 +453,15 @@ describe("Daemon Settings", () => {
   });
 
   it.each([null, false, 0, "unexpected"])("reports an unknown restart result for %s", async (response) => {
-    const { user } = show({ loaded: false }, false, false, true, false, response);
+    const { user, calls } = show({ loaded: false }, false, false, true, false, response);
     await user.click(await screen.findByRole("button", { name: "Restart" }));
     expect(await screen.findByText("The restart result is unavailable. Check the daemon status.")).toBeInTheDocument();
+    const restart = screen.queryByRole("button", { name: "Restart" });
+    if (restart) {
+      expect(restart).toBeDisabled();
+      await user.click(restart);
+    }
+    expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
     expect(
       screen.queryByText("Restart requested. If the service is active, its next tick will confirm the version."),
     ).not.toBeInTheDocument();

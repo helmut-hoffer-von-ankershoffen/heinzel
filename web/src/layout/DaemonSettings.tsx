@@ -7,7 +7,7 @@ import { OperationDialog } from "@/components/OperationDialog";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { DAEMON_RESTART } from "@/lib/operationCalls";
-import { requestOperation, useOperationRun } from "@/lib/operationRun";
+import { requestOperation, restartOutcomeUnconfirmed, useOperationRun } from "@/lib/operationRun";
 
 type Action = DaemonAction;
 
@@ -17,8 +17,7 @@ export function DaemonSettings() {
   const change = useChangeDaemon();
   const operation = useOperationRun();
   const operationBusy = operation.stage === "running" || operation.stage === "confirm";
-  const restartUnconfirmed =
-    operation.stage === "failed" && operation.outcomeUnknown && operation.call.path === DAEMON_RESTART.path;
+  const restartUnconfirmed = restartOutcomeUnconfirmed(operation);
   const expert = useExpert();
   const [pending, setPending] = useState<Action | null>(null);
   const label = (action: Action) => t(`daemon.${action}`);
