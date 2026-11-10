@@ -49,6 +49,7 @@ export function drawSwarm(
   reduced: boolean,
 ) {
   ctx.clearRect(0, 0, width, height);
+  if (reduced) state.sparks.length = 0;
   const glow = analysis.quiet ? 0.06 : 0.1 + Math.min(1, analysis.level) * 0.3;
   for (const x of centres) {
     const light = ctx.createRadialGradient(x, height, 2, x, height, 30);

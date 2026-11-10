@@ -199,8 +199,8 @@ describe("halo", () => {
     }) as unknown as CanvasRenderingContext2D;
 
   it("puts bass at the bottom and treble at the top, mirrored", () => {
-    expect(haloBand(0)).toBe(VIZ_BANDS - 1);
-    expect(haloBand(HALO_RAYS / 2)).toBe(0);
+    expect(haloBand(0)).toBe(0);
+    expect(haloBand(HALO_RAYS / 2)).toBe(VIZ_BANDS - 1);
     expect(haloBand(HALO_RAYS / 4)).toBe(haloBand((HALO_RAYS * 3) / 4));
   });
 
@@ -268,5 +268,15 @@ describe("swarm", () => {
       drawSwarm(ctx(), state, a, theme, 200, 80, [40, 100, 160], 0.05, false);
     stepSwarm(state, a, 0.05, false);
     expect(swarmSettled(state)).toBe(true);
+  });
+
+  it("clears existing sparks immediately when reduced motion is enabled", () => {
+    const a = analysis();
+    const state = createSwarm(3);
+    state.sparks.push({ x: 1, y: 20, vx: 3, vy: -5, life: 1, warm: true });
+    const canvas = ctx();
+    drawSwarm(canvas, state, a, theme, 200, 80, [40, 100, 160], 0.033, true);
+    expect(state.sparks).toHaveLength(0);
+    expect(canvas.arc).not.toHaveBeenCalled();
   });
 });

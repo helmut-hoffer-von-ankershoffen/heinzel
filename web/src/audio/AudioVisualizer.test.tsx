@@ -422,6 +422,9 @@ describe("AudioVisualizer", () => {
     open();
     const group = within(screen.getByRole("radiogroup", { name: "Listen to" }));
     expect(group.getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["Off", "Shared audio"]);
+    expect(
+      screen.getByText("Nothing is recorded or uploaded. Sharing a tab shows your browser's sharing bar."),
+    ).toBeVisible();
     cleanup();
     Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: true });
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getDisplayMedia: vi.fn() } });
@@ -432,6 +435,9 @@ describe("AudioVisualizer", () => {
         .getAllByRole("radio")
         .map((radio) => radio.textContent),
     ).toEqual(["Off", "Shared audio"]);
+    expect(
+      screen.getByText("Nothing is recorded or uploaded. Sharing a tab shows your browser's sharing bar."),
+    ).toBeVisible();
   });
 
   it("shows no Listen to group when this browser can take no source, and says so", () => {

@@ -601,9 +601,11 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             {t(
               sharing && listenable
                 ? "audio.visualizerHelp"
-                : listenable
-                  ? "audio.visualizerHelpMicrophone"
-                  : "audio.visualizerHelpOwn",
+                : sharing
+                  ? "audio.visualizerHelpShared"
+                  : listenable
+                    ? "audio.visualizerHelpMicrophone"
+                    : "audio.visualizerHelpOwn",
             )}
           </p>
           <div className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground">

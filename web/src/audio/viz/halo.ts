@@ -10,7 +10,7 @@ export const HALO_RAYS = 48;
 /** The band a ray shows: bass at the bottom (ray 0), treble at the top (ray 24), mirrored on both sides. */
 export function haloBand(ray: number) {
   const around = (ray % HALO_RAYS) / HALO_RAYS;
-  return Math.round(Math.abs(((around * 2) % 2) - 1) * (VIZ_BANDS - 1));
+  return Math.round((1 - Math.abs(around * 2 - 1)) * (VIZ_BANDS - 1));
 }
 
 /** Draws one frame and returns the scale for the Heinzel in the middle (1 at rest, at most 1.05 on a beat). */
