@@ -204,6 +204,15 @@ MIXED_TEST_PATHS = {
     "web": re.compile(r"web/src/(?:[\w-]+/)*[\w.-]+\.test\.tsx?", re.ASCII),
     "desktop": re.compile(r"desktop/test/(?:[\w-]+/)*[\w-]+\.test\.js", re.ASCII),
 }
+ACME_SETUP_FIXTURE = "scripts/acme_setup_e2e.py"
+ACME_SETUP_TESTS = frozenset(
+    {
+        "tests/unit/acme_setup_e2e_test.py",
+        "tests/unit/scripts_test.py",
+        "web/src/api/stream.test.ts",
+        "web/src/layout/PluginsSection.test.tsx",
+    }
+)
 PUSH_REF_FIELDS = 4  # local ref, local SHA, remote ref, remote SHA
 
 
@@ -300,8 +309,13 @@ def mixed_test_targets(manifest: Path, *, base: str, head: str, changed: list[st
     if any(any(pattern.fullmatch(path) for pattern in MIXED_TEST_PATHS.values()) for path in set(changed) - files):
         msg = "A focused mixed manifest must cover every changed test file."
         raise SystemExit(msg)
+    if ACME_SETUP_FIXTURE in changed:
+        if missing := ACME_SETUP_TESTS.difference(targets["unit"], targets["web"]):
+            msg = f"A focused ACME setup manifest must include its owning test files: {', '.join(sorted(missing))}."
+            raise SystemExit(msg)
+        files.add(ACME_SETUP_FIXTURE)
     if files != tracked_test_files(head, files):
-        msg = "A focused mixed manifest can select only tracked test files at HEAD."
+        msg = "A focused mixed manifest can select only tracked test files and fixture scripts at HEAD."
         raise SystemExit(msg)
     return targets
 
@@ -318,7 +332,7 @@ def mixed_push_checks(changed: list[str], base: str, manifest: Path) -> int:
         or bool(WEB_ROOT_FILES.intersection(changed))
         or any(
             not is_document(path)
-            and path not in {"scripts/scoped_checks.py", "web/openapi.json"}
+            and path not in {"scripts/scoped_checks.py", "web/openapi.json", ACME_SETUP_FIXTURE}
             and not path.startswith(MIXED_SOURCE_DIRS)
             for path in changed
         )

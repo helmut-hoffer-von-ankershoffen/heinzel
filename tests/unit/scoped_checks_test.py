@@ -348,6 +348,73 @@ def test_focused_mixed_push_keeps_guards_static_checks_and_explicit_test_targets
     assert desktop[3:] == [*scoped.WEB.split(), "exec", "node", "--test", "../desktop/test/window.test.js"]
 
 
+@pytest.fixture
+def acme_mixed_push(mixed_push):
+    base, plan, _, manifest = mixed_push
+    plan.update(
+        unit=["tests/unit/acme_setup_e2e_test.py", "tests/unit/scripts_test.py"],
+        integration=[],
+        web=["web/src/api/stream.test.ts", "web/src/layout/PluginsSection.test.tsx"],
+        desktop=[],
+    )
+    changed = [
+        "scripts/acme_setup_e2e.py",
+        "src/heinzel/modules/system/plugin/_service.py",
+        "web/openapi.json",
+        "web/src/api/schema.d.ts",
+    ]
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+    return base, plan, changed, manifest
+
+
+def test_focused_acme_fixture_scope_runs_owning_checks(gate_calls, acme_mixed_push):
+    gate, calls = gate_calls
+    base, plan, changed, _ = acme_mixed_push
+
+    assert scoped.push_checks(changed, base) == 0
+
+    [(guard, _), (checks, _)] = calls
+    assert guard == [gate, "--timeout", "180", *scoped.early_guard_commands(changed)[0]]
+    assert checks[:5] == [gate, "--timeout", "600", "make", "check-fast"]
+    assert f"FAST_TYPES={scoped.TYPES}" in checks
+    assert f"UNIT_TARGETS={' '.join(plan['unit'])}" in checks
+    web = next(arg for arg in checks if arg.startswith("WEB_TESTS="))
+    assert web.endswith('vitest run --maxWorkers=2 src/api/stream.test.ts src/layout/PluginsSection.test.tsx"')
+
+
+@pytest.mark.parametrize(
+    ("lane", "omitted"),
+    [
+        ("unit", "tests/unit/acme_setup_e2e_test.py"),
+        ("unit", "tests/unit/scripts_test.py"),
+        ("web", "web/src/api/stream.test.ts"),
+        ("web", "web/src/layout/PluginsSection.test.tsx"),
+    ],
+)
+def test_focused_acme_fixture_refuses_missing_owning_checks(gate_calls, acme_mixed_push, lane, omitted):
+    _, calls = gate_calls
+    base, plan, changed, manifest = acme_mixed_push
+    plan[lane].remove(omitted)
+    manifest.write_text(json.dumps(plan), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="must include its owning test files") as error:
+        scoped.push_checks(changed, base)
+
+    assert omitted in str(error.value)
+    assert calls == []
+
+
+def test_focused_acme_fixture_refuses_an_untracked_script(monkeypatch, gate_calls, acme_mixed_push):
+    _, calls = gate_calls
+    base, _, changed, _ = acme_mixed_push
+    monkeypatch.setattr(scoped, "tracked_test_files", lambda _, files: files - {"scripts/acme_setup_e2e.py"})
+
+    with pytest.raises(SystemExit, match="tracked test files and fixture scripts"):
+        scoped.push_checks(changed, base)
+
+    assert calls == []
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -379,6 +446,7 @@ def test_focused_mixed_push_refuses_unsafe_manifests(gate_calls, mixed_push, fie
     [
         ("uv.lock", "without build or runtime configuration"),
         ("web/vite.config.ts", "without build or runtime configuration"),
+        ("scripts/foreign_fixture.py", "without build or runtime configuration"),
         ("tests/unit/related_tests_test.py", "cover every changed test file"),
     ],
 )
