@@ -341,6 +341,10 @@ describe("Daemon Settings", () => {
     await act(async () => timeout.abort(new DOMException("Timed out", "TimeoutError")));
     expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    const restart = screen.getByRole("button", { name: "Restart" });
+    expect(restart).toBeDisabled();
+    await userEvent.setup().click(restart);
+    expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
     expect(screen.queryByText("The daemon restarted.")).not.toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
     timer.mockRestore();
@@ -375,6 +379,10 @@ describe("Daemon Settings", () => {
     await act(async () => controller.close());
     expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    const restart = screen.getByRole("button", { name: "Restart" });
+    expect(restart).toBeDisabled();
+    await userEvent.setup().click(restart);
+    expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
     const steps = screen.getByRole("list", { name: "Steps" });
     expect(within(steps).getByText("Last reported: in progress")).toBeVisible();
     expect(steps.querySelector(".motion-safe\\:animate-spin")).toBeNull();
@@ -384,6 +392,8 @@ describe("Daemon Settings", () => {
     );
     expect(screen.queryByText("The daemon restarted.")).not.toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.getByRole("button", { name: "Restart" })).toBeEnabled();
   });
 
   it("does not claim a restart when the operation reports no service was restarted", async () => {

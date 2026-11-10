@@ -17,6 +17,8 @@ export function DaemonSettings() {
   const change = useChangeDaemon();
   const operation = useOperationRun();
   const operationBusy = operation.stage === "running" || operation.stage === "confirm";
+  const restartUnconfirmed =
+    operation.stage === "failed" && operation.outcomeUnknown && operation.call.path === DAEMON_RESTART.path;
   const expert = useExpert();
   const [pending, setPending] = useState<Action | null>(null);
   const label = (action: Action) => t(`daemon.${action}`);
@@ -87,7 +89,7 @@ export function DaemonSettings() {
                   <PaneAction
                     key="restart"
                     icon={RotateCw}
-                    disabled={change.isPending || operationBusy}
+                    disabled={change.isPending || operationBusy || restartUnconfirmed}
                     onClick={() => {
                       change.reset();
                       requestOperation(DAEMON_RESTART);
