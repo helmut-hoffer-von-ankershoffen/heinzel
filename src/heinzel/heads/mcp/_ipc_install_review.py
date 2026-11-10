@@ -195,11 +195,10 @@ class McpInstallReview:
             self._require_session(authority, pending, terminal)
             if review.digest != pending.config_digest:
                 raise HeinzelError(_UNAVAILABLE)
-            review_mcp_lifecycle_from_terminal(
-                pending.exact
-                | {"server": review.server_name, "command": review.command, "args": list(review.arguments)},
-                deadline=pending.deadline,
-            )
+            arguments: list[JsonValue] = list(review.arguments)
+            exact = pending.exact.copy()
+            exact.update(server=review.server_name, command=review.command, args=arguments)
+            review_mcp_lifecycle_from_terminal(exact, deadline=pending.deadline)
             self._require_session(authority, pending, terminal)
             return True
 
