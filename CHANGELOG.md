@@ -10,6 +10,7 @@ Find uv in its install dirs under launchd's minimal PATH; Name the worker's shel
 
 - **web:** Move YouTube action into player header ([#700](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/700)) ([c6e1f23](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/c6e1f239c36c02580c0eb0b2933c84361fbac6a8))
 - **cli:** Show update steps and explain how to finish ([#702](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/702)) ([a40aef5](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/a40aef5e307908f3e45743c2fcecb8888d2950ab))
+- **heads:** Configure MCP clients and check readiness ([#703](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/703)) ([d1e9684](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/d1e96845aa02fc67e4246e6bcb688f64eb69c273))
 
 ### 🐛 Bug fixes
 
@@ -19,6 +20,7 @@ Find uv in its install dirs under launchd's minimal PATH; Name the worker's shel
 - **ci:** Verify original focused runs after main advances ([#701](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/701)) ([6ff4bdd](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/6ff4bddd104bbc17b69384e927435902d7c19a66))
 - **heads:** Recover from desktop release download timeouts ([#695](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/695)) ([d9a7050](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/d9a705071e015b1d61c08ce4aba20e87a25a68c6))
 - **system:** Detect installed macOS Git accurately ([#696](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/696)) ([2c8fb47](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/2c8fb4794a1a299d39708cc0d65feac00bb02eff))
+- **ci:** Preserve worker coverage and stabilize draft slot tests ([#707](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/707)) ([f51ff04](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f51ff0433fd11abe007f355c82c4fa349875c6a3))
 
 ### 🧪 Testing
 
