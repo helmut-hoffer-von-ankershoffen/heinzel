@@ -10,13 +10,12 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
-
-from coverage import Coverage
 
 from scripts import focused_job
 from scripts.focused_plan import LANES, Scope, current_scope, git
@@ -33,6 +32,44 @@ JUNIT = "junit.xml"
 MAX_FILE = 2 * 1024 * 1024
 ARC_LENGTH = 2
 ENV_KEYS = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "UV_PYTHON", "PLAYWRIGHT_BROWSERS_PATH", "SYSTEMROOT")
+
+# Coverage() disables automatic subprocess measurement in its own process.
+# Run analysis in a child so an already-measured caller keeps its coverage data.
+_COVERAGE_ANALYSIS = r"""
+import json
+import sys
+from coverage import Coverage
+
+request = json.load(sys.stdin)
+coverage = Coverage(config_file=request["config"], data_file=request.get("datafile"))
+if request["combine"]:
+    coverage.combine(strict=True)
+data = coverage.get_data()
+try:
+    if request["combine"] and not data.has_arcs():
+        raise ValueError("focused run has no branch measurement")
+    data.add_arcs({name: [] for name in set(request["paths"]) - data.measured_files()})
+    coverage.json_report(morfs=request["paths"], outfile=request["output"])
+finally:
+    data.erase()
+"""
+
+
+def _analyse(config: Path, paths: list[str], output: Path, *, datafile: str | None = None) -> None:
+    """Analyse coverage in an isolated interpreter without disturbing a measured caller."""
+    request = {
+        "config": str(config),
+        "paths": paths,
+        "output": str(output),
+        "datafile": datafile,
+        "combine": datafile is not None,
+    }
+    subprocess.run(  # noqa: S603 - fixed interpreter and analysis code; data is JSON input
+        [sys.executable, "-I", "-c", _COVERAGE_ANALYSIS],
+        input=canonical(request),
+        check=True,
+        timeout=120,
+    )
 
 
 def canonical(value: object) -> bytes:
@@ -97,15 +134,9 @@ def source_opportunities(scope: Scope, config: bytes) -> dict[str, Any]:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(git("cat-file", "blob", blob))
             paths[str(dest.resolve())] = path
-        coverage = Coverage(config_file=str(rc), data_file=None)
-        data = coverage.get_data()
-        try:
-            data.add_arcs({name: [] for name in paths})
-            output = root / "opportunities.json"
-            coverage.json_report(morfs=list(paths), outfile=str(output))
-            reports = parse(output.read_bytes())
-        finally:
-            data.erase()
+        output = root / "opportunities.json"
+        _analyse(rc, list(paths), output)
+        reports = parse(output.read_bytes())
         require(reports["meta"]["branch_coverage"] is True, "source analysis lost branch opportunities")
         inventory = {}
         for name, row in reports["files"].items():
@@ -233,15 +264,7 @@ def _instrument(
         datafile = str(work / ".coverage")
         env = {**env, "COVERAGE_FILE": datafile}
         _execute([*command[:3], "coverage", "run", f"--rcfile={rc}", "-m", *command[3:]], env)
-        coverage = Coverage(config_file=str(rc), data_file=datafile)
-        coverage.combine(strict=True)
-        data = coverage.get_data()
-        try:
-            require(data.has_arcs(), "focused run has no branch measurement")
-            data.add_arcs({name: [] for name in set(scope.production) - data.measured_files()})
-            coverage.json_report(morfs=list(scope.production), outfile=str(out / MEASUREMENT))
-        finally:
-            data.erase()
+        _analyse(rc, list(scope.production), out / MEASUREMENT, datafile=datafile)
 
 
 def _managed_commands(tests: tuple[str, ...], out: Path) -> list[list[str]]:
