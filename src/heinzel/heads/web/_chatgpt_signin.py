@@ -4,6 +4,7 @@ import asyncio
 import logging
 import secrets
 import webbrowser
+from collections.abc import Callable
 from typing import Literal
 
 from fastapi import FastAPI, Request, Response
@@ -53,6 +54,15 @@ async def _disconnected(request: Request) -> None:
         pass
 
 
+async def _keep(commit: Callable[[], bool]) -> Outcome:
+    try:
+        granted = await asyncio.to_thread(commit)
+    except Exception:  # noqa: BLE001 - a credential backend may include secrets in error text
+        return "failed"
+    else:
+        return "connected" if granted else "declined"
+
+
 class ChatGptSignIn:
     """Own a single cancellable attempt for this web server instance."""
 
@@ -89,7 +99,7 @@ class ChatGptSignIn:
         self._callback = loop.create_future()
         disconnect = asyncio.create_task(_disconnected(request))
         deadline = loop.time() + SIGN_IN_TIMEOUT
-        work = asyncio.create_task(self._run(f"{origin}{CALLBACK}", self._callback, disconnect, deadline))
+        work = asyncio.create_task(self._run(f"{origin}{CALLBACK}", self._callback))
         outcome: Outcome = "cancelled"
         log_event(logger, "ai.access.chatgpt.web_sign_in", phase="start")
         try:
@@ -97,7 +107,9 @@ class ChatGptSignIn:
                 (work, disconnect), timeout=SIGN_IN_TIMEOUT, return_when=asyncio.FIRST_COMPLETED
             )
             if disconnect not in done:
-                outcome = work.result() if work in done else "expired"
+                result = work.result() if work in done and loop.time() < deadline else "expired"
+                # Let the approved keychain write finish on its own thread while this attempt retains the slot.
+                outcome = await _keep(result) if callable(result) else result
             return ChatGptSignInResult(outcome=outcome)
         finally:
             work.cancel()
@@ -111,9 +123,7 @@ class ChatGptSignIn:
         self,
         redirect_uri: str,
         callback: asyncio.Future[tuple[str, str | None] | None],
-        disconnect: asyncio.Task[None],
-        deadline: float,
-    ) -> Outcome:
+    ) -> Outcome | Callable[[], bool]:
         try:
             access = self._kernel.resolve_builtin_service(AiAccessWebSignIn, "ai.access")
             self._login = login = await asyncio.to_thread(access.prepare_web_login, redirect_uri)
@@ -123,16 +133,11 @@ class ChatGptSignIn:
             code = await callback
             if code is None:
                 return "declined"
-            keep = await login.exchange(*code)
-            if disconnect.done():
-                return "cancelled"
-            if asyncio.get_running_loop().time() >= deadline:
-                return "expired"
-            plan_usage_granted = keep()
+            commit = await login.exchange(*code)
         except Exception:  # noqa: BLE001 - OAuth or a credential backend may include secrets in error text
             return "failed"
         else:
-            return "connected" if plan_usage_granted else "declined"
+            return commit
 
     async def callback(self, request: Request) -> Response:
         """Consume one matching OAuth state, never reflecting parameters in a response."""

@@ -193,9 +193,9 @@ status, tests one on request, and keeps `agent-runner` as the runner an option n
   option and agent runner (next slice).
   **Local web sign-in.** A person using the owning web session on the same computer can start sign-in from AI access
   settings. The web head opens the system browser for the person's consent and waits for the one-time callback on
-  its existing `127.0.0.1` listener. The callback accepts only the state for that pending request. The request can be
-  cancelled by closing the dialog or expires after five minutes. The web head checks the OpenAI identity token's
-  signature against OpenAI's public keys, using the existing PyJWT dependency, before keeping it in the keychain.
+  its existing `127.0.0.1` listener. The callback accepts only the state for that pending request. Closing the dialog
+  cancels an unverified attempt, and the authorization expires after five minutes. The web head checks the OpenAI
+  identity token's signature against OpenAI's public keys with PyJWT before saving the result in the keychain.
   The app gets an outcome without authorization URLs or tokens. Paired device sessions and reverse-proxy origins use
   the command in Details. The [OpenAI public-client sign-in guide](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
   specifies the loopback callback and signed identity checks.

@@ -5,6 +5,7 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from queue import Queue
+from threading import Event
 from time import time
 from urllib.parse import parse_qs, urlsplit
 
@@ -72,11 +73,25 @@ def token_response(key, nonce, *, scopes="openid chatgpt.tokens.use.direct"):
     )
 
 
+def pause_keychain_write(backend, monkeypatch):
+    writing, release_write = Event(), Event()
+    store = backend.set
+
+    def hold_keychain_write(service, name, value):
+        writing.set()
+        assert release_write.wait(4)
+        store(service, name, value)
+
+    monkeypatch.setattr(backend, "set", hold_keychain_write)
+    return writing, release_write
+
+
 def test_local_owner_starts_one_flow_and_verified_callback_keeps_only_keychain_credentials(
     sign_in, monkeypatch, caplog
 ):
     client, backend, opened, key, _ = sign_in
     exchanges = []
+    writing, release_write = pause_keychain_write(backend, monkeypatch)
     caplog.set_level(logging.INFO, logger=_chatgpt_signin.__name__)
     with ThreadPoolExecutor() as executor:
         pending = executor.submit(client.post, START, headers=AUTH)
@@ -107,8 +122,14 @@ def test_local_owner_starts_one_flow_and_verified_callback_keeps_only_keychain_c
         assert received.headers["Cache-Control"] == "no-store"
         assert received.headers["Referrer-Policy"] == "no-referrer"
         assert CODE not in received.text
-        assert client.get(received.headers["Location"], headers=REDIRECT).status_code == 200
-        assert client.get("/auth/callback", params=query, headers=REDIRECT).status_code == 400
+        assert writing.wait(4)
+        try:
+            page = executor.submit(client.get, received.headers["Location"], headers=REDIRECT)
+            assert page.result(timeout=2).status_code == 200
+            assert client.get("/auth/callback", params=query, headers=REDIRECT).status_code == 400
+            assert client.post(START, headers=AUTH).status_code == 409
+        finally:
+            release_write.set()
         result = pending.result(timeout=4)
     assert result.json() == {"outcome": "connected"}
     assert result.headers["Cache-Control"] == "no-store"
