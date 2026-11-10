@@ -701,7 +701,11 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   // A plugin change asks once, in the dialog that then shows its progress: never an inline card, never a second
   // question about the restart it brings.
   useEffect(() => {
-    if (!pending || restartBlocked || opened.current === pending) return;
+    if (!pending) {
+      opened.current = null;
+      return;
+    }
+    if (restartBlocked || opened.current) return;
     if (operationStatus === "running" || operationStatus === "unknown") return;
     if (pending.action === "add" && !operation.data) return;
     const call = callOf(pending);
@@ -709,7 +713,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       // A confirmed receipt must survive another result until the store actually accepts its resumption.
       if (resumeDrivenOperation(call, drive(pending)) === null) return;
     } else {
-      requestDrivenOperation(call, drive(pending));
+      if (!requestDrivenOperation(call, drive(pending))) return;
     }
     opened.current = pending;
     finished.current = false;
@@ -720,7 +724,6 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     // Only clean up if the store is still idle, not when that new operation is running.
     if (run.stage !== "idle" || getRun().stage !== "idle" || !opened.current) return;
     const value = opened.current;
-    opened.current = null;
     if (finished.current) return;
     if (value.action === "add") {
       setReceiptId(null);

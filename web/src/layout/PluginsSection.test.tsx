@@ -697,6 +697,37 @@ describe("PluginsSection", () => {
     expect(calls.filter((call) => new URL(call.url).searchParams.get("confirm") === "true")).toHaveLength(1);
   });
 
+  it("retains an unobserved completed receipt while an unconfirmed restart is open", async () => {
+    const operationId = "previous-operation";
+    sessionStorage.setItem("hz.token", "test-token");
+    await act(async () => {
+      await trackOperation(DAEMON_RESTART, async () => null);
+    });
+    sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/operation")
+        return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
+      return base(url);
+    });
+    show();
+    await waitFor(() =>
+      expect(calls.some((request) => new URL(request.url).pathname === "/api/system/plugin/operation")).toBe(true),
+    );
+    const restart = getRun();
+    expect(restart.stage).toBe("done");
+    expect(restart.stage !== "idle" && restart.call).toEqual(DAEMON_RESTART);
+    expect(screen.queryByRole("button", { name: "Install" })).not.toBeInTheDocument();
+    const close = await screen.findAllByRole("button", { name: "Done" });
+    await userEvent.setup().click(close[close.length - 1] as HTMLElement);
+    const prompt = await dialog(/Install heinzel-crm/);
+    expect(within(prompt).getByRole("button", { name: "Install" })).toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
+    expect(calls.filter((request) => new URL(request.url).searchParams.get("confirm") === "true")).toHaveLength(0);
+    await userEvent.setup().click(within(prompt).getByRole("button", { name: "Cancel" }));
+    sessionStorage.removeItem("hz.plugin-add-operation.v1");
+    act(() => resetOperationRun());
+  });
+
   it("restores a confirmed restart receipt and skips every retiring instance", async () => {
     const operationId = "previous-operation";
     sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);

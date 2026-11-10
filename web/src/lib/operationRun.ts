@@ -117,11 +117,12 @@ export function confirmOperation(call: SchemaOperationCall): Promise<unknown> {
 }
 
 /** Ask the person to confirm a write the app drives (`driven`); nothing runs until they choose its action. */
-export function requestDrivenOperation(call: SchemaOperationCall, driven: DrivenOperation): void {
-  if (outcomeUnconfirmed()) return;
-  if (current.stage !== "idle" && current.stage !== "done" && current.stage !== "failed") return;
+export function requestDrivenOperation(call: SchemaOperationCall, driven: DrivenOperation): boolean {
+  if (outcomeUnconfirmed()) return false;
+  if (current.stage !== "idle" && current.stage !== "done" && current.stage !== "failed") return false;
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   set({ stage: "confirm", call, driven });
+  return true;
 }
 
 /**
