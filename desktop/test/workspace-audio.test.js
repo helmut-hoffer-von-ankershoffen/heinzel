@@ -156,6 +156,7 @@ test("a chosen system source loops back system audio with the own frame as video
   assert.equal(f.prompts[0].options.defaultId, 0);
   f.reply(1); await settled();
   assert.deepEqual(f.responses, [{ video: f.frame, audio: "loopback" }]);
+  assert.equal(f.controller.choose(f.sender, "workspace"), true);
   f.start(); await settled();
   assert.equal(f.prompts[1].options.title, "Share workspace audio?", "a choice arms exactly one capture");
   f.reply(1); await settled();
@@ -177,8 +178,9 @@ test("system audio is never granted where unavailable, unowned, expired or revok
   for (const [name, arm] of Object.entries(cases)) {
     const f = fixture({ system: true });
     assert.equal(arm(f), false, name);
-    f.start(); await settled(); f.reply(1); await settled();
-    assert.deepEqual(f.responses, [{ video: f.frame, audio: f.frame, enableLocalEcho: true }], name);
+    f.start(); await settled();
+    assert.deepEqual(f.responses, [{}], name);
+    assert.equal(f.prompts.length, 0, name);
   }
   for (const cancel of [f => f.tick(10_001), f => f.controller.revoke(), f => f.controller.navigation({ isMainFrame: true })]) {
     const f = fixture({ system: true });
@@ -186,8 +188,26 @@ test("system audio is never granted where unavailable, unowned, expired or revok
     cancel(f);
     f.start(); await settled();
     if (f.prompts.length) { f.reply(1); await settled(); }
-    assert.notDeepEqual(f.responses[0], { video: f.frame, audio: "loopback" });
+    assert.deepEqual(f.responses[0], {});
+    assert.equal(f.prompts.length, 0);
   }
+});
+
+test("a system-capable desktop never substitutes workspace audio for an unarmed request", async () => {
+  const f = fixture({ system: true });
+  f.start(); await settled();
+  assert.deepEqual(f.responses, [{}]);
+  assert.equal(f.prompts.length, 0);
+});
+
+test("revocation denies a pending system consent even if the dialog later approves", async () => {
+  const f = fixture({ system: true });
+  assert.equal(f.controller.choose(f.sender, "system"), true);
+  f.start(); await settled();
+  f.controller.revoke();
+  assert.deepEqual(f.responses, [{}]);
+  f.reply(1); await settled();
+  assert.deepEqual(f.responses, [{}], "late approval cannot grant or reply a second time");
 });
 
 test("a refused source choice logs one skipped outcome with its reason", () => {

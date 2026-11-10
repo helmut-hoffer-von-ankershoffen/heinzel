@@ -74,6 +74,7 @@ describe("explicit ephemeral audio capture", () => {
   });
 
   it("rejects and releases an audio track that ends before activation", async () => {
+    vi.stubGlobal("heinzelDesktop", { audioSource: vi.fn().mockResolvedValue(true) });
     let resume!: () => void;
     context.resume.mockReturnValue(new Promise<void>((resolve) => (resume = resolve)));
     const ended = track("audio");
@@ -90,6 +91,7 @@ describe("explicit ephemeral audio capture", () => {
   });
 
   it("rejects an already-ended audio track without waiting for activation", async () => {
+    vi.stubGlobal("heinzelDesktop", { audioSource: vi.fn().mockResolvedValue(true) });
     context.resume.mockReturnValue(new Promise<void>(() => {}));
     const ended = { ...track("audio"), readyState: "ended" };
     choose.mockResolvedValue({ getTracks: () => [ended, video], getAudioTracks: () => [ended] });
@@ -104,8 +106,7 @@ describe("explicit ephemeral audio capture", () => {
     let resume!: () => void;
     context.resume.mockReturnValue(new Promise<void>((resolve) => (resume = resolve)));
     const pending = captureAudio(new AbortController().signal);
-    await Promise.resolve();
-    expect(video.stop).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(video.stop).toHaveBeenCalledOnce());
     expect(audio.stop).not.toHaveBeenCalled();
     expect(source.connect).not.toHaveBeenCalled();
     resume();
@@ -113,6 +114,17 @@ describe("explicit ephemeral audio capture", () => {
     captured.stop();
     expect(video.stop).toHaveBeenCalledOnce();
     expect(audio.stop).toHaveBeenCalledOnce();
+  });
+
+  it("settles cancellation and stops audio when activation never completes", async () => {
+    context.resume.mockReturnValue(new Promise<void>(() => {}));
+    const controller = new AbortController();
+    const pending = captureAudio(controller.signal);
+    await vi.waitFor(() => expect(video.stop).toHaveBeenCalledOnce());
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(audio.stop).toHaveBeenCalledOnce();
+    expect(context.close).toHaveBeenCalledOnce();
   });
 
   it("does not open the picker after cancellation", async () => {
@@ -221,6 +233,54 @@ describe("desktop system audio", () => {
 
   it("never falls back to another source when the app refuses system audio", async () => {
     vi.stubGlobal("heinzelDesktop", { audioSource: vi.fn().mockResolvedValue(false) });
+    await expect(captureAudio(new AbortController().signal, true)).rejects.toThrow("System audio is not available");
+    expect(choose).not.toHaveBeenCalled();
+    expect(context.close).toHaveBeenCalledOnce();
+  });
+
+  it("settles cancellation without opening a picker if desktop source selection never responds", async () => {
+    vi.stubGlobal("heinzelDesktop", { audioSource: vi.fn().mockReturnValue(new Promise(() => {})) });
+    const controller = new AbortController();
+    const pending = captureAudio(controller.signal, true);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(choose).not.toHaveBeenCalled();
+    expect(context.close).toHaveBeenCalledOnce();
+  });
+
+  it("stops every late system track when cancelled while the request is pending", async () => {
+    vi.stubGlobal("heinzelDesktop", { audioSource: vi.fn().mockResolvedValue(true) });
+    let deliver!: (stream: unknown) => void;
+    choose.mockReturnValue(new Promise((resolve) => (deliver = resolve)));
+    const controller = new AbortController();
+    const pending = captureAudio(controller.signal, true);
+    await vi.waitFor(() => expect(choose).toHaveBeenCalledOnce());
+    controller.abort();
+    deliver(shared);
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(audio.stop).toHaveBeenCalledOnce();
+    expect(video.stop).toHaveBeenCalledOnce();
+    expect(context.close).toHaveBeenCalledOnce();
+    expect(source.connect).not.toHaveBeenCalled();
+  });
+
+  it("settles cancellation before the native picker returns and stops any later stream", async () => {
+    vi.stubGlobal("heinzelDesktop", { audioSource: vi.fn().mockResolvedValue(true) });
+    let deliver!: (stream: unknown) => void;
+    choose.mockReturnValue(new Promise((resolve) => (deliver = resolve)));
+    const controller = new AbortController();
+    const pending = captureAudio(controller.signal, true);
+    await vi.waitFor(() => expect(choose).toHaveBeenCalledOnce());
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(context.close).toHaveBeenCalledOnce();
+    deliver(shared);
+    await vi.waitFor(() => expect(audio.stop).toHaveBeenCalledOnce());
+    expect(video.stop).toHaveBeenCalledOnce();
+    expect(source.connect).not.toHaveBeenCalled();
+  });
+
+  it("does not silently request a different source if the desktop bridge is missing", async () => {
     await expect(captureAudio(new AbortController().signal, true)).rejects.toThrow("System audio is not available");
     expect(choose).not.toHaveBeenCalled();
     expect(context.close).toHaveBeenCalledOnce();

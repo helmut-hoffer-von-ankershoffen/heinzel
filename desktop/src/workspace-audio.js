@@ -109,11 +109,15 @@ export function createWorkspaceAudio({ windows, fromWebContents, fromFrame, conn
     } catch { original = null; }
     const choice = armed;
     armed = null;
-    const source = original && choice?.contents === original.contents && now() - choice.at <= ARMED_MS && system ?
+    const age = choice ? now() - choice.at : Infinity;
+    const validChoice = Boolean(original && choice?.contents === original.contents && age >= 0 && age <= ARMED_MS);
+    const source = validChoice && system ?
       choice.source : "workspace";
-    if (!original || pending) {
+    // A system-capable desktop must never turn an expired or revoked system request into a workspace grant.
+    // Older desktops without system support retain their workspace-only compatibility path.
+    if (!original || pending || (system && !validChoice)) {
       log("desktop.audio.capture", { operation: "audio_capture", step: "request", phase: "end", source,
-        outcome: "skipped", reason: pending ? "pending" : "unowned" });
+        outcome: "skipped", reason: pending ? "pending" : !original ? "unowned" : "unarmed" });
       denyDisplay(callback); return;
     }
     let completed = false;
