@@ -25,5 +25,11 @@ export async function assertBundleIcon(bundle) {
   return icon;
 }
 
-/** Extra Info.plist keys: Finder shows the umlaut name while the file name stays ASCII. */
-export const EXTEND_INFO = { CFBundleDisplayName: "Heinzelmännchen" };
+/**
+ * Extra Info.plist keys: Finder shows the umlaut name while the file name stays ASCII; macOS names the visualizer
+ * when it asks to allow system audio (Core Audio tap loopback).
+ */
+export const EXTEND_INFO = {
+  CFBundleDisplayName: "Heinzelmännchen",
+  NSAudioCaptureUsageDescription: "The audio visualizer reacts to the sound this Mac plays. Nothing is recorded or uploaded.",
+};
