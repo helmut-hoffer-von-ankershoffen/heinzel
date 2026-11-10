@@ -20,16 +20,20 @@ from scripts.ci_workload import WorkloadSource
 from scripts.focused_coverage import MAX_FILE, REPORT, canonical, config_policy, evidence, parse
 from scripts.focused_plan import (
     ARTIFACT_PREFIX,
+    LANES,
+    MAX_PLAN,
     PLAN_VARIABLE,
     PROTECTED_FILES,
     Scope,
     git,
     git_blob,
     raw_diff,
+    require_pr_base_ancestor,
     resolve,
+    unique_object,
     web_production,
 )
-from scripts.merge_gate import ARTIFACT, GITHUB, Gate, fetch, red_below, whole_total
+from scripts.merge_gate import ARTIFACT, GITHUB, Gate, fetch_evidence, red_below, whole_total
 from scripts.release_candidate import (
     REPOSITORY,
     WORKFLOW,
@@ -62,6 +66,7 @@ STATIC_JOBS = {
 }
 PR_JOBS = {"Conventional commits", "Dependency review"}
 API_CHECKS = {"merge-gate", "coverage-floor"}
+CLAUDE_REVIEW = "Claude review"
 UPLOAD = re.compile(
     r"(?:[0-9T:.Z-]+ )?Artifact (focused-pr-evidence-[a-z0-9-]+|coverage-total) has been successfully uploaded! "
     r"Final size is ([1-9][0-9]{0,9}) bytes\. Artifact ID is ([1-9][0-9]{0,19})"
@@ -81,8 +86,8 @@ def _positive(value: object) -> bool:
     return type(value) is int and value > 0
 
 
-def pull_identity(gate: Gate, head: str) -> tuple[dict[str, Any], str]:
-    """Read current PR and resolve its actual merge ref independently of the event body."""
+def pull_identity(gate: Gate, head: str) -> tuple[dict[str, Any], str, str]:
+    """Read the current PR, its actual merge ref and protected main independently."""
     number = int(gate.pr)
     pr = gate.github(f"pulls/{number}")
     base = gate.github("git/ref/heads/main")["object"]["sha"]
@@ -92,7 +97,7 @@ def pull_identity(gate: Gate, head: str) -> tuple[dict[str, Any], str]:
         and pr["draft"] is False
         and pr["base"]["repo"]["full_name"] == REPOSITORY
         and pr["base"]["ref"] == "main"
-        and pr["base"]["sha"] == base
+        and valid_sha(pr["base"]["sha"])
         and pr["head"]["sha"] == head
         and valid_sha(base)
         and valid_sha(head),
@@ -105,7 +110,7 @@ def pull_identity(gate: Gate, head: str) -> tuple[dict[str, Any], str]:
         "missing current GitHub test merge",
     )
     require(pr.get("merge_commit_sha") in (None, fields[0]), "GitHub test merge changed")
-    return pr, fields[0]
+    return pr, fields[0], base
 
 
 def _authenticated_run(gate: Gate, run_id: int, *, candidate_composite: bool = False) -> dict[str, Any]:
@@ -147,16 +152,19 @@ def _authenticated_run(gate: Gate, run_id: int, *, candidate_composite: bool = F
     return run
 
 
-def _pr_source(gate: Gate, run: dict[str, Any], snapshot: tuple[dict[str, Any], str]) -> GateSource:
-    pr, merge = snapshot
+def _pr_source(
+    gate: Gate, run: dict[str, Any], snapshot: tuple[dict[str, Any], str, str], *, candidate: bool
+) -> GateSource:
+    pr, merge, base = snapshot
     event = run["event"]
-    head, base = gate.head, pr["base"]["sha"]
+    head = gate.head
     require(
         event in ("pull_request", "workflow_dispatch")
         and run["head_repository"]["id"] == pr["head"]["repo"]["id"]
         and run["head_branch"] == pr["head"]["ref"],
         "run does not belong to this pull request",
     )
+    require(not candidate or pr["base"]["sha"] == base, "release PR or protected base changed")
     if event == "pull_request":
         ref = f"refs/pull/{gate.pr}/merge"
         associated = run["pull_requests"]
@@ -165,31 +173,37 @@ def _pr_source(gate: Gate, run: dict[str, Any], snapshot: tuple[dict[str, Any], 
             or (
                 len(associated) == 1
                 and associated[0]["number"] == pr["number"]
-                and associated[0]["base"]["sha"] == base
                 and associated[0]["head"]["sha"] == head
             ),
-            "workflow run association does not bind the exact PR base and head",
+            "workflow run association does not bind the exact PR and head",
         )
         git("fetch", "--no-tags", "origin", ref)
         require(git("rev-parse", "FETCH_HEAD").decode().strip() == merge, "GitHub test merge moved during fetch")
+        if associated:
+            reported = associated[0]["base"]
+            if candidate:
+                require(reported["sha"] == base, "release workflow run association does not bind the exact PR base")
+            else:
+                require(
+                    reported["ref"] == pr["base"]["ref"] and reported["repo"]["id"] == pr["base"]["repo"]["id"],
+                    "workflow run association does not target protected main",
+                )
+                require_pr_base_ancestor(reported["sha"], base)
     else:
-        require(
-            release_version("pull_request", REPOSITORY, "", {"pull_request": pr}),
-            "ordinary pull requests require their original PR CI run",
-        )
+        require(candidate, "ordinary pull requests require their original PR CI run")
         ref, merge = f"refs/heads/{pr['head']['ref']}", head
         git("fetch", "--no-tags", "origin", head)
     payload = {"pull_request": pr}
     return GateSource(run, WorkloadSource(event, REPOSITORY, ref, payload, base, head, raw_diff(base, merge)), merge)
 
 
-def _is_published_check(job: dict[str, Any], run_id: int) -> bool:
+def _is_published_check(gate: Gate, source: GateSource, job: dict[str, Any]) -> bool:
     # GitHub can list API-created checks on the PR head alongside Actions jobs.
     # Match their exact runner-less shape, as the release evidence reader does.
     url = job.get("html_url")
-    return (
+    run_id = source.run["id"]
+    if not (
         _positive(job.get("id"))
-        and job.get("name") in API_CHECKS
         and job.get("runner_id") is None
         and job.get("runner_name") is None
         and job.get("steps") == []
@@ -197,6 +211,35 @@ def _is_published_check(job: dict[str, Any], run_id: int) -> bool:
         and job.get("run_id") == run_id
         and url == f"https://github.com/{REPOSITORY}/runs/{job['id']}"
         and f"/actions/runs/{run_id}/job/" not in str(job.get("check_run_url", "")) + str(url)
+    ):
+        return False
+    if job.get("name") in API_CHECKS:
+        return True
+    if not (
+        source.run["event"] == "pull_request"
+        and job.get("name") == CLAUDE_REVIEW
+        and job.get("status") == "completed"
+        and job.get("conclusion") == "neutral"
+        and "runner_id" in job
+        and "runner_name" in job
+        and type(job.get("run_attempt")) is int
+        and job["run_attempt"] == 1
+        and job.get("head_sha") == source.source.head
+        and job.get("check_run_url") == f"{GITHUB}/repos/{REPOSITORY}/check-runs/{job['id']}"
+    ):
+        return False
+    # The advisory workflow creates a neutral API check when no review ran.
+    # Authenticate that check independently before excluding it from the CI jobs.
+    check = gate.github(f"check-runs/{job['id']}")
+    return (
+        check.get("id") == job["id"]
+        and check.get("name") == CLAUDE_REVIEW
+        and check.get("head_sha") == source.source.head
+        and check.get("status") == "completed"
+        and check.get("conclusion") == "neutral"
+        and check.get("html_url") == check.get("details_url") == url
+        and check.get("app", {}).get("id") == ACTIONS_APP_ID
+        and check.get("check_suite", {}).get("id") == source.run["check_suite_id"]
     )
 
 
@@ -213,7 +256,7 @@ def jobs_for(gate: Gate, source: GateSource) -> list[dict[str, Any]]:
         "unexpected GitHub Actions check suite",
     )
     raw_jobs = job_inventory(gate.github, run["id"])
-    jobs = [job for job in raw_jobs if not _is_published_check(job, run["id"])]
+    jobs = [job for job in raw_jobs if not _is_published_check(gate, source, job)]
     for job in jobs:
         require(
             _positive(job["id"])
@@ -356,13 +399,72 @@ def _verify_config(scope: Scope) -> None:
     )
 
 
+def _tested_source_after_main_moves(
+    gate: Gate, source: GateSource, manifest: str, current_main: str, read: Callable[[str], bytes]
+) -> GateSource:
+    """Recover only an artifact-authenticated candidate; the detached plan still judges it."""
+    require(len(manifest.encode()) <= MAX_PLAN, "focused plan registry exceeds its supported size")
+    registry = json.loads(manifest or "{}", object_pairs_hook=unique_object)
+    plan = registry.get(f"pull_request:{source.source.head}") if isinstance(registry, dict) else None
+    require(isinstance(plan, dict) and isinstance(plan.get("selection"), dict), "missing reviewed focused plan")
+    lanes = plan["selection"]
+    require(lanes and set(lanes) <= set(LANES), "invalid focused lane inventory")
+    base = plan.get("base")
+    require(valid_sha(base), "invalid reviewed tested base")
+    git("fetch", "--no-tags", "origin", base)
+    require_pr_base_ancestor(base, current_main)
+    jobs = jobs_for(gate, source)
+    names = {job["name"]: job for job in jobs}
+    expected = STATIC_JOBS | PR_JOBS | {f"Focused tests ({lane})" for lane in lanes}
+    require(
+        len(names) == len(jobs) and {n for n, j in names.items() if j["conclusion"] != "skipped"} == expected,
+        "focused workload job inventory is missing, unexpected or skipped",
+    )
+    for name in sorted(expected):
+        _check(gate, source, names[name])
+    artifacts = _artifact_inventory(gate, source.run["id"])
+    by_lane = {lane: f"{ARTIFACT_PREFIX}-{lane}-{source.run['id']}-1" for lane in lanes}
+    require(set(artifacts) == set(by_lane.values()), "focused artifact lane inventory mismatch")
+    commits = set()
+    for lane, name in by_lane.items():
+        files = _artifact(read, names[f"Focused tests ({lane})"], artifacts[name], name)
+        commits.add(parse(files[REPORT]).get("commit"))
+    require(len(commits) == 1, "focused artifacts disagree on tested commit")
+    commit = commits.pop()
+    require(valid_sha(commit), "invalid artifact tested commit")
+    git("fetch", "--no-tags", "origin", commit)
+    require(git("rev-parse", "FETCH_HEAD").decode().strip() == commit, "tested commit fetch changed")
+    recovered = WorkloadSource(
+        source.source.event,
+        source.source.repository,
+        source.source.ref,
+        source.source.payload,
+        base,
+        source.source.head,
+        raw_diff(base, commit),
+    )
+    return GateSource(source.run, recovered, commit)
+
+
 def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes]) -> str:
     """Return a typed verdict for the completed original CI attempt, without publishing checks."""
     snapshot = pull_identity(gate, gate.head)
     candidate = bool(release_version("pull_request", REPOSITORY, "", {"pull_request": snapshot[0]}))
     run = _authenticated_run(gate, run_id, candidate_composite=candidate)
-    source = _pr_source(gate, run, snapshot)
-    scope = resolve(source.source, source.commit, manifest, source.source.payload["pull_request"])
+    source = _pr_source(gate, run, snapshot, candidate=candidate)
+    if (
+        not candidate
+        and json.loads(manifest, object_pairs_hook=unique_object).get(f"pull_request:{gate.head}", {}).get("base")
+        != snapshot[2]
+    ):
+        source = _tested_source_after_main_moves(gate, source, manifest, snapshot[2], read)
+    scope = resolve(
+        source.source,
+        source.commit,
+        manifest,
+        source.source.payload["pull_request"],
+        pr_base_limit=None if candidate else snapshot[2],
+    )
     if not isinstance(scope, Scope):
         jobs = [job for job in jobs_for(gate, source) if job["name"] == "Coverage"]
         require(len(jobs) == 1, "canonical candidate requires the exact Coverage job")
@@ -392,13 +494,18 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes])
             if any(web_production(path) for path in scope.changed)
             else "Python coverage: not applicable to the reviewed scope"
         )
-    current, merge = pull_identity(gate, gate.head)
+    current, merge, main = pull_identity(gate, gate.head)
     require(
-        current["base"]["sha"] == source.source.base
-        and (source.source.event != "pull_request" or merge == source.commit)
+        main == snapshot[2]
+        and (not candidate or current["base"]["sha"] == main)
+        and (source.source.event != "pull_request" or merge == snapshot[1])
+        and (not candidate or source.source.event != "pull_request" or merge == source.commit)
         and _authenticated_run(gate, run_id, candidate_composite=candidate) == run,
         "source or workflow attempt changed during verification",
     )
+    if not candidate:
+        require_pr_base_ancestor(source.source.base, main)
+        require_pr_base_ancestor(current["base"]["sha"], main)
     return verdict
 
 
@@ -455,17 +562,10 @@ def main() -> None:
     """Run from the protected merge gate, with the workload Git tree fetched as data."""
     gate = Gate(REPOSITORY, os.environ.get("PR_NUMBER", ""), os.environ["PR_HEAD_SHA"], os.environ["GITHUB_TOKEN"])
 
-    storage = frozenset(filter(None, os.environ.get("FOCUSED_CI_STORAGE_HOSTS", "").split(",")))
-
     def read(path: str) -> bytes:
         url = f"{GITHUB}/repos/{REPOSITORY}/{path}"
         limit = MAX_UPLOAD_LOG if path.endswith("/logs") else MAX_ARCHIVE
-        headers = {
-            "Authorization": f"Bearer {gate.token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2026-03-10",
-        }
-        return fetch(url, headers, limit=limit, storage_hosts=storage)
+        return fetch_evidence(url, gate.token, limit=limit)
 
     run = int(os.environ["CI_RUN_ID"])
     manifests = os.environ.get(PLAN_VARIABLE, "")
