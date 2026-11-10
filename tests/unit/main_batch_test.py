@@ -105,13 +105,20 @@ def test_release_proof_tries_only_the_two_reviewed_source_pairs(monkeypatch):
     assert batch.release_proof_approved(FINAL, lambda _: {}, lambda _: b"") == {"run": 99}
     assert tried == [batch.RELEASE_PINS, batch.DELEGATION_PINS]
 
+    recognition_calls = []
+
     def recognized(*_args):
+        recognition_calls.append(1)
+        if len(recognition_calls) > 1:
+            msg = "second request unavailable"
+            raise OSError(msg)
         msg = "recognized release has a noncanonical merge message"
         raise batch.RecognizedReleaseError(msg)
 
     monkeypatch.setattr(batch, "release_proof_for", recognized)
     with pytest.raises(batch.RecognizedReleaseError, match="noncanonical"):
         batch.release_proof_approved(FINAL, lambda _: {}, lambda _: b"")
+    assert len(recognition_calls) == 1
 
 
 @pytest.fixture
