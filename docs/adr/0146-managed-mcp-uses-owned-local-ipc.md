@@ -11,17 +11,20 @@ related: 0019, 0062, 0068, 0133, 0138
 
 Vendor clients need to call reviewed Heinzel operations through a connection the owner can install, inspect, start,
 stop and remove. Start must verify MCP readiness while every vendor client is closed. Existing MCP exposure,
-Claude settings discovery and human approval have separate contracts.
+Claude settings discovery and human approval have separate contracts. This proposal governs managed private IPC;
+it does not require the private bridge for an owner-authorized ordinary MCP client.
 
 ## Considered Options
 
 - Supervise one server per registration and admit clients over owned local IPC.
 - Start a server on demand from each vendor's stdio command. Readiness would depend on the vendor connecting.
-- Register a loopback HTTP server. Direct HTTP needs its own audience and authorization review.
+- Register a loopback HTTP server. The existing scoped-bearer HTTP head is a separate, usable transport governed by
+  ADR 0142; integrating its lifecycle into a managed registration needs its own audience and authorization review.
 
 ## Decision Outcome
 
-- Use one supervised local server per registration on macOS and Linux. Vendor integration requires a standalone
+- For the managed private-IPC registration, use one supervised local server per registration on macOS and Linux.
+  Its vendor integration requires a standalone
   bridge with a pinned absolute interpreter and `-I -S`, plus a trusted bootstrap that delivers a private broker
   channel. Vendor launches that can only resolve the named socket remain unadmitted. The bridge never starts
   the server or boots the application. Readiness requires authenticated MCP initialization, discovery and identity
@@ -211,6 +214,9 @@ refresh, update, rollback and uninstall. A legacy migration must establish the c
 pending work under that same authority before activation. Ordinary install and recovery remain available during
 this work. They cannot certify historical profiles or replace the broker.
 
-Direct HTTP is separate follow-up work building on the proposed bearer scope in
-[PR #655](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/655). Claude Desktop and Gemini CLI
-remain follow-up client integrations with their own acceptance matrix.
+The existing streamable-HTTP head in [ADR 0142](0142-mcp-over-http-takes-per-agent-bearer-tokens-with-read-and-write-scopes.md)
+is an independent path for owner-authorized standard clients. Its scoped bearer, exposed-operation policy and
+per-operation approval rules apply without a managed private descriptor or authenticated descendant. Same-user
+installed software follows the trusted-local-code boundary in [ADR 0068](0068-human-approval-proofs-and-head-parity.md);
+a compromised host remains outside that boundary. Managed registration over HTTP, Claude Desktop and Gemini CLI
+remain follow-up integrations with their own acceptance matrix.
