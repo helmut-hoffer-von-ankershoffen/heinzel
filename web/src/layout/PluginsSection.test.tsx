@@ -286,6 +286,55 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PluginsSection", () => {
+  it("recovers an acknowledged restart on remount after closing failed verification", async () => {
+    const operationId = "acknowledged-restart";
+    sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+    const key = "hz.plugin-add-restart.v1";
+    sessionStorage.setItem(
+      key,
+      JSON.stringify({
+        operation_id: operationId,
+        acknowledged: true,
+        observation: { retired: ["old"], version: "0.9.23", settings: [] },
+      }),
+    );
+    let verifies = 0;
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/operation")
+        return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
+      if (url.pathname === "/api/lifecycle")
+        return { body: { instance: "replacement", version: "0.9.23", restartable: true } };
+      if (url.pathname === "/api/lifecycle/verify")
+        return ++verifies === 1
+          ? { status: 403, body: { error: "verification failed" } }
+          : { body: { instance: "replacement", version: "0.9.23", matches: true, mismatched: [] } };
+      return base(url);
+    });
+    const reload = vi.fn();
+    const first = show({ reload, restartInterval: 1 });
+    const failed = await dialog(/Installing heinzel-crm/);
+    const user = userEvent.setup();
+    await within(failed).findByRole("button", { name: "Try again" });
+    const close = within(failed).getAllByRole("button", { name: "Close" }).at(-1);
+    if (!close) throw new Error("Missing Close button");
+    await user.click(close);
+    expect(getRun().stage).toBe("idle");
+    expect(sessionStorage.getItem(key)).not.toBeNull();
+    first.unmount();
+
+    show({ reload, restartInterval: 1 });
+    await waitFor(() =>
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/operation")).toHaveLength(
+        2,
+      ),
+    );
+    await waitFor(() => expect(verifies).toBe(2), {
+      timeout: 1000,
+      onTimeout: (error) => error,
+    });
+    expect(reload).toHaveBeenCalledOnce();
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
+  });
   it("does not reopen an admitted restored receipt when Settings remounts and it is cancelled", async () => {
     const operationId = "previous-operation";
     sessionStorage.setItem("hz.token", "test-token");

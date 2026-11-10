@@ -173,7 +173,7 @@ async function startDriven(): Promise<void> {
 /** Close the confirmation, or the outcome; a running operation can't be closed, it can't be stopped safely. */
 export function dismissOperation(): void {
   if (current.stage === "running") return;
-  if (current.stage !== "idle" && current.driven?.identity) dismissedDrivenIdentities.add(current.driven.identity);
+  if (current.stage === "confirm" && current.driven?.identity) dismissedDrivenIdentities.add(current.driven.identity);
   set({ stage: "idle" });
   // The focus goes back to the button that asked.
   const back = opener;
