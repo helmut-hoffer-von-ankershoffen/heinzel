@@ -33,7 +33,7 @@ def route(router, event="pull_request", ref=PR_REF, payload=None, **overrides):
         payload = {
             "pull_request": {
                 "number": int(ref.split("/")[2]),
-                "base": {"sha": source["base"]},
+                "base": {"sha": source["base"], "ref": "main", "repo": {"full_name": router.REPOSITORY}},
                 "head": {"sha": source["head"]},
             },
         }
@@ -146,6 +146,13 @@ def test_canonical_open_release_pr_uses_current_full_candidate_contract(router, 
     assert len([name for name, _ in result.expected_jobs if name.startswith("Test (")]) == 16
     assert len([name for name, _ in result.expected_jobs if name.startswith("End-to-end ")]) == 8
     assert result.coverage_floor == merge_gate.red_below((ROOT / release_candidate.WORKFLOW).read_text()) == 80
+
+
+def test_release_pull_request_still_requires_its_exact_reported_base(router):
+    pr = release_pr(router)
+    pr["base"]["sha"] = "e" * 40
+    with pytest.raises(router.CandidateError, match="canonical open release PR"):
+        route(router, payload={"pull_request": pr})
 
 
 @pytest.mark.parametrize("defect", ["absent", "closed", "draft", "wrong title", "fork", "wrong head", "wrong base"])

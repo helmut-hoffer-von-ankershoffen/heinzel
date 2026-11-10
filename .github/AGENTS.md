@@ -63,6 +63,9 @@ An entry has these fields.
   `refs/pull/*/merge` as its planning ref and compute the expected tree with `git merge-tree --write-tree BASE HEAD`.
   CI independently binds the real PR number and test merge with ordered parents `[base, head]`. Evidence records
   the actual tested merge commit. Provide an optional exact `commit` only when the GitHub merge SHA already exists.
+  GitHub can report older PR and run base SHAs. Each reported SHA must be in the tested base's Git history. The
+  protected judge requires the tested base to equal current `main` and rechecks `main` and the merge ref before
+  its verdict.
 - `diff_sha256` is the SHA-256 of `git diff-tree --no-commit-id -r --raw --no-abbrev --no-renames -z BASE TREE`.
   `changed` is its complete path-to-status map. Rename halves are reviewed as deletion and addition.
 - `production` maps every changed and explicitly affected covered Python file to its Git blob ID in that tree.
@@ -76,9 +79,9 @@ An entry has these fields.
 Run `python3 -I scripts/focused_plan.py --suggest BASE` in the checkout to get the advisory affected-selector
 result. The selector's full or broad recommendations request an explicit bounded plan. They never schedule tests.
 The protected judge replays the detached plan and checks the actual first attempt, job suite, uploaded artifact
-identity and digest, exact case inventory, and source opportunities. The administrator provisions
-`FOCUSED_CI_STORAGE_HOSTS` as the exact comma-separated artifact redirect hosts. A redirect never carries the API
-token. The focused integration verifier takes the expected aggregate base from the queue and emits
+identity and digest, exact case inventory, and source opportunities. The protected evidence reader accepts a single
+authenticated GitHub API delegation to numeric production-results storage, without forwarding credentials or proxies.
+The focused integration verifier takes the expected aggregate base from the queue and emits
 `focused-main/v1` evidence for the exact current main run. The queue still checks that base and the tested PR source.
 
 The existing release source policy reviews and pins the candidate workflow and recorder before candidate use.
