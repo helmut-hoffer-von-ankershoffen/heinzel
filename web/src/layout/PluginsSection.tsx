@@ -42,10 +42,12 @@ import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
 import {
   type DrivenOperation,
+  getRun,
   type Phase,
   requestDrivenOperation,
   resumeDrivenOperation,
   useOperationRun,
+  wasDrivenOperationDismissed,
 } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
 import { type ApplyStepId, ApplySteps, applyWithSteps } from "@/lifecycle/applySteps";
@@ -144,6 +146,14 @@ function takeFinishing(): { pending: Pending; phases: Phase[] } | null {
     return { pending: record.pending, phases: record.phases };
   } catch {
     return null;
+  }
+}
+
+function hasFinishing(): boolean {
+  try {
+    return window.sessionStorage.getItem(FINISHING_KEY) !== null;
+  } catch {
+    return false;
   }
 }
 
@@ -576,6 +586,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   const finished = useRef(false);
   /** The one confirmation and the whole progress of a plugin change, in the operation dialog (ADR 0056). */
   const drive = (value: Pending): DrivenOperation => ({
+    ...(value.action === "add" ? { identity: `plugin-add:${value.operationId}` } : {}),
     consent: consentOf(value),
     ...wordsOf(value),
     details: value.action === "add" ? <CandidateDetails candidate={value.candidate} /> : undefined,
@@ -656,9 +667,17 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       steps.mark("check", "done");
     },
   });
-  // Back after the reload a change asked for: the same dialog opens at its final check, with the steps it took.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: once, on the page the reload opened
+  const run = useOperationRun();
+  // Only a record present at mount belongs to a previous page. A record saved by this page awaits its reload.
+  const finishingFromPreviousPage = useRef(hasFinishing());
+  // Keep the saved final check until the dialog is free, including while a restart outcome is unconfirmed.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resume when the dialog becomes available
   useEffect(() => {
+    if (!finishingFromPreviousPage.current) return;
+    // Read the store at effect time: another entry point can change it after this render.
+    const currentRun = getRun();
+    if (currentRun.stage !== "idle") return;
+    finishingFromPreviousPage.current = false;
     const finishing = takeFinishing();
     if (!finishing) return;
     const { pending: value, phases } = finishing;
@@ -679,26 +698,51 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
         steps.mark("check", "done");
       },
     });
-  }, []);
+  }, [run]);
   const operationStatus = pending?.action === "add" ? operation.data?.status : undefined;
-  const run = useOperationRun();
   // A plugin change asks once, in the dialog that then shows its progress: never an inline card, never a second
   // question about the restart it brings.
   useEffect(() => {
-    if (!pending || restartBlocked || opened.current === pending) return;
+    if (!pending) {
+      opened.current = null;
+      return;
+    }
+    if (restartBlocked || opened.current) return;
     if (operationStatus === "running" || operationStatus === "unknown") return;
     if (pending.action === "add" && !operation.data) return;
+    if (pending.action === "add" && wasDrivenOperationDismissed(`plugin-add:${pending.operationId}`)) {
+      setReceiptId(null);
+      setRestartObservation(null);
+      setPending(null);
+      return;
+    }
+    // A restored receipt may already own the dialog opened by an earlier mount. Remember that ownership so
+    // Cancel closes it instead of this mount treating the same receipt as a new deferred request.
+    const currentRun = getRun();
+    if (
+      pending.action === "add" &&
+      currentRun.stage !== "idle" &&
+      currentRun.driven?.identity === `plugin-add:${pending.operationId}`
+    ) {
+      opened.current = pending;
+      return;
+    }
+    const call = callOf(pending);
+    if (pending.action === "add" && restartObservation) {
+      // A confirmed receipt must survive another result until the store actually accepts its resumption.
+      if (resumeDrivenOperation(call, drive(pending)) === null) return;
+    } else {
+      if (!requestDrivenOperation(call, drive(pending))) return;
+    }
     opened.current = pending;
     finished.current = false;
-    const call = callOf(pending);
-    if (pending.action === "add" && restartObservation) void resumeDrivenOperation(call, drive(pending));
-    else requestDrivenOperation(call, drive(pending));
   });
   // Cancel (or Close after a failure) ends the change here; the receipt keeps what the server knows.
   useEffect(() => {
-    if (run.stage !== "idle" || !opened.current) return;
+    // A preceding effect may have resumed a receipt after this render's idle snapshot.
+    // Only clean up if the store is still idle, not when that new operation is running.
+    if (run.stage !== "idle" || getRun().stage !== "idle" || !opened.current) return;
     const value = opened.current;
-    opened.current = null;
     if (finished.current) return;
     if (value.action === "add") {
       setReceiptId(null);
