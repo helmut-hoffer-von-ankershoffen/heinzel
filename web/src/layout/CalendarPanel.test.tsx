@@ -38,8 +38,8 @@ it("sets up the profile worker only after explicit confirmation without a termin
   const { calls, container } = panel(true);
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Set up reminder worker" }));
-  expect(screen.getByRole("alertdialog")).toHaveTextContent("at every login");
-  expect(screen.getByRole("alertdialog")).toHaveTextContent("separate consent");
+  expect(screen.getByRole("dialog")).toHaveTextContent("at every login");
+  expect(screen.getByRole("dialog")).toHaveTextContent("separate consent");
   expect(container.textContent).not.toContain("hz org");
   expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
   await expectAccessible(container);

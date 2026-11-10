@@ -185,7 +185,7 @@ describe("Onboarding focus and answers", { timeout: 20_000 }, () => {
     await user.click(within(dialog).getByRole("button", { name: "Install the daemon" }));
     expect(await screen.findByRole("button", { name: "Cancel" })).toHaveFocus();
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /Keep my Heinzelmännchen working/ })).not.toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Set up hz" })).toBeInTheDocument();
     await waitFor(() => expect(within(dialog).getByRole("button", { name: "Install the daemon" })).toHaveFocus());
     await user.click(within(dialog).getByRole("button", { name: /AI access/ }));
@@ -312,7 +312,7 @@ describe("Onboarding notifications step", { timeout: 20_000 }, () => {
         ),
     });
     await user.click(within(dialog).getByRole("button", { name: "Install the daemon" }));
-    const confirm = await screen.findByRole("alertdialog", { name: /Keep my Heinzelmännchen working/ });
+    const confirm = await screen.findByRole("dialog", { name: /Keep my Heinzelmännchen working/ });
     expect(confirm).toHaveTextContent("hz system daemon install");
     await user.click(within(confirm).getByRole("button", { name: "Install background service" }));
     expect(await screen.findByText(/Installed\. Its first check comes within 5 minutes/)).toBeInTheDocument();

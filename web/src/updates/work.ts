@@ -6,9 +6,14 @@ export function registerUpdatePreparation(prepare: () => void): () => void {
   return () => owners.delete(prepare);
 }
 
+/** Save every registered draft so that a restart or a reload of the page keeps it; nothing is refused here. */
+export function saveOpenWork(): void {
+  for (const prepare of owners) prepare();
+}
+
 export function preserveUpdateWork(): void {
   // The dialog that shows this update's own steps is not open work.
-  if (document.querySelector('[role="dialog"],[role="alertdialog"]:not([data-tracked]),.xterm'))
+  if (document.querySelector('[role="dialog"]:not([data-operation]),[role="alertdialog"],.xterm'))
     throw new Error("Close the terminal or editor before updating; its open work will stay here.");
   for (const prepare of owners) prepare();
 }

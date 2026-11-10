@@ -485,8 +485,8 @@ def test_an_installed_window_opened_while_hz_is_down_opens_the_app_by_itself_whe
 
 
 @pytest.mark.timeout(600)
-def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(environment, tmp_path):
-    """Install on a row low in Discover shows its confirmation next to the click, focused, on desktop and phone."""
+def test_plugin_install_asks_once_in_the_operation_dialog_in_view(environment, tmp_path):
+    """Install on a row low in Discover asks once in the operation dialog, in view and focused, on desktop and phone."""
     env, _ = environment
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
@@ -507,7 +507,7 @@ def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(env
         url = ui.stdout.readline().strip()
         assert url.startswith("http://127.0.0.1:")
         driven = subprocess.run(
-            [*run, "exec", "node", "e2e/plugin-install-inline.mjs", url, str(shots)],
+            [*run, "exec", "node", "e2e/plugin-install-confirm.mjs", url, str(shots)],
             cwd=REPO,
             capture_output=True,
             text=True,
