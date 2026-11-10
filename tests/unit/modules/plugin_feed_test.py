@@ -471,3 +471,37 @@ def test_public_raw_metadata_is_anonymous_bounded_and_treats_not_found_as_unavai
         _feed.raw_text(RAW + "oversize.toml", 4)
     assert [method for method, _, _ in seen] == ["GET", "HEAD", "GET", "GET"]
     assert all(authority is None for _, _, authority in seen)
+
+
+def test_public_release_asset_fetch_is_anonymous_bounded_and_rejects_foreign_redirects(monkeypatch):
+    """The shared GitHub reader does not send credentials or follow an asset redirect to an unrelated host."""
+    monkeypatch.setenv("GH_TOKEN", "fictional-private-token")
+    seen = []
+    read_limits = []
+
+    class AssetResponse(Reply):
+        def read(self, limit):
+            read_limits.append(limit)
+            return self.body[:limit]
+
+    class Opener:
+        def open(self, request, timeout):
+            seen.append((request.full_url, request.get_header("Authorization"), timeout))
+            return AssetResponse(b"release-data")
+
+    def opener(*handlers):
+        assert handlers == (_github._AssetRedirects,)
+        return Opener()
+
+    monkeypatch.setattr(urllib.request, "build_opener", opener)
+    url = "https://github.com/fictional-lab/harbor/releases/download/v1/catalog.json"
+    assert _github.read_asset(url, 3) == b"release-data"
+    assert seen == [(url, None, 3)]
+    assert read_limits == [_github.MAX_BYTES + 1]
+    with pytest.raises(ValueError, match="not a GitHub asset URL"):
+        _github.read_asset("https://evil.example/catalog.json", 3)
+    request = urllib.request.Request(url)
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        _github._AssetRedirects().redirect_request(request, None, 302, "Found", {}, "https://evil.example/asset")
+    assert caught.value.code == 302
+    caught.value.close()
