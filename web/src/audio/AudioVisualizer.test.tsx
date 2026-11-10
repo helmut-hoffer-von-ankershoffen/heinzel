@@ -283,6 +283,29 @@ describe("AudioVisualizer", () => {
     expect(source("Microphone")).toHaveAttribute("aria-checked", "true");
   });
 
+  it("keeps a replacement request alive when the old source ends", async () => {
+    const track = new EventTarget();
+    Object.assign(track, { readyState: "live" });
+    vi.mocked(captureMicrophone).mockResolvedValueOnce({
+      ...listening,
+      stream: { getTracks: () => [track], getAudioTracks: () => [track] },
+    } as unknown as typeof listening);
+    let grant: (value: typeof captured) => void = () => undefined;
+    vi.mocked(captureAudio).mockImplementationOnce(() => new Promise((resolve) => (grant = resolve)));
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(source("Microphone"));
+    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    fireEvent.click(source("Shared audio"));
+    const replacementSignal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
+    act(() => track.dispatchEvent(new Event("ended")));
+    expect(replacementSignal?.aborted).toBe(false);
+    await act(async () => grant(captured));
+    expect(source("Shared audio")).toHaveAttribute("aria-checked", "true");
+    act(() => track.dispatchEvent(new Event("ended")));
+    expect(stop).not.toHaveBeenCalled();
+  });
+
   it("stops the microphone with Off, remembers Off, and never restarts it by itself", async () => {
     localStorage.setItem("hz.audio.source", "mic");
     const realPermissions = Object.getOwnPropertyDescriptor(navigator, "permissions");

@@ -192,10 +192,21 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   useEffect(() => {
     if (!session) return;
     const tracks = session.stream.getTracks();
-    for (const track of tracks) track.addEventListener("ended", stop, { once: true });
-    if (session.stream.getAudioTracks().every((track) => track.readyState === "ended")) stop();
+    const ended = () => {
+      if (current.current !== session) return;
+      if (!request.current) {
+        stop();
+        return;
+      }
+      session.stop();
+      current.current = null;
+      setSession(null);
+      setHasSignal(false);
+    };
+    for (const track of tracks) track.addEventListener("ended", ended, { once: true });
+    if (session.stream.getAudioTracks().every((track) => track.readyState === "ended")) ended();
     return () => {
-      for (const track of tracks) track.removeEventListener("ended", stop);
+      for (const track of tracks) track.removeEventListener("ended", ended);
     };
   }, [session, stop]);
   // A microphone the person already allowed and chose before listens again without another question.
