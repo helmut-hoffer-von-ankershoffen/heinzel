@@ -1,6 +1,8 @@
 """The web app's notice stream (ADR 0041): server-sent events behind the session token, and the notify operations."""
 
+import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +10,8 @@ from fastapi.testclient import TestClient
 from heinzel import Delivery, NoticeKind, Notifications
 from heinzel.heads import api, web
 from heinzel.heads._exposure import exposed
+from heinzel.heads.web import _stream
+from heinzel.heads.web._shutdown import Stopping
 
 pytestmark = pytest.mark.integration
 
@@ -73,6 +77,33 @@ def test_a_tab_that_cant_pop_up_only_hears_that_the_list_changed(client, kernel)
     found = events(client.get(STREAM, params={"once": True}, headers=AUTH).text)
     assert found == [("changed", {"latest": notice.id})]
     assert kernel.resolve(Notifications).store.watched_at() is None
+
+
+def test_empty_stream_sends_initial_snapshot(client):
+    assert events(client.get(STREAM, params={"once": True}, headers=AUTH).text) == [("changed", {"latest": None})]
+
+
+def test_stream_detects_removal_beyond_the_first_fifty(monkeypatch):
+    monkeypatch.setattr(_stream, "POLL_SECONDS", 0.001)
+    notices = [SimpleNamespace(id=str(i)) for i in range(200)]
+
+    class Source:
+        def recent(self, limit):
+            return notices[:limit]
+
+    class Request:
+        async def is_disconnected(self):
+            return False
+
+    async def observe():
+        stream = _stream._events(Request(), Source(), popups=False, once=False, clock=lambda: 0, stopping=Stopping())
+        assert await anext(stream) == "retry: 3000\n\n"
+        assert events(await anext(stream)) == [("changed", {"latest": "0"})]
+        notices.pop(150)
+        assert events(await asyncio.wait_for(anext(stream), timeout=2)) == [("changed", {"latest": "0"})]
+        await stream.aclose()
+
+    asyncio.run(observe())
 
 
 def test_the_app_acknowledges_what_it_showed_and_lists_notices(client, kernel):
