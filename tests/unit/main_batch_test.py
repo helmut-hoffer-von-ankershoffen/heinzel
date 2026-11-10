@@ -1,6 +1,7 @@
 """A partial or forged batch must never suppress a full main suite."""
 
 import importlib.util
+import json
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -56,6 +57,53 @@ def test_release_delegation_uses_verified_candidate_and_fails_closed(monkeypatch
     rows[f"commits/{head}/check-runs?check_name=coverage-floor&per_page=100"]["check_runs"][0]["conclusion"] = "failure"
     with pytest.raises(batch.release_candidate.CandidateError):
         batch.release_proof_for(FINAL, rows.__getitem__, lambda _: b"", batch.RELEASE_PINS)
+
+
+@pytest.mark.parametrize("release", [False, True])
+def test_main_api_failure_falls_back_only_for_ordinary_push(monkeypatch, tmp_path, release):
+    event = tmp_path / "event.json"
+    output = tmp_path / "output"
+    output.touch()
+    message = "chore(release): v0.9.35 (#693)" if release else "fix(web): ordinary change"
+    event.write_text(json.dumps({"head_commit": {"id": FINAL, "message": message}}))
+    for key, value in {
+        "GITHUB_REPOSITORY": batch.REPOSITORY,
+        "GITHUB_EVENT_NAME": "push",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_RUN_ATTEMPT": "1",
+        "GITHUB_SHA": FINAL,
+        "GITHUB_EVENT_PATH": str(event),
+        "GITHUB_OUTPUT": str(output),
+    }.items():
+        monkeypatch.setenv(key, value)
+
+    def unavailable(*_args):
+        msg = "API unavailable"
+        raise OSError(msg)
+
+    monkeypatch.setattr(batch, "release_proof_approved", unavailable)
+    if release:
+        with pytest.raises(OSError, match="API unavailable"):
+            batch.main()
+        assert output.read_text() == ""
+    else:
+        batch.main()
+        assert "full=true" in output.read_text()
+
+
+def test_release_proof_tries_only_the_two_reviewed_source_pairs(monkeypatch):
+    tried = []
+
+    def proof(_sha, _get, _download, pins):
+        tried.append(pins)
+        if pins == batch.RELEASE_PINS:
+            msg = "not the historical sources"
+            raise batch.release_candidate.CandidateError(msg)
+        return {"run": 99}
+
+    monkeypatch.setattr(batch, "release_proof_for", proof)
+    assert batch.release_proof_approved(FINAL, lambda _: {}, lambda _: b"") == {"run": 99}
+    assert tried == [batch.RELEASE_PINS, batch.DELEGATION_PINS]
 
 
 @pytest.fixture

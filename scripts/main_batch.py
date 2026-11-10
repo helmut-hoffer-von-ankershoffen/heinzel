@@ -41,6 +41,15 @@ RELEASE_PINS = {
     ".github/workflows/ci.yml": "2ab124821108a4c6795627d33e70e871b1ee93e5f6f5ff8b57e331c98e1779ef",
     "scripts/release_candidate.py": "49c2b354fb84aa6139dc801243082e04275fa4d9b63c278cc7121b76a08149ca",
 }
+# These two files are independently reviewed together. A later change requires a fresh re-pin review.
+DELEGATION_PINS = {
+    ".github/workflows/ci.yml": "37df0ac6843171c28bdbdb5919c7ba13b3414b2e9c1454b9fed906862f6bfbd2",
+    "scripts/release_candidate.py": "483f8d92e73e3c72f28f130643ff5b7e5c6e1e5d286822489c66c4e2e5870d61",
+}
+
+
+class RecognizedReleaseError(release_candidate.CandidateError):
+    """An associated release was recognized but does not have the required canonical merge identity."""
 
 
 def _candidate_job_reader(get: Callable[[str], Any]) -> Callable[[str], Any]:
@@ -77,7 +86,11 @@ def _candidate_job_reader(get: Callable[[str], Any]) -> Callable[[str], Any]:
 def release_proof_for(
     sha: str, get: Callable[[str], Any], download: Callable[[int], bytes], approved_sources: dict[str, str]
 ) -> dict[str, Any] | None:
-    """Return candidate evidence for a canonical merged release; recognized invalid releases fail closed."""
+    """Return candidate evidence for a canonical merged release; recognized invalid releases fail closed.
+
+    Raises:
+        RecognizedReleaseError: An associated release has a noncanonical merge identity.
+    """
     release_candidate.require(bool(SHA.fullmatch(sha)), "invalid main commit")
     merge = get(f"commits/{sha}")
     release_candidate.require(isinstance(merge, dict) and merge.get("sha") == sha, "main commit unavailable")
@@ -87,13 +100,12 @@ def release_proof_for(
         isinstance(associated, list) and len(associated) < PULL_PAGE_LIMIT, "ambiguous associated pull requests"
     )
     if not message.startswith("chore(release): v"):
-        release_candidate.require(
-            not any(
-                str(pr.get("title", "")).startswith("chore(release): v") and pr.get("merge_commit_sha") == sha
-                for pr in associated
-            ),
-            "recognized release has a noncanonical merge message",
-        )
+        if any(
+            str(pr.get("title", "")).startswith("chore(release): v") and pr.get("merge_commit_sha") == sha
+            for pr in associated
+        ):
+            msg = "recognized release has a noncanonical merge message"
+            raise RecognizedReleaseError(msg)
         return None
     matched = re.fullmatch(
         r"chore\(release\): v((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)) \(#([1-9][0-9]*)\)", message
@@ -134,6 +146,16 @@ def release_proof_for(
         approved_sources,
     )
     return {"run": run_id, "base": proof["base"], "head": head, "tree": tree, "pr": number}
+
+
+def release_proof_approved(
+    sha: str, get: Callable[[str], Any], download: Callable[[int], bytes]
+) -> dict[str, Any] | None:
+    """Try only explicitly reviewed source pairs; never fall back to a full suite for an invalid release."""
+    try:
+        return release_proof_for(sha, get, download, RELEASE_PINS)
+    except release_candidate.CandidateError:
+        return release_proof_for(sha, get, download, DELEGATION_PINS)
 
 
 def proof_url(base: str, prs: list[list[int | str]], run_id: int) -> str:
@@ -432,7 +454,17 @@ def admit(
 
 
 def main() -> None:
-    """Emit workflow outputs using a token with read permissions only."""
+    """Emit workflow outputs using a token with read permissions only.
+
+    Raises:
+        RecognizedReleaseError: A release merge has an inconsistent identity.
+        ValueError: Release evidence or the event payload is invalid.
+        TypeError: Release evidence has an invalid shape.
+        KeyError: Required release evidence is missing.
+        AttributeError: Release evidence has an invalid shape.
+        OSError: Release evidence is unavailable.
+        subprocess.SubprocessError: A required release evidence request fails.
+    """
     result: dict[str, str | bool | int] = {"full": True, "base": "", "run": ""}
     if (
         os.environ.get("GITHUB_REPOSITORY") == REPOSITORY
@@ -463,12 +495,25 @@ def main() -> None:
                 timeout=max(0.001, min(30, deadline - time.monotonic())),
             ).stdout
 
-        release = release_proof_for(os.environ["GITHUB_SHA"], get, download, RELEASE_PINS)
-        result = (
-            {"full": False, "base": release["base"], "run": release["run"], "kind": "release"}
-            if release
-            else admit(os.environ["GITHUB_SHA"], get, seconds=180)
-        )
+        event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+        commit = event.get("head_commit") or {}
+        release_candidate.require(commit.get("id") == os.environ["GITHUB_SHA"], "push event head differs")
+        recognized = str(commit.get("message", "")).startswith("chore(release): v")
+        try:
+            release = release_proof_approved(os.environ["GITHUB_SHA"], get, download)
+        except RecognizedReleaseError:
+            raise
+        except (ValueError, TypeError, KeyError, AttributeError, OSError, subprocess.SubprocessError):
+            if recognized:
+                raise
+            release = None
+            result = _full_run()
+        else:
+            result = (
+                {"full": False, "base": release["base"], "run": release["run"], "kind": "release"}
+                if release
+                else admit(os.environ["GITHUB_SHA"], get, seconds=180)
+            )
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as handle:
         for key, value in result.items():
             print(f"{key}={str(value).lower() if isinstance(value, bool) else value}", file=handle)
