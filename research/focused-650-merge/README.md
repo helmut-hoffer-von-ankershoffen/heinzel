@@ -1,0 +1,5 @@
+# One-shot PR 650 merge
+
+This source is inert until separately reviewed and pinned by the coordinator. Under the coordinator's queue, train and release serialization, activate `bootstrap/one-shot-650-merge` only after run 42784687184 and its publisher complete successfully. The merge uses the ordinary GitHub squash API with exact head and revalidates the required statuses, source, test merge, main and evidence. GitHub does not atomically bind the base to the merge: a final read narrows the race, and the post-merge parent and tree checks detect drift. Preserve existing holds.
+
+After an observed merge, dispatch the focused Python and browser suites on both Linux and macOS against the returned squash SHA, verify each run's head and completion, and retain those results as resulting-main validation. These checks do not constitute full main CI or release acceptance. Stamp bead a8mw only after the actual merge. Remove the activation variable and restore only the coordinator-owned jobs after the operation.
