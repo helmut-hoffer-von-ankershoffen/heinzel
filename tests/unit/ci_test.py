@@ -193,6 +193,18 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
 }
 
 
+# These reviewed one-shot operations are plumbing; added shell or arguments need a new review.
+EXACT_NOT_MAKE = {
+    "one-shot-683-merge.yml": {
+        'test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"': (
+            "requires the independently reviewed workflow commit"
+        ),
+        "python3 -I scripts/one_shot_683_merge.py check": "validates pinned merge evidence",
+        "python3 -I scripts/one_shot_683_merge.py merge": "revalidates and requests the pinned merge",
+    },
+}
+
+
 def commands(workflow: Path) -> list[str]:
     """The `run:` commands of a workflow's steps, without leading comment lines (such as shellcheck directives)."""
     spec = yaml.safe_load(workflow.read_text(encoding="utf-8"))
@@ -214,7 +226,8 @@ def _without_leading_comments(script: str) -> str:
 def not_through_make(workflow: Path) -> list[str]:
     """Commands that should be a make target: neither `make ...` nor exempt for this workflow."""
     exempt = (*NOT_MAKE["*"], *NOT_MAKE.get(workflow.name, {}))
-    return [run for run in commands(workflow) if not run.startswith(("make ", *exempt))]
+    exact = EXACT_NOT_MAKE.get(workflow.name, {})
+    return [run for run in commands(workflow) if run not in exact and not run.startswith(("make ", *exempt))]
 
 
 def test_finds_commands_not_run_through_make(tmp_path):
@@ -228,6 +241,24 @@ def test_finds_commands_not_run_through_make(tmp_path):
     ]
     workflow.write_text(yaml.safe_dump({"jobs": {"publish": {"steps": [{"uses": "x"}, *steps]}}}), encoding="utf-8")
     assert not_through_make(workflow) == ["bash scripts/check_licenses.sh", unreviewed]
+
+
+@pytest.mark.parametrize(
+    ("name", "run"),
+    [
+        ("one-shot-683-merge.yml", "python3 -I scripts/one_shot_683_merge.py check --extra"),
+        ("one-shot-683-merge.yml", "python3 -I scripts/one_shot_683_merge.py merge\necho extra"),
+        (
+            "one-shot-683-merge.yml",
+            'test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"; echo extra',
+        ),
+        ("publish.yml", "python3 -I scripts/one_shot_683_merge.py merge"),
+    ],
+)
+def test_683_merge_exemptions_reject_other_commands(tmp_path, name, run):
+    workflow = tmp_path / name
+    workflow.write_text(yaml.safe_dump({"jobs": {"check": {"steps": [{"run": run}]}}}), encoding="utf-8")
+    assert not_through_make(workflow) == [run]
 
 
 @pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda p: p.name)
@@ -685,6 +716,12 @@ def test_every_not_make_exemption_is_used():
         for start in exempt
         if not any(run.startswith(start) for run in runs.get(name, []))
     ]
+    stale.extend(
+        f"{name}: {command}"
+        for name, exempt in EXACT_NOT_MAKE.items()
+        for command in exempt
+        if command not in runs.get(name, [])
+    )
     assert stale == [], "remove stale NOT_MAKE entries"
 
 
