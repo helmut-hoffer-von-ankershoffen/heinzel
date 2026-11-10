@@ -18,9 +18,9 @@ from typing import Any
 
 REPO = "helmut-hoffer-von-ankershoffen/heinzel"
 BASE = "85f8f31cebd9456430b62f4be7c96f1305905b72"
-CURRENT_MAIN = "a155fadd467a79115faf677c839da38cce0fb8b8"
-READER = "5e93b82dff56cf19436905c3fd81737343917ee4"
-READER_TREE = "dde271a609f0cdcf08ddb37714e1be12a0d6d54a"
+CURRENT_MAIN = "01205988a97da9c5362a20c5723485d191696208"
+READER = "d8cbd3240b535c7e42853ea331274f220b2cf21d"
+READER_TREE = "88f7dcd4f5a0e8c34db963dce6f668ca61662f47"
 REF = "refs/heads/bootstrap/one-shot-focused-reader-recovery"
 WORKFLOW = ".github/workflows/one-shot-focused-reader-recovery.yml"
 RULESET = 25762292

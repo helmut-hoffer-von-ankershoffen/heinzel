@@ -16,7 +16,7 @@ jobs:
       && github.sha == vars.ONE_SHOT_FOCUSED_READER_RECOVERY_SHA
       && github.workflow_sha == github.sha
       && github.run_attempt == '1'
-      && vars.ONE_SHOT_FOCUSED_READER_WRITER_HOLD == 'a155fadd467a79115faf677c839da38cce0fb8b8'
+      && vars.ONE_SHOT_FOCUSED_READER_WRITER_HOLD == '01205988a97da9c5362a20c5723485d191696208'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -39,7 +39,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 5e93b82dff56cf19436905c3fd81737343917ee4
+          ref: d8cbd3240b535c7e42853ea331274f220b2cf21d
           path: reviewed-reader
           fetch-depth: 0
           persist-credentials: false
@@ -72,7 +72,7 @@ jobs:
       && github.sha == vars.ONE_SHOT_FOCUSED_READER_RECOVERY_SHA
       && github.workflow_sha == github.sha
       && github.run_attempt == '1'
-      && vars.ONE_SHOT_FOCUSED_READER_WRITER_HOLD == 'a155fadd467a79115faf677c839da38cce0fb8b8'
+      && vars.ONE_SHOT_FOCUSED_READER_WRITER_HOLD == '01205988a97da9c5362a20c5723485d191696208'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
