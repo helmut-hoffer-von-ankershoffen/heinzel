@@ -1,0 +1,49 @@
+# External queue, train and base-writer serialization is required before either push.
+name: Focused 683 guarded writes
+on:
+  push:
+    branches: [bootstrap/one-shot-683-update, bootstrap/one-shot-683-publish]
+permissions: {}
+concurrency:
+  group: one-shot-683-write
+  cancel-in-progress: false
+jobs:
+  update:
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.ref == 'refs/heads/bootstrap/one-shot-683-update' && github.run_attempt == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_683_HELPER_SHA }}
+    steps:
+      - name: Require independently pinned bootstrap source
+        run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Update only the exact pinned PR ref
+        run: python3 -I research/focused-683/write.py update
+  publish:
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.ref == 'refs/heads/bootstrap/one-shot-683-publish' && github.run_attempt == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_683_HELPER_SHA }}
+      FOCUSED_EVIDENCE_RUN_ID: ${{ vars.ONE_SHOT_683_EVIDENCE_RUN_ID }}
+    steps:
+      - name: Require independently pinned bootstrap source
+        run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify the completed evidence attempt and publish statuses
+        run: python3 -I research/focused-683/write.py publish

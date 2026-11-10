@@ -62,15 +62,28 @@ def _inventory(path: str, key: str) -> list[dict[str, Any]]:
     return entries
 
 
-def _source() -> None:
+def _source(*, before_update: bool = False) -> None:
     base_ref, pr_ref = (MANIFEST[key].removeprefix("refs/") for key in ("base_ref", "pr_ref"))
+    original = MANIFEST["current_pr_head"]
+    expected_head = original if before_update else HEAD
     _require(_one(f"git/ref/{base_ref}")["object"]["sha"] == BASE, "main drift")
-    _require(_one(f"git/ref/{pr_ref}")["object"]["sha"] == HEAD, "PR branch drift")
+    _require(_one(f"git/ref/{pr_ref}")["object"]["sha"] == expected_head, "PR branch drift")
+    validation_ref = MANIFEST["candidate_ref"].removeprefix("refs/")
+    _require(_one(f"git/ref/{validation_ref}")["object"]["sha"] == HEAD, "validation ref drift")
+    predecessor = _one("pulls/650")
+    _require(predecessor["merged"] is True and bool(predecessor["merge_commit_sha"]), "#650 has not merged")
+    predecessor_sha = predecessor["merge_commit_sha"]
+    if predecessor_sha != BASE:
+        comparison = _one(f"compare/{predecessor_sha}...{BASE}")
+        _require(
+            comparison["status"] == "ahead" and comparison["merge_base_commit"]["sha"] == predecessor_sha,
+            "protected base does not contain #650",
+        )
     pr = _one(f"pulls/{MANIFEST['pull_request']}")
     _require(pr["state"] == "open" and not pr["draft"], "PR state drift")
     _require(pr["head"]["repo"]["full_name"] == pr["base"]["repo"]["full_name"] == REPO, "PR repository drift")
     _require(
-        pr["head"]["sha"] == HEAD
+        pr["head"]["sha"] == expected_head
         and f"heads/{pr['head']['ref']}" == pr_ref
         and f"heads/{pr['base']['ref']}" == base_ref,
         "PR refs drift",
@@ -88,12 +101,17 @@ def _source() -> None:
         == {path: statuses[status] for path, status in MANIFEST["changed_paths"].items()},
         "candidate paths drift",
     )
-    original = MANIFEST["current_pr_head"]
     ancestry = _one(f"compare/{original}...{HEAD}?per_page=100")
     _require(ancestry["merge_base_commit"]["sha"] == original and ancestry["status"] == "ahead", "original PR lost")
-    merge = _one(f"git/commits/{pr['merge_commit_sha']}")
-    _require([parent["sha"] for parent in merge["parents"]] == [BASE, HEAD], "test merge parents drift")
-    _require(merge["tree"]["sha"] == TREE, "test merge tree drift")
+    merge_sha = pr["merge_commit_sha"]
+    merge = _one(f"git/commits/{merge_sha}")
+    if before_update:
+        _require(merge_sha == MANIFEST["current_test_merge"], "old test merge SHA drift")
+        parents, tree = MANIFEST["current_test_merge_parents"], MANIFEST["current_test_merge_tree"]
+    else:
+        parents, tree = [BASE, HEAD], TREE
+    _require([parent["sha"] for parent in merge["parents"]] == parents, "test merge parents drift")
+    _require(merge["tree"]["sha"] == tree, "test merge tree drift")
 
 
 def _rules() -> None:
@@ -315,10 +333,17 @@ def _evidence(run_id: int, helper: str) -> None:
 
 def _main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("run_id", type=int)
     parser.add_argument("reviewed_helper_sha")
+    phase = parser.add_mutually_exclusive_group(required=True)
+    phase.add_argument("--evidence", type=int, metavar="RUN_ID")
+    phase.add_argument("--before-update", action="store_true")
+    phase.add_argument("--after-update", action="store_true")
     args = parser.parse_args()
     _require(MANIFEST["activation"] == "ready", "admission held pending exact final-base review")
+    _require(
+        MANIFEST["candidate_parents"] == [BASE, MANIFEST["reviewed_repair"]],
+        "candidate must merge the exact reviewed repair into the protected base",
+    )
     review = MANIFEST["source_review"]
     _require(
         review["decision"] == "GO" and (review["base"], review["head"], review["tree"]) == (BASE, HEAD, TREE),
@@ -331,11 +356,15 @@ def _main() -> None:
     _require(not status, "helper checkout is dirty")
     _require(set(MEMBERS) == set(MANIFEST["jobs"]), "manifest lane inventory drift")
     _rules()
-    _source()
-    _evidence(args.run_id, helper)
-    _source()
-    _rules()
-    print("Exact #683 evidence verified")
+    _source(before_update=args.before_update)
+    if args.evidence is not None:
+        _require(args.evidence > 0, "invalid evidence run ID")
+        _evidence(args.evidence, helper)
+        _source()
+        _rules()
+        print("Exact #683 evidence verified")
+    else:
+        print("Pinned #683 source and required rules verified")
 
 
 if __name__ == "__main__":

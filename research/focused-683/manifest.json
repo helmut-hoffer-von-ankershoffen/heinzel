@@ -9,7 +9,7 @@
   "base_ref": "refs/heads/main",
   "base": "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
   "candidate": "e79108052f6d4071d1b0bb802c758d47c5aa3a33",
-  "candidate_ref": "refs/heads/validation/683-uv-trust-e7910805",
+  "candidate_ref": "refs/heads/validation/683-reviewed-e7910805",
   "candidate_parents": [
     "8558755d5144280e92fe4975875dd7aee3807f51"
   ],
@@ -185,5 +185,10 @@
   "activation_blockers": [
     "Repin to the protected base after #650 merges. Independently review the exact new composition and bootstrap.",
     "Confirm the live required ruleset and serialize protected writers before the exact PR ref update and evidence run."
+  ],
+  "reviewed_repair": "e79108052f6d4071d1b0bb802c758d47c5aa3a33",
+  "current_test_merge_parents": [
+    "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
+    "c25199bc0c9c257a2ae957b9a16153b452d8bfd3"
   ]
 }

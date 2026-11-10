@@ -269,10 +269,8 @@ def _main() -> None:
             "--python",
             "3.14",
             "python",
-            "scripts/check_confidentiality.py",
+            str(HERE.parents[1] / "scripts/check_confidentiality.py"),
             "--require",
-            "--text",
-            "",
         )
         env = {key: value for key, value in os.environ.items() if key != "CONFIDENTIAL_TERMS"}
         _run("make", "lint", env=env)

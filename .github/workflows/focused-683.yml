@@ -1,12 +1,15 @@
-# Review draft outside .github/workflows. The manifest holds execution pending the protected-base repin.
+# One-shot evidence. The manifest holds execution pending the protected-base repin and review.
 name: Focused 683 bootstrap evidence
 on:
   push:
     branches: [bootstrap/one-shot-683]
 permissions: {}
+concurrency:
+  group: one-shot-683-evidence
+  cancel-in-progress: false
 jobs:
   focused:
-    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.run_attempt == '1'
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.ref == 'refs/heads/bootstrap/one-shot-683' && github.run_attempt == '1'
     name: Focused 683 ${{ matrix.lane }}
     runs-on: ${{ matrix.lane == 'macos' && 'macos-latest' || 'ubuntu-24.04' }}
     timeout-minutes: 35
