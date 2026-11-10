@@ -3513,6 +3513,26 @@ $ hz system plugin search [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+#### `hz system plugin showcase`
+
+(expert) Preview an owning public plugin&#x27;s UI and CLI screenshots without installing it.
+
+**Usage**:
+
+```console
+$ hz system plugin showcase [OPTIONS] {spec}
+```
+
+**Arguments**:
+
+* `spec`: The selected catalog plugin&#x27;s install specification.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz system prerequisite`
 
 (expert) Inspect and prepare the external tools modules need.
@@ -3583,26 +3603,6 @@ $ hz system prerequisite list [OPTIONS]
 **Options**:
 
 * `--owner <str>`: Qualified module that declares the tool; every enabled module if left out.
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-#### `hz system plugin showcase`
-
-(expert) Preview an owning public plugin&#x27;s UI and CLI screenshots without installing it.
-
-**Usage**:
-
-```console
-$ hz system plugin showcase [OPTIONS] {spec}
-```
-
-**Arguments**:
-
-* `spec`: The selected catalog plugin&#x27;s install specification.  [required]
-
-**Options**:
-
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
