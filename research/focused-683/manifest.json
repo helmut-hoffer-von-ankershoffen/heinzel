@@ -1,0 +1,287 @@
+{
+  "schema": 1,
+  "repository": "helmut-hoffer-von-ankershoffen/heinzel",
+  "pull_request": 683,
+  "pr_ref": "refs/heads/fix/cwte-uv-path",
+  "current_pr_head": "c25199bc0c9c257a2ae957b9a16153b452d8bfd3",
+  "current_test_merge": "8b753b4350ade853db9c12c63443ea6601fca172",
+  "current_test_merge_tree": "1678ed0295195723ae341f350f2c689dfdaa1506",
+  "base_ref": "refs/heads/main",
+  "base": "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
+  "candidate": "7d983e9662f58fd3af2c779c3ca1a9ccf8a70576",
+  "candidate_ref": "refs/heads/validation/683-coverage-7d983e96",
+  "candidate_parents": [
+    "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
+    "b3c1c513220da79a50e9d3d1c52d1e20d994aed5"
+  ],
+  "tree": "0722838ec82ed417118ee8d388ffeec0335c330e",
+  "changed_paths": {
+    "src/heinzel/heads/install.py": "M",
+    "src/heinzel/kernel/_installation.py": "M",
+    "src/heinzel/kernel/_uv_locate.py": "A",
+    "src/heinzel/modules/system/doctor/__init__.py": "M",
+    "src/heinzel/modules/ui/_service.py": "M",
+    "tests/integration/plugin_web_test.py": "M",
+    "tests/integration/ui_service_test.py": "M",
+    "tests/integration/update_uv_minimal_path_test.py": "A",
+    "tests/unit/ci_test.py": "M",
+    "tests/unit/heads/install_test.py": "M",
+    "tests/unit/kernel/installation_test.py": "M",
+    "tests/unit/kernel/uv_locate_test.py": "A",
+    "tests/unit/modules/system_update_test.py": "M",
+    "tests/unit/modules/team_repo_test.py": "M",
+    "web/src/updates/updateState.test.ts": "M",
+    "web/src/updates/updateState.ts": "M"
+  },
+  "required_contexts": [
+    "CI OK",
+    "coverage-floor",
+    "merge-gate"
+  ],
+  "activation": "ready",
+  "coverage": {
+    "type": "pr-affected-production-coverage/v1",
+    "floor_percent": 80,
+    "threshold_percent": 90,
+    "python_files": [
+      "src/heinzel/heads/install.py",
+      "src/heinzel/kernel/_installation.py",
+      "src/heinzel/kernel/_uv_locate.py",
+      "src/heinzel/modules/system/doctor/__init__.py",
+      "src/heinzel/modules/ui/_service.py"
+    ],
+    "web_files": [
+      "web/src/updates/updateState.ts"
+    ],
+    "source_shape_sha256": {
+      "python": {
+        "src/heinzel/heads/install.py": "4be69f6797a4aa59dfa7020cfc9ea1cfd6cdad7d3ddd09f1ca1400378cdd5b0d",
+        "src/heinzel/kernel/_installation.py": "88970f4a811a71e054afe96ad025427fe48cdde85e04aa7ed915662da599deee",
+        "src/heinzel/kernel/_uv_locate.py": "a3f47f487852b20a092ea268dd9c4d9a72356da05e05915340e888f75d8cd781",
+        "src/heinzel/modules/system/doctor/__init__.py": "73ed8e6f87164450fec666658cae671c85725c764889c4f0bfae11f0762cbe92",
+        "src/heinzel/modules/ui/_service.py": "3bb9cd5c68367b7482dd91a437e75a6674003e5a83e8294b3e21d870edd1938f"
+      },
+      "web": {
+        "web/src/updates/updateState.ts": "f5769b6c2e643f3493acb628ecca8f2a50986d192b5c6a45dd628352e173a6fd"
+      }
+    }
+  },
+  "jobs": {
+    "python": {
+      "os": "ubuntu-24.04",
+      "version": "3.14.8",
+      "selectors": [
+        "tests/unit/heads/install_test.py",
+        "tests/unit/heads/standard_install_lifecycle_test.py",
+        "tests/unit/kernel/installation_test.py",
+        "tests/unit/kernel/uv_locate_test.py",
+        "tests/unit/modules/system_update_test.py",
+        "tests/unit/ci_test.py::test_template_installed_cli_uses_its_own_daemon_unit_directory",
+        "tests/unit/modules/team_repo_test.py::test_a_missing_program_says_how_to_install_it",
+        "tests/integration/plugin_web_test.py",
+        "tests/integration/ui_service_test.py",
+        "tests/integration/update_uv_minimal_path_test.py",
+        "tests/integration/update_test.py",
+        "tests/integration/standard_app_update_test.py",
+        "tests/integration/standard_install_policy_test.py",
+        "tests/integration/cli_test.py::test_doctor_reports_and_exits_by_status",
+        "tests/integration/cli_test.py::test_doctor_is_down_when_a_check_fails",
+        "tests/integration/update_notice_test.py::test_doctor_reports_the_newer_release_instead_of_the_notice",
+        "tests/unit/offline_uninstall_test.py",
+        "tests/unit/offline_uninstall_manager_test.py",
+        "tests/unit/modules/ui_refresh_test.py",
+        "tests/unit/modules/system_announced_test.py",
+        "tests/unit/kernel/tool_policy_api_test.py",
+        "tests/unit/kernel/installation_continuity_test.py",
+        "tests/integration/auto_update_real_uv_test.py",
+        "tests/integration/update_heads_real_uv_test.py",
+        "tests/integration/offline_python_preflight_test.py",
+        "tests/unit/heads/tool_install_test.py",
+        "tests/unit/heads/bootstrap_test.py::test_interactive_retained_app_checks_freshness_before_opening",
+        "tests/unit/modules/system_service_test.py::test_doctor_says_what_the_release_cache_knows"
+      ],
+      "deselect": [
+        "tests/unit/kernel/installation_test.py::test_opt_in_current_installed_receipt_target_read_only",
+        "tests/integration/ui_service_test.py::test_launcher_pins_guarded_state_and_verified_uv_path_with_minimal_inherited_path[darwin]",
+        "tests/integration/ui_service_test.py::test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loading_a_job[darwin]",
+        "tests/integration/ui_service_test.py::test_real_user_factory_binds_profile_and_refuses_process_behavior_before_manager_calls[darwin]"
+      ]
+    },
+    "web": {
+      "os": "ubuntu-24.04",
+      "selectors": [
+        "src/updates/updateState.test.ts"
+      ]
+    },
+    "structural": {
+      "os": "ubuntu-24.04",
+      "commands": [
+        "make lint",
+        "make managed-backend-setup typecheck quarantine-check"
+      ]
+    },
+    "security": {
+      "os": "ubuntu-24.04",
+      "commands": [
+        "make secrets audit"
+      ]
+    },
+    "sonar": {
+      "os": "ubuntu-24.04",
+      "checkout": "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
+      "pr": 683,
+      "head": "7d983e9662f58fd3af2c779c3ca1a9ccf8a70576"
+    },
+    "python315": {
+      "os": "ubuntu-24.04",
+      "version": "3.15.2",
+      "selectors": [
+        "tests/integration/ui_service_test.py::test_real_user_factory_binds_profile_and_refuses_process_behavior_before_manager_calls[darwin]",
+        "tests/integration/ui_service_test.py::test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loading_a_job[darwin]"
+      ]
+    },
+    "macos": {
+      "os": "macos-latest",
+      "version": "3.14.8",
+      "selectors": [
+        "tests/integration/update_uv_minimal_path_test.py::test_installation_runs_uv_from_a_homebrew_like_dir_with_a_minimal_path",
+        "tests/integration/update_uv_minimal_path_test.py::test_missing_uv_says_where_it_looked",
+        "tests/integration/ui_service_test.py::test_launcher_pins_guarded_state_and_verified_uv_path_with_minimal_inherited_path[darwin]",
+        "tests/integration/ui_service_test.py::test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loading_a_job[darwin]",
+        "tests/integration/ui_service_test.py::test_real_user_factory_binds_profile_and_refuses_process_behavior_before_manager_calls[darwin]"
+      ]
+    }
+  },
+  "diagnostics": [
+    {
+      "classification": "Historical exact 8558755 macOS run. Retain only as diagnostics.",
+      "run": 42777749675,
+      "job": 129700154174,
+      "attempt": 1,
+      "head": "8558755d5144280e92fe4975875dd7aee3807f51",
+      "artifact": 13745050592,
+      "digest": "sha256:9b8acabaee84160024fd41c54d2f38d63a40a7d27bef124e2301e21598111b7e",
+      "tests": [
+        "tests/integration/update_uv_minimal_path_test.py::test_installation_runs_uv_from_a_homebrew_like_dir_with_a_minimal_path",
+        "tests/integration/update_uv_minimal_path_test.py::test_missing_uv_says_where_it_looked",
+        "tests/integration/ui_service_test.py::test_launcher_pins_guarded_state_and_verified_uv_path_with_minimal_inherited_path[darwin]",
+        "tests/integration/ui_service_test.py::test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loading_a_job[darwin]",
+        "tests/integration/ui_service_test.py::test_real_user_factory_binds_profile_and_refuses_process_behavior_before_manager_calls[darwin]"
+      ]
+    },
+    {
+      "classification": "earlier composition; Linux CPython 3.15.2 factory regression only",
+      "run": 42746011689,
+      "job": 129598161789,
+      "attempt": 1,
+      "head": "f73cb104a56181bcf611e73e9ff0009419cb2aca",
+      "artifact": 13730444690,
+      "digest": "sha256:13892e54b681449e240c65d144fb3f6465b06b7cfbb2c05547dfc36b5e3b2d39",
+      "tests": [
+        "tests/integration/ui_service_test.py::test_real_user_factory_binds_profile_and_refuses_process_behavior_before_manager_calls[darwin]",
+        "tests/integration/ui_service_test.py::test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loading_a_job[darwin]"
+      ]
+    },
+    {
+      "classification": "earlier composition plus offline desktop-owned CLI fixture; macOS boundary only",
+      "run": 42721507069,
+      "job": 129516346835,
+      "attempt": 1,
+      "head": "1cb1be77d07adba07f9e2f4506b8bac6102ba221",
+      "artifact": 13721425428,
+      "digest": "sha256:2c83d555e7a379b48c0641ff326d75c5ca639e2132f6b9f5df1d5b23ed02bd21",
+      "tests": [
+        "tests/integration/update_uv_minimal_path_test.py::test_desktop_owned_cli_inherits_finder_path_and_finds_home_uv_offline"
+      ]
+    }
+  ],
+  "source_review": {
+    "decision": "GO",
+    "head": "7d983e9662f58fd3af2c779c3ca1a9ccf8a70576",
+    "tree": "0722838ec82ed417118ee8d388ffeec0335c330e",
+    "base": "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
+    "scope": "Exact coverage-tested candidate source and Python TOTAL coverage policy. Final activation helper independently reviewed before pinning.",
+    "reviewer": "independent Astra source and policy review",
+    "reviewed_helper": "3442d36085c0c0f0408a32513e837a06a92e7f5d"
+  },
+  "reviewed_repair": "e79108052f6d4071d1b0bb802c758d47c5aa3a33",
+  "current_test_merge_parents": [
+    "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
+    "c25199bc0c9c257a2ae957b9a16153b452d8bfd3"
+  ],
+  "reviewed_repair_ref": "refs/heads/validation/683-reviewed-e7910805",
+  "reviewed_repair_review": {
+    "decision": "GO",
+    "historical_review_head": "8558755d5144280e92fe4975875dd7aee3807f51",
+    "historical_review": "The 8558755 composition passed the initial source review. The later PATH injection and replaceable-ancestor finding supersedes that verdict.",
+    "reviewer": "Astra",
+    "head": "e79108052f6d4071d1b0bb802c758d47c5aa3a33",
+    "tree": "62896e17f50e0d9797218ae1ad6a8d02139b8e8f",
+    "base": "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
+    "scope": "Reviewed exact uv locator security repair on the provisional base. Admission bootstrap and final base remain separate.",
+    "historical_blocker": "Embedded PATH separator can inject a relative segment; an absolute leaf under a world-writable ancestor can be replaced; stat errors admit the leaf."
+  },
+  "activation_preconditions": [
+    "Independently review and pin this exact bootstrap commit before any push to a bootstrap trigger ref.",
+    "Verify the normal candidate validation ref, current PR snapshot and effective required rules.",
+    "Serialize protected writers before the exact PR ref update, evidence run and status publication."
+  ],
+  "coverage_test_commit": "b3c1c513220da79a50e9d3d1c52d1e20d994aed5",
+  "coverage_test_paths": [
+    "tests/integration/ui_service_test.py",
+    "tests/unit/heads/install_test.py",
+    "tests/unit/kernel/installation_test.py"
+  ],
+  "recovery": {
+    "original_run": 42798384171,
+    "original_workflow": 413147730,
+    "original_helper": "772aefe7bdbe9faaa4173f53fb7415231b088af2",
+    "original_jobs": {
+      "macos": {
+        "job": 129769293187,
+        "artifact": 13755157457,
+        "digest": "sha256:99d909944095c369596fddbb9f37f1f7c5601f81ee7d90d00dc995c2e56978ff"
+      },
+      "security": {
+        "job": 129769293659,
+        "artifact": 13755113054,
+        "digest": "sha256:2e272cc8c91a8e657883b22d95f1548badaa1b407e58a0094b4c2f18883bd72c"
+      },
+      "sonar": {
+        "job": 129769293734,
+        "artifact": 13753918650,
+        "digest": "sha256:f06c60252249f98cb90e090653371a1367d0e1e2d4794f8b758a9836b4421ee8"
+      },
+      "web": {
+        "job": 129769293763,
+        "artifact": 13755247916,
+        "digest": "sha256:2dbddf74ed1ac3e22bee862d5a23b5ac57de963b13042a4082e5c179c150982a"
+      },
+      "python315": {
+        "job": 129769293804,
+        "failure_step": 7,
+        "markers": [
+          "error: Distribution `pyyaml==6.0.3 @ registry+https://pypi.org/simple` can't be installed",
+          "marked as `--no-build` but has no binary distribution"
+        ]
+      },
+      "structural": {
+        "job": 129769293984,
+        "failure_step": 7,
+        "markers": [
+          "\u2717 zizmor",
+          "error: invalid value '' for '--github-token <GITHUB_TOKEN>': GitHub token cannot be empty"
+        ]
+      },
+      "python": {
+        "job": 129769295777,
+        "artifact": 13753594334,
+        "digest": "sha256:c58e44b50e8bfd70f42a1cb281b3c43afe719e1144dd3eaee0d2fbe29f10abf9"
+      }
+    },
+    "lanes": [
+      "python315",
+      "structural"
+    ]
+  }
+}
