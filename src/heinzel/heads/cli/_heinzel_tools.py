@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from pydantic import ValidationError
 
 from heinzel.kernel import HeinzelError
-from heinzel.kernel._heinzel_invocation import HeinzelInput
+from heinzel.kernel._heinzel_invocation import MAX_MESSAGE_LENGTH, HeinzelInput
 
 if TYPE_CHECKING:
     from heinzel.heads._heinzel_tools import HeinzelTools
@@ -24,7 +24,9 @@ def main(arguments: list[str], tools: "HeinzelTools | None") -> int:
     invoke = commands.add_parser("invoke", help="Invoke a reviewed Heinzel")
     invoke.add_argument("tool")
     invoke.add_argument("--request-id", required=True)
-    invoke.add_argument("--message")
+    messages = invoke.add_mutually_exclusive_group()
+    messages.add_argument("--message")
+    messages.add_argument("--message-stdin", action="store_true", help="Read the personal message from standard input")
     args = parser.parse_args(arguments)
     if tools is None:
         sys.stderr.write(_REFUSED + "\n")
@@ -41,9 +43,10 @@ def main(arguments: list[str], tools: "HeinzelTools | None") -> int:
                 + "\n"
             )
         else:
-            request = HeinzelInput(request_id=args.request_id, message=args.message)
+            message = sys.stdin.read(MAX_MESSAGE_LENGTH + 1) if args.message_stdin else args.message
+            request = HeinzelInput(request_id=args.request_id, message=message)
             result = tools.call(args.tool, request).decode()
-    except (HeinzelError, OSError, ValidationError):
+    except (HeinzelError, OSError, UnicodeError, ValidationError):
         sys.stderr.write(_REFUSED + "\n")
         return 1
     sys.stdout.write(result)
