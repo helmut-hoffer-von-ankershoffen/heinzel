@@ -117,6 +117,10 @@ jobs:
         if: steps.release.outputs.full_release != 'true'
         env:
           FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
+          FOCUSED_CI_PLANS_V2_0: ${{ vars.FOCUSED_CI_PLANS_V2_0 }}
+          FOCUSED_CI_PLANS_V2_1: ${{ vars.FOCUSED_CI_PLANS_V2_1 }}
+          FOCUSED_CI_PLANS_V2_2: ${{ vars.FOCUSED_CI_PLANS_V2_2 }}
+          FOCUSED_CI_PLANS_V2_3: ${{ vars.FOCUSED_CI_PLANS_V2_3 }}
           BATCH_BASE: ${{ needs.admission.outputs.base }}
         run: python3 -I scripts/focused_plan.py
       - id: paths
@@ -1133,6 +1137,10 @@ jobs:
         env:
           FOCUSED_LANE: ${{ matrix.lane }}
           FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
+          FOCUSED_CI_PLANS_V2_0: ${{ vars.FOCUSED_CI_PLANS_V2_0 }}
+          FOCUSED_CI_PLANS_V2_1: ${{ vars.FOCUSED_CI_PLANS_V2_1 }}
+          FOCUSED_CI_PLANS_V2_2: ${{ vars.FOCUSED_CI_PLANS_V2_2 }}
+          FOCUSED_CI_PLANS_V2_3: ${{ vars.FOCUSED_CI_PLANS_V2_3 }}
           BATCH_BASE: ${{ needs.changes.outputs.focused_base }}
           PYTHONPATH: .
         run: uv run --no-build --frozen --script scripts/focused_coverage.py
