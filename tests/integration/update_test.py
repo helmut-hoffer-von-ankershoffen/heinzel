@@ -19,6 +19,12 @@ from heinzel.modules.system import _github
 pytestmark = pytest.mark.integration
 
 runner = CliRunner()
+KEPT = "kept at 1.0.0 (pinned to v1.0.0; newer releases not checked)"
+AUTOMATIC = (
+    "Automatic updates: on. The web server checks about every 30 minutes and installs the newest published stable "
+    "release (not a prerelease) once it is 6 h old (plugins 24 h). "
+    "An update run by hand installs that same release now."
+)
 REPO = "https://github.com/example-org/heinzel"
 PLUGIN = "heinzel-acme @ git+https://github.com/example-org/heinzel-acme@v1.0.0"
 
@@ -170,11 +176,34 @@ def uv_log(env: Path) -> list[str]:
     return log.read_text().splitlines() if log.exists() else []
 
 
+def test_update_help_explains_automatic_updates_desktop_handoff_and_progress(app):
+    result = runner.invoke(app, ["system", "update", "--help"], env={"COLUMNS": "160"})
+    assert result.exit_code == 0, result.output
+    help_text = " ".join(result.stdout.split())
+    assert "hz system config set auto_update true" in help_text
+    assert "About every 30 minutes" in help_text
+    assert "hz app install" in help_text
+    assert "each step goes to stderr as one JSON object per line" in help_text
+    assert "2>&1" in help_text
+
+
 def test_a_tag_pinned_install_updates_to_the_latest_release_and_keeps_plugins(app, env, monkeypatch):
     github_releases(monkeypatch, "v99.0.0", f"v{__version__}", "v99.1.0rc1")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == f"Updated hz {__version__} → 99.0.0.\nPlugins unchanged: heinzel-acme."
+    assert result.stdout.strip() == (
+        f"Updated hz {__version__} → 99.0.0.\nPlugins:\n  heinzel-acme: {KEPT}\n{AUTOMATIC}"
+    )
+    # Not a terminal: one line when each step starts and ends, on stderr, the same steps the web dialog shows.
+    assert result.stderr.splitlines() == [
+        "[1/4] Finding the newest version ...",
+        "[1/4] Finding the newest version: done",
+        "[2/4] Installing the update ...",
+        f"[2/4] Installing the update: done (Updated hz {__version__} → 99.0.0.)",
+        "[3/4] Plugin heinzel-acme: done (Kept at 1.0.0 (pinned to v1.0.0; newer releases not checked))",
+        "[4/4] Moving the background services onto it ...",
+        "[4/4] Moving the background services onto it: done",
+    ]
     [command] = uv_log(env)
     assert command.startswith("tool install --reinstall --refresh ")
     assert command.endswith(f"heinzel @ git+{REPO}@v99.0.0 --with {PLUGIN}")
@@ -185,7 +214,17 @@ def test_json_carries_before_after_latest_and_the_pin(app, env, monkeypatch):
     github_releases(monkeypatch, "v99.0.0")
     invoked = runner.invoke(app, ["system", "update", "--json"])
     assert invoked.exit_code == 0, invoked.output
-    result = json.loads(invoked.output)
+    result = json.loads(invoked.stdout)
+    assert result["automatic"] == {
+        "enabled": True,
+        "check_every_minutes": 30,
+        "core_min_age_hours": 6,
+        "plugin_min_age_hours": 24,
+    }
+    # The steps go to stderr as one JSON object per line, so stdout stays exactly the result.
+    events = [json.loads(line) for line in invoked.stderr.splitlines()]
+    assert {event["event"] for event in events} == {"phase"}
+    assert [event["state"] for event in events if event["id"] == "check"] == ["pending", "running", "done"]
     assert {k: result[k] for k in ("before", "after", "latest", "pinned_to", "updated")} == {
         "before": __version__,
         "after": "99.0.0",
@@ -199,7 +238,7 @@ def test_the_latest_release_installed_is_said_not_silent(app, env, monkeypatch):
     github_releases(monkeypatch, f"v{__version__}")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == f"hz {__version__} is up to date (releases)."
+    assert result.stdout.strip() == f"hz {__version__} is up to date (releases)."
     assert uv_log(env) == []
 
 
@@ -210,7 +249,9 @@ def test_a_main_pin_is_updated_in_place_to_the_newest_commit(app, env, monkeypat
     github_releases(monkeypatch, "v0.0.1")
     result = runner.invoke(app, ["system", "update", "--channel", "main"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == f"Updated hz {__version__} \u2192 99.0.0.dev7.\nPlugins unchanged: heinzel-acme."
+    assert result.stdout.strip() == (
+        f"Updated hz {__version__} \u2192 99.0.0.dev7.\nPlugins:\n  heinzel-acme: {KEPT}\n{AUTOMATIC}"
+    )
     [command] = uv_log(env)
     assert command.endswith(f"heinzel @ git+{REPO}@main --with {PLUGIN}")
     assert "rev=main" in receipt.read_text()
@@ -250,7 +291,7 @@ def test_json_reports_each_plugin(app, env, monkeypatch):
     github_releases(monkeypatch, "v99.0.0")
     invoked = runner.invoke(app, ["system", "update", "--json"])
     assert invoked.exit_code == 0, invoked.output
-    [acme] = json.loads(invoked.output)["plugins"]
+    [acme] = json.loads(invoked.stdout)["plugins"]
     assert (acme["distribution"], acme["status"], acme["disabled"]) == ("heinzel-acme", "failed", True)
     assert acme["next"] == [f"hz system plugin add '{PLUGIN}' --confirm"]
 
@@ -261,7 +302,7 @@ def test_channel_release_switches_a_main_pin_to_the_newest_release(app, env, mon
     github_releases(monkeypatch, "v99.0.0")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    assert result.output.strip().splitlines()[0] == f"Updated hz {__version__} \u2192 99.0.0."
+    assert result.stdout.strip().splitlines()[0] == f"Updated hz {__version__} \u2192 99.0.0."
     assert "rev=v99.0.0" in receipt.read_text()
 
 
