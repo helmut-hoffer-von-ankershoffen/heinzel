@@ -58,7 +58,11 @@ function timeOf(phase: Phase & { startedAt?: number; endedAt?: number }, now: nu
 }
 
 /** The steps as a segmented bar, one segment per planned step: never a percentage the head did not measure. */
-function Steps({ phases, active }: Readonly<{ phases: Phase[]; active: boolean }>) {
+function Steps({
+  phases,
+  active,
+  uncertain = false,
+}: Readonly<{ phases: Phase[]; active: boolean; uncertain?: boolean }>) {
   const now = Date.now();
   if (!phases.length) return null;
   const finished = phases.filter((phase) => ["done", "warn", "skipped"].includes(phase.state)).length;
@@ -70,10 +74,14 @@ function Steps({ phases, active }: Readonly<{ phases: Phase[]; active: boolean }
         names={false}
         pulse={active}
         segments={phases.map((phase) => ({ id: phase.id, label: phase.label, state: phase.state }))}
-        valueText={t("op.step", {
-          done: Math.min(finished + (running ? 1 : 0), phases.length),
-          total: phases.length,
-        })}
+        valueText={
+          uncertain
+            ? t("op.lastReportedSteps")
+            : t("op.step", {
+                done: Math.min(finished + (running ? 1 : 0), phases.length),
+                total: phases.length,
+              })
+        }
       />
       <ol aria-label={t("op.steps")} className="space-y-1.5">
         {phases.map((phase) => {
@@ -85,21 +93,22 @@ function Steps({ phases, active }: Readonly<{ phases: Phase[]; active: boolean }
                 className={cn("mt-0.5 flex size-4 shrink-0 items-center justify-center", TONE[phase.state])}
               >
                 {Icon ? (
-                  <Icon className={cn("size-4", phase.state === "running" && "motion-safe:animate-spin")} />
+                  <Icon className={cn("size-4", active && phase.state === "running" && "motion-safe:animate-spin")} />
                 ) : (
                   <span className="size-1.5 rounded-full bg-current opacity-50" />
                 )}
               </span>
               <span className={cn("min-w-0 flex-1", phase.state === "pending" && "text-muted-foreground")}>
                 {phase.label}
-                <span className="sr-only">: {t(`op.state.${phase.state}` as MessageKey)}</span>
+                {uncertain ? (
+                  <span className="block text-xs text-muted-foreground">
+                    {t("op.lastReported", { state: t(`op.state.${phase.state}` as MessageKey) })}
+                  </span>
+                ) : (
+                  <span className="sr-only">: {t(`op.state.${phase.state}` as MessageKey)}</span>
+                )}
                 {phase.detail && (
-                  <span
-                    className={cn(
-                      "block text-xs",
-                      phase.state === "done" ? "text-muted-foreground" : TONE[phase.state],
-                    )}
-                  >
+                  <span className={cn("block text-xs", phase.state === "done" ? "text-muted-foreground" : TONE[phase.state])}>
                     {phase.detail}
                   </span>
                 )}
@@ -293,9 +302,11 @@ export function OperationDialog() {
         <>
           <p role="alert" className="mt-1 flex items-start gap-2 text-bad">
             <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-            <span className="min-w-0 break-words">{quick ? plain("failed") : run.error}</span>
+            <span className="min-w-0 break-words">
+              {quick ? (run.outcomeUnknown ? t("op.daemon.restart.unknown") : plain("failed")) : run.error}
+            </span>
           </p>
-          {!quick && <Steps phases={run.phases} active={false} />}
+          <Steps phases={run.phases} active={false} uncertain={run.outcomeUnknown} />
           {!quick && (
             <p className="mt-3 text-xs text-muted-foreground">
               {run.phases.some((phase) => phase.state === "failed") ? t("op.failedNext") : t("op.lost")}
@@ -306,7 +317,7 @@ export function OperationDialog() {
               {t("op.close")}
             </PaneAction>
             {/* A tracked write is retried where it was asked; a driven one checks what the failed attempt left. */}
-            {(!run.tracked || run.driven) && (
+            {(!run.tracked || run.driven) && !run.outcomeUnknown && (
               <PaneAction key="retry" icon={RotateCw} primary autoFocus={driven} onClick={go}>
                 {t("op.retry")}
               </PaneAction>

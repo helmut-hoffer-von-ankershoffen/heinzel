@@ -2,8 +2,11 @@ import { Check, Download, Pause, Play, RefreshCw, RotateCw, Trash2, X } from "lu
 import { useState } from "react";
 import { type DaemonAction, useChangeDaemon, useDaemonStatus } from "@/api/daemon";
 import { Loaded } from "@/components/common";
+import { OperationDialog } from "@/components/OperationDialog";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
+import { DAEMON_RESTART } from "@/lib/operationCalls";
+import { requestOperation, useOperationRun } from "@/lib/operationRun";
 
 type Action = DaemonAction;
 
@@ -11,6 +14,8 @@ type Action = DaemonAction;
 export function DaemonSettings() {
   const status = useDaemonStatus();
   const change = useChangeDaemon();
+  const operation = useOperationRun();
+  const operationBusy = operation.stage === "running" || operation.stage === "confirm";
   const [pending, setPending] = useState<Action | null>(null);
   const label = (action: Action) => t(`daemon.${action}`);
   const ask = (action: Action) => {
@@ -61,7 +66,7 @@ export function DaemonSettings() {
                     <PaneAction
                       key="pause"
                       icon={daemon.paused ? Play : Pause}
-                      disabled={change.isPending}
+                      disabled={change.isPending || operationBusy}
                       onClick={() => ask(daemon.paused ? "resume" : "pause")}
                     >
                       {label(daemon.paused ? "resume" : "pause")}
@@ -70,7 +75,7 @@ export function DaemonSettings() {
                     <PaneAction
                       key="install"
                       icon={Download}
-                      disabled={change.isPending}
+                      disabled={change.isPending || operationBusy}
                       onClick={() => ask("install")}
                     >
                       {label("install")}
@@ -80,10 +85,10 @@ export function DaemonSettings() {
                   <PaneAction
                     key="restart"
                     icon={RotateCw}
-                    disabled={change.isPending}
+                    disabled={change.isPending || operationBusy}
                     onClick={() => {
                       change.reset();
-                      change.mutate("restart");
+                      requestOperation(DAEMON_RESTART);
                     }}
                   >
                     {label("restart")}
@@ -102,7 +107,7 @@ export function DaemonSettings() {
                     key="uninstall"
                     icon={Trash2}
                     destructive
-                    disabled={change.isPending}
+                    disabled={change.isPending || operationBusy}
                     onClick={() => ask("uninstall")}
                   >
                     {label("uninstall")}
@@ -113,13 +118,12 @@ export function DaemonSettings() {
           );
         }}
       </Loaded>
-      {change.isPending && change.variables === "restart" && <p role="status">{t("daemon.restarting")}</p>}
-      {change.isSuccess && change.variables === "restart" && <p role="status">{t("daemon.restarted")}</p>}
       {change.error && (
         <p role="alert" className="text-bad">
-          {change.variables === "restart" ? t("daemon.restartFailed") : change.error.message}
+          {change.error.message}
         </p>
       )}
+      <OperationDialog />
       {pending && (
         <div
           role="alertdialog"
@@ -144,7 +148,7 @@ export function DaemonSettings() {
               icon={Check}
               primary
               destructive={pending === "uninstall"}
-              disabled={change.isPending}
+              disabled={change.isPending || operationBusy}
               onClick={confirm}
             >
               {label(pending)}

@@ -34,7 +34,7 @@ export type OperationRun =
   | ({ stage: "confirm"; call: SchemaOperationCall } & Driven)
   | ({ stage: "running"; call: SchemaOperationCall; phases: Phase[]; task: string | null; tracked?: true } & Driven)
   | ({ stage: "done"; call: SchemaOperationCall; phases: Phase[]; result: unknown; tracked?: true } & Driven)
-  | ({ stage: "failed"; call: SchemaOperationCall; phases: Phase[]; error: string; tracked?: true } & Driven)
+  | ({ stage: "failed"; call: SchemaOperationCall; phases: Phase[]; error: string; tracked?: true; outcomeUnknown?: true } & Driven)
   | ({ stage: "attention"; call: SchemaOperationCall; phases: Phase[]; error: string; tracked: true } & Driven);
 
 /** What a head reports for one step; anything else in a `phase` event is ignored. */
@@ -169,6 +169,8 @@ export async function startOperation(onSettled: () => void): Promise<void> {
   if (current.stage !== "confirm" && current.stage !== "failed") return;
   const { call } = current;
   let phases: Phase[] = [];
+  const timeout = call.path === "/system/daemon/restart" ? AbortSignal.timeout(30_000) : undefined;
+  let confirmedFailure = false;
   set({ stage: "running", call, phases, task: null });
   try {
     const result = await stream<unknown>(
@@ -176,6 +178,7 @@ export async function startOperation(onSettled: () => void): Promise<void> {
       call.query,
       ({ event, data }) => {
         if (current.stage !== "running") return;
+        if (event === "error") confirmedFailure = true;
         if (event === "phase") {
           const phase = parsePhase(data);
           if (!phase) return;
@@ -185,13 +188,30 @@ export async function startOperation(onSettled: () => void): Promise<void> {
           set({ stage: "running", call, phases, task: data.text });
         }
       },
-      undefined,
+      timeout,
       call.body,
     );
+    // A restart may return normally without restarting when its service definition is absent.
+    if (
+      call.path === "/system/daemon/restart" &&
+      typeof result === "object" &&
+      result !== null &&
+      "restarted" in result &&
+      result.restarted === false
+    ) {
+      confirmedFailure = true;
+      throw new Error("The daemon was not restarted.");
+    }
     set({ stage: "done", call, phases: settle(phases), result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    set({ stage: "failed", call, phases, error: message });
+    set({
+      stage: "failed",
+      call,
+      phases,
+      error: message,
+      ...(timeout && !confirmedFailure ? { outcomeUnknown: true } : {}),
+    });
   } finally {
     onSettled();
   }
