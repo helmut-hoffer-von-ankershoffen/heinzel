@@ -1,10 +1,11 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import type { SchemaDaemonStatus } from "@/api/client";
+import { resetOperationRun } from "@/lib/operationRun";
 import { config, shell } from "@/test/fixtures";
-import { expectAccessible, mockApi } from "@/test/render";
+import { eventStream, expectAccessible, mockApi } from "@/test/render";
 import { DaemonSettings } from "./DaemonSettings";
 import { SettingsDialog } from "./SettingsDialog";
 
@@ -52,10 +53,20 @@ function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false, restart
       status = { ...status, paused: false };
       return { paused: false };
     },
-    "/api/system/daemon/restart": () => {
-      if (restartFails) return { status: 400, body: { error: "previous handover cannot be verified" } };
+    "/api/stream/system/daemon/restart": () => {
+      const phase = {
+        id: "verify",
+        label: "Checking the service",
+        state: restartFails ? "failed" : "done",
+        ...(restartFails ? { detail: "previous handover cannot be verified" } : {}),
+      };
+      if (restartFails)
+        return new Response(
+          `event: phase\ndata: ${JSON.stringify(phase)}\n\nevent: error\ndata: ${JSON.stringify({ error: "previous handover cannot be verified" })}\n\n`,
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
       status = { ...status, loaded: true, installed_version: "2.0.0", version_mismatch: false };
-      return { restarted: true, version: "2.0.0", interval_minutes: 5 };
+      return eventStream([["phase", phase]], { restarted: true, version: "2.0.0", interval_minutes: 5 });
     },
   });
   const view = render(
@@ -70,6 +81,7 @@ beforeEach(() => {
   sessionStorage.setItem("hz.token", "test-token");
 });
 afterEach(() => {
+  resetOperationRun();
   vi.unstubAllGlobals();
 });
 
@@ -236,10 +248,142 @@ describe("Daemon Settings", () => {
     expect(screen.getByText("0")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("not loaded");
     await user.click(screen.getByRole("button", { name: "Restart" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(await screen.findByText("2.0.0")).toBeInTheDocument();
     expect(screen.getByText("The daemon restarted.")).toBeInTheDocument();
+    expect(screen.getByText("Checking the service")).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
+  });
+
+  it("shows the streamed restart step while it runs and retains it on success", async () => {
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        stream = controller;
+      },
+    });
+    const { calls } = mockApi({
+      "/api/system/daemon/status": { ...running, loaded: false },
+      "/api/stream/system/daemon/restart": new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
+    });
+    render(
+      <Providers client={queryClient()}>
+        <DaemonSettings />
+      </Providers>,
+    );
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Restart" }));
+    await screen.findByText("Restarting the daemon…", { selector: "output" });
+    expect(
+      calls.filter((request) => new URL(request.url).pathname === "/api/stream/system/daemon/restart"),
+    ).toHaveLength(1);
+    expect(screen.queryByText("This changes something")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Uninstall" })).toBeDisabled();
+    await act(async () => {
+      stream.enqueue(
+        encoder.encode(
+          `event: phase\ndata: ${JSON.stringify({ id: "verify", label: "Checking the service", state: "running" })}\n\n`,
+        ),
+      );
+    });
+    expect(await screen.findByText("Checking the service")).toBeInTheDocument();
+    await act(async () => {
+      stream.enqueue(
+        encoder.encode(
+          `event: phase\ndata: ${JSON.stringify({ id: "verify", label: "Checking the service", state: "done" })}\n\nevent: result\ndata: ${JSON.stringify({ data: { restarted: true } })}\n\n`,
+        ),
+      );
+      stream.close();
+    });
+    expect(await screen.findByText("The daemon restarted.")).toBeInTheDocument();
+    expect(screen.getByText("Checking the service")).toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
+  });
+
+  it("marks a timed out restart as unknown without offering an immediate retry", async () => {
+    const timeout = new AbortController();
+    const originalTimeout = AbortSignal.timeout;
+    const timer = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((ms) => (ms === 30_000 ? timeout.signal : originalTimeout(ms)));
+    const body = new ReadableStream<Uint8Array>({ start() {} });
+    const { calls } = mockApi({
+      "/api/system/daemon/status": { ...running, loaded: false },
+      "/api/stream/system/daemon/restart": new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
+    });
+    render(
+      <Providers client={queryClient()}>
+        <DaemonSettings />
+      </Providers>,
+    );
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Restart" }));
+    await screen.findByText("Restarting the daemon…", { selector: "output" });
+    expect(timer).toHaveBeenCalledWith(30_000);
+    await act(async () => timeout.abort(new DOMException("Timed out", "TimeoutError")));
+    expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    expect(screen.queryByText("The daemon restarted.")).not.toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
+    timer.mockRestore();
+  });
+
+  it("marks a disconnected restart as unconfirmed and does not offer a retry", async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+      },
+    });
+    const { calls } = mockApi({
+      "/api/system/daemon/status": { ...running, loaded: false },
+      "/api/stream/system/daemon/restart": new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
+    });
+    render(
+      <Providers client={queryClient()}>
+        <DaemonSettings />
+      </Providers>,
+    );
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Restart" }));
+    await screen.findByText("Restarting the daemon…", { selector: "output" });
+    await act(async () => {
+      controller.enqueue(
+        new TextEncoder().encode(
+          `event: phase\ndata: ${JSON.stringify({ id: "verify", label: "Checking the service", state: "running" })}\n\n`,
+        ),
+      );
+    });
+    expect(await screen.findByText("Checking the service")).toBeInTheDocument();
+    await act(async () => controller.close());
+    expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    const steps = screen.getByRole("list", { name: "Steps" });
+    expect(within(steps).getByText("Last reported: in progress")).toBeVisible();
+    expect(steps.querySelector(".motion-safe\\:animate-spin")).toBeNull();
+    expect(screen.getByRole("progressbar", { name: "Steps" })).toHaveAttribute(
+      "aria-valuetext",
+      "Last reported steps; outcome unconfirmed",
+    );
+    expect(screen.queryByText("The daemon restarted.")).not.toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
+  });
+
+  it("does not claim a restart when the operation reports no service was restarted", async () => {
+    mockApi({
+      "/api/system/daemon/status": { ...running, loaded: false },
+      "/api/stream/system/daemon/restart": eventStream([], {
+        restarted: false,
+        version: "2.0.0",
+        interval_minutes: null,
+      }),
+    });
+    render(
+      <Providers client={queryClient()}>
+        <DaemonSettings />
+      </Providers>,
+    );
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Restart" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The daemon could not restart.");
+    expect(screen.queryByText("The daemon restarted.")).not.toBeInTheDocument();
   });
 
   it("explains a daemon version mismatch and restarts without a confirmation", async () => {
@@ -250,16 +394,17 @@ describe("Daemon Settings", () => {
       ),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Restart" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(await screen.findByText("The daemon restarted.")).toBeInTheDocument();
   });
 
-  it("says in plain words that a restart did not work, without the technical reason", async () => {
+  it("shows the failed step and its detail alongside the plain failure message", async () => {
     const { user } = show({ version: "1.0.0", installed_version: "2.0.0", version_mismatch: true }, false, true);
     await user.click(await screen.findByRole("button", { name: "Restart" }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("The daemon could not restart. Try again in a moment.");
     expect(alert).not.toHaveTextContent("handover");
+    expect(screen.getByText("Checking the service")).toBeInTheDocument();
+    expect(screen.getByText("previous handover cannot be verified")).toBeInTheDocument();
   });
 
   it("keeps state and reports a refused pause instead of claiming success or retrying", async () => {
