@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaSoundscapeView } from "@/api/client";
+import { expectPaneStructure } from "@/test/pane";
 import { StreamPlayer } from "./StreamPlayer";
 import { resetSound, soundState, toggle } from "./store";
 import { rememberYouTubeAccount } from "./stream";
@@ -168,6 +169,18 @@ describe("stream recovery", () => {
   });
 });
 
+describe("open on YouTube", () => {
+  it("is one small icon in the card header with a tooltip, and no bottom row", () => {
+    toggle();
+    mount();
+    const link = screen.getByRole("link", { name: "Open on YouTube" });
+    expect(link.closest("header")).not.toBeNull();
+    expect(link).toHaveAttribute("title", "Open on YouTube");
+    expect(link.textContent?.trim()).toBe("");
+    expect(player().closest("section")?.lastElementChild).toBe(player().parentElement);
+  });
+});
+
 describe("playback help pane", () => {
   it("takes no line of the card: the help is only an icon button on the video until it is opened", () => {
     mount();
@@ -190,6 +203,8 @@ describe("playback help pane", () => {
     const pane = screen.getByRole("region", { name: "Playback or sign-in trouble?" });
     expect(pane).toHaveTextContent("Try the regular player");
     expect(screen.getByRole("link", { name: "Play on YouTube" }).parentElement).toHaveClass("border-t");
+    // The shared action row: the first action leads with its words, the rest are named icons.
+    expectPaneStructure(pane);
     fireEvent.keyDown(info(), { key: "Escape" });
     expect(screen.queryByRole("region", { name: "Playback or sign-in trouble?" })).toBeNull();
     fireEvent.focus(info());

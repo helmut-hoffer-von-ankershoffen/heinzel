@@ -6,10 +6,12 @@ import importlib.util
 import io
 import re
 import ssl
+import subprocess
 import tarfile
 import urllib.error
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -165,6 +167,7 @@ def transport(monkeypatch):
     now = [0.0]
     monkeypatch.setattr(tools.time, "monotonic", lambda: now[0])
     monkeypatch.setattr(tools.time, "sleep", lambda delay: now.__setitem__(0, now[0] + delay))
+    monkeypatch.setattr(tools.secrets, "randbelow", lambda _: 500)  # jitter factor 1.0
     monkeypatch.setattr(tools, "ssl_context", lambda: None)
     return now
 
@@ -730,3 +733,122 @@ def test_certificate_failure_retains_immediate_failure_with_one_observed_attempt
     assert requests == [120]
     assert transport == [0.0]
     assert raised.value.__cause__ is error
+
+
+RELEASE = "https://github.com/example-owner/example-tool/releases/download/v1.2.3/tool.tar.gz"
+
+
+def _gateway_timeout(url):
+    """What http_get raises after its last retry of a flapping edge (a plain OSError, nothing to close)."""
+    msg = f"gateway timeout for {url}"
+    raise TimeoutError(msg)
+
+
+def test_persistent_gateway_failure_falls_back_to_the_authenticated_route_and_caches(tmp_path):
+    routes = []
+    download = tools.Download(RELEASE, sha(BINARY))
+    data = tools.fetch(download, tmp_path, _gateway_timeout, fallback=lambda url: routes.append(url) or BINARY)
+    assert data == BINARY
+    assert routes == [RELEASE]
+    assert (tmp_path / sha(BINARY)).read_bytes() == BINARY
+    refuse = lambda _: pytest.fail("a verified cache entry needs no network")  # noqa: E731
+    assert tools.fetch(download, tmp_path, refuse, fallback=refuse) == BINARY
+
+
+def test_fallback_bytes_are_refused_unless_they_match_the_pin(tmp_path):
+    download = tools.Download(RELEASE, sha(BINARY))
+    with pytest.raises(tools.ToolError, match="checksum mismatch"):
+        tools.fetch(download, tmp_path, _gateway_timeout, fallback=lambda _: b"tampered")
+    assert not (tmp_path / sha(BINARY)).exists()
+
+
+def test_failed_fallback_reports_both_routes(tmp_path):
+    def unavailable(_):
+        msg = "gh release download failed (exit 1)"
+        raise tools.ToolError(msg)
+
+    download = tools.Download(RELEASE, ZERO)
+    with pytest.raises(
+        tools.ToolError, match=r"download failed \(gateway timeout.*fallback: gh release download failed"
+    ):
+        tools.fetch(download, tmp_path, _gateway_timeout, fallback=unavailable)
+
+
+def test_gh_route_downloads_the_pinned_release_asset(monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    commands = []
+    monkeypatch.setattr(tools, "on_path", lambda name, *_: Path("/fictional/gh"))
+
+    def gh(command, **kwargs):
+        commands.append(command)
+        (Path(command[command.index("-D") + 1]) / "tool.tar.gz").write_bytes(BINARY)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(tools.subprocess, "run", gh)
+    assert tools.gh_release_get(RELEASE) == BINARY
+    assert commands[0][:7] == [
+        "/fictional/gh",
+        "release",
+        "download",
+        "v1.2.3",
+        "-R",
+        "example-owner/example-tool",
+        "-p",
+    ]
+    assert commands[0][7] == "tool.tar.gz"
+
+
+def test_gh_route_refuses_other_hosts_without_running_anything(monkeypatch):
+    monkeypatch.setattr(tools.subprocess, "run", lambda *_, **__: pytest.fail("gh ran for a non-release URL"))
+    with pytest.raises(tools.ToolError, match="no authenticated route"):
+        tools.gh_release_get("https://example.com/releases/download/v1/tool.tar.gz")
+
+
+@pytest.mark.parametrize("failure", [subprocess.TimeoutExpired("gh", 120), PermissionError("not executable")])
+def test_hanging_or_unexecutable_gh_is_a_route_failure(monkeypatch, failure):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setattr(tools, "on_path", lambda name, *_: Path("/fictional/gh"))
+
+    def gh(*args, **kwargs):
+        raise failure
+
+    monkeypatch.setattr(tools.subprocess, "run", gh)
+    with pytest.raises(tools.ToolError, match="gh release download"):
+        tools.gh_release_get(RELEASE)
+
+
+def test_option_shaped_release_tag_never_reaches_gh(monkeypatch):
+    monkeypatch.setattr(tools.subprocess, "run", lambda *_, **__: pytest.fail("an option-shaped tag reached gh"))
+    with pytest.raises(tools.ToolError, match="no authenticated route"):
+        tools.gh_release_get("https://github.com/o/r/releases/download/--repo=x/tool.tar.gz")
+
+
+def test_hosted_step_without_token_skips_gh_and_retries_the_direct_url_longer(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr(tools, "on_path", lambda name, *_: Path("/fictional/gh"))
+    monkeypatch.setattr(tools.subprocess, "run", lambda *_, **__: pytest.fail("gh cannot authenticate here"))
+    pauses, rounds = [], []
+    monkeypatch.setattr(tools.time, "sleep", pauses.append)
+
+    def flapping(url):
+        rounds.append(url)
+        if len(rounds) == 1:
+            _gateway_timeout(url)
+        return BINARY
+
+    assert tools.fetch(tools.Download(RELEASE, sha(BINARY)), tmp_path, flapping) == BINARY
+    assert len(rounds) == 2
+    assert tools.HOSTED_PAUSE * 0.5 <= pauses[0] <= tools.HOSTED_PAUSE * 1.5
+
+
+def test_hosted_step_without_token_says_why_when_both_direct_rounds_fail(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr(tools, "on_path", lambda name, *_: Path("/fictional/gh"))
+    monkeypatch.setattr(tools.time, "sleep", lambda _: None)
+    download = tools.Download(RELEASE, ZERO)
+    with pytest.raises(tools.ToolError, match="no GH_TOKEN; second direct round: download failed"):
+        tools.fetch(download, tmp_path, _gateway_timeout)

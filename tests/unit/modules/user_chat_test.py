@@ -134,11 +134,13 @@ def test_cancelled_cli_keeps_started_turn_and_will_not_relaunch(tmp_path):
 
         async def run():
             task = asyncio.create_task(service.answer(session, "hello"))
+            # Wait for the model call's mark itself, not the file: the fake creates the file before it writes,
+            # and a cancel in between kills it with the call unrecorded (seen on a hosted Python 3.12 runner).
             for _ in range(300):
-                if marker.exists():
+                if marker.exists() and marker.read_text() == "x":
                     break
                 await asyncio.sleep(0.01)
-            assert marker.exists()
+            assert marker.read_text() == "x"
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task

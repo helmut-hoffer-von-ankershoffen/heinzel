@@ -79,7 +79,7 @@ def kernel(make_kernel, tmp_path, monkeypatch):
         "hz",
         lambda *args: json.dumps(installed) if args[:3] == ("system", "plugin", "list") else "[]",
     )
-    monkeypatch.setattr(_sources.shutil, "which", lambda name: None)
+    monkeypatch.setattr(_sources.shutil, "which", lambda name, **_: None)
     monkeypatch.setattr(
         service, "_host_list", lambda **_kwargs: [PluginInfo.model_validate(item) for item in installed]
     )

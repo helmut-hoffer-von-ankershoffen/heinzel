@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { openChatJourney, revealChat } from "./chat-ready.mjs";
+import { createHeinzelWith, openAppWithSetupClosed, openChatJourney, revealChat } from "./chat-ready.mjs";
 import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 
 const { browser, context, page, token, url } = await openChatJourney();
@@ -60,17 +60,10 @@ page.on("requestfailed", (request) => {
   if (watched.has(path)) trace.push(`${request.method()} ${path} failed`);
 });
 try {
-  await page.goto(url.href);
-  await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
-  const setup = page.getByRole("dialog");
-  await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
-  if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
-  if (!(await page.getByLabel("Your message").isVisible()))
-    await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await openAppWithSetupClosed(page, url);
   const text = "Prepare a private draft and suggest an identity.";
-  await page.getByLabel("Your message").fill(text);
-  trace.push(`+${Date.now() - began}ms create input=${(await page.getByLabel("Your message").inputValue()).length}`);
-  await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
+  await createHeinzelWith(page, text);
+  trace.push(`+${Date.now() - began}ms create pressed`);
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();
   assert.equal(await message.inputValue(), text);

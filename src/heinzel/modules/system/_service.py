@@ -303,7 +303,8 @@ def _release_notes(item: object, repository: str) -> ReleaseNotes | None:
 
 def github_releases(installation: Installation, kernel: Kernel) -> GitHubReleases:
     """The releases of the repository in the uv tool receipt, or of the default repository, on the chosen channel."""
-    return installed_releases(installation, kernel.settings.update_channel)
+    channel = kernel.fresh_settings().update_channel  # saved without a restart
+    return installed_releases(installation, channel)
 
 
 def installed_releases(installation: Installation, channel: str = "stable") -> GitHubReleases:

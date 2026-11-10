@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ListChecks } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FooterItem } from "./FooterItem";
 import { FOOTER_MORE, FOOTER_RELOCATED, FooterLayout, FooterMore, FooterPart } from "./FooterLayout";
+import { PaneAction } from "./PaneActions";
 
 function Counter({ mounted }: { mounted: () => void }) {
   const [count, setCount] = useState(0);
@@ -185,8 +187,13 @@ describe("single-instance overflow", () => {
     const user = userEvent.setup();
     measuredFooter(
       220,
-      <FooterItem label="Daemon" state="ok" text="Daemon">
-        <button type="button">Inspect jobs</button>
+      <FooterItem
+        label="Daemon"
+        state="ok"
+        text="Daemon"
+        actions={<PaneAction icon={ListChecks}>Inspect jobs</PaneAction>}
+      >
+        <p>Running</p>
       </FooterItem>,
     );
     fireEvent.click(await screen.findByRole("button", { name: "More status items" }));
@@ -212,10 +219,17 @@ describe("single-instance overflow", () => {
     const action = vi.fn();
     const { resize } = measuredFooter(
       500,
-      <FooterItem label="Daemon" state="ok" text="Daemon">
-        <button type="button" onClick={action}>
-          Inspect jobs
-        </button>
+      <FooterItem
+        label="Daemon"
+        state="ok"
+        text="Daemon"
+        actions={
+          <PaneAction icon={ListChecks} onClick={action}>
+            Inspect jobs
+          </PaneAction>
+        }
+      >
+        <p>Running</p>
       </FooterItem>,
     );
     const original = await screen.findByRole("button", { name: "Daemon" });

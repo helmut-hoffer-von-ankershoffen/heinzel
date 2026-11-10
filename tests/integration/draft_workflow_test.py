@@ -1,6 +1,7 @@
 """Captured SDK doubles exercise the real standing-draft host; no live account or external message is used."""
 
 import sys
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -137,6 +138,11 @@ def workflow(tmp_path, monkeypatch, settings):
     executable = fake_claude(tmp_path)
     monkeypatch.setattr(chat, "_load", lambda: FixtureConfig(executable))
     crud = kernel.resolve(SessionCrud)
+    # The journey exercises replay/cleanup, not the wall-clock race at a cron
+    # boundary. Keep the host and its durable journal on one explicit instant.
+    now = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    monkeypatch.setattr(crud, "clock", lambda: now)
+    monkeypatch.setattr(crud.repository, "clock", lambda: now)
     provider = sys.modules[package]
     with current.local("cli"):
         session = crud.new_chat(
@@ -222,8 +228,6 @@ def test_publication_denies_source_account_and_destination_drift_without_effects
 
 
 def add_release(state, identity="release-2", text="A new real provider release"):
-    from datetime import UTC, datetime
-
     from heinzel import ReleaseRecord
 
     state["releases"].append(
@@ -233,12 +237,34 @@ def add_release(state, identity="release-2", text="A new real provider release")
 
 def run_tick(host, session, request):
     import asyncio
-    from datetime import UTC, datetime
 
     from heinzel.modules.heinzel._draft_workflow_runtime import tick
 
     with host.current_user.local("daemon"):
-        asyncio.run(tick(host, session, request.request_id, datetime.now(UTC)))
+        asyncio.run(tick(host, session, request.request_id, host.crud.clock()))
+
+
+@pytest.mark.parametrize("slot", ["previous", "future", "naive"])
+def test_invalid_polling_slot_cannot_reach_the_feed_or_append(workflow, slot):
+    import asyncio
+
+    from heinzel.modules.heinzel._draft_workflow_journal import matching
+    from heinzel.modules.heinzel._draft_workflow_runtime import tick
+
+    host, session, request, state = workflow
+    publish(workflow)
+    add_release(state)
+    now = host.crud.clock()  # Exactly the start of the fixture's five-minute slot.
+    when = {
+        "previous": now - timedelta(microseconds=1),
+        "future": now + timedelta(seconds=2),
+        "naive": now.replace(tzinfo=None),
+    }[slot]
+    with host.current_user.local("daemon"), pytest.raises(HeinzelError, match="current approved draft polling slot"):
+        asyncio.run(tick(host, session, request.request_id, when))
+    assert not matching(host.journal.events(session), "draft.poll-started")
+    assert state["appends"] == 0
+    assert state["notices"] == state["shares"] == []
 
 
 def test_registered_cli_one_prompt_daemon_edit_and_trusted_share_with_restart(workflow, monkeypatch):
@@ -275,9 +301,7 @@ def test_registered_cli_one_prompt_daemon_edit_and_trusted_share_with_restart(wo
         job = next(item for item in jobs if item.name == "draft-" + session.lower())
         assert job.schedule == "*/5 * * * *"
         assert job.retries == 0
-        from datetime import UTC, datetime
-
-        job.run_for_slot(datetime.now(UTC))
+        job.run_for_slot(host.crud.clock())
     assert state["appends"] == 1
     from heinzel import Notifications
 
@@ -307,7 +331,10 @@ def test_registered_cli_one_prompt_daemon_edit_and_trusted_share_with_restart(wo
 
 
 @pytest.mark.parametrize("failure", ["append_lost_ack", "append_close_failure"])
-def test_lost_append_acknowledgement_or_cleanup_fences_restarts_without_duplicate(workflow, failure):
+@pytest.mark.parametrize("restart_seconds", [0, 300])
+def test_lost_append_acknowledgement_or_cleanup_fences_restarts_without_duplicate(
+    workflow, failure, restart_seconds, monkeypatch
+):
     host, session, request, state = workflow
     publish(workflow)
     add_release(state)
@@ -317,6 +344,9 @@ def test_lost_append_acknowledgement_or_cleanup_fences_restarts_without_duplicat
     assert state["appends"] == 1
     assert state["notices"] == state["shares"] == []
     state[failure] = False
+    restarted_at = host.crud.clock() + timedelta(seconds=restart_seconds)
+    monkeypatch.setattr(host.crud, "clock", lambda: restarted_at)
+    monkeypatch.setattr(host.crud.repository, "clock", lambda: restarted_at)
     restarted = DraftWorkflowPublication(host.crud, host.current_user, host.kernel, host.chat)
     with pytest.raises(HeinzelError, match="uncertain"):
         run_tick(restarted, session, request)

@@ -451,7 +451,11 @@ def test_an_open_app_window_reconnects_when_the_daemon_restarts_on_the_same_port
 def test_an_installed_window_opened_while_hz_is_down_opens_the_app_by_itself_when_hz_returns(
     environment, tmp_path, engine
 ):
-    """A paired window reopened while `hz ui serve` is down shows the offline page, then the app, without a reload."""
+    """A paired phone window reopened while `hz ui serve` is down shows this build's offline page, then the app.
+
+    An older build's shell cache and remembered version are planted first: the worker named after this build must drop
+    them, so the offline page is never an older build's (an iPhone kept v0.7.27's).
+    """
     env, _ = environment
     port = _free_port()
     ui, link = _start_ui(env, port)
@@ -474,6 +478,11 @@ def test_an_installed_window_opened_while_hz_is_down_opens_the_app_by_itself_whe
         assert result == {
             "offlineShowed": True,
             "noVersionShown": True,
+            "noStaleOfflinePage": True,
+            "workerIsStamped": True,
+            "onlyThisBuildsCache": True,
+            "cachedOfflineIsCurrent": True,
+            "oldBuildCacheDropped": True,
             "iconLoaded": True,
             "openedByItself": True,
             "askedToSignIn": False,
@@ -485,8 +494,8 @@ def test_an_installed_window_opened_while_hz_is_down_opens_the_app_by_itself_whe
 
 
 @pytest.mark.timeout(600)
-def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(environment, tmp_path):
-    """Install on a row low in Discover shows its confirmation next to the click, focused, on desktop and phone."""
+def test_plugin_install_asks_once_in_the_operation_dialog_in_view(environment, tmp_path):
+    """Install on a row low in Discover asks once in the operation dialog, in view and focused, on desktop and phone."""
     env, _ = environment
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
@@ -507,7 +516,7 @@ def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(env
         url = ui.stdout.readline().strip()
         assert url.startswith("http://127.0.0.1:")
         driven = subprocess.run(
-            [*run, "exec", "node", "e2e/plugin-install-inline.mjs", url, str(shots)],
+            [*run, "exec", "node", "e2e/plugin-install-confirm.mjs", url, str(shots)],
             cwd=REPO,
             capture_output=True,
             text=True,
@@ -942,6 +951,14 @@ def test_desktop_title_bar_row_in_mounted_chromium_and_unchanged_browser(environ
     assert result["browser"] == {"topbar": 48}
     assert result["desktop"]["order"][1:] == ["Collapse navigation", "Today", "Notifications", "Search"]
     assert result["collapsed"]["expandX"] >= 80
+
+
+@pytest.mark.timeout(600)
+def test_right_sidebar_resizes_by_drag_and_keys_and_keeps_its_width(environment, tmp_path):
+    """The divider drags and answers keys, the width survives a reload, the terminal refits, a phone has no handle."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "sidebar-resize.mjs")
+    assert result == {"refit": True, "phone": "no handle"}
 
 
 @pytest.mark.timeout(600)

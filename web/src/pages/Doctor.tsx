@@ -48,10 +48,10 @@ export function Doctor() {
                     </th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-border">
                   {Object.entries(report.checks).flatMap(([module, checks]) =>
                     checks.map((check) => (
-                      <tr key={`${module}/${check.name}`} className="border-t border-border align-top">
+                      <tr key={`${module}/${check.name}`} className="align-top">
                         <td className="p-2 font-mono text-xs">{module}</td>
                         <td className="p-2">{check.name}</td>
                         <td className="p-2">

@@ -5,7 +5,7 @@ import { AnchoredPopover } from "@/components/AnchoredPopover";
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { Check, ChevronRight, Ellipsis, Maximize2, Minimize2, Plus, RotateCcw, X } from "lucide-react";
+import { Check, ChevronRight, Ellipsis, Maximize2, Minimize2, Pencil, Plus, RotateCcw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { token } from "@/api/token";
 import { Button } from "@/components/ui/button";
@@ -28,13 +28,60 @@ function loadOptions(): Options {
   }
 }
 
-type Tab = { id: number; title: string; agentTitle?: string; notice?: string; status?: string };
+const NAMES = "hz.terminal.names";
+
+/** The names the person gave tabs, by tab number, remembered in this browser profile. */
+function loadNames(): Record<number, string> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(NAMES) ?? "{}");
+    if (typeof raw !== "object" || raw === null) return {};
+    return Object.fromEntries(
+      Object.entries(raw).filter(([, name]) => typeof name === "string" && name.length > 0 && name.length <= 40),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveName(id: number, name: string | undefined) {
+  try {
+    const names = loadNames();
+    if (name) names[id] = name;
+    else delete names[id];
+    localStorage.setItem(NAMES, JSON.stringify(names));
+  } catch {
+    // Not remembered.
+  }
+}
+
+type Tab = { id: number; title: string; custom?: string; agentTitle?: string; notice?: string; status?: string };
+/** The name a tab shows: the one the person gave it, else what the running program says, else the numbered default. */
+const tabName = (tab: Tab) => tab.custom || tab.agentTitle || tab.title;
+
+/** Phones and tablets: a touch screen is the primary pointer. A desktop with a keyboard has its own Esc, Tab and arrows. */
+function useTouchPrimary(): boolean {
+  const query = "(pointer: coarse)";
+  const read = () => typeof window.matchMedia === "function" && window.matchMedia(query).matches;
+  const [touch, setTouch] = useState(read);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const list = window.matchMedia(query);
+    const update = () => setTouch(list.matches);
+    update();
+    list.addEventListener?.("change", update);
+    return () => list.removeEventListener?.("change", update);
+  }, []);
+  return touch;
+}
+
 type Props = { onClose: () => void; full: boolean; onToggleFull: () => void; onActivate?: () => void };
 
 export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props) {
-  const [tabs, setTabs] = useState<Tab[]>([{ id: 1, title: t("terminal.title") }]);
+  const [tabs, setTabs] = useState<Tab[]>(() => [{ id: 1, title: t("terminal.title"), custom: loadNames()[1] }]);
   const [active, setActive] = useState(1);
   const [options, setOptions] = useState<Options>(loadOptions);
+  const [renaming, setRenaming] = useState<number | null>(null);
+  const press = useRef(0);
   const nextId = useRef(2);
   const panelRef = useRef<HTMLElement>(null);
   const change = (patch: Partial<Options>) =>
@@ -49,8 +96,13 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
     });
   const add = () => {
     const id = nextId.current++;
-    setTabs((current) => [...current, { id, title: `${t("terminal.title")} ${id}` }]);
+    setTabs((current) => [...current, { id, title: `${t("terminal.title")} ${id}`, custom: loadNames()[id] }]);
     setActive(id);
+  };
+  const rename = (id: number, name: string) => {
+    const custom = name.trim().slice(0, 40) || undefined;
+    saveName(id, custom);
+    updateTab(id, { custom });
   };
   const updateTab = (id: number, patch: Partial<Tab>) =>
     setTabs((current) => current.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)));
@@ -80,32 +132,80 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
                 tab.id === active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60",
               )}
             >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={tab.id === active}
-                onClick={() => {
-                  setActive(tab.id);
-                  updateTab(tab.id, { notice: undefined });
-                }}
-                className="px-3.5 py-1"
-              >
-                {tab.agentTitle || tab.title}
-                {tab.status && <span className="ml-2 text-xs text-muted-foreground">{tab.status}</span>}
-                {tab.notice && (
-                  <span
-                    role="img"
-                    aria-label={t("terminal.attention")}
-                    title={tab.notice}
-                    className="ml-2 inline-block size-2 rounded-full bg-primary"
-                  />
-                )}
-              </button>
+              {renaming === tab.id ? (
+                <input
+                  // biome-ignore lint/a11y/noAutofocus: the field appears on request and takes the typing at once
+                  autoFocus
+                  aria-label={t("terminal.renameField")}
+                  defaultValue={tabName(tab)}
+                  maxLength={40}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.currentTarget.dataset.cancelled = "true";
+                      setRenaming(null);
+                    }
+                    if (event.key === "Enter") event.currentTarget.blur();
+                  }}
+                  onBlur={(event) => {
+                    // Empty brings back the automatic name; Escape has already closed the field without saving.
+                    if (!event.currentTarget.dataset.cancelled) rename(tab.id, event.currentTarget.value);
+                    setRenaming(null);
+                  }}
+                  className="mx-1 my-0.5 w-32 rounded-md border border-border bg-background px-2 py-0.5 text-sm"
+                />
+              ) : (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab.id === active}
+                  onClick={() => {
+                    setActive(tab.id);
+                    updateTab(tab.id, { notice: undefined });
+                  }}
+                  onDoubleClick={() => setRenaming(tab.id)}
+                  // A long press renames on a touch screen, where a double tap zooms or does nothing.
+                  onPointerDown={(event) => {
+                    if (event.pointerType === "mouse") return;
+                    window.clearTimeout(press.current);
+                    press.current = window.setTimeout(() => setRenaming(tab.id), 600);
+                  }}
+                  onPointerUp={() => window.clearTimeout(press.current)}
+                  onPointerLeave={() => window.clearTimeout(press.current)}
+                  onPointerCancel={() => window.clearTimeout(press.current)}
+                  onKeyDown={(event) => event.key === "F2" && setRenaming(tab.id)}
+                  className="px-3.5 py-1 select-none [-webkit-touch-callout:none]"
+                >
+                  {tabName(tab)}
+                  {tab.status && <span className="ml-2 text-xs text-muted-foreground">{tab.status}</span>}
+                  {tab.notice && (
+                    <span
+                      role="img"
+                      aria-label={t("terminal.attention")}
+                      title={tab.notice}
+                      className="ml-2 inline-block size-2 rounded-full bg-primary"
+                    />
+                  )}
+                </button>
+              )}
+              {tab.id === active && renaming !== tab.id && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setRenaming(tab.id)}
+                  aria-label={t("terminal.renameTab", { title: tabName(tab) })}
+                  title={t("terminal.rename")}
+                  className="mr-0.5 size-6 opacity-60 hover:opacity-100"
+                >
+                  <Pencil aria-hidden className="size-3" />
+                </Button>
+              )}
               {tabs.length > 1 && (
                 <button
                   type="button"
                   onClick={() => close(tab.id)}
-                  aria-label={t("terminal.closeTab", { title: tab.agentTitle || tab.title })}
+                  aria-label={t("terminal.closeTab", { title: tabName(tab) })}
                   className="mr-1 rounded p-0.5 opacity-60 hover:bg-background/40 hover:opacity-100"
                 >
                   <X aria-hidden className="size-3" />
@@ -124,7 +224,12 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
           <Plus aria-hidden />
         </Button>
         <div className="ml-auto flex items-center text-muted-foreground">
-          <OptionsMenu options={options} onChange={change} />
+          <OptionsMenu
+            options={options}
+            onChange={change}
+            onRename={() => setRenaming(active)}
+            onCloseTab={() => close(active)}
+          />
           <Button
             variant="ghost"
             size="icon"
@@ -164,7 +269,7 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
               const hidden = tab.id !== active || !document.hasFocus() || !!panelRef.current?.closest("[hidden]");
               if (hidden && desktopState() === "on") {
                 try {
-                  const notification = new Notification(tab.agentTitle || tab.title, { body: notice });
+                  const notification = new Notification(tabName(tab), { body: notice });
                   notification.onclick = () => {
                     window.focus();
                     onActivate?.();
@@ -222,6 +327,7 @@ function TerminalView({
   const senderRef = useRef<((text: string) => void) | null>(null);
   const copyOnSelect = useRef(options.copyOnSelect);
   const initial = useRef(options);
+  const touch = useTouchPrimary();
   const [state, setState] = useState<State>("connecting");
   // The shell has drawn its prompt: commands typed for the person wait until then, or the line is echoed twice and
   // the shell prints a stray `%` for output that had no newline.
@@ -463,44 +569,46 @@ function TerminalView({
         </div>
       )}
       <div ref={host} className="min-h-0 flex-1 px-3 pb-1" />
-      <fieldset
-        aria-label="Terminal keys"
-        className="m-0 flex min-w-0 shrink-0 gap-1 overflow-x-auto border-0 px-3 py-1 md:[@media(pointer:fine)]:hidden"
-      >
-        {(
-          [
-            ["Esc", "\x1b", "Escape"],
-            ["Tab", "\t", "Tab"],
-            ["Ctrl+C", "\x03", "Control+C"],
-            ["Ctrl+Z", "\x1a", "Control+Z"],
-            ["Ctrl+D", "\x04", "Control+D"],
-            ["←", "D", "Arrow left"],
-            ["↓", "B", "Arrow down"],
-            ["↑", "A", "Arrow up"],
-            ["→", "C", "Arrow right"],
-          ] as const
-        ).map(([label, key, accessibleName]) => (
-          <Button
-            key={label}
-            variant="outline"
-            size="sm"
-            className="min-h-11 min-w-11 shrink-0"
-            disabled={state !== "open"}
-            aria-label={accessibleName}
-            onClick={() => {
-              if (!active) return;
-              const arrows = ["←", "↓", "↑", "→"];
-              const sequence = arrows.includes(label)
-                ? `\x1b${terminalRef.current?.modes?.applicationCursorKeysMode ? "O" : "["}${key}`
-                : key;
-              senderRef.current?.(sequence);
-              terminalRef.current?.focus();
-            }}
-          >
-            {label}
-          </Button>
-        ))}
-      </fieldset>
+      {touch && (
+        <fieldset
+          aria-label="Terminal keys"
+          className="m-0 flex min-w-0 shrink-0 gap-1 overflow-x-auto border-0 px-3 py-1"
+        >
+          {(
+            [
+              ["Esc", "\x1b", "Escape"],
+              ["Tab", "\t", "Tab"],
+              ["Ctrl+C", "\x03", "Control+C"],
+              ["Ctrl+Z", "\x1a", "Control+Z"],
+              ["Ctrl+D", "\x04", "Control+D"],
+              ["←", "D", "Arrow left"],
+              ["↓", "B", "Arrow down"],
+              ["↑", "A", "Arrow up"],
+              ["→", "C", "Arrow right"],
+            ] as const
+          ).map(([label, key, accessibleName]) => (
+            <Button
+              key={label}
+              variant="outline"
+              size="sm"
+              className="min-h-11 min-w-11 shrink-0"
+              disabled={state !== "open"}
+              aria-label={accessibleName}
+              onClick={() => {
+                if (!active) return;
+                const arrows = ["←", "↓", "↑", "→"];
+                const sequence = arrows.includes(label)
+                  ? `\x1b${terminalRef.current?.modes?.applicationCursorKeysMode ? "O" : "["}${key}`
+                  : key;
+                senderRef.current?.(sequence);
+                terminalRef.current?.focus();
+              }}
+            >
+              {label}
+            </Button>
+          ))}
+        </fieldset>
+      )}
     </div>
   );
 }
@@ -509,7 +617,17 @@ const SCROLLBACK = [1_000, 10_000, 100_000];
 const CURSORS: CursorStyle[] = ["block", "bar", "underline"];
 
 /** Cursor style, blink, copy on select and scrollback, remembered in this browser. */
-function OptionsMenu({ options, onChange }: { options: Options; onChange: (patch: Partial<Options>) => void }) {
+function OptionsMenu({
+  options,
+  onChange,
+  onRename,
+  onCloseTab,
+}: {
+  options: Options;
+  onChange: (patch: Partial<Options>) => void;
+  onRename: () => void;
+  onCloseTab: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [sub, setSub] = useState<"cursor" | "scrollback" | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -547,6 +665,31 @@ function OptionsMenu({ options, onChange }: { options: Options; onChange: (patch
       </Button>
       {open && (
         <AnchoredPopover anchor={ref} role="menu" className="w-60">
+          <Button
+            type="button"
+            variant="ghost"
+            role="menuitem"
+            className={cn(row, "h-auto justify-start font-normal")}
+            onClick={() => {
+              setOpen(false);
+              onRename();
+            }}
+          >
+            {t("terminal.rename")}
+            <kbd className="ml-auto font-sans text-xs text-muted-foreground">F2</kbd>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            role="menuitem"
+            className={cn(row, "h-auto justify-start font-normal")}
+            onClick={() => {
+              setOpen(false);
+              onCloseTab();
+            }}
+          >
+            {t("terminal.closeTabItem")}
+          </Button>
           <button
             type="button"
             role="menuitem"

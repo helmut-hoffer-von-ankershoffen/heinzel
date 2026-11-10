@@ -125,7 +125,7 @@ def test_noninteractive_missing_profile_is_explicitly_incomplete_without_prompts
     assert calls == [["org", "show"], ["system", "config", "show"]]
 
 
-def test_bare_noninteractive_first_use_installs_and_stops_before_opening(managed_profile, monkeypatch):
+def test_bare_noninteractive_first_use_stops_incomplete_before_opening(managed_profile, monkeypatch):
     _kernel, _directory, calls = managed_profile
     executable = Path("/fixture/persistent/bin/hz")
     monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
@@ -134,9 +134,11 @@ def test_bare_noninteractive_first_use_installs_and_stops_before_opening(managed
     monkeypatch.setattr(bootstrap, "_workspace_command", lambda *_args: ["ui", "open"])
     launched = []
     monkeypatch.setattr(bootstrap, "_launch_app", lambda *_args: launched.append(True))
-    bootstrap.main()  # The start contract: install, start nothing, exit 0; the profile is the app's first screen.
+    with pytest.raises(SystemExit) as result:
+        bootstrap.main()
+    assert result.value.code == 1
     assert not launched
-    assert calls == []
+    assert calls == [["org", "show"], ["system", "config", "show"]]
 
 
 @pytest.mark.parametrize(
@@ -150,7 +152,7 @@ def test_bare_noninteractive_first_use_installs_and_stops_before_opening(managed
         ("Mira", "\t "),
     ],
 )
-def test_noninteractive_start_never_prompts_writes_or_opens_with_an_incomplete_profile(
+def test_noninteractive_health_complete_profile_still_requires_real_name_and_team(
     managed_profile, monkeypatch, name, team
 ):
     _kernel, directory, calls = managed_profile
@@ -172,13 +174,15 @@ def test_noninteractive_start_never_prompts_writes_or_opens_with_an_incomplete_p
     monkeypatch.setattr(bootstrap, "_launch_app", lambda *_args: opened.append(True))
     monkeypatch.setattr(bootstrap, "_install_services", lambda *_args: mutations.append(True))
     monkeypatch.setattr(bootstrap, "_complete_profile", lambda *_args: pytest.fail("Noninteractive profile prompt"))
-    bootstrap.main()
+    with pytest.raises(SystemExit) as result:
+        bootstrap.main()
+    assert result.value.code == 1
     assert opened == mutations == []
     assert configuration.read_bytes() == before
-    assert calls == []
+    assert calls == [["org", "show"], ["system", "config", "show"]]
 
 
-def test_unattended_yes_start_leaves_the_profile_untouched_and_opens_on_a_terminal(managed_profile, monkeypatch):
+def test_complete_noninteractive_profile_is_preserved_and_can_open_without_prompt(managed_profile, monkeypatch):
     _kernel, directory, calls = managed_profile
     directory.mkdir(parents=True, exist_ok=True)
     configuration = directory / "config.toml"
@@ -187,19 +191,17 @@ def test_unattended_yes_start_leaves_the_profile_untouched_and_opens_on_a_termin
     )
     before = configuration.read_bytes()
     executable = Path("/fixture/persistent/bin/hz")
-    monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel", "--yes", "--no-app"])
+    monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
     monkeypatch.setattr(bootstrap.sys.stdin, "isatty", lambda: False)
-    monkeypatch.setattr(bootstrap.sys.stdout, "isatty", lambda: True)
     monkeypatch.setattr(bootstrap, "installed_app", lambda: executable)
     monkeypatch.setattr(bootstrap, "_workspace_command", lambda *_args: ["ui", "open"])
-    monkeypatch.setattr(bootstrap, "_install_services", lambda *_args: None)
     opened = []
     monkeypatch.setattr(bootstrap, "_launch_app", lambda *_args: opened.append(True))
     monkeypatch.setattr(bootstrap, "_complete_profile", lambda *_args: pytest.fail("Noninteractive profile prompt"))
     bootstrap.main()
     assert opened == [True]
     assert configuration.read_bytes() == before
-    assert calls == []
+    assert calls == [["org", "show"], ["system", "config", "show"]]
 
 
 def test_explicit_environment_profile_completes_noninteractive_requirements_without_writes(
@@ -286,3 +288,27 @@ def test_real_config_write_results_are_json_paths_and_all_setup_writes_are_read_
     assert result.exit_code == 0
     assert json.loads(result.stdout) == str(directory / "config.toml")
     assert isinstance(json.loads(result.stdout), str)
+
+
+def test_unattended_yes_start_leaves_the_profile_untouched_and_opens_on_a_terminal(managed_profile, monkeypatch):
+    _kernel, directory, calls = managed_profile
+    directory.mkdir(parents=True, exist_ok=True)
+    configuration = directory / "config.toml"
+    configuration.write_text(
+        '[org]\nname="Mira"\nhandle="mira"\nrole="engineer"\ntimezone="Europe/Berlin"\n[team]\nname="Payments"\n'
+    )
+    before = configuration.read_bytes()
+    executable = Path("/fixture/persistent/bin/hz")
+    monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel", "--yes", "--no-app"])
+    monkeypatch.setattr(bootstrap.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(bootstrap.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: executable)
+    monkeypatch.setattr(bootstrap, "_workspace_command", lambda *_args: ["ui", "open"])
+    monkeypatch.setattr(bootstrap, "_install_services", lambda *_args: None)
+    opened = []
+    monkeypatch.setattr(bootstrap, "_launch_app", lambda *_args: opened.append(True))
+    monkeypatch.setattr(bootstrap, "_complete_profile", lambda *_args: pytest.fail("Noninteractive profile prompt"))
+    bootstrap.main()
+    assert opened == [True]
+    assert configuration.read_bytes() == before
+    assert calls == []

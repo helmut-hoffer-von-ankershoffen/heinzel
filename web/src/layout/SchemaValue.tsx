@@ -3,6 +3,7 @@
 import { ArrowDown, ArrowUp, MapPin, Plus, X } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { useCapabilities, useInfo } from "@/api/queries";
+import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -255,9 +256,6 @@ function Draft({ id, label, value, disabled, onCommit, className, type = "text",
   );
 }
 
-const rowButton =
-  "flex size-8 items-center justify-center rounded-lg text-icon hover:bg-accent disabled:opacity-40 [&_svg]:size-4";
-
 /** A list of tables: one row per item with a control per property, buttons to move or remove it, and Add. The order
  *  means something: in a list of time zones the first is yours ("Primary"). */
 function Table({
@@ -335,36 +333,30 @@ function Table({
                 </span>
               )}
               <span className="ml-auto flex items-center">
-                <button
-                  type="button"
+                <PaneAction
+                  ghost
+                  icon={ArrowUp}
                   disabled={disabled || index === 0}
                   onClick={() => move(index, index - 1)}
-                  aria-label={t("settings.moveUp", { item: name })}
-                  title={t("settings.moveUp", { item: name })}
-                  className={rowButton}
                 >
-                  <ArrowUp aria-hidden />
-                </button>
-                <button
-                  type="button"
+                  {t("settings.moveUp", { item: name })}
+                </PaneAction>
+                <PaneAction
+                  ghost
+                  icon={ArrowDown}
                   disabled={disabled || index === rows.length - 1}
                   onClick={() => move(index, index + 1)}
-                  aria-label={t("settings.moveDown", { item: name })}
-                  title={t("settings.moveDown", { item: name })}
-                  className={rowButton}
                 >
-                  <ArrowDown aria-hidden />
-                </button>
-                <button
-                  type="button"
+                  {t("settings.moveDown", { item: name })}
+                </PaneAction>
+                <PaneAction
+                  ghost
+                  icon={X}
                   disabled={disabled}
                   onClick={() => onChange(rows.filter((_, at) => at !== index))}
-                  aria-label={t("settings.removeItem", { item: name })}
-                  title={t("settings.removeItem", { item: name })}
-                  className={rowButton}
                 >
-                  <X aria-hidden />
-                </button>
+                  {t("settings.removeItem", { item: name })}
+                </PaneAction>
               </span>
             </li>
           );

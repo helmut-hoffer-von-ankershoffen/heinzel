@@ -18,6 +18,99 @@ sys.path.insert(0, str(REPO / "scripts"))
 import related_tests as scoped_related  # noqa: E402 - needs the scripts path above
 
 
+@pytest.fixture(autouse=True)
+def _without_host_gate(monkeypatch):
+    """Keep dispatch tests independent of the developer's PATH."""
+    monkeypatch.setattr(scoped.shutil, "which", lambda _: None)
+
+
+@pytest.fixture
+def gate_calls(monkeypatch, tmp_path):
+    gate = str(tmp_path / "hz-gate")
+    monkeypatch.setattr(scoped.shutil, "which", lambda _: gate)
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(scoped.subprocess, "run", run)
+    return gate, calls
+
+
+@pytest.mark.parametrize(("mode", "timeout"), [("preflight", 1800), ("fast", 300)])
+def test_a_full_core_check_passes_the_actual_make_command_to_the_heavy_gate(monkeypatch, gate_calls, mode, timeout):
+    gate, calls = gate_calls
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", mode, "--base", "origin/main"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: ["README.md"])
+    monkeypatch.setenv("HZ_GATE_LIGHT", "1")
+
+    scoped.main()
+
+    [(command, kwargs)] = calls
+    target = ["preflight", "BASE=" + "a" * 40] if mode == "preflight" else ["check-fast"]
+    assert command == [gate, "--timeout", str(timeout), "make", *target]
+    assert "HZ_GATE_LIGHT" not in kwargs["env"]
+    queue_wait = int(kwargs["env"]["HZ_GATE_MAX_WAIT"])
+    assert kwargs["timeout"] > queue_wait + timeout  # the outer watchdog leaves room for admission and execution
+
+
+def test_only_the_selected_documentation_push_checks_take_the_light_lane(monkeypatch, gate_calls):
+    gate, calls = gate_calls
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: ["docs/guides/install.md"])
+
+    with pytest.raises(SystemExit) as done:
+        scoped.main()
+
+    assert done.value.code == 0
+    [(guard, guard_kwargs), (docs, docs_kwargs)] = calls
+    assert guard == [gate, "--timeout", "180", *scoped.early_guard_commands(["docs/guides/install.md"])[0]]
+    assert docs == [
+        gate,
+        "--timeout",
+        "600",
+        "uv",
+        "run",
+        "--quiet",
+        "--script",
+        "scripts/steps.py",
+        *scoped.DOCS_STEPS,
+    ]
+    assert guard_kwargs["env"]["HZ_GATE_LIGHT"] == docs_kwargs["env"]["HZ_GATE_LIGHT"] == "1"
+
+
+@pytest.mark.parametrize(
+    ("requested", "expected"), [("0", "3600"), ("-1", "3600"), ("bad", "3600"), ("9999", "3600"), ("5", "5")]
+)
+def test_a_caller_cannot_skip_the_gate_or_raise_its_queue_deadline(monkeypatch, gate_calls, requested, expected):
+    gate, calls = gate_calls
+    monkeypatch.setenv("HZ_GATE_HELD", "4242")
+    monkeypatch.setenv("HZ_GATE_MAX_WAIT", requested)
+
+    scoped.run_check(["make", "check-fast"], timeout=300)
+
+    [(command, kwargs)] = calls
+    assert command == [gate, "--timeout", "300", "make", "check-fast"]
+    assert kwargs["env"]["HZ_GATE_HELD"] == "4242"  # the host decides whether the holder is real
+    assert kwargs["env"]["HZ_GATE_MAX_WAIT"] == expected
+    assert kwargs["timeout"] == 2 * int(expected) + 310
+
+
+@pytest.mark.parametrize("gate_path", [None, "bin/hz-gate"])
+def test_checks_run_directly_with_the_same_runtime_limit_without_an_absolute_gate(monkeypatch, gate_calls, gate_path):
+    _, calls = gate_calls
+    monkeypatch.setattr(scoped.shutil, "which", lambda _: gate_path)
+
+    scoped.run_check(["make", "check-fast"], timeout=300)
+
+    [(command, kwargs)] = calls
+    assert command == ["make", "check-fast"]
+    assert kwargs["timeout"] == 300
+
+
 def names(steps: list[str]) -> list[str]:
     return [step.lstrip("&").split("=", 1)[0] for step in steps]
 
@@ -35,6 +128,91 @@ def test_site_assets_and_configuration_run_only_the_documentation_checks():
 def test_web_files_alone_run_the_web_checks_without_python_unit_tests_or_the_managed_backend():
     steps = scoped.scoped_steps(["web/src/components/ErrorScreen.tsx"])
     assert names(steps) == ["web-prepare", "web-lint", "web-client", "web-types", "web-tests"]
+
+
+@pytest.mark.parametrize(
+    ("selection", "arguments"),
+    [
+        (None, ""),
+        (
+            "web/src/sound/StreamPlayer.test.tsx web/src/sound/stream.test.ts",
+            " --maxWorkers=2 ./src/sound/StreamPlayer.test.tsx ./src/sound/stream.test.ts",
+        ),
+    ],
+)
+def test_web_push_keeps_all_guards_and_only_changes_the_vitest_step(monkeypatch, gate_calls, selection, arguments):
+    gate, calls = gate_calls
+    changed = ["docs/guides/install.md", "web/src/sound/PlayerCard.tsx"]
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: changed)
+    monkeypatch.setenv("WEB_TESTS", "")  # The scoped path does not accept a Make command override.
+    monkeypatch.delenv("WEB_TEST_FILES", raising=False)
+    if selection is not None:
+        monkeypatch.setenv("WEB_TEST_FILES", selection)
+
+    with pytest.raises(SystemExit) as done:
+        scoped.main()
+
+    assert done.value.code == 0
+    [(guard, _), (command, _)] = calls
+    assert guard == [gate, "--timeout", "180", *scoped.early_guard_commands(changed)[0]]
+    assert command == [
+        gate,
+        "--timeout",
+        "600",
+        "uv",
+        "run",
+        "--quiet",
+        "--script",
+        "scripts/steps.py",
+        *scoped.DOCS_STEPS,
+        f"web-prepare={scoped.WEB} prepare",
+        *scoped.WEB_STEPS[:-1],
+        f"&web-tests={scoped.WEB} exec vitest run{arguments}",
+    ]
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        "",
+        " \t ",
+        "--passWithNoTests",
+        "web/src/sound/StreamPlayer.test.tsx;whoami",
+        "web/src/sound/$(whoami).test.ts",
+        "web/src/sound/../sound/StreamPlayer.test.tsx",
+        "/web/src/sound/StreamPlayer.test.tsx",
+        "web/src/sound/*.test.ts",
+        "web/src/sound/PlayerCard.tsx",
+        "web/src/sound/StreamPlayer.test.tsx web/src/missing.test.ts",
+    ],
+)
+def test_invalid_web_push_selection_fails_before_launching_vitest(monkeypatch, gate_calls, capsys, selection):
+    _, calls = gate_calls
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: ["web/src/sound/PlayerCard.tsx"])
+    monkeypatch.setenv("WEB_TEST_FILES", selection)
+
+    with pytest.raises(SystemExit) as done:
+        scoped.main()
+
+    assert done.value.code == 2
+    assert "WEB_TEST_FILES" in capsys.readouterr().err
+    assert calls == []
+
+
+def test_web_push_does_not_accept_a_symlink_as_a_test_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(scoped, "ROOT", tmp_path)
+    outside = tmp_path / "outside.test.ts"
+    outside.touch()
+    alias = tmp_path / "web" / "src" / "alias.test.ts"
+    alias.parent.mkdir(parents=True)
+    alias.symlink_to(outside)
+
+    with pytest.raises(ValueError, match="existing web test file"):
+        scoped.scoped_steps(["web/src/feature.ts"], web_test_files="web/src/alias.test.ts")
 
 
 def test_documents_and_web_files_run_both():
@@ -157,6 +335,34 @@ def test_imports_follow_the_defining_module_not_the_package_that_re_exports_it()
     graph = scoped_related.graph()
     assert "src/heinzel/modules/system/_update.py" not in graph.imports["tests/conftest.py"]
     assert "tests/unit/modules/system_update_test.py" in graph.dependents({"src/heinzel/modules/system/_update.py"})
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "if True: import heinzel.kernel\n",
+        "value = 1; import heinzel.kernel\n",
+        "import \\\n    heinzel.kernel\n",
+        "from heinzel.kernel import (  # factory )\n    Config,  # a (comment)\n)\n",
+    ],
+)
+def test_valid_import_syntax_keeps_its_dependents_in_the_graph(tmp_path, monkeypatch, statement):
+    monkeypatch.setattr(scoped_related, "ROOT", tmp_path)
+    package = tmp_path / "src/heinzel/kernel/__init__.py"
+    package.parent.mkdir(parents=True)
+    package.write_text("class Config: pass\n", encoding="utf-8")
+    test = tmp_path / "tests/unit/example_test.py"
+    test.parent.mkdir(parents=True)
+    test.write_text(statement, encoding="utf-8")
+    graph = scoped_related.Graph()
+    assert "tests/unit/example_test.py" in graph.dependents({"src/heinzel/kernel/__init__.py"})
+
+
+def test_every_import_resolves_to_a_file_of_the_tree_even_on_a_case_insensitive_disk():
+    """`from heinzel import Kernel` once resolved to a `heinzel/Kernel` package only a macOS disk claims."""
+    graph = scoped_related.graph()
+    assert {target for targets in graph.imports.values() for target in targets} <= graph.known
+    assert "src/heinzel/kernel/_kernel.py" in graph.imports["tests/unit/kernel/kernel_test.py"]
 
 
 def test_make_check_fast_by_hand_is_the_full_unit_run():

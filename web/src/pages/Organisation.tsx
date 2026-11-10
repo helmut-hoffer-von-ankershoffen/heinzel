@@ -57,9 +57,9 @@ export function Team() {
                       </th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-border">
                     {(data.members ?? []).map((member) => (
-                      <tr key={member.handle} className="border-t border-border">
+                      <tr key={member.handle}>
                         <td className="p-2 font-medium">
                           {member.handle} {member.owner && <Badge tone="primary">{t("team.owner")}</Badge>}
                         </td>

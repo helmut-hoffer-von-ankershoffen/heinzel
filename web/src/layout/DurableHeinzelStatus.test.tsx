@@ -1,6 +1,7 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { shell } from "@/test/fixtures";
+import { expectPane } from "@/test/pane";
 import { mockApi, renderAt } from "@/test/render";
 
 const sessions = [
@@ -22,7 +23,14 @@ describe("The durable Heinzel footer control", () => {
     expect(within(panel).getByText("Paused").nextElementSibling).toHaveTextContent("1");
     expect(within(panel).getByText("Needs attention").nextElementSibling).toHaveTextContent("1");
     expect(within(panel).getByText("Proposed").nextElementSibling).toHaveTextContent("1");
-    expect(within(panel).getByRole("link", { name: "Open chat" })).toHaveAttribute("href", "/");
+    // Content first, then the divider and the one bottom row of buttons with icon and text (design/README.md).
+    await expectPane(panel);
+    const row = within(panel).getByRole("group", { name: "Actions" });
+    const chat = within(row).getByRole("link", { name: "Open chat" });
+    expect(chat).toHaveAttribute("href", "/");
+    // The only action leads with its words (design/README.md, "Actions").
+    expect(chat).toHaveTextContent("Open chat");
+    expect(chat.querySelector("svg")).not.toBeNull();
   });
 
   it("shows zero for an authoritative empty persisted list", async () => {
@@ -31,6 +39,17 @@ describe("The durable Heinzel footer control", () => {
     expect(await screen.findByRole("button", { name: "0 Heinzelmännchen, off" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "0 Heinzelmännchen, off" }));
     expect(await screen.findByText("No persisted Heinzels yet.")).toBeInTheDocument();
+    // The empty state's action is the pane's primary button in the bottom row under the divider.
+    const panel = screen.getByRole("region", { name: "Heinzelmännchen" });
+    await expectPane(panel);
+    // One row: Create leads with its words, Open chat is an icon named by its words.
+    const row = within(panel).getByRole("group", { name: "Actions" });
+    const [create, chat] = [...row.querySelectorAll("a, button")];
+    expect(create).toHaveTextContent("Create a personal Heinzel");
+    expect(chat).toHaveAttribute("aria-label", "Open chat");
+    expect(chat).toHaveAttribute("title", "Open chat");
+    expect(chat).toHaveTextContent(/^$/);
+    expect(within(row).getByRole("button", { name: "Create a personal Heinzel" })).not.toHaveClass("underline");
   });
 
   it("creates a durable personal Heinzel and opens its inspectable session", async () => {

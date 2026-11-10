@@ -4,12 +4,11 @@
 import { CircleHelp } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { AnchoredPopover } from "@/components/AnchoredPopover";
+import { PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 const CLOSE_DELAY = 200;
-
-export const helpButton = "flex min-h-8 items-center gap-1.5 rounded-lg px-2 py-1 text-ui-sm hover:bg-accent";
 
 type Props = { attention: boolean; children: ReactNode; actions: ReactNode };
 
@@ -117,7 +116,7 @@ export function PlayerHelp({ attention, children, actions }: Props) {
             className="w-72 max-w-[calc(100vw-1rem)] p-2 text-ui-sm text-foreground"
           >
             <div className="px-1.5 py-1">{children}</div>
-            <div className="mt-1 flex flex-wrap gap-1 border-t border-border pt-1.5">{actions}</div>
+            <PaneActions className="mt-1">{actions}</PaneActions>
           </AnchoredPopover>
         </div>
       )}

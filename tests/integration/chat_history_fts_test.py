@@ -14,7 +14,7 @@ pytestmark = pytest.mark.integration
 
 
 def test_rare_unicode_hit_uses_index_and_short_query_falls_back(make_kernel, monkeypatch):
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
     with current.local("cli"):
@@ -50,7 +50,7 @@ def test_rare_unicode_hit_uses_index_and_short_query_falls_back(make_kernel, mon
 
 
 def test_index_pagination_append_reopen_and_exact_owner_scope(make_kernel, tmp_path):
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
     with current.local("cli"):
@@ -80,7 +80,7 @@ def test_index_pagination_append_reopen_and_exact_owner_scope(make_kernel, tmp_p
 
 
 def test_missing_docs_and_postings_are_refused_then_rebuilt(make_kernel):
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
     with current.local("cli"):
@@ -104,7 +104,7 @@ def test_missing_docs_and_postings_are_refused_then_rebuilt(make_kernel):
 
 
 def test_indexed_search_is_private_http(make_kernel, tmp_path):
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
     with current.local("cli"):
@@ -119,7 +119,7 @@ def test_indexed_search_is_private_http(make_kernel, tmp_path):
 
 
 def test_expired_matching_body_is_omitted_and_removed_from_disposable_index(make_kernel, tmp_path):
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "identity"))
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
@@ -149,7 +149,7 @@ def test_expired_matching_body_is_omitted_and_removed_from_disposable_index(make
 
 
 def test_unicode_and_quoted_trigrams_and_nul_fallback(make_kernel):
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
     with current.local("cli"):
@@ -166,7 +166,7 @@ def test_unicode_and_quoted_trigrams_and_nul_fallback(make_kernel):
 
 
 def test_append_indexes_only_new_body_and_validates_the_hit(make_kernel, monkeypatch):
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
     with current.local("cli"):
@@ -191,7 +191,7 @@ def test_append_indexes_only_new_body_and_validates_the_hit(make_kernel, monkeyp
 def test_warmed_cache_is_safe_across_authenticated_worker_threads(make_kernel):
     from concurrent.futures import ThreadPoolExecutor
 
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
     with current.local("cli"):
@@ -208,7 +208,7 @@ def test_warmed_cache_is_safe_across_authenticated_worker_threads(make_kernel):
 
 
 def test_equal_sequence_changed_hash_invalidates_cached_index(make_kernel, monkeypatch):
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
     with current.local("cli"):
@@ -233,7 +233,7 @@ def test_equal_sequence_changed_hash_invalidates_cached_index(make_kernel, monke
 def test_identical_owner_session_in_distinct_stores_does_not_share_cache(make_kernel, tmp_path):
     import shutil
 
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "first" / "identity"))
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
@@ -257,7 +257,7 @@ def test_identical_owner_session_in_distinct_stores_does_not_share_cache(make_ke
 
 
 def test_unmatched_expired_body_is_purged_without_reading_its_content(make_kernel, tmp_path, monkeypatch):
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "identity"))
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
@@ -306,7 +306,7 @@ def test_unsupported_secure_delete_refuses_indexed_search_and_closes_cache(make_
 
     from heinzel.modules.heinzel import _history_fts as module
 
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
     with current.local("cli"):
@@ -337,7 +337,7 @@ def test_unsupported_secure_delete_refuses_indexed_search_and_closes_cache(make_
 def test_indexed_query_honors_time_bounds_and_rejects_cursor_rebinding(make_kernel):
     from datetime import UTC, datetime
 
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
     with current.local("cli"):
@@ -359,7 +359,7 @@ def test_cursor_cannot_move_between_distinct_owner_store_copies(make_kernel, tmp
     import base64
     import shutil
 
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "first" / "identity"))
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
@@ -382,7 +382,7 @@ def test_cursor_cannot_move_between_distinct_owner_store_copies(make_kernel, tmp
 
 
 def test_fresh_search_never_recovers_deleted_body_from_cached_index(make_kernel, tmp_path):
-    kernel = make_kernel(builtins=True, settings_=Settings(features={"connected_history"}))
+    kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "identity"))
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)

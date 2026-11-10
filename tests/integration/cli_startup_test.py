@@ -1,5 +1,7 @@
 """Direct UI startup avoids schemas belonging to other CLI commands."""
 
+import json
+
 import pytest
 import typer
 from typer.testing import CliRunner
@@ -9,24 +11,19 @@ from heinzel.heads import cli
 pytestmark = pytest.mark.integration
 
 
-def _shape(command):
-    result = (
-        command.name,
-        command.help,
-        command.hidden,
-        [(p.name, p.opts, p.secondary_opts, p.default, p.required, p.nargs, str(p.type)) for p in command.params],
-    )
-    if isinstance(command, typer.core.TyperGroup):
-        return result, {name: _shape(child) for name, child in command.commands.items()}
-    return result
-
-
 def test_ui_subtree_retains_every_command_option_and_help(make_kernel):
     kernel = make_kernel(builtins=True)
-    full = typer.main.get_command(cli.build(kernel))
-    direct = typer.main.get_command(cli.build(kernel, ui_only=True))
-    assert _shape(direct.commands["ui"]) == _shape(full.commands["ui"])
-    assert direct.params == full.params or [p.name for p in direct.params] == [p.name for p in full.params]
+    runner = CliRunner()
+    full = runner.invoke(cli.build(kernel), ["--command-tree"])
+    direct = runner.invoke(cli.build(kernel, ui_only=True), ["--command-tree"])
+    assert full.exit_code == 0, full.output
+    assert direct.exit_code == 0, direct.output
+    full_root = json.loads(full.stdout)["root"]
+    direct_root = json.loads(direct.stdout)["root"]
+    assert next(node for node in direct_root["commands"] if node["command"] == "hz ui") == next(
+        node for node in full_root["commands"] if node["command"] == "hz ui"
+    )
+    assert direct_root["parameters"] == full_root["parameters"]
 
 
 @pytest.mark.parametrize(

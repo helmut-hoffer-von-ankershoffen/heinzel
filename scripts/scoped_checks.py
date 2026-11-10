@@ -11,13 +11,17 @@ only `web/` runs the web checks; changes that touch neither `web/` nor `desktop/
 `make check-fast` without the web app's tests and the managed backend's check, with the type checks added and the unit
 tests narrowed to the ones related to the change (`scripts/related_tests.py`; configuration, the lockfile and
 `conftest.py` cannot be mapped and run all of them); anything else runs `make check-fast` in full. `make check-fast` by
-hand stays the full run. CI always runs the full gate, so nothing goes unchecked, only later.
+hand stays the full run. CI runs reviewed focused workloads and reserves the full suite for release candidates.
+
+For a scoped web push, set WEB_TEST_FILES to a space-separated list of existing repo-relative Vitest files,
+for example `WEB_TEST_FILES=web/src/sound/StreamPlayer.test.tsx git push`. Leave it unset to run all web tests.
 """
 
 import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -112,6 +116,37 @@ WEB_STEPS = [  # WEB_LINT, WEB_TYPES and WEB_TESTS of the Makefile
     f"&web-types={WEB} exec node node_modules/@typescript/native/bin/tsc --noEmit -p .",
     f"&web-tests={WEB} exec vitest run",
 ]
+WEB_TEST_SUFFIXES = {"src": (".test.ts", ".test.tsx"), "e2e": (".test.mjs",)}
+
+
+def web_test_step(files: str | None) -> str:
+    """Build the Vitest step from explicit checkout files, with no shell or Vitest options from the caller.
+
+    Raises:
+        ValueError: If the opt-in is empty or any entry is outside the web test inventory.
+    """
+    if files is None:
+        return WEB_STEPS[-1]
+    targets = []
+    for file in files.split():
+        root, _, relative = file.partition("/")
+        area, _, test = relative.partition("/")
+        if (
+            root != "web"
+            or not test.endswith(WEB_TEST_SUFFIXES.get(area, ()))
+            or any(not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*", part) for part in test.split("/"))
+        ):
+            msg = "WEB_TEST_FILES must list repo-relative web/src/*.test.ts(x) or web/e2e/*.test.mjs files"
+            raise ValueError(msg)
+        path = ROOT / file
+        if not path.is_file() or path.resolve() != path:
+            msg = f"WEB_TEST_FILES must name an existing web test file: {file}"
+            raise ValueError(msg)
+        targets.append(f"./{relative}")
+    if not targets:
+        msg = "WEB_TEST_FILES is empty. Unset it for the default web test run."
+        raise ValueError(msg)
+    return f"{WEB_STEPS[-1]} --maxWorkers=2 {' '.join(targets)}"
 
 
 def is_document(path: str) -> bool:
@@ -156,7 +191,7 @@ def docs_steps(tooling: list[str]) -> list[str]:
     ]
 
 
-def scoped_steps(changed: list[str]) -> list[str] | None:
+def scoped_steps(changed: list[str], *, web_test_files: str | None = None) -> list[str] | None:
     """Steps for a branch of documents, their tooling and web files only, or None when the full gate must run."""
     web = [path for path in changed if path.startswith("web/") and not is_document(path)]
     tooling = [path for path in changed if is_docs_tooling(path)]
@@ -167,7 +202,7 @@ def scoped_steps(changed: list[str]) -> list[str] | None:
     if documents or tooling:
         steps += docs_steps(tooling)
     if web:
-        steps += [f"web-prepare={WEB} prepare", *WEB_STEPS]
+        steps += [f"web-prepare={WEB} prepare", *WEB_STEPS[:-1], web_test_step(web_test_files)]
     return steps
 
 
@@ -272,16 +307,65 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
     return commands
 
 
-def run_early_guards(changed: list[str]) -> None:
+MODES = ("fast", "preflight", "push", "early-fast", "early-preflight")
+GATE_MAX_WAIT = 3600  # waiting for a host slot does not count against the check's runtime limit
+
+
+def run_check(
+    command: list[str], *, timeout: int, light: bool = False, check: bool = True, capture_output: bool = False
+) -> subprocess.CompletedProcess[str]:
+    """Run the selected check through the optional host queue, with its own runtime limit."""
+    gate = shutil.which("hz-gate")
+    if gate is None or not Path(gate).is_absolute():
+        return subprocess.run(  # noqa: S603 - fixed check commands and validated operands
+            command, check=check, timeout=timeout, capture_output=capture_output, text=True
+        )
+    env = os.environ.copy()
+    try:
+        requested_wait = int(os.environ.get("HZ_GATE_MAX_WAIT", ""))
+    except ValueError:
+        requested_wait = GATE_MAX_WAIT
+    queue_wait = min(requested_wait, GATE_MAX_WAIT) if requested_wait > 0 else GATE_MAX_WAIT
+    env["HZ_GATE_MAX_WAIT"] = str(queue_wait)
+    if light:
+        env["HZ_GATE_LIGHT"] = "1"
+    else:
+        env.pop("HZ_GATE_LIGHT", None)
+    # The host enforces separate queue and runtime limits. The outer watchdog allows both
+    # the optional pre-push lock wait and the slot wait, plus time for launcher startup.
+    return subprocess.run(  # noqa: S603 - absolute gate, fixed check commands and validated operands
+        [gate, "--timeout", str(timeout), *command],
+        env=env,
+        check=check,
+        capture_output=capture_output,
+        text=True,
+        timeout=2 * queue_wait + timeout + 10,
+    )
+
+
+def run_early_guards(changed: list[str], *, light: bool = False) -> None:
     """Fail before the caller can launch an expensive full-check command."""
     for command in early_guard_commands(changed):
-        subprocess.run(command, check=True, timeout=180)  # noqa: S603 - fixed owning pytest commands
+        run_check(command, timeout=180, light=light)
+
+
+def run_scoped_push(changed: list[str], parser: argparse.ArgumentParser) -> None:
+    """Run the pre-push guards and the docs or web steps when they cover the branch."""
+    light = bool(changed) and all(is_document(path) for path in changed)
+    run_early_guards(changed, light=light)
+    try:
+        steps = scoped_steps(changed, web_test_files=os.environ.get("WEB_TEST_FILES"))
+    except ValueError as error:
+        parser.error(str(error))
+    if steps:
+        command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
+        sys.exit(run_check(command, check=False, timeout=600, light=light).returncode)
 
 
 def main() -> None:
     """Preserve core checks and common policies while selecting independent owning plugin work."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["fast", "preflight", "push", "early-fast", "early-preflight"])
+    parser.add_argument("mode", choices=MODES)
     parser.add_argument("--base", default="origin/main")
     args = parser.parse_args()
     early = args.mode.startswith("early-")
@@ -299,46 +383,36 @@ def main() -> None:
     base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if args.mode == "push":
         changed = sorted({*changed, *changed_paths("fast", base)})
-        run_early_guards(changed)
-        steps = scoped_steps(changed)
-        if steps:
-            command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
-            done = subprocess.run(command, check=False, timeout=600)  # noqa: S603
-            sys.exit(done.returncode)
+        run_scoped_push(changed, parser)
         if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
             # Python, scripts, tests and documents: everything of the fast gate but the web app's tests and the managed
             # backend's check, which read nothing of it (the generated client is still checked by web-lint).
             command = ["make", "check-fast", *python_overrides(changed)]
-            sys.exit(subprocess.run(command, check=False, timeout=1800).returncode)  # noqa: S603
+            sys.exit(run_check(command, check=False, timeout=1800).returncode)
         args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):
-        subprocess.run(  # noqa: S603 - explicit owning commands, no shell
-            # Make from PATH
-            ["make", "preflight" if args.mode == "preflight" else "check-fast", *base_arguments],  # noqa: S607
-            check=True,
+        run_check(
+            ["make", "preflight" if args.mode == "preflight" else "check-fast", *base_arguments],
             timeout=1800 if args.mode == "preflight" else 300,
         )
         return
     toolkit = [sys.executable, str(Path(__file__).with_name("plugin_tooling.py")), "--toolkit", TOOLKIT, "hz-plugin"]
     if args.mode == "fast":
-        subprocess.run([*toolkit, "check-changed", "--changed", *changed], check=True, timeout=300)  # noqa: S603 - pinned toolkit, literal paths
+        run_check([*toolkit, "check-changed", "--changed", *changed], timeout=300)
         return
     # These policies apply to plugin source too; no core build, native job or test suite runs.
     # Shared policy targets
-    subprocess.run(["make", "commits", "secrets", *base_arguments], check=True, timeout=120)  # noqa: S603, S607
-    subprocess.run(
-        [sys.executable, "scripts/check_confidentiality.py"],
-        check=True,
-        timeout=120,
-    )
-    plan = json.loads(
-        subprocess.check_output([*toolkit, "plan", "--changed", *changed], text=True, timeout=60)  # noqa: S603 - pinned metadata-only planner
-    )
-    for project in plan["include"]:
-        subprocess.run([*toolkit, "preflight", project["name"]], check=True, timeout=1800)  # noqa: S603 - canonical names from the pinned planner
+    run_check(["make", "commits", "secrets", *base_arguments], timeout=120)
+    run_check([sys.executable, "scripts/check_confidentiality.py"], timeout=120)
+    plan = run_check([*toolkit, "plan", "--changed", *changed], timeout=60, capture_output=True)
+    for project in json.loads(plan.stdout)["include"]:
+        run_check([*toolkit, "preflight", project["name"]], timeout=1800)
 
 
 if __name__ == "__main__":
     # Git runs hooks at the repository root; explicit cwd also supports direct invocation elsewhere.
     os.chdir(Path(__file__).resolve().parents[1])
-    main()
+    try:
+        main()
+    except subprocess.CalledProcessError as error:
+        sys.exit(error.returncode)

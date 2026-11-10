@@ -70,6 +70,14 @@ building or testing core for plugin-only work. Explicit local developer candidat
 candidate URLs must carry a SHA-256 digest which the launcher checks before installation. Candidate dependencies
 are wheel-only, but are not promised to match the released toolkit's lock.
 
+Each direct wheel URL (the pinned toolkit, a remote candidate) is fetched before uv sees it: from the content-addressed
+cache `~/.cache/hz/plugin-tooling/<sha256>.whl`, else the URL with three jittered retries on 429/5xx and cut-short
+transfers, else GitHub's authenticated route (`gh release download`, or the REST asset endpoint with `GH_TOKEN`,
+`GITHUB_TOKEN` or `gh auth token`; the token stays in the process and is dropped on the storage redirect). The bytes
+must match the pin before they are cached or installed, and the rewritten requirements keep that `--hash`, so uv
+checks the wheel again under `--require-hashes`. `scripts/tools.py` falls back to `gh release download` the same way
+for pinned GitHub release assets after its retries, still checking the manifest checksum.
+
 CI's test dependency sync is frozen and wheel-only, with the same isolated, hash-verified Python 3.15 PyYAML build
 described above. Stdlib-only publication checks select Python explicitly and load no project dependencies.
 Native actionlint replaces the source-only wrapper at the same version, including generated governed templates.

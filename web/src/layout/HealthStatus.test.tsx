@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { doctor } from "@/test/fixtures";
+import { expectPane } from "@/test/pane";
 import { expectAccessible, mockApi } from "@/test/render";
 import { HealthStatus } from "./HealthStatus";
 
@@ -28,7 +29,17 @@ describe("footer system health", () => {
     expect(screen.getByRole("region")).toHaveTextContent("1 healthy · 2 need attention · 0 unavailable");
     expect(screen.getByRole("region")).toHaveTextContent("missing org.handle");
     expect(screen.getByRole("region")).toHaveTextContent("Run `hz setup`");
-    expect(screen.getByRole("link", { name: "Open Doctor" })).toHaveAttribute("href", "/doctor");
+    const doctor = screen.getByRole("link", { name: "Open Doctor" });
+    expect(doctor).toHaveAttribute("href", "/doctor");
+    // Both actions are buttons of one style in the one bottom row under the divider.
+    const row = doctor.closest("[data-pane-actions]");
+    expect(row).toHaveClass("border-t");
+    await expectPane(screen.getByRole("region"));
+    const refresh = screen.getByRole("button", { name: "Refresh health checks" });
+    expect(refresh.closest("[data-pane-actions]")).toBe(row);
+    expect(doctor).not.toHaveClass("underline");
+    expect(doctor.className.split(" ")).toEqual(expect.arrayContaining(["border", "h-8"]));
+    expect(refresh.className.split(" ")).toEqual(expect.arrayContaining(["border", "h-8"]));
     await expectAccessible(container);
   });
   it("keeps a typed DOWN result returned as HTTP 503", async () => {
@@ -76,6 +87,15 @@ describe("footer system health", () => {
     fireEvent.click(await screen.findByRole("button", { name: "System health, error" }));
     expect(screen.getByText("Needs repair now")).toBeInTheDocument();
     expect(screen.queryByText("warning 2")).not.toBeInTheDocument();
+  });
+  it("shows a health detail once when the remedy repeats the same text", async () => {
+    const detail = "Apple's /usr/bin/git launcher is not verified yet.";
+    show({
+      status: "degraded",
+      checks: { "system.prerequisite": [{ name: "system: git", status: "degraded", detail, fix: detail }] },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "System health, warning" }));
+    expect(screen.getAllByText(detail)).toHaveLength(1);
   });
   it("limits the summary to three problems and directs remaining detail to Doctor", async () => {
     show({

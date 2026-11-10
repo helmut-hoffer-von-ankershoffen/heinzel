@@ -1,10 +1,11 @@
 import { ExternalLink, EyeOff, LogIn, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
+import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { PlayerCard } from "./PlayerCard";
-import { helpButton, PlayerHelp } from "./PlayerHelp";
+import { PlayerHelp } from "./PlayerHelp";
 import { page } from "./queries";
 import { stop } from "./store";
 import {
@@ -163,25 +164,16 @@ function Player({
           actions={
             <>
               {chooseAccount && (
-                <button type="button" onClick={() => chooseAccount(!account)} className={helpButton}>
-                  {account ? <EyeOff aria-hidden className="size-3.5" /> : <LogIn aria-hidden className="size-3.5" />}
+                <PaneAction icon={account ? EyeOff : LogIn} onClick={() => chooseAccount(!account)}>
                   {t(account ? "sound.privatePlayer" : "sound.accountPlayer")}
-                </button>
+                </PaneAction>
               )}
-              <button type="button" onClick={retry} className={helpButton}>
-                <RotateCw aria-hidden className="size-3.5" />
+              <PaneAction icon={RotateCw} onClick={retry}>
                 {t("sound.retryPlayer")}
-              </button>
-              <a
-                href={stream.watch_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={stop}
-                className={helpButton}
-              >
-                <ExternalLink aria-hidden className="size-3.5" />
+              </PaneAction>
+              <PaneAction icon={ExternalLink} href={stream.watch_url} onClick={stop}>
                 {t("sound.playOnYouTube")}
-              </a>
+              </PaneAction>
             </>
           }
         >

@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -32,6 +33,7 @@ from heinzel.modules.ai.access._models import (
     AccessUse,
     Bindings,
     LastTest,
+    Setup,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,15 +49,43 @@ _TESTS = TypeAdapter(dict[str, LastTest])
 DETAIL_LIMIT = 300
 
 
+_CLIENT = re.compile(r"heinzel\[([a-z0-9-]+)\]")
+"""An optional Python client of the core named in a fix, e.g. `heinzel[openai]`: an extra, never a plugin."""
+CLIENTS = {"openai": "OpenAI", "anthropic": "Anthropic"}
+MODEL_API = "pydantic-ai"
+GATEWAY = "gateway"
+
+
 def state(status: AccessStatus, last: LastTest | None) -> AccessState:
     """The one status word people read: sign-in as far as the option tells offline, else the last test."""
     if not status.installed:
-        return "not installed"
+        return "needs setup"
     if status.signed_in is not None:
         return "signed in" if status.signed_in else "not signed in"
     if last is None:
         return "not tested"
     return "tested" if last.ok else "test failed"
+
+
+def setup_of(name: str, status: AccessStatus) -> tuple[Setup | None, str]:  # noqa: PLR0911 - one answer per gap
+    """What setting option `name` up takes and the one thing missing, in a few words; none and empty when ready.
+
+    Options are built into hz: what one lacks is a setting, a sign-in or an optional client, never a plugin.
+    """
+    if match := _CLIENT.search(status.fix):
+        client = CLIENTS.get(match[1], match[1])
+        return "client", f"Add the {client} client"
+    if name == MODEL_API and (not status.installed or status.signed_in is False):
+        if not status.models:
+            return "model", "Add a model and API key"
+        return "model", "Name the model's vendor" if not status.installed else "Add an API key"
+    if name == GATEWAY and not status.installed:
+        return "gateway", "Add your gateway command"
+    if status.signed_in is False:
+        return "sign-in", f"Sign in to {status.title}"
+    if not status.installed:
+        return None, f"Set up {status.title}"
+    return None, ""
 
 
 class ResultStore:
@@ -143,8 +173,11 @@ class AccessService:
         )
         if isinstance(status, str):
             return row.model_copy(update={"detail": status})
+        setup, needs = setup_of(name, status)
         return row.model_copy(
             update={
+                "setup": setup,
+                "needs": needs,
                 "title": status.title,
                 "summary": status.summary,
                 "status": state(status, last),
@@ -179,13 +212,9 @@ class AccessService:
                 f"doesn't follow the AI access."
             )
             next_steps = [f"hz ai access use {chosen.name}"]
-        elif runner != self._view.bound("agent-runner"):
-            # Bindings are read once at boot: a running `hz ui serve` or MCP server keeps the runner it started with.
-            note = (
-                f"The agent runner is now {runner or 'none'}, but this hz process started with "
-                f"{self._view.bound('agent-runner') or 'none'}; restart `hz ui serve` or the MCP server to apply it."
-            )
-        elif chosen.status in {"not installed", "not signed in"} and chosen.fix:
+        # No "restart to apply" branch: a running head takes up a changed runner before its next call
+        # (`Kernel.refresh_live_bindings`), so the files decide what runs.
+        elif chosen.status in {"needs setup", "not signed in"} and chosen.fix:
             next_steps = [chosen.fix]
         elif chosen.status == "not tested":
             next_steps = [f"hz ai access test --name {chosen.name}"]
@@ -287,7 +316,7 @@ class AccessService:
             fix = listing.next[0] if listing.next else f"hz ai access use {DEFAULT}"
             return [Check(name="ai access", status=Status.DEGRADED, detail=listing.note or "none in use", fix=fix)]
         detail = f"{chosen.name}: {chosen.status}" + (f"; {chosen.detail}" if chosen.detail else "")
-        if chosen.status in {"not installed", "not signed in", "test failed", "error"}:
+        if chosen.status in {"needs setup", "not signed in", "test failed", "error"}:
             fix = chosen.fix or f"hz ai access test --name {chosen.name}"
             return [Check(name="ai access", status=Status.DEGRADED, detail=detail, fix=fix)]
         if listing.note:

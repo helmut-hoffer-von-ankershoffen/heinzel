@@ -1,15 +1,14 @@
 // Today's tease of the notification center (ADR 0043): how many notices you haven't seen, the latest few, and the way
 // to all of them. Nothing unread, nothing shown: the center itself is a click away on the bell.
 import { Bell, ListChecks } from "lucide-react";
-import { Link, useNavigate } from "react-router";
-import { Button } from "@/components/ui/button";
+import { Link } from "react-router";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { useLiveNotices, useSeen, when } from "@/layout/NotificationCenter";
 
 const TEASED = 3;
 
 export function TodayNotifications() {
-  const navigate = useNavigate();
   const notices = useLiveNotices();
   const [seen] = useSeen();
   const unread = (notices.data?.notices ?? []).filter((notice) => notice.id > seen);
@@ -33,21 +32,15 @@ export function TodayNotifications() {
             {t("today.notifications.unread", { count: unread.length })}
           </span>
         </h3>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="-my-1 -mr-1 size-8"
-          onClick={() => navigate("/?panel=notifications")}
-          aria-label={t("today.notifications.all")}
-          title={t("today.notifications.all")}
-        >
-          <ListChecks aria-hidden />
-        </Button>
       </div>
       <ul className="flex flex-col gap-1 text-xs">
         {teased.map((notice) => (
           <li key={notice.id}>
-            <Link to={notice.route} className="flex items-baseline gap-2 hover:underline">
+            <Link
+              to={notice.route}
+              data-prose-link
+              className="flex items-baseline gap-2 rounded px-1 hover:bg-accent/60"
+            >
               <span className="truncate" title={notice.title}>
                 {notice.title}
               </span>
@@ -56,6 +49,11 @@ export function TodayNotifications() {
           </li>
         ))}
       </ul>
+      <PaneActions>
+        <PaneAction icon={ListChecks} to="/?panel=notifications">
+          {t("today.notifications.all")}
+        </PaneAction>
+      </PaneActions>
     </li>
   );
 }

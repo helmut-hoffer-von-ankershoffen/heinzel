@@ -45,7 +45,7 @@ export function Heinzelmaennchen() {
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full text-left text-sm">
                 <caption className="sr-only">{t("heinzel.title")}</caption>
-                <thead className="bg-muted text-xs text-muted-foreground">
+                <thead className="border-b border-border bg-muted text-xs text-muted-foreground">
                   <tr>
                     <th scope="col" className="p-2">
                       {t("heinzel.name")}
@@ -70,13 +70,17 @@ export function Heinzelmaennchen() {
                     </th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-border">
                   {shown.heinzelmaennchen.map((heinzel) => {
                     const qualified = `${heinzel.namespace}:${heinzel.name}`;
                     return (
-                      <tr key={qualified} className="border-t border-border align-top">
+                      <tr key={qualified} className="align-top">
                         <td className="p-2">
-                          <Link to={contractPath(qualified)} className="font-medium underline-offset-2 hover:underline">
+                          <Link
+                            to={contractPath(qualified)}
+                            data-prose-link
+                            className="font-medium underline-offset-2 hover:underline"
+                          >
                             {heinzel.title ?? heinzel.name}
                           </Link>
                         </td>

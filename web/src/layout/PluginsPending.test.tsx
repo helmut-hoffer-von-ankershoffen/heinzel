@@ -1,7 +1,8 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it } from "vitest";
 import { shell } from "@/test/fixtures";
+import { expectPane } from "@/test/pane";
 import { mockApi, renderAt } from "@/test/render";
 
 const pending = {
@@ -21,7 +22,21 @@ it("tells which plugins changed outside the app and offers Restart and apply, wi
   expect(await screen.findByText("heinzel-weather was installed")).toBeInTheDocument();
   expect(screen.getByText("heinzel-old was removed")).toBeInTheDocument();
   expect(screen.getByText(/choose it in Settings → Appearance/)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Restart and apply" })).toBeInTheDocument();
+  const pane = screen.getByRole("region", { name: "Plugins changed" });
+  await expectPane(pane);
+  // Confirming keeps every button in the bottom row: the question is content, its answers are the row's buttons.
+  await user.click(within(pane).getByRole("button", { name: "Restart and apply" }));
+  expect(within(pane).getByRole("alertdialog", { name: "Restart and apply Plugins" })).toHaveTextContent("Restart");
+  const row = within(pane).getByRole("group", { name: "Actions" });
+  // The inline confirmation answers like a dialog: right-aligned, words on both, Cancel first.
+  expect(row).toHaveAttribute("data-words", "all");
+  expect(row).toHaveClass("justify-end");
+  expect(
+    within(row)
+      .getAllByRole("button")
+      .map((button) => button.textContent),
+  ).toEqual(["Cancel", "Restart and apply Plugins"]);
+  await expectPane(pane);
 });
 
 it("shows nothing while nothing changed", async () => {

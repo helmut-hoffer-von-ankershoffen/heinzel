@@ -90,6 +90,29 @@ The toolkit checks the artifact's identity and compatibility range. Local wheel 
 After the compatible core is published, the same commands work without `CORE`. Set `TOOLING=<toolkit-wheel>` only
 when testing a candidate developer toolkit; normal projects use their immutable version and digest pin.
 
+### Other plugins your plugin needs
+
+A plugin that can't work without another plugin (a company plugin whose bindings read through `heinzel-github`)
+names it under `requires-plugins` in `[tool.heinzel.plugin]`; one it only works better with goes under
+`recommends-plugins`. The table's `requires` stays the capability contracts:
+
+```toml
+[tool.heinzel.plugin]
+requires-plugins = ["heinzel-github", "heinzel-atlassian>=0.2"]
+recommends-plugins = ["heinzel-google"]
+```
+
+Entries are plugin names with an optional version range, never a URL: `hz system plugin add` says before it starts
+which required plugins it installs too, reads each from the plugin catalog (first-party, or your own GitHub owner),
+installs them first, one step each, and only offers the recommended ones. `hz system plugin repair`, which the
+automatic updater runs once per plugin version, installs required plugins an installation lacks. Neither signs in:
+your `hz system doctor` checks keep naming the sign-in step.
+
+To prove a company plugin on a clean profile, run `scripts/acme_setup_e2e.py --hz <hz>`: it adds `acme` from the
+plugin catalog under a throwaway HOME (never your live profile) and asserts `heinzel-github` and `heinzel-atlassian`
+came with it. It signs in nowhere. Those steps are yours, once: `gh auth login` and `acli jira auth login --web`
+(then `acli confluence auth login --web` if you use Confluence); `hz system doctor` names whichever is still open.
+
 ## Declare the programs your plugin needs
 
 If a feature runs an external command line (a VPN client, a vendor CLI), declare it in the module that owns the

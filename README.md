@@ -125,8 +125,8 @@ You can [inspect the script](https://github.com/helmut-hoffer-von-ankershoffen/h
 
 In a terminal, the first run installs the verified standard app with its default plugins, asks which background
 services (and, on Apple silicon Macs, the desktop app) to install, and opens Heinzelmännchen. Without a terminal it
-installs only and prints the next step, `uvx heinzel@latest` in a terminal (it asks) or with `--yes`. Later runs open
-the installed app. `hz ui serve` runs the web server in the foreground; **Ctrl-C** stops it.
+asks nothing, skips the desktop app (add `--yes` to install it) and opens the workspace in the foreground. Later runs
+open the installed app. **Ctrl-C** stops the foreground session; background operation stays optional.
 
 <details>
 <summary>Install details, updates and recovery</summary>
@@ -247,7 +247,7 @@ alongside its CPU, memory and load readings.
 
 Every module is a set of operations, and every operation is a `hz` command, an MCP tool (`hz system serve mcp`)
 and a REST endpoint (`hz system serve api`) at once. Coding agents use whichever suits them: the CLI with `--json`,
-or the MCP tools. People who'd rather click run `hz ui open`: a web app on localhost with a
+or the MCP tools (over HTTP with a read or write token per agent, `hz system serve mcp-token create`). People who'd rather click run `hz ui open`: a web app on localhost with a
 navigation tree of settings, contracts, your team, inventory and the doctor's fixes, and a chat with your agent runner
 that says what it may cost before it runs. Modules can also advertise jobs that
 `hz system daemon install` runs in the background on a schedule, under launchd or systemd, with your
@@ -272,8 +272,8 @@ In an interactive terminal, bare `uvx heinzel@latest` offers independent choices
 scheduled daemon, web server after login and native notifier. Each defaults to **Yes** and runs only after the persistent standard app
 has been verified. First interactive setup asks for missing name, team name and genuinely required profile fields
 through normal configuration, preserving existing values. Setup is complete only when system health is green. Answer **No** to leave that choice unchanged. Help, explicit commands, machine-readable calls
-and noninteractive use never prompt or select services automatically; without a terminal nothing starts, so run
-`uvx heinzel@latest` in a terminal or add `--yes`. Native notification support and OS permission
+and noninteractive use never prompt or select services automatically; without a terminal the bare command still
+opens the workspace in the foreground, and `--yes` also installs the services and the desktop app. Native notification support and OS permission
 are reported separately; an installed notifier does not prove a visible notification.
 
 Built in today:

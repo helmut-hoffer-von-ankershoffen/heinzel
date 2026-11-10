@@ -3151,6 +3151,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/plugin/repair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
+         * @description Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
+         *
+         *     A plugin declares the plugins it can't work without in `[tool.heinzel.plugin] requires-plugins`; `add` installs them
+         *     first, and this repairs an installation that lacks them (one installed before they were declared). It never signs
+         *     in: `hz system doctor` still names each plugin's sign-in step. Running servers load them after a restart.
+         */
+        post: operations["system_plugin_repair"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/plugin/search": {
         parameters: {
             query?: never;
@@ -4093,6 +4117,17 @@ export interface paths {
          *     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
          *     version, the error names it and the previous version stays installed.
          *
+         *     Why it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)
+         *     run in the web server. About every 30 minutes it looks for the newest published stable release (not a draft or
+         *     prerelease) and installs it once it is `auto_update_min_age_hours` old (plugins:
+         *     `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait. The desktop
+         *     app is not part of the tool: it updates itself at the web server's next automatic update check, or now with
+         *     `hz app install`. The output says which applies.
+         *
+         *     Each step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds
+         *     only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so
+         *     the output still parses.
+         *
          *     Raises:
          *         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
          */
@@ -4229,6 +4264,12 @@ export interface components {
              */
             name: string;
             /**
+             * Needs
+             * @description The one thing missing, in a few words, e.g. `Add a model and API key`; empty when nothing is.
+             * @default
+             */
+            needs: string;
+            /**
              * Plugin
              * @description The plugin it comes with, e.g. `heinzel-acme`; none when built in.
              */
@@ -4239,11 +4280,16 @@ export interface components {
              */
             runner?: string | null;
             /**
+             * Setup
+             * @description What setting it up takes: `model` (a model and API key), `gateway` (its commands), `sign-in` or `client` (an optional Python client hz installs); none when nothing is missing or hz can't tell.
+             */
+            setup?: ("model" | "gateway" | "sign-in" | "client") | null;
+            /**
              * Status
-             * @description `signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `not installed` when what it needs is missing.
+             * @description `signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `needs setup` when a setting, a sign-in or its optional client is missing: these options come with hz, they are never plugins to install.
              * @enum {string}
              */
-            status: "signed in" | "not signed in" | "not tested" | "tested" | "test failed" | "not installed" | "error";
+            status: "signed in" | "not signed in" | "not tested" | "tested" | "test failed" | "needs setup" | "error";
             /**
              * Summary
              * @description One sentence on how it reaches AI.
@@ -4807,6 +4853,32 @@ export interface components {
              * @enum {string}
              */
             state: "retained" | "expired";
+        };
+        /**
+         * AutomaticUpdates
+         * @description The automatic-updates setting, as an update run by hand reports it.
+         */
+        AutomaticUpdates: {
+            /**
+             * Check Every Minutes
+             * @description How often the web server checks for the newest stable release.
+             */
+            check_every_minutes: number;
+            /**
+             * Core Min Age Hours
+             * @description How old a stable release of hz must be before it is installed.
+             */
+            core_min_age_hours: number;
+            /**
+             * Enabled
+             * @description The setting `auto_update`: whether hz updates itself and its plugins.
+             */
+            enabled: boolean;
+            /**
+             * Plugin Min Age Hours
+             * @description How old a plugin's release must be before it is installed.
+             */
+            plugin_min_age_hours: number;
         };
         /**
          * AvailablePlugin
@@ -10294,11 +10366,6 @@ export interface components {
              */
             also: string;
             /**
-             * Also Installs
-             * @description Plugins of the same repository it needs and that are not installed yet, in install order (dependencies first), pinned to the same commit; they are installed in the same confirmed operation.
-             */
-            also_installs?: components["schemas"]["PluginDependency"][];
-            /**
              * Distribution
              * @description Distribution name, when it could be read before installing.
              */
@@ -10313,6 +10380,11 @@ export interface components {
              * @description The version installed now, when this replaces it.
              */
             installed_version: string | null;
+            /**
+             * Needs
+             * @description Plugins it requires (dependencies first, each once) and recommends, and what the add does.
+             */
+            needs?: components["schemas"]["PluginNeed"][];
             /**
              * Private
              * @description Whether the repository is private (read with your gh login); none when unknown.
@@ -10389,6 +10461,11 @@ export interface components {
              */
             done: boolean;
             /**
+             * Needs
+             * @description For a confirmed add or a repair: each plugin it required or recommended, with its result.
+             */
+            needs?: components["schemas"]["PluginNeed"][];
+            /**
              * Next
              * @description Commands to run next, e.g. the one that confirms.
              */
@@ -10414,34 +10491,6 @@ export interface components {
              * @description Whether a running `hz ui serve` or MCP server must restart to load the change; the web app restarts its server with `POST /api/restart`. Every new `hz` command sees it at once.
              */
             restart_required: boolean;
-        };
-        /**
-         * PluginDependency
-         * @description A plugin of the same repository and commit that installing a plugin installs first.
-         */
-        PluginDependency: {
-            /**
-             * Distribution
-             * @description Distribution name, e.g. heinzel-acme.
-             */
-            distribution: string;
-            /**
-             * Requirement
-             * @description What is installed: its git source pinned to the same commit.
-             */
-            requirement: string;
-            /**
-             * Source
-             * @description Where its code comes from; the same source as the plugin.
-             * @default git
-             * @enum {string}
-             */
-            source: "pypi" | "git" | "path" | "unknown";
-            /**
-             * Version
-             * @description The version at that commit, when known.
-             */
-            version: string | null;
         };
         /**
          * PluginEvent
@@ -10596,6 +10645,11 @@ export interface components {
          */
         PluginLayer: {
             /**
+             * Label
+             * @description Where it sits in its tree, derived from its position; none while the layer is left out of the tree (a missing parent, a cycle).
+             */
+            label?: ("company" | "org" | "site" | "team") | null;
+            /**
              * Module
              * @description The layer's module name, e.g. `acme-payments`.
              */
@@ -10610,6 +10664,67 @@ export interface components {
              * @description The site layer it names, if any.
              */
             site: string | null;
+        };
+        /**
+         * PluginNeed
+         * @description A plugin another plugin requires or recommends (`[tool.heinzel.plugin]`), and what the add does about it.
+         */
+        PluginNeed: {
+            /** @description For a plugin the add installs or updates: exactly what, read from the same catalog. */
+            candidate?: components["schemas"]["PluginCandidate"] | null;
+            /**
+             * Detail
+             * @description What went wrong, or what the person still does (e.g. sign in).
+             * @default
+             */
+            detail: string;
+            /**
+             * Distribution
+             * @description The plugin needed, e.g. `heinzel-github`.
+             */
+            distribution: string;
+            /**
+             * Install
+             * @description What `hz system plugin add` takes for it, e.g. `github`.
+             */
+            install: string;
+            /**
+             * Installed Version
+             * @description The version installed before the add, if any.
+             */
+            installed_version?: string | null;
+            /**
+             * Needed By
+             * @description The plugin that requires or recommends it.
+             */
+            needed_by: string;
+            /**
+             * Required
+             * @description Whether it is required (installed first) or only recommended (offered).
+             */
+            required: boolean;
+            /**
+             * Requirement
+             * @description What is needed, as declared: the plugin and an optional version range.
+             */
+            requirement: string;
+            /**
+             * State
+             * @description What the add does or did about it.
+             * @enum {string}
+             */
+            state: "install" | "update" | "present" | "offered" | "installed" | "updated" | "failed" | "not-reached";
+            /**
+             * Version
+             * @description The version the add installs or installed, when known.
+             */
+            version?: string | null;
+            /**
+             * With It
+             * @description A plugin of the same repository it depends on, installed in the same run and pinned to the same commit; `requirement` is that pinned source.
+             * @default false
+             */
+            with_it: boolean;
         };
         /**
          * PluginOperation
@@ -10782,6 +10897,27 @@ export interface components {
             version?: string | null;
         };
         /**
+         * PluginRepair
+         * @description What a repair of the installed plugins' requirements found and did, one entry per missing plugin.
+         */
+        PluginRepair: {
+            /**
+             * Message
+             * @description One line: what was repaired, or that nothing needed it.
+             */
+            message: string;
+            /**
+             * Needs
+             * @description Each required plugin that was missing or too old, with its result.
+             */
+            needs: components["schemas"]["PluginNeed"][];
+            /**
+             * Restart Required
+             * @description Whether a running server must restart to load what was installed.
+             */
+            restart_required: boolean;
+        };
+        /**
          * PluginSearch
          * @description Plugins one can install, and what kept the search from being complete.
          */
@@ -10813,6 +10949,12 @@ export interface components {
              */
             before: string | null;
             /**
+             * Checked
+             * @description Whether the update asked for its newest version; false when the plugin update stopped before it.
+             * @default true
+             */
+            checked: boolean;
+            /**
              * Disabled
              * @description Whether the plugin does not work with the new hz at all and was taken out of the installation: it is not loaded until a release that allows the new hz is added (`next`).
              * @default false
@@ -10828,6 +10970,11 @@ export interface components {
              * @description Commands that bring a failed plugin back.
              */
             next?: string[];
+            /**
+             * Pinned
+             * @description The tag, commit, file or exact version its install spec pins it to, so an update cannot move it; none if it follows a branch or the package index.
+             */
+            pinned?: string | null;
             /**
              * Reason
              * @description Why it failed, and what became of it.
@@ -11696,6 +11843,11 @@ export interface components {
              * @description Holds once the hz installed on this machine (on disk, not the running process) is at least this.
              */
             installed_version_at_least?: string | null;
+            /**
+             * Plugins Installed
+             * @description Holds once every plugin distribution named is installed on this machine (on disk).
+             */
+            plugins_installed?: string[] | null;
         };
         /**
          * Restart
@@ -14823,13 +14975,23 @@ export interface components {
             /** @description The declaring module's operation that enables the feature. */
             enable: components["schemas"]["RunOperation"];
             /**
+             * Explanation
+             * @description The longer explanation, shown only on demand under Details.
+             */
+            explanation?: string | null;
+            /**
              * Label
              * @description The action the person enables or disables.
              */
             label: string;
             /**
+             * Problem
+             * @description One short cause the person can fix, e.g. `Sign in to Tailscale, then try again.`; its presence offers Try again.
+             */
+            problem?: string | null;
+            /**
              * Requested
-             * @description The requested state when it differs from verified readiness; never a success claim.
+             * @description The person's choice, which the switch shows; `checked` alone says whether it is live.
              */
             requested?: boolean | null;
             /**
@@ -14837,6 +14999,11 @@ export interface components {
              * @description Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and an active session or device credential.
              */
             sign_in_url?: string | null;
+            /**
+             * Status
+             * @description The provider's one short status line, e.g. `Turning on…`; the host shows its own when absent.
+             */
+            status?: string | null;
             /**
              * Url
              * @description Optional nonsecret link shown alongside the toggle.
@@ -14997,6 +15164,8 @@ export interface components {
              * @description Heinzelmännchen version installed now; the same as `before` if nothing changed.
              */
             after: string;
+            /** @description Whether automatic updates are on and what they install, so a run by hand says why it was needed. */
+            automatic?: components["schemas"]["AutomaticUpdates"] | null;
             /**
              * Before
              * @description Heinzelmännchen version installed before.
@@ -16426,6 +16595,7 @@ export type SchemaAgentResult = components['schemas']['AgentResult'];
 export type SchemaAssetTypeDoc = components['schemas']['AssetTypeDoc'];
 export type SchemaAssetView = components['schemas']['AssetView'];
 export type SchemaAttachmentRef = components['schemas']['AttachmentRef'];
+export type SchemaAutomaticUpdates = components['schemas']['AutomaticUpdates'];
 export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
 export type SchemaAvatar = components['schemas']['Avatar'];
 export type SchemaAvatarSlot = components['schemas']['AvatarSlot'];
@@ -16589,14 +16759,15 @@ export type SchemaPlaybookList = components['schemas']['PlaybookList'];
 export type SchemaPlaybookView = components['schemas']['PlaybookView'];
 export type SchemaPluginCandidate = components['schemas']['PluginCandidate'];
 export type SchemaPluginChange = components['schemas']['PluginChange'];
-export type SchemaPluginDependency = components['schemas']['PluginDependency'];
 export type SchemaPluginEvent = components['schemas']['PluginEvent'];
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
+export type SchemaPluginNeed = components['schemas']['PluginNeed'];
 export type SchemaPluginOperation = components['schemas']['PluginOperation'];
 export type SchemaPluginPage = components['schemas']['PluginPage'];
 export type SchemaPluginPending = components['schemas']['PluginPending'];
 export type SchemaPluginPendingChange = components['schemas']['PluginPendingChange'];
+export type SchemaPluginRepair = components['schemas']['PluginRepair'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaPrerequisiteCheck = components['schemas']['PrerequisiteCheck'];
@@ -21440,11 +21611,45 @@ export interface operations {
             };
         };
     };
+    system_plugin_repair: {
+        parameters: {
+            query?: {
+                /** @description As the automatic updater asks: try each missing plugin once per version of the plugin that requires it, so a failure isn't retried every half hour. */
+                automatic?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginRepair"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_plugin_search: {
         parameters: {
             query?: {
                 /** @description Words that name or describe the plugin, e.g. `calendar`; sent to GitHub's search. All plugins if omitted. */
                 text?: string;
+                /** @description Ask GitHub again instead of using the answer kept for the last minute. */
+                refresh?: boolean;
             };
             header?: never;
             path?: never;
@@ -22771,7 +22976,7 @@ export interface operations {
             query?: {
                 /** @description Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel. */
                 source?: string | null;
-                /** @description Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit. */
+                /** @description Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest published stable release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit. */
                 channel?: ("stable" | "edge" | "main" | "release") | null;
             };
             header?: never;
