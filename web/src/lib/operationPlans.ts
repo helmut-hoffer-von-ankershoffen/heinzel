@@ -12,6 +12,7 @@ export const PLANS = {
   "plugin.remove": ["preserve", "write", "restart", "wait", "reload", "check"],
   "plugin.enable": ["preserve", "write", "restart", "wait", "reload", "check"],
   "plugin.disable": ["preserve", "write", "restart", "wait", "reload", "check"],
+  "ai.client.install": ["preserve", "write", "restart", "wait", "reload", "check"],
   "restart.batch": ["preserve", "restart", "wait", "reload", "check"],
   "restart.web": ["preserve", "restart", "wait", "reload", "check"],
   "setting.apply": ["preserve", "write", "restart", "wait", "reload", "check"],

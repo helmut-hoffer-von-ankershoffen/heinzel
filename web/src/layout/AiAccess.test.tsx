@@ -15,6 +15,7 @@ vi.mock("@/lifecycle/controller", async (importOriginal) => ({
     options.onPhase?.("preserving");
     const restartRequired = await request.preserve?.(new AbortController().signal);
     if (restartRequired === false) return { instance: "before", version: "0.0.0", restartable: true };
+    options.onPhase?.("restarting");
     options.onPhase?.("reconnecting");
     options.onPhase?.("applied");
     return { instance: "after", version: "0.0.0", restartable: true };
@@ -190,10 +191,16 @@ describe("AI access", () => {
     renderAt("/doctor?settings=ai");
     await user.click(await screen.findByRole("button", { name: "Set up ChatGPT plan" }));
     const dialog = await screen.findByRole("dialog", { name: "Set up ChatGPT plan" });
+    expect(dialog).toHaveAttribute("data-operation", "/system/plugin/add-extra");
+    expect(dialog).toHaveTextContent("hz installs it, then restarts to load it.");
     expect(dialog).not.toHaveTextContent(/uv tool|hz system/);
     expect(calls.some((call) => call.url.includes("/add-extra"))).toBe(false);
-    await user.click(within(dialog).getByRole("button", { name: "Add and restart" }));
-    expect(await within(dialog).findByText("Applied")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(calls.some((call) => call.url.includes("/add-extra"))).toBe(false);
+    await user.click(await screen.findByRole("button", { name: "Set up ChatGPT plan" }));
+    const confirmation = await screen.findByRole("dialog", { name: "Set up ChatGPT plan" });
+    await user.click(within(confirmation).getByRole("button", { name: "Add and restart" }));
+    expect(await screen.findByRole("dialog", { name: "Applied" })).toBe(confirmation);
     const add = calls.find((call) => call.url.includes("/system/plugin/add-extra"));
     expect(new URL(add?.url ?? "").searchParams.get("extra")).toBe("openai");
   });
@@ -205,8 +212,27 @@ describe("AI access", () => {
     await user.click(await screen.findByRole("button", { name: "Set up ChatGPT plan" }));
     const dialog = await screen.findByRole("dialog", { name: "Set up ChatGPT plan" });
     await user.click(within(dialog).getByRole("button", { name: "Add and restart" }));
-    expect(await within(dialog).findByText("Applied")).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(await screen.findByRole("dialog", { name: "Applied" })).toBe(dialog);
+    expect(within(dialog).getByRole("button", { name: "Done" })).toBeEnabled();
+  });
+
+  it("requires receipt recovery and fresh consent before another install can run", async () => {
+    const { calls } = accessApi();
+    const user = userEvent.setup();
+    sessionStorage.setItem("hz.ai-client-install-pending.v1", "pending");
+    renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Set up ChatGPT plan" }));
+    const dialog = await screen.findByRole("dialog", { name: "Adding the client for ChatGPT plan" });
+    expect(dialog).toHaveTextContent("The server cannot confirm how this installation ended.");
+    expect(within(dialog).queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Add and restart" })).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: "Resolve after checking" }));
+    await user.click(within(dialog).getByRole("button", { name: "I checked; clear this tab's receipt" }));
+    expect(await screen.findByRole("dialog", { name: "Set up ChatGPT plan" })).toBe(dialog);
+    expect(calls.filter((call) => call.url.includes("/add-extra"))).toHaveLength(0);
+    await user.click(within(dialog).getByRole("button", { name: "Add and restart" }));
+    expect(await screen.findByRole("dialog", { name: "Applied" })).toBe(dialog);
+    expect(calls.filter((call) => call.url.includes("/add-extra"))).toHaveLength(1);
   });
 
   it("leaves a sign-in to the person's browser: the command only in Details, and Check again", async () => {

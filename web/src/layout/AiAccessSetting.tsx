@@ -3,10 +3,10 @@
 // test button that runs `hz ai access test` only when pressed, since a live check may cost a little. Picking an option
 // applies at once: the running hz takes up the agent runner before its next call, so nothing asks for a restart.
 // Commands are for people who want them: only inside each card's Details.
-import { useQueryClient } from "@tanstack/react-query";
-import { Download, FlaskConical, RotateCw, Settings2, Trash2, X } from "lucide-react";
-import { type ReactNode, useId, useState, useSyncExternalStore } from "react";
-import type { SchemaAccessOption, SchemaAccessTestReport, SchemaExtraChange } from "@/api/client";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { FlaskConical, RotateCw, Settings2, Trash2, X } from "lucide-react";
+import { type ReactNode, useId, useState } from "react";
+import type { SchemaAccessOption, SchemaAccessTestReport, SchemaOperationCall } from "@/api/client";
 import { api, unwrap } from "@/api/client";
 import {
   useAiAccess,
@@ -24,11 +24,14 @@ import {
   acknowledgePluginRestart,
   acquirePluginChange,
   completePluginRestart,
+  forgetPluginRestart,
   retainPluginRestart,
-  usePluginActivation,
 } from "@/layout/pluginActivation";
+import { PLANS } from "@/lib/operationPlans";
+import { OperationRecoveryRequired, type Phase, requestDrivenOperation } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
-import { type ApplyPhase, restartAndApply } from "@/lifecycle/controller";
+import { ApplySteps, applyWithSteps } from "@/lifecycle/applySteps";
+import { RestartApplyError, type RestartObservation } from "@/lifecycle/controller";
 
 type Tone = "ok" | "idle" | "warn" | "bad";
 const tone: Record<SchemaAccessOption["status"], Tone> = {
@@ -54,6 +57,7 @@ const WORD: Record<SchemaAccessOption["status"], MessageKey> = {
 export const SUGGESTED_MODELS = ["anthropic:claude-sonnet-4-5", "anthropic:claude-haiku-4-5", "openai:gpt-5"];
 
 export function AiAccessSetting() {
+  const client = useQueryClient();
   const access = useAiAccess();
   const change = useSetAiAccess();
   const check = useTestAiAccess();
@@ -79,7 +83,10 @@ export function AiAccessSetting() {
             result={tested?.name === option.name ? tested : undefined}
             onSelect={() => !option.in_use && change.mutate(option.name)}
             onTest={() => check.mutate(option.name)}
-            onSetUp={() => setSetting(option)}
+            onSetUp={() => {
+              if (option.setup === "client") requestClientInstall(option, client);
+              else setSetting(option);
+            }}
           />
         ))}
       </div>
@@ -232,13 +239,7 @@ function SetUpDialog({ option, onClose }: { option: SchemaAccessOption; onClose:
   const title = t("aiAccess.setUpOne", { title: option.title });
   return (
     <Modal title={title} onClose={onClose}>
-      {option.setup === "client" ? (
-        <ClientSetup option={option} onClose={onClose} />
-      ) : option.setup === "sign-in" ? (
-        <SignInSetup option={option} />
-      ) : (
-        <FormSetup option={option} />
-      )}
+      {option.setup === "sign-in" ? <SignInSetup option={option} /> : <FormSetup option={option} />}
     </Modal>
   );
 }
@@ -345,19 +346,10 @@ function FormSetup({ option }: { option: SchemaAccessOption }) {
   );
 }
 
-const PHASE: Record<ApplyPhase, MessageKey> = {
-  checking: "lifecycle.phase.checking",
-  preserving: "lifecycle.phase.preserving",
-  restarting: "lifecycle.phase.restarting",
-  reconnecting: "lifecycle.phase.reconnecting",
-  verifying: "lifecycle.phase.verifying",
-  applied: "lifecycle.phase.applied",
-};
-
-// An install can finish after its initiating dialog unmounts; keep its error for the next dialog in this page.
-let clientInstallError: string | null = null;
 const CLIENT_INSTALL_PENDING = "hz.ai-client-install-pending.v1";
-const clientInstallListeners = new Set<() => void>();
+// The receipt survives reloads. Preserve the server's error too while this page is open.
+let clientInstallError: string | null = null;
+
 function clientInstallUncertain(): boolean {
   try {
     return window.sessionStorage.getItem(CLIENT_INSTALL_PENDING) !== null;
@@ -365,132 +357,118 @@ function clientInstallUncertain(): boolean {
     return true;
   }
 }
-function setClientInstallError(error: string | null) {
-  clientInstallError = error;
-  for (const listener of clientInstallListeners) listener();
-}
-function subscribeClientInstallError(listener: () => void) {
-  clientInstallListeners.add(listener);
-  return () => {
-    clientInstallListeners.delete(listener);
-  };
+
+function clientInstallRecovery(message?: string): OperationRecoveryRequired {
+  const unknown = t("plugins.operationUnknown");
+  return new OperationRecoveryRequired(message ?? unknown, {
+    message: unknown,
+    help: t("plugins.operationUnknownHelp"),
+    action: t("plugins.operationResolve"),
+    confirm: t("plugins.operationResolveConfirm"),
+    clear: () => {
+      try {
+        window.sessionStorage.removeItem(CLIENT_INSTALL_PENDING);
+        clientInstallError = null;
+      } catch {
+        throw new Error(t("plugins.operationUnavailable"));
+      }
+    },
+  });
 }
 
-/** Adding an optional client of hz itself: confirm, install it through hz's own pinned path, restart, reload, check. */
-function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose: () => void }) {
-  const client = useQueryClient();
-  const activation = usePluginActivation();
-  const [phase, setPhase] = useState<ApplyPhase | null>(null);
-  const [resolving, setResolving] = useState(false);
-  const error = useSyncExternalStore(subscribeClientInstallError, () => clientInstallError);
-  const extra = option.client ?? "";
-  const run = async () => {
-    if (clientInstallUncertain()) return;
-    // The owner outlives this dialog. A second dialog cannot report a no-op as complete while the first still restarts.
-    const release = acquirePluginChange();
-    if (!release) return;
-    setClientInstallError(null);
-    try {
-      await restartAndApply(
-        {
-          confirmed: true,
-          // The install runs before the restart, so the restarted hz loads the new client.
-          preserve: async (signal) => {
-            // A lost response can hide a completed server-side installation. Keep the uncertainty across reloads.
-            try {
-              window.sessionStorage.setItem(CLIENT_INSTALL_PENDING, "pending");
-            } catch {
-              throw new Error(t("plugins.receiptStorageUnavailable"));
-            }
-            await unwrap(
-              api.POST("/system/plugin/add-extra", {
-                params: { query: { extra: extra as SchemaExtraChange["extra"] } },
-                signal,
-              }),
-            );
-            // Older servers may report a receipt-only no-op even when this process has not loaded the client.
-            return true;
-          },
-        },
-        {
-          onPhase: setPhase,
-          onObservation: retainPluginRestart,
-          onAcknowledged: acknowledgePluginRestart,
-          preserveTimeout: 10 * 60_000,
-        },
-      );
-      completePluginRestart();
-      window.sessionStorage.removeItem(CLIENT_INSTALL_PENDING);
-      setPhase("applied");
-      await client.invalidateQueries({ queryKey: ["ai"] });
-    } catch (failure) {
-      setClientInstallError(failure instanceof Error ? failure.message : String(failure));
-    } finally {
-      release();
-    }
+/** Consent and progress for adding a client of hz itself, even after Settings unmounts. */
+function requestClientInstall(option: SchemaAccessOption, client: QueryClient): void {
+  const extra = option.client;
+  if (extra !== "openai" && extra !== "anthropic") return;
+  const call: SchemaOperationCall = {
+    method: "POST",
+    path: "/system/plugin/add-extra",
+    query: { extra },
+    command: `hz system plugin add-extra ${extra}`,
+    summary: t("aiAccess.setUpOne", { title: option.title }),
+    read_only: false,
   };
-  const running = activation.changing || (phase !== null && phase !== "applied" && error === null);
-  const uncertain = clientInstallUncertain();
-  return (
-    <>
-      <p className="text-sm">{t("aiAccess.client.confirm", { needs: option.needs })}</p>
-      <p className="text-ui-sm text-muted-foreground">{t("aiAccess.client.why")}</p>
-      {(phase || activation.changing) && (
-        <p role="status" className={cn("text-sm", phase === "applied" ? "text-ok" : "text-muted-foreground")}>
-          {t(PHASE[phase ?? "preserving"])}
-        </p>
-      )}
-      {(error || activation.error) && <p className="text-sm text-bad">{error || activation.error}</p>}
-      {uncertain && !running && (
-        <>
-          <p className="text-sm text-bad">{t("plugins.operationUnknown")}</p>
-          <p className="text-ui-sm text-muted-foreground">{t("plugins.operationUnknownHelp")}</p>
-          <PaneAction
-            icon={RotateCw}
-            type="button"
-            onClick={() => {
-              if (!resolving) {
-                setResolving(true);
-                return;
-              }
-              try {
-                window.sessionStorage.removeItem(CLIENT_INSTALL_PENDING);
-                setClientInstallError(null);
-                setPhase(null);
-                setResolving(false);
-              } catch {
-                setClientInstallError(t("plugins.operationUnavailable"));
-              }
-            }}
-          >
-            {t(resolving ? "plugins.operationResolveConfirm" : "plugins.operationResolve")}
-          </PaneAction>
-        </>
-      )}
-      <PaneActions align="end" words="all">
-        <PaneAction key="cancel" icon={X} type="button" disabled={running} onClick={onClose}>
-          {t("lifecycle.cancel")}
-        </PaneAction>
-        <PaneAction
-          key="add"
-          icon={Download}
-          primary
-          type="button"
-          disabled={
-            running ||
-            activation.blocked ||
-            activation.pending ||
-            !!activation.observation ||
-            uncertain ||
-            phase === "applied" ||
-            !extra
+  let restart: RestartObservation | undefined;
+  let phases: Phase[] = [];
+  requestDrivenOperation(
+    call,
+    {
+      consent: [t("aiAccess.client.confirm", { needs: option.needs }), t("aiAccess.client.why")],
+      action: t("aiAccess.client.add"),
+      runningTitle: t("aiAccess.client.runningTitle", { title: option.title }),
+      doneTitle: t("lifecycle.phase.applied"),
+      running: t("aiAccess.client.running"),
+      run: async (report) => {
+        if (!restart && clientInstallUncertain()) throw clientInstallRecovery(clientInstallError ?? undefined);
+        // Reserve the environment from the first mutation through verification of the restarted server.
+        const release = acquirePluginChange(restart);
+        if (!release) throw new Error(t("pluginsPending.restartRequired"));
+        const steps = new ApplySteps(
+          (next) => {
+            phases = next;
+            report(next);
+          },
+          { write: t("aiAccess.client.write"), check: t("aiAccess.client.check") },
+          restart ? phases : undefined,
+          undefined,
+          [...PLANS["ai.client.install"]],
+        );
+        try {
+          await applyWithSteps(
+            {
+              resume: restart,
+              change: async (signal) => {
+                try {
+                  window.sessionStorage.setItem(CLIENT_INSTALL_PENDING, "pending");
+                } catch {
+                  throw new Error(t("plugins.receiptStorageUnavailable"));
+                }
+                const answer = await unwrap(
+                  api.POST("/system/plugin/add-extra", { params: { query: { extra } }, signal }),
+                );
+                if (
+                  answer?.extra !== extra ||
+                  typeof answer.done !== "boolean" ||
+                  typeof answer.restart_required !== "boolean"
+                )
+                  throw new Error(t("plugins.notCompleted"));
+                // An older server can return a receipt-only no-op before this process has loaded the client.
+                return true;
+              },
+              options: {
+                onObservation: (observation) => {
+                  retainPluginRestart(observation);
+                  restart = observation;
+                },
+                onAcknowledged: acknowledgePluginRestart,
+                preserveTimeout: 10 * 60_000,
+              },
+            },
+            steps,
+          );
+          completePluginRestart();
+          window.sessionStorage.removeItem(CLIENT_INSTALL_PENDING);
+          steps.mark("reload", "skipped");
+          steps.mark("check", "running");
+          await client.invalidateQueries({ queryKey: ["ai"] });
+          steps.mark("check", "done");
+        } catch (error) {
+          if (restart && error instanceof RestartApplyError && error.kind === "stale") {
+            forgetPluginRestart();
+            restart = undefined;
           }
-          onClick={() => void run()}
-        >
-          {t("aiAccess.client.add")}
-        </PaneAction>
-      </PaneActions>
-    </>
+          // Once the install answered, a retry can observe its recorded restart without replaying either POST.
+          if (restart) throw error;
+          if (!clientInstallUncertain()) throw error;
+          clientInstallError = error instanceof Error ? error.message : String(error);
+          throw clientInstallRecovery(clientInstallError);
+        } finally {
+          steps.stop();
+          release();
+        }
+      },
+    },
+    clientInstallUncertain() ? clientInstallRecovery(clientInstallError ?? undefined) : undefined,
   );
 }
 

@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.mark.timeout(300)
 def test_client_install_survives_dialog_close_and_reopen(environment, tmp_path):  # noqa: F811 - imported fixture
-    """A delayed synthetic install stays owned across Close, Escape and backdrop."""
+    """A delayed synthetic install stays owned across Settings unmount, Escape and backdrop."""
     fixture_env, _ = environment
     env = {key: value for key, value in fixture_env.items() if key.startswith("HZ_") or key in {"PATH", "PYTHONPATH"}}
     env["HOME"] = str(tmp_path)
@@ -37,14 +37,14 @@ def test_client_install_survives_dialog_close_and_reopen(environment, tmp_path):
         result = subprocess.run(
             [sys.executable, "scripts/web_build.py", "exec", "node", "e2e/ai-access-install-ownership.mjs", url],
             cwd=ROOT,
-            env=env,
+            env={**env, "PLAYWRIGHT_BROWSER": fixture_env.get("PLAYWRIGHT_BROWSER", "chromium")},
             capture_output=True,
             text=True,
             timeout=180,
             check=False,
         )
         assert result.returncode == 0, result.stdout + result.stderr
-        assert "three dismissal paths passed" in result.stdout
+        assert "shared client install confirmation, progress, and recovery passed" in result.stdout
     finally:
         server.terminate()
         server.wait(timeout=30)
