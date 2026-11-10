@@ -22,7 +22,7 @@ from pydantic import Field, JsonValue
 from rich.console import RenderableType
 
 from heinzel import Check, Config, ConfigEditor, HeinzelError, Module, Prompter
-from heinzel.kernel import CompiledJobs, PlaybookLet, PlaybookSetup, TeamPromises
+from heinzel.kernel import CompiledJobs, HeinzelInvocations, PlaybookLet, PlaybookSetup, TeamPromises
 from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
 from heinzel.modules.heinzel._measure import Measurements, Sent
 from heinzel.modules.heinzel._models import (
@@ -45,6 +45,7 @@ from heinzel.modules.heinzel._promises import ContractPromises
 from heinzel.modules.heinzel._service import HeinzelService
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_operations import register_session_operations
+from heinzel.modules.heinzel._target_invocations import BuiltinHeinzelInvocations
 
 
 def render_check(report: CheckReport) -> RenderableType:
@@ -131,6 +132,7 @@ module = Module(
 )
 module.settings(HeinzelSettings)
 module.service(HeinzelService, HeinzelService.for_user)
+module.service(HeinzelInvocations, BuiltinHeinzelInvocations)
 
 
 def _compiled(service: HeinzelService, sessions: SessionCrud, schedules: AutonomousSchedules) -> CompiledJobs:

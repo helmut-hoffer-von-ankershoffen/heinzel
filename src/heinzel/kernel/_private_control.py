@@ -47,14 +47,14 @@ def private_directory(path: Path, *, create: bool = True) -> None:
 
 
 @contextmanager
-def private_lock(path: Path) -> Generator[None]:
+def private_lock(path: Path) -> Generator[int]:
     """Hold one owned file lock while local integration changes are serialized.
 
     Raises:
         HeinzelError: If a foreign lock file or another writer prevents ownership.
 
     Yields:
-        While this process exclusively owns the private file descriptor.
+        The exact private file descriptor this process holds exclusively.
     """
     private_directory(path.parent)
     descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
@@ -68,7 +68,7 @@ def private_lock(path: Path) -> Generator[None]:
         except BlockingIOError as exc:
             msg = "Another web integration change is in progress."
             raise HeinzelError(msg) from exc
-        yield
+        yield descriptor
     finally:
         os.close(descriptor)
 

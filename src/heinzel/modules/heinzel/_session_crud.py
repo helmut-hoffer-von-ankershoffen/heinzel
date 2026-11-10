@@ -22,6 +22,7 @@ from pydantic import (
 )
 
 from heinzel import HeinzelError, JobInactive, NoticeHelper, NoticeKind, Notifications, SessionEvent, SessionWriter
+from heinzel.kernel import PRIVATE_MCP_HEADS
 from heinzel.kernel._approval import (
     ApprovalEvidence,
     ApprovalIntent,
@@ -647,7 +648,13 @@ class SessionCrud(ApprovalIssuer):
                 )
         return self.snapshot(session_id)
 
-    def accept(self, session_id: str, request: MessageRequest) -> MessageAccepted:
+    def require_inbox_target(self, session_id: str) -> None:
+        """Verify the scoped inbox exists without opening any retained message body."""
+        self._profile(session_id, self.repository.control_read(session_id).events)
+
+    def accept(
+        self, session_id: str, request: MessageRequest, *, check_active: Callable[[], None] | None = None
+    ) -> MessageAccepted:
         """Record the exact inbox request before model work, preserving request identity across lost replies.
 
         Raises:
@@ -658,9 +665,16 @@ class SessionCrud(ApprovalIssuer):
             msg = "Attachments need a retained upload before they can be sent in this conversation"
             raise HeinzelError(msg)
         with self.repository.control_writer(session_id) as writer:
-            return self._accept_locked(session_id, request, writer)
+            return self._accept_locked(session_id, request, writer, check_active=check_active)
 
-    def _accept_locked(self, session_id: str, request: MessageRequest, writer: SessionWriter) -> MessageAccepted:
+    def _accept_locked(
+        self,
+        session_id: str,
+        request: MessageRequest,
+        writer: SessionWriter,
+        *,
+        check_active: Callable[[], None] | None = None,
+    ) -> MessageAccepted:
         """Accept under the owning control lock, retaining a creation prompt's first inbox position.
 
         Raises:
@@ -685,14 +699,26 @@ class SessionCrud(ApprovalIssuer):
                 raise HeinzelError(msg)
             event = prior
         else:
+            if check_active is not None:
+                check_active()
             body = immutable_body(writer, "inbox", request.model_dump(mode="json"), control=True)
+            identity = self.repository.identity
+            origin: dict[str, JsonValue] = {"origin": identity.authentication}
+            if identity.authentication in PRIVATE_MCP_HEADS:
+                origin = {
+                    "origin": "mcp-stdio",
+                    "mcp_grant": identity.credential_id,
+                    "mcp_head": identity.authentication,
+                }
+            if check_active is not None:
+                check_active()
             event = writer.append(
                 "message.accepted",
                 key=f"message-{request.request_id}",
                 data={
                     "message_id": request.request_id,
                     "request_hash": digest,
-                    "origin": _ORIGIN.validate_python(self.repository.authentication, strict=True),
+                    **origin,
                     **body.model_dump(mode="json"),
                 },
             )

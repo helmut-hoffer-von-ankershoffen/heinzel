@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
+import { createMcpHandoffHandler } from "../src/mcp-handoff-ipc.js";
 import { shouldRefresh, stopWithReport } from "../src/shutdown.js";
 import { installSignalQuit } from "../src/signal-quit.js";
 
@@ -64,7 +65,7 @@ function quitHarness(result, rejects = false) {
     initializeDesktopIdentity: () => true,
     createInstanceLifecycle: () => ({ acquire: () => true }),
     createMiniBrowser: () => ({ handle() {}, closeAll() {} }),
-    createLifecycleHandler: () => () => {}, createOwnedCli: () => owned,
+    createLifecycleHandler: () => () => {}, createMcpHandoffHandler, createOwnedCli: () => owned,
     stopWithReport, shouldRefresh,
     installSignalQuit: (options) => installSignalQuit({ ...options, setTimer: () => ({ unref() {} }) }),
   });

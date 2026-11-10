@@ -5,6 +5,7 @@
 // of its own; installed providers declare their own pages and semantic icons.
 import {
   Bell,
+  Cable,
   Cpu,
   Download,
   FileCog,
@@ -28,6 +29,7 @@ export const FILES = "files";
 export const FROM_CLAUDE_PAGE = "from-claude";
 export const PLUGINS = "plugins";
 export const CONNECTORS = "connectors";
+export const MCP_CONNECTIONS = "mcp-connections";
 /** The `[capabilities]` table: which adapter serves which capability; shown on the Connectors page. */
 export const BINDINGS = "capabilities";
 
@@ -196,6 +198,14 @@ export const PAGES: Page[] = [
     heading: "computer",
     owns: ["system.daemon"],
     keywords: "background service",
+  },
+  {
+    id: MCP_CONNECTIONS,
+    title: "MCP connections",
+    icon: Cable,
+    heading: "computer",
+    owns: [],
+    keywords: "model context protocol start check stop install claude codex cursor",
   },
   {
     id: FILES,

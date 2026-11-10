@@ -26,7 +26,13 @@ PRIVATE_READ = "private:read"
 PRIVATE_WRITE = "private:write"
 LOCAL_PERMISSIONS = frozenset({PRIVATE_READ, PRIVATE_WRITE})
 LOCAL_READ_PERMISSIONS = frozenset({PRIVATE_READ})
-Authentication = Literal["cli", "mcp-stdio", "daemon", "api-bearer", "web-session", "web-device"]
+type PrivateMcpAuthentication = Literal["mcp-private-cli", "mcp-private-wire"]
+Authentication = Literal[
+    "cli", "mcp-stdio", "daemon", "api-bearer", "web-session", "web-device", "mcp-private-cli", "mcp-private-wire"
+]
+PRIVATE_MCP_HEADS = frozenset({"mcp-private-cli", "mcp-private-wire"})
+MCP_HEINZEL_INBOX = "mcp:heinzel:inbox"
+MCP_HEINZEL_CONTRACT = "mcp:heinzel:contract"
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +61,7 @@ class CallIdentity:
     credential_id: str
     audience: str
     permissions: frozenset[str] = frozenset()
+    resource: str | None = None
 
     def __post_init__(self) -> None:
         """Copy scopes so trusted callers cannot mutate a context after it was established."""

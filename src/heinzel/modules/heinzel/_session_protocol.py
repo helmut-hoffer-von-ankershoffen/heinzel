@@ -6,7 +6,7 @@ from typing import Protocol
 from pydantic import JsonValue
 
 from heinzel import SessionHead, SessionRead, SessionWriter
-from heinzel.kernel import Authentication
+from heinzel.kernel import Authentication, CallIdentity
 
 
 class SessionRepository(Protocol):
@@ -29,6 +29,11 @@ class SessionRepository(Protocol):
     @property
     def authentication(self) -> Authentication:
         """The verified current call's channel; never a request argument or approval claim."""
+        ...
+
+    @property
+    def identity(self) -> CallIdentity:
+        """The verified per-call authority, including any exact private MCP resource scope."""
         ...
 
     def heads(self) -> list[SessionHead]:
