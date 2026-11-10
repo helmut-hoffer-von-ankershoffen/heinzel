@@ -273,6 +273,71 @@ def _appended_checks(repo, run, lane, defect):
     return rows
 
 
+def _advisory_check(repo, run, head, suite_id):
+    check_id = 803
+    url = f"https://github.com/{repo}/runs/{check_id}"
+    job = {
+        "id": check_id,
+        "name": "Claude review",
+        "run_id": run,
+        "run_attempt": 1,
+        "head_sha": head,
+        "html_url": url,
+        "check_run_url": f"https://api.github.com/repos/{repo}/check-runs/{check_id}",
+        "runner_id": None,
+        "runner_name": None,
+        "steps": [],
+        "labels": [],
+        "status": "completed",
+        "conclusion": "neutral",
+    }
+    check = job | {"details_url": url, "app": {"id": 15368}, "check_suite": {"id": suite_id}}
+    return job, check
+
+
+@pytest.mark.parametrize(
+    ("changes", "error"),
+    [
+        ({}, ""),
+        ({"job": {"runner_id": 99, "runner_name": "GitHub Actions"}}, "workload job inventory"),
+        ({"job": {"name": "Claude review lookalike"}}, "workload job inventory"),
+        ({"job": {"conclusion": "failure"}}, "workload job inventory"),
+        ({"job": {"status": "in_progress"}}, "job identity or attempt"),
+        ({"job": {"run_attempt": 2}}, "job identity or attempt"),
+        ({"job": {"run_id": 999}}, "job identity or attempt"),
+        ({"job": {"head_sha": "f" * 40}}, "job identity or attempt"),
+        ({"job": {"html_url": "https://github.com/other/repo/runs/803"}}, "workload job inventory"),
+        (
+            {"job": {"check_run_url": "https://api.github.com/repos/other/repo/check-runs/803"}},
+            "workload job inventory",
+        ),
+        ({"check": {"id": 999}}, "workload job inventory"),
+        ({"check": {"app": {"id": 999}}}, "workload job inventory"),
+        ({"check": {"check_suite": {"id": 999}}}, "workload job inventory"),
+        ({"check": {"details_url": "https://github.com/other/repo/runs/803"}}, "workload job inventory"),
+        ({"check": {"conclusion": "success"}}, "workload job inventory"),
+    ],
+)
+def test_protected_reader_only_excludes_authentic_neutral_advisory(
+    focused_gate, first_attempt, monkeypatch, changes, error
+):
+    gate, run, manifest, lane, rows, logs, _git_rows = first_attempt
+    suite_id = rows[f"actions/runs/{run}"]["check_suite_id"]
+    job, check = _advisory_check(gate.repo, run, gate.head, suite_id)
+    page = rows[f"actions/runs/{run}/attempts/1/jobs?per_page=100&page=1"]
+    page["jobs"].extend([*_appended_checks(gate.repo, run, lane, "none"), job | changes.get("job", {})])
+    page["total_count"] = len(page["jobs"])
+    rows[f"check-runs/{job['id']}"] = check | changes.get("check", {})
+    monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
+    if error:
+        with pytest.raises(focused_gate.CandidateError, match=error):
+            focused_gate.verify(gate, run, manifest, logs.__getitem__)
+    else:
+        assert focused_gate.verify(gate, run, manifest, logs.__getitem__) == (
+            "Python coverage: not applicable to the reviewed scope"
+        )
+
+
 @pytest.mark.parametrize(
     ("defect", "error"),
     [
