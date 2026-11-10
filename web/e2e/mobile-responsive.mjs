@@ -719,7 +719,10 @@ try {
     try {
       await assertOneActionRow(updatePane, `${spec.name}: update pane with compact spacing`);
     } finally {
-      await updateActions.evaluate((row, { value, priority }) => row.style.setProperty("--spacing", value, priority), previousSpacing);
+      await updateActions.evaluate(
+        (row, { value, priority }) => row.style.setProperty("--spacing", value, priority),
+        previousSpacing,
+      );
     }
     await updatePane.getByText(/^Last installed:/).waitFor();
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
