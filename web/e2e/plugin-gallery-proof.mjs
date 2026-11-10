@@ -5,6 +5,8 @@ import { chromium, webkit } from "playwright-core";
 import { contributeGallery, exercisePluginGallery } from "./plugin-gallery.mjs";
 
 const [url, shots] = process.argv.slice(2);
+const origin = new URL(url).origin;
+assert.match(origin, /^http:\/\/127\.0\.0\.1:\d+$/);
 mkdirSync(shots, { recursive: true });
 const engine = process.env.PLAYWRIGHT_BROWSER === "webkit" ? "webkit" : "chromium";
 const browser = await (engine === "webkit" ? webkit : chromium).launch();
@@ -26,8 +28,32 @@ try {
     });
     const page = await context.newPage();
     const errors = [];
+    const unexpected = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    const requests = await contributeGallery(page);
+    // Playwright does not re-route redirects after continue(), so fetch each
+    // bounded local response with redirects disabled and refuse redirect status.
+    await context.route("**/*", async (route) => {
+      const address = new URL(route.request().url());
+      if (address.origin !== origin) {
+        unexpected.push(address.href);
+        return route.abort();
+      }
+      // This unrelated long-lived stream must not be buffered by route.fetch.
+      if (address.pathname === "/api/system/notify/stream" && route.request().method() === "GET") {
+        return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": fixture\n\n" });
+      }
+      const response = await route.fetch({ maxRedirects: 0 });
+      if (response.status() >= 300 && response.status() < 400) {
+        unexpected.push(`redirect ${address.pathname}`);
+        return route.abort();
+      }
+      return route.fulfill({ response });
+    });
+    await context.routeWebSocket("**/*", (socket) => {
+      unexpected.push(socket.url());
+      socket.close();
+    });
+    const requests = await contributeGallery(page, origin);
     const address = new URL(url);
     address.searchParams.set("settings", "plugins");
     await page.goto(address.href);
@@ -35,6 +61,7 @@ try {
     await page.getByRole("dialog", { name: "Settings", exact: true }).waitFor();
     await exercisePluginGallery(page, requests, shots, `${engine}-${width}x${height}`);
     assert.deepEqual(errors, []);
+    assert.deepEqual(unexpected, [], "Unexpected requests must not escape the fixture");
     await context.close();
   }
   console.log(JSON.stringify({ engine, viewports: viewports.length, gallery: true, axe: true }));

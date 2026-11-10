@@ -12,9 +12,9 @@ const uiImage = readFileSync(new URL("../../docs/assets/web/home.png", import.me
 const cliImage = readFileSync(new URL("../../docs/assets/demo.png", import.meta.url));
 const specification = `heinzel-harbor @ git+https://github.com/fictional-lab/harbor@${revision}`;
 
-export async function contributeGallery(page) {
+export async function contributeGallery(page, fixtureOrigin = "**") {
   const requests = { metadata: 0, images: 0, external: [] };
-  await page.route("**/api/system/plugin/search**", (route) =>
+  await page.route(`${fixtureOrigin}/api/system/plugin/search**`, (route) =>
     route.fulfill({
       json: {
         plugins: [
@@ -35,7 +35,7 @@ export async function contributeGallery(page) {
       },
     }),
   );
-  await page.route("**/api/system/plugin/showcase?*", (route) => {
+  await page.route(`${fixtureOrigin}/api/system/plugin/showcase?*`, (route) => {
     requests.metadata++;
     assert.equal(new URL(route.request().url()).searchParams.get("spec"), specification);
     return route.fulfill({

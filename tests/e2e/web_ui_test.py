@@ -96,7 +96,7 @@ def verify_fixture_plugins(env: dict[str, str]) -> None:
                 "assert actual=={('sound-demo','heinzel_sound_demo')}, 'Browser tests require a core-only environment'"
             ),
         ],
-        env=env,
+        env={"HOME": env["HZ_CONFIG_HOME"], "PATH": os.defpath, "PYTHONPATH": env["PYTHONPATH"]},
         capture_output=True,
         check=True,
         timeout=30,
@@ -906,29 +906,171 @@ def test_sound_picker_stays_open_and_plays_the_pick_in_mounted_chromium(environm
     assert result == {"stayedOpen": True, "played": True, "switched": True, "closes": ["Escape", "outside"]}
 
 
+def gallery_profile_preflight(backend_env, tmp_path, denied):
+    """Check typed fixture settings, offline Doctor, and neutral UI startup."""
+    # Resolve every declared settings model through the normal SDK, and retain
+    # the unmodified offline Doctor output (including warnings) for review.
+    sdk = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import json; from heinzel.kernel import boot; "
+                "print(json.dumps([name for name, _ in boot().settings_of()]))"
+            ),
+        ],
+        env=backend_env,
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert json.loads(sdk.stdout.strip())
+    (tmp_path / "typed-settings.json").write_text(sdk.stdout, encoding="utf-8")
+    doctor = subprocess.run(
+        [sys.executable, "-m", "heinzel", "system", "doctor", "--json"],
+        env=backend_env,
+        cwd=REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    (tmp_path / "offline-doctor.json").write_text(doctor.stdout, encoding="utf-8")
+    (tmp_path / "offline-doctor.stderr.txt").write_text(doctor.stderr, encoding="utf-8")
+    (tmp_path / "offline-doctor.exit.txt").write_text(f"{doctor.returncode}\n", encoding="utf-8")
+    json.loads(doctor.stdout)
+    assert not denied.exists(), "SDK or offline Doctor attempted an outbound request"
+
+    # A separate neutral profile starts the normal UI without the scenario's
+    # workflow directory or copied authority, under the same network policy.
+    neutral = tmp_path / "neutral"
+    neutral.mkdir()
+    neutral_env = dict(backend_env)
+    for key in (
+        "HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_STATE_HOME",
+        "TMPDIR",
+        "HZ_CONFIG_HOME",
+        "HZ_DATA_DIR",
+        "HZ_CACHE_DIR",
+        "HZ_STATE_DIR",
+        "HZ_LOG_DIR",
+        "HZ_SYSTEM_DAEMON__UNIT_DIR",
+        "HZ_HEINZEL__USER_DIR",
+    ):
+        neutral_env[key] = str(neutral / key.lower())
+    Path(neutral_env["HOME"]).mkdir()
+    Path(neutral_env["TMPDIR"]).mkdir()
+    Path(neutral_env["HZ_HEINZEL__USER_DIR"]).mkdir()
+    neutral_env["HZ_GALLERY_INITIALIZED"] = str(neutral / "initialized")
+    neutral_env["HZ_GALLERY_DENIAL_LOG"] = str(neutral / "denied")
+    neutral_sdk = subprocess.run(
+        sdk.args, env=neutral_env, cwd=REPO, check=True, capture_output=True, text=True, timeout=60
+    )
+    assert json.loads(neutral_sdk.stdout.strip())
+    (neutral / "typed-settings.json").write_text(neutral_sdk.stdout, encoding="utf-8")
+    neutral_doctor = subprocess.run(
+        doctor.args, env=neutral_env, cwd=REPO, check=False, capture_output=True, text=True, timeout=120
+    )
+    (neutral / "offline-doctor.json").write_text(neutral_doctor.stdout, encoding="utf-8")
+    (neutral / "offline-doctor.stderr.txt").write_text(neutral_doctor.stderr, encoding="utf-8")
+    (neutral / "offline-doctor.exit.txt").write_text(f"{neutral_doctor.returncode}\n", encoding="utf-8")
+    json.loads(neutral_doctor.stdout)
+    Path(neutral_env["HZ_GALLERY_INITIALIZED"]).unlink()
+    neutral_ui = subprocess.Popen(
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0", "--no-browser"],
+        cwd=REPO,
+        env=neutral_env,
+        stderr=subprocess.PIPE,
+    )
+    neutral_output = MobileServerOutput(neutral_ui)
+    try:
+        neutral_address = urlsplit(neutral_output.wait_url())
+        assert neutral_address.scheme == "http"
+        assert neutral_address.hostname == "127.0.0.1"
+        assert Path(neutral_env["HZ_GALLERY_INITIALIZED"]).read_text(encoding="utf-8")
+        from urllib.request import ProxyHandler, build_opener
+
+        with build_opener(ProxyHandler({})).open(f"http://127.0.0.1:{neutral_address.port}/", timeout=10) as response:
+            assert response.status == 200
+    finally:
+        neutral_ui.terminate()
+        neutral_ui.wait(30)
+        neutral_output.close()
+        if neutral_ui.stderr is not None:
+            neutral_ui.stderr.close()
+    assert not Path(neutral_env["HZ_GALLERY_DENIAL_LOG"]).exists(), "Neutral UI attempted an outbound request"
+
+
 @pytest.mark.parametrize("engine", ["chromium", "webkit"])
-@pytest.mark.timeout(300)
+@pytest.mark.timeout(600)
 def test_plugin_gallery_is_lazy_accessible_and_responsive_in_both_engines(environment, tmp_path, engine):
     """The built Plugins screen previews actual declared media at desktop and all six phone sizes."""
-    env, _recorded = environment
-    env["PLAYWRIGHT_BROWSER"] = engine
-    web_build.ensure_built()
-    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
-    subprocess.run(
-        [*run, "exec", "playwright-core", "install", engine], cwd=REPO, check=True, timeout=600, capture_output=True
+    fixture_env, _recorded = environment
+    home = tmp_path / "home"
+    home.mkdir()
+    # The gallery process receives no ambient provider, proxy, credential or HOME settings.
+    env = {key: value for key, value in fixture_env.items() if key.startswith("HZ_")}
+    env.update(
+        {
+            "HOME": str(home),
+            "XDG_CONFIG_HOME": str(home / "config"),
+            "XDG_DATA_HOME": str(home / "data"),
+            "XDG_CACHE_HOME": str(home / "cache"),
+            "XDG_STATE_HOME": str(home / "state"),
+            "TMPDIR": str(tmp_path),
+            "PATH": os.defpath,
+            "PYTHONPATH": fixture_env["PYTHONPATH"],
+            "BROWSER": fixture_env["BROWSER"],
+            "PLAYWRIGHT_BROWSER": engine,
+            "PLAYWRIGHT_BROWSERS_PATH": str(
+                Path.home() / ("Library/Caches/ms-playwright" if sys.platform == "darwin" else ".cache/ms-playwright")
+            ),
+        }
     )
-    shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
+    assert web_build.current(), "Prepare the locked web build before this offline test"
+    assert web_build.installed(), "Prepare the locked web dependencies before this offline test"
+    shots = tmp_path / "screenshots"
+    denied = tmp_path / "backend-network-denied.txt"
+    initialized = tmp_path / "backend-network-initialized.txt"
+    backend_env = env | {
+        "HZ_AUTO_UPDATE": "false",
+        "HZ_UPDATE_CHECK": "false",
+        "HZ_GALLERY_DENIAL_LOG": str(denied),
+        "HZ_GALLERY_INITIALIZED": str(initialized),
+        "PYTHONPATH": os.pathsep.join((str(REPO / "tests/fixtures/gallery_offline"), env["PYTHONPATH"])),
+    }
+    canary = (
+        "import socket\n"
+        "try: socket.socket().connect(('1.1.1.1', 443))\n"
+        "except PermissionError: pass\n"
+        "else: raise AssertionError('network denial was not installed')\n"
+    )
+    subprocess.run([sys.executable, "-c", canary], env=backend_env, cwd=REPO, check=True, timeout=30)
+    assert initialized.read_text(encoding="utf-8") == "gallery network denial active\n"
+    assert denied.read_text(encoding="utf-8") == "blocked outbound request\n"
+    initialized.unlink()
+    denied.unlink()
+
+    gallery_profile_preflight(backend_env, tmp_path, denied)
+    initialized.unlink()
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=backend_env, stderr=subprocess.PIPE
     )
     output = MobileServerOutput(ui)
     token = ""
     try:
         address = output.wait_url()
+        assert initialized.read_text(encoding="utf-8") == "gallery network denial active\n"
         token = parse_qs(urlsplit(address).fragment).get("token", [""])[0]
         driven = subprocess.run(
-            [*run, "exec", "node", "e2e/plugin-gallery-proof.mjs", address, str(shots)],
-            cwd=REPO,
+            [str(web_build.node_bin() / "node"), "e2e/plugin-gallery-proof.mjs", address, str(shots)],
+            cwd=REPO / "web",
             env=env,
             capture_output=True,
             text=True,
@@ -948,6 +1090,7 @@ def test_plugin_gallery_is_lazy_accessible_and_responsive_in_both_engines(enviro
         output.close()
         if ui.stderr is not None:
             ui.stderr.close()
+    assert not denied.exists(), "The synthetic backend attempted an unexpected outbound request"
 
 
 @pytest.mark.timeout(600)
