@@ -215,7 +215,11 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       }
       if (kind === "system" && systemBroken(error)) {
         // Offered but not working here (unsupported, no audio track, device error): no retry dead end; the other
-        // sources come back with one line.
+        // sources come back with one line. A prior microphone choice must not turn this failure into a new capture.
+        if (!current.current) {
+          setRemembered("off");
+          remember("off");
+        }
         markNoSystem();
         setSystem(false);
         setProblem("");

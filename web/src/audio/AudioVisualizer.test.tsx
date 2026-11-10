@@ -341,6 +341,38 @@ describe("AudioVisualizer", () => {
     }
   });
 
+  it("does not resume a remembered microphone after system audio fails, including after remount", async () => {
+    localStorage.setItem("hz.audio.source", "mic");
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    vi.mocked(captureAudio).mockRejectedValueOnce(new DOMException("Not supported", "NotSupportedError"));
+    vi.mocked(captureMicrophone).mockResolvedValue(listening);
+    const realPermissions = Object.getOwnPropertyDescriptor(navigator, "permissions");
+    const query = vi.fn(async () => ({ state: "granted" }));
+    Object.defineProperty(navigator, "permissions", { configurable: true, value: { query } });
+    try {
+      act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+      const view = render(<AudioVisualizer />);
+      open();
+      fireEvent.click(await waitFor(() => pane().getByRole("button", { name: "Use system audio" })));
+      await waitFor(() => expect(pane().getByRole("radiogroup", { name: "Listen to" })).toBeInTheDocument());
+      expect(captureMicrophone).not.toHaveBeenCalled();
+      expect(query).not.toHaveBeenCalled();
+      view.unmount();
+      render(<AudioVisualizer />);
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+      expect(captureMicrophone).not.toHaveBeenCalled();
+      expect(query).not.toHaveBeenCalled();
+      open();
+      fireEvent.click(source("Microphone"));
+      await waitFor(() => expect(captureMicrophone).toHaveBeenCalledOnce());
+    } finally {
+      if (realPermissions) Object.defineProperty(navigator, "permissions", realPermissions);
+      else delete (navigator as { permissions?: Permissions }).permissions;
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("after a declined system audio prompt shows one plain line and Try again, never the other choices", async () => {
     vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
     vi.mocked(systemAudioAvailable).mockResolvedValue(true);
