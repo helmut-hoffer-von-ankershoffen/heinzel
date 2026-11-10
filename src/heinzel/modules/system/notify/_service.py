@@ -134,6 +134,7 @@ class NotifyService(Notifications):
         """Asks a capability's state for a notice's condition; set by `for_user`, None asks nothing."""
         self.problems: _resolve.ProblemsProbe | None = None
         """The health checks that aren't up, for a notice's `checks_up`; set by `for_user`, None asks nothing."""
+        self._health_resolved_at: datetime | None = None
         self._refresh_hours: Callable[[], policy.Hours] = lambda: self.hours
 
     @classmethod
@@ -359,11 +360,11 @@ class NotifyService(Notifications):
             )
         ]
 
-    def _resolvable(self, notices: list[Notice]) -> dict[str, str]:
+    def _resolvable(self, notices: list[Notice], *, check_health: bool = True) -> dict[str, str]:
         """The ids of shown notices whose condition holds now, each with why."""
         installed = self.installed()
         probe = _resolve.cached(self.capability) if self.capability is not None else None
-        problems = _resolve.once(self.problems) if self.problems is not None else None
+        problems = _resolve.once(self.problems) if check_health and self.problems is not None else None
         found: dict[str, str] = {}
         for notice in notices:
             when = _resolve.condition(notice) if notice.resolved_at is None else None
@@ -371,13 +372,13 @@ class NotifyService(Notifications):
                 found[notice.id] = why
         return found
 
-    def resolve(self) -> int:
+    def resolve(self, *, check_health: bool = True) -> int:
         """Resolve the shown notices whose condition holds now; how many. Never touches whether one was read.
 
         Capabilities are asked outside the store's lock; the write then marks only notices still unresolved.
         """
         try:
-            found = self._resolvable(self.store.read())
+            found = self._resolvable(self.store.read(), check_health=check_health)
         except OSError:
             return 0
         if not found:
@@ -513,7 +514,12 @@ class NotifyService(Notifications):
         if self.settings.native:
             self._end_leftover_instances()
         self.look()
-        self.resolve()
+        now = self._clock()
+        last = self._health_resolved_at
+        check_health = self.settings.wants(NoticeKind.DOCTOR) and (last is None or not now - LOOK_EVERY < last <= now)
+        if check_health:
+            self._health_resolved_at = now
+        self.resolve(check_health=check_health)
         if not self.settings.native or self.is_watched() or self.notifier.name is None:
             return 0
         # Claimed before they pop up, under the store's lock, so a web app can't show the same ones meanwhile.

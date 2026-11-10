@@ -1,5 +1,6 @@
 """Notices that resolve by themselves (ADR 0043, amended 2026-11-07): a condition holds, the notice disappears."""
 
+import json
 import subprocess
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -71,6 +72,33 @@ def test_an_update_notice_disappears_once_its_version_is_installed(service):
     assert shown(service) == []  # at once, on read: no tick needed for a version condition
     assert service.recent() == []
     assert service.due() == []
+
+
+def test_ordinary_conditions_are_compatible_with_older_store_readers(service):
+    class OlderCondition(BaseModel, extra="forbid"):
+        installed_version_at_least: str | None = None
+        capability: dict | None = None
+        plugins_installed: list[str] | None = None
+
+    assert release(service) is not None
+    raw = json.loads(service.store.path.read_text())
+    OlderCondition.model_validate(raw[0]["resolve_when"])
+
+
+def test_background_health_resolution_respects_consent_and_hourly_limit(service, clock):
+    calls = []
+    service.problems = lambda: calls.append(1) or {"sample: network"}
+    assert doctor(service, ["sample: network"])
+    service.settings = service.settings.model_copy(update={"doctor": False})
+    service.post_native()
+    assert calls == []
+    service.settings = service.settings.model_copy(update={"doctor": True})
+    service.post_native()
+    service.post_native()
+    assert calls == [1]
+    clock.now += timedelta(hours=1)
+    service.post_native()
+    assert calls == [1, 1]
 
 
 def test_resolving_keeps_the_history_with_a_reason_and_never_marks_read(service, clock):

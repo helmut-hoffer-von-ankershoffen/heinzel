@@ -105,6 +105,7 @@ class ResolveWhen(BaseModel):
     capability: CapabilityState | None = Field(default=None, description="Holds once a capability reports a state.")
     checks_up: list[Annotated[str, Field(pattern=CHECK, max_length=200)]] | None = Field(
         default=None,
+        exclude_if=lambda value: value is None,
         min_length=1,
         max_length=50,
         description="Holds once every named health check (`<module>: <check>`) is up again in `hz system doctor`.",
