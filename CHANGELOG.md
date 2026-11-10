@@ -31,10 +31,12 @@ Find uv in its install dirs under launchd's minimal PATH; Name the worker's shel
 - Fix five flaky and slow tests at their cause ([#650](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/650)) ([6443f4b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/6443f4b8cde047954cdd4a6eb190ce6471ce123e))
 - **heads:** Use loopback MCP test server ([#708](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/708)) ([f71de1d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f71de1dca85fbbbef2a79f3f023e7cb35d9034f6))
 - **system:** Ratchet the notifier logging allowlist ([#710](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/710)) ([38965c9](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/38965c991ba9ec2f6e2d394f3b15abae5be55224))
+- **ci:** Isolate nested xdist coverage probe plugins ([#711](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/711)) ([e3dc6ee](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e3dc6ee2325505e542b1f707a371ef8896e17903))
 
 ### 🏗️ Build and CI
 
 - Require exact focused workloads before release ([#694](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/694)) ([85f8f31](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/85f8f31cebd9456430b62f4be7c96f1305905b72))
+- Reduce full-history secret scan overhead ([#712](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/712)) ([0ccaff4](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/0ccaff4a61f80f7338c8b400278e4a47070f2f07))
 
 ## [0.9.35](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.35) - 2026-11-10
 
