@@ -13,7 +13,8 @@ vi.mock("@/lifecycle/controller", async (importOriginal) => ({
     options: { onPhase?: (phase: string) => void },
   ) => {
     options.onPhase?.("preserving");
-    await request.preserve?.(new AbortController().signal);
+    const restartRequired = await request.preserve?.(new AbortController().signal);
+    if (restartRequired === false) return { instance: "before", version: "0.0.0", restartable: true };
     options.onPhase?.("reconnecting");
     options.onPhase?.("applied");
     return { instance: "after", version: "0.0.0", restartable: true };
@@ -72,7 +73,7 @@ function listing(selected: string): SchemaAccessList {
 }
 
 /** The API with an AI access list that follows `hz ai access use` and answers `hz ai access test`. */
-function accessApi() {
+function accessApi(restartRequired = true) {
   let selected = "claude-code";
   return mockApi({
     ...shell,
@@ -86,7 +87,7 @@ function accessApi() {
     "/api/system/config/set": "config.toml",
     "/api/ai/access/key": { stored: false },
     "/api/ai/access/set-key": { stored: true },
-    "/api/system/plugin/add-extra": { extra: "openai", done: true, restart_required: true },
+    "/api/system/plugin/add-extra": { extra: "openai", done: restartRequired, restart_required: restartRequired },
     "/api/ai/access/test": {
       name: "gateway",
       ok: true,
@@ -195,6 +196,17 @@ describe("AI access", () => {
     expect(await within(dialog).findByText("Applied")).toBeInTheDocument();
     const add = calls.find((call) => call.url.includes("/system/plugin/add-extra"));
     expect(new URL(add?.url ?? "").searchParams.get("extra")).toBe("openai");
+  });
+
+  it("finishes when a concurrent installation already added the client", async () => {
+    accessApi(false);
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Set up ChatGPT plan" }));
+    const dialog = await screen.findByRole("dialog", { name: "Set up ChatGPT plan" });
+    await user.click(within(dialog).getByRole("button", { name: "Add and restart" }));
+    expect(await within(dialog).findByText("Applied")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeEnabled();
   });
 
   it("leaves a sign-in to the person's browser: the command only in Details, and Check again", async () => {

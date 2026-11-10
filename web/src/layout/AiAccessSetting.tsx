@@ -366,6 +366,8 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
         },
         { onPhase: setPhase, preserveTimeout: 10 * 60_000 },
       );
+      // A concurrent install can make this request a successful no-op, with no restart phases emitted.
+      setPhase("applied");
       await client.invalidateQueries({ queryKey: ["ai"] });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
