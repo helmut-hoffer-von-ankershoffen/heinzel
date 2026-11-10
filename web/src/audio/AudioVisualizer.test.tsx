@@ -283,6 +283,22 @@ describe("AudioVisualizer", () => {
     expect(source("Microphone")).toHaveAttribute("aria-checked", "true");
   });
 
+  it("lets Off stop the microphone and cancel a pending source switch", async () => {
+    vi.mocked(captureMicrophone).mockResolvedValueOnce(listening);
+    vi.mocked(captureAudio).mockImplementationOnce(() => new Promise(() => undefined));
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(source("Microphone"));
+    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    fireEvent.click(source("Shared audio"));
+    const signal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
+    expect(source("Off")).not.toHaveAttribute("aria-disabled");
+    fireEvent.click(source("Off"));
+    expect(signal?.aborted).toBe(true);
+    expect(micStop).toHaveBeenCalledOnce();
+    expect(source("Off")).toHaveAttribute("aria-checked", "true");
+  });
+
   it("keeps a replacement request alive when the old source ends", async () => {
     const track = new EventTarget();
     const addListener = vi.spyOn(track, "addEventListener");

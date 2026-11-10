@@ -468,6 +468,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
                 segments={sourceSegments}
                 value={listening}
                 busy={requesting}
+                allowWhileBusy="off"
                 onSelect={choose}
               />
             </>
