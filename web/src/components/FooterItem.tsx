@@ -8,7 +8,7 @@ import { t } from "@/i18n";
 import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { watchViewport } from "@/lib/viewport";
-import { FOOTER_RELOCATED, useFooterVisibility } from "./FooterLayout";
+import { FOOTER_RELOCATED, useFooterVisibility, useOpenFooterOverflow } from "./FooterLayout";
 import { actionStructureProblems, assertActionStructure, PaneActions, PaneLeave, PaneTitle } from "./PaneActions";
 
 export type State = "ok" | "warn" | "bad" | "off";
@@ -47,6 +47,7 @@ export function FooterItem({
   paneName,
   hideHeading = false,
   steady = false,
+  openRequest = 0,
   actions,
   actionRow,
   freeform,
@@ -77,6 +78,8 @@ export function FooterItem({
   hideHeading?: boolean;
   /** `text` changes while shown (a clock): fixed-width digits and a width that never shrinks, so neighbours stay put. */
   steady?: boolean;
+  /** Raised by the owner to pin the pane open (the desktop menu asks for the Updates pane this way). */
+  openRequest?: number;
   /** Every action of the pane: `PaneAction`s in the one bottom row under a divider, after all content. */
   actions?: ReactNode;
   /** The row's layout: a pane leads with words (default); an inline confirmation answers like a dialog. */
@@ -101,6 +104,25 @@ export function FooterItem({
   const returningFocus = useRef(false);
   const visible = useFooterVisibility();
   const id = useId();
+  const openOverflow = useOpenFooterOverflow();
+  const pendingPin = useRef(false);
+  // A request while the item is hidden in More opens that list first; the pane is pinned once it is shown there.
+  const handled = useRef(0);
+  useEffect(() => {
+    if (openRequest <= handled.current) return;
+    handled.current = openRequest;
+    if (visible) setPinned(true);
+    else {
+      pendingPin.current = true;
+      openOverflow?.(true);
+    }
+  }, [openRequest, visible, openOverflow]);
+  useEffect(() => {
+    if (visible && pendingPin.current) {
+      pendingPin.current = false;
+      setPinned(true);
+    }
+  }, [visible]);
   const open = visible && (hovered || focused || pinned);
   // In development and tests, an open pane that breaks the structure fails loudly, on each render and late change.
   const structured = useRef(!freeform);

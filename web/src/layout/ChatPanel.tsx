@@ -14,6 +14,7 @@ import { SessionSwitcher } from "@/chat/SessionSwitcher";
 import { isDurableSession } from "@/chat/useChat";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { clearChatLink } from "@/lib/chatIntent";
 
 const PERSONAL_HANDOFF = "hz.personal-heinzel.handoff";
 type PersonalHandoff = { request_id: string; message: string };
@@ -56,7 +57,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   });
   const [params, setParams] = useSearchParams();
   const durableId = params.get("chat");
-  const { chat, inputRef, focus } = useSharedChat();
+  const { chat, inputRef, startNewChat } = useSharedChat();
   const context = chat.session?.context;
   const end = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -69,12 +70,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     if (box && box.scrollHeight - box.scrollTop - box.clientHeight > 120) return;
     end.current?.scrollIntoView?.({ block: "end" });
   }, [count, chat.live?.text]);
-  // An empty chat is already a new one: the button then just puts you in its composer.
-  const empty = !chat.session?.messages?.length && !chat.live;
-  const fresh = () => {
-    if (!empty) chat.fresh();
-    focus();
-  };
+  const empty = !chat.loading && !chat.session?.messages?.length && !chat.live;
   const createPersonal = async (initialMessage?: string) => {
     if (creating.current) return false;
     creating.current = true;
@@ -160,19 +156,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
         onClose={() =>
           setParams((current) => {
             const next = new URLSearchParams(current);
-            next.delete("chat");
-            for (const key of [
-              "agent-chat",
-              "approval-chat",
-              "approval-request",
-              "agent-open-request",
-              "contract-chat",
-              "schedule-chat",
-              "schedule-request",
-              "notification-chat",
-              "connected-chat",
-            ])
-              next.delete(key);
+            clearChatLink(next);
             return next;
           })
         }
@@ -183,12 +167,12 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     <div className="flex h-full flex-col">
       <div className="chat-panel-header flex h-10 shrink-0 items-center sm:h-12 gap-1 border-b-[0.5px] border-foreground/20 px-3">
         <h2 className="sr-only">{t("chat.title")}</h2>
-        <SessionSwitcher chat={chat} onNew={fresh} onCreatePersonal={() => void createPersonal()} />
+        <SessionSwitcher chat={chat} onNew={startNewChat} onCreatePersonal={() => void createPersonal()} />
         <Button
           variant="ghost"
           size="icon"
           className="text-icon"
-          onClick={fresh}
+          onClick={startNewChat}
           aria-label={t("chat.new")}
           title={empty ? t("chat.isNew") : t("chat.new")}
         >

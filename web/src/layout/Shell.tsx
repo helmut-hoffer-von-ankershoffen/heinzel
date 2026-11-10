@@ -2,7 +2,9 @@
 // beside the screen when the window leaves it at least 30rem, below it otherwise; never both at once.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Outlet, useLocation, useSearchParams } from "react-router";
+import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router";
+import { AboutDialog } from "@/about/AboutDialog";
+import { type MenuAction, onMenuAction } from "@/about/menu";
 import { useConfig } from "@/api/queries";
 import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { ChatProvider } from "@/chat/ChatContext";
@@ -11,7 +13,7 @@ import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { OperationDialog } from "@/components/OperationDialog";
 import { t } from "@/i18n";
-import { OPEN_CHAT } from "@/lib/chatIntent";
+import { clearChatLink, OPEN_CHAT, OPEN_NEW_CHAT } from "@/lib/chatIntent";
 import { clampSidebar, readSidebarWidth, sidebarMax, writeSidebarWidth } from "@/lib/sidebarWidth";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import { useWidth } from "@/lib/useWidth";
@@ -79,6 +81,13 @@ export function fitsBeside(areaPx: number, remPx: number): boolean {
 
 /** No element: `useWidth` then follows the window. */
 const WINDOW = { current: null };
+
+const GO: Record<string, string> = {
+  "go:today": "/",
+  "go:heinzel": "/heinzel",
+  "go:team": "/team",
+  "go:plugins": "/plugins",
+};
 
 export function Shell() {
   useVisualViewport();
@@ -212,6 +221,23 @@ function Layout() {
     }
   }, [durableChat, setChatOpen]);
   const settings = params.get("settings");
+  const navigate = useNavigate();
+  // About, Updates and Copy are handled where they live. Reveal the footer first if the terminal covers it.
+  useEffect(
+    () =>
+      onMenuAction(["settings", "daemon", "changelog", "doctor", "updates"], (action) => {
+        if (action === "doctor") navigate("/doctor");
+        else if (action === "updates") setTerminalFull(false);
+        else
+          setParams((current) => {
+            const next = new URLSearchParams(current);
+            if (action === "changelog") next.set("panel", "changelog");
+            else next.set("settings", action === "daemon" ? "daemon" : "");
+            return next;
+          });
+      }),
+    [navigate, setParams],
+  );
   const requestedView = panelViews.find((view) => view.id === params.get("panel"));
   const viewOpen = Boolean(requestedView);
   const requestedId = requestedView?.id;
@@ -342,8 +368,9 @@ function Layout() {
     return () => cancelAnimationFrame(frame);
   }, [beside, full, pageHold, scrollTarget, selectedPanel]);
 
+  const hasChatLink = params.has("chat") || params.has("chat-context");
   const selectPanel = useCallback(
-    (id: string) => {
+    (id: string, newChat = false) => {
       pageScroll.current?.();
       setScrollTarget(null);
       // Preserve the old panel height while Page scrolls up so selecting its tab cannot clamp the scroll instantly.
@@ -359,11 +386,15 @@ function Layout() {
       setPageHold(hold);
       setActivePanel(id);
       setTerminalFull(false);
-      // Native panel selection needs no URL write unless it closes a contributed panel. A no-op
-      // navigation can overwrite a conversation selected before this router render has committed.
-      if (requestedId || panelViews.some((view) => view.id === id)) {
+      // A no-op navigation can overwrite a conversation selected before this router render has committed.
+      const clearLink = newChat && hasChatLink;
+      if (clearLink || requestedId || panelViews.some((view) => view.id === id)) {
         setParams((current) => {
           const next = new URLSearchParams(current);
+          if (clearLink) {
+            clearChatLink(next);
+            next.delete("chat-context");
+          }
           if (panelViews.some((view) => view.id === id)) next.set("panel", id);
           else if (panelViews.some((view) => view.id === next.get("panel"))) next.delete("panel");
           ownNavigation.current = { path: location.pathname, search: next.toString() };
@@ -372,7 +403,7 @@ function Layout() {
       }
       if (!beside) requestScroll(id);
     },
-    [beside, full, location.pathname, requestScroll, requestedId, selectedPanel, setParams, panelViews],
+    [beside, full, hasChatLink, location.pathname, requestScroll, requestedId, selectedPanel, setParams, panelViews],
   );
   const closeView = (id: string) => {
     pageScroll.current?.();
@@ -390,15 +421,17 @@ function Layout() {
       setTerminalOpen(true);
       selectPanel("terminal");
     };
-    const openChat = () => {
+    const openChat = (event: Event) => {
       setChatOpen(true);
-      selectPanel("chat");
+      selectPanel("chat", event.type === OPEN_NEW_CHAT);
     };
     window.addEventListener(OPEN_TERMINAL, open);
     window.addEventListener(OPEN_CHAT, openChat);
+    window.addEventListener(OPEN_NEW_CHAT, openChat);
     return () => {
       window.removeEventListener(OPEN_TERMINAL, open);
       window.removeEventListener(OPEN_CHAT, openChat);
+      window.removeEventListener(OPEN_NEW_CHAT, openChat);
     };
   }, [setChatOpen, selectPanel]);
   const setSettings = (section: string | null) =>
@@ -424,6 +457,63 @@ function Layout() {
     window.addEventListener("keydown", open);
     return () => window.removeEventListener("keydown", open);
   }, [setParams]);
+  const toggleChat = (canClose: boolean) => {
+    if (canClose && chatOpen && selectedPanel === "chat") setChatOpen(false);
+    else {
+      setChatOpen(true);
+      selectPanel("chat");
+    }
+  };
+  const toggleBrowser = (canClose: boolean) => {
+    if (canClose && browserOpen && selectedPanel === "browser") setBrowserOpen(false);
+    else {
+      setBrowserOpen(true);
+      selectPanel("browser");
+    }
+  };
+  const toggleTerminal = (canClose: boolean) => {
+    if (canClose && terminalOpen && selectedPanel === "terminal") {
+      setTerminalOpen(false);
+      setTerminalFull(false);
+    } else {
+      setTerminalOpen(true);
+      selectPanel("terminal");
+    }
+  };
+  // View menu toggles can close panels in either layout. The narrow top bar navigates to them.
+  const menu = useRef({ toggleChat, toggleBrowser, toggleTerminal, browserEnabled });
+  menu.current = { toggleChat, toggleBrowser, toggleTerminal, browserEnabled };
+  useEffect(
+    () =>
+      onMenuAction(
+        [
+          "search",
+          "sidebar",
+          "terminal",
+          "browser",
+          "chat",
+          "notifications",
+          "help",
+          ...Object.keys(GO),
+        ] as MenuAction[],
+        (action) => {
+          if (action === "search") setSearchOpen(true);
+          else if (action === "sidebar") setNavOpen((open) => !open);
+          else if (action === "terminal") menu.current.toggleTerminal(true);
+          else if (action === "browser") {
+            if (menu.current.browserEnabled) menu.current.toggleBrowser(true);
+          } else if (action === "chat") menu.current.toggleChat(true);
+          else if (action === "notifications" || action === "help")
+            setParams((current) => {
+              const next = new URLSearchParams(current);
+              next.set("panel", action);
+              return next;
+            });
+          else navigate(GO[action] ?? "/");
+        },
+      ),
+    [navigate, setNavOpen, setParams],
+  );
   return (
     <div
       data-testid="app-shell"
@@ -625,35 +715,11 @@ function Layout() {
               selectPanel("calendar");
             }}
             chatOpen={chatOpen && selectedPanel === "chat"}
-            onToggleChat={() => {
-              if (beside && chatOpen && selectedPanel === "chat") setChatOpen(false);
-              else {
-                setChatOpen(true);
-                selectPanel("chat");
-              }
-            }}
+            onToggleChat={() => toggleChat(beside)}
             browserOpen={browserOpen && selectedPanel === "browser"}
-            onToggleBrowser={
-              browserEnabled
-                ? () => {
-                    if (beside && browserOpen && selectedPanel === "browser") setBrowserOpen(false);
-                    else {
-                      setBrowserOpen(true);
-                      selectPanel("browser");
-                    }
-                  }
-                : undefined
-            }
+            onToggleBrowser={browserEnabled ? () => toggleBrowser(beside) : undefined}
             terminalOpen={terminalOpen && selectedPanel === "terminal"}
-            onToggleTerminal={() => {
-              if (beside && terminalOpen && selectedPanel === "terminal") {
-                setTerminalOpen(false);
-                setTerminalFull(false);
-              } else {
-                setTerminalOpen(true);
-                selectPanel("terminal");
-              }
-            }}
+            onToggleTerminal={() => toggleTerminal(beside)}
           />,
           headerHost,
         )}
@@ -691,6 +757,7 @@ function Layout() {
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <Onboarding />
       <OperationDialog />
+      <AboutDialog />
       {(params.get("panel") === "changelog" || params.get("panel") === "help") && (
         <InfoDialog
           panel={params.get("panel") as Panel}
