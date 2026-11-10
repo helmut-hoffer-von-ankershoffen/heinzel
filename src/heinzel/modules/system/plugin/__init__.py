@@ -10,6 +10,8 @@ from heinzel import CurrentUser, HeinzelError, Kernel, Module, Prompter
 from heinzel.kernel import DaemonInstallationLifecycle, Installation
 from heinzel.modules.system.plugin._models import (
     AvailablePlugin,
+    CoreExtra,
+    ExtraChange,
     PluginCandidate,
     PluginChange,
     PluginEvent,
@@ -140,6 +142,18 @@ def add(
     if prompter.confirm(f"Install {name} now?", default=False):
         return service.add(spec, confirm=True, operation_id=change.operation_id)
     return change.model_copy(update={"previewed": True})
+
+
+@module.operation(read_only=False, heads=CHANGES)
+def add_extra(
+    service: PluginService,
+    extra: Annotated[
+        CoreExtra,
+        Field(description="The optional client of hz itself: `openai` (Model API, ChatGPT plan) or `anthropic`."),
+    ],
+) -> ExtraChange:
+    """Add an optional client of hz itself, such as OpenAI's for the ChatGPT plan; a restart loads it."""
+    return service.add_extra(extra)
 
 
 @module.operation(read_only=False, heads=CHANGES, render=render_repair)

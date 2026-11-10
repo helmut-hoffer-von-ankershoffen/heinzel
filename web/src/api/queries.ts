@@ -171,6 +171,28 @@ export const useTestAiAccess = () => {
     onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access", "list"] }),
   });
 };
+/** Whether a Model API key is kept in the credentials store; never the key. */
+export const useAiKey = () =>
+  useQuery({ queryKey: ["ai", "access", "key"], queryFn: () => unwrap(api.GET("/ai/access/key")) });
+
+/** Keep the typed Model API key in the credentials store: a strict JSON body, never a query or URL. */
+export const useSetAiKey = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (value: string) => unwrap(api.POST("/ai/access/set-key", { body: { value } })),
+    onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access"] }),
+  });
+};
+
+/** Remove the Model API key from the credentials store. */
+export const useRemoveAiKey = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => unwrap(api.POST("/ai/access/remove-key")),
+    onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access"] }),
+  });
+};
+
 /** `hz ai models`: the models and efforts of the AI access in use, for the chat's picker (ADR 0057). */
 export const useAiModels = () =>
   useQuery({ queryKey: ["ai", "models"], queryFn: () => unwrap(api.GET("/ai/models")), staleTime: 5 * 60 * 1000 });

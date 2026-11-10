@@ -178,6 +178,7 @@ class AccessService:
             update={
                 "setup": setup,
                 "needs": needs,
+                "client": match[1] if setup == "client" and (match := _CLIENT.search(status.fix)) else None,
                 "title": status.title,
                 "summary": status.summary,
                 "status": state(status, last),

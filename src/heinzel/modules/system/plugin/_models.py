@@ -268,6 +268,18 @@ class PluginRepair(BaseModel):
     message: str = Field(description="One line: what was repaired, or that nothing needed it.")
 
 
+CoreExtra = Literal["openai", "anthropic"]
+"""Optional clients of hz itself (`heinzel[openai]`), for the Model API and the ChatGPT plan: extras, not plugins."""
+
+
+class ExtraChange(BaseModel):
+    """The outcome of adding an optional client of hz itself."""
+
+    extra: CoreExtra = Field(description="The client added, e.g. `openai`.")
+    done: bool = Field(description="Whether it was installed now; false when it was there already.")
+    restart_required: bool = Field(description="Whether running servers load it only after a restart.")
+
+
 class PluginOperation(BaseModel):
     """Durable state of one plugin-add preview and its confirmation."""
 
