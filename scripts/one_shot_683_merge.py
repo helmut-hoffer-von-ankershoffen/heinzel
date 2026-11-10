@@ -24,6 +24,7 @@ BASE = "6443f4b8cde047954cdd4a6eb190ce6471ce123e"
 TREE = "0722838ec82ed417118ee8d388ffeec0335c330e"
 PR_NUMBER = 683
 PUBLISHER_RUN_ID = 42801566747
+PUBLISHER_JOBS = {"publish": 129780118307, "update": 129780120657}
 RECOVERY_RUN_ID = 42801046287
 RECOVERY_SHA = "ad3b8961cd44596f0bc0b5a9e1a965f5772e6589"
 REPOSITORY_ID = 1431672693
@@ -36,6 +37,7 @@ UNSTABLE_SUITES = {
     115906269005: (42798140654, ".github/workflows/codeql.yml"),
 }
 CONTEXTS = {"CI OK": None, "merge-gate": 15368, "coverage-floor": 15368}
+STATUS_IDS = {"CI OK": 58515146064, "merge-gate": 58515138753, "coverage-floor": 58515132055}
 
 
 def api(path: str, *args: str) -> Any:  # noqa: ANN401
@@ -181,6 +183,15 @@ def validate_evidence() -> None:
     verifier._rules()  # noqa: SLF001
     verifier._source()  # noqa: SLF001
     verifier._evidence(RECOVERY_RUN_ID, RECOVERY_SHA)  # noqa: SLF001
+    validate_publisher()
+
+
+def validate_publisher() -> None:
+    """Check the exact successful publisher and its latest statuses.
+
+    Raises:
+        ValueError: Publisher evidence differs.
+    """
     publisher_id = PUBLISHER_RUN_ID
     run = one(f"actions/runs/{publisher_id}")
     if not (
@@ -204,13 +215,30 @@ def validate_evidence() -> None:
     if not (
         pages
         and all(page["total_count"] == len(jobs) for page in pages)
-        and len(jobs) == 1
-        and jobs[0]["name"] == "publish"
-        and jobs[0]["status"] == "completed"
-        and jobs[0]["conclusion"] == "success"
-        and jobs[0]["run_id"] == publisher_id
-        and jobs[0]["run_attempt"] == 1
-        and jobs[0]["head_sha"] == RECOVERY_SHA
+        and len(jobs) == len(PUBLISHER_JOBS)
+        and {j["name"] for j in jobs} == {"publish", "update"}
+        and all(
+            j["status"] == "completed"
+            and j["run_id"] == publisher_id
+            and j["run_attempt"] == 1
+            and j["head_sha"] == RECOVERY_SHA
+            for j in jobs
+        )
+        and any(
+            j["name"] == "publish"
+            and j["id"] == PUBLISHER_JOBS["publish"]
+            and j["conclusion"] == "success"
+            and (j.get("runner_id") or 0) > 0
+            for j in jobs
+        )
+        and any(
+            j["name"] == "update"
+            and j["id"] == PUBLISHER_JOBS["update"]
+            and j["conclusion"] == "skipped"
+            and j.get("runner_id") is None
+            and j["steps"] == []
+            for j in jobs
+        )
     ):
         msg = "publisher jobs differ"
         raise ValueError(msg)
@@ -220,6 +248,7 @@ def validate_evidence() -> None:
         matches = [status for status in statuses if status.get("context") == name]
         if not (
             matches
+            and matches[0].get("id") == STATUS_IDS[name]
             and matches[0].get("state") == "success"
             and matches[0].get("target_url") == f"https://github.com/{REPO}/actions/runs/{publisher_id}"
             and (matches[0].get("creator") or {}).get("id") == ACTIONS_BOT_ID

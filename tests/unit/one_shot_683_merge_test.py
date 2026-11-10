@@ -152,3 +152,45 @@ def test_refuses_changed_unstable_suites(unstable, mutation):
         jobs[run].append({"id": 1})
     with pytest.raises(ValueError, match=r"suite|run"):
         mod.validate_unstable()
+
+
+def test_publisher_rejects_extra_acquired_job(monkeypatch):
+    run = {
+        "id": mod.PUBLISHER_RUN_ID,
+        "head_sha": mod.RECOVERY_SHA,
+        "head_branch": "bootstrap/one-shot-683-publish",
+        "event": "push",
+        "path": ".github/workflows/one-shot-683-write.yml",
+        "run_attempt": 1,
+        "status": "completed",
+        "conclusion": "success",
+        "repository": {"id": mod.REPOSITORY_ID},
+        "head_repository": {"id": mod.REPOSITORY_ID},
+        "actor": {"login": mod.REPO.split("/")[0]},
+        "triggering_actor": {"login": mod.REPO.split("/")[0]},
+    }
+    common = {"status": "completed", "run_id": mod.PUBLISHER_RUN_ID, "run_attempt": 1, "head_sha": mod.RECOVERY_SHA}
+    jobs = [
+        {**common, "name": "publish", "id": 129780118307, "conclusion": "success", "runner_id": 42},
+        {**common, "name": "update", "id": 129780120657, "conclusion": "skipped", "runner_id": None, "steps": []},
+    ]
+    statuses = [
+        {
+            "id": identity,
+            "context": name,
+            "state": "success",
+            "target_url": f"https://github.com/{mod.REPO}/actions/runs/{mod.PUBLISHER_RUN_ID}",
+            "creator": {"id": mod.ACTIONS_BOT_ID},
+        }
+        for name, identity in mod.STATUS_IDS.items()
+    ]
+    monkeypatch.setattr(mod, "one", lambda _: run)
+    monkeypatch.setattr(
+        mod,
+        "api",
+        lambda path: [{"total_count": len(jobs), "jobs": jobs}] if "/jobs?" in path else statuses and [statuses],
+    )
+    mod.validate_publisher()
+    jobs[1]["runner_id"] = 1
+    with pytest.raises(ValueError, match="publisher jobs"):
+        mod.validate_publisher()
