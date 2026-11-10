@@ -9,6 +9,7 @@ import { daemonStatusKey } from "@/api/daemon";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { Progress } from "@/components/Progress";
 import { type MessageKey, t } from "@/i18n";
+import { daemonRestartResult } from "@/lib/daemonRestart";
 import {
   dismissOperation,
   type OperationRun,
@@ -108,7 +109,12 @@ function Steps({
                   <span className="sr-only">: {t(`op.state.${phase.state}` as MessageKey)}</span>
                 )}
                 {phase.detail && (
-                  <span className={cn("block text-xs", phase.state === "done" ? "text-muted-foreground" : TONE[phase.state])}>
+                  <span
+                    className={cn(
+                      "block text-xs",
+                      phase.state === "done" ? "text-muted-foreground" : TONE[phase.state],
+                    )}
+                  >
                     {phase.detail}
                   </span>
                 )}
@@ -172,7 +178,8 @@ export function OperationDialog() {
   if (!primary || run.stage === "idle" || (quick && run.stage === "confirm")) return null;
   const persistent = PERSISTENT.has(run.call.path);
   const copy = copyOf(run.call.path);
-  const plain = (kind: "running" | "done" | "failed") => t(`op.daemon.restart.${kind}` as MessageKey);
+  const plain = (kind: "running" | "failed") => t(`op.daemon.restart.${kind}` as MessageKey);
+  const restartResult = quick && run.stage === "done" ? daemonRestartResult(run.result) : null;
   return createPortal(
     <div
       ref={box}
@@ -286,9 +293,23 @@ export function OperationDialog() {
       )}
       {run.stage === "done" && (
         <>
-          <p role="status" className="mt-1 flex items-start gap-2 text-ok">
-            <Check aria-hidden className="mt-0.5 size-4 shrink-0" />
-            {quick ? plain("done") : persistent ? t(`op.daemon.${copy}.done` as MessageKey) : t("op.done")}
+          <p
+            role="status"
+            className={cn(
+              "mt-1 flex items-start gap-2",
+              restartResult && restartResult !== "daemon.restarted" ? "text-warn" : "text-ok",
+            )}
+          >
+            {restartResult && restartResult !== "daemon.restarted" ? (
+              <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+            ) : (
+              <Check aria-hidden className="mt-0.5 size-4 shrink-0" />
+            )}
+            {quick
+              ? t(daemonRestartResult(run.result))
+              : persistent
+                ? t(`op.daemon.${copy}.done` as MessageKey)
+                : t("op.done")}
           </p>
           <Steps phases={run.phases} active={false} />
           <PaneActions align="end" words="all">

@@ -34,7 +34,14 @@ export type OperationRun =
   | ({ stage: "confirm"; call: SchemaOperationCall } & Driven)
   | ({ stage: "running"; call: SchemaOperationCall; phases: Phase[]; task: string | null; tracked?: true } & Driven)
   | ({ stage: "done"; call: SchemaOperationCall; phases: Phase[]; result: unknown; tracked?: true } & Driven)
-  | ({ stage: "failed"; call: SchemaOperationCall; phases: Phase[]; error: string; tracked?: true; outcomeUnknown?: true } & Driven)
+  | ({
+      stage: "failed";
+      call: SchemaOperationCall;
+      phases: Phase[];
+      error: string;
+      tracked?: true;
+      outcomeUnknown?: true;
+    } & Driven)
   | ({ stage: "attention"; call: SchemaOperationCall; phases: Phase[]; error: string; tracked: true } & Driven);
 
 /** What a head reports for one step; anything else in a `phase` event is ignored. */
@@ -191,17 +198,6 @@ export async function startOperation(onSettled: () => void): Promise<void> {
       timeout,
       call.body,
     );
-    // A restart may return normally without restarting when its service definition is absent.
-    if (
-      call.path === "/system/daemon/restart" &&
-      typeof result === "object" &&
-      result !== null &&
-      "restarted" in result &&
-      result.restarted === false
-    ) {
-      confirmedFailure = true;
-      throw new Error("The daemon was not restarted.");
-    }
     set({ stage: "done", call, phases: settle(phases), result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

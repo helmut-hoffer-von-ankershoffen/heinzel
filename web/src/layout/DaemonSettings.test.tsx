@@ -25,9 +25,17 @@ const running: SchemaDaemonStatus = {
   last_tick: null,
 };
 
-function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false, restartFails = false) {
+function show(
+  initial: Partial<SchemaDaemonStatus> = {},
+  failed = false,
+  restartFails = false,
+  restarted = true,
+  expert = false,
+  restartResponse: unknown = undefined,
+) {
   let status = { ...running, ...initial };
   const { calls } = mockApi({
+    "/api/system/expert": { expert },
     "/api/system/daemon/status": () => status,
     "/api/system/daemon/install": () => {
       status = { ...status, installed: true, loaded: true, version: "1.2.3" };
@@ -65,8 +73,15 @@ function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false, restart
           `event: phase\ndata: ${JSON.stringify(phase)}\n\nevent: error\ndata: ${JSON.stringify({ error: "previous handover cannot be verified" })}\n\n`,
           { headers: { "Content-Type": "text/event-stream" } },
         );
-      status = { ...status, loaded: true, installed_version: "2.0.0", version_mismatch: false };
-      return eventStream([["phase", phase]], { restarted: true, version: "2.0.0", interval_minutes: 5 });
+      if (restarted) status = { ...status, loaded: true, installed_version: "2.0.0", version_mismatch: false };
+      const result =
+        restartResponse !== undefined
+          ? restartResponse
+          : { restarted, version: "2.0.0", interval_minutes: restarted ? 5 : null };
+      return new Response(
+        `event: phase\ndata: ${JSON.stringify(phase)}\n\nevent: result\ndata: ${JSON.stringify({ data: result })}\n\n`,
+        { headers: { "Content-Type": "text/event-stream" } },
+      );
     },
   });
   const view = render(
@@ -249,8 +264,10 @@ describe("Daemon Settings", () => {
     expect(screen.getByRole("status")).toHaveTextContent("not loaded");
     await user.click(screen.getByRole("button", { name: "Restart" }));
     expect(await screen.findByText("2.0.0")).toBeInTheDocument();
-    expect(screen.getByText("The daemon restarted.")).toBeInTheDocument();
     expect(screen.getByText("Checking the service")).toBeInTheDocument();
+    expect(
+      screen.getByText("Restart requested. If the service is active, its next tick will confirm the version."),
+    ).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });
 
@@ -295,7 +312,9 @@ describe("Daemon Settings", () => {
       );
       stream.close();
     });
-    expect(await screen.findByText("The daemon restarted.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Restart requested. If the service is active, its next tick will confirm the version."),
+    ).toBeInTheDocument();
     expect(screen.getByText("Checking the service")).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });
@@ -382,7 +401,7 @@ describe("Daemon Settings", () => {
       </Providers>,
     );
     await userEvent.setup().click(await screen.findByRole("button", { name: "Restart" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("The daemon could not restart.");
+    expect(await screen.findByText("The daemon was not restarted. Install it and try again.")).toBeInTheDocument();
     expect(screen.queryByText("The daemon restarted.")).not.toBeInTheDocument();
   });
 
@@ -394,7 +413,42 @@ describe("Daemon Settings", () => {
       ),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Restart" }));
-    expect(await screen.findByText("The daemon restarted.")).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(
+      await screen.findByText("Restart requested. If the service is active, its next tick will confirm the version."),
+    ).toBeInTheDocument();
+  });
+
+  it.each([false, true])("shows the restart command only in expert mode=%s", async (expert) => {
+    show({}, false, false, true, expert);
+    await screen.findByText("Last service tick version");
+    if (expert) expect(await screen.findByText("hz system daemon restart")).toBeInTheDocument();
+    else {
+      await waitFor(() => expect(screen.queryByText("hz system daemon restart")).not.toBeInTheDocument());
+    }
+  });
+
+  it("does not claim a restart when the daemon is no longer installed", async () => {
+    const { user } = show(
+      { version: "1.0.0", installed_version: "2.0.0", version_mismatch: true },
+      false,
+      false,
+      false,
+    );
+    await user.click(await screen.findByRole("button", { name: "Restart" }));
+    expect(await screen.findByText("The daemon was not restarted. Install it and try again.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Restart requested. If the service is active, its next tick will confirm the version."),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([null, false, 0, "unexpected"])("reports an unknown restart result for %s", async (response) => {
+    const { user } = show({ loaded: false }, false, false, true, false, response);
+    await user.click(await screen.findByRole("button", { name: "Restart" }));
+    expect(await screen.findByText("The restart result is unavailable. Check the daemon status.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Restart requested. If the service is active, its next tick will confirm the version."),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the failed step and its detail alongside the plain failure message", async () => {
