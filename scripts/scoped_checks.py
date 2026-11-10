@@ -11,7 +11,10 @@ only `web/` runs the web checks; changes that touch neither `web/` nor `desktop/
 `make check-fast` without the web app's tests and the managed backend's check, with the type checks added and the unit
 tests narrowed to the ones related to the change (`scripts/related_tests.py`; configuration, the lockfile and
 `conftest.py` cannot be mapped and run all of them); anything else runs `make check-fast` in full. `make check-fast` by
-hand stays the full run. CI always runs the full gate, so nothing goes unchecked, only later.
+hand stays the full run. CI runs reviewed focused workloads and reserves the full suite for release candidates.
+
+For a scoped web push, set WEB_TEST_FILES to a space-separated list of existing repo-relative Vitest files,
+for example `WEB_TEST_FILES=web/src/sound/StreamPlayer.test.tsx git push`. Leave it unset to run all web tests.
 """
 
 import argparse
@@ -113,6 +116,37 @@ WEB_STEPS = [  # WEB_LINT, WEB_TYPES and WEB_TESTS of the Makefile
     f"&web-types={WEB} exec node node_modules/@typescript/native/bin/tsc --noEmit -p .",
     f"&web-tests={WEB} exec vitest run",
 ]
+WEB_TEST_SUFFIXES = {"src": (".test.ts", ".test.tsx"), "e2e": (".test.mjs",)}
+
+
+def web_test_step(files: str | None) -> str:
+    """Build the Vitest step from explicit checkout files, with no shell or Vitest options from the caller.
+
+    Raises:
+        ValueError: If the opt-in is empty or any entry is outside the web test inventory.
+    """
+    if files is None:
+        return WEB_STEPS[-1]
+    targets = []
+    for file in files.split():
+        root, _, relative = file.partition("/")
+        area, _, test = relative.partition("/")
+        if (
+            root != "web"
+            or not test.endswith(WEB_TEST_SUFFIXES.get(area, ()))
+            or any(not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*", part) for part in test.split("/"))
+        ):
+            msg = "WEB_TEST_FILES must list repo-relative web/src/*.test.ts(x) or web/e2e/*.test.mjs files"
+            raise ValueError(msg)
+        path = ROOT / file
+        if not path.is_file() or path.resolve() != path:
+            msg = f"WEB_TEST_FILES must name an existing web test file: {file}"
+            raise ValueError(msg)
+        targets.append(f"./{relative}")
+    if not targets:
+        msg = "WEB_TEST_FILES is empty. Unset it for the default web test run."
+        raise ValueError(msg)
+    return f"{WEB_STEPS[-1]} --maxWorkers=2 {' '.join(targets)}"
 
 
 def is_document(path: str) -> bool:
@@ -157,7 +191,7 @@ def docs_steps(tooling: list[str]) -> list[str]:
     ]
 
 
-def scoped_steps(changed: list[str]) -> list[str] | None:
+def scoped_steps(changed: list[str], *, web_test_files: str | None = None) -> list[str] | None:
     """Steps for a branch of documents, their tooling and web files only, or None when the full gate must run."""
     web = [path for path in changed if path.startswith("web/") and not is_document(path)]
     tooling = [path for path in changed if is_docs_tooling(path)]
@@ -168,7 +202,7 @@ def scoped_steps(changed: list[str]) -> list[str] | None:
     if documents or tooling:
         steps += docs_steps(tooling)
     if web:
-        steps += [f"web-prepare={WEB} prepare", *WEB_STEPS]
+        steps += [f"web-prepare={WEB} prepare", *WEB_STEPS[:-1], web_test_step(web_test_files)]
     return steps
 
 
@@ -315,6 +349,19 @@ def run_early_guards(changed: list[str], *, light: bool = False) -> None:
         run_check(command, timeout=180, light=light)
 
 
+def run_scoped_push(changed: list[str], parser: argparse.ArgumentParser) -> None:
+    """Run the pre-push guards and the docs or web steps when they cover the branch."""
+    light = bool(changed) and all(is_document(path) for path in changed)
+    run_early_guards(changed, light=light)
+    try:
+        steps = scoped_steps(changed, web_test_files=os.environ.get("WEB_TEST_FILES"))
+    except ValueError as error:
+        parser.error(str(error))
+    if steps:
+        command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
+        sys.exit(run_check(command, check=False, timeout=600, light=light).returncode)
+
+
 def main() -> None:
     """Preserve core checks and common policies while selecting independent owning plugin work."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -336,13 +383,7 @@ def main() -> None:
     base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if args.mode == "push":
         changed = sorted({*changed, *changed_paths("fast", base)})
-        light = bool(changed) and all(is_document(path) for path in changed)
-        run_early_guards(changed, light=light)
-        steps = scoped_steps(changed)
-        if steps:
-            command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
-            done = run_check(command, check=False, timeout=600, light=light)
-            sys.exit(done.returncode)
+        run_scoped_push(changed, parser)
         if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
             # Python, scripts, tests and documents: everything of the fast gate but the web app's tests and the managed
             # backend's check, which read nothing of it (the generated client is still checked by web-lint).

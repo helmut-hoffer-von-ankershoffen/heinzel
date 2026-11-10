@@ -130,6 +130,91 @@ def test_web_files_alone_run_the_web_checks_without_python_unit_tests_or_the_man
     assert names(steps) == ["web-prepare", "web-lint", "web-client", "web-types", "web-tests"]
 
 
+@pytest.mark.parametrize(
+    ("selection", "arguments"),
+    [
+        (None, ""),
+        (
+            "web/src/sound/StreamPlayer.test.tsx web/src/sound/stream.test.ts",
+            " --maxWorkers=2 ./src/sound/StreamPlayer.test.tsx ./src/sound/stream.test.ts",
+        ),
+    ],
+)
+def test_web_push_keeps_all_guards_and_only_changes_the_vitest_step(monkeypatch, gate_calls, selection, arguments):
+    gate, calls = gate_calls
+    changed = ["docs/guides/install.md", "web/src/sound/PlayerCard.tsx"]
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: changed)
+    monkeypatch.setenv("WEB_TESTS", "")  # The scoped path does not accept a Make command override.
+    monkeypatch.delenv("WEB_TEST_FILES", raising=False)
+    if selection is not None:
+        monkeypatch.setenv("WEB_TEST_FILES", selection)
+
+    with pytest.raises(SystemExit) as done:
+        scoped.main()
+
+    assert done.value.code == 0
+    [(guard, _), (command, _)] = calls
+    assert guard == [gate, "--timeout", "180", *scoped.early_guard_commands(changed)[0]]
+    assert command == [
+        gate,
+        "--timeout",
+        "600",
+        "uv",
+        "run",
+        "--quiet",
+        "--script",
+        "scripts/steps.py",
+        *scoped.DOCS_STEPS,
+        f"web-prepare={scoped.WEB} prepare",
+        *scoped.WEB_STEPS[:-1],
+        f"&web-tests={scoped.WEB} exec vitest run{arguments}",
+    ]
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        "",
+        " \t ",
+        "--passWithNoTests",
+        "web/src/sound/StreamPlayer.test.tsx;whoami",
+        "web/src/sound/$(whoami).test.ts",
+        "web/src/sound/../sound/StreamPlayer.test.tsx",
+        "/web/src/sound/StreamPlayer.test.tsx",
+        "web/src/sound/*.test.ts",
+        "web/src/sound/PlayerCard.tsx",
+        "web/src/sound/StreamPlayer.test.tsx web/src/missing.test.ts",
+    ],
+)
+def test_invalid_web_push_selection_fails_before_launching_vitest(monkeypatch, gate_calls, capsys, selection):
+    _, calls = gate_calls
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: ["web/src/sound/PlayerCard.tsx"])
+    monkeypatch.setenv("WEB_TEST_FILES", selection)
+
+    with pytest.raises(SystemExit) as done:
+        scoped.main()
+
+    assert done.value.code == 2
+    assert "WEB_TEST_FILES" in capsys.readouterr().err
+    assert calls == []
+
+
+def test_web_push_does_not_accept_a_symlink_as_a_test_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(scoped, "ROOT", tmp_path)
+    outside = tmp_path / "outside.test.ts"
+    outside.touch()
+    alias = tmp_path / "web" / "src" / "alias.test.ts"
+    alias.parent.mkdir(parents=True)
+    alias.symlink_to(outside)
+
+    with pytest.raises(ValueError, match="existing web test file"):
+        scoped.scoped_steps(["web/src/feature.ts"], web_test_files="web/src/alias.test.ts")
+
+
 def test_documents_and_web_files_run_both():
     steps = scoped.scoped_steps(["docs/TEAMS.md", "web/src/index.css"])
     assert "docs" in names(steps)

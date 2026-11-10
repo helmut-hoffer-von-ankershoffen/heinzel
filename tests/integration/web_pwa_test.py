@@ -28,6 +28,8 @@ def client(make_kernel, tmp_path):
         (PUBLIC / "manifest.webmanifest").read_text(encoding="utf-8"), encoding="utf-8"
     )
     (static / "icons" / "icon-192.png").write_bytes((PUBLIC / "icons" / "icon-192.png").read_bytes())
+    for shell in ("offline.html", "boot-retry.js"):
+        (static / shell).write_bytes((PUBLIC / shell).read_bytes())
     app = web.build(make_kernel(builtins=True), port=8000, token="t", static=static, devices=Devices(tmp_path / "d"))
     return TestClient(app, base_url=BASE)
 
@@ -42,6 +44,9 @@ def test_the_manifest_and_the_worker_are_served_fresh_under_the_csp(client):
     csp = worker.headers["content-security-policy"]
     assert "worker-src 'self'" in csp
     assert "manifest-src 'self'" in csp
+    # The shell the worker keeps: never an HTTP-cached copy of an older build when a new worker installs.
+    for shell in ("/offline.html", "/boot-retry.js"):
+        assert client.get(shell).headers["cache-control"] == "no-cache", shell
     assert client.get("/icons/icon-192.png").headers["content-type"] == "image/png"
     revisioned_icon = manifest.json()["icons"][0]["src"]
     assert urlsplit(revisioned_icon).query.startswith("v=")

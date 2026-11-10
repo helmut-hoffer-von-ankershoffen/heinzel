@@ -38,7 +38,7 @@ def test_all_e2e_lanes_keep_workers_and_deadlines_and_readme_runs_only_once(suit
         assert not any(arg.startswith("--ignore=") or arg in SUPERVISED for arg in commands[-1])
 
 
-def test_supervised_is_a_required_matrix_cell_on_the_existing_platforms_and_events():
+def test_supervised_stays_required_in_the_full_release_candidate_matrix():
     jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]
     e2e = jobs["e2e"]
     assert set(e2e["strategy"]["matrix"]) == {"os", "suite"}
@@ -47,7 +47,10 @@ def test_supervised_is_a_required_matrix_cell_on_the_existing_platforms_and_even
         "${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' "
         '&& \'["ubuntu-24.04"]\' || \'["ubuntu-24.04","macos-latest"]\') }}'
     )
-    assert e2e["if"] == "needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'"
+    assert e2e["if"] == (
+        "needs.changes.outputs.full_release == 'true' && "
+        "(needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true')"
+    )
     assert e2e["strategy"]["fail-fast"] is False
     assert e2e["timeout-minutes"] == 15
     assert "continue-on-error" not in e2e
@@ -74,6 +77,15 @@ def test_installed_browser_journey_receives_cached_runtimes_and_linux_host_depen
     browser_target = makefile.partition("test-browser-deps:")[2].partition("# Core E2E lanes")[0]
     assert '"$$(uname -s)" = Linux' in browser_target
     assert "playwright-core install --with-deps chromium webkit" in browser_target
+    assert "continue-on-error" not in installer
+
+
+def test_focused_browser_lane_installs_host_dependencies_before_selected_execution():
+    steps = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]["focused-tests"]["steps"]
+    [installer] = [step for step in steps if step.get("run") == "make test-browser-deps"]
+    [runner] = [step for step in steps if step.get("name") == "Run the exact reviewed selection with fresh evidence"]
+    assert installer["if"] == "matrix.kind == 'e2e'"
+    assert steps.index(installer) < steps.index(runner)
     assert "continue-on-error" not in installer
 
 

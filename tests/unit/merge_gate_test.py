@@ -302,8 +302,17 @@ def test_a_redirect_drops_the_token(monkeypatch):
 
 def test_the_workflow_never_checks_out_the_pull_request():
     text = (ROOT / ".github/workflows/merge-gate.yml").read_text()
-    assert set(yaml.safe_load(text)[True]) == {"workflow_run"}  # YAML reads the key `on` as True
-    assert "ref:" not in text
+    workflow = yaml.safe_load(text)
+    assert set(workflow[True]) == {"workflow_run"}  # YAML reads the key `on` as True
+    checkouts = [
+        step["with"]
+        for job in workflow["jobs"].values()
+        for step in job["steps"]
+        if step.get("uses", "").startswith("actions/checkout@")
+    ]
+    assert checkouts
+    assert all(step["ref"] == "${{ github.workflow_sha }}" for step in checkouts)
+    assert all(step["persist-credentials"] is False for step in checkouts)
     assert "secrets." not in text
 
 
@@ -320,3 +329,17 @@ def test_the_gates_start_after_ci_and_report_the_required_check_names():
     finish = job["steps"][-1]
     assert finish["if"].startswith("always()")
     assert "conclusion=success || conclusion=failure" in finish["run"]
+
+
+def test_full_coverage_reader_refuses_scoped_evidence_disguised_as_legacy_total():
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        archive.writestr("coverage-total.txt", "99.99\n")
+        archive.writestr("evidence.json", '{"type":"pr-affected-production-coverage/v1"}')
+    gate = merge_gate.Gate(
+        "example/repo",
+        read=lambda *_: {"artifacts": [{"archive_download_url": "https://example.invalid/archive"}]},
+        read_bytes=lambda *_: out.getvalue(),
+    )
+    with pytest.raises(merge_gate.UnavailableError, match="bounded whole-project scalar"):
+        gate.measured({"name": "Coverage"}, run_id=1)

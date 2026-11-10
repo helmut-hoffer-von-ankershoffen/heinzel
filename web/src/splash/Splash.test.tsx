@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { acmeTheme, config, shell, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { GIVE_UP_MS, initial, reduce, type SplashEvent } from "./machine";
-import { type ProbeResult, Splash, SplashGone, START, signInFromLink } from "./Splash";
+import { PROBE_TIMEOUT_MS, type ProbeResult, probeServer, Splash, SplashGone, START, signInFromLink } from "./Splash";
 import { createSplashStore } from "./store";
 
 const page = readFileSync(join(process.cwd(), "index.html"), "utf8"); // vitest runs in web/
@@ -186,6 +186,77 @@ describe("the splash", () => {
     expect(reload).toHaveBeenCalledTimes(1);
     expect(JSON.parse(localStorage.getItem("hz.splash") ?? "{}").version).toBe("0.9.22");
     localStorage.clear();
+  });
+
+  it("shows no remembered version while hz cannot be reached: an old build's number is not the one connecting", async () => {
+    // index.html paints the last start's version before the app loads; a phone that cannot reach hz cleared nothing.
+    const shown = () => document.getElementById("splash-version");
+    (shown() as HTMLElement).textContent = "v0.7.30";
+    let calls = 0;
+    mount(async () => (++calls > 2 ? ok : gone));
+    await passes(1);
+    expect(shown()?.textContent).toBe("");
+    await passes(60_000);
+    expect(shown()?.textContent).toBe("v0.9.1"); // hz's own, once it answers
+  });
+
+  it("gives up a question hz never answers, so the next one can reach it, and logs why", async () => {
+    // A dead connection on a VPN: the request neither answers nor fails until it is aborted.
+    const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(
+      (input) =>
+        new Promise((_resolve, reject) => {
+          const signal = input instanceof Request ? input.signal : undefined;
+          signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        }),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    try {
+      let answer: ProbeResult | undefined;
+      void probeServer().then((result) => {
+        answer = result;
+      });
+      await passes(PROBE_TIMEOUT_MS - 1);
+      expect(answer).toBeUndefined();
+      await passes(1);
+      expect(answer).toEqual({ kind: "unreachable" });
+      expect(JSON.parse(String(debug.mock.calls.at(-1)?.[0]))).toEqual({
+        event: "web.splash.probe",
+        operation: "web.splash",
+        step: "probe",
+        phase: "start",
+      });
+      expect(JSON.parse(String(warn.mock.calls.at(-1)?.[0]))).toMatchObject({
+        event: "web.splash.probe",
+        phase: "end",
+        outcome: "error",
+        reason: "timeout",
+        error_type: "AbortError",
+        duration_ms: PROBE_TIMEOUT_MS,
+      });
+    } finally {
+      fetcher.mockRestore();
+      warn.mockRestore();
+      debug.mockRestore();
+    }
+  });
+
+  it("logs an answered question as an ok outcome", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    try {
+      const answer = await probeServer();
+      expect(answer.kind).toBe("ok");
+      expect(JSON.parse(String(info.mock.calls.at(-1)?.[0]))).toMatchObject({
+        event: "web.splash.probe",
+        operation: "web.splash",
+        step: "probe",
+        phase: "end",
+        outcome: "ok",
+      });
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   it("does not reload when hz comes back as the same version", async () => {

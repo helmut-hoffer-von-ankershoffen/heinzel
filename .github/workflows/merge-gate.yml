@@ -40,6 +40,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - id: pull
@@ -76,12 +78,16 @@ jobs:
           PR_NUMBER: ${{ steps.pull.outputs.number }}
         run: uv run --no-build --frozen --script scripts/merge_gate.py sonar
       - id: coverage
-        name: Coverage at this head is not where the badge turns red
+        name: Verify the original workload and applicable coverage evidence
         if: ${{ !cancelled() && steps.start.outcome == 'success' }}
         env:
           PR_NUMBER: ${{ steps.pull.outputs.number }}
-          COVERAGE_CHECK: Coverage
-        run: uv run --no-build --frozen --script scripts/merge_gate.py coverage
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
+          FOCUSED_CI_STORAGE_HOSTS: ${{ vars.FOCUSED_CI_STORAGE_HOSTS }}
+          PYTHONPATH: .
+          UV_PYTHON: "3.14.8"
+        run: uv run --no-build --frozen --script scripts/focused_gate.py
       - name: Report both verdicts; a gate that didn't pass, or didn't run, fails closed
         if: always() && steps.start.outputs.merge_gate != '' && steps.start.outputs.coverage_floor != ''
         env:
@@ -89,13 +95,15 @@ jobs:
           MERGE_GATE_OUTCOME: ${{ steps.sonar.outcome }}
           COVERAGE_FLOOR: ${{ steps.start.outputs.coverage_floor }}
           COVERAGE_FLOOR_OUTCOME: ${{ steps.coverage.outcome }}
+          COVERAGE_VERDICT: ${{ steps.coverage.outputs.verdict }}
         run: |
           for check in MERGE_GATE COVERAGE_FLOOR; do
             id="${!check}"
             outcome_var="${check}_OUTCOME"
             outcome="${!outcome_var}"
             [ "$outcome" = success ] && conclusion=success || conclusion=failure
+            summary="The gate step ended with ${outcome:-no result}. See the linked run."
+            if [ "$check" = COVERAGE_FLOOR ] && [ "$conclusion" = success ]; then summary="$COVERAGE_VERDICT"; fi
             gh api --method PATCH "repos/$GITHUB_REPOSITORY/check-runs/$id" -f status=completed \
-              -f conclusion="$conclusion" -f "output[title]=$conclusion" \
-              -f "output[summary]=The gate step ended with ${outcome:-no result}; its log is in the linked run." >/dev/null
+              -f conclusion="$conclusion" -f "output[title]=$conclusion" -f "output[summary]=$summary" >/dev/null
           done
