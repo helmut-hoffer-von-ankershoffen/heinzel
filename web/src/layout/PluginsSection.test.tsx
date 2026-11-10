@@ -1210,10 +1210,15 @@ describe("PluginGallery", () => {
     if (!pane || !content) throw new Error("Gallery fixture is missing its settings pane");
     vi.spyOn(pane, "getBoundingClientRect").mockReturnValue({ top: 80, bottom: 380 } as DOMRect);
     vi.spyOn(content, "getBoundingClientRect").mockReturnValue({ top: 330 } as DOMRect);
-    vi.spyOn(image, "getBoundingClientRect").mockReturnValue({ bottom: 500 } as DOMRect);
+    const imageRect = vi.spyOn(image, "getBoundingClientRect").mockReturnValue({ top: 400, bottom: 500 } as DOMRect);
     fireEvent.load(image);
     expect(pane.scrollTop).toBe(242);
     expect(open).toHaveFocus();
+    pane.scrollTop = 100;
+    vi.mocked(content.getBoundingClientRect).mockReturnValue({ top: 50 } as DOMRect);
+    imageRect.mockReturnValue({ top: 50, bottom: 200 } as DOMRect);
+    fireEvent.load(image);
+    expect(pane.scrollTop).toBe(62);
   });
 
   it("loads no metadata or images until opened, switches UI/CLI captures and keeps sound external", async () => {

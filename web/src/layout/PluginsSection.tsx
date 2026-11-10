@@ -1267,12 +1267,12 @@ function GalleryContents({ spec }: { spec: string }) {
                         const image = event.currentTarget;
                         const content = image.closest<HTMLElement>("[data-plugin-gallery-content]");
                         const pane = image.closest<HTMLElement>("[data-settings-content]");
-                        if (
-                          content &&
-                          pane &&
-                          image.getBoundingClientRect().bottom > pane.getBoundingClientRect().bottom
-                        ) {
-                          pane.scrollTop += content.getBoundingClientRect().top - pane.getBoundingClientRect().top - 8;
+                        if (content && pane) {
+                          const picture = image.getBoundingClientRect();
+                          const viewport = pane.getBoundingClientRect();
+                          if (picture.top < viewport.top || picture.bottom > viewport.bottom) {
+                            pane.scrollTop += content.getBoundingClientRect().top - viewport.top - 8;
+                          }
                         }
                       }}
                     />
