@@ -1,6 +1,8 @@
 """NotifyService (ADR 0041) with a fake clock and a fake notifier: recording, showing once, the daemon's pop-ups."""
 
+import io
 import json
+import logging
 import stat
 import subprocess
 from datetime import datetime, timedelta
@@ -11,6 +13,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from heinzel import Check, Delivery, Module, Notice, NoticeHelper, NoticeKind, Notifications, Status
+from heinzel.kernel._logging import TextFormatter
 from heinzel.modules.system.notify import NotifyService, NotifySettings
 from heinzel.modules.system.notify._macos import NotifierApp
 from heinzel.modules.system.notify._native import ALLOW, DENIED, HEINZEL, Native
@@ -451,6 +454,35 @@ def heinzel_service(  # noqa: PLR0913 - a test double with switches
         (app.path / "Contents" / "MacOS" / "notifier").write_bytes(b"old app")
     notifier = Native(HEINZEL, str(app.path), clicks=True, app=app)
     return NotifyService(settings, NotifySettings(), ORG, clock=clock, notifier=notifier)
+
+
+def test_native_notifier_warning_is_single_line_and_preserves_retry(settings, clock, tmp_path):
+    diagnostic = "failed:\t\x1b[31m\u202edetails " + "x" * 300 + " end marker"
+    service = heinzel_service(settings, clock, tmp_path, "authorized", posted=f"prior output\n{diagnostic}\n")
+    notice = draft(service)
+    assert notice is not None
+    output = io.StringIO()
+    handler = logging.StreamHandler(output)
+    handler.setFormatter(TextFormatter())
+    logger = logging.getLogger("heinzel.modules.system.notify._service")
+    logger.addHandler(handler)
+    try:
+        assert service.post_native() == 0
+    finally:
+        logger.removeHandler(handler)
+
+    text = output.getvalue()
+    prefix = f'notify.native.post outcome=error notice_id={notice.id} problem="'
+    assert text.removesuffix("\n").isprintable()
+    assert text.startswith(prefix)
+    assert text.endswith('"\n')
+    assert text.count("\n") == 1
+    problem = text[len(prefix) : -2]
+    assert problem.startswith("Heinzel Notifier: failed: [31mdetails ")
+    assert len(problem) == 280
+    assert "end marker" not in problem
+    assert service.store.native_problem() == f"Heinzel Notifier: {diagnostic}"
+    assert service.due() == [notice]
 
 
 @pytest.mark.macos_specific

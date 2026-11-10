@@ -1,6 +1,10 @@
 """Focused coverage preserves independent branch opportunities and both numeric gates."""
 
 import json
+import os
+import subprocess
+import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -9,6 +13,7 @@ pytestmark = pytest.mark.unit
 PRODUCTION = "src/heinzel/new.py"
 ALREADY_USED = "src/heinzel/existing.py"
 CONFIG = (Path(__file__).resolve().parents[2] / "pyproject.toml").read_bytes()
+REPO = Path(__file__).resolve().parents[2]
 
 
 def _row(lines, missing, branches=(), missing_branches=()):
@@ -121,6 +126,99 @@ def test_producer_reports_unimported_module_from_real_branch_data(coverage, scop
     assert rows[PRODUCTION]["missing_lines"] == [1, 2, 3, 4]
     assert rows[PRODUCTION]["missing_branches"] == [[2, 3], [2, 4]]
     assert rows[ALREADY_USED]["executed_lines"] == [1]
+
+
+def test_analysis_preserves_coverage_of_instrumented_xdist_workers(tmp_path):
+    """Both real analysis paths must leave an outer measured worker's data intact."""
+    marker = tmp_path / "worker_marker.py"
+    marker.write_text(
+        "def before_opportunities():\n    return 11\n\n"
+        "def after_opportunities():\n    return 12\n\n"
+        "def before_instrument():\n    return 13\n\n"
+        "def after_instrument():\n    return 14\n"
+    )
+    config = tmp_path / "pyproject.toml"
+    config.write_text(
+        f"[tool.coverage.run]\nsource = [{json.dumps(str(tmp_path))}]\n"
+        'branch = true\nparallel = true\npatch = ["subprocess"]\n'
+    )
+    probe = tmp_path / "test_outer_worker_probe.py"
+    probe.write_text(
+        textwrap.dedent(f"""
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        import worker_marker
+        from scripts import focused_coverage as focused
+        from scripts.ci_workload import FocusedPlan
+        from scripts.focused_plan import Scope
+
+        CONFIG = Path({str(REPO / "pyproject.toml")!r}).read_bytes()
+        PATH = "src/heinzel/example.py"
+        SOURCE = b"def value():\\n    return 42\\n"
+        WORKLOAD = FocusedPlan("pull_request", "refs/pull/1/merge", "a", "b", "c", ("Focused tests (python)",))
+        SCOPE = Scope(WORKLOAD, "d", "e", {{}}, {{PATH: "source"}}, "config", {{}}, {{"python": ()}}, {{}}, "d")
+
+        def test_opportunities(monkeypatch):
+            assert worker_marker.before_opportunities() == 11
+            monkeypatch.setattr(focused, "git", lambda *_args: SOURCE)
+            rows = focused.source_opportunities(SCOPE, CONFIG)
+            assert rows[PATH]["missing_lines"] == [1, 2]
+            assert worker_marker.after_opportunities() == 12
+
+        def test_instrument(monkeypatch, tmp_path):
+            assert worker_marker.before_instrument() == 13
+            monkeypatch.chdir(tmp_path)
+            module = tmp_path / PATH
+            module.parent.mkdir(parents=True)
+            module.write_bytes(SOURCE)
+            (module.parent / "__init__.py").touch()
+            sample = tmp_path / "sample_test.py"
+            sample.write_text("def test_sample():\\n    from heinzel.example import value\\n"
+                              "    assert value() == 42\\n")
+            monkeypatch.setattr(focused, "git", lambda *_args: CONFIG)
+            def execute(args, env):
+                subprocess.run([sys.executable, "-m", *args[3:]], check=True, timeout=30,
+                               env={{**os.environ, **env, "PYTHONPATH": str(tmp_path / "src"),
+                                     "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}}, capture_output=True)
+            monkeypatch.setattr(focused, "_execute", execute)
+            focused._instrument(SCOPE, ["uv", "run", "--no-sync", "pytest", str(sample)], tmp_path, {{}})
+            assert (tmp_path / focused.MEASUREMENT).is_file()
+            assert worker_marker.after_instrument() == 14
+    """)
+    )
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join((str(REPO), str(tmp_path))),
+        "COVERAGE_FILE": str(tmp_path / ".coverage"),
+        "PYTEST_ADDOPTS": "",
+    }
+    run = [sys.executable, "-m", "coverage"]
+    subprocess.run(
+        [*run, "run", f"--rcfile={config}", "-m", "pytest", "-n", "2", "-q", str(probe)],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        timeout=90,
+    )
+    subprocess.run(
+        [*run, "combine", "--rcfile", str(config)], cwd=tmp_path, env=env, check=True, capture_output=True, timeout=30
+    )
+    report = tmp_path / "outer-coverage.json"
+    subprocess.run(
+        [*run, "json", "--rcfile", str(config), "-o", str(report)],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    files = json.loads(report.read_text())["files"]
+    measured = next(row for name, row in files.items() if Path(name).name == marker.name)
+    assert {2, 5, 8, 11} <= set(measured["executed_lines"])
 
 
 def test_managed_runner_compiles_but_executes_only_the_selected_test(coverage, tmp_path):

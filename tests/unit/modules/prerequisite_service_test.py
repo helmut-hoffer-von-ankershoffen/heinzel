@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Never
@@ -10,6 +11,7 @@ import pytest
 
 from heinzel import HeinzelError, Homebrew, Kernel, ManualInstall, Module, PrerequisiteLet, Progress
 from heinzel.kernel import ProcessOutcome
+from heinzel.modules.system.prerequisite import prerequisites as prerequisite_health
 from heinzel.modules.system.prerequisite._host import ToolHost
 from heinzel.modules.system.prerequisite._service import BREW_FLAGS, ToolPrerequisites
 from tests._prerequisite_machine import BREW, Machine
@@ -39,26 +41,33 @@ def engine(machine: Machine, kernel_factory: Callable[..., Kernel], **modules: M
     return ToolPrerequisites(kernel_factory(**modules), Progress(), machine.host())
 
 
-def aliased_apple_launcher(
+def aliased_apple_launcher(  # noqa: C901
     tmp_path: Path, *, fallback: bool = False, developer_tools: bool = False, alias_kind: str = "symlink"
 ) -> tuple[ToolHost, list[list[str]], Path, Path]:
-    """Real private files and filesystem aliases, with every executable call intercepted."""
+    """Private files with real or mapped aliases; intercept every executable call."""
     system, alias, alternative = tmp_path / "system" / "tool", tmp_path / "alias" / "tool", tmp_path / "real" / "tool"
     for directory in (system.parent, alternative.parent):
         directory.mkdir()
     system.write_text("tool 3.0")
     system.chmod(0o755)
+    case_alias_simulated = False
     if alias_kind == "case":
         alias = tmp_path / "SYSTEM" / "tool"
         if not alias.is_file():
-            pytest.skip("The private fixture filesystem is case sensitive.")
+            if sys.platform == "darwin":
+                message = "The macOS case-alias lane requires a case-insensitive test filesystem."
+                raise AssertionError(message)
+            case_alias_simulated = True
     else:
         alias.parent.mkdir()
         if alias_kind == "hardlink":
             alias.hardlink_to(system)
         else:
             alias.symlink_to(system)
-    assert Path(alias).samefile(system)
+    if case_alias_simulated:
+        assert not Path(alias).is_file()
+    else:
+        assert Path(alias).samefile(system)
     if fallback:
         alternative.write_text("tool 4.0")
         alternative.chmod(0o755)
@@ -68,17 +77,48 @@ def aliased_apple_launcher(
         del options
         commands.append(command)
         if command[0] == "/usr/bin/xcode-select":
-            return ProcessOutcome(0 if developer_tools else 2, "", "")
-        return ProcessOutcome(0, Path(command[0]).read_text(), "")
+            return ProcessOutcome(0 if developer_tools else 2, "/Library/Developer\n" if developer_tools else "", "")
+        return ProcessOutcome(
+            0, system.read_text() if command[0].startswith("/Library/Developer/") else Path(command[0]).read_text(), ""
+        )
 
     def same_file(path: str, reference: str) -> bool:
         # The virtual system launcher maps to a private file; no host tool is inspected or executed.
-        return Path(path).samefile(system if reference == "/usr/bin/tool" else reference)
+        if developer_tools and path == "/Library/Developer/usr/bin/tool" and reference == "/usr/bin/tool":
+            return False
+        candidate = Path(path)
+        expected = system if reference == "/usr/bin/tool" else Path(reference)
+        if case_alias_simulated and candidate.as_posix().casefold() == str(alias).casefold():
+            candidate = system
+        if case_alias_simulated and expected.as_posix().casefold() == str(alias).casefold():
+            expected = system
+        return candidate.samefile(expected)
+
+    def is_executable(path: str) -> bool:
+        return (
+            Path(path).is_file()
+            or (case_alias_simulated and Path(path).as_posix().casefold() == str(alias).casefold())
+            or (developer_tools and path == "/Library/Developer/usr/bin/tool")
+        )
+
+    resolvable = {str(alias), str(alternative)} if fallback else {str(alias)}
+    if developer_tools:
+        resolvable.add("/Library/Developer/usr/bin/tool")
+    which = lambda name, path: next(  # noqa: E731
+        (
+            str(Path(directory) / name)
+            for directory in path.split(os.pathsep)
+            if str(Path(directory) / name) in resolvable
+        ),
+        None,
+    )
 
     host = ToolHost(
         platform="darwin",
         environment={"PATH": str(alias.parent), "HOME": str(tmp_path)},
         execute=execute,
+        which=which,
+        is_executable=is_executable,
         same_file=same_file,
         brew_locations=(str(alternative.parent / "brew"),) if fallback else (),
     )
@@ -147,9 +187,84 @@ def test_a_no_process_check_leaves_an_apple_developer_shim_unverified(make_kerne
 
     assert machine.commands == []
     [check] = report.checks
-    assert not report.ready
-    assert (check.status, check.path, check.automatic) == ("failed", None, False)
+    if developer_tools:
+        assert report.ready
+        assert (check.status, check.path, check.automatic) == (
+            "available",
+            "/Library/Developer/CommandLineTools/usr/bin/git",
+            False,
+        )
+    else:
+        assert not report.ready
+        assert (check.status, check.path, check.automatic) == ("failed", None, False)
+        assert "not verified" in check.detail
+
+
+def test_doctor_uses_a_present_command_line_tools_git_without_starting_processes(make_kernel):
+    machine = Machine(present={"/usr/bin/git": "git version 2.39.5"})
+    manager = engine(machine, make_kernel, example=owner(tool("git", requires_apple_developer_tools=True)))
+
+    [check] = prerequisite_health(manager)
+
+    assert (check.status.value, check.detail, check.fix) == (
+        "up",
+        "git: /Library/Developer/CommandLineTools/usr/bin/git",
+        "",
+    )
+    assert machine.commands == []
+
+
+def test_doctor_reports_an_unverified_apple_launcher_without_starting_processes(make_kernel):
+    machine = Machine(present={"/usr/bin/git": "git version 2.39.5"})
+    machine.developer_tools = False
+    manager = engine(machine, make_kernel, example=owner(tool("git", requires_apple_developer_tools=True)))
+
+    [check] = prerequisite_health(manager)
+
+    assert check.status.value == "degraded"
+    assert "Apple's `/usr/bin/git` launcher" in check.detail
     assert "not verified" in check.detail
+    assert "Run `hz system prerequisite check --owner example`" in check.detail
+    assert "Git is missing" not in check.detail
+    assert check.fix == "hz system prerequisite check --owner example"
+    assert machine.commands == []
+
+
+@pytest.mark.parametrize("failure", ["relative_directory", "launcher_alias"])
+def test_explicit_apple_check_never_runs_an_unverified_payload(make_kernel, failure: str):
+    machine = Machine(present={"/usr/bin/git": "git version 2.39.5"})
+    if failure == "relative_directory":
+        machine.developer_directory = "Developer/CommandLineTools"
+    else:
+        machine.developer_payload_is_launcher = True
+    machine.command_line_tools_payload = False
+
+    [check] = (
+        engine(machine, make_kernel, example=owner(tool("git", requires_apple_developer_tools=True))).check().checks
+    )
+
+    assert check.status == "missing"
+    assert machine.commands == [["/usr/bin/xcode-select", "-p"]]
+
+
+def test_unknown_developer_payload_identity_never_authorizes_homebrew_install(make_kernel):
+    machine = Machine(present={"/usr/bin/git": "git version 2.39.5", BREW: ""})
+    machine.developer_payload_identity_unreadable = True
+    machine.command_line_tools_payload = False
+    manager = engine(machine, make_kernel, example=owner(tool("git", requires_apple_developer_tools=True)))
+
+    [check] = manager.check().checks
+
+    assert check.status == "failed"
+    assert check.automatic is False
+    assert machine.commands == [["/usr/bin/xcode-select", "-p"]]
+    machine.commands.clear()
+
+    [check] = manager.install().checks
+
+    assert check.status == "failed"
+    assert check.automatic is False
+    assert machine.commands == []
 
 
 def test_a_no_process_check_can_select_a_real_copy_instead_of_a_declared_apple_launcher(make_kernel):
@@ -237,15 +352,15 @@ def test_real_file_aliases_cannot_bypass_launcher_checks_or_final_lookup(
 def test_a_verified_launcher_keeps_its_selected_alias_path_for_execution_and_reporting(
     make_kernel, tmp_path, alias_kind: str
 ):
-    host, commands, alias, _ = aliased_apple_launcher(tmp_path, developer_tools=True, alias_kind=alias_kind)
+    host, commands, _alias, _ = aliased_apple_launcher(tmp_path, developer_tools=True, alias_kind=alias_kind)
 
     report = ToolPrerequisites(
         make_kernel(example=owner(tool(requires_apple_developer_tools=True))), Progress(), host
     ).check()
 
     assert report.ready
-    assert report.checks[0].path == host.which("tool", host.search_path) == str(alias)
-    assert commands == [["/usr/bin/xcode-select", "-p"], [str(alias), "--version"]]
+    assert report.checks[0].path == host.which("tool", host.search_path) == "/Library/Developer/usr/bin/tool"
+    assert commands == [["/usr/bin/xcode-select", "-p"], ["/Library/Developer/usr/bin/tool", "--version"]]
 
 
 @pytest.mark.parametrize("problem", [FileNotFoundError, PermissionError, OSError])
@@ -769,6 +884,7 @@ def test_apple_stubs_are_never_run_without_the_command_line_tools(make_kernel):
     [check] = engine(machine, make_kernel, example=owner(tool(requires_apple_developer_tools=True))).check().checks
 
     assert check.status == "missing"
+    assert "did not confirm an active developer directory" in check.detail
     assert machine.commands == [["/usr/bin/xcode-select", "-p"]]
 
 
@@ -784,6 +900,7 @@ def test_apple_stubs_run_once_the_command_line_tools_exist(make_kernel):
 
 def test_a_missing_xcode_select_counts_as_no_command_line_tools(make_kernel):
     machine = Machine(present={"/usr/bin/tool": "tool 2.39"})
+    machine.developer_tools = False
     machine.unstartable.add("xcode-select")
 
     assert (
