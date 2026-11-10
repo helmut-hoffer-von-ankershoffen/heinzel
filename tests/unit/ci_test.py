@@ -93,6 +93,11 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "for check in merge-gate coverage-floor": "reports the gates as check runs on the pull request's head",
         "for check in MERGE_GATE COVERAGE_FLOOR": "completes both check runs, failing closed",
     },
+    "one-shot-focused-reader-recovery.yml": {
+        "uv run --script scripts/one_shot_focused_reader_recovery.py": (
+            "one-shot protected evidence judge and owned-check cleanup require the Actions token and pinned checkouts"
+        ),
+    },
     "focused-job.yml": {
         '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
         "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
