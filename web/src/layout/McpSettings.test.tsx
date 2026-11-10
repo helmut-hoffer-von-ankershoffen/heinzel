@@ -22,7 +22,7 @@ it("reports the missing installed host without showing action buttons", async ()
   renderAt("/doctor?settings=mcp-connections");
   const page = await screen.findByRole("region", { name: "MCP connections" });
   expect(await within(page).findByText(/This server has no host connection/)).toBeVisible();
-  expect(within(page).queryByRole("button")).not.toBeInTheDocument();
+  expect(within(page).queryByRole("button", { name: /Prepare (Start|Check|Stop|Install)/ })).not.toBeInTheDocument();
 });
 
 it("offers ordinary project setup without claiming a client connection", async () => {
@@ -31,13 +31,44 @@ it("offers ordinary project setup without claiming a client connection", async (
   renderAt("/doctor?settings=mcp-connections");
   const page = await screen.findByRole("region", { name: "MCP connections" });
   await user.click(within(page).getByText("Set up a project client"));
-  for (const client of ["claude", "codex", "cursor"]) {
-    expect(
-      within(page).getByText(`hz system serve mcp-install-project --client ${client} --project "<project-path>"`),
-    ).toBeVisible();
-  }
+  const copy = within(page).getByRole("button", { name: "Copy install command" });
+  expect(copy).toBeDisabled();
+  await user.selectOptions(within(page).getByLabelText("Client"), "codex");
+  await user.type(within(page).getByLabelText("Absolute project path"), "/fictional/a'b $(not-run)");
+  const command = "hz system serve mcp-install-project --client codex --project '/fictional/a'\\''b $(not-run)'";
+  expect(within(page).getByText(command)).toBeVisible();
+  await user.click(copy);
+  expect(await navigator.clipboard.readText()).toBe(command);
+  expect(within(page).getByText(/Command copied\. Run it in your terminal/)).toBeVisible();
+  await user.clear(within(page).getByLabelText("Absolute project path"));
+  await user.type(within(page).getByLabelText("Absolute project path"), "relative");
+  expect(copy).toBeDisabled();
+  expect(within(page).queryByText(/Command copied\. Run it in your terminal/)).not.toBeInTheDocument();
   expect(within(page).getByText(/client starts and stops its own server/)).toBeVisible();
   expect(within(page).getAllByText(/Connection not checked/)).toHaveLength(3);
+});
+
+it("uses the native project picker only after client selection and reports the observed result", async () => {
+  const install = vi.fn(async () => true);
+  vi.stubGlobal("heinzelDesktop", { mcpProjectInstall: install });
+  try {
+    mockApi({ ...shell, "/api/mcp/lifecycle": { planning_available: false } });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=mcp-connections");
+    const page = await screen.findByRole("region", { name: "MCP connections" });
+    await user.click(within(page).getByText("Set up a project client"));
+    const action = within(page).getByRole("button", { name: "Choose project and install" });
+    expect(action).toBeDisabled();
+    await user.selectOptions(within(page).getByLabelText("Client"), "cursor");
+    await user.click(action);
+    expect(install).toHaveBeenCalledExactlyOnceWith("cursor");
+    expect(
+      await within(page).findByText("Project configuration created. Client connection not checked."),
+    ).toBeVisible();
+    expect(within(page).getAllByText(/Connection not checked/)).toHaveLength(3);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 it("reads authenticated observations and sends only the prepared locator to native handoff", async () => {

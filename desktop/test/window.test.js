@@ -65,7 +65,8 @@ function quitHarness(result, rejects = false) {
     initializeDesktopIdentity: () => true,
     createInstanceLifecycle: () => ({ acquire: () => true }),
     createMiniBrowser: () => ({ handle() {}, closeAll() {} }),
-    createLifecycleHandler: () => () => {}, createMcpHandoffHandler, createOwnedCli: () => owned,
+    createLifecycleHandler: () => () => {}, createMcpHandoffHandler, createMcpProjectHandler: () => () => {},
+    createOwnedCli: () => owned,
     stopWithReport, shouldRefresh,
     installSignalQuit: (options) => installSignalQuit({ ...options, setTimer: () => ({ unref() {} }) }),
   });

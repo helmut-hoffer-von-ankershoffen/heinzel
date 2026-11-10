@@ -23,7 +23,7 @@ class StandardClient(StrEnum):
     CURSOR = "cursor"
 
 
-def install_project(client: StandardClient, project: Path) -> Path:
+def install_project(client: StandardClient, project: Path, *, expected_identity: tuple[int, int] | None = None) -> Path:
     """Create a new project config; never replace an existing file or follow its final links.
 
     Raises:
@@ -48,6 +48,10 @@ def install_project(client: StandardClient, project: Path) -> Path:
         child = None
         try:
             directory = os.open(project, flags)
+            stat = os.fstat(directory)
+            if expected_identity is not None and (stat.st_dev, stat.st_ino) != expected_identity:
+                msg = "The selected project changed. Choose it again."
+                raise HeinzelError(msg)
             if folder:
                 # The subsequent no-follow open validates an existing entry.
                 with suppress(FileExistsError):

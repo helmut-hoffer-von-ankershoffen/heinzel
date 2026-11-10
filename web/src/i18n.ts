@@ -162,7 +162,16 @@ const en = {
   "mcpSettings.clientNotChecked": "Connection not checked",
   "mcpSettings.projectSetup": "Set up a project client",
   "mcpSettings.projectSetupHelp":
-    "In a terminal, replace <project-path> with your project folder and run the command for your client. This creates a new configuration only when one does not already exist.",
+    "Choose a client. To use a terminal, enter an absolute project path, copy the command, and run it there. Installation creates a configuration only when one does not already exist.",
+  "mcpSettings.projectClient": "Client",
+  "mcpSettings.projectChoose": "Choose a client",
+  "mcpSettings.projectInstall": "Choose project and install",
+  "mcpSettings.projectInstalled": "Project configuration created. Client connection not checked.",
+  "mcpSettings.projectInstallUncertain": "Installation could not be confirmed. Check the project before trying again.",
+  "mcpSettings.projectPath": "Absolute project path",
+  "mcpSettings.projectCopy": "Copy install command",
+  "mcpSettings.projectCopied": "Command copied. Run it in your terminal to create the configuration.",
+  "mcpSettings.projectCopyError": "Could not copy the command. Select it above to copy it.",
   "mcpSettings.projectSetupLifecycle":
     "Trust or approve the project in your client when asked. The client starts and stops its own server; this setup does not verify a connection.",
   "mcpSettings.clientEvidence":

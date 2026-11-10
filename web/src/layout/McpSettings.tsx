@@ -46,16 +46,7 @@ export function McpSettings() {
         <p>{t("mcpSettings.clientEvidence")}</p>
         <details>
           <summary className="cursor-pointer">{t("mcpSettings.projectSetup")}</summary>
-          <p className="mt-2">{t("mcpSettings.projectSetupHelp")}</p>
-          <ul className="mt-2 space-y-1">
-            {(["claude", "codex", "cursor"] as const).map((client) => (
-              <li key={client}>
-                <span>{t(`mcpSettings.clientName.${client}`)}: </span>
-                <code>{`hz system serve mcp-install-project --client ${client} --project "<project-path>"`}</code>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2">{t("mcpSettings.projectSetupLifecycle")}</p>
+          <ProjectSetup />
         </details>
       </section>
       {availability.isPending && <p role="status">{t("mcpSettings.loading")}</p>}
@@ -113,6 +104,103 @@ export function McpSettings() {
         </>
       )}
     </section>
+  );
+}
+
+function ProjectSetup() {
+  const [client, setClient] = useState<"" | "claude" | "codex" | "cursor">("");
+  const [project, setProject] = useState("");
+  const [copied, setCopied] = useState<"copied" | "error" | null>(null);
+  const [installed, setInstalled] = useState<"pending" | "created" | "uncertain" | null>(null);
+  const desktop = (
+    window as Window & {
+      heinzelDesktop?: { mcpProjectInstall?: (client: string) => Promise<boolean> };
+    }
+  ).heinzelDesktop;
+  const valid =
+    client !== "" &&
+    project.startsWith("/") &&
+    !Array.from(project).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127);
+  const command = valid
+    ? `hz system serve mcp-install-project --client ${client} --project '${project.replaceAll("'", "'\\''")}'`
+    : "";
+  return (
+    <div className="mt-2 space-y-2">
+      <p>{t("mcpSettings.projectSetupHelp")}</p>
+      <label className="flex flex-col gap-1">
+        {t("mcpSettings.projectClient")}
+        <select
+          className="h-9 rounded-lg border border-border bg-input px-2"
+          disabled={installed === "pending"}
+          value={client}
+          onChange={(event) => {
+            const value = event.target.value;
+            setClient(value === "claude" || value === "codex" || value === "cursor" ? value : "");
+            setCopied(null);
+            setInstalled(null);
+          }}
+        >
+          <option value="">{t("mcpSettings.projectChoose")}</option>
+          {(["claude", "codex", "cursor"] as const).map((name) => (
+            <option key={name} value={name}>
+              {t(`mcpSettings.clientName.${name}`)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {desktop?.mcpProjectInstall && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!client || installed === "pending"}
+          onClick={async () => {
+            setInstalled("pending");
+            try {
+              setInstalled((await desktop.mcpProjectInstall?.(client)) ? "created" : null);
+            } catch {
+              setInstalled("uncertain");
+            }
+          }}
+        >
+          {t("mcpSettings.projectInstall")}
+        </Button>
+      )}
+      {installed === "created" && <p role="status">{t("mcpSettings.projectInstalled")}</p>}
+      {installed === "uncertain" && <p role="alert">{t("mcpSettings.projectInstallUncertain")}</p>}
+      <label className="flex flex-col gap-1">
+        {t("mcpSettings.projectPath")}
+        <input
+          className="h-9 rounded-lg border border-border bg-input px-2"
+          value={project}
+          maxLength={4096}
+          onChange={(event) => {
+            setProject(event.target.value);
+            setCopied(null);
+          }}
+        />
+      </label>
+      {command && <code className="block break-all rounded-lg bg-accent p-2">{command}</code>}
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={!valid}
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(command);
+            setCopied("copied");
+          } catch {
+            setCopied("error");
+          }
+        }}
+      >
+        {t("mcpSettings.projectCopy")}
+      </Button>
+      {copied === "copied" && <p role="status">{t("mcpSettings.projectCopied")}</p>}
+      {copied === "error" && <p role="alert">{t("mcpSettings.projectCopyError")}</p>}
+      <p>{t("mcpSettings.projectSetupLifecycle")}</p>
+    </div>
   );
 }
 

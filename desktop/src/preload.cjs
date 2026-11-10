@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
   browser: (request) => ipcRenderer.invoke("hz:browser", request),
   lifecycle: () => ipcRenderer.invoke("hz:lifecycle"),
   mcpHandoff: (id) => ipcRenderer.invoke("hz:mcp-handoff", id),
+  mcpProjectInstall: (client) => ipcRenderer.invoke("hz:mcp-project-install", client),
   onFullscreen: (callback) => {
     const listener = (_event, full) => callback(full === true);
     ipcRenderer.on("hz:fullscreen", listener);

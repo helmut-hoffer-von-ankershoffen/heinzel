@@ -74,3 +74,20 @@ def test_symlinked_config_file_is_not_followed(make_kernel, tmp_path):
     )
     assert result.exit_code != 0
     assert target.read_text() == "untouched"
+
+
+def test_native_identity_mismatch_never_creates_configuration(make_kernel, tmp_path):
+    info = tmp_path.stat()
+    runner = CliRunner()
+    app = build(make_kernel(builtins=True))
+    args = ["system", "serve", "mcp-install-project", "--client", "claude", "--project", str(tmp_path)]
+    mismatch = runner.invoke(
+        app, [*args, "--expected-device", str(info.st_dev), "--expected-inode", str(info.st_ino + 1)]
+    )
+    assert mismatch.exit_code != 0
+    assert not (tmp_path / ".mcp.json").exists()
+    incomplete = runner.invoke(app, [*args, "--expected-device", str(info.st_dev)])
+    assert incomplete.exit_code != 0
+    assert not (tmp_path / ".mcp.json").exists()
+    matched = runner.invoke(app, [*args, "--expected-device", str(info.st_dev), "--expected-inode", str(info.st_ino)])
+    assert matched.exit_code == 0, matched.output

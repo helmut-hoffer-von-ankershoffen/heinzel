@@ -5,6 +5,7 @@ import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createMcpHandoffHandler } from "./mcp-handoff-ipc.js";
+import { createMcpProjectHandler, installMcpProject } from "./mcp-project-ipc.js";
 import { createMiniBrowser } from "./mini-browser.js";
 import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
 import { createNativePermissions } from "./native-permissions.js";
@@ -122,6 +123,15 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     connection: () => (stopping || quitting ? null : instance.currentConnection()),
     prompt: (owner, options) => dialog.showMessageBox(owner, options),
     copy: (command) => clipboard.writeText(command),
+  }));
+  ipcMain.handle("hz:mcp-project-install", createMcpProjectHandler({
+    windows,
+    fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+    connection: () => (stopping || quitting ? null : instance.currentConnection()),
+    choose: (owner) => dialog.showOpenDialog(owner, { properties: ["openDirectory"] }),
+    prompt: (owner, options) => dialog.showMessageBox(owner, options),
+    install: (client, project, device, inode) =>
+      installMcpProject(app.isPackaged ? installedCli() : "hz", client, project, device, inode),
   }));
   let serviceStarted = false;
   let unexpectedExitReported = false;

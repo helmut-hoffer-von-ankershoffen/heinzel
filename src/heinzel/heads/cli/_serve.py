@@ -308,6 +308,8 @@ def _add_mcp_project_install(serve: typer.Typer, footer: str | None, err_console
     def mcp_install_project(
         client: Annotated[ProjectMcpClient, typer.Option(help="Client whose project configuration to create.")],
         project: Annotated[Path, typer.Option(help="Existing project directory; no global configuration is changed.")],
+        expected_device: Annotated[int | None, typer.Option(hidden=True)] = None,
+        expected_inode: Annotated[int | None, typer.Option(hidden=True)] = None,
     ) -> None:
         """Create a new project MCP config; existing configs are never replaced.
 
@@ -318,8 +320,14 @@ def _add_mcp_project_install(serve: typer.Typer, footer: str | None, err_console
         """
         from heinzel.heads.mcp._standard_project import StandardClient, install_project  # noqa: PLC0415
 
+        if (expected_device is None) != (expected_inode is None):
+            err_console.print(message("Can't install:", "The selected project identity is incomplete."))
+            raise typer.Exit(2)
+        identity = (
+            (expected_device, expected_inode) if expected_device is not None and expected_inode is not None else None
+        )
         try:
-            path = install_project(StandardClient(client.value), project)
+            path = install_project(StandardClient(client.value), project, expected_identity=identity)
         except HeinzelError as exc:
             err_console.print(message("Can't install:", str(exc)))
             raise typer.Exit(1) from None
