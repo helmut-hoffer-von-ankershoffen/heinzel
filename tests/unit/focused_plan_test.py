@@ -57,6 +57,27 @@ def git_objects(focused_plan, monkeypatch):
     monkeypatch.setattr(focused_plan, "git", lambda *_args: f"{MERGE} {BASE} {HEAD}".encode())
 
 
+def test_reviewed_plan_accepts_hyphenated_owning_web_paths(focused_plan, git_objects):
+    paths = ["web/src/test/choices-standards.test.ts", "web/src/lib/pane-actions-standards.test.ts"]
+    assert focused_plan._selections({"selection": {"web": paths}}, MERGE) == {"web": tuple(paths)}
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "-web/src/test/example.test.ts",
+        "web/-option.test.ts",
+        "web/src/../outside.test.ts",
+        "web/src/test/example.test.ts;id",
+        "tests/unit/example-test.py",
+        "web/src/test/not-a-test.ts",
+    ],
+)
+def test_reviewed_plan_rejects_unsafe_or_non_owning_hyphenated_paths(focused_plan, git_objects, path):
+    with pytest.raises(focused_plan.CandidateError):
+        focused_plan._selections({"selection": {"web": [path]}}, MERGE)
+
+
 def test_reviewed_tree_can_be_provisioned_before_pr_number_and_merge_sha_exist(focused_plan, git_objects):
     source, plan = _input(focused_plan, "pull_request", "refs/pull/5/merge", focused_plan.PREOPEN_PR_REF)
     scope = focused_plan.resolve(source, MERGE, json.dumps({f"pull_request:{HEAD}": plan}))
@@ -64,6 +85,18 @@ def test_reviewed_tree_can_be_provisioned_before_pr_number_and_merge_sha_exist(f
     assert scope.commit == MERGE
     assert scope.tree == TREE
     assert scope.workload.ref == "refs/pull/5/merge"
+
+
+def test_only_canonical_python_lane_accepts_the_expanded_selection(focused_plan, git_objects):
+    ids = [f"tests/unit/ci_test.py::test_case_{i}" for i in range(33)]
+    assert focused_plan._selections({"selection": {"python": ids[:32]}}, MERGE)["python"] == tuple(ids[:32])
+    with pytest.raises(focused_plan.CandidateError, match="broad focused lane python"):
+        focused_plan._selections({"selection": {"python": ids}}, MERGE)
+    for lane in ("python312", "python315", "macos", "macos-notifier", "web", "managed", "browser", "macos-browser"):
+        with pytest.raises(focused_plan.CandidateError, match="broad focused lane"):
+            focused_plan._selections({"selection": {lane: ids[:11]}}, MERGE)
+    with pytest.raises(focused_plan.CandidateError, match="duplicate selection"):
+        focused_plan._selections({"selection": {"python": ids[:31] + ids[:1]}}, MERGE)
 
 
 @pytest.mark.parametrize(
