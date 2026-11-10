@@ -216,8 +216,15 @@ def test_granted_read_fences_code_owner_turn_and_model_arguments(make_kernel, tm
         stranger = CallIdentity(
             Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read"})
         )
-        with current.using(stranger), pytest.raises(HeinzelError, match="owner cannot be verified"):
-            HostToolCatalog(kernel, current, crud, session, allowed, verified_code=lambda _: "a" * 64)
+        with pytest.raises(HeinzelError, match="owner cannot be verified"):
+            HostToolCatalog(
+                kernel,
+                CurrentUser(tmp_path / "unbound-identity"),
+                crud,
+                session,
+                allowed,
+                verified_code=lambda _: "a" * 64,
+            )
         with current.using(stranger), pytest.raises(HeinzelError, match="different owner"):
             catalog.preview()
         with current.using(stranger), pytest.raises(HeinzelError, match="different owner"):
