@@ -1,4 +1,4 @@
-# Review draft outside .github/workflows. The manifest holds execution pending source repair and review.
+# Review draft outside .github/workflows. The manifest holds execution pending the protected-base repin.
 name: Focused 683 bootstrap evidence
 on:
   push:
@@ -8,7 +8,7 @@ jobs:
   focused:
     if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.run_attempt == '1'
     name: Focused 683 ${{ matrix.lane }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.lane == 'macos' && 'macos-latest' || 'ubuntu-24.04' }}
     timeout-minutes: 35
     permissions:
       contents: read
@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [python, python315, web, structural, security, sonar]
+        lane: [python, python315, macos, web, structural, security, sonar]
     env:
       REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_683_HELPER_SHA }}
       UV_FROZEN: "1"
@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 8558755d5144280e92fe4975875dd7aee3807f51
+          ref: e79108052f6d4071d1b0bb802c758d47c5aa3a33
           path: candidate
           fetch-depth: 0
           persist-credentials: false

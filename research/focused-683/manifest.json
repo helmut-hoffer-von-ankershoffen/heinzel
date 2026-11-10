@@ -8,13 +8,12 @@
   "current_test_merge_tree": "1678ed0295195723ae341f350f2c689dfdaa1506",
   "base_ref": "refs/heads/main",
   "base": "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
-  "candidate": "8558755d5144280e92fe4975875dd7aee3807f51",
-  "candidate_ref": "refs/heads/validation/683-current-main-8558755d",
+  "candidate": "e79108052f6d4071d1b0bb802c758d47c5aa3a33",
+  "candidate_ref": "refs/heads/validation/683-uv-trust-e7910805",
   "candidate_parents": [
-    "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
-    "42f6c3384723cf5d5779c8f45aee7ef074556335"
+    "8558755d5144280e92fe4975875dd7aee3807f51"
   ],
-  "tree": "7ecd230c32895d24396b6c30f58a5428f2b61891",
+  "tree": "62896e17f50e0d9797218ae1ad6a8d02139b8e8f",
   "changed_paths": {
     "src/heinzel/heads/install.py": "M",
     "src/heinzel/kernel/_installation.py": "M",
@@ -37,7 +36,7 @@
     "coverage-floor",
     "merge-gate"
   ],
-  "activation": "held; v0.9.35 and independent bootstrap/publisher review",
+  "activation": "held",
   "coverage": {
     "minimum_percent": 80,
     "python_files": [
@@ -69,7 +68,13 @@
         "tests/integration/standard_install_policy_test.py",
         "tests/integration/cli_test.py::test_doctor_reports_and_exits_by_status",
         "tests/integration/cli_test.py::test_doctor_is_down_when_a_check_fails",
-        "tests/integration/update_notice_test.py::test_doctor_reports_the_newer_release_instead_of_the_notice"
+        "tests/integration/update_notice_test.py::test_doctor_reports_the_newer_release_instead_of_the_notice",
+        "tests/unit/offline_uninstall_test.py",
+        "tests/unit/offline_uninstall_manager_test.py",
+        "tests/unit/modules/ui_refresh_test.py",
+        "tests/unit/modules/system_announced_test.py",
+        "tests/unit/kernel/tool_policy_api_test.py",
+        "tests/unit/kernel/installation_continuity_test.py"
       ],
       "deselect": [
         "tests/unit/kernel/installation_test.py::test_opt_in_current_installed_receipt_target_read_only",
@@ -101,7 +106,7 @@
       "os": "ubuntu-24.04",
       "checkout": "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
       "pr": 683,
-      "head": "8558755d5144280e92fe4975875dd7aee3807f51"
+      "head": "e79108052f6d4071d1b0bb802c758d47c5aa3a33"
     },
     "python315": {
       "os": "ubuntu-24.04",
@@ -110,11 +115,22 @@
         "tests/integration/ui_service_test.py::test_real_user_factory_binds_profile_and_refuses_process_behavior_before_manager_calls[darwin]",
         "tests/integration/ui_service_test.py::test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loading_a_job[darwin]"
       ]
+    },
+    "macos": {
+      "os": "macos-latest",
+      "version": "3.14.8",
+      "selectors": [
+        "tests/integration/update_uv_minimal_path_test.py::test_installation_runs_uv_from_a_homebrew_like_dir_with_a_minimal_path",
+        "tests/integration/update_uv_minimal_path_test.py::test_missing_uv_says_where_it_looked",
+        "tests/integration/ui_service_test.py::test_launcher_pins_guarded_state_and_verified_uv_path_with_minimal_inherited_path[darwin]",
+        "tests/integration/ui_service_test.py::test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loading_a_job[darwin]",
+        "tests/integration/ui_service_test.py::test_real_user_factory_binds_profile_and_refuses_process_behavior_before_manager_calls[darwin]"
+      ]
     }
   },
   "diagnostics": [
     {
-      "classification": "exact macOS candidate; reuse for macOS test lane only",
+      "classification": "Historical exact 8558755 macOS run. Retain only as diagnostics.",
       "run": 42777749675,
       "job": 129700154174,
       "attempt": 1,
@@ -156,9 +172,18 @@
     }
   ],
   "source_review": {
-    "decision": "HOLD",
+    "decision": "GO",
     "historical_review_head": "8558755d5144280e92fe4975875dd7aee3807f51",
-    "historical_review": "Independent source and scoped validation GO on 2026-11-10, later security finding supersedes it",
-    "blocker": "Embedded PATH separator can inject a relative segment; an absolute leaf under a world-writable ancestor can be replaced; stat errors admit the leaf."
-  }
+    "historical_review": "The 8558755 composition passed the initial source review. The later PATH injection and replaceable-ancestor finding supersedes that verdict.",
+    "reviewer": "Astra",
+    "head": "e79108052f6d4071d1b0bb802c758d47c5aa3a33",
+    "tree": "62896e17f50e0d9797218ae1ad6a8d02139b8e8f",
+    "base": "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
+    "scope": "Reviewed exact uv locator security repair on the provisional base. Admission bootstrap and final base remain separate.",
+    "historical_blocker": "Embedded PATH separator can inject a relative segment; an absolute leaf under a world-writable ancestor can be replaced; stat errors admit the leaf."
+  },
+  "activation_blockers": [
+    "Repin to the protected base after #650 merges. Independently review the exact new composition and bootstrap.",
+    "Confirm the live required ruleset and serialize protected writers before the exact PR ref update and evidence run."
+  ]
 }

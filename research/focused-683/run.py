@@ -11,7 +11,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 MANIFEST = json.loads((HERE / "manifest.json").read_text())
-WEB = ("uv", "run", "--no-build", "--frozen", "--quiet", "--script", "scripts/web_build.py")
+WEB = ("uv", "run", "--no-sync", "--no-build", "--frozen", "--quiet", "python", "scripts/web_build.py")
 
 
 def _require(condition: bool, message: str) -> None:
@@ -34,6 +34,10 @@ def _source() -> None:
     subprocess.run(("git", "merge-base", "--is-ancestor", MANIFEST["current_pr_head"], head), check=True)
     changed = _git("diff", "--no-renames", "--name-status", base, head).splitlines()
     _require(changed == [f"{kind}\t{path}" for path, kind in MANIFEST["changed_paths"].items()], "scope drift")
+    production = {path for path in MANIFEST["changed_paths"] if path.startswith("src/heinzel/")}
+    _require(production == set(MANIFEST["coverage"]["python_files"]), "incomplete Python production coverage scope")
+    web = {path for path in MANIFEST["changed_paths"] if path.startswith("web/src/") and not path.endswith(".test.ts")}
+    _require(web == {MANIFEST["coverage"]["web_file"]}, "incomplete web production coverage scope")
     _require(not _git("status", "--porcelain"), "candidate checkout is dirty")
 
 
@@ -73,25 +77,34 @@ def _test_python(out: Path) -> None:
     data = json.loads(report.read_text())
     _require(data["meta"]["branch_coverage"] and set(data["files"]) == set(files), "unexpected Python coverage scope")
     for path, stats in data["files"].items():
-        _require(stats["summary"]["num_statements"] > 0, f"empty Python coverage scope: {path}")
+        summary = stats["summary"]
+        _require(summary["num_statements"] > 0, f"empty Python coverage scope: {path}")
+        _threshold(
+            summary["covered_lines"] + summary["covered_branches"],
+            summary["num_statements"] + summary["num_branches"],
+            path,
+        )
     summary = data["totals"]
     covered = summary["covered_lines"] + summary["covered_branches"]
     total = summary["num_statements"] + summary["num_branches"]
     _threshold(covered, total, "Python statements and branches")
 
 
-def _test_python315(out: Path) -> None:
-    job = MANIFEST["jobs"]["python315"]
+def _test_platform(out: Path, lane: str) -> None:
+    job = MANIFEST["jobs"][lane]
     junit = out / "results.xml"
     _run("uv", "sync", "--python", job["version"], "--frozen", "--no-build", "--no-dev", "--group", "test")
+    platform = "darwin" if lane == "macos" else "linux"
     _run(
         "uv",
         "run",
         "--no-sync",
         "python",
         "-c",
-        "import sys; assert sys.platform == 'linux' and sys.implementation.name == 'cpython' "
-        "and tuple(sys.version_info) == (3, 15, 2, 'final', 0)",
+        "import sys; assert sys.platform == sys.argv[1] and sys.implementation.name == 'cpython' "
+        "and '.'.join(map(str, sys.version_info[:3])) == sys.argv[2] and sys.version_info.releaselevel == 'final'",
+        platform,
+        job["version"],
     )
     _run(
         "uv",
@@ -108,10 +121,10 @@ def _test_python315(out: Path) -> None:
     )
     cases = list(ET.parse(junit).iter("testcase"))  # noqa: S314 - local pytest output from pinned source
     actual = sorted(f"{case.attrib['classname'].replace('.', '/')}.py::{case.attrib['name']}" for case in cases)
-    _require(actual == sorted(job["selectors"]), "unexpected Python 3.15 case inventory")
+    _require(actual == sorted(job["selectors"]), f"unexpected {lane} case inventory")
     _require(
         all(case.find(tag) is None for case in cases for tag in ("skipped", "failure", "error")),
-        "Python 3.15 cases contain skips, failures or errors",
+        f"{lane} cases contain skips, failures or errors",
     )
 
 
@@ -121,11 +134,21 @@ def _threshold(covered: int, total: int, scope: str) -> None:
     _require(100 * covered >= MANIFEST["coverage"]["minimum_percent"] * total, f"{scope}: coverage below 80%")
 
 
+def _sonar_refs() -> None:
+    base_ref, pr_ref = (MANIFEST[key] for key in ("base_ref", "pr_ref"))
+    refs = _git("ls-remote", f"https://github.com/{MANIFEST['repository']}.git", base_ref, pr_ref).splitlines()
+    _require(
+        set(refs) == {f"{MANIFEST['base']}\t{base_ref}", f"{MANIFEST['candidate']}\t{pr_ref}"},
+        "protected base or actual PR ref drifted during Sonar evidence",
+    )
+
+
 def _test_web(out: Path) -> None:
     provider = out.parent / "coverage-provider"
     provider.mkdir()
     for name in ("package.json", "pnpm-lock.yaml"):
         (provider / name).write_bytes((HERE / "coverage-provider" / name).read_bytes())
+    _run("uv", "sync", "--frozen", "--no-build", "--only-group", "build")
     _run(*WEB, "prepare")
     _run(*WEB, "pnpm", "--dir", str(provider), "install", "--frozen-lockfile", "--ignore-scripts")
     link = Path("web/node_modules/@vitest/coverage-v8")
@@ -190,13 +213,20 @@ def _test_web(out: Path) -> None:
 
 def _main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("lane", choices=("check", "python", "python315", "web", "structural", "security", "sonar"))
+    parser.add_argument("lane", choices=("check", *MANIFEST["jobs"]))
     args = parser.parse_args()
     _source()
     if args.lane == "check":
         print("Pinned source, tree, parents and scope match")
         return
-    _require(MANIFEST["source_review"]["decision"] == "GO", "admission requires new independent source review")
+    _require(MANIFEST["activation"] == "ready", "admission held pending the protected-base repin and review")
+    review = MANIFEST["source_review"]
+    _require(
+        review["decision"] == "GO"
+        and (review["base"], review["head"], review["tree"])
+        == (MANIFEST["base"], MANIFEST["candidate"], MANIFEST["tree"]),
+        "admission requires independent review on the exact source pin",
+    )
     helper = os.environ.get("REVIEWED_HELPER_SHA")
     _require(
         os.environ.get("GITHUB_ACTIONS") == "true"
@@ -225,8 +255,8 @@ def _main() -> None:
     )
     if args.lane == "python":
         _test_python(out)
-    elif args.lane == "python315":
-        _test_python315(out)
+    elif args.lane in ("python315", "macos"):
+        _test_platform(out, args.lane)
     elif args.lane == "web":
         _test_web(out)
     elif args.lane == "structural":
@@ -244,14 +274,16 @@ def _main() -> None:
             "--text",
             "",
         )
-        _run("make", "lint")
-        _run("make", "managed-backend-setup", "typecheck", "quarantine-check")
+        env = {key: value for key, value in os.environ.items() if key != "CONFIDENTIAL_TERMS"}
+        _run("make", "lint", env=env)
+        _run("make", "managed-backend-setup", "typecheck", "quarantine-check", env=env)
     elif args.lane == "security":
         _run("make", "secrets", "audit")
     elif args.lane == "sonar":
         trusted = Path(os.environ["GITHUB_WORKSPACE"]) / "trusted-base"
         base = subprocess.check_output(("git", "-C", str(trusted), "rev-parse", "HEAD"), text=True).strip()
         _require(base == MANIFEST["base"], "Sonar gate is not from the pinned protected base")
+        _sonar_refs()
         subprocess.run(
             ("uv", "run", "--no-build", "--frozen", "--script", "scripts/merge_gate.py", "sonar"),
             cwd=trusted,
@@ -262,6 +294,7 @@ def _main() -> None:
                 "PR_HEAD_SHA": MANIFEST["candidate"],
             },
         )
+        _sonar_refs()
     _source()
 
 
