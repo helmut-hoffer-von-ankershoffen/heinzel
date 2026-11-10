@@ -60,3 +60,39 @@ def test_focused_artifact_is_bound_to_its_successful_upload_and_digest(defect):
     else:
         with pytest.raises(CandidateError, match=r".+"):
             focused_gate._artifact(read, job, artifact, name)
+
+
+def test_candidate_composite_still_binds_original_attempt_without_allowing_a_focused_rerun(monkeypatch):
+    from scripts import merge_gate
+    from scripts.release_candidate import REPOSITORY, WORKFLOW
+
+    head = "a" * 40
+    live = {
+        "id": 123,
+        "run_attempt": 2,
+        "head_sha": head,
+        "workflow_id": focused_gate.CI_WORKFLOW_ID,
+        "path": WORKFLOW,
+        "repository": {"full_name": REPOSITORY},
+        "status": "completed",
+        "conclusion": "success",
+        "event": "pull_request",
+        "check_suite_id": 333,
+    }
+    original = live | {"run_attempt": 1, "conclusion": "failure"}
+
+    def github(_gate, path):
+        if path == "actions/runs/123":
+            return live
+        if path == "actions/runs/123/attempts/1":
+            return original
+        return {"workflow_runs": [live]}
+
+    monkeypatch.setattr(merge_gate.Gate, "github", github)
+    gate = merge_gate.Gate(REPOSITORY, head=head)
+    with pytest.raises(CandidateError, match="successful original attempt"):
+        focused_gate._authenticated_run(gate, 123)
+    assert focused_gate._authenticated_run(gate, 123, candidate_composite=True) == live
+    original["head_sha"] = "b" * 40
+    with pytest.raises(CandidateError, match="canonical CI workflow"):
+        focused_gate._authenticated_run(gate, 123, candidate_composite=True)

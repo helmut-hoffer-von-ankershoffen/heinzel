@@ -107,27 +107,38 @@ def pull_identity(gate: Gate, head: str) -> tuple[dict[str, Any], str]:
     return pr, fields[0]
 
 
-def _authenticated_run(gate: Gate, run_id: int) -> dict[str, Any]:
+def _authenticated_run(gate: Gate, run_id: int, *, candidate_composite: bool = False) -> dict[str, Any]:
     require(run_id > 0 and gate.repo == REPOSITORY and valid_sha(gate.head), "invalid workflow event identity")
     run = gate.github(f"actions/runs/{run_id}")
     original = gate.github(f"actions/runs/{run_id}/attempts/1")
+    attempt = run["run_attempt"]
     require(
-        all(
+        _positive(attempt)
+        and original["run_attempt"] == 1
+        and all(
             item["id"] == run_id
-            and item["run_attempt"] == 1
             and item["head_sha"] == gate.head
             and item["workflow_id"] == CI_WORKFLOW_ID
             and item["path"] == WORKFLOW
             and item["repository"]["full_name"] == REPOSITORY
             and item["status"] == "completed"
-            and item["conclusion"] == "success"
             for item in (run, original)
         )
+        and run["conclusion"] == "success"
         and original["event"] == run["event"]
         and _positive(run["check_suite_id"])
         and original["check_suite_id"] == run["check_suite_id"],
-        "missing successful first attempt of the canonical CI workflow",
+        "missing completed evidence from the canonical CI workflow",
     )
+    # Capacity recovery is judged separately by the release verifier. Even in a
+    # canonical composite, this judge reads Coverage from the original attempt.
+    if attempt == 1:
+        require(original["conclusion"] == "success", "original workflow attempt was unsuccessful")
+    else:
+        require(
+            candidate_composite and original["conclusion"] in {"cancelled", "failure"},
+            "ordinary focused CI requires a successful original attempt",
+        )
     latest = gate.github(
         f"actions/workflows/{CI_WORKFLOW_ID}/runs?head_sha={gate.head}&event={run['event']}&per_page=1"
     )["workflow_runs"]
@@ -135,8 +146,8 @@ def _authenticated_run(gate: Gate, run_id: int) -> dict[str, Any]:
     return run
 
 
-def _pr_source(gate: Gate, run: dict[str, Any]) -> GateSource:
-    pr, merge = pull_identity(gate, gate.head)
+def _pr_source(gate: Gate, run: dict[str, Any], snapshot: tuple[dict[str, Any], str]) -> GateSource:
+    pr, merge = snapshot
     event = run["event"]
     head, base = gate.head, pr["base"]["sha"]
     require(
@@ -328,8 +339,10 @@ def _verify_config(scope: Scope) -> None:
 
 def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes]) -> str:
     """Return a typed verdict for the completed original CI attempt, without publishing checks."""
-    run = _authenticated_run(gate, run_id)
-    source = _pr_source(gate, run)
+    snapshot = pull_identity(gate, gate.head)
+    candidate = bool(release_version("pull_request", REPOSITORY, "", {"pull_request": snapshot[0]}))
+    run = _authenticated_run(gate, run_id, candidate_composite=candidate)
+    source = _pr_source(gate, run, snapshot)
     scope = resolve(source.source, source.commit, manifest, source.source.payload["pull_request"])
     if not isinstance(scope, Scope):
         jobs = [job for job in jobs_for(gate, source) if job["name"] == "Coverage"]
@@ -364,7 +377,7 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes])
     require(
         current["base"]["sha"] == source.source.base
         and (source.source.event != "pull_request" or merge == source.commit)
-        and _authenticated_run(gate, run_id) == run,
+        and _authenticated_run(gate, run_id, candidate_composite=candidate) == run,
         "source or workflow attempt changed during verification",
     )
     return verdict
