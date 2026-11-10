@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "base": "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
-  "candidate": "628f2e0501623d785c16a5c8cb7e71b0c9b162a8",
-  "tree": "d72c0eb84f24637761b91c65b5aa5fab426e6ca4",
+  "candidate": "37ea58445ac9ac73f9b698de3bd852a2821e8501",
+  "tree": "0f14c4c296ab267b89eef6eec59e28644d01d68b",
   "changed_paths": ["scripts/related_tests.py", "tests/unit/scoped_checks_test.py", "web/e2e/chat-ready.mjs", "web/e2e/device-reopen.mjs", "web/e2e/generic-agent-chat.mjs"],
   "classification": "no changed src/heinzel Python production files; scripts/related_tests.py is executable developer tooling, not a test or production package file",
-  "coverage_verdict": "unavailable; preserve existing required coverage-floor policy",
+  "coverage_verdict": "empty application production scope; no numeric measurement and no pass issued; policy requires independent review",
   "jobs": {
     "python": ["tests/unit/scoped_checks_test.py", "tests/unit/scripts_test.py"],
     "browser": ["tests/e2e/web_ui_test.py::test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts", "tests/e2e/web_ui_test.py::test_the_apps_own_restart_keeps_a_paired_browser_signed_in", "tests/e2e/generic_agent_chat_test.py", "tests/e2e/connected_read_test.py", "tests/e2e/scheduled_connected_test.py", "tests/e2e/scheduled_notification_review_test.py", "tests/e2e/source_suggestion_test.py"]
