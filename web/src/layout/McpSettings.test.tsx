@@ -33,7 +33,7 @@ it("offers ordinary project setup without claiming a client connection", async (
   await user.click(within(page).getByText("Set up a project client"));
   for (const client of ["claude", "codex", "cursor"]) {
     expect(
-      within(page).getByText(`hz system serve mcp-install-project --client ${client} --project <project-path>`),
+      within(page).getByText(`hz system serve mcp-install-project --client ${client} --project "<project-path>"`),
     ).toBeVisible();
   }
   expect(within(page).getByText(/client starts and stops its own server/)).toBeVisible();

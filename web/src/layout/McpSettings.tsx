@@ -51,7 +51,7 @@ export function McpSettings() {
             {(["claude", "codex", "cursor"] as const).map((client) => (
               <li key={client}>
                 <span>{t(`mcpSettings.clientName.${client}`)}: </span>
-                <code>{`hz system serve mcp-install-project --client ${client} --project <project-path>`}</code>
+                <code>{`hz system serve mcp-install-project --client ${client} --project "<project-path>"`}</code>
               </li>
             ))}
           </ul>
