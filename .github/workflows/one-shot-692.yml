@@ -1,0 +1,57 @@
+name: One-shot reviewed merge
+on:
+  push:
+    branches: [bootstrap/one-shot-692]
+
+permissions: {}
+concurrency:
+  group: one-shot-692
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: >-
+      github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+      && github.actor == github.repository_owner
+      && github.workflow_sha == github.sha
+      && github.run_attempt == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      actions: read
+      statuses: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_692_HELPER_SHA }}
+    steps:
+      - name: Require the independently reviewed workflow commit
+        run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate exact pull request and required checks
+        run: python3 -I scripts/one_shot_692.py check
+  merge:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+      checks: read
+      actions: read
+      statuses: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_692_HELPER_SHA }}
+    steps:
+      - name: Require the independently reviewed workflow commit
+        run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Revalidate and request the normal head-bound squash merge
+        run: python3 -I scripts/one_shot_692.py merge
