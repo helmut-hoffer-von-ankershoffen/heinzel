@@ -81,7 +81,7 @@ def _report(kernel: Kernel) -> tuple[Status, list[str], set[str]] | None:
         for check in checks
         if check.status is Status.UP and qualname != "system.notify"
     }
-    return report.status, problems, up
+    return report.status, problems, up - set(problems)
 
 
 def doctor_problems(kernel: Kernel) -> set[str] | None:
