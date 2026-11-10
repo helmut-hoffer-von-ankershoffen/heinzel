@@ -1,9 +1,10 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { OperationDialog } from "@/components/OperationDialog";
-import { getRun, resetOperationRun } from "@/lib/operationRun";
+import { DAEMON_RESTART } from "@/lib/operationCalls";
+import { getRun, requestOperation, resetOperationRun, startOperation } from "@/lib/operationRun";
 import { expectAccessible } from "@/test/render";
 import { CandidateDetails, ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
 
@@ -277,6 +278,32 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PluginsSection", () => {
+  it("preserves a saved final check until an unconfirmed restart is closed", async () => {
+    const calls = serve((url) => {
+      if (url.pathname === "/api/stream/system/daemon/restart") throw new Error("connection lost");
+      if (url.pathname === "/api/system/plugin/list") return { body: [] };
+      return base(url);
+    });
+    sessionStorage.setItem("hz.token", "test-token");
+    await act(async () => {
+      requestOperation(DAEMON_RESTART);
+      await startOperation(() => {});
+    });
+    expect(getRun()).toMatchObject({ stage: "failed", outcomeUnknown: true });
+    const key = "hz.plugin-operation.v1";
+    const saved = JSON.stringify({ pending: { action: "remove", name: "heinzel-clock" }, phases: [] });
+    sessionStorage.setItem(key, saved);
+    show();
+    expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+    expect(sessionStorage.getItem(key)).toBe(saved);
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(sessionStorage.getItem(key)).toBeNull());
+    expect(await screen.findByRole("dialog", { name: /Removed heinzel-clock/ })).toBeInTheDocument();
+    expect(
+      calls.filter((request) => new URL(request.url).pathname === "/api/stream/system/daemon/restart"),
+    ).toHaveLength(1);
+  });
   it("says outright which installed version a plugin replaces, without opening the details", () => {
     render(<CandidateDetails candidate={{ ...candidate, source: "git", installed_version: "0.9.3" }} />);
     const line = screen.getByText(/Replaces 0\.9\.3/);
