@@ -5,6 +5,7 @@ import json
 import os
 import pty
 import re
+import runpy
 import select
 import shutil
 import socket
@@ -21,11 +22,14 @@ from fastapi.testclient import TestClient
 from heinzel.heads import cli, web
 from heinzel.heads.mcp import _ipc_lifecycle as lifecycle
 from heinzel.heads.mcp import _ipc_runtime_root as roots
+from heinzel.heads.mcp._client_config import ClientBridgeBinding, ClientConfigContext, McpClient
+from heinzel.heads.mcp._client_config_files import PinnedClientBridge
 from heinzel.heads.mcp._ipc_admission import McpGeneration
 from heinzel.heads.mcp._ipc_approval import PrivateMcpPlan
-from heinzel.heads.mcp._ipc_install_review import McpInstallReview
+from heinzel.heads.mcp._ipc_install_review import ManualInstallAuthority, McpInstallReview
 from heinzel.heads.web._devices import Devices
 from heinzel.kernel import (
+    HeinzelError,
     HostServiceManager,
     Kernel,
     McpLifecycleObservation,
@@ -33,6 +37,7 @@ from heinzel.kernel import (
     Settings,
     host_maintenance_directory,
 )
+from heinzel.kernel._approval import arguments_hash
 from heinzel.kernel._mcp_native import McpNativePlan
 from heinzel.kernel._mcp_storage import InstalledMcpRuntime
 
@@ -119,6 +124,9 @@ def _exercise_running(patcher, host, installation, native_root, phase):
 
 
 def _exercise_installed_cli(directory, phase):
+    if phase.startswith("manual-"):
+        _exercise_manual_install(directory, phase)
+        return
     if phase.startswith("install-"):
         _exercise_install_handoff(directory, phase)
         return
@@ -199,6 +207,89 @@ def _exercise_install_handoff(directory, phase):
     assert result.value.code == (0 if phase == "install-accepted" else 1)
     expected = '{"updated": true}\n' if phase == "install-changed" else "{}\n"
     assert config.read_text() == expected
+
+
+def _manual_target(directory, phase):
+    client = {"manual-codex": McpClient.CODEX, "manual-cursor": McpClient.CURSOR}.get(phase, McpClient.CLAUDE)
+    return ClientConfigContext(client, directory / "home", directory / "workspace")
+
+
+def _exercise_manual_install(directory, phase):
+    context = _manual_target(directory, phase)
+    context.path.parent.mkdir(parents=True)
+    context.workspace.mkdir()
+    binding = ClientBridgeBinding(_REGISTRATION, directory / "interpreter", directory / "bridge.py")
+    binding.interpreter.write_bytes(b"fixture interpreter")
+    binding.interpreter.chmod(0o700)
+    binding.bridge.write_bytes(b"fixture bridge")
+    pins = PinnedClientBridge(
+        binding,
+        hashlib.sha256(binding.interpreter.read_bytes()).hexdigest(),
+        hashlib.sha256(binding.bridge.read_bytes()).hexdigest(),
+    )
+    fixture = runpy.run_path(str(Path(__file__).with_name("mcp_client_config_host_test.py")))
+    authority = {"grant": "fixture-only", "grant_revision": 3, "generation": 4, "sdk_fingerprint": "a" * 64}
+    observed_edit = False
+
+    def observe(config, bridge):
+        nonlocal observed_edit
+        assert config == context
+        assert bridge == binding
+        assert context.client is not McpClient.CURSOR
+        observed_edit = binding.name in context.path.read_text()
+        if phase == "manual-native-source" and observed_edit:
+            return fixture["_native"](config, bridge, installed=True, source=directory / "another.json")
+        return fixture["_fixture_observe"](config, bridge)
+
+    @contextmanager
+    def fence(expected):
+        # Model revocation exactly at the protected publication boundary, after the last snapshot.
+        if phase == "manual-revoked" and observed_edit:
+            authority["grant_revision"] += 1
+        if expected != arguments_hash(authority):
+            message = "The fixture grant changed."
+            raise HeinzelError(message)
+        yield
+
+    def clock():
+        return time.monotonic() + (301 if (directory / "expire-session").exists() else 0)
+
+    def snapshot(registration):
+        assert registration == _REGISTRATION
+        return dict(authority)
+
+    def forbidden_boot():
+        pytest.fail("The manual Install route booted the project kernel")
+
+    reviewer = McpInstallReview(snapshot, manual=ManualInstallAuthority(context, pins, observe, fence), clock=clock)
+    baseline = "fixture = true\n" if context.client is McpClient.CODEX else '{"fixture": true}\n'
+    if phase == "manual-collision":
+        baseline = json.dumps({context.table: {binding.name: {"command": "unrelated"}}})
+    context.path.write_text(baseline)
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(cli, "boot", forbidden_boot)
+        handoff = _prepare_manual_fixture(reviewer, phase)
+        patcher.setattr(sys, "argv", ["hz", "system", "mcp", "review-install", _REGISTRATION, "--handoff", handoff])
+        assert _invoke_manual_install(reviewer) == (0 if phase in {"manual-claude", "manual-codex"} else 1)
+        assert _invoke_manual_install(reviewer) == 1
+
+
+def _invoke_manual_install(reviewer):
+    with pytest.raises(SystemExit) as result:
+        cli.main(host_mcp_install_review=reviewer)
+    return result.value.code
+
+
+def _prepare_manual_fixture(reviewer, phase):
+    expiry = int(time.time()) + 120
+    if phase in {"manual-collision", "manual-cursor"}:
+        with pytest.raises(HeinzelError):
+            reviewer.prepare(_REGISTRATION, expiry)
+        return f"{expiry}.{'b' * 64}"
+    handoff = reviewer.prepare(_REGISTRATION, expiry)
+    with pytest.raises(HeinzelError, match="session is unavailable"):
+        reviewer.prepare(_REGISTRATION, expiry)
+    return handoff
 
 
 def _inject_lifecycle_race(patcher, phase, manager, name):
@@ -356,6 +447,85 @@ def test_web_install_handoff_reaches_exact_local_review_only(short_socket_root, 
         assert json.loads(stdout) == {"review": "accepted", "installation": "not-applied"}
     else:
         assert stdout == b""
+
+
+def _manual_prompt(terminal, mode):
+    prompt = _read_review(terminal).decode().replace("\r\n", "\n")
+    _, _, content = prompt.partition("Review this exact MCP foreground lifecycle action:\n")
+    plan, _, challenge = content.partition("\n\nType exactly: ")
+    payload = json.loads(plan)
+    assert payload["review_mode"] == mode
+    assert payload["registration"] == _REGISTRATION
+    match = re.fullmatch(r"(approve MCP [0-9a-f]{8})\n> ", challenge)
+    assert match is not None
+    return payload, match[1].encode() + b"\n"
+
+
+@pytest.mark.parametrize(
+    "phase",
+    [
+        "manual-claude",
+        "manual-codex",
+        "manual-collision",
+        "manual-replaced",
+        "manual-cursor",
+        "manual-cancelled",
+        "manual-expired",
+        "manual-revoked",
+        "manual-native-source",
+        "manual-unrelated-edit",
+        "manual-scope-replaced",
+    ],
+)
+def test_foreground_cli_verifies_only_one_reviewed_manual_install(short_socket_root, phase):
+    context = _manual_target(short_socket_root, phase)
+    with _installed_terminal(short_socket_root, phase) as (terminal, process):
+        if phase not in {"manual-collision", "manual-cursor"}:
+            approved, answer = _manual_prompt(terminal, "manual-install")
+            assert approved["client"] == context.client.value
+            assert approved["authority"]["grant_revision"] == 3
+            baseline = context.path.read_text()
+            if phase == "manual-replaced":
+                replacement = context.path.with_suffix(".replacement")
+                replacement.write_text(baseline)
+                replacement.replace(context.path)
+            os.write(terminal, answer)
+            if phase != "manual-replaced":
+                _complete_manual_fixture(terminal, context, approved, baseline, phase)
+        stdout, stderr = process.communicate(timeout=4)
+        assert process.returncode == 0, stderr.decode()
+    if phase in {"manual-claude", "manual-codex"}:
+        assert json.loads(stdout) == {"configuration": "verified", "mcp_readiness": "unverified"}
+    else:
+        assert not stdout
+    if phase in {"manual-replaced", "manual-cancelled", "manual-scope-replaced"}:
+        assert context.path.read_text() == '{"fixture": true}\n'
+
+
+def _complete_manual_fixture(terminal, context, approved, baseline, phase):
+    edit, answer = _manual_prompt(terminal, "verify-manual-edit")
+    assert edit["installation"] == "not-applied"
+    assert edit["session"] == approved["session"]
+    assert edit["path"] == str(context.path)
+    assert edit["table"] == context.table
+    assert context.path.read_text() == baseline
+    if phase == "manual-cancelled":
+        os.write(terminal, b"no\n")
+        return
+    if phase == "manual-scope-replaced":
+        context.workspace.rename(context.workspace.with_name("previous-workspace"))
+        context.workspace.mkdir()
+    # Only the test driver writes the fixture config, exactly as a separate manual edit would.
+    elif context.client is McpClient.CODEX:
+        context.path.write_text(baseline + edit["entry"])
+    else:
+        data = json.loads(baseline) | json.loads(edit["entry"])
+        if phase == "manual-unrelated-edit":
+            data["fixture"] = False
+        context.path.write_text(json.dumps(data))
+    if phase == "manual-expired":
+        (context.home.parent / "expire-session").touch()
+    os.write(terminal, answer)
 
 
 def test_native_manager_preflight_observes_only_exact_namespace():

@@ -110,6 +110,25 @@ class HostClientConfigWorkflow:
         self._approved: _Approved | None = None
         self._reviewing = False
 
+    def commitment(self, action: ClientConfigAction) -> str:
+        """Describe the exact current change without reserving or replacing a review."""
+        plan, before = self._plan(action)
+        return self._digest(plan, before)
+
+    def _plan(self, action: ClientConfigAction) -> tuple[ManualClientConfigPlan, ClientFileSnapshot | None]:
+        before, native = self._inspect()
+        return plan_manual_client_config(action, self._context, self._pinned.binding, _bytes(before), native), before
+
+    def _digest(self, plan: ManualClientConfigPlan, before: ClientFileSnapshot | None) -> str:
+        return arguments_hash(
+            {
+                "config_plan": plan.digest,
+                "file_identity": None if before is None else list(before.identity),
+                "interpreter_sha256": self._pinned.interpreter_sha256,
+                "bridge_sha256": self._pinned.bridge_sha256,
+            }
+        )
+
     def prepare(self, action: ClientConfigAction) -> str:
         """Return an opaque local review handle for the current exact change.
 
@@ -117,19 +136,11 @@ class HostClientConfigWorkflow:
             HeinzelError: If inspection fails or a local review or manual edit is already active.
         """
         with step(log, "mcp.client_config.prepare_review", client=self._context.client.value, action=action.value):
-            before, native = self._inspect()
+            plan, before = self._plan(action)
             binding = self._pinned.binding
-            plan = plan_manual_client_config(action, self._context, binding, _bytes(before), native)
             review = ClientChangeReview(
                 secrets.token_hex(16),
-                arguments_hash(
-                    {
-                        "config_plan": plan.digest,
-                        "file_identity": None if before is None else list(before.identity),
-                        "interpreter_sha256": self._pinned.interpreter_sha256,
-                        "bridge_sha256": self._pinned.bridge_sha256,
-                    }
-                ),
+                self._digest(plan, before),
                 action,
                 self._context,
                 binding.name,
@@ -138,7 +149,9 @@ class HostClientConfigWorkflow:
             )
             with self._lock:
                 now = self._clock()
-                if self._reviewing or (self._approved is not None and now < self._approved.expires_at):
+                if self._reviewing or any(
+                    item is not None and now < item.expires_at for item in (self._pending, self._approved)
+                ):
                     raise HeinzelError(_UNAVAILABLE)
                 self._pending = _Pending(review, plan, before, now + _REVIEW_SECONDS)
             return review.identifier

@@ -123,12 +123,19 @@ def _require_no_claude_local_entry(data: bytes, name: str) -> None:
             raise HeinzelError(_SHADOWED)
 
 
-def _require_directory(path: Path, *, owner: int | None) -> None:
+def client_config_scope(context: ClientConfigContext) -> tuple[tuple[int, int], tuple[int, int]]:
+    """Capture the no-follow identities of the selected user profile and workspace."""
+    return _require_directory(context.home, owner=os.getuid()), _require_directory(context.workspace, owner=None)
+
+
+def _require_directory(path: Path, *, owner: int | None) -> tuple[int, int]:
     try:
         with ExitStack() as stack:
             descriptor = _open_directory(path, stack)
-            if owner is not None and os.fstat(descriptor).st_uid != owner:
+            info = os.fstat(descriptor)
+            if owner is not None and info.st_uid != owner:
                 raise HeinzelError(_BAD_FILE)
+            return info.st_dev, info.st_ino
     except (OSError, ValueError):
         raise HeinzelError(_BAD_FILE) from None
 

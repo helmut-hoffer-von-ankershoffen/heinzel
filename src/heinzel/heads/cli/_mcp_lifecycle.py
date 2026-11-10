@@ -33,7 +33,7 @@ COMMANDS: dict[str, LifecycleCommand] = {command: command for command in _COMMAN
 
 
 def review_install(arguments: list[str], *, host: "McpInstallReview | None") -> int:
-    """Review an installed client's exact plan without performing installation."""
+    """Review an exact client plan and report configuration only after manual verification."""
     match arguments:
         case [registration, "--handoff", handoff] if REGISTRATION_ID.fullmatch(registration):
             pass
@@ -42,11 +42,14 @@ def review_install(arguments: list[str], *, host: "McpInstallReview | None") -> 
             return 2
     if host is not None:
         try:
-            host.review(registration, handoff)
+            verified = host.review(registration, handoff)
         except (HeinzelError, OSError, ValueError):
             pass
         else:
-            sys.stdout.write('{"review":"accepted","installation":"not-applied"}\n')
+            if verified:
+                sys.stdout.write('{"configuration":"verified","mcp_readiness":"unverified"}\n')
+            else:
+                sys.stdout.write('{"review":"accepted","installation":"not-applied"}\n')
             return 0
     sys.stderr.write("The local MCP Install review was declined or unavailable.\n")
     return 1

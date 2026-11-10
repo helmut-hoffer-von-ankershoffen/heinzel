@@ -211,6 +211,8 @@ def test_deny_and_expire_are_one_use(profile):
     )
     pending = flow.prepare(ClientConfigAction.INSTALL)
     with pytest.raises(HeinzelError, match="review is unavailable"):
+        flow.prepare(ClientConfigAction.INSTALL)
+    with pytest.raises(HeinzelError, match="review is unavailable"):
         flow.review(pending)
     with pytest.raises(HeinzelError, match="review is unavailable"):
         flow.review(pending)
