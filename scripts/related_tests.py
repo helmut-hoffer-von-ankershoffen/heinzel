@@ -39,31 +39,20 @@ def module_file(dotted: str, files: frozenset[str]) -> str | None:
 
 
 def import_statements(text: str) -> list[tuple[bool, ast.Import | ast.ImportFrom]]:
-    """The import statements of a file at any depth, each parsed on its own, and whether it is at module level.
-
-    Parsing only the import lines instead of the whole module keeps the hook and its unit tests fast: compiling every
-    file of the tree costs seconds on a loaded runner. A line in a string that reads like an import can only add a
-    dependency, so the selection errs on running more tests, never fewer.
-    """
+    """Parse the whole file so valid Python syntax cannot hide an import from the graph."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
     found: list[tuple[bool, ast.Import | ast.ImportFrom]] = []
-    lines = text.splitlines()
-    index = 0
-    while index < len(lines):
-        top_level = not lines[index][:1].isspace()
-        line = lines[index].strip()
-        index += 1
-        if not line.startswith(("import ", "from ", "import\t", "from\t")):
-            continue
-        statement = [line]
-        opened = "(" in line.partition("#")[0]
-        while index < len(lines) and (statement[-1].endswith("\\") or (opened and ")" not in statement[-1])):
-            statement.append(lines[index].strip())
-            index += 1
-        try:
-            body = ast.parse("\n".join(statement)).body
-        except SyntaxError:
-            continue
-        found.extend((top_level, node) for node in body if isinstance(node, ast.Import | ast.ImportFrom))
+    stack: list[tuple[ast.AST, bool]] = [(tree, True)]
+    while stack:
+        parent, top_level = stack.pop()
+        for child in ast.iter_child_nodes(parent):
+            if isinstance(child, ast.Import | ast.ImportFrom):
+                found.append((top_level, child))
+            elif isinstance(child, ast.stmt | ast.ExceptHandler | ast.match_case):
+                stack.append((child, False))
     return found
 
 

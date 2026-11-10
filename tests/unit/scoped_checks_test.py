@@ -252,6 +252,27 @@ def test_imports_follow_the_defining_module_not_the_package_that_re_exports_it()
     assert "tests/unit/modules/system_update_test.py" in graph.dependents({"src/heinzel/modules/system/_update.py"})
 
 
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "if True: import heinzel.kernel\n",
+        "value = 1; import heinzel.kernel\n",
+        "import \\\n    heinzel.kernel\n",
+        "from heinzel.kernel import (  # factory )\n    Config,  # a (comment)\n)\n",
+    ],
+)
+def test_valid_import_syntax_keeps_its_dependents_in_the_graph(tmp_path, monkeypatch, statement):
+    monkeypatch.setattr(scoped_related, "ROOT", tmp_path)
+    package = tmp_path / "src/heinzel/kernel/__init__.py"
+    package.parent.mkdir(parents=True)
+    package.write_text("class Config: pass\n", encoding="utf-8")
+    test = tmp_path / "tests/unit/example_test.py"
+    test.parent.mkdir(parents=True)
+    test.write_text(statement, encoding="utf-8")
+    graph = scoped_related.Graph()
+    assert "tests/unit/example_test.py" in graph.dependents({"src/heinzel/kernel/__init__.py"})
+
+
 def test_every_import_resolves_to_a_file_of_the_tree_even_on_a_case_insensitive_disk():
     """`from heinzel import Kernel` once resolved to a `heinzel/Kernel` package only a macOS disk claims."""
     graph = scoped_related.graph()
