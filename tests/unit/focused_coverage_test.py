@@ -236,6 +236,27 @@ def test_managed_runner_compiles_but_executes_only_the_selected_test(coverage, t
     ]
 
 
+@pytest.mark.parametrize("case", [("python", 32), ("python312", 10), ("macos", 10)])
+def test_only_python_lane_receives_the_expanded_execution_limit(coverage, scope, monkeypatch, tmp_path, case):
+    from dataclasses import replace
+
+    lane, expected = case
+    scope = replace(scope, selection={lane: ("tests/unit/ci_test.py",)})
+
+    class ObservedError(Exception):
+        pass
+
+    def plan(kind, selector, out, *, max_ids):
+        assert kind == "pytest"
+        assert selector == "tests/unit/ci_test.py"
+        assert max_ids == expected
+        raise ObservedError
+
+    monkeypatch.setattr(coverage.focused_job, "plan", plan)
+    with pytest.raises(ObservedError):
+        coverage.run_lane(scope, lane, tmp_path / "evidence", 123, 1)
+
+
 def test_python315_bootstraps_pyyaml_before_the_selected_tests(coverage, scope, monkeypatch, tmp_path):
     from dataclasses import replace
 
