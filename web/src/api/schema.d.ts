@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/ai/access/chatgpt-sign-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start ChatGPT sign-in from the local owner's browser session.
+         * @description Start a browser sign-in from the locally authenticated owning web session.
+         */
+        post: operations["web_chatgpt_sign_in"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai/access/key": {
         parameters: {
             query?: never;
@@ -5953,6 +5973,17 @@ export interface components {
              * @description What its answers cost so far, as reported.
              */
             spent_usd: number;
+        };
+        /**
+         * ChatGptSignInResult
+         * @description Only the outcome of this sign-in. OAuth data stays on the host.
+         */
+        ChatGptSignInResult: {
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "connected" | "declined" | "failed" | "cancelled" | "expired" | "browser-unavailable";
         };
         /**
          * ChatMessage
@@ -16711,6 +16742,7 @@ export type SchemaChartWidget = components['schemas']['ChartWidget'];
 export type SchemaChatAction = components['schemas']['ChatAction'];
 export type SchemaChatContext = components['schemas']['ChatContext'];
 export type SchemaChatCosts = components['schemas']['ChatCosts'];
+export type SchemaChatGptSignInResult = components['schemas']['ChatGptSignInResult'];
 export type SchemaChatMessage = components['schemas']['ChatMessage'];
 export type SchemaChatSession = components['schemas']['ChatSession'];
 export type SchemaChatSummary = components['schemas']['ChatSummary'];
@@ -17038,6 +17070,26 @@ export type SchemaSystemStatePushInput = components['schemas']['system_state_pus
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
 export type $defs = Record<string, never>;
 export interface operations {
+    web_chatgpt_sign_in: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatGptSignInResult"];
+                };
+            };
+        };
+    };
     ai_access_key: {
         parameters: {
             query?: never;

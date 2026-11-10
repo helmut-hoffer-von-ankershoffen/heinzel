@@ -1,3 +1,4 @@
+// @vitest-environment-options {"url":"http://127.0.0.1:34123"}
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -70,6 +71,21 @@ function listing(selected: string): SchemaAccessList {
     uses: [],
     note: null,
     next: [],
+  };
+}
+
+function chatGptListing(signedIn = false): SchemaAccessList {
+  return {
+    ...listing("claude-code"),
+    options: [
+      option("chatgpt", {
+        title: "ChatGPT plan",
+        status: signedIn ? "signed in" : "not signed in",
+        needs: signedIn ? "" : "Sign in to ChatGPT plan",
+        setup: signedIn ? null : "sign-in",
+        fix: signedIn ? "" : "hz ai access login",
+      }),
+    ],
   };
 }
 
@@ -238,18 +254,7 @@ describe("AI access", () => {
   it("leaves a sign-in to the person's browser: the command only in Details, and Check again", async () => {
     const { calls } = mockApi({
       ...shell,
-      "/api/ai/access/list": {
-        ...listing("claude-code"),
-        options: [
-          option("chatgpt", {
-            title: "ChatGPT plan",
-            status: "not signed in",
-            needs: "Sign in to ChatGPT plan",
-            setup: "sign-in",
-            fix: "hz ai access login",
-          }),
-        ],
-      },
+      "/api/ai/access/list": chatGptListing(),
     });
     const user = userEvent.setup();
     renderAt("/doctor?settings=ai");
@@ -264,5 +269,52 @@ describe("AI access", () => {
     await waitFor(() =>
       expect(calls.filter((call) => call.url.includes("/ai/access/list")).length).toBeGreaterThan(before),
     );
+  });
+
+  it("starts the local sign-in only on a click and uses the server's result", async () => {
+    let signedIn = false;
+    const { calls } = mockApi({
+      ...shell,
+      "/api/ai/access/list": () => chatGptListing(signedIn),
+      "/api/ai/access/chatgpt-sign-in": () => {
+        signedIn = true;
+        return { outcome: "connected" };
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Set up ChatGPT plan" }));
+    const dialog = await screen.findByRole("dialog", { name: "Set up ChatGPT plan" });
+    expect(calls.some((call) => call.url.endsWith("chatgpt-sign-in"))).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Continue with ChatGPT" }));
+    expect(await within(dialog).findByText("Your ChatGPT plan is connected.")).toBeInTheDocument();
+    const request = calls.find((call) => call.url.endsWith("chatgpt-sign-in"));
+    expect(request?.method).toBe("POST");
+    expect(request?.body).toBeNull();
+    expect(request?.headers.get("Authorization")).toBe("Bearer test-token");
+    await waitFor(() => expect(within(dialog).getByText("Signed in", { exact: true })).toBeInTheDocument());
+  });
+
+  it("cancels the pending local sign-in when the dialog closes", async () => {
+    const aborted = vi.fn();
+    mockApi({
+      ...shell,
+      "/api/ai/access/list": chatGptListing(),
+      "/api/ai/access/chatgpt-sign-in": (request: Request) =>
+        new Promise((_, reject) => {
+          request.signal.addEventListener("abort", () => {
+            aborted();
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        }),
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Set up ChatGPT plan" }));
+    const dialog = await screen.findByRole("dialog", { name: "Set up ChatGPT plan" });
+    await user.click(within(dialog).getByRole("button", { name: "Continue with ChatGPT" }));
+    expect(within(dialog).getByText("Waiting for you to finish in your browser…")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Close settings" }));
+    expect(aborted).toHaveBeenCalledOnce();
   });
 });

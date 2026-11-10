@@ -3079,6 +3079,28 @@
         "title": "ChatCosts",
         "type": "object"
       },
+      "ChatGptSignInResult": {
+        "description": "Only the outcome of this sign-in. OAuth data stays on the host.",
+        "properties": {
+          "outcome": {
+            "enum": [
+              "connected",
+              "declined",
+              "failed",
+              "cancelled",
+              "expired",
+              "browser-unavailable"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "ChatGptSignInResult",
+        "type": "object"
+      },
       "ChatMessage": {
         "description": "One message of a chat.",
         "properties": {
@@ -21659,6 +21681,28 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/ai/access/chatgpt-sign-in": {
+      "post": {
+        "description": "Start a browser sign-in from the locally authenticated owning web session.",
+        "operationId": "web_chatgpt_sign_in",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatGptSignInResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start ChatGPT sign-in from the local owner's browser session.",
+        "tags": [
+          "web"
+        ]
+      }
+    },
     "/ai/access/key": {
       "get": {
         "description": "Whether a Model API key is stored in your keychain; never shows it.",

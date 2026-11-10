@@ -14,6 +14,7 @@ from rich.table import Table
 from rich.text import Text
 
 from heinzel import AccessStatus, Adapters, AiAccess, Check, ConfiguredApiAccess, Credentials, Module, Progress
+from heinzel.kernel import AiAccessWebSignIn
 from heinzel.kernel._logging import log_event
 from heinzel.modules.ai.access._chatgpt import CHATGPT_LOGIN, ChatGptAccess
 from heinzel.modules.ai.access._chatgpt import HOSTS as CHATGPT_HOSTS
@@ -52,6 +53,7 @@ module.provides("ai-access", modes={"read"}, hosts=model_hosts, name=PYDANTIC_AI
 module.add(CHATGPT_LOGIN)
 module.provides("ai-access", modes={"read"}, hosts=CHATGPT_HOSTS, name=CHATGPT)(ChatGptAccess)
 module.service(ChatGptAccess)  # `hz ai access login` signs in through it
+module.service(AiAccessWebSignIn, ChatGptAccess)
 
 STYLES = {"signed in": "green", "tested": "green", "not signed in": "yellow", "test failed": "red", "error": "red"}
 
