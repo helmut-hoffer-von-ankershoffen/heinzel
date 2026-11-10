@@ -96,7 +96,9 @@ try {
         try {
           await page.getByText("Checking the service").waitFor({ timeout: 5000 });
         } catch (error) {
-          console.error(JSON.stringify({ text: await page.locator("body").textContent(), errors, unexpected, restarts }));
+          console.error(
+            JSON.stringify({ text: await page.locator("body").textContent(), errors, unexpected, restarts }),
+          );
           throw error;
         }
         assert.equal(restarts, 1);
