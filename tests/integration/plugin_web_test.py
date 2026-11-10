@@ -483,6 +483,55 @@ def test_a_handed_over_socket_that_isnt_a_loopback_listener_starts_a_fresh_sessi
     assert not resumed
 
 
+def test_handover_socket_fallback_accepts_listener_but_rejects_connected_or_closed_socket(monkeypatch):
+    """A platform without SO_ACCEPTCONN must not resume from an established connection."""
+    import socket
+
+    original = socket.socket.getsockopt
+
+    def unsupported(sock, level, option, *args):
+        if (level, option) == (socket.SOL_SOCKET, socket.SO_ACCEPTCONN):
+            msg = "SO_ACCEPTCONN unavailable"
+            raise OSError(msg)
+        return original(sock, level, option, *args)
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
+            client.connect(listener.getsockname())
+            with listener.accept()[0]:
+                monkeypatch.setattr(socket.socket, "getsockopt", unsupported)
+                assert web._listening_on_loopback(listener)
+                assert not web._listening_on_loopback(client)
+        closed = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        closed.close()
+        assert not web._listening_on_loopback(closed)
+
+
+@pytest.mark.parametrize("provider", [None, "https://attacker.invalid", "youtube"])
+def test_page_csp_only_admits_the_fixed_known_stream_provider(provider):
+    from unittest.mock import Mock
+
+    kernel = Mock()
+    kernel.provides.return_value = True
+    kernel.resolve.return_value.stream_provider.return_value = provider
+    policy = web.page_csp(kernel)
+    if provider == "youtube":
+        assert policy == web.CSP + "; frame-src https://www.youtube-nocookie.com https://www.youtube.com"
+    else:
+        assert policy == web.CSP
+
+
+def test_page_csp_remains_strict_when_the_sound_provider_fails():
+    from unittest.mock import Mock
+
+    kernel = Mock()
+    kernel.provides.return_value = True
+    kernel.resolve.return_value.stream_provider.side_effect = RuntimeError("fixture provider failure")
+    assert web.page_csp(kernel) == web.CSP
+
+
 def test_public_gallery_is_lazy_authenticated_metadata_without_running_plugin_code(kernel, client):
     project = b"""[project]
 name="heinzel-harbor"
