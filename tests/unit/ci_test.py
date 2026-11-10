@@ -977,7 +977,7 @@ def test_template_installed_cli_uses_its_own_daemon_unit_directory(tmp_path, tmp
     inherited_units = tmp_path / "user-units"
     monkeypatch.setenv("HZ_SYSTEM_DAEMON__UNIT_DIR", str(inherited_units))
     monkeypatch.setenv("PLUGIN_TEST_WHEEL", str(tmp_path / "plugin.whl"))
-    monkeypatch.setattr("shutil.which", lambda _name: "/isolated/uv")
+    monkeypatch.setattr("shutil.which", lambda _name, **_: "/isolated/uv")
     calls = []
 
     def run(command, **kwargs):
