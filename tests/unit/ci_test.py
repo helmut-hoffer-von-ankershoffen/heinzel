@@ -273,6 +273,15 @@ def test_workflows_run_checks_through_make(workflow):
     assert not_through_make(workflow) == [], "run these through a make target, or add them to NOT_MAKE with a reason"
 
 
+def test_focused_683_runner_environment_scopes_github_token_to_sonar():
+    workflow = yaml.safe_load((REPO / ".github/workflows/focused-683.yml").read_text())
+    job = workflow["jobs"]["focused"]
+    runner = next(step for step in job["steps"] if "/research/focused-683/run.py" in step.get("run", ""))
+    assert all("GITHUB_TOKEN" not in scope.get("env", {}) for scope in (workflow, job, runner))
+    assert runner["env"]["FOCUSED_SONAR_TOKEN"] == "${{ matrix.lane == 'sonar' && github.token || '' }}"
+    assert job["permissions"] == {"contents": "read", "pull-requests": "read"}
+
+
 def test_every_main_commit_and_release_pr_run_completes_while_other_pull_requests_cancel_superseded_runs():
     concurrency = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["concurrency"]
 

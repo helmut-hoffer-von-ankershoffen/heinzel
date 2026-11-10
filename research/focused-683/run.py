@@ -102,7 +102,12 @@ def _test_python(out: Path) -> None:
 def _test_platform(out: Path, lane: str) -> None:
     job = MANIFEST["jobs"][lane]
     junit = out / "results.xml"
-    _run("uv", "sync", "--python", job["version"], "--frozen", "--no-build", "--no-dev", "--group", "test")
+    sync = ("uv", "sync", "--python", job["version"], "--frozen", "--no-build", "--no-dev", "--group", "test")
+    if lane == "python315":
+        _run(*sync, "--no-install-package", "pyyaml")
+        _run("bash", "scripts/bootstrap-pyyaml.sh", env={**os.environ, "UV_PYTHON": job["version"]})
+    else:
+        _run(*sync)
     platform = "darwin" if lane == "macos" else "linux"
     _run(
         "uv",
@@ -144,6 +149,28 @@ def _sonar_refs() -> None:
         set(refs) == {f"{MANIFEST['base']}\t{base_ref}", f"{MANIFEST['candidate']}\t{pr_ref}"},
         "protected base or actual PR ref drifted during Sonar evidence",
     )
+
+
+def _test_sonar() -> None:
+    trusted = Path(os.environ["GITHUB_WORKSPACE"]) / "trusted-base"
+    base = subprocess.check_output(("git", "-C", str(trusted), "rev-parse", "HEAD"), text=True).strip()
+    _require(base == MANIFEST["base"], "Sonar gate is not from the pinned protected base")
+    env = os.environ.copy()
+    token = env.pop("FOCUSED_SONAR_TOKEN", "")
+    _require(bool(token), "missing read-only GitHub token for Sonar")
+    _sonar_refs()
+    subprocess.run(
+        ("uv", "run", "--no-build", "--frozen", "--script", "scripts/merge_gate.py", "sonar"),
+        cwd=trusted,
+        check=True,
+        env={
+            **env,
+            "GITHUB_TOKEN": token,
+            "PR_NUMBER": str(MANIFEST["pull_request"]),
+            "PR_HEAD_SHA": MANIFEST["candidate"],
+        },
+    )
+    _sonar_refs()
 
 
 def _test_web(out: Path) -> None:
@@ -240,21 +267,7 @@ def _main() -> None:
     elif args.lane == "security":
         _run("make", "secrets", "audit")
     elif args.lane == "sonar":
-        trusted = Path(os.environ["GITHUB_WORKSPACE"]) / "trusted-base"
-        base = subprocess.check_output(("git", "-C", str(trusted), "rev-parse", "HEAD"), text=True).strip()
-        _require(base == MANIFEST["base"], "Sonar gate is not from the pinned protected base")
-        _sonar_refs()
-        subprocess.run(
-            ("uv", "run", "--no-build", "--frozen", "--script", "scripts/merge_gate.py", "sonar"),
-            cwd=trusted,
-            check=True,
-            env={
-                **os.environ,
-                "PR_NUMBER": str(MANIFEST["pull_request"]),
-                "PR_HEAD_SHA": MANIFEST["candidate"],
-            },
-        )
-        _sonar_refs()
+        _test_sonar()
     if args.lane == "python":
         evidence = coverage_evidence.evidence(MANIFEST, identity, lambda name: (out / name).read_bytes())
         (out / "pr-coverage.json").write_text(json.dumps(evidence, sort_keys=True) + "\n")

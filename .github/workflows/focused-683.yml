@@ -51,7 +51,7 @@ jobs:
         env:
           LANE: ${{ matrix.lane }}
           CONFIDENTIAL_TERMS: ${{ matrix.lane == 'structural' && secrets.CONFIDENTIAL_TERMS || '' }}
-          GITHUB_TOKEN: ${{ matrix.lane == 'sonar' && github.token || '' }}
+          FOCUSED_SONAR_TOKEN: ${{ matrix.lane == 'sonar' && github.token || '' }}
         working-directory: candidate
         run: python3 -I "$GITHUB_WORKSPACE/bootstrap/research/focused-683/run.py" "$LANE"
       - name: Upload exact attempt evidence
