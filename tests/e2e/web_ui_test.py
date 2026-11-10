@@ -992,9 +992,9 @@ def gallery_profile_preflight(backend_env, tmp_path, denied):
     )
     # --no-browser prints the owned URL to stdout; merge diagnostics into the
     # same pipe so the bounded reader drains the exact startup channel.
-    neutral_output = MobileServerOutput(SimpleNamespace(stderr=neutral_ui.stdout, poll=neutral_ui.poll))
+    neutral_output = MobileServerOutput(SimpleNamespace(stderr=neutral_ui.stdout, poll=neutral_ui.poll), bare_url=True)
     try:
-        neutral_address = urlsplit(neutral_output.wait_url())
+        neutral_address = urlsplit(neutral_output.wait_url(timeout=30))
         assert neutral_address.scheme == "http"
         assert neutral_address.hostname == "127.0.0.1"
         assert Path(neutral_env["HZ_GALLERY_INITIALIZED"]).read_text(encoding="utf-8")
