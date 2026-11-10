@@ -221,7 +221,11 @@ Once it holds, the notice is resolved: `resolved_at` and `resolved` (why, in wor
 Resolution never marks a notice read: read stays the person's own action. A notice whose condition already holds is
 not recorded.
 
-Version conditions are checked on every read without writing. Capability conditions are checked only at a tick
+A third condition, `checks_up`, names health checks (`<module>: <check>`); it holds once none of them is failing in
+`hz system doctor`. Doctor's degraded and down notices carry it, so they disappear once their checks are up again.
+Doctor notices recorded before it resolve by their `doctor:<status>:<check>|…` key, as release notices do.
+
+Version conditions are checked on every read without writing. Capability and health conditions are checked only at a tick, doctor at most once per pass
 (`post_native` resolves after its hourly look), so a read never runs another module's operation.
 
 The release notice compares the installed version, names it in its body and carries `installed_version_at_least` the

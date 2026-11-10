@@ -36,6 +36,7 @@ from heinzel import (
 )
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.kernel._calendar_reminders import agenda_plan
+from heinzel.kernel._logging import get_logger, log_event
 from heinzel.modules.system.notify import _policy as policy
 from heinzel.modules.system.notify import _resolve
 from heinzel.modules.system.notify._channels import (
@@ -59,9 +60,10 @@ from heinzel.modules.system.notify._models import (
 )
 from heinzel.modules.system.notify._native import ALLOW, DENIED_DETAIL, DENIED_FIX, HEINZEL, ICON_CACHE, Native, native
 from heinzel.modules.system.notify._store import INTEGRITY_LEGACY, Store, recover
-from heinzel.modules.system.notify._watch import daemon_state, watch
+from heinzel.modules.system.notify._watch import daemon_state, doctor_problems, watch
 
 logger = logging.getLogger(__name__)
+_EVENTS = get_logger("system.notify")
 MODULE_SECTION = "system.notify"
 WATCHED_FOR = timedelta(seconds=30)
 """After a head last said it shows notices, the daemon holds back this long: the web app says so every few seconds."""
@@ -130,6 +132,9 @@ class NotifyService(Notifications):
         """The hz installed on this machine, read from disk each time; tests replace it."""
         self.capability: _resolve.CapabilityProbe | None = None
         """Asks a capability's state for a notice's condition; set by `for_user`, None asks nothing."""
+        self.problems: _resolve.ProblemsProbe | None = None
+        """The health checks that aren't up, for a notice's `checks_up`; set by `for_user`, None asks nothing."""
+        self._health_resolved_at: datetime | None = None
         self._refresh_hours: Callable[[], policy.Hours] = lambda: self.hours
 
     @classmethod
@@ -154,6 +159,7 @@ class NotifyService(Notifications):
         service._refresh_settings = refresh_settings
         service.daemon = lambda: daemon_state(kernel)
         service.capability = _resolve.kernel_probe(kernel)
+        service.problems = lambda: doctor_problems(kernel)
         return service
 
     @property
@@ -338,9 +344,9 @@ class NotifyService(Notifications):
         return self._shown(list(reversed(self.store.read())))[:limit]
 
     def _shown(self, notices: list[Notice]) -> list[Notice]:
-        """`notices` without the resolved ones, nor those whose version condition holds now (cheap, no write).
+        """`notices` without resolved ones or conditions already met by installed metadata.
 
-        A capability is only asked at a tick (`resolve`), so a read never runs another module's operation.
+        Capability and doctor checks run at resolution time. A read never runs another module's operation.
         """
         installed = self.installed()
         return [
@@ -349,48 +355,61 @@ class NotifyService(Notifications):
             if notice.resolved_at is None
             and not (
                 (when := _resolve.condition(notice)) is not None
-                and when.capability is None
+                and _resolve.at_read(when)
                 and _resolve.holds(when, installed, None) is not None
             )
         ]
 
-    def _resolvable(self, notices: list[Notice]) -> dict[str, str]:
+    def _resolvable(self, notices: list[Notice], *, check_health: bool = True) -> dict[str, str]:
         """The ids of shown notices whose condition holds now, each with why."""
         installed = self.installed()
         probe = _resolve.cached(self.capability) if self.capability is not None else None
+        problems = _resolve.once(self.problems) if check_health and self.problems is not None else None
         found: dict[str, str] = {}
         for notice in notices:
             when = _resolve.condition(notice) if notice.resolved_at is None else None
-            if when is not None and (why := _resolve.holds(when, installed, probe)) is not None:
+            if when is not None and (why := _resolve.holds(when, installed, probe, problems)) is not None:
                 found[notice.id] = why
         return found
 
-    def resolve(self) -> int:
+    def resolve(self, *, check_health: bool = True) -> int:
         """Resolve the shown notices whose condition holds now; how many. Never touches whether one was read.
 
         Capabilities are asked outside the store's lock; the write then marks only notices still unresolved.
         """
         try:
-            found = self._resolvable(self.store.read())
+            found = self._resolvable(self.store.read(), check_health=check_health)
         except OSError:
             return 0
         if not found:
             return 0
         now = self._clock()
 
+        marked: list[str] = []
+
         def mark(notices: list[Notice]) -> int:
-            count = 0
+            marked.clear()
             for index, notice in enumerate(notices):
                 if notice.id in found and notice.resolved_at is None:
                     notices[index] = notice.model_copy(update={"resolved_at": now, "resolved": found[notice.id]})
-                    count += 1
-            return count
+                    marked.append(notice.id)
+            return len(marked)
 
         try:
-            return self.store.change(now, mark)
+            resolved = self.store.change(now, mark)
         except OSError:
             logger.warning("can't resolve notices in %s", self.store.directory, exc_info=True)
             return 0
+        for notice_id in marked:
+            log_event(
+                _EVENTS,
+                "notify.resolve.notice",
+                operation="system.notify:resolve",
+                outcome="ok",
+                notice=notice_id,
+                reason=found[notice_id],
+            )
+        return resolved
 
     def due(self, now: datetime | None = None) -> list[Notice]:
         """Notices to pop up now, oldest first: not shown, their time come, not stale, within the hour's rate limit.
@@ -495,7 +514,12 @@ class NotifyService(Notifications):
         if self.settings.native:
             self._end_leftover_instances()
         self.look()
-        self.resolve()
+        now = self._clock()
+        last = self._health_resolved_at
+        check_health = self.settings.wants(NoticeKind.DOCTOR) and (last is None or not now - LOOK_EVERY < last <= now)
+        if check_health:
+            self._health_resolved_at = now
+        self.resolve(check_health=check_health)
         if not self.settings.native or self.is_watched() or self.notifier.name is None:
             return 0
         # Claimed before they pop up, under the store's lock, so a web app can't show the same ones meanwhile.

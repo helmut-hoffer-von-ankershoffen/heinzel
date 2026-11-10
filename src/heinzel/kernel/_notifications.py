@@ -69,6 +69,8 @@ VERSION = r"^[0-9]+(\.[0-9]+){1,3}([.-]?(a|b|rc|dev|post)[0-9]*)?$"
 OPERATION = r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*:[a-z][a-z0-9_-]*$"
 """`<module qualname>:<operation name>`, such as `system.daemon:status`."""
 FIELD = r"^[a-z][a-z0-9_]*$"
+CHECK = r"^[^\s:|]+: [^\s|][^|\n]*$"
+"""`<module qualname>: <check name>`, as doctor names a check that isn't up."""
 
 
 class CapabilityState(BaseModel):
@@ -101,8 +103,16 @@ class ResolveWhen(BaseModel):
         description="Holds once the hz installed on this machine (on disk, not the running process) is at least this.",
     )
     capability: CapabilityState | None = Field(default=None, description="Holds once a capability reports a state.")
+    checks_up: list[Annotated[str, Field(pattern=CHECK, max_length=200)]] | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        min_length=1,
+        max_length=50,
+        description="Holds once every named health check (`<module>: <check>`) is up again in `hz system doctor`.",
+    )
     plugins_installed: tuple[Annotated[str, StringConstraints(pattern=DISTRIBUTION)], ...] | None = Field(
         default=None,
+        exclude_if=lambda value: value is None,
         min_length=1,
         max_length=16,
         description="Holds once every plugin distribution named is installed on this machine (on disk).",
@@ -115,8 +125,13 @@ class ResolveWhen(BaseModel):
         Raises:
             ValueError: If no condition is given.
         """
-        if self.installed_version_at_least is None and self.capability is None and self.plugins_installed is None:
-            msg = "A resolve condition needs installed_version_at_least, capability or plugins_installed"
+        if (
+            self.installed_version_at_least is None
+            and self.capability is None
+            and self.checks_up is None
+            and self.plugins_installed is None
+        ):
+            msg = "A resolve condition needs installed_version_at_least, capability, checks_up or plugins_installed"
             raise ValueError(msg)
         return self
 
