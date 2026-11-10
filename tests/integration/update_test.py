@@ -176,6 +176,17 @@ def uv_log(env: Path) -> list[str]:
     return log.read_text().splitlines() if log.exists() else []
 
 
+def test_update_help_explains_automatic_updates_desktop_handoff_and_progress(app):
+    result = runner.invoke(app, ["system", "update", "--help"], env={"COLUMNS": "160"})
+    assert result.exit_code == 0, result.output
+    help_text = " ".join(result.stdout.split())
+    assert "hz system config set auto_update true" in help_text
+    assert "About every 30 minutes" in help_text
+    assert "hz app install" in help_text
+    assert "each step goes to stderr as one JSON object per line" in help_text
+    assert "2>&1" in help_text
+
+
 def test_a_tag_pinned_install_updates_to_the_latest_release_and_keeps_plugins(app, env, monkeypatch):
     github_releases(monkeypatch, "v99.0.0", f"v{__version__}", "v99.1.0rc1")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
