@@ -88,7 +88,11 @@ def test_actual_v0929_reader_writer_preserves_conditions_and_receipt(tmp_path, k
     store = Store(tmp_path)
     assert store.change_once(now, "receipt", lambda rows: rows.append(notice(now, "one", condition)))
     result = subprocess.run(
-        [sys.executable, "-c", OLD_WRITER, str(FIXTURE), str(tmp_path)], capture_output=True, text=True, check=False
+        [sys.executable, "-c", OLD_WRITER, str(FIXTURE), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
     )
     assert result.returncode == 0, result.stderr
     (restored,) = store.read()
