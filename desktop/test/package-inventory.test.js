@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { createPackage, getRawHeader, uncacheAll } from "@electron/asar";
 import { captureRuntime, RUNTIME_FILES, verifyRuntime } from "../ci/runtime-inventory.mjs";
+import { fileURLToPath } from "node:url";
 
 async function setup(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "hz-asar-inventory-"));
@@ -26,6 +27,21 @@ async function archive(root, stage, label) {
   await createPackage(stage, target);
   return target;
 }
+
+test("the actual runtime packages and verifies both MCP handlers", async (t) => {
+  const project = fileURLToPath(new URL("..", import.meta.url));
+  const runtime = await captureRuntime(project);
+  for (const name of ["mcp-handoff-ipc.js", "mcp-project-ipc.js"]) {
+    assert.ok(RUNTIME_FILES.includes(name));
+    assert.deepEqual(runtime.files.get(`src/${name}`), await readFile(path.join(project, "src", name)));
+  }
+  const root = await mkdtemp(path.join(os.tmpdir(), "hz-actual-mcp-inventory-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const stage = path.join(root, "staging");
+  await mkdir(path.join(stage, "src"), { recursive: true });
+  for (const [name, bytes] of runtime.files) await writeFile(path.join(stage, name), bytes);
+  assert.equal(await verifyRuntime(await archive(root, stage, "actual"), project), runtime.version);
+});
 
 test("accepts only the exact source and generated package metadata", async (t) => {
   const { root, project, stage } = await setup(t);
