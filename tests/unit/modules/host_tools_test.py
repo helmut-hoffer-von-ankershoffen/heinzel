@@ -26,7 +26,10 @@ pytestmark = pytest.mark.unit
     ("payload", "accepted"),
     [(["x"] * 3999, True), (["x"] * 4000, False), (["é" * 7998], True), (["é" * 7999], False)],
 )
-def test_result_keeps_every_value_within_the_16000_utf8_byte_limit(make_kernel, tmp_path, payload, accepted):
+@pytest.mark.parametrize("projection", [None, lambda text, limit: text], ids=["ordinary", "unbounded-projection"])
+def test_result_keeps_every_value_within_the_16000_utf8_byte_limit(
+    make_kernel, tmp_path, payload, accepted, projection
+):
     module = Module("fixture", "Bounded result")
 
     @module.operation()
@@ -42,7 +45,13 @@ def test_result_keeps_every_value_within_the_16000_utf8_byte_limit(make_kernel, 
         crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1))
         session = crud.new_chat("bounded").session_id
         catalog = HostToolCatalog(
-            kernel, current, crud, session, frozenset({"fixture:inspect"}), verified_code=lambda _: "a" * 64
+            kernel,
+            current,
+            crud,
+            session,
+            frozenset({"fixture:inspect"}),
+            verified_code=lambda _: "a" * 64,
+            oversized_result=projection,
         )
         descriptor = catalog.preview()[0]
         grant = ModelGrant(
