@@ -94,8 +94,11 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "for check in MERGE_GATE COVERAGE_FLOOR": "completes both check runs, failing closed",
     },
     "one-shot-focused-reader-recovery.yml": {
-        "uv run --script scripts/one_shot_focused_reader_recovery.py": (
-            "one-shot protected evidence judge and owned-check cleanup require the Actions token and pinned checkouts"
+        "uv run --script scripts/one_shot_focused_reader_recovery.py ../protected ../reviewed-reader": (
+            "one-shot protected evidence judge requires the Actions token and pinned checkouts"
+        ),
+        "uv run --script scripts/one_shot_focused_reader_recovery.py --cleanup": (
+            "one-shot owned-check cleanup requires the Actions token and recovery run identity"
         ),
     },
     "focused-job.yml": {
@@ -238,6 +241,19 @@ def test_finds_commands_not_run_through_make(tmp_path):
     ]
     workflow.write_text(yaml.safe_dump({"jobs": {"publish": {"steps": [{"uses": "x"}, *steps]}}}), encoding="utf-8")
     assert not_through_make(workflow) == ["bash scripts/check_licenses.sh", unreviewed]
+
+
+def test_recovery_exemptions_apply_only_to_the_two_reviewed_commands_and_workflow(tmp_path):
+    judge = "uv run --script scripts/one_shot_focused_reader_recovery.py ../protected ../reviewed-reader"
+    cleanup = "uv run --script scripts/one_shot_focused_reader_recovery.py --cleanup"
+    other = "uv run --script scripts/one_shot_focused_reader_recovery.py --other"
+    body = yaml.safe_dump({"jobs": {"recovery": {"steps": [{"run": cmd} for cmd in (judge, cleanup, other)]}}})
+    workflow = tmp_path / "one-shot-focused-reader-recovery.yml"
+    workflow.write_text(body, encoding="utf-8")
+    assert not_through_make(workflow) == [other]
+    workflow = tmp_path / "another.yml"
+    workflow.write_text(body, encoding="utf-8")
+    assert not_through_make(workflow) == [judge, cleanup, other]
 
 
 @pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda p: p.name)
