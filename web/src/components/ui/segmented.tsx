@@ -24,6 +24,8 @@ type Props<T extends string> = {
   readonly selectOnArrow?: boolean;
   /** The segment being asked for: the selected look with a spinner, the group busy. */
   readonly busy?: T | null;
+  /** A cancellation choice that remains actionable while a request is pending. */
+  readonly allowWhileBusy?: T;
 };
 
 export function SegmentedControl<T extends string>({
@@ -33,6 +35,7 @@ export function SegmentedControl<T extends string>({
   onSelect,
   selectOnArrow = false,
   busy = null,
+  allowWhileBusy,
 }: Props<T>) {
   const legendId = useId();
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
@@ -88,12 +91,14 @@ export function SegmentedControl<T extends string>({
               type="button"
               role="radio"
               aria-checked={checked}
-              aria-disabled={segment.unavailable || (busy && !checked) ? true : undefined}
+              aria-disabled={
+                segment.unavailable || (busy && !checked && segment.value !== allowWhileBusy) ? true : undefined
+              }
               title={segment.unavailable}
               tabIndex={index === focusable ? 0 : -1}
               onKeyDown={(event) => move(event, index)}
               onClick={() => {
-                if (busy) return;
+                if (busy && segment.value !== allowWhileBusy) return;
                 onSelect(segment.value);
               }}
               className={cn(
