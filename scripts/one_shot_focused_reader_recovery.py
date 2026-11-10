@@ -18,7 +18,7 @@ from typing import Any
 
 REPO = "helmut-hoffer-von-ankershoffen/heinzel"
 BASE = "85f8f31cebd9456430b62f4be7c96f1305905b72"
-CURRENT_MAIN = "01205988a97da9c5362a20c5723485d191696208"
+CURRENT_MAIN = "c6e1f239c36c02580c0eb0b2933c84361fbac6a8"
 READER = "d8cbd3240b535c7e42853ea331274f220b2cf21d"
 READER_TREE = "88f7dcd4f5a0e8c34db963dce6f668ca61662f47"
 REF = "refs/heads/bootstrap/one-shot-focused-reader-recovery"

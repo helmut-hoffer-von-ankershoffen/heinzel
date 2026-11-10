@@ -16,7 +16,7 @@ jobs:
       && github.sha == vars.ONE_SHOT_FOCUSED_READER_RECOVERY_SHA
       && github.workflow_sha == github.sha
       && github.run_attempt == '1'
-      && vars.ONE_SHOT_FOCUSED_READER_WRITER_HOLD == '01205988a97da9c5362a20c5723485d191696208'
+      && vars.ONE_SHOT_FOCUSED_READER_WRITER_HOLD == 'c6e1f239c36c02580c0eb0b2933c84361fbac6a8'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -72,7 +72,7 @@ jobs:
       && github.sha == vars.ONE_SHOT_FOCUSED_READER_RECOVERY_SHA
       && github.workflow_sha == github.sha
       && github.run_attempt == '1'
-      && vars.ONE_SHOT_FOCUSED_READER_WRITER_HOLD == '01205988a97da9c5362a20c5723485d191696208'
+      && vars.ONE_SHOT_FOCUSED_READER_WRITER_HOLD == 'c6e1f239c36c02580c0eb0b2933c84361fbac6a8'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
