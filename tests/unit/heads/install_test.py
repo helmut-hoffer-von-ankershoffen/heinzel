@@ -304,3 +304,111 @@ def test_default_discovery_can_never_select_an_edge_or_prerelease_app(version):
     """Every versionless install path resolves through here, and edge is an explicit choice (ADR 0114)."""
     with pytest.raises(HeinzelError, match="canonical stable"):
         install._app_release_version(f"{install.PROFILE_TAG}{version}")
+
+
+@pytest.mark.parametrize(
+    ("source", "landing", "error", "message"),
+    [
+        ("http://example.invalid/app", "", ValueError, "require HTTPS"),
+        ("https://user@example.invalid/app", "", ValueError, "without credentials"),
+        ("https://example.invalid/app#fragment", "", ValueError, "or fragments"),
+        ("https://example.invalid/app", "http://example.invalid/app", ValueError, "away from HTTPS"),
+        (install.PROFILE_ROOT + "/artifact", "https://example.invalid/app", HeinzelError, "download authority"),
+        ("https://example.invalid/app", "https://example.invalid/app", ValueError, "size limit"),
+    ],
+)
+def test_artifact_reads_reject_unsafe_sources_responses_and_size(monkeypatch, source, landing, error, message):
+    calls = []
+
+    def opener(url, *, timeout):
+        calls.append((url, timeout))
+        return nullcontext(SimpleNamespace(url=landing, read=lambda size: b"x" * size))
+
+    monkeypatch.setattr(install, "build_opener", lambda *_args: SimpleNamespace(open=opener))
+    monkeypatch.setattr(install, "urlopen", opener)
+    with pytest.raises(error, match=message):
+        install._read(source, 8)
+    assert calls == ([(source, install.TIMEOUT)] if landing else [])
+
+
+def test_remote_profile_cannot_select_local_artifacts(tmp_path, monkeypatch):
+    local_profile = profile_file(tmp_path)
+    source = "https://example.invalid/profile.json"
+    content = local_profile.read_bytes()
+    monkeypatch.setattr(
+        install,
+        "urlopen",
+        lambda *_args, **_kwargs: nullcontext(SimpleNamespace(url=source, read=lambda size: content[:size])),
+    )
+    with pytest.raises(ValueError, match="remote app profile cannot select a local file"):
+        install.read_profile(source)
+
+
+@pytest.mark.parametrize(
+    ("error", "kind", "message"),
+    [
+        (OSError, install.ReleaseUnavailableError, "could not reach the release server"),
+        (ValueError, HeinzelError, "schema or package identities are invalid"),
+    ],
+)
+def test_latest_profile_explains_failed_discovery_without_exposing_response(monkeypatch, error, kind, message):
+    def fail(*_args, **_kwargs):
+        detail = "https://example.invalid/?token=fixture"
+        raise error(detail)
+
+    monkeypatch.setattr(install, "build_opener", lambda *_args: SimpleNamespace(open=fail))
+    with pytest.raises(kind, match=message) as failure:
+        install.latest_profile()
+    assert "token=fixture" not in str(failure.value)
+
+
+@pytest.mark.parametrize("executable", [None, "/fixture/uv"])
+def test_installer_uv_uses_the_verified_locator_without_a_shell(monkeypatch, executable):
+    monkeypatch.setattr(install, "find_uv", lambda: executable)
+    if executable is None:
+        with pytest.raises(ValueError, match="Install uv before installing the standard app"):
+            install.uv_executable()
+    else:
+        assert install.uv_executable() == executable
+
+
+@pytest.mark.parametrize("returncode", [0, 1])
+def test_existing_requirements_checks_the_selected_uv_tool_directory(tmp_path, monkeypatch, returncode):
+    monkeypatch.setattr(install, "find_uv", lambda: "/fixture/uv")
+
+    def run(command, **options):
+        assert command == ["/fixture/uv", "tool", "dir"]
+        assert not options["check"]
+        return subprocess.CompletedProcess(command, returncode, str(tmp_path) + "\n", "")
+
+    def installation(_progress, *, prefix):
+        assert returncode == 0
+        assert prefix == tmp_path / "heinzel"
+        return SimpleNamespace(requirements=lambda: ["heinzel", "heinzel-plugin==1.2.3"])
+
+    monkeypatch.setattr(install.subprocess, "run", run)
+    monkeypatch.setattr(install, "Installation", installation)
+    assert install.existing_requirements() == ([] if returncode else ["heinzel-plugin==1.2.3"])
+
+
+def test_prepared_wheel_is_reused_only_while_its_contents_are_unchanged(tmp_path):
+    profile = install.read_profile(str(profile_file(tmp_path)))
+    directory = tmp_path.resolve() / "cache"
+    paths = install.prepare(profile, directory, set())
+    identity = [(path.stat().st_ino, path.stat().st_mtime_ns) for path in paths]
+    assert install.prepare(profile, directory, set()) == paths
+    assert [(path.stat().st_ino, path.stat().st_mtime_ns) for path in paths] == identity
+    paths[0].write_bytes(b"foreign bytes")
+    with pytest.raises(OSError, match="existing app artifact is unsafe or does not match"):
+        install.prepare(profile, directory, set())
+    assert paths[0].read_bytes() == b"foreign bytes"
+
+
+def test_prepare_refuses_an_artifact_directory_writable_by_other_users(tmp_path):
+    profile = install.read_profile(str(profile_file(tmp_path)))
+    directory = tmp_path.resolve() / "cache"
+    directory.mkdir()
+    directory.chmod(0o777)
+    with pytest.raises(OSError, match="artifact directory has unsafe ownership or permissions"):
+        install.prepare(profile, directory, set())
+    assert not list(directory.iterdir())

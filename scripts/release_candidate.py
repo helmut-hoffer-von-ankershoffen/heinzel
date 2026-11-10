@@ -35,6 +35,7 @@ VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)")
 SHA = re.compile(r"[0-9a-f]{40}")
 DIGEST = re.compile(r"[0-9a-f]{64}")
 MAX_JOBS = 1000
+PR_PAGE_SIZE = 100
 MAX_PROOF = 64 * 1024
 CONSUMERS = ("atlassian", "clock", "example", "github", "google", "resource", "tailscale", "theme", "weather", "zoom")
 
@@ -102,6 +103,53 @@ def release_version(event: str, repository: str, ref: str, payload: dict[str, An
     if event == "pull_request" and payload["pull_request"].get("title") != f"chore(release): v{version}":
         return None
     return version
+
+
+def dispatch_pull(
+    head: str,
+    ref: str,
+    get: Callable[[str], Any],
+) -> dict[str, Any]:
+    """Find the unique open canonical release PR for an exact candidate dispatch."""
+    require(valid_sha(head), "candidate dispatch requires the exact source head")
+    pulls = get(f"commits/{head}/pulls?per_page={PR_PAGE_SIZE}")
+    require(isinstance(pulls, list) and len(pulls) < PR_PAGE_SIZE, "candidate pull request lookup may be truncated")
+    matches = [
+        pr
+        for pr in pulls
+        if pr["state"] == "open"
+        and pr["draft"] is False
+        and pr["head"]["sha"] == head
+        and pr["head"]["ref"] == ref
+        and valid_sha(pr["base"]["sha"])
+        and release_version("pull_request", REPOSITORY, "", {"pull_request": pr})
+    ]
+    require(len(matches) == 1, "dispatch has no unique canonical open release PR")
+    return matches[0]
+
+
+def select_release() -> bool:
+    """Recognize a canonical non-draft candidate without executing any focused code."""
+    event, repository, ref, payload = context()
+    if not release_version(event, repository, ref, payload):
+        return False
+    if event == "pull_request":
+        pr = payload["pull_request"]
+        require(
+            pr.get("state") == "open"
+            and pr.get("draft") is False
+            and valid_sha(pr["head"].get("sha"))
+            and valid_sha(pr["base"].get("sha"))
+            and pr["head"]["sha"] != pr["base"]["sha"],
+            "candidate requires an exact open non-draft release PR",
+        )
+    else:
+
+        def get(path: str) -> Any:  # noqa: ANN401 - the GitHub JSON response is validated at the source boundary
+            return json.loads(command(["gh", "api", f"repos/{REPOSITORY}/{path}"]))
+
+        dispatch_pull(os.environ["GITHUB_SHA"], ref, get)
+    return True
 
 
 def context() -> tuple[str, str, str, dict[str, Any]]:
@@ -200,9 +248,10 @@ def expected_jobs(event: str) -> dict[str, str]:
         *[f"Consumer (heinzel-{name})" for name in CONSUMERS],
     }
     skipped = {
-        "Main batch full suite (${{ needs.admission.outputs.base }})",
+        "Main batch focused scope (${{ needs.admission.outputs.base }})",
         "Main batch delegated to ${{ needs.admission.outputs.run }}",
         "Site tests",
+        "Focused tests (${{ matrix.lane }})",
         "macOS smoke",
         "Source plugin (${{ matrix.name }})",
         *[
@@ -536,9 +585,9 @@ def main() -> int:
     checking.add_argument("--recorder-sha256", required=True)
     args = parser.parse_args()
     if args.command == "select":
-        version = release_version(*context())
+        selected = select_release()
         with args.output.open("a") as output:
-            output.write(f"full_release={'true' if version else 'false'}\n")
+            output.write(f"full_release={str(selected).lower()}\n")
     elif args.command == "verify":
 
         def get(path: str) -> Any:  # noqa: ANN401 - the GitHub JSON response is validated at the evidence boundary

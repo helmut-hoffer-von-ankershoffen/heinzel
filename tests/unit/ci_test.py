@@ -59,7 +59,11 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
-        "python3 -I scripts/release_candidate.py": "selects or records release source",
+        "python3 -I scripts/release_candidate.py": "records release source",
+        "python3 -I scripts/focused_plan.py": "routes exact source to a reviewed focused plan or a full candidate",
+        "uv run --no-build --frozen --script scripts/focused_coverage.py": "runs and measures reviewed test selectors",
+        "required=(admission changes lint": "requires every owning focused job",
+        "sudo sed -i ": "uses the primary signed Ubuntu archive for focused browser runtime setup",
         "uv run --frozen --no-sync --no-build python scripts/ci_node.py": (
             "exports the already installed locked runtime through GitHub's step-local GITHUB_PATH setup contract"
         ),
@@ -69,7 +73,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ),
         "uv run --no-build --script scripts/main_batch.py": "read-only bounded admission of an explicit main batch",
         "echo 'The validated aggregate base": "records that the final run consumed the aggregate base",
-        'echo "Full CI is recorded': "links the intermediate admission to its exact final run",
+        'echo "Integration CI is recorded': "links the intermediate admission to its exact final run",
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
             "the secret must be configured in this repo"
         ),
@@ -84,6 +88,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "merge-gate.yml": {
         "uv run --no-build --frozen --script scripts/merge_gate.py": "judges by public APIs, from the base branch",
+        "uv run --no-build --frozen --script scripts/focused_gate.py": "verifies protected focused evidence",
         '[[ "$PR_HEAD_SHA" =~': "finds the open pull request whose finished CI the gates judge",
         "for check in merge-gate coverage-floor": "reports the gates as check runs on the pull request's head",
         "for check in MERGE_GATE COVERAGE_FLOOR": "completes both check runs, failing closed",
@@ -262,11 +267,20 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
     workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
     jobs = workflow["jobs"]
     assert "lint" in jobs["ci-ok"]["needs"]
-    assert any(step.get("run") == "make managed-backend-setup managed-backend-check" for step in jobs["lint"]["steps"])
-    runs = [step.get("run") for step in jobs["lint"]["steps"]]
-    assert runs.index("make managed-backend-setup managed-backend-check") < runs.index("make typecheck")
+    runs = {step["run"]: step.get("if") for step in jobs["lint"]["steps"] if "run" in step}
+    assert list(runs).index("make managed-backend-setup") < list(runs).index("make typecheck")
+    assert runs["make managed-backend-static"] == "needs.changes.outputs.full_release != 'true'"
+    assert runs["make managed-backend-check"] == "needs.changes.outputs.full_release == 'true'"
     for name in ("Makefile", ".github/workflows/ci.yml.jinja"):
         assert "managed-backend" not in (REPO / "template" / name).read_text()
+
+
+def test_core_lint_does_not_export_an_empty_github_token_to_zizmor():
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    job = workflow["jobs"]["lint"]
+    [lint] = [step for step in job["steps"] if step.get("run") == "make lint"]
+    for scope in (workflow, job, lint):
+        assert {"GH_TOKEN", "GITHUB_TOKEN"}.isdisjoint(scope.get("env", {}))
 
 
 @pytest.mark.parametrize(("event", "batch_base"), [("pull_request", False), ("push", False), ("push", True)])
@@ -977,7 +991,7 @@ def test_template_installed_cli_uses_its_own_daemon_unit_directory(tmp_path, tmp
     inherited_units = tmp_path / "user-units"
     monkeypatch.setenv("HZ_SYSTEM_DAEMON__UNIT_DIR", str(inherited_units))
     monkeypatch.setenv("PLUGIN_TEST_WHEEL", str(tmp_path / "plugin.whl"))
-    monkeypatch.setattr("shutil.which", lambda _name: "/isolated/uv")
+    monkeypatch.setattr("shutil.which", lambda _name, **_: "/isolated/uv")
     calls = []
 
     def run(command, **kwargs):
@@ -1451,10 +1465,15 @@ def test_everything_else_runs_the_app_jobs(tmp_path, ci_paths, event, changed):
 def test_site_only_skips_exactly_the_app_test_jobs_and_ci_ok_waits_for_site_tests():
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
     for name in ("test", "coverage", "perf", "e2e"):
-        assert jobs[name]["if"] == "needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'"
+        assert jobs[name]["if"] == (
+            "needs.changes.outputs.full_release == 'true' && "
+            "(needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true')"
+        )
     for name in ("lint", "build"):
         assert "site_only" not in jobs[name]["if"]
-    assert jobs["site-tests"]["if"] == "needs.changes.outputs.site_only == 'true'"
+    assert jobs["site-tests"]["if"] == (
+        "needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.site_only == 'true')"
+    )
     assert "site-tests" in jobs["ci-ok"]["needs"]
 
 
@@ -1553,33 +1572,22 @@ def test_every_scheduled_macos_job_blocks_ci_ok():
     assert "needs.changes.outputs.macos_full" not in jobs["test"]["strategy"]["matrix"]["include"]
 
 
-def test_a_pull_request_runs_one_small_macos_job_and_main_runs_the_full_macos_suite():
+def test_macos_workload_is_reviewed_focused_or_the_unchanged_candidate_matrix():
     jobs = _ci_jobs()
-    on_pull_request, on_main = set(), set()
-    for name, job in jobs.items():
-        runs_on = str(job.get("runs-on", ""))
-        matrix = job.get("strategy", {}).get("matrix")
-        oses = matrix.get("os") if isinstance(matrix, dict) else None  # a planned matrix lists plugins, on Linux
-        for event, found in (("pull_request", on_pull_request), ("push", on_main)):
-            if event == "pull_request" and not _runs_on_pull_request(job):
-                continue
-            if event == "push" and "github.event_name == 'pull_request'" in str(job.get("if", "")):
-                continue
-            if "macos" in runs_on or (oses is not None and any("macos" in os for os in _oses(oses, event))):
-                found.add(name)
-    include = jobs["test"]["strategy"]["matrix"]["include"]
-    assert "github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '[]'" in include
-    assert on_pull_request == {"macos-smoke"}
-    # and the test matrix's macOS shards; `quarantine` is the non-blocking lane, run when tests/quarantine.toml asks
-    assert on_main == {"setup", "e2e", "notifier", "macos-specific", "electron", "quarantine"}
+    candidate_only = "needs.changes.outputs.full_release == 'true'"
+    for name in ("setup", "test", "e2e", "notifier", "macos-specific", "macos-smoke", "electron", "quarantine"):
+        assert jobs[name]["if"].startswith(candidate_only)
+    assert jobs["focused-tests"]["if"] == "needs.changes.outputs.focused_mode != ''"
+    assert "fromJSON(needs.changes.outputs.focused_matrix" in jobs["focused-tests"]["strategy"]["matrix"]
+    assert "focused-tests" in jobs["ci-ok"]["needs"]
     assert "quarantine" not in jobs["ci-ok"]["needs"]
-    assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], "push") == [
+    assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], "workflow_dispatch") == [
         "ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest",
     ]  # fmt: skip
     smoke = jobs["macos-smoke"]
     assert (smoke["name"], smoke["runs-on"]) == ("macOS smoke", "macos-latest")
     assert smoke["timeout-minutes"] <= 10
-    assert smoke["if"].startswith("github.event_name == 'pull_request' && ")
+    assert "needs.changes.outputs.full_release != 'true'" in smoke["if"]
     runs = {step.get("run"): step.get("if") for step in smoke["steps"] if "run" in step}
     assert runs["make test-macos-smoke"] is None
     assert runs["make notifier"] is None  # the macos_specific real-launch tests must not skip

@@ -1,4 +1,4 @@
-"""A partial or forged batch must never suppress a full main suite."""
+"""A partial or forged batch must never suppress independent main integration."""
 
 import importlib.util
 from copy import deepcopy
@@ -58,11 +58,14 @@ def evidence():
     return rows
 
 
-def test_intermediate_delegates_only_after_final_consumes_aggregate_base(evidence):
+@pytest.mark.parametrize("workload", ["full suite", "focused scope"])
+def test_intermediate_delegates_only_after_final_consumes_aggregate_base(evidence, workload):
+    jobs = evidence["actions/runs/99/attempts/1/jobs?per_page=100"]["jobs"]
+    jobs[0]["name"] = f"Main batch {workload} ({BASE})"
     assert batch.admit(FIRST, evidence.__getitem__, seconds=0) == {"full": False, "base": BASE, "run": 99}
 
 
-def test_final_always_runs_full_and_can_start_before_its_marker(evidence):
+def test_final_owns_integration_and_can_start_before_its_marker(evidence):
     del evidence["actions/runs/99/attempts/1/jobs?per_page=100"]
     assert batch.admit(FINAL, evidence.__getitem__, seconds=0) == {"full": True, "base": BASE, "run": 99}
 
