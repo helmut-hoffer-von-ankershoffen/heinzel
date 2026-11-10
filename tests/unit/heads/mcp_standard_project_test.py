@@ -18,7 +18,11 @@ pytestmark = pytest.mark.unit
     ("client", "relative"),
     [("claude", ".mcp.json"), ("codex", ".codex/config.toml"), ("cursor", ".cursor/mcp.json")],
 )
-def test_explicit_install_creates_only_selected_project_file(make_kernel, tmp_path, client, relative):
+def test_explicit_install_creates_only_selected_project_file(make_kernel, tmp_path, monkeypatch, client, relative):
+    home = tmp_path / "fictional-home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.delenv("CODEX_HOME", raising=False)
     destination = tmp_path / relative
     unrelated = tmp_path / "unrelated.json"
     unrelated.write_text('{"keep": true}')
@@ -34,6 +38,7 @@ def test_explicit_install_creates_only_selected_project_file(make_kernel, tmp_pa
     assert entry == {"command": sys.executable, "args": ["-m", "heinzel", "system", "serve", "mcp"]}
     assert destination.stat().st_mode & 0o777 == 0o600
     assert unrelated.read_text() == '{"keep": true}'
+    assert list(home.iterdir()) == []
     again = CliRunner().invoke(
         build(make_kernel(builtins=True)),
         ["system", "serve", "mcp-install-project", "--client", client, "--project", str(tmp_path)],
@@ -152,20 +157,29 @@ def test_codex_home_override_never_receives_project_configuration(make_kernel, t
     assert global_dir.exists() is existing  # Never create even the global directory on refusal.
 
 
-def test_separate_codex_home_override_still_allows_project_install(make_kernel, tmp_path, monkeypatch):
+@pytest.mark.parametrize("existing", [False, True])
+def test_separate_codex_home_override_still_allows_project_install(make_kernel, tmp_path, monkeypatch, existing):
     home = tmp_path / "home"
     home.mkdir()
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "separate-codex-home"))
+    codex_home = tmp_path / "separate-codex-home"
+    if existing:
+        codex_home.mkdir()
+        (codex_home / "unrelated").write_text("untouched")
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
     result = CliRunner().invoke(
         build(make_kernel(builtins=True)),
         ["system", "serve", "mcp-install-project", "--client", "codex", "--project", str(project)],
     )
     assert result.exit_code == 0, result.output
     assert (project / ".codex/config.toml").is_file()
-    assert not (tmp_path / "separate-codex-home").exists()
+    if existing:
+        assert [path.name for path in codex_home.iterdir()] == ["unrelated"]
+        assert (codex_home / "unrelated").read_text() == "untouched"
+    else:
+        assert not codex_home.exists()
 
 
 def test_missing_codex_home_parent_does_not_block_unrelated_project(make_kernel, tmp_path, monkeypatch):
