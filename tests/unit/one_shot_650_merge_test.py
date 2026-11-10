@@ -164,3 +164,33 @@ def test_refuses_changed_evidence(evidence, mutation):
         statuses[0]["state"] = "failure"
     with pytest.raises(ValueError, match=r"focused jobs|recovery run|recovery job|untrusted status"):
         mod.validate_evidence(recovery_id)
+
+
+def test_validate_reads_test_merge_ref_without_pr_merge_sha(monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORY", mod.REPO)
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/bootstrap/one-shot-650-merge")
+    monkeypatch.setenv("GITHUB_SHA", "a" * 40)
+    monkeypatch.setenv("REVIEWED_HELPER_SHA", "a" * 40)
+    monkeypatch.setenv("RECOVERY_RUN_ID", "123456789")
+    objects = {
+        "pulls/650": {
+            "state": "open",
+            "draft": False,
+            "head": {"sha": mod.HEAD},
+            "base": {"sha": mod.BASE, "ref": "main"},
+            "mergeable": True,
+            "mergeable_state": "clean",
+        },
+        "commits/main": {"sha": mod.BASE},
+        f"git/commits/{mod.HEAD}": {"tree": {"sha": mod.TREE}},
+        "git/ref/pull/650/merge": {"object": {"sha": "merge-oid"}},
+        "git/commits/merge-oid": {"tree": {"sha": mod.TREE}, "parents": [{"sha": mod.BASE}, {"sha": mod.HEAD}]},
+    }
+    monkeypatch.setattr(mod, "one", lambda path: objects[path])
+    validated = []
+    monkeypatch.setattr(mod, "validate_evidence", validated.append)
+    mod.validate()
+    assert validated == [123456789]
+    objects["git/commits/merge-oid"]["parents"].reverse()
+    with pytest.raises(ValueError, match="test merge changed"):
+        mod.validate()

@@ -89,7 +89,8 @@ def validate() -> None:
     if one(f"git/commits/{HEAD}").get("tree", {}).get("sha") != TREE:
         msg_0 = "candidate tree changed"
         raise ValueError(msg_0)
-    merge = one(f"git/commits/{pull['merge_commit_sha']}")
+    merge_ref = one("git/ref/pull/650/merge")
+    merge = one(f"git/commits/{merge_ref['object']['sha']}")
     if [p.get("sha") for p in merge.get("parents", [])] != [BASE, HEAD] or merge.get("tree", {}).get("sha") != TREE:
         msg_0 = "test merge changed"
         raise ValueError(msg_0)
