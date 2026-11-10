@@ -31,21 +31,21 @@ def test_installation_runs_uv_from_a_homebrew_like_dir_with_a_minimal_path(tmp_p
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "uv 0.0.0"
     child_path = Path(seen).read_text().strip().split(os.pathsep)
-    assert child_path[:2] == ["/usr/bin", "/bin"]
-    assert str(brew) in child_path
-    assert "/opt/homebrew/bin" in child_path
+    assert child_path[:3] == ["/usr/bin", "/bin", str(brew)]
 
 
 def test_missing_uv_says_where_it_looked(tmp_path, monkeypatch):
+    bin_dir = tmp_path / ".local/bin"
+    bin_dir.mkdir(parents=True)
     monkeypatch.setenv("PATH", "/nonexistent-a:/nonexistent-b")
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("UV_INSTALL_DIR", raising=False)
     monkeypatch.delenv("XDG_BIN_HOME", raising=False)
     monkeypatch.delenv("CARGO_HOME", raising=False)
-    monkeypatch.setattr("heinzel.kernel._uv_locate.standard_directories", lambda _=None: [str(tmp_path / ".local/bin")])
+    monkeypatch.setattr("heinzel.kernel._uv_locate.standard_directories", lambda _=None: [str(bin_dir)])
     from heinzel import HeinzelError
 
     with pytest.raises(HeinzelError) as caught:
         _ = Installation(Progress(), prefix=tmp_path).uv
     assert "/nonexistent-a" in str(caught.value)
-    assert str(tmp_path / ".local/bin") in str(caught.value)
+    assert str(bin_dir) in str(caught.value)
