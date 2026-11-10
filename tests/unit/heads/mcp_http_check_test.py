@@ -94,7 +94,7 @@ def test_cli_reads_token_only_from_stdin_and_reports_ownership_unverified(endpoi
     assert "hzmcp_wrong" not in bad.output
 
 
-@pytest.mark.parametrize("mode", ["redirect", "invalid-json"])
+@pytest.mark.parametrize("mode", ["redirect", "redirect-path", "invalid-json"])
 def test_reflected_token_never_reaches_cli_or_sdk_logs(make_kernel, caplog, capfd, mode):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -104,7 +104,14 @@ def test_reflected_token_never_reaches_cli_or_sdk_logs(make_kernel, caplog, capf
     class Reflect(BaseHTTPRequestHandler):
         def do_POST(self):
             requests.append(self.path)
-            if mode == "redirect":
+            if mode == "redirect-path" and self.path == "/mcp":
+                self.send_response(307)
+                self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/{secret}")
+                body = b""
+            elif mode == "redirect-path":
+                self.send_response(400)
+                body = b""
+            elif mode == "redirect":
                 self.send_response(302)
                 self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/mcp?reflected={secret}")
                 body = b""
@@ -132,6 +139,8 @@ def test_reflected_token_never_reaches_cli_or_sdk_logs(make_kernel, caplog, capf
         )
         assert result.exit_code != 0
         assert requests
+        if mode == "redirect-path":
+            assert f"/{secret}" in requests  # The SDK followed the same-origin redirect before failing.
         assert secret not in result.output
         assert secret not in caplog.text
         captured = capfd.readouterr()
