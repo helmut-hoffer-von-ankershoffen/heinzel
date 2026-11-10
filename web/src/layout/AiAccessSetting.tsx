@@ -456,6 +456,7 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
               try {
                 window.sessionStorage.removeItem(CLIENT_INSTALL_PENDING);
                 setClientInstallError(null);
+                setPhase(null);
                 setResolving(false);
               } catch {
                 setClientInstallError(t("plugins.operationUnavailable"));

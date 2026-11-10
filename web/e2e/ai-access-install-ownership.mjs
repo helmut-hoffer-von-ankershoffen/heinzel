@@ -5,7 +5,7 @@ import { chromium } from "playwright-core";
 const [url] = process.argv.slice(2);
 const browser = await chromium.launch();
 try {
-  for (const dismissal of ["close", "escape", "backdrop", "failure", "lost-response"]) {
+  for (const dismissal of ["close", "escape", "backdrop", "failure", "lost-response", "same-dialog-loss"]) {
     console.log(`dismissal: ${dismissal}`);
     const context = await browser.newContext({ serviceWorkers: "block" });
     const page = await context.newPage();
@@ -59,8 +59,9 @@ try {
       installStarted();
       await pending;
       if (dismissal === "failure") return route.fulfill({ status: 500, json: { error: "Fictional install failed" } });
-      if (dismissal === "lost-response" && installs === 1) return route.abort("connectionreset");
-      if (dismissal === "lost-response")
+      if ((dismissal === "lost-response" || dismissal === "same-dialog-loss") && installs === 1)
+        return route.abort("connectionreset");
+      if (dismissal === "lost-response" || dismissal === "same-dialog-loss")
         return route.fulfill({ json: { extra: "openai", done: false, restart_required: false } });
       await route.fulfill({ json: { extra: "openai", done: true, restart_required: true } });
     });
@@ -114,26 +115,32 @@ try {
         .locator(".viewport-overlay")
         .last()
         .click({ position: { x: 2, y: 2 } });
-    await dialog.waitFor({ state: "detached", timeout: 3_000 });
-    await page.getByRole("button", { name: "Set up ChatGPT plan" }).click();
-    dialog = page.getByRole("dialog", { name: "Set up ChatGPT plan" });
+    if (dismissal !== "same-dialog-loss") {
+      await dialog.waitFor({ state: "detached", timeout: 3_000 });
+      await page.getByRole("button", { name: "Set up ChatGPT plan" }).click();
+      dialog = page.getByRole("dialog", { name: "Set up ChatGPT plan" });
+    }
     assert.equal(await dialog.getByRole("button", { name: "Add and restart" }).isDisabled(), true, dismissal);
     assert.equal(await dialog.getByText("Applied").count(), 0, dismissal);
     assert.equal(installs, 1, dismissal);
     releaseInstall();
-    if (dismissal === "failure" || dismissal === "lost-response") {
+    if (dismissal === "failure" || dismissal === "lost-response" || dismissal === "same-dialog-loss") {
       await dialog.getByText("The server cannot confirm how this installation ended. Do not retry it yet.").waitFor();
       if (dismissal === "failure") await dialog.getByText("Fictional install failed").waitFor();
       assert.equal(await dialog.getByRole("button", { name: "Add and restart" }).isDisabled(), true);
       assert.equal(restarts, 0);
-      if (dismissal === "lost-response") {
-        await page.reload();
-        await page.locator("#splash").waitFor({ state: "hidden" });
-        await page.getByRole("button", { name: "Set up ChatGPT plan" }).click();
-        dialog = page.getByRole("dialog", { name: "Set up ChatGPT plan" });
-        await dialog.getByText("The server cannot confirm how this installation ended. Do not retry it yet.").waitFor();
-        assert.equal(await dialog.getByRole("button", { name: "Add and restart" }).isDisabled(), true);
-        assert.equal(installs, 1);
+      if (dismissal === "lost-response" || dismissal === "same-dialog-loss") {
+        if (dismissal === "lost-response") {
+          await page.reload();
+          await page.locator("#splash").waitFor({ state: "hidden" });
+          await page.getByRole("button", { name: "Set up ChatGPT plan" }).click();
+          dialog = page.getByRole("dialog", { name: "Set up ChatGPT plan" });
+          await dialog
+            .getByText("The server cannot confirm how this installation ended. Do not retry it yet.")
+            .waitFor();
+          assert.equal(await dialog.getByRole("button", { name: "Add and restart" }).isDisabled(), true);
+          assert.equal(installs, 1);
+        }
         await dialog.getByRole("button", { name: "Resolve after checking" }).click();
         await dialog.getByRole("button", { name: "I checked; clear this tab's receipt" }).click();
         assert.equal(await dialog.getByRole("button", { name: "Add and restart" }).isEnabled(), true);
