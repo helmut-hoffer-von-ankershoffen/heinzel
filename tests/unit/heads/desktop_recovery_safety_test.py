@@ -22,7 +22,7 @@ def test_move_status_rejects_unexpected_file_identity_and_reverses(tmp_path, mon
     assert move.status() is True
     move.apply(reverse=True)
     assert move.status() is False
-    private.unlink()
+    private.rename(tmp_path / "retained-original")
     private.write_text("replaced")
     with pytest.raises(desktop.DesktopInstallationError):
         move.status()
