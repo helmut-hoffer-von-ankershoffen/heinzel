@@ -160,6 +160,11 @@ const en = {
   "mcpSettings.clientName.codex": "Codex",
   "mcpSettings.clientName.cursor": "Cursor",
   "mcpSettings.clientNotChecked": "Connection not checked",
+  "mcpSettings.projectSetup": "Set up a project client",
+  "mcpSettings.projectSetupHelp":
+    "In a terminal, replace <project-path> with your project folder and run the command for your client. This creates a new configuration only when one does not already exist.",
+  "mcpSettings.projectSetupLifecycle":
+    "Trust or approve the project in your client when asked. The client starts and stops its own server; this setup does not verify a connection.",
   "mcpSettings.clientEvidence":
     "This page cannot yet verify individual client connections. A running worker or reachable transport does not confirm that a client is connected.",
   "mcpSettings.noActions": "The host offers no lifecycle actions for this registration.",

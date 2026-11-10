@@ -44,6 +44,19 @@ export function McpSettings() {
           ))}
         </ul>
         <p>{t("mcpSettings.clientEvidence")}</p>
+        <details>
+          <summary className="cursor-pointer">{t("mcpSettings.projectSetup")}</summary>
+          <p className="mt-2">{t("mcpSettings.projectSetupHelp")}</p>
+          <ul className="mt-2 space-y-1">
+            {(["claude", "codex", "cursor"] as const).map((client) => (
+              <li key={client}>
+                <span>{t(`mcpSettings.clientName.${client}`)}: </span>
+                <code>{`hz system serve mcp-install-project --client ${client} --project <project-path>`}</code>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2">{t("mcpSettings.projectSetupLifecycle")}</p>
+        </details>
       </section>
       {availability.isPending && <p role="status">{t("mcpSettings.loading")}</p>}
       {availability.isError && <p role="alert">{t("mcpSettings.statusError")}</p>}

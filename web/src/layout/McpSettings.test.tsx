@@ -25,6 +25,21 @@ it("reports the missing installed host without showing action buttons", async ()
   expect(within(page).queryByRole("button")).not.toBeInTheDocument();
 });
 
+it("offers ordinary project setup without claiming a client connection", async () => {
+  mockApi({ ...shell, "/api/mcp/lifecycle": { planning_available: false } });
+  const user = userEvent.setup();
+  renderAt("/doctor?settings=mcp-connections");
+  const page = await screen.findByRole("region", { name: "MCP connections" });
+  await user.click(within(page).getByText("Set up a project client"));
+  for (const client of ["claude", "codex", "cursor"]) {
+    expect(
+      within(page).getByText(`hz system serve mcp-install-project --client ${client} --project <project-path>`),
+    ).toBeVisible();
+  }
+  expect(within(page).getByText(/client starts and stops its own server/)).toBeVisible();
+  expect(within(page).getAllByText(/Connection not checked/)).toHaveLength(3);
+});
+
 it("reads authenticated observations and sends only the prepared locator to native handoff", async () => {
   const mcpHandoff = vi.fn(async () => true);
   vi.stubGlobal("heinzelDesktop", { mcpHandoff });
