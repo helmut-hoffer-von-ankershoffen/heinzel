@@ -97,13 +97,21 @@ def test_release_proof_tries_only_the_two_reviewed_source_pairs(monkeypatch):
     def proof(_sha, _get, _download, pins):
         tried.append(pins)
         if pins == batch.RELEASE_PINS:
-            msg = "not the historical sources"
+            msg = "executed CI source differs from independent review"
             raise batch.release_candidate.CandidateError(msg)
         return {"run": 99}
 
     monkeypatch.setattr(batch, "release_proof_for", proof)
     assert batch.release_proof_approved(FINAL, lambda _: {}, lambda _: b"") == {"run": 99}
     assert tried == [batch.RELEASE_PINS, batch.DELEGATION_PINS]
+
+    def recognized(*_args):
+        msg = "recognized release has a noncanonical merge message"
+        raise batch.RecognizedReleaseError(msg)
+
+    monkeypatch.setattr(batch, "release_proof_for", recognized)
+    with pytest.raises(batch.RecognizedReleaseError, match="noncanonical"):
+        batch.release_proof_approved(FINAL, lambda _: {}, lambda _: b"")
 
 
 @pytest.fixture

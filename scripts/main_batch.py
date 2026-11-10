@@ -151,10 +151,19 @@ def release_proof_for(
 def release_proof_approved(
     sha: str, get: Callable[[str], Any], download: Callable[[int], bytes]
 ) -> dict[str, Any] | None:
-    """Try only explicitly reviewed source pairs; never fall back to a full suite for an invalid release."""
+    """Try only explicitly reviewed source pairs; never fall back to a full suite for an invalid release.
+
+    Raises:
+        RecognizedReleaseError: A release merge has an inconsistent identity.
+        release_candidate.CandidateError: Candidate evidence does not match a reviewed source pair.
+    """
     try:
         return release_proof_for(sha, get, download, RELEASE_PINS)
-    except release_candidate.CandidateError:
+    except RecognizedReleaseError:
+        raise
+    except release_candidate.CandidateError as error:
+        if str(error) != "executed CI source differs from independent review":
+            raise
         return release_proof_for(sha, get, download, DELEGATION_PINS)
 
 
