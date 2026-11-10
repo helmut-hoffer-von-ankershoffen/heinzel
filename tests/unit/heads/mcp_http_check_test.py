@@ -106,6 +106,29 @@ def test_check_refuses_nonlocal_or_ambiguous_urls(url):
         check_http(url, "hzmcp_fictional")
 
 
+@pytest.mark.parametrize(
+    "url",
+    ["http://127.0.0.1:bad/mcp", "http://127.0.0.1:65536/mcp", "http://127.0.0.1:123/mcp\n"],
+)
+def test_check_refuses_invalid_port_or_control_characters_before_launch(monkeypatch, url):
+    def unexpected_launch(*args, **kwargs):
+        pytest.fail("invalid endpoint must not launch the probe")
+
+    monkeypatch.setattr(subprocess, "run", unexpected_launch)
+    with pytest.raises(HeinzelError, match="loopback"):
+        check_http(url, "hzmcp_fictional")
+
+
+@pytest.mark.parametrize("output", ["", "-1", "\N{ARABIC-INDIC DIGIT ONE}", "1234567890", "1\n"])
+def test_probe_output_must_be_a_bounded_ascii_count(monkeypatch, output):
+    def fake_probe(*args, **kwargs):
+        return subprocess.CompletedProcess(args[0], 0, stdout=output)
+
+    monkeypatch.setattr(subprocess, "run", fake_probe)
+    with pytest.raises(HeinzelError, match="could not be authenticated"):
+        check_http("http://127.0.0.1:1234/mcp", "hzmcp_fictional")
+
+
 def test_cli_reads_token_only_from_stdin_and_reports_ownership_unverified(endpoint, monkeypatch):
     kernel, url, token = endpoint
     runner = CliRunner()
@@ -131,6 +154,19 @@ def test_cli_refuses_missing_or_wrong_token_without_disclosure(endpoint):
     )
     assert bad.exit_code != 0
     assert "hzmcp_wrong" not in bad.output
+
+
+def test_chat_session_is_never_served_over_http(make_kernel, monkeypatch):
+    def unexpected_serve(*args, **kwargs):
+        pytest.fail("a chat session must not start an HTTP server")
+
+    monkeypatch.setattr(mcp, "serve", unexpected_serve)
+    result = CliRunner().invoke(
+        build(make_kernel(builtins=True)),
+        ["system", "serve", "mcp", "--transport", "streamable-http", "--chat", "fictional"],
+    )
+    assert result.exit_code == 2
+    assert "stdio only" in result.output
 
 
 @pytest.mark.parametrize("failure", [OSError("unavailable"), subprocess.TimeoutExpired("probe", 10)])

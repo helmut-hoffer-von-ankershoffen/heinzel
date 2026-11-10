@@ -1,6 +1,7 @@
 """Ordinary project installation is explicit, creation-only, and never claims readiness."""
 
 import json
+import os
 import sys
 import tomllib
 from pathlib import Path
@@ -165,3 +166,34 @@ def test_separate_codex_home_override_still_allows_project_install(make_kernel, 
     assert result.exit_code == 0, result.output
     assert (project / ".codex/config.toml").is_file()
     assert not (tmp_path / "separate-codex-home").exists()
+
+
+def test_missing_codex_home_parent_does_not_block_unrelated_project(make_kernel, tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "missing" / ".codex"))
+    result = CliRunner().invoke(
+        build(make_kernel(builtins=True)),
+        ["system", "serve", "mcp-install-project", "--client", "codex", "--project", str(project)],
+    )
+    assert result.exit_code == 0, result.output
+    assert (project / ".codex/config.toml").is_file()
+    assert not (tmp_path / "missing").exists()
+
+
+def test_opened_codex_directory_matching_global_identity_is_refused(tmp_path):
+    from heinzel import HeinzelError
+    from heinzel.heads.mcp._standard_project import _reject_global_codex_dir
+
+    global_dir = tmp_path / "codex-global"
+    global_dir.mkdir()
+    descriptor = os.open(global_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        with pytest.raises(HeinzelError, match="global Codex configuration"):
+            _reject_global_codex_dir(descriptor, global_dir)
+        assert list(global_dir.iterdir()) == []
+    finally:
+        os.close(descriptor)
