@@ -263,6 +263,46 @@ def test_a_doctor_notice_disappears_once_its_checks_are_up_again(service, condit
     assert kept.delivered_by is None  # never marked read
 
 
+def test_provider_exception_does_not_resolve_its_named_check(service, make_kernel):
+    from heinzel import Check, Status
+    from heinzel.modules.system.doctor import module as doctor_module
+    from heinzel.modules.system.notify._watch import doctor_problems
+
+    provider = Module("sample", "Sample health provider.")
+    broken = {"value": True}
+
+    @provider.health
+    def health() -> list[Check]:
+        """Report health, or fail before reporting the named check."""
+        if broken["value"]:
+            message = "provider failed"
+            raise RuntimeError(message)
+        return [Check(name="network", status=Status.UP, detail="connected")]
+
+    kernel = make_kernel(system__doctor=doctor_module, sample=provider)
+    service.problems = lambda: doctor_problems(kernel)
+    assert doctor(service, ["sample: network"])
+    assert service.resolve() == 0
+    assert len(service.recent()) == 1
+    broken["value"] = False
+    assert service.resolve() == 1
+
+
+def test_a_recurring_fault_creates_a_new_visible_notice(service):
+    failing = {"sample: network"}
+    service.problems = lambda: failing
+    first = doctor(service, ["sample: network"])
+    assert first is not None
+    failing.clear()
+    assert service.resolve() == 1
+    failing.add("sample: network")
+    second = doctor(service, ["sample: network"])
+    assert second is not None
+    assert second.id != first.id
+    assert [notice.id for notice in service.recent()] == [second.id]
+    assert len(service.listing(50, resolved=True).notices) == 2
+
+
 def test_plugin_and_doctor_conditions_compose_without_extra_doctor_probes(service, monkeypatch):
     installed: set[str] = set()
     failing: set[str] | None = None

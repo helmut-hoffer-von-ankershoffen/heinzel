@@ -94,7 +94,10 @@ def holds(
         reasons.append(f"{', '.join(plugins)} {'is' if len(plugins) == 1 else 'are'} installed")
     if (checks := when.checks_up) is not None:
         failing = problems() if problems is not None else None
-        if failing is None or failing & set(checks):
+        # Doctor represents an exception from a provider as `<module>: checks` DOWN.  Its individual
+        # checks are unknown, not UP, until the provider answers again.
+        provider_failures = {f"{check.partition(': ')[0]}: checks" for check in checks}
+        if failing is None or failing & (set(checks) | provider_failures):
             return None
         reasons.append(f"{', '.join(checks)} {'is' if len(checks) == 1 else 'are'} up again")
     return "; ".join(reasons) or None
