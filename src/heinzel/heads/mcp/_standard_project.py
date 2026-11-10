@@ -23,6 +23,43 @@ class StandardClient(StrEnum):
     CURSOR = "cursor"
 
 
+def _identity(stat: os.stat_result) -> tuple[int, int]:
+    return stat.st_dev, stat.st_ino
+
+
+def _reject_global_project(client: StandardClient, project: os.stat_result) -> Path | None:
+    # Compare identities so symlinked parents cannot disguise a global target.
+    if _identity(project) == _identity(Path.home().stat()):
+        msg = "Choose a project directory other than your home."
+        raise HeinzelError(msg)
+    if client is not StandardClient.CODEX:
+        return None
+    codex_home = Path(os.environ.get("CODEX_HOME") or str(Path.home() / ".codex")).expanduser().resolve()
+    if codex_home.name == ".codex":
+        # Refuse before mkdir even when the configured global directory is absent.
+        try:
+            parent = codex_home.parent.stat()
+        except FileNotFoundError:
+            pass  # A missing parent cannot be the already-open project.
+        else:
+            if _identity(project) == _identity(parent):
+                msg = "The selected project would create the global Codex configuration."
+                raise HeinzelError(msg)
+    return codex_home
+
+
+def _reject_global_codex_dir(child: int, codex_home: Path | None) -> None:
+    if codex_home is None:
+        return
+    try:
+        global_dir = codex_home.stat()
+    except FileNotFoundError:
+        return
+    if _identity(os.fstat(child)) == _identity(global_dir):
+        msg = "The selected project would create the global Codex configuration."
+        raise HeinzelError(msg)
+
+
 def install_project(client: StandardClient, project: Path, *, expected_identity: tuple[int, int] | None = None) -> Path:
     """Create a new project config; never replace an existing file or follow its final links.
 
@@ -49,7 +86,8 @@ def install_project(client: StandardClient, project: Path, *, expected_identity:
         try:
             directory = os.open(project, flags)
             stat = os.fstat(directory)
-            if expected_identity is not None and (stat.st_dev, stat.st_ino) != expected_identity:
+            codex_home = _reject_global_project(client, stat)
+            if expected_identity is not None and _identity(stat) != expected_identity:
                 msg = "The selected project changed. Choose it again."
                 raise HeinzelError(msg)
             if folder:
@@ -57,10 +95,11 @@ def install_project(client: StandardClient, project: Path, *, expected_identity:
                 with suppress(FileExistsError):
                     os.mkdir(folder, 0o700, dir_fd=directory)
             child = os.open(folder, flags, dir_fd=directory) if folder else os.dup(directory)
+            _reject_global_codex_dir(child, codex_home)
             descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=child)
             with os.fdopen(descriptor, "wb") as output:
                 output.write(contents)
-        except OSError:
+        except (OSError, RuntimeError):
             msg = "The project config already exists or its directory is unavailable."
             raise HeinzelError(msg) from None
         finally:

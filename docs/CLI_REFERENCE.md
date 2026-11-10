@@ -3761,7 +3761,7 @@ $ hz system serve mcp-install-project [OPTIONS]
 **Options**:
 
 * `--client <claude|codex|cursor>`: Client whose project configuration to create.  [required]
-* `--project <path>`: Existing project directory; no global configuration is changed.  [required]
+* `--project <path>`: Existing project directory other than home; no global configuration is changed.  [required]
 * `--help`: Show this message and exit.
 
 #### `hz system serve mcp-token`

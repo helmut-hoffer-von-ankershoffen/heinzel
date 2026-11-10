@@ -51,18 +51,19 @@ def endpoint(make_kernel, tmp_path):
         assert not thread.is_alive()
 
 
-def test_check_initializes_and_lists_actual_authenticated_server(endpoint, caplog):
+@pytest.mark.parametrize("valid", [True, False])
+def test_check_initializes_and_lists_actual_authenticated_server(endpoint, caplog, valid):
     _, url, token = endpoint
     caplog.set_level(logging.INFO, logger="heinzel.mcp.http.check")
-    assert check_http(url, token) > 0
-    with pytest.raises(HeinzelError, match="could not be authenticated"):
-        check_http(url, "hzmcp_wrong")
+    if valid:
+        assert check_http(url, token) > 0
+    else:
+        with pytest.raises(HeinzelError, match="could not be authenticated"):
+            check_http(url, "hzmcp_wrong")
     events = [record_fields(record) for record in caplog.records if record.getMessage() == "mcp.http.check"]
     assert [(event["phase"], event.get("outcome")) for event in events] == [
         ("start", None),
-        ("end", "ok"),
-        ("start", None),
-        ("end", "error"),
+        ("end", "ok" if valid else "error"),
     ]
     assert token not in str(events)
     assert "hzmcp_wrong" not in str(events)
@@ -105,17 +106,23 @@ def test_check_refuses_nonlocal_or_ambiguous_urls(url):
         check_http(url, "hzmcp_fictional")
 
 
-def test_cli_reads_token_only_from_stdin_and_reports_ownership_unverified(endpoint):
+def test_cli_reads_token_only_from_stdin_and_reports_ownership_unverified(endpoint, monkeypatch):
     kernel, url, token = endpoint
     runner = CliRunner()
     result = runner.invoke(build(kernel), ["system", "serve", "mcp-check", "--url", url, "--token-stdin"], input=token)
     assert result.exit_code == 0, result.output
     assert token not in result.output
-    assert json.loads(result.stdout) == {
-        "mcp_readiness": "initialized",
-        "tools": check_http(url, token),
-        "worker_ownership": "unverified",
-    }
+    output = json.loads(result.stdout)
+    assert output["mcp_readiness"] == "initialized"
+    assert output["worker_ownership"] == "unverified"
+    monkeypatch.setattr(logging, "disable", lambda *_: None)
+    probe = importlib.import_module("heinzel.heads.mcp._http_probe")
+    assert output["tools"] == anyio.run(probe._observe, url, token) > 0
+
+
+def test_cli_refuses_missing_or_wrong_token_without_disclosure(endpoint):
+    kernel, url, token = endpoint
+    runner = CliRunner()
     refused = runner.invoke(build(kernel), ["system", "serve", "mcp-check", "--url", url], input=token)
     assert refused.exit_code != 0
     assert token not in refused.output

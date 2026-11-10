@@ -3,6 +3,7 @@
 import json
 import sys
 import tomllib
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -91,3 +92,76 @@ def test_native_identity_mismatch_never_creates_configuration(make_kernel, tmp_p
     assert not (tmp_path / ".mcp.json").exists()
     matched = runner.invoke(app, [*args, "--expected-device", str(info.st_dev), "--expected-inode", str(info.st_ino)])
     assert matched.exit_code == 0, matched.output
+
+
+@pytest.mark.parametrize("client", ["claude", "codex", "cursor"])
+@pytest.mark.parametrize("use_alias", [False, True])
+def test_home_and_parent_symlink_alias_are_never_project_targets(make_kernel, tmp_path, monkeypatch, client, use_alias):
+    home = tmp_path / "fictional-home"
+    home.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(tmp_path, target_is_directory=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    selected = alias / home.name if use_alias else home
+    result = CliRunner().invoke(
+        build(make_kernel(builtins=True)),
+        ["system", "serve", "mcp-install-project", "--client", client, "--project", str(selected)],
+    )
+    assert result.exit_code == 1
+    assert "other than your home" in result.output
+    assert list(home.iterdir()) == []
+
+
+def test_install_refuses_when_home_identity_cannot_be_checked(make_kernel, tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "missing-home"))
+    project = tmp_path / "project"
+    project.mkdir()
+    result = CliRunner().invoke(
+        build(make_kernel(builtins=True)),
+        ["system", "serve", "mcp-install-project", "--client", "claude", "--project", str(project)],
+    )
+    assert result.exit_code == 1
+    assert list(project.iterdir()) == []
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_codex_home_override_never_receives_project_configuration(make_kernel, tmp_path, monkeypatch, existing):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(tmp_path, target_is_directory=True)
+    global_dir = project / ".codex"
+    if existing:
+        global_dir.mkdir()
+        override = tmp_path / "global-alias"
+        override.symlink_to(global_dir, target_is_directory=True)
+    else:
+        override = alias / project.name / ".codex"
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setenv("CODEX_HOME", str(override))
+    result = CliRunner().invoke(
+        build(make_kernel(builtins=True)),
+        ["system", "serve", "mcp-install-project", "--client", "codex", "--project", str(project)],
+    )
+    assert result.exit_code == 1
+    assert "global Codex configuration" in result.output
+    assert not (global_dir / "config.toml").exists()
+    assert global_dir.exists() is existing  # Never create even the global directory on refusal.
+
+
+def test_separate_codex_home_override_still_allows_project_install(make_kernel, tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "separate-codex-home"))
+    result = CliRunner().invoke(
+        build(make_kernel(builtins=True)),
+        ["system", "serve", "mcp-install-project", "--client", "codex", "--project", str(project)],
+    )
+    assert result.exit_code == 0, result.output
+    assert (project / ".codex/config.toml").is_file()
+    assert not (tmp_path / "separate-codex-home").exists()

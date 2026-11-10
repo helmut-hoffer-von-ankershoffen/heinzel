@@ -307,7 +307,9 @@ def _add_mcp_project_install(serve: typer.Typer, footer: str | None, err_console
     @serve.command(name="mcp-install-project", epilog=footer)
     def mcp_install_project(
         client: Annotated[ProjectMcpClient, typer.Option(help="Client whose project configuration to create.")],
-        project: Annotated[Path, typer.Option(help="Existing project directory; no global configuration is changed.")],
+        project: Annotated[
+            Path, typer.Option(help="Existing project directory other than home; no global configuration is changed.")
+        ],
         expected_device: Annotated[int | None, typer.Option(hidden=True)] = None,
         expected_inode: Annotated[int | None, typer.Option(hidden=True)] = None,
     ) -> None:
