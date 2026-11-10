@@ -92,6 +92,21 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
         "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
     },
+    "focused-683.yml": {
+        'test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"': (
+            "checks the independently pinned bootstrap before checkout"
+        ),
+        'python3 -I "$GITHUB_WORKSPACE/bootstrap/research/focused-683/run.py" "$LANE"': (
+            "binds read-only focused evidence to the reviewed source, run and lane"
+        ),
+    },
+    "one-shot-683-write.yml": {
+        'test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"': (
+            "checks the independently pinned bootstrap before checkout"
+        ),
+        "python3 -I research/focused-683/write.py update": "updates only the verified pull request ref once",
+        "python3 -I research/focused-683/write.py publish": "revalidates the exact evidence and publishes its statuses",
+    },
     "acceptance-sharded.yml": {
         "uv python install 3.13": "the isolated acceptance study interpreter",
         '"$(uv python find 3.13)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
