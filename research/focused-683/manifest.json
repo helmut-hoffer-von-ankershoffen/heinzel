@@ -1,0 +1,164 @@
+{
+  "schema": 1,
+  "repository": "helmut-hoffer-von-ankershoffen/heinzel",
+  "pull_request": 683,
+  "pr_ref": "refs/heads/fix/cwte-uv-path",
+  "current_pr_head": "c25199bc0c9c257a2ae957b9a16153b452d8bfd3",
+  "current_test_merge": "8b753b4350ade853db9c12c63443ea6601fca172",
+  "current_test_merge_tree": "1678ed0295195723ae341f350f2c689dfdaa1506",
+  "base_ref": "refs/heads/main",
+  "base": "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
+  "candidate": "8558755d5144280e92fe4975875dd7aee3807f51",
+  "candidate_ref": "refs/heads/validation/683-current-main-8558755d",
+  "candidate_parents": [
+    "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
+    "42f6c3384723cf5d5779c8f45aee7ef074556335"
+  ],
+  "tree": "7ecd230c32895d24396b6c30f58a5428f2b61891",
+  "changed_paths": {
+    "src/heinzel/heads/install.py": "M",
+    "src/heinzel/kernel/_installation.py": "M",
+    "src/heinzel/kernel/_uv_locate.py": "A",
+    "src/heinzel/modules/system/doctor/__init__.py": "M",
+    "src/heinzel/modules/ui/_service.py": "M",
+    "tests/integration/plugin_web_test.py": "M",
+    "tests/integration/ui_service_test.py": "M",
+    "tests/integration/update_uv_minimal_path_test.py": "A",
+    "tests/unit/ci_test.py": "M",
+    "tests/unit/kernel/installation_test.py": "M",
+    "tests/unit/kernel/uv_locate_test.py": "A",
+    "tests/unit/modules/system_update_test.py": "M",
+    "tests/unit/modules/team_repo_test.py": "M",
+    "web/src/updates/updateState.test.ts": "M",
+    "web/src/updates/updateState.ts": "M"
+  },
+  "required_contexts": [
+    "CI OK",
+    "coverage-floor",
+    "merge-gate"
+  ],
+  "activation": "held; v0.9.35 and independent bootstrap/publisher review",
+  "coverage": {
+    "minimum_percent": 80,
+    "python_files": [
+      "src/heinzel/heads/install.py",
+      "src/heinzel/kernel/_installation.py",
+      "src/heinzel/kernel/_uv_locate.py",
+      "src/heinzel/modules/system/doctor/__init__.py",
+      "src/heinzel/modules/ui/_service.py"
+    ],
+    "web_file": "web/src/updates/updateState.ts"
+  },
+  "jobs": {
+    "python": {
+      "os": "ubuntu-24.04",
+      "version": "3.14.8",
+      "selectors": [
+        "tests/unit/heads/install_test.py",
+        "tests/unit/heads/standard_install_lifecycle_test.py",
+        "tests/unit/kernel/installation_test.py",
+        "tests/unit/kernel/uv_locate_test.py",
+        "tests/unit/modules/system_update_test.py",
+        "tests/unit/ci_test.py::test_template_installed_cli_uses_its_own_daemon_unit_directory",
+        "tests/unit/modules/team_repo_test.py::test_a_missing_program_says_how_to_install_it",
+        "tests/integration/plugin_web_test.py",
+        "tests/integration/ui_service_test.py",
+        "tests/integration/update_uv_minimal_path_test.py",
+        "tests/integration/update_test.py",
+        "tests/integration/standard_app_update_test.py",
+        "tests/integration/standard_install_policy_test.py",
+        "tests/integration/cli_test.py::test_doctor_reports_and_exits_by_status",
+        "tests/integration/cli_test.py::test_doctor_is_down_when_a_check_fails",
+        "tests/integration/update_notice_test.py::test_doctor_reports_the_newer_release_instead_of_the_notice"
+      ],
+      "deselect": [
+        "tests/unit/kernel/installation_test.py::test_opt_in_current_installed_receipt_target_read_only",
+        "tests/integration/ui_service_test.py::test_launcher_pins_guarded_state_and_verified_uv_path_with_minimal_inherited_path[darwin]",
+        "tests/integration/ui_service_test.py::test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loading_a_job[darwin]",
+        "tests/integration/ui_service_test.py::test_real_user_factory_binds_profile_and_refuses_process_behavior_before_manager_calls[darwin]"
+      ]
+    },
+    "web": {
+      "os": "ubuntu-24.04",
+      "selectors": [
+        "src/updates/updateState.test.ts"
+      ]
+    },
+    "structural": {
+      "os": "ubuntu-24.04",
+      "commands": [
+        "make lint",
+        "make managed-backend-setup typecheck quarantine-check"
+      ]
+    },
+    "security": {
+      "os": "ubuntu-24.04",
+      "commands": [
+        "make secrets audit"
+      ]
+    },
+    "sonar": {
+      "os": "ubuntu-24.04",
+      "checkout": "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
+      "pr": 683,
+      "head": "8558755d5144280e92fe4975875dd7aee3807f51"
+    },
+    "python315": {
+      "os": "ubuntu-24.04",
+      "version": "3.15.2",
+      "selectors": [
+        "tests/integration/ui_service_test.py::test_real_user_factory_binds_profile_and_refuses_process_behavior_before_manager_calls[darwin]",
+        "tests/integration/ui_service_test.py::test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loading_a_job[darwin]"
+      ]
+    }
+  },
+  "diagnostics": [
+    {
+      "classification": "exact macOS candidate; reuse for macOS test lane only",
+      "run": 42777749675,
+      "job": 129700154174,
+      "attempt": 1,
+      "head": "8558755d5144280e92fe4975875dd7aee3807f51",
+      "artifact": 13745050592,
+      "digest": "sha256:9b8acabaee84160024fd41c54d2f38d63a40a7d27bef124e2301e21598111b7e",
+      "tests": [
+        "tests/integration/update_uv_minimal_path_test.py::test_installation_runs_uv_from_a_homebrew_like_dir_with_a_minimal_path",
+        "tests/integration/update_uv_minimal_path_test.py::test_missing_uv_says_where_it_looked",
+        "tests/integration/ui_service_test.py::test_launcher_pins_guarded_state_and_verified_uv_path_with_minimal_inherited_path[darwin]",
+        "tests/integration/ui_service_test.py::test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loading_a_job[darwin]",
+        "tests/integration/ui_service_test.py::test_real_user_factory_binds_profile_and_refuses_process_behavior_before_manager_calls[darwin]"
+      ]
+    },
+    {
+      "classification": "earlier composition; Linux CPython 3.15.2 factory regression only",
+      "run": 42746011689,
+      "job": 129598161789,
+      "attempt": 1,
+      "head": "f73cb104a56181bcf611e73e9ff0009419cb2aca",
+      "artifact": 13730444690,
+      "digest": "sha256:13892e54b681449e240c65d144fb3f6465b06b7cfbb2c05547dfc36b5e3b2d39",
+      "tests": [
+        "tests/integration/ui_service_test.py::test_real_user_factory_binds_profile_and_refuses_process_behavior_before_manager_calls[darwin]",
+        "tests/integration/ui_service_test.py::test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loading_a_job[darwin]"
+      ]
+    },
+    {
+      "classification": "earlier composition plus offline desktop-owned CLI fixture; macOS boundary only",
+      "run": 42721507069,
+      "job": 129516346835,
+      "attempt": 1,
+      "head": "1cb1be77d07adba07f9e2f4506b8bac6102ba221",
+      "artifact": 13721425428,
+      "digest": "sha256:2c83d555e7a379b48c0641ff326d75c5ca639e2132f6b9f5df1d5b23ed02bd21",
+      "tests": [
+        "tests/integration/update_uv_minimal_path_test.py::test_desktop_owned_cli_inherits_finder_path_and_finds_home_uv_offline"
+      ]
+    }
+  ],
+  "source_review": {
+    "decision": "HOLD",
+    "historical_review_head": "8558755d5144280e92fe4975875dd7aee3807f51",
+    "historical_review": "Independent source and scoped validation GO on 2026-11-10, later security finding supersedes it",
+    "blocker": "Embedded PATH separator can inject a relative segment; an absolute leaf under a world-writable ancestor can be replaced; stat errors admit the leaf."
+  }
+}

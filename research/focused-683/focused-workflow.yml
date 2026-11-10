@@ -1,0 +1,61 @@
+# Review draft outside .github/workflows. The manifest holds execution pending source repair and review.
+name: Focused 683 bootstrap evidence
+on:
+  push:
+    branches: [bootstrap/one-shot-683]
+permissions: {}
+jobs:
+  focused:
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.run_attempt == '1'
+    name: Focused 683 ${{ matrix.lane }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      pull-requests: read
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [python, python315, web, structural, security, sonar]
+    env:
+      REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_683_HELPER_SHA }}
+      UV_FROZEN: "1"
+    steps:
+      - name: Require independently pinned bootstrap source
+        run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: bootstrap
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8558755d5144280e92fe4975875dd7aee3807f51
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - if: matrix.lane == 'sonar'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: b234067b172f33db59f98c9ea38808b3d5ab9bc5
+          path: trusted-base
+          persist-credentials: false
+      - uses: ./bootstrap/.github/actions/setup-uv
+        with:
+          enable-cache: false
+          save-cache: false
+          python-version: "3.14.8"
+      - name: Verify source and run evidence lane
+        env:
+          LANE: ${{ matrix.lane }}
+          CONFIDENTIAL_TERMS: ${{ matrix.lane == 'structural' && secrets.CONFIDENTIAL_TERMS || '' }}
+          GITHUB_TOKEN: ${{ matrix.lane == 'sonar' && github.token || '' }}
+        working-directory: candidate
+        run: python3 -I "$GITHUB_WORKSPACE/bootstrap/research/focused-683/run.py" "$LANE"
+      - name: Upload exact attempt evidence
+        if: success()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: focused-683-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/focused-683/
+          if-no-files-found: error
+          retention-days: 7
