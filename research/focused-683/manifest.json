@@ -37,7 +37,7 @@
     "coverage-floor",
     "merge-gate"
   ],
-  "activation": "held",
+  "activation": "ready",
   "coverage": {
     "minimum_percent": 80,
     "python_files": [
@@ -173,17 +173,13 @@
     }
   ],
   "source_review": {
-    "decision": "HOLD",
+    "decision": "GO",
     "head": "a607194a5b1afdf8518be84b4562a0f33dbd5e98",
     "tree": "b9be3c2ac3db4072b480a330c1ad81b490dd88f0",
     "base": "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
-    "scope": "Final-base composition. All 15 affected blobs and path statuses match the independently reviewed repair. Independent review on this pin remains required."
+    "scope": "Exact post-650 source composition review. All 15 affected blobs and path statuses match the reviewed repair. Hosted admission evidence remains pending.",
+    "reviewer": "independent-review"
   },
-  "activation_blockers": [
-    "Independently review the exact post-650 composition and bootstrap.",
-    "Publish the exact candidate to its pinned no-trigger validation ref through normal scoped hooks.",
-    "Confirm the live required ruleset and serialize protected writers before the exact PR ref update and evidence run."
-  ],
   "reviewed_repair": "e79108052f6d4071d1b0bb802c758d47c5aa3a33",
   "current_test_merge_parents": [
     "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
@@ -200,5 +196,10 @@
     "base": "b234067b172f33db59f98c9ea38808b3d5ab9bc5",
     "scope": "Reviewed exact uv locator security repair on the provisional base. Admission bootstrap and final base remain separate.",
     "historical_blocker": "Embedded PATH separator can inject a relative segment; an absolute leaf under a world-writable ancestor can be replaced; stat errors admit the leaf."
-  }
+  },
+  "activation_preconditions": [
+    "Independently review and pin this exact bootstrap commit before any push to a bootstrap trigger ref.",
+    "Verify the normal candidate validation ref, current PR snapshot and effective required rules.",
+    "Serialize protected writers before the exact PR ref update, evidence run and status publication."
+  ]
 }
