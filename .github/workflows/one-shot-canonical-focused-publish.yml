@@ -1,4 +1,6 @@
 # Temporary publisher for the first canonical CI PR. Never runs test workloads.
+# Recovery after independently reviewed main SQLite false positives were closed.
+# Preserve failed publisher 42805938511; reuse native CI 42804797993 unchanged.
 name: Canonical focused CI cutover publisher
 on:
   push:
