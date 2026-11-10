@@ -1265,14 +1265,14 @@ function GalleryContents({ spec }: { spec: string }) {
                       className="max-h-[35dvh] w-full rounded-md border border-border object-contain"
                       onLoad={(event) => {
                         const image = event.currentTarget;
-                        const content = image.closest<HTMLElement>("[data-plugin-gallery-content]");
                         const pane = image.closest<HTMLElement>("[data-settings-content]");
-                        if (content && pane) {
+                        if (pane) {
                           const picture = image.getBoundingClientRect();
                           const viewport = pane.getBoundingClientRect();
-                          if (picture.top < viewport.top || picture.bottom > viewport.bottom) {
-                            pane.scrollTop += content.getBoundingClientRect().top - viewport.top - 8;
-                          }
+                          const top = Math.max(viewport.top, 0);
+                          const bottom = Math.min(viewport.bottom, window.innerHeight);
+                          if (picture.top < top) pane.scrollTop += picture.top - top - 8;
+                          else if (picture.bottom > bottom) pane.scrollTop += picture.bottom - bottom + 8;
                         }
                       }}
                     />

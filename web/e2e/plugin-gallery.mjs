@@ -88,7 +88,13 @@ export async function exercisePluginGallery(page, requests, shots, name) {
       if (!image || !pane) return false;
       const picture = image.getBoundingClientRect();
       const viewport = pane.getBoundingClientRect();
-      return picture.height > 0 && picture.top >= viewport.top && picture.bottom <= viewport.bottom;
+      return (
+        picture.height > 0 &&
+        picture.top >= Math.max(viewport.top, 0) &&
+        picture.bottom <= Math.min(viewport.bottom, window.innerHeight) &&
+        picture.left >= Math.max(viewport.left, 0) &&
+        picture.right <= Math.min(viewport.right, window.innerWidth)
+      );
     }, caption);
   };
   await visiblePreview("Harbor UI preview");

@@ -1206,16 +1206,13 @@ describe("PluginGallery", () => {
     await user.click(open);
     const image = await screen.findByRole("img", { name: "Harbor in the app" });
     const pane = container.querySelector<HTMLElement>("[data-settings-content]");
-    const content = container.querySelector<HTMLElement>("[data-plugin-gallery-content]");
-    if (!pane || !content) throw new Error("Gallery fixture is missing its settings pane");
+    if (!pane) throw new Error("Gallery fixture is missing its settings pane");
     vi.spyOn(pane, "getBoundingClientRect").mockReturnValue({ top: 80, bottom: 380 } as DOMRect);
-    vi.spyOn(content, "getBoundingClientRect").mockReturnValue({ top: 330 } as DOMRect);
     const imageRect = vi.spyOn(image, "getBoundingClientRect").mockReturnValue({ top: 400, bottom: 500 } as DOMRect);
     fireEvent.load(image);
-    expect(pane.scrollTop).toBe(242);
+    expect(pane.scrollTop).toBe(128);
     expect(open).toHaveFocus();
     pane.scrollTop = 100;
-    vi.mocked(content.getBoundingClientRect).mockReturnValue({ top: 50 } as DOMRect);
     imageRect.mockReturnValue({ top: 50, bottom: 200 } as DOMRect);
     fireEvent.load(image);
     expect(pane.scrollTop).toBe(62);
