@@ -245,6 +245,47 @@ def test_a_change_no_test_reaches_still_runs_the_hooks_own_test():
     )
 
 
+def test_daemon_progress_push_runs_fixed_checks_and_rejects_unmapped_or_bypassed_inputs(monkeypatch, tmp_path):
+    base, head = "a" * 40, "b" * 40
+    refs = tmp_path / "refs"
+    refs.write_text(f"{scoped.DAEMON_PUSH_REF} {head} {scoped.DAEMON_PUSH_REF} {'0' * 40}\n")
+    monkeypatch.setenv("HZ_DEV_PUSH_REFS_FILE", str(refs))
+    for key in scoped.FORBIDDEN_FOCUSED_ENV:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(scoped.sys, "platform", "linux")
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    monkeypatch.delenv("PYTEST_ADDOPTS", raising=False)
+    monkeypatch.setattr(scoped, "resolve_base", lambda ref: head if ref == "HEAD" else base)
+    monkeypatch.setattr(Path, "is_symlink", lambda _: False)
+    monkeypatch.setattr(Path, "is_file", lambda _: True)
+    rows = b"".join(f"100644 blob {blob}\t{path}\0".encode() for path, blob in scoped.DAEMON_BLOBS.items())
+    monkeypatch.setattr(
+        scoped.subprocess,
+        "check_output",
+        lambda cmd, **_: "" if "status" in cmd else b"H x\0" if "ls-files" in cmd else rows,
+    )
+    monkeypatch.setattr(scoped.subprocess, "run", lambda *_, **__: subprocess.CompletedProcess([], 0))
+    calls = []
+    monkeypatch.setattr(scoped, "run_early_guards", lambda changed: calls.append(("guard", changed)))
+    monkeypatch.setattr(scoped, "run_check", lambda cmd, **_: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0))
+
+    assert scoped.daemon_progress_push(sorted(scoped.DAEMON_CHANGE), base) == 0
+    assert any(scoped.DAEMON_STREAM in call for call in calls)
+    assert any(scoped.DAEMON_BROWSER in call for call in calls)
+    assert [*scoped.WEB.split(), "build"] in calls
+    assert any("OperationDialog.test.tsx" in str(call) and "DaemonSettings.test.tsx" in str(call) for call in calls)
+    for name, value in (("PYTEST_ADDOPTS", "--collect-only"), ("MAKEFLAGS", "-n"), ("SKIP", "check-fast")):
+        monkeypatch.setenv(name, value)
+        with pytest.raises(SystemExit):
+            scoped.daemon_progress_push(sorted(scoped.DAEMON_CHANGE), base)
+        monkeypatch.delenv(name)
+    with pytest.raises(SystemExit):
+        scoped.daemon_progress_push([*scoped.DAEMON_CHANGE, "web/e2e/unmapped.mjs"], base)
+    refs.write_text(f"refs/heads/other {head} refs/heads/other {'0' * 40}\n")
+    with pytest.raises(SystemExit):
+        scoped.daemon_progress_push(sorted(scoped.DAEMON_CHANGE), base)
+
+
 def test_imports_follow_the_defining_module_not_the_package_that_re_exports_it():
     """`from heinzel import Config` must not make every test depend on everything `heinzel` imports."""
     graph = scoped_related.graph()

@@ -315,7 +315,130 @@ def run_early_guards(changed: list[str], *, light: bool = False) -> None:
         run_check(command, timeout=180, light=light)
 
 
-def main() -> None:
+DAEMON_BROWSER = "tests/e2e/daemon_settings_restart_test.py"
+DAEMON_STREAM = "tests/integration/daemon_restart_stream_test.py"
+DAEMON_CHANGE = {
+    "web/src/api/stream.ts",
+    "web/src/components/OperationDialog.tsx",
+    "web/src/i18n.ts",
+    "web/src/layout/DaemonSettings.tsx",
+    "web/src/lib/operationRun.ts",
+    "web/src/components/OperationDialog.test.tsx",
+    "web/src/layout/DaemonSettings.test.tsx",
+    DAEMON_BROWSER,
+    "web/e2e/daemon-settings-restart.mjs",
+    DAEMON_STREAM,
+}
+SELECTOR_CHANGE = {"scripts/scoped_checks.py", "tests/unit/scoped_checks_test.py"}
+FORBIDDEN_FOCUSED_ENV = {
+    "MAKEFLAGS",
+    "MFLAGS",
+    "GNUMAKEFLAGS",
+    "UNIT_TARGETS",
+    "WEB_TESTS",
+    "FAST_TYPES",
+    "MANAGED_CHECK",
+    "PYTEST_PLUGINS",
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+    "SKIP",
+}
+DAEMON_PUSH_REF = "refs/heads/work/progress-scoped-validation"
+PUSH_REF_FIELDS = 4
+DAEMON_BLOBS = {
+    "tests/e2e/daemon_settings_restart_test.py": "3c725ed096a1c5a934cef585fc1c191002cbac7d",
+    "tests/integration/daemon_restart_stream_test.py": "3c05cc50bce709bf357b683c17a8a6db98216799",
+    "web/e2e/daemon-settings-restart.mjs": "8d5f15aeb237529eaac29cd98916e59ad86277ea",
+    "web/src/api/stream.ts": "cc3b9aed68bef612b92e73ae4931581cfaf40b9f",
+    "web/src/components/OperationDialog.test.tsx": "31d68ae46b8834f91c7bc6bb9a0c87781504c36f",
+    "web/src/components/OperationDialog.tsx": "d0c7464fb492f0914512c7f8de9f9729d82f33d3",
+    "web/src/i18n.ts": "5283c9c880444619c254909f870280a3398d1596",
+    "web/src/layout/DaemonSettings.test.tsx": "0c79d92455002944e1cf9396014bb3c7cfc8934b",
+    "web/src/layout/DaemonSettings.tsx": "872832aba0b251e61170051f7c6c69ab5db4f3da",
+    "web/src/lib/operationRun.ts": "f688f7cb5e06a5cbcdf5daf3f321646b3be7cb71",
+}
+
+
+def daemon_progress_push(changed: list[str], base: str) -> int:  # noqa: C901
+    """Run fixed owning checks only for the reviewed daemon-progress file set.
+
+    Raises:
+        SystemExit: If the checkout, push ref, environment or file set is not the expected one.
+    """
+    if set(changed) not in (DAEMON_CHANGE, DAEMON_CHANGE | SELECTOR_CHANGE):
+        msg = "Unsupported daemon progress change set"
+        raise SystemExit(msg)
+    if FORBIDDEN_FOCUSED_ENV.intersection(os.environ):
+        msg = "Unsupported inherited test or Make configuration"
+        raise SystemExit(msg)
+    gate = shutil.which("hz-gate")
+    expected_path = str(Path(gate).resolve().parent / "pytest_plugins") if gate and sys.platform == "darwin" else ""
+    expected_opts = "-p hz_gate_native_gui" if expected_path else ""
+    if os.environ.get("PYTHONPATH", "") != expected_path or os.environ.get("PYTEST_ADDOPTS", "") != expected_opts:
+        msg = "Unexpected pytest gate configuration"
+        raise SystemExit(msg)
+    head = resolve_base("HEAD")
+    if subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=all"], text=True, timeout=30):  # noqa: S607
+        msg = "Focused push requires a clean checkout"
+        raise SystemExit(msg)
+    try:
+        lines = Path(os.environ["HZ_DEV_PUSH_REFS_FILE"]).read_text(encoding="utf-8").splitlines()
+    except (KeyError, OSError, ValueError) as error:
+        msg = "Focused push requires the hook ref list"
+        raise SystemExit(msg) from error
+    if (
+        len(lines) != 1
+        or len(fields := lines[0].split()) != PUSH_REF_FIELDS
+        or fields[1] != head
+        or fields[0] != DAEMON_PUSH_REF
+        or fields[2] != DAEMON_PUSH_REF
+    ):
+        msg = "Focused push requires the single checked-out head"
+        raise SystemExit(msg)
+    files = DAEMON_CHANGE | (SELECTOR_CHANGE & set(changed))
+    listing = subprocess.check_output(["git", "ls-tree", "-rz", "--full-tree", head, "--", *sorted(files)], timeout=30)  # noqa: S603, S607
+    rows = [row for row in listing.split(b"\0") if row]
+    regular = {row.split(b"\t", 1)[1].decode() for row in rows if row.startswith((b"100644 ", b"100755 "))}
+    blobs = {row.split(b"\t", 1)[1].decode(): row.split(b"\t", 1)[0].split()[2].decode() for row in rows}
+    flags = subprocess.check_output(["git", "ls-files", "-v", "-z"], timeout=30).split(b"\0")  # noqa: S607
+    if any(row and not row.startswith(b"H ") for row in flags):
+        msg = "Focused push requires a normal index"
+        raise SystemExit(msg)
+    ancestry = subprocess.run(["git", "merge-base", "--is-ancestor", base, head], check=False, timeout=30)  # noqa: S603, S607
+    if (
+        regular != files
+        or any(blobs.get(path) != blob for path, blob in DAEMON_BLOBS.items())
+        or any(Path(path).is_symlink() or not Path(path).is_file() for path in files)
+        or resolve_base("origin/main") != base
+        or ancestry.returncode
+    ):
+        msg = "Focused push requires tracked regular files and the exact main base"
+        raise SystemExit(msg)
+    unit = "tests/unit/modules/daemon_service_test.py"
+    if SELECTOR_CHANGE.issubset(changed):
+        unit += " tests/unit/scoped_checks_test.py tests/unit/scripts_test.py"
+    web = "src/components/OperationDialog.test.tsx src/layout/DaemonSettings.test.tsx"
+    steps = [
+        [
+            "make",
+            "check-fast",
+            f"FAST_TYPES={TYPES}",
+            f"UNIT_TARGETS={unit}",
+            "PYTEST_XDIST_AUTO_NUM_WORKERS=2",
+            f'WEB_TESTS="web-tests={WEB} exec vitest run --maxWorkers=2 {web}"',
+        ],
+        ["uv", "run", "pytest", DAEMON_STREAM, "-m", "integration and not perf", "-n", "2", "-x", "-q"],
+        [*WEB.split(), "build"],
+        ["uv", "run", "pytest", DAEMON_BROWSER, "-m", "e2e", "-n", "2", "-x", "-q"],
+    ]
+    run_early_guards(changed)
+    for command in steps:
+        result = run_check(command, check=False, timeout=600).returncode
+        if result:
+            return result
+    return 0
+
+
+def main() -> None:  # noqa: C901
     """Preserve core checks and common policies while selecting independent owning plugin work."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=MODES)
@@ -336,6 +459,8 @@ def main() -> None:
     base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if args.mode == "push":
         changed = sorted({*changed, *changed_paths("fast", base)})
+        if os.environ.get("HZ_DAEMON_PROGRESS_PUSH") == "1":
+            sys.exit(daemon_progress_push(changed, base))
         light = bool(changed) and all(is_document(path) for path in changed)
         run_early_guards(changed, light=light)
         steps = scoped_steps(changed)
