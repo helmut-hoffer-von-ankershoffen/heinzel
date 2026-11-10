@@ -21,7 +21,7 @@ if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.ci_workload import CandidatePlan, FocusedPlan, WorkloadSource, plan_workload
-from scripts.focused_job import MAX_IDS, TOKEN
+from scripts.focused_job import MAX_IDS, PYTHON_CI_MAX_IDS, TOKEN
 from scripts.release_candidate import (
     DIGEST,
     REPOSITORY,
@@ -196,7 +196,8 @@ def _selections(plan: dict[str, Any], commit: str) -> dict[str, tuple[str, ...]]
     for lane, tests in rows.items():
         kind = LANES[lane][2]
         prefix = {"pytest": "tests/", "vitest": "web/", "e2e": "tests/e2e/", "managed": "desktop/managed/test/"}[kind]
-        require(isinstance(tests, list) and 0 < len(tests) <= MAX_IDS, f"empty or broad focused lane {lane}")
+        limit = PYTHON_CI_MAX_IDS if lane == "python" else MAX_IDS
+        require(isinstance(tests, list) and 0 < len(tests) <= limit, f"empty or broad focused lane {lane}")
         require(len(set(tests)) == len(tests), f"duplicate selection in {lane}")
         for test in tests:
             path = test.split("::", 1)[0]

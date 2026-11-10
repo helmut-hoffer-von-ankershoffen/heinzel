@@ -38,10 +38,12 @@ ROOT = Path(__file__).resolve().parents[1]
 KINDS = ("e2e", "pytest", "vitest")
 LANES = ("cli", "supervised", "web-1", "web-2")
 MAX_IDS = 10
+PYTHON_CI_MAX_IDS = 32
 MAX_REPEAT = 60
 DEADLINE = 1020  # seconds into the run: start no new round after this, so the tally and artifacts still upload
-# A path, then optionally `::test_name` and a parametrize id; never a leading `-` (no option injection), never `..`.
-TOKEN = re.compile(r"\w[\w./]{0,199}(::\w{1,120}(\[[\w.,=+-]{1,80}\])?){0,2}", re.ASCII)
+# A path, then optionally `::test_name` and a parametrize id. Internal hyphens are valid, but no path
+# component starts with `-`: the web prefix is stripped before Vitest receives it. Never allow `..`.
+TOKEN = re.compile(r"(?![^:]*\/-)\w[\w./-]{0,199}(::\w{1,120}(\[[\w.,=+-]{1,80}\])?){0,2}", re.ASCII)
 SERIAL = ("-n", "0", "-q", "-p", "no:cacheprovider", "--session-timeout=900")  # one selection, no worker noise
 TIMEOUT = 1080  # under the job's 20 minutes, so the report and screenshots are still written and uploaded
 
@@ -54,13 +56,13 @@ class SelectorError(ValueError):
         super().__init__(f"{kind}: {problem}")
 
 
-def _paths(selector: str, prefix: str, kind: str) -> list[str]:
+def _paths(selector: str, prefix: str, kind: str, max_ids: int = MAX_IDS) -> list[str]:
     ids = selector.split()
     if not ids:
         problem = "the selector is empty"
         raise SelectorError(kind, problem)
-    if len(ids) > MAX_IDS:
-        problem = f"at most {MAX_IDS} ids, got {len(ids)}"
+    if len(ids) > max_ids:
+        problem = f"at most {max_ids} ids, got {len(ids)}"
         raise SelectorError(kind, problem)
     for token in ids:
         if not TOKEN.fullmatch(token) or ".." in token:
@@ -89,12 +91,14 @@ def repeat_count(kind: str, value: str) -> int:
     return int(value)
 
 
-def plan(kind: str, selector: str, out: Path, repeat: int = 1) -> list[list[str]]:
+def plan(kind: str, selector: str, out: Path, repeat: int = 1, *, max_ids: int = MAX_IDS) -> list[list[str]]:
     """The commands that run the selection, in order (the last one is the selection itself).
 
     Raises:
         SelectorError: the inputs are not a selection this workflow runs.
     """
+    if max_ids != MAX_IDS and (kind != "pytest" or max_ids != PYTHON_CI_MAX_IDS):
+        raise SelectorError(kind, "unsupported selection limit")
     selector = selector.strip()
     junit = f"--junitxml={out / 'junit.xml'}"
     plugin = ["-p", "focused_job"] if repeat > 1 else []
@@ -108,7 +112,7 @@ def plan(kind: str, selector: str, out: Path, repeat: int = 1) -> list[list[str]
         pytest = ["uv", "run", "pytest", "-m", "e2e", *SERIAL, *plugin]
         return [["make", "e2e-prepare"], [*pytest, junit, *ids]]
     if kind == "pytest":
-        ids = _paths(selector, "tests/", kind)
+        ids = _paths(selector, "tests/", kind, max_ids)
         sync = ["uv", "sync", "--frozen", "--no-build", "--no-dev", "--group", "test"]
         pytest = ["uv", "run", "--no-sync", "pytest", *SERIAL, *plugin]
         return [sync, [*pytest, junit, *ids]]
