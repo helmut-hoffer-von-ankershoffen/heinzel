@@ -3661,6 +3661,7 @@ $ hz system serve [OPTIONS] COMMAND [ARGS]...
 * `daemon`: (expert) Run the daemon&#x27;s tick in the...
 * `mcp`: (expert) Serve every operation as an MCP...
 * `mcp-check`: (expert) Authenticate and initialize a...
+* `mcp-install-project`: (expert) Create a new project MCP config;...
 * `mcp-token`: Make, list and revoke the tokens agents...
 
 #### `hz system serve api`
@@ -3740,6 +3741,27 @@ $ hz system serve mcp-check [OPTIONS]
 
 * `--url <str>`: Loopback HTTP MCP endpoint, including /mcp.  [required]
 * `--token-stdin`: Read the bearer from standard input; the network timeout starts after input arrives.
+* `--help`: Show this message and exit.
+
+#### `hz system serve mcp-install-project`
+
+(expert) Create a new project MCP config; existing configs are never replaced.
+
+The client may require project trust or approval. Connection readiness is not verified.
+
+Raises:
+    typer.Exit: If the project config already exists or its directory is unavailable.
+
+**Usage**:
+
+```console
+$ hz system serve mcp-install-project [OPTIONS]
+```
+
+**Options**:
+
+* `--client <claude|codex|cursor>`: Client whose project configuration to create.  [required]
+* `--project <path>`: Existing project directory; no global configuration is changed.  [required]
 * `--help`: Show this message and exit.
 
 #### `hz system serve mcp-token`

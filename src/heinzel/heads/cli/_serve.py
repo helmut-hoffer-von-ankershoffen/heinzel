@@ -38,6 +38,14 @@ class ChatToolSet(StrEnum):
     PERSONAL_CHECK_IN = "personal-check-in"
 
 
+class ProjectMcpClient(StrEnum):
+    """Clients supporting ordinary project MCP configuration."""
+
+    CLAUDE = "claude"
+    CODEX = "codex"
+    CURSOR = "cursor"
+
+
 def serve_group(
     group_cls: type[TyperGroup], footer: str | None, kernel: Kernel, out_console: Console, err_console: Console
 ) -> typer.Typer:
@@ -109,6 +117,7 @@ def serve_group(
         _refused_or_served(lambda: serving(expose=expose, allowed_hosts=tuple(allowed_host or ())), err_console)
 
     _add_mcp_check(serve, footer, err_console)
+    _add_mcp_project_install(serve, footer, err_console)
 
     serve.add_typer(_mcp_token_group(group_cls, footer, err_console))
 
@@ -290,6 +299,31 @@ def _devices(paired: "Devices", revoke: str | None, err_console: Console) -> Non
 
 
 _MAX_MCP_TOKEN_LENGTH = 4096
+
+
+def _add_mcp_project_install(serve: typer.Typer, footer: str | None, err_console: Console) -> None:
+    """Register explicit creation of an ordinary client project configuration."""
+
+    @serve.command(name="mcp-install-project", epilog=footer)
+    def mcp_install_project(
+        client: Annotated[ProjectMcpClient, typer.Option(help="Client whose project configuration to create.")],
+        project: Annotated[Path, typer.Option(help="Existing project directory; no global configuration is changed.")],
+    ) -> None:
+        """Create a new project MCP config; existing configs are never replaced.
+
+        The client may require project trust or approval. Connection readiness is not verified.
+
+        Raises:
+            typer.Exit: If the project config already exists or its directory is unavailable.
+        """
+        from heinzel.heads.mcp._standard_project import StandardClient, install_project  # noqa: PLC0415
+
+        try:
+            path = install_project(StandardClient(client.value), project)
+        except HeinzelError as exc:
+            err_console.print(message("Can't install:", str(exc)))
+            raise typer.Exit(1) from None
+        typer.echo(json.dumps({"configuration": "created", "path": str(path), "mcp_readiness": "unverified"}))
 
 
 def _add_mcp_check(serve: typer.Typer, footer: str | None, err_console: Console) -> None:
