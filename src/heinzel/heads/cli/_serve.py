@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 import webbrowser
 from collections.abc import Callable
 from enum import StrEnum
@@ -35,6 +36,14 @@ class ChatToolSet(StrEnum):
     EVERYDAY = "everyday"
     ALL = "all"
     PERSONAL_CHECK_IN = "personal-check-in"
+
+
+class ProjectMcpClient(StrEnum):
+    """Clients supporting ordinary project MCP configuration."""
+
+    CLAUDE = "claude"
+    CODEX = "codex"
+    CURSOR = "cursor"
 
 
 def serve_group(
@@ -106,6 +115,9 @@ def serve_group(
             os.chdir(project)  # before the head boots its kernel, so it finds the same project file
         serving = partial(head.serve, transport.value, host, port, chat=chat, chat_tools=chat_tools.value)
         _refused_or_served(lambda: serving(expose=expose, allowed_hosts=tuple(allowed_host or ())), err_console)
+
+    _add_mcp_check(serve, footer, err_console)
+    _add_mcp_project_install(serve, footer, err_console)
 
     serve.add_typer(_mcp_token_group(group_cls, footer, err_console))
 
@@ -284,6 +296,80 @@ def _devices(paired: "Devices", revoke: str | None, err_console: Console) -> Non
         typer.echo(
             f"{device.id}  {device.name}  paired {device.created:%Y-%m-%d}, last used {device.last_used:%Y-%m-%d}"
         )
+
+
+_MAX_MCP_TOKEN_LENGTH = 4096
+
+
+def _add_mcp_project_install(serve: typer.Typer, footer: str | None, err_console: Console) -> None:
+    """Register explicit creation of an ordinary client project configuration."""
+
+    @serve.command(name="mcp-install-project", epilog=footer)
+    def mcp_install_project(
+        client: Annotated[ProjectMcpClient, typer.Option(help="Client whose project configuration to create.")],
+        project: Annotated[Path, typer.Option(help="Existing project directory; no global configuration is changed.")],
+        expected_device: Annotated[int | None, typer.Option(hidden=True)] = None,
+        expected_inode: Annotated[int | None, typer.Option(hidden=True)] = None,
+    ) -> None:
+        """Create a new project MCP config; existing configs are never replaced.
+
+        The client may require project trust or approval. Connection readiness is not verified.
+
+        Raises:
+            typer.Exit: If the project config already exists or its directory is unavailable.
+        """
+        from heinzel.heads.mcp._standard_project import StandardClient, install_project  # noqa: PLC0415
+
+        if (expected_device is None) != (expected_inode is None):
+            err_console.print(message("Can't install:", "The selected project identity is incomplete."))
+            raise typer.Exit(2)
+        identity = (
+            (expected_device, expected_inode) if expected_device is not None and expected_inode is not None else None
+        )
+        try:
+            path = install_project(StandardClient(client.value), project, expected_identity=identity)
+        except HeinzelError as exc:
+            err_console.print(message("Can't install:", str(exc)))
+            raise typer.Exit(1) from None
+        typer.echo(json.dumps({"configuration": "created", "path": str(path), "mcp_readiness": "unverified"}))
+
+
+def _add_mcp_check(serve: typer.Typer, footer: str | None, err_console: Console) -> None:
+    """Register a bounded authenticated observation of the ordinary loopback MCP head."""
+
+    @serve.command(name="mcp-check", epilog=footer)
+    def mcp_check(
+        url: Annotated[str, typer.Option(help="Loopback HTTP MCP endpoint, including /mcp.")],
+        token_stdin: Annotated[
+            bool,
+            typer.Option(
+                "--token-stdin",
+                help="Read the bearer from standard input; the network timeout starts after input arrives.",
+            ),
+        ] = False,
+    ) -> None:
+        """Authenticate and initialize a loopback MCP endpoint; this does not prove worker ownership.
+
+        Input waits for a line or EOF; the network check then has a ten-second limit.
+
+        Raises:
+            typer.Exit: If the token, endpoint or MCP initialization is unavailable.
+        """
+        if not token_stdin or sys.stdin.isatty():
+            err_console.print(message("Can't check:", "Provide the token on standard input with --token-stdin."))
+            raise typer.Exit(2)
+        token = sys.stdin.readline(_MAX_MCP_TOKEN_LENGTH + 1).rstrip("\r\n")
+        if len(token) > _MAX_MCP_TOKEN_LENGTH:
+            err_console.print(message("Can't check:", "The token is invalid."))
+            raise typer.Exit(1)
+        from heinzel.heads.mcp._http_check import check_http  # noqa: PLC0415 - imported only for this command
+
+        try:
+            count = check_http(url, token)
+        except HeinzelError:
+            err_console.print(message("Can't check:", "The MCP endpoint could not be authenticated and initialized."))
+            raise typer.Exit(1) from None
+        typer.echo(json.dumps({"mcp_readiness": "initialized", "tools": count, "worker_ownership": "unverified"}))
 
 
 class TokenScope(StrEnum):

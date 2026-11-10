@@ -145,7 +145,7 @@ def test_help_lists_only_everyday_commands_and_says_how_many_are_hidden(app, mak
     assert "graph" not in top_level(app, "heinzel")
     kernel = make_kernel(builtins=True, **example_modules())
     expert = sum(let.audience == "expert" for _, let in kernel.lets(OperationLet) if kernel.available(let.func))
-    hidden = expert + 3  # and `hz system serve mcp | api | daemon`
+    hidden = expert + 5  # and the server plus MCP setup/check commands
     last = screen.strip().splitlines()[-1].strip()
     assert f"{hidden} more commands for experts are hidden; hz system expert on lists them." in screen
     assert last.startswith(f"v{__version__}")
@@ -643,6 +643,8 @@ SERVERS = {
     "hz system serve api",
     "hz system serve daemon",
     "hz system serve mcp",
+    "hz system serve mcp-check",
+    "hz system serve mcp-install-project",
     "hz ui",
     "hz ui serve",
     "hz ui open",
