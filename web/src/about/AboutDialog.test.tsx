@@ -1,3 +1,6 @@
+import { execFileSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -42,6 +45,12 @@ afterEach(() => {
 });
 
 describe("About dialog", () => {
+  it("only exposes native About details to the owned desktop frame", () => {
+    // The focused web lane owns the About surface and can run this dependency-free IPC suite with its pinned Node.
+    const suite = resolve(dirname(fileURLToPath(import.meta.url)), "../../../desktop/test/lifecycle-ipc.test.js");
+    execFileSync(process.execPath, ["--test", suite], { encoding: "utf8", timeout: 3_000 });
+  });
+
   it("says so when no plugin is installed", () => {
     current = { ...info, plugins: [] };
     show();
