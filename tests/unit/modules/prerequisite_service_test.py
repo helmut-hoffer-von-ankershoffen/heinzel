@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Never
@@ -43,23 +44,30 @@ def engine(machine: Machine, kernel_factory: Callable[..., Kernel], **modules: M
 def aliased_apple_launcher(  # noqa: C901
     tmp_path: Path, *, fallback: bool = False, developer_tools: bool = False, alias_kind: str = "symlink"
 ) -> tuple[ToolHost, list[list[str]], Path, Path]:
-    """Real private files and filesystem aliases, with every executable call intercepted."""
+    """Private files with real or mapped aliases; intercept every executable call."""
     system, alias, alternative = tmp_path / "system" / "tool", tmp_path / "alias" / "tool", tmp_path / "real" / "tool"
     for directory in (system.parent, alternative.parent):
         directory.mkdir()
     system.write_text("tool 3.0")
     system.chmod(0o755)
+    case_alias_simulated = False
     if alias_kind == "case":
         alias = tmp_path / "SYSTEM" / "tool"
         if not alias.is_file():
-            pytest.skip("The private fixture filesystem is case sensitive.")
+            if sys.platform == "darwin":
+                message = "The macOS case-alias lane requires a case-insensitive test filesystem."
+                raise AssertionError(message)
+            case_alias_simulated = True
     else:
         alias.parent.mkdir()
         if alias_kind == "hardlink":
             alias.hardlink_to(system)
         else:
             alias.symlink_to(system)
-    assert Path(alias).samefile(system)
+    if case_alias_simulated:
+        assert not Path(alias).is_file()
+    else:
+        assert Path(alias).samefile(system)
     if fallback:
         alternative.write_text("tool 4.0")
         alternative.chmod(0o755)
@@ -78,7 +86,20 @@ def aliased_apple_launcher(  # noqa: C901
         # The virtual system launcher maps to a private file; no host tool is inspected or executed.
         if developer_tools and path == "/Library/Developer/usr/bin/tool" and reference == "/usr/bin/tool":
             return False
-        return Path(path).samefile(system if reference == "/usr/bin/tool" else reference)
+        candidate = Path(path)
+        expected = system if reference == "/usr/bin/tool" else Path(reference)
+        if case_alias_simulated and candidate.as_posix().casefold() == str(alias).casefold():
+            candidate = system
+        if case_alias_simulated and expected.as_posix().casefold() == str(alias).casefold():
+            expected = system
+        return candidate.samefile(expected)
+
+    def is_executable(path: str) -> bool:
+        return (
+            Path(path).is_file()
+            or (case_alias_simulated and Path(path).as_posix().casefold() == str(alias).casefold())
+            or (developer_tools and path == "/Library/Developer/usr/bin/tool")
+        )
 
     resolvable = {str(alias), str(alternative)} if fallback else {str(alias)}
     if developer_tools:
@@ -97,9 +118,7 @@ def aliased_apple_launcher(  # noqa: C901
         environment={"PATH": str(alias.parent), "HOME": str(tmp_path)},
         execute=execute,
         which=which,
-        is_executable=lambda path: (
-            Path(path).is_file() or (developer_tools and path == "/Library/Developer/usr/bin/tool")
-        ),
+        is_executable=is_executable,
         same_file=same_file,
         brew_locations=(str(alternative.parent / "brew"),) if fallback else (),
     )
