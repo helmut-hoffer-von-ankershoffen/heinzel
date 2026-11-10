@@ -1190,3 +1190,95 @@ def test_explicit_uninstall_retires_historical_launcher_under_compatibility_fenc
     assert not host_maintenance_gate(selected.prefix).exists()
     assert not selected.compatibility_gate().exists()
     assert not manager.active
+
+
+@pytest.mark.parametrize("value", [None, "uv", "/fixture/uv", "/fixture/\x00uv", "/" + "a" * 4096])
+def test_removal_uses_only_a_bounded_absolute_historical_uv_spelling(service, value):
+    selected, _manager, _port = service
+    state = selected.directory.parent
+    assert selected.removal_uv_hint(state) == Path("/usr/bin/uv")
+    private_write(selected.marker, json.dumps({"uv": value}))
+    if value == "/fixture/uv":
+        assert selected.removal_uv_hint(state) == Path(value)
+    else:
+        with pytest.raises(HeinzelError, match="installation identity changed"):
+            selected.removal_uv_hint(state)
+
+
+def test_historical_service_dry_run_previews_migration_without_touching_manager(service):
+    selected, manager, port, _old = seed_released_service(service, "published015")
+    launcher = selected.launcher.read_bytes()
+    preview = selected.install(port, dry_run=True)
+    assert preview.dry_run
+    assert not preview.changed
+    assert preview.files[str(selected.launcher)].encode() != launcher
+    assert selected.launcher.read_bytes() == launcher
+    assert not manager_effects(manager)
+
+
+@pytest.mark.parametrize("failure", ["unverified", "wrong port", "pending"])
+def test_historical_migration_refuses_before_any_manager_change(service, failure):
+    selected, manager, port, old = seed_released_service(service, "published015")
+    if failure == "unverified":
+        selected.verify = lambda: False
+        message = "Verify the selected standard Heinzel SDK"
+    elif failure == "wrong port":
+        port = port + 1 if port < 65535 else port - 1
+        message = "recorded port"
+    else:
+        private_write(selected.compatibility_gate(), "fixture recovery fence")
+        message = "existing installation change needs recovery"
+    with pytest.raises(HeinzelError, match=message):
+        selected.install(port)
+    assert json.loads(private_read(selected.marker)) == old
+    assert not manager_effects(manager)
+
+
+def test_historical_service_without_a_live_pid_requires_explicit_migration(service):
+    selected, manager, _port, _old = seed_released_service(service, "published015")
+    manager.active = False
+    with pytest.raises(HeinzelError, match="before opening"):
+        selected.open_local()
+    with pytest.raises(HeinzelError, match="No owned running historical service"):
+        selected.restart()
+    assert not manager_effects(manager)
+
+
+def test_open_and_restart_refuse_unavailable_or_mismatched_live_service(service, monkeypatch):
+    selected, manager, port = service
+    assert selected.open_local() is None
+    selected.install(port)
+    manager.active = False
+    with pytest.raises(HeinzelError, match="not ready"):
+        selected.open_local()
+    manager.active = True
+    control = start_control(selected, port)
+    try:
+        request = PrivateControl.request
+
+        def response(path, command):
+            result = request(path, "status")
+            if command == "open":
+                return result | {"url": "https://example.invalid/#token=fixture"}
+            if command == "restart":
+                return result | {"error": "mutation-pending"}
+            return result | {"pid": -1}
+
+        monkeypatch.setattr(PrivateControl, "request", response)
+        assert not selected.status().ready
+        with pytest.raises(HeinzelError, match="valid local session"):
+            selected.open_local()
+        with pytest.raises(HeinzelError, match="installation change requires completion"):
+            selected.restart()
+    finally:
+        control.close()
+
+
+def test_web_removal_cannot_finish_until_the_owned_job_is_stopped(service):
+    selected, manager, port = service
+    selected.install(port)
+    before = {path: path.read_bytes() for path in (selected.unit, selected.launcher, selected.marker)}
+    with selected.removal_guard() as guarded, pytest.raises(HeinzelError, match="job is not stopped"):
+        guarded.finish()
+    assert manager.active
+    assert {path: path.read_bytes() for path in before} == before
