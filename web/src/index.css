@@ -427,6 +427,15 @@ body {
   }
 }
 
+/* Pane actions need a 44px target on touch-capable devices and in phone-sized portrait or landscape windows.
+   A browser can report a fine pointer in those windows. Keep the minimum independent of theme spacing. */
+@media (any-pointer: coarse), (width < 640px), (width < 1024px) and (height < 480px) {
+  [data-pane-action] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 :root {
   --hz-viewport-safe-top: var(--hz-safe-area-top, env(safe-area-inset-top, 0px));
   --hz-viewport-safe-right: var(--hz-safe-area-right, env(safe-area-inset-right, 0px));
