@@ -61,6 +61,12 @@ def test_vitest_files_run_with_or_without_the_web_prefix():
         assert "--maxWorkers=2" in command
 
 
+@pytest.mark.parametrize("path", ["src/test/choices-standards.test.ts", "src/lib/pane-actions-standards.test.ts"])
+def test_vitest_accepts_hyphenated_owning_test_paths(path):
+    for selector in (path, f"web/{path}"):
+        assert focused_job.plan("vitest", selector, OUT)[0][-1] == path
+
+
 @pytest.mark.parametrize(
     ("kind", "selector"),
     [
@@ -68,11 +74,15 @@ def test_vitest_files_run_with_or_without_the_web_prefix():
         ("e2e", "--deselect=tests"),  # an option, not a test id
         ("e2e", "tests/unit/ci_test.py"),  # outside the end-to-end tests
         ("pytest", "tests/../../etc/passwd"),
+        ("pytest", "tests/unit/../other-test.py"),
+        ("pytest", "tests/unit/-option-test.py"),
         ("pytest", "tests/unit/ci_test.py;rm -rf ~"),
         ("pytest", "tests/unit/ci_test.py $(id)"),
         ("pytest", "tests/unit/does_not_exist_test.py"),
         ("pytest", " ".join(["tests/unit/ci_test.py"] * 11)),
         ("vitest", "src/nope.test.tsx"),
+        ("vitest", "--help"),
+        ("vitest", "web/-option.test.ts"),
         ("shell", "tests/unit/ci_test.py"),
     ],
 )

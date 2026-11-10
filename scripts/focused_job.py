@@ -41,8 +41,9 @@ MAX_IDS = 10
 PYTHON_CI_MAX_IDS = 32
 MAX_REPEAT = 60
 DEADLINE = 1020  # seconds into the run: start no new round after this, so the tally and artifacts still upload
-# A path, then optionally `::test_name` and a parametrize id; never a leading `-` (no option injection), never `..`.
-TOKEN = re.compile(r"\w[\w./]{0,199}(::\w{1,120}(\[[\w.,=+-]{1,80}\])?){0,2}", re.ASCII)
+# A path, then optionally `::test_name` and a parametrize id. Internal hyphens are valid, but no path
+# component starts with `-`: the web prefix is stripped before Vitest receives it. Never allow `..`.
+TOKEN = re.compile(r"(?![^:]*\/-)\w[\w./-]{0,199}(::\w{1,120}(\[[\w.,=+-]{1,80}\])?){0,2}", re.ASCII)
 SERIAL = ("-n", "0", "-q", "-p", "no:cacheprovider", "--session-timeout=900")  # one selection, no worker noise
 TIMEOUT = 1080  # under the job's 20 minutes, so the report and screenshots are still written and uploaded
 
