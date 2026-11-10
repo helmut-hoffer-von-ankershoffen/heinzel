@@ -55,7 +55,7 @@ Each finding names the rule it breaks:
 | Page headers (`components/common.tsx` `Page`) | Have an `actions` slot at the top right | — | Compliant. "Re-run", "Discover", "Search" and "Copy Mermaid" may become icon-only. |
 | Top bar, sidebar, chat and terminal headers, plugin header actions, ticker | Icon-only, named, with tooltips | — | Compliant. The top bar's "Open calendar" literal moves to `t()`. |
 
-The pending counts in `web/src/lib/pane-actions-standards.test.ts` track batches 2 and 3. Each fixed file leaves the
+The pending counts in `web/src/lib/paneActionsStandards.test.ts` track batches 2 and 3. Each fixed file leaves the
 list in the same pull request.
 
 ## Proposal: mask the Tailscale share token
