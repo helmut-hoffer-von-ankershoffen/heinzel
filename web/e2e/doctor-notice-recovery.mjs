@@ -21,7 +21,9 @@ try {
       return setInterval(callback, delay, ...args);
     };
     window.__noticeEvents = 0;
-    window.addEventListener("hz:notices", () => { window.__noticeEvents += 1; });
+    window.addEventListener("hz:notices", () => {
+      window.__noticeEvents += 1;
+    });
   });
   await page.goto(url);
   await page.getByRole("heading", { name: "Today" }).waitFor();
