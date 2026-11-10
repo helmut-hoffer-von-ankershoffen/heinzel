@@ -20,8 +20,9 @@ import related_tests as scoped_related  # noqa: E402 - needs the scripts path ab
 
 @pytest.fixture(autouse=True)
 def _without_host_gate(monkeypatch):
-    """Keep dispatch tests independent of the developer's PATH."""
+    """Keep dispatch tests independent of the host gate and its selected push."""
     monkeypatch.setattr(scoped.shutil, "which", lambda _: None)
+    monkeypatch.delenv("HZ_DAEMON_PROGRESS_PUSH", raising=False)
 
 
 @pytest.fixture
