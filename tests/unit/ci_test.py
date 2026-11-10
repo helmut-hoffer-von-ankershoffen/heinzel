@@ -92,21 +92,6 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
         "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
     },
-    "focused-683.yml": {
-        'test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"': (
-            "checks the independently pinned bootstrap before checkout"
-        ),
-        'python3 -I "$GITHUB_WORKSPACE/bootstrap/research/focused-683/run.py" "$LANE"': (
-            "binds read-only focused evidence to the reviewed source, run and lane"
-        ),
-    },
-    "one-shot-683-write.yml": {
-        'test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"': (
-            "checks the independently pinned bootstrap before checkout"
-        ),
-        "python3 -I research/focused-683/write.py update": "updates only the verified pull request ref once",
-        "python3 -I research/focused-683/write.py publish": "revalidates the exact evidence and publishes its statuses",
-    },
     "acceptance-sharded.yml": {
         "uv python install 3.13": "the isolated acceptance study interpreter",
         '"$(uv python find 3.13)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
@@ -207,6 +192,26 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
 }
 
+# One-shot admission delegates to pinned entry points. Match entire commands so an added argument or shell line
+# cannot inherit an exemption for a reviewed command.
+EXACT_NOT_MAKE = {
+    "focused-683.yml": {
+        'test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"': (
+            "checks the independently pinned bootstrap before checkout"
+        ),
+        'python3 -I "$GITHUB_WORKSPACE/bootstrap/research/focused-683/run.py" "$LANE"': (
+            "binds read-only focused evidence to the reviewed source, run and lane"
+        ),
+    },
+    "one-shot-683-write.yml": {
+        'test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"': (
+            "checks the independently pinned bootstrap before checkout"
+        ),
+        "python3 -I research/focused-683/write.py update": "updates only the verified pull request ref once",
+        "python3 -I research/focused-683/write.py publish": "revalidates the exact evidence and publishes its statuses",
+    },
+}
+
 
 def commands(workflow: Path) -> list[str]:
     """The `run:` commands of a workflow's steps, without leading comment lines (such as shellcheck directives)."""
@@ -229,7 +234,8 @@ def _without_leading_comments(script: str) -> str:
 def not_through_make(workflow: Path) -> list[str]:
     """Commands that should be a make target: neither `make ...` nor exempt for this workflow."""
     exempt = (*NOT_MAKE["*"], *NOT_MAKE.get(workflow.name, {}))
-    return [run for run in commands(workflow) if not run.startswith(("make ", *exempt))]
+    exact = EXACT_NOT_MAKE.get(workflow.name, {})
+    return [run for run in commands(workflow) if run not in exact and not run.startswith(("make ", *exempt))]
 
 
 def test_finds_commands_not_run_through_make(tmp_path):
@@ -243,6 +249,22 @@ def test_finds_commands_not_run_through_make(tmp_path):
     ]
     workflow.write_text(yaml.safe_dump({"jobs": {"publish": {"steps": [{"uses": "x"}, *steps]}}}), encoding="utf-8")
     assert not_through_make(workflow) == ["bash scripts/check_licenses.sh", unreviewed]
+
+
+@pytest.mark.parametrize(
+    ("name", "run"),
+    [
+        ("focused-683.yml", 'python3 -I "$GITHUB_WORKSPACE/bootstrap/research/focused-683/run.py" "$LANE" --extra'),
+        ("focused-683.yml", 'python3 -I "$GITHUB_WORKSPACE/bootstrap/research/other/run.py" "$LANE"'),
+        ("one-shot-683-write.yml", "python3 -I research/focused-683/write.py merge"),
+        ("one-shot-683-write.yml", "python3 -I research/focused-683/write.py publish\necho extra"),
+        ("publish.yml", "python3 -I research/focused-683/write.py publish"),
+    ],
+)
+def test_guarded_683_workflow_exemptions_refuse_other_commands(tmp_path, name, run):
+    workflow = tmp_path / name
+    workflow.write_text(yaml.safe_dump({"jobs": {"check": {"steps": [{"run": run}]}}}), encoding="utf-8")
+    assert not_through_make(workflow) == [run]
 
 
 @pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda p: p.name)
