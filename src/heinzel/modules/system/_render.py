@@ -1,7 +1,7 @@
 """How the CLI head presents system results."""
 
 import json
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from rich.console import Group, RenderableType
 from rich.markup import escape
@@ -10,6 +10,10 @@ from rich.table import Table
 from rich.text import Text
 
 from heinzel.modules.system._models import ChannelReport, ModuleInfo, ReleaseCheck, SystemInfo, UpdateResult
+from heinzel.modules.system._plugin_standing import standing
+
+if TYPE_CHECKING:  # read only through attributes: an hz updated in place renders with the old models (see below)
+    from heinzel.modules.system._models import AutomaticUpdates
 
 
 def render_modules(modules: list[ModuleInfo]) -> RenderableType:
@@ -76,6 +80,30 @@ def render_channel(report: ChannelReport) -> RenderableType:
 
 
 def render_update(result: UpdateResult) -> RenderableType:
-    """What the update did, or what the installation is pinned to and the command that moves it."""
-    unchanged = [p.distribution for p in result.plugins if p.status == "unchanged"]
-    return Text("\n".join([result.message, *([f"Plugins unchanged: {', '.join(unchanged)}."] if unchanged else [])]))
+    """What the update did, or what the installation is pinned to and the command that moves it.
+
+    The hz that ran `hz system update` imports this file only after uv replaced it with the new release's, while it
+    still holds its own `_models` in memory. So it names no model that is new, and reads a field that is new with a
+    default: an older hz updating itself must still print its result.
+    """
+    lines = [result.message]
+    unchanged = [p for p in result.plugins if p.status == "unchanged"]
+    if unchanged:
+        lines.append("Plugins:")
+        lines += [f"  {p.distribution}: {standing(p)}" for p in unchanged]
+    automatic = getattr(result, "automatic", None)
+    if result.updated and automatic is not None:
+        lines.append(_automatic(automatic))
+    return Text("\n".join(lines))
+
+
+def _automatic(automatic: "AutomaticUpdates") -> str:
+    """What automatic updates install and when, whether they are on, and how to turn them on."""
+    rule = (
+        f"The web server checks about every {automatic.check_every_minutes} minutes and installs the newest "
+        f"published stable release (not a prerelease) once it is {automatic.core_min_age_hours} h old (plugins "
+        f"{automatic.plugin_min_age_hours} h). An update run by hand installs that same release now."
+    )
+    if automatic.enabled:
+        return f"Automatic updates: on. {rule}"
+    return f"Automatic updates: off. Turn them on with `hz system config set auto_update true`. {rule}"

@@ -308,7 +308,7 @@ it.each([
 });
 
 it.each([plan, { ...plan, phase: "off", enabled: false }, { status: 503, body: {} }])(
-  "does not call an empty, disabled or failed plan current",
+  "does not call an empty, disabled or failed plan current (case %#)",
   async (answer) => {
     mockApi({
       ...shell,
