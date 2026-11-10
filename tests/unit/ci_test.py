@@ -92,6 +92,11 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
         "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
     },
+    "one-shot-692.yml": {
+        'test -n "$REVIEWED_HELPER_SHA"': "refuses an unreviewed helper commit before checkout",
+        "python3 -I scripts/one_shot_692.py check": "reads the bound PR and required evidence",
+        "python3 -I scripts/one_shot_692.py merge": "rechecks the evidence and requests the bound normal merge",
+    },
     "acceptance-sharded.yml": {
         "uv python install 3.13": "the isolated acceptance study interpreter",
         '"$(uv python find 3.13)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
