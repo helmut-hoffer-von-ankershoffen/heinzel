@@ -303,11 +303,7 @@ def publish_statuses(run_id: int) -> None:
 
 
 def main() -> None:
-    """Check exact source and attempt; intentionally do not publish statuses.
-
-    Raises:
-        ValueError: Publication is held pending review.
-    """
+    """Check exact source and attempt, then publish the guarded statuses."""
     require(
         os.environ.get("GITHUB_REPOSITORY") == REPO and os.environ.get("GITHUB_REF") == f"refs/heads/{BRANCH}",
         "repository or ref drift",
@@ -327,13 +323,12 @@ def main() -> None:
     source()
     evidence(run_id)
     source()
-    msg = "publication held: verifier and external serialization require independent review"
-    raise ValueError(msg)
+    publish_statuses(run_id)
 
 
 if __name__ == "__main__":
     try:
         main()
     except (KeyError, OSError, ValueError, subprocess.CalledProcessError, zipfile.BadZipFile) as exc:
-        print(f"Stopped without publishing: {exc}")
+        print(f"Stopped; inspect status and PR state: {exc}")
         raise SystemExit(1) from exc

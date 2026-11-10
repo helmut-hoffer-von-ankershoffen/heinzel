@@ -1,0 +1,173 @@
+# One-shot reviewed source. External queue/train/base-writer serialization is required.
+name: Focused 650 bootstrap evidence
+on:
+  push:
+    branches: [bootstrap/one-shot-650]
+permissions: {}
+concurrency:
+  group: one-shot-650-evidence
+  cancel-in-progress: false
+jobs:
+  focused:
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.ref == 'refs/heads/bootstrap/one-shot-650' && github.run_attempt == '1'
+    name: Focused 650 ${{ matrix.suite }} (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+        suite: [python, browser]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Require independently pinned bootstrap source
+        env:
+          REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_650_HELPER_SHA }}
+        run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"
+      - name: Checkout reviewed bootstrap source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: bootstrap
+          persist-credentials: false
+      - name: Checkout reviewed candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 9f26091bbf84ef7141fea0b0454008a6344b84d9
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup uv
+        uses: ./bootstrap/.github/actions/setup-uv
+        with:
+          enable-cache: false
+          python-version: "3.14.8"
+      - name: Install browser runtimes
+        if: matrix.suite == 'browser'
+        working-directory: candidate
+        run: make test-browser-deps
+      - name: Run exact selection
+        working-directory: candidate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash "$GITHUB_WORKSPACE/bootstrap/research/focused-650/run.sh" '${{ matrix.suite }}'
+      - name: Upload exact attempt evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: focused-650-${{ matrix.suite }}-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/focused-650/
+          if-no-files-found: error
+          retention-days: 7
+  structural:
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.ref == 'refs/heads/bootstrap/one-shot-650' && github.run_attempt == '1'
+    name: Focused 650 structural
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Require independently pinned bootstrap source
+        env:
+          REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_650_HELPER_SHA }}
+        run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: bootstrap
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: candidate
+          ref: 9f26091bbf84ef7141fea0b0454008a6344b84d9
+          persist-credentials: false
+      - uses: ./bootstrap/.github/actions/setup-uv
+        with:
+          enable-cache: false
+          python-version: "3.14.8"
+      - name: Require confidential terms
+        env:
+          CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
+        working-directory: candidate
+        run: uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require --text ""
+      - name: Lint and check confidentiality
+        env:
+          CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
+        working-directory: candidate
+        run: make lint
+      - working-directory: candidate
+        run: make typecheck
+      - working-directory: candidate
+        run: make quarantine-check
+  security:
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.ref == 'refs/heads/bootstrap/one-shot-650' && github.run_attempt == '1'
+    name: Focused 650 security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Require independently pinned bootstrap source
+        env:
+          REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_650_HELPER_SHA }}
+        run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: bootstrap
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: candidate
+          ref: 9f26091bbf84ef7141fea0b0454008a6344b84d9
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./bootstrap/.github/actions/setup-uv
+        with:
+          enable-cache: false
+          python-version: "3.14.8"
+      - working-directory: candidate
+        run: make secrets
+  sonar:
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.ref == 'refs/heads/bootstrap/one-shot-650' && github.run_attempt == '1'
+    name: Focused 650 Sonar
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      PR_NUMBER: '650'
+      PR_HEAD_SHA: 9f26091bbf84ef7141fea0b0454008a6344b84d9
+    steps:
+      - name: Require independently pinned bootstrap source
+        env:
+          REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_650_HELPER_SHA }}
+        run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: de5ebbb5b471a477c2c875e4e1effc501d021642
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+      - run: uv run --no-build --frozen --script scripts/merge_gate.py sonar
+  publisher:
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && github.actor == github.repository_owner && github.workflow_sha == github.sha && github.ref == 'refs/heads/bootstrap/one-shot-650' && github.run_attempt == '1'
+    name: Focused 650 protected publisher
+    needs: [focused, structural, security, sonar]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REVIEWED_HELPER_SHA: ${{ vars.ONE_SHOT_650_HELPER_SHA }}
+    steps:
+      - name: Require the independently reviewed bootstrap
+        run: test -n "$REVIEWED_HELPER_SHA" && test "$GITHUB_SHA" = "$REVIEWED_HELPER_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify exact run, evidence, PR and publish statuses
+        run: python3 -I scripts/one_shot_650_publish.py

@@ -79,8 +79,6 @@ def main() -> None:
     ):
         msg = "unreviewed helper or unexpected execution context"
         raise ValueError(msg)
-    msg = "ref update held until writer serialization is independently enforced"
-    raise ValueError(msg)
     snapshot(OLD)
     comparison = api(f"compare/{OLD}...{NEW}")
     if comparison.get("status") != "ahead" or comparison.get("base_commit", {}).get("sha") != OLD:

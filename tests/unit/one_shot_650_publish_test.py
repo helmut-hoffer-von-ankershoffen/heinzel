@@ -34,7 +34,7 @@ def test_evidence_rejects_wrong_run_attempt_before_reading_jobs(monkeypatch):
     api.assert_not_called()
 
 
-def test_publication_stays_held_after_successful_verification(monkeypatch):
+def test_publication_follows_successful_verification(monkeypatch):
     for key, value in {
         "GITHUB_REPOSITORY": publisher.REPO,
         "GITHUB_REF": f"refs/heads/{publisher.BRANCH}",
@@ -49,11 +49,12 @@ def test_publication_stays_held_after_successful_verification(monkeypatch):
         patch.object(publisher, "source_review"),
         patch.object(publisher, "source") as source_check,
         patch.object(publisher, "evidence") as evidence_check,
-        pytest.raises(ValueError, match="publication held"),
+        patch.object(publisher, "publish_statuses") as publish,
     ):
         publisher.main()
     assert source_check.call_count == 2
     evidence_check.assert_called_once_with(42)
+    publish.assert_called_once_with(42)
 
 
 def test_status_publisher_sets_pending_then_reads_back_each_success():

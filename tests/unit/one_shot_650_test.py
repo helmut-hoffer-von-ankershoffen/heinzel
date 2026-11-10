@@ -1,4 +1,4 @@
-"""Offline tests of the unactivated updater."""
+"""Offline tests of the one-shot updater."""
 
 import importlib.util
 import os
@@ -28,11 +28,23 @@ class TestUpdateRef:
                 return {
                     "state": "open",
                     "draft": False,
-                    "base": {"ref": "main"},
-                    "head": {"sha": state["head"], "ref": updater.BRANCH},
+                    "base": {"ref": "main", "repo": {"full_name": updater.REPO}},
+                    "head": {"sha": state["head"], "ref": updater.BRANCH, "repo": {"full_name": updater.REPO}},
+                    "merge_commit_sha": updater.OLD_MERGE if state["head"] == updater.OLD else "new-merge",
                 }
-            if path.startswith("compare/"):
-                return {"status": "ahead", "base_commit": {"sha": updater.OLD}}
+            fixed = {
+                f"git/commits/{updater.NEW}": {"tree": {"sha": updater.TREE}},
+                f"git/commits/{updater.OLD_MERGE}": {
+                    "parents": [{"sha": updater.OLD_MERGE_BASE}, {"sha": updater.OLD}]
+                },
+                "git/commits/new-merge": {
+                    "parents": [{"sha": updater.BASE}, {"sha": updater.NEW}],
+                    "tree": {"sha": updater.TREE},
+                },
+                f"compare/{updater.OLD}...{updater.NEW}": {"status": "ahead", "base_commit": {"sha": updater.OLD}},
+            }
+            if path in fixed:
+                return fixed[path]
             if path == f"git/refs/heads/{updater.BRANCH}":
                 state["writes"].append(args)
                 state["head"] = updater.NEW
@@ -49,17 +61,16 @@ class TestUpdateRef:
         }
         with patch.dict(os.environ, env, clear=True), patch.object(updater, "api", api):
             if drift:
-                with pytest.raises(ValueError, match="held until writer serialization"):
+                with pytest.raises(ValueError, match="base or PR head drift"):
                     updater.main()
             else:
                 updater.main()
         return state["writes"]
 
-    def test_update_is_held_until_serialization_is_enforced(self):
-        with pytest.raises(ValueError, match="held until writer serialization"):
-            self.exercise()
+    def test_fast_forward_is_non_force(self):
+        assert self.exercise() == [("--method", "PATCH", "-f", f"sha={updater.NEW}", "-F", "force=false")]
 
-    def test_hold_prevents_write_when_base_drifts(self):
+    def test_drift_prevents_write(self):
         assert self.exercise(drift=True) == []
 
 

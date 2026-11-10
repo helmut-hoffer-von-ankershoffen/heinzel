@@ -58,6 +58,19 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 # plumbing. Everything else is a make target, so it runs the same way locally.
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
+    "one-shot-650-update.yml": {
+        'test -n "$REVIEWED_HELPER_SHA"': "checks the independently pinned Actions bootstrap SHA",
+        "python3 -I scripts/one_shot_650.py": "one-shot guarded PR ref update on the isolated writer",
+    },
+    "focused-650.yml": {
+        'test -n "$REVIEWED_HELPER_SHA"': "checks the independently pinned Actions bootstrap SHA",
+        'bash "$GITHUB_WORKSPACE/bootstrap/research/focused-650/run.sh"': "runs the pinned one-shot test manifest",
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
+            "fails when the confidential terms secret is unavailable"
+        ),
+        "uv run --no-build --frozen --script scripts/merge_gate.py sonar": "judges the existing protected Sonar policy",
+        "python3 -I scripts/one_shot_650_publish.py": "one-shot evidence verifier and status writer",
+    },
     "ci.yml": {
         "python3 -I scripts/release_candidate.py": "selects or records release source",
         "uv run --frozen --no-sync --no-build python scripts/ci_node.py": (
