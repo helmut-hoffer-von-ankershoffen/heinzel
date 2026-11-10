@@ -11791,6 +11791,11 @@ export interface components {
             /** @description Holds once a capability reports a state. */
             capability?: components["schemas"]["CapabilityState"] | null;
             /**
+             * Checks Up
+             * @description Holds once every named health check (`<module>: <check>`) is up again in `hz system doctor`.
+             */
+            checks_up?: string[] | null;
+            /**
              * Installed Version At Least
              * @description Holds once the hz installed on this machine (on disk, not the running process) is at least this.
              */
