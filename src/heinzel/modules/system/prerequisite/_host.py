@@ -16,6 +16,7 @@ from heinzel.kernel import ProcessExecute, ProcessOutcome, run_bounded_process, 
 
 BREW_LOCATIONS = ("/opt/homebrew/bin/brew", "/usr/local/bin/brew", "/home/linuxbrew/.linuxbrew/bin/brew")
 """Where Homebrew installs itself; its directory is often missing from the `PATH` of a launchd or GUI process."""
+APPLE_COMMAND_LINE_TOOLS_BIN = Path("/Library/Developer/CommandLineTools/usr/bin")
 OUTPUT_LIMIT = 65536
 
 

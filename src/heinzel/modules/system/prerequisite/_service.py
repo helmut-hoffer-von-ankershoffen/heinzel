@@ -21,7 +21,7 @@ from heinzel import (
     Progress,
 )
 from heinzel.kernel import PREREQUISITE_CONTEXTS, PREREQUISITE_READY
-from heinzel.modules.system.prerequisite._host import ToolHost
+from heinzel.modules.system.prerequisite._host import APPLE_COMMAND_LINE_TOOLS_BIN, ToolHost
 
 PROBE_TIMEOUT = 10.0
 INSTALL_TIMEOUT = 900.0
@@ -67,7 +67,10 @@ class ToolPrerequisites(PrerequisiteService):
         """Look at `host` (the real machine by default) on behalf of the modules `kernel` has loaded."""
         self.kernel, self.progress = kernel, progress
         self.host = host or ToolHost.system()
-        self._developer_tools: bool | None = None
+        self._developer_directory: str | None = None
+        self._developer_directory_error: str | None = None
+        self._developer_payload_identity_unknown = False
+        self._developer_directory_checked = False
 
     # Selection -------------------------------------------------------------------------------------------------------
 
@@ -119,19 +122,93 @@ class ToolPrerequisites(PrerequisiteService):
 
     # Looking ---------------------------------------------------------------------------------------------------------
 
-    def _developer_tools_ready(self) -> bool:
-        """Whether Apple's Command Line Tools exist, asked once; their stubs open a GUI installer otherwise."""
-        if self._developer_tools is None:
+    def _developer_tool(self, name: str) -> str | None:
+        """Return an installed developer-tool binary without invoking Apple's potentially prompting shim."""
+        self._developer_payload_identity_unknown = False
+        if not self._developer_directory_checked:
             try:
-                self._developer_tools = self.host.run(["/usr/bin/xcode-select", "-p"], PROBE_TIMEOUT).returncode == 0
+                result = self.host.run(["/usr/bin/xcode-select", "-p"], PROBE_TIMEOUT)
+                if result.returncode == 0 and result.stdout.strip() and not result.truncated:
+                    selected = result.stdout.strip()
+                    if Path(selected).is_absolute():
+                        self._developer_directory = selected
+                        self._developer_directory_error = None
+                    else:
+                        self._developer_directory_error = (
+                            "`xcode-select -p` returned a non-absolute developer directory."
+                        )
+                else:
+                    self._developer_directory_error = "`xcode-select -p` did not confirm an active developer directory."
             except OSError:
-                self._developer_tools = False
-        return self._developer_tools
+                self._developer_directory_error = (
+                    "`xcode-select -p` could not be run; the Apple executable remains unverified."
+                )
+            self._developer_directory_checked = True
+        if self._developer_directory is None:
+            return None
+        self._developer_directory_error = None
+        candidate = str(Path(self._developer_directory) / "usr" / "bin" / name)
+        if not self.host.is_executable(candidate):
+            self._developer_directory_error = f"The selected developer directory has no executable `{name}` payload."
+            return None
+        try:
+            if self.host.same_file(candidate, f"/usr/bin/{name}"):
+                self._developer_directory_error = f"The selected `{name}` payload resolves to Apple's launcher."
+                return None
+        except OSError:
+            self._developer_directory_error = (
+                f"The selected `{name}` payload's physical identity could not be verified."
+            )
+            self._developer_payload_identity_unknown = True
+            return None
+        return candidate
+
+    def _apple_launcher_without_developer_tools(self, definition: PrerequisiteDefinition) -> PrerequisiteCheck:
+        """Report the unusable Apple shim without mislabeling it as absent or running it."""
+        if self._developer_payload_identity_unknown:
+            return PrerequisiteCheck(
+                requirement=definition,
+                status="failed",
+                detail=(
+                    f"{definition.title} resolves to Apple's `/usr/bin/{definition.name}` launcher, but the selected "
+                    "developer-tool payload's physical identity could not be verified. The launcher was not run. "
+                    f"Run `hz system prerequisite check --owner {definition.module}` again after checking file access."
+                ),
+            )
+        check = self._missing(definition)
+        reason = self._developer_directory_error or (
+            f"The selected developer directory has no executable `{definition.name}` payload "
+            "distinct from Apple's launcher."
+        )
+        check.detail = (
+            f"{definition.title} resolves to Apple's `/usr/bin/{definition.name}` launcher, but {reason} "
+            "The launcher was not run. " + check.detail
+        )
+        return check
+
+    @staticmethod
+    def _apple_launcher_version_failed(definition: PrerequisiteDefinition, executable: str) -> PrerequisiteCheck:
+        """Report a selected developer-tool payload whose version command failed."""
+        return PrerequisiteCheck(
+            requirement=definition,
+            status="failed",
+            detail=(
+                f"The selected Apple developer-tool binary `{executable}` did not return a usable "
+                f"{definition.title} version. Apple's `/usr/bin/{definition.name}` launcher was not run."
+            ),
+        )
 
     def _candidates(self, let: PrerequisiteLet) -> list[str]:
         found = self.host.which(let.name, self.host.search_path)
         homebrew = [str(Path(location).parent / let.name) for location in self.host.brew_locations]
-        return [path for path in dict.fromkeys(([found] if found else []) + homebrew) if path.startswith("/")]
+        apple_tools = (
+            [str(APPLE_COMMAND_LINE_TOOLS_BIN / let.name)]
+            if self.host.platform == "darwin" and let.requires_apple_developer_tools
+            else []
+        )
+        return [
+            path for path in dict.fromkeys(([found] if found else []) + homebrew + apple_tools) if path.startswith("/")
+        ]
 
     def _version(self, let: PrerequisiteLet, executable: str) -> Version | None:
         try:
@@ -159,20 +236,34 @@ class ToolPrerequisites(PrerequisiteService):
             return None
 
     def _observe(
-        self, record: ModuleRecord, let: PrerequisiteLet, candidate: str, *, run: bool
+        self,
+        record: ModuleRecord,
+        let: PrerequisiteLet,
+        candidate: str,
+        *,
+        run: bool,
     ) -> PrerequisiteCheck | None:
         """Observe exactly this executable, without changing command resolution."""
         definition = definition_of(record, let)
         if not candidate.startswith("/") or not self.host.is_executable(candidate):
             return None
         apple_launcher = self._apple_launcher(let, candidate)
+        developer_tool = None
+        if apple_launcher and run:
+            developer_tool = self._developer_tool(let.name)
+            if developer_tool is None:
+                return self._apple_launcher_without_developer_tools(definition)
+        executable = developer_tool or candidate
         if apple_launcher is None or not run:
             if apple_launcher is None:
                 detail = "The executable's filesystem identity could not be verified. "
                 detail += "Check file access, then run `hz system prerequisite check` again."
             elif apple_launcher:
-                detail = "The Apple developer-tool launcher is not verified. "
-                detail += "Run `hz system prerequisite check` to check it without installing anything."
+                detail = (
+                    f"Apple's `/usr/bin/{definition.name}` launcher is not verified. Run "
+                    f"`hz system prerequisite check --owner {definition.module}` to check it without installing "
+                    "anything."
+                )
             else:
                 detail = "Found; `hz system prerequisite check` verifies its version."
             return PrerequisiteCheck(
@@ -181,23 +272,22 @@ class ToolPrerequisites(PrerequisiteService):
                 path=candidate if apple_launcher is False else None,
                 detail=detail,
             )
-        if apple_launcher and not self._developer_tools_ready():
-            return None
-        if (version := self._version(let, candidate)) is None:
-            return None
+        if (version := self._version(let, executable)) is None:
+            return self._apple_launcher_version_failed(definition, executable) if apple_launcher else None
         if let.minimum_version is not None and version < Version(let.minimum_version):
             return PrerequisiteCheck(
                 requirement=definition,
                 status="incompatible",
-                path=candidate,
+                path=executable,
                 version=str(version),
                 detail=f"Version {let.minimum_version} or newer is needed; update {let.name} with its installer.",
             )
-        return PrerequisiteCheck(requirement=definition, status="available", path=candidate, version=str(version))
+        return PrerequisiteCheck(requirement=definition, status="available", path=executable, version=str(version))
 
     def _probe(self, record: ModuleRecord, let: PrerequisiteLet, *, run: bool) -> PrerequisiteCheck:
         too_old: PrerequisiteCheck | None = None
         unverified: PrerequisiteCheck | None = None
+        apple_tools_missing: PrerequisiteCheck | None = None
         for candidate in self._candidates(let):
             check = self._observe(record, let, candidate, run=run)
             if check is None:
@@ -208,10 +298,14 @@ class ToolPrerequisites(PrerequisiteService):
             if check.status == "incompatible":
                 too_old = too_old or check
                 continue
+            if check.status == "missing":
+                apple_tools_missing = apple_tools_missing or check
+                continue
             found = self.host.which(let.name, self.host.search_path)
-            self.host.add_to_path(str(Path(candidate).parent), first=found is not None and found != candidate)
+            executable = check.path or candidate
+            self.host.add_to_path(str(Path(executable).parent), first=found is not None and found != executable)
             return check
-        return too_old or unverified or self._missing(definition_of(record, let))
+        return too_old or unverified or apple_tools_missing or self._missing(definition_of(record, let))
 
     def _final_paths(
         self, entries: list[Entry], checks: list[PrerequisiteCheck], *, run: bool
@@ -264,7 +358,11 @@ class ToolPrerequisites(PrerequisiteService):
         return checks
 
     def check(
-        self, module: str | None = None, *, context: PrerequisiteContext = "setup", probe: bool = True
+        self,
+        module: str | None = None,
+        *,
+        context: PrerequisiteContext = "setup",
+        probe: bool = True,
     ) -> PrerequisiteReport:
         """Check applicable executables without running an installer or signing into any account.
 

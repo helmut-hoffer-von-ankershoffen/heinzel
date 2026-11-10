@@ -47,6 +47,8 @@ def _fix(item: PrerequisiteCheck) -> str:
     """What the person does next: the command that installs it, or the owner's instructions."""
     if item.automatic:
         return f"hz system prerequisite install --owner {item.requirement.module} --confirm"
+    if item.requirement.requires_apple_developer_tools:
+        return f"hz system prerequisite check --owner {item.requirement.module}"
     return item.detail
 
 
@@ -99,7 +101,7 @@ def install(
 
 @module.health
 def prerequisites(manager: PrerequisiteService) -> list[Check]:
-    """The external tools the selected features need, found without starting them; nothing is installed."""
+    """Find external tools without starting them; Apple launchers remain unverified until an explicit check."""
     return [
         Check(
             name=f"{item.requirement.module}: {item.requirement.name}",
