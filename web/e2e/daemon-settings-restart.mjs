@@ -10,7 +10,10 @@ try {
   const posts = [];
   page.on("request", (request) => {
     const target = new URL(request.url());
-    if (request.method() === "POST" && ["/api/stream/system/daemon/restart", "/api/system/daemon/restart"].includes(target.pathname))
+    if (
+      request.method() === "POST" &&
+      ["/api/stream/system/daemon/restart", "/api/system/daemon/restart"].includes(target.pathname)
+    )
       posts.push(`${target.origin}${target.pathname}`);
   });
   await page.goto(url.href);
