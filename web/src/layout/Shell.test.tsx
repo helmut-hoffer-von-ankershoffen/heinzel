@@ -311,4 +311,23 @@ describe("Desktop menu actions", () => {
     act(() => requestMenuAction("search"));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
+
+  it("reveals Updates from the desktop menu when a full-screen terminal hides the narrow footer", async () => {
+    vi.stubGlobal("innerWidth", 640);
+    const { calls } = mockApi({
+      ...answers,
+      "/api/system/release": { current: "0.1.0", latest: "0.1.0", update_available: false, warnings: [] },
+    });
+    renderAt("/doctor");
+    act(() => requestMenuAction("terminal"));
+    const terminal = await screen.findByRole("tabpanel", { name: "Terminal" });
+    await userEvent.setup().click(within(terminal).getByRole("button", { name: "Full screen" }));
+    expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
+
+    act(() => requestMenuAction("updates"));
+    expect(await screen.findByRole("contentinfo")).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Check for updates" })).toBeVisible();
+    expect(within(terminal).getByRole("button", { name: "Full screen" })).toBeVisible();
+    expect(calls.filter((request) => request.url.endsWith("/api/system/release"))).toHaveLength(1);
+  });
 });

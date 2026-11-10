@@ -222,11 +222,12 @@ function Layout() {
   }, [durableChat, setChatOpen]);
   const settings = params.get("settings");
   const navigate = useNavigate();
-  // The desktop app's menu asks for these screens; About, Updates and Copy are answered where they live.
+  // About, Updates and Copy are handled where they live. Reveal the footer first if the terminal covers it.
   useEffect(
     () =>
-      onMenuAction(["settings", "daemon", "changelog", "doctor"], (action) => {
+      onMenuAction(["settings", "daemon", "changelog", "doctor", "updates"], (action) => {
         if (action === "doctor") navigate("/doctor");
+        else if (action === "updates") setTerminalFull(false);
         else
           setParams((current) => {
             const next = new URLSearchParams(current);
