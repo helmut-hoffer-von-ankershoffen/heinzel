@@ -87,6 +87,43 @@ Claude settings discovery and human approval have separate contracts.
   in the SDK maintenance inventory even with the feature disabled. Require writer exclusion for automatic client
   config changes. Where that proof is unavailable, review a manual change and verify native effective config.
 
+### Foreground manual Install fixture
+
+Use `hz system mcp review-install REGISTRATION_ID --handoff PLAN` before discovery. The isolated fixture injects
+`McpInstallReview` through the existing trusted CLI startup argument and uses the same foreground controlling
+terminal for review, instructions and confirmation. Keep the review-only result contract. The new manual session
+requires its own host-supplied workflow. The production entry point supplies neither this workflow nor a planner.
+The registration and handoff are locators. CLI arguments, environment, owner UID and project settings confer no
+host authority. Cursor remains unavailable pending proof of native effective configuration.
+
+The host selects one client, user profile and workspace from its retained registration. Commit to their physical
+identities, the registration and generation, the install grant and revision, SDK and bridge pins, the exact entry,
+and the original configuration's digest and file identity or proven absence. Use the existing workflow's plan
+and review digest for the file and entry terms. Give `McpInstallReview.prepare` a read-only commitment view of
+those same terms. A handoff does not create or replace the workflow's pending approval. The host reserves one
+session for the exact target and refuses a second until the first is closed. Keep its handle and workflow in process.
+
+After checking the handoff, `McpInstallReview` calls `HostClientConfigWorkflow.prepare(INSTALL)` and `review(id)`.
+The workflow's approval callback compares the pending review digest to the committed digest before displaying
+the exact plan with the pinned terminal reviewer. Recheck the handoff, host binding and preimage before and
+after approval. Show only the approved entry, insertion point and destination on that terminal. At this point
+the configuration is still `not-applied`. The workflow and CLI perform no file writes or vendor launches.
+
+After the separate manual edit, an explicit confirmation in the same session calls `verify(id)` once. It must
+prove the exact entry, unchanged unrelated settings and trusted native selection from the expected scope. Bind
+the session to a fixed monotonic deadline no later than the handoff expiry or the workflow's own deadlines.
+Recheck terminal ownership and current registration, grant and pins around review and verification. Fence
+publication of the verification result against grant revocation with the same host authority. Expiry, decline,
+interruption, EOF, lost terminal or failed verification consumes the session. Discard approval without writing
+or undoing the manual edit. Success reports `configuration=verified` and `mcp_readiness=unverified`. This proof
+does not start a worker, grant a lease or verify a vendor connection.
+
+Use a disposable profile, workspace and pinned bridge with controlled native observation and a PTY. Verify that
+a conflicting entry or second session is refused, a preimage replacement before approval invalidates the plan,
+and expiry or cancellation prevents reuse and success. Reject changed grant, scope or native winning source and
+edits that also alter unrelated settings. For Claude Code and Codex, let only the fixture driver write the intended
+entry, then confirm that the same session verifies it once. Exercise Cursor and ordinary CLI refusal separately.
+
 ### Consequences
 
 The owner can check readiness independently and stop one registration while others remain active. The initial
