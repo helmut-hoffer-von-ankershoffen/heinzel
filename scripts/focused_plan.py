@@ -203,10 +203,15 @@ def resolve(
             return workload
         message = "canonical candidate source did not resolve to the full inventory"
         raise CandidateError(message)
+    require(valid_sha(commit), "missing exact tested checkout")
     require(len(manifests.encode()) <= MAX_PLAN, "focused plan registry exceeds its supported size")
     registry = json.loads(manifests or "{}", object_pairs_hook=unique_object)
     require(isinstance(registry, dict), "invalid reviewed focused plan registry")
     plan = registry.get(f"{source.event}:{source.head}")
+    preplanned_main = plan is None and source.event == "push" and source.ref == "refs/heads/main"
+    if preplanned_main:
+        tree = object_id(f"{commit}^{{tree}}")
+        plan = registry.get(f"push-tree:{tree}")
     if not isinstance(plan, dict):
         message = "No focused plan for this exact source. Submit an independently reviewed scope manifest."
         raise CandidateError(message)
@@ -221,7 +226,7 @@ def resolve(
             plan["event"],
             source.ref,
             plan["base"],
-            plan["head"],
+            plan.get("head", source.head) if preplanned_main else plan["head"],
             plan["diff_sha256"],
             tuple(f"Focused tests ({lane})" for lane in selection),
         ),

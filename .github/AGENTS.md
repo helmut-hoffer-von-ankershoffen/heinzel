@@ -54,7 +54,10 @@ Constraints per workflow:
 ### Reviewed focused plans
 
 `FOCUSED_CI_PLANS` is the administrator-controlled, size-bounded JSON registry. Publish an entry only after
-independent source and scope review. Its key is `<event>:<head>`. Its value has these fields.
+independent source and scope review. Use `<event>:<head>` for a known head. Before a normal main squash or batch
+has a commit SHA, use `push-tree:<reviewed-result-tree>` and omit `head`. This key applies only to main push and
+still binds the exact reviewed aggregate base, tree and diff. The resulting evidence records the real head SHA.
+An entry has these fields.
 
 - `schema` is 1. `event`, `ref`, `base`, `head` and `tree` bind the exact workload. Before opening a PR, use
   `refs/pull/*/merge` as its planning ref and compute the expected tree with `git merge-tree --write-tree BASE HEAD`.

@@ -69,3 +69,22 @@ def test_preopen_planning_ref_is_accepted_only_for_a_pull_request(git_objects):
     source, plan = _input("push", "refs/heads/main", focused_plan.PREOPEN_PR_REF)
     with pytest.raises(CandidateError, match="reviewed ref"):
         focused_plan.resolve(source, HEAD, json.dumps({f"push:{HEAD}": plan}))
+
+
+def test_main_squash_can_preprovision_the_exact_base_and_result_tree(git_objects):
+    source, plan = _input("push", "refs/heads/main", "refs/heads/main")
+    del plan["head"]
+    scope = focused_plan.resolve(source, HEAD, json.dumps({f"push-tree:{TREE}": plan}))
+    assert isinstance(scope, focused_plan.Scope)
+    assert scope.workload.head == HEAD
+    assert scope.workload.base == BASE
+    assert scope.tree == TREE
+    plan["base"] = BLOB
+    with pytest.raises(CandidateError, match="exact event, ref and diff"):
+        focused_plan.resolve(source, HEAD, json.dumps({f"push-tree:{TREE}": plan}))
+
+
+def test_tree_registry_key_does_not_replace_exact_head_for_a_pr(git_objects):
+    source, plan = _input("pull_request", "refs/pull/5/merge", focused_plan.PREOPEN_PR_REF)
+    with pytest.raises(CandidateError, match="independently reviewed scope manifest"):
+        focused_plan.resolve(source, MERGE, json.dumps({f"push-tree:{TREE}": plan}))
