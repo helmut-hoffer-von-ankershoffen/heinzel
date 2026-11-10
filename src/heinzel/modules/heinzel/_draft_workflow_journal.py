@@ -73,8 +73,14 @@ class DraftJournal:
         """Fsync a private transition and an explicit host message without inventing an assistant reply.
 
         Raises:
-            HeinzelError: If an exact transition key is replayed with different immutable terms.
+            HeinzelError: If a private inbox grant attempts a workflow transition or its terms changed.
         """
+        match self.crud.repository.authentication:
+            case "mcp-private-cli" | "mcp-private-wire":
+                msg = "A private MCP inbox grant cannot record a draft workflow transition"
+                raise HeinzelError(msg)
+            case origin:
+                pass
         with self.crud.repository.control_writer(session) as writer:
             prior = matching(self.events(session), kind, key)
             if prior:
@@ -91,7 +97,7 @@ class DraftJournal:
                     id=message_id,
                     seq=1,
                     role="system",
-                    origin=self.crud.repository.authentication,
+                    origin=origin,
                     at=event.ts,
                     text=text,
                 )

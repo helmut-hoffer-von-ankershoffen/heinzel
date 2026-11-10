@@ -759,6 +759,38 @@ def test_a_render_saves_a_private_draft_and_its_record(make, dirs, runner, tmp_p
     assert again.draft.name == "20261026T070000Z-2.md"
 
 
+def test_a_reviewed_contract_run_checks_the_exact_qualified_source_before_effect(make, dirs, runner):
+    contract_path = put(dirs[0])
+    service = make()
+    contract = service.find("me:weekly-digest")
+    with pytest.raises(HeinzelError, match="reviewed Heinzel contract has changed"):
+        service.run_reviewed("weekly-digest", contract.sha256, check_active=lambda: None)
+    assert runner.runs == []
+    rendered = service.run_reviewed(contract.qualified, contract.sha256, check_active=lambda: None)
+    assert rendered.draft.read_text() == runner.draft
+    assert len(runner.runs) == 1
+    contract_path.write_text(contract_path.read_text() + "\n")
+    with pytest.raises(HeinzelError, match="reviewed Heinzel contract has changed"):
+        service.run_reviewed(contract.qualified, contract.sha256, check_active=lambda: None)
+    assert len(runner.runs) == 1
+
+
+def test_revocation_during_a_reviewed_contract_run_prevents_a_draft(make, dirs, runner):
+    put(dirs[0])
+    service = make()
+    contract = service.find("me:weekly-digest")
+
+    def check_active():
+        if runner.runs:
+            msg = "revoked"
+            raise HeinzelError(msg)
+
+    with pytest.raises(HeinzelError, match="revoked"):
+        service.run_reviewed(contract.qualified, contract.sha256, check_active=check_active)
+    assert len(runner.runs) == 1
+    assert not service.drafts_dir.exists()
+
+
 def test_an_agent_run_that_doesnt_complete_fails_without_a_draft(make, dirs, runner, tmp_path):
     put(dirs[0])
     runner.status = "budget"

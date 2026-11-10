@@ -1,0 +1,206 @@
+"""Host-selected MCP locator storage and observational maintenance receipts."""
+
+import hashlib
+import os
+import secrets
+import sys
+from collections.abc import Generator
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from pydantic import JsonValue
+
+from heinzel.kernel import CurrentUser, HeinzelError
+from heinzel.kernel._host_maintenance import MaintenanceLocks, host_maintenance_lock
+from heinzel.kernel._installation_mutations import installation_mutation_pending
+from heinzel.kernel._mcp_storage import (
+    PHYSICAL_DIRECTORY_FLAGS,
+    InstalledMcpRuntime,
+    descriptor_identity,
+    encode_record,
+    physical_directory,
+    read_record,
+    write_record,
+)
+
+_DARWIN_USER_TEMP_DIR = 65537  # Darwin's _CS_DARWIN_USER_TEMP_DIR, absent from Python's string table.
+_ROOT_BYTES = 86  # Reserve 17 bytes for /g-<12 hex characters>/s.
+_REFUSED = "The installed MCP runtime root is unavailable or changed"
+
+
+def _os_runtime_base() -> Path:
+    if sys.platform == "linux":
+        return Path("/run/user") / str(os.getuid())
+    if sys.platform == "darwin":
+        value = os.confstr(_DARWIN_USER_TEMP_DIR)
+        if value is not None:
+            path = Path(value)
+            # Canonicalize the system /var spelling without following user-controlled links.
+            if path.is_relative_to("/var/folders"):
+                path = Path("/private") / path.relative_to("/")
+            if path.is_relative_to("/private/var/folders") and ".." not in path.parts:
+                return path
+    raise HeinzelError(_REFUSED)
+
+
+def _locator_name() -> str:
+    return "hz-m-" + secrets.token_hex(8)
+
+
+@dataclass(slots=True)
+class McpRuntimeLocator:
+    """Retain locator storage and fence activation through the SDK maintenance lock."""
+
+    path: Path
+    descriptor: int = field(repr=False)
+    _installation: InstalledMcpRuntime = field(repr=False)
+    _inventory: int = field(repr=False)
+    _record_name: str = field(repr=False)
+    _locks: MaintenanceLocks = field(repr=False)
+    _anchors: tuple[tuple[Path, int, bool], ...] = field(repr=False)
+    _storage: dict[str, JsonValue] = field(repr=False)
+    _observation: bytes | None = field(default=None, init=False, repr=False)
+
+    def require_current(self) -> None:
+        """Refuse changed anchors or a maintenance fence before using locator storage.
+
+        Raises:
+            HeinzelError: If an anchor or observation changed or the host is under maintenance.
+        """
+        lock = host_maintenance_lock(self._installation.prefix)
+        try:
+            with self._locks.guard(lock):
+                for path, retained, private in self._anchors:
+                    with physical_directory(path, private=private) as current:
+                        if descriptor_identity(current) != descriptor_identity(retained):
+                            raise HeinzelError(_REFUSED)
+                if (
+                    self._observation is not None
+                    and read_record(self._inventory, self._record_name) != self._observation
+                ):
+                    raise HeinzelError(_REFUSED)
+                if installation_mutation_pending(self._installation.prefix, self._installation.state):
+                    raise HeinzelError(_REFUSED)
+        except OSError:
+            raise HeinzelError(_REFUSED) from None
+
+    def observe_generation(
+        self,
+        locator: Path,
+        directory: tuple[int, int],
+        socket_node: tuple[int, int],
+        registration: str,
+        generation: int,
+    ) -> None:
+        """Commit one observation of the retained listener before publishing the supervisor.
+
+        The receipt grants no admission, adoption or deletion rights. An incomplete write is left in
+        inventory and the caller retires its unpublished listener. Activation never restores a receipt.
+
+        Raises:
+            HeinzelError: If the generation or maintenance inventory cannot be verified or recorded.
+        """
+        self.require_current()
+        leaf = locator.parent.name
+        if (
+            self._observation is not None
+            or locator.parent.parent != self.path
+            or locator.name != "s"
+            or not leaf.startswith("g-")
+        ):
+            raise HeinzelError(_REFUSED)
+        data: dict[str, JsonValue] = {
+            "schema": 1,
+            "kind": "mcp-locator-observation",
+            "storage": self._storage,
+            "registration": registration,
+            "generation": generation,
+            "locator": os.fspath(locator),
+            "directory": list(directory),
+            "socket": list(socket_node),
+        }
+        try:
+            observation = encode_record(data)
+            os.fsync(self.descriptor)
+            write_record(self._inventory, self._record_name, observation)
+            self._observation = observation
+            self.require_current()
+        except OSError:
+            raise HeinzelError(_REFUSED) from None
+
+
+def _provision(
+    installation: InstalledMcpRuntime, stack: ExitStack, locks: MaintenanceLocks, prefix: int, state: int
+) -> McpRuntimeLocator:
+    lock = host_maintenance_lock(installation.prefix)
+    if installation_mutation_pending(installation.prefix, installation.state):
+        raise HeinzelError(_REFUSED)
+    inventory = stack.enter_context(physical_directory(lock.parent, private=True))
+    base = _os_runtime_base()
+    base_fd = stack.enter_context(physical_directory(base, private=True))
+    sdk, profile = os.fspath(installation.prefix), os.fspath(installation.state)
+    key = hashlib.sha256(os.fsencode(sdk) + b"\0" + os.fsencode(profile)).hexdigest()
+    name = _locator_name()
+    path = base / name
+    if len(os.fsencode(path)) > _ROOT_BYTES:
+        msg = "The installed MCP runtime root exceeds the Unix socket path budget"
+        raise HeinzelError(msg)
+    record_name = f"mcp-activation-{key}-{name}.json"
+    os.mkdir(name, mode=0o700, dir_fd=base_fd)  # A pre-existing entry refuses this activation.
+    descriptor = os.open(name, PHYSICAL_DIRECTORY_FLAGS, dir_fd=base_fd)
+    stack.callback(os.close, descriptor)
+    CurrentUser.verify_private(os.fstat(descriptor), directory=True)
+    # mkdir/open cannot prove creation provenance against another process under the same UID.
+    # This descriptor bounds subsequent creation-only operations. It grants no authority to the path.
+    os.fsync(base_fd)
+    data: dict[str, JsonValue] = {
+        "platform": sys.platform,
+        "uid": os.getuid(),
+        "sdk": sdk,
+        "sdk_identity": list(descriptor_identity(prefix)),
+        "profile": profile,
+        "profile_identity": list(descriptor_identity(state)),
+        "os_root": os.fspath(base),
+        "os_root_identity": list(descriptor_identity(base_fd)),
+        "locator_root": os.fspath(path),
+        "observed_directory": list(descriptor_identity(descriptor)),
+    }
+    anchors = (
+        (installation.prefix, prefix, False),
+        (installation.state, state, True),
+        (lock.parent, inventory, True),
+        (base, base_fd, True),
+        (path, descriptor, True),
+    )
+    return McpRuntimeLocator(path, descriptor, installation, inventory, record_name, locks, anchors, data)
+
+
+@contextmanager
+def mcp_runtime_locator(installation: InstalledMcpRuntime) -> Generator[McpRuntimeLocator]:
+    """Hold the SDK maintenance fence and retain fresh per-activation locator storage.
+
+    The already-authenticated isolated runtime supplies the installation binding. This scope stays locked
+    until its supervisor exits, pending a native manager registration that maintenance can stop itself.
+
+    Raises:
+        HeinzelError: If isolation, maintenance authority, inventory or the OS runtime root is unavailable.
+
+    Yields:
+        A bounded locator directory descriptor selected by the host.
+    """
+    if not sys.flags.isolated or os.getuid() != os.geteuid() or installation.state.is_relative_to(installation.prefix):
+        raise HeinzelError(_REFUSED)
+    with ExitStack() as stack:
+        try:
+            lock = host_maintenance_lock(installation.prefix)
+            # Verify native paths before the existing maintenance lock creates its own state outside the SDK.
+            prefix = stack.enter_context(physical_directory(installation.prefix))
+            state = stack.enter_context(physical_directory(installation.state, private=True))
+            locks = stack.enter_context(MaintenanceLocks((lock,)))
+            with locks.guard(lock):
+                runtime = _provision(installation, stack, locks, prefix, state)
+            runtime.require_current()
+        except (OSError, ValueError):
+            raise HeinzelError(_REFUSED) from None
+        yield runtime

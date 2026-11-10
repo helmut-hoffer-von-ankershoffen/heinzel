@@ -28,6 +28,7 @@ from heinzel import (
     Status,
     __version__,
 )
+from heinzel.kernel import installation_mutation_pending
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import Disposition, Wake, unit_dir
@@ -1979,8 +1980,10 @@ def test_quiescent_accepts_only_verified_gui_absence_under_admission(make, bin_d
         with pytest.raises(HeinzelError, match="could not be verified"):
             service.recover_quiescent_install(selected_bin)
     assert service._handover_pending()
+    assert installation_mutation_pending(installation.prefix, tmp_path / "other-profile")
     service.recover_quiescent_install(selected_bin)
     assert not service._handover_pending()
+    assert not installation_mutation_pending(installation.prefix, tmp_path / "other-profile")
 
 
 @pytest.mark.parametrize(
@@ -2278,6 +2281,7 @@ def test_quiescence_interrupted_install_retains_pending(make, tmp_path):
     with pytest.raises(RuntimeError, match="interrupted"):
         interrupted()
     assert service._handover_pending()
+    assert installation_mutation_pending(service._quiescence_installation.prefix, tmp_path / "other-profile")
     with pytest.raises(HeinzelError, match="requires recovery"), service.quiescence_guard(selected_bin):
         pass
 
