@@ -12,6 +12,9 @@ from functools import partial
 from pathlib import Path
 from socket import socket
 from threading import Event, Lock
+from typing import TYPE_CHECKING
+
+import anyio
 
 from heinzel.heads.mcp._ipc_admission import (
     McpGeneration,
@@ -38,6 +41,9 @@ from heinzel.kernel import HeinzelError
 from heinzel.kernel._approval import arguments_hash
 from heinzel.kernel._logging import get_logger, step
 from heinzel.kernel._mcp_storage import InstalledMcpRuntime
+
+if TYPE_CHECKING:
+    from heinzel.kernel import Kernel
 
 type ReadLocator = Callable[[socket], McpGeneration]
 log = get_logger("mcp")
@@ -78,6 +84,7 @@ class InheritedMcpTransport:
     admit: Callable[[], AbstractContextManager[PublishedMcpLease]]
     record: Callable[[PublishedMcpLease, McpWorkRequest, Boundary], Disposition]
     catalog_probe: Callable[[], None]
+    serve_heinzel: Callable[["Kernel"], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,11 +229,18 @@ class OwnedMcpSupervisor:
             with admit() as lease:
                 serve_catalog_probe(lease, partial(self._reply_catalog, lease))
 
+        def serve_heinzel(kernel: "Kernel") -> None:
+            # The host supplies the kernel; this does not grant authority or identify a vendor.
+            from heinzel.heads.mcp._heinzel_tools import serve_admitted_heinzel_connection  # noqa: PLC0415
+
+            with step(log, "mcp.ipc.serve_heinzel", operation="ipc", step="serve_heinzel"), admit() as lease:
+                anyio.run(serve_admitted_heinzel_connection, kernel, self._dispatch, lease)
+
         # Unwind the broker channel first so its EOF releases the direct child even before approval.
         with ExitStack() as child, self.open_transport() as (channel, transport):
             with step(log, "mcp.ipc.launch_bridge", operation="ipc", step="launch_bridge"):
                 front = child.enter_context(launch_inherited_bridge(channel, handshake))
-            yield front, InheritedMcpTransport(admit, transport.record, catalog_probe)
+            yield front, InheritedMcpTransport(admit, transport.record, catalog_probe, serve_heinzel)
 
     def review(self, instance_id: str) -> None:
         """Give the pinned terminal reviewer one private control descriptor for this exact instance."""

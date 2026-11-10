@@ -146,8 +146,8 @@ clients require a pinned bridge and a reviewed config adapter for each supported
 ### Confirmation
 
 The private composition retains three independent boundaries. The bounded catalog probe serves empty
-discovery on an admitted bridge; it does not select or delegate to the broker's individual-Heinzel tool
-server. That server requires its own admitted lease and reviewed dispatch grant. Lifecycle and Install
+discovery on an admitted bridge. The trusted host can instead select the individual-Heinzel server for a fresh
+bridge. That server requires its own admitted lease and reviewed dispatch grant. Lifecycle and Install
 handoffs do not issue either capability.
 
 The dormant native observer and managed-preference prototype

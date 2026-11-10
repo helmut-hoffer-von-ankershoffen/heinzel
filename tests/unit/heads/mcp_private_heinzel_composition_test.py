@@ -180,7 +180,7 @@ def _cli_invoke(tools, request_id, monkeypatch, capsys):
     return finished.value.code, capsys.readouterr().out
 
 
-def _exercise_inherited_tool_bridge(directory, phase):  # noqa: C901, PLR0915 - keep ownership and teardown in one scope
+def _exercise_inherited_tool_bridge(directory, phase):  # noqa: PLR0915 - keep ownership and teardown in one scope
     """Exercise a private synthetic tool through the owned bridge, without a vendor process."""
     kernel = Kernel(Settings(state_dir=directory / "profile"), [])
     provider = SyntheticProvider(kernel.resolve(CurrentUser))
@@ -210,10 +210,6 @@ def _exercise_inherited_tool_bridge(directory, phase):  # noqa: C901, PLR0915 - 
         retire(child, *args)
         reaped.append(child.pid)
 
-    def serve(transport, dispatch):
-        with transport.admit() as lease:
-            anyio.run(serve_admitted_heinzel_connection, kernel, dispatch, lease)
-
     with (
         pytest.MonkeyPatch.context() as patcher,
         owned_mcp_supervisor(directory / "state", plan) as supervisor,
@@ -223,7 +219,7 @@ def _exercise_inherited_tool_bridge(directory, phase):  # noqa: C901, PLR0915 - 
         # Fork the owned bridge before starting any test worker threads.
         with supervisor.launch_bridge() as (front, transport), ThreadPoolExecutor(max_workers=1) as workers:
             front.settimeout(_TIMEOUT)
-            running = workers.submit(serve, transport, supervisor._dispatch)
+            running = workers.submit(transport.serve_heinzel, kernel)
             try:
                 with supervisor._authority._changed:
                     assert supervisor._authority._changed.wait_for(
@@ -251,6 +247,8 @@ def _exercise_inherited_tool_bridge(directory, phase):  # noqa: C901, PLR0915 - 
                         _initialize(front, wire)
                         listed = _rpc(front, wire, "tools/list", 2)
                         assert [tool["name"] for tool in listed["tools"]] == [_TARGET.tool_name]
+                        assert _mcp_invoke(front, wire, "unreviewed", target=_UNREVIEWED)["isError"]
+                        assert provider.calls == []
                         result = _mcp_invoke(front, wire, "bridge-call")
                         if phase == "provider-failure":
                             assert result["isError"]
@@ -262,8 +260,8 @@ def _exercise_inherited_tool_bridge(directory, phase):  # noqa: C901, PLR0915 - 
                         supervisor.revoke()
                         assert wire.readline() == b""
                     running.result(timeout=_TIMEOUT)
-                    with pytest.raises(HeinzelError), transport.admit():
-                        pytest.fail("A revoked bridge was admitted again")
+                    with pytest.raises(HeinzelError):
+                        transport.serve_heinzel(kernel)
             finally:
                 supervisor.revoke()
                 with suppress(OSError):
