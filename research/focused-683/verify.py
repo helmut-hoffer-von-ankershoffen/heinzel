@@ -106,6 +106,18 @@ def _source(*, before_update: bool = False) -> None:
         "candidate paths drift",
     )
     coverage_evidence.scope(MANIFEST)
+    repair = MANIFEST["reviewed_repair"]
+    test_commit = MANIFEST["coverage_test_commit"]
+    test_change = _one(f"compare/{repair}...{test_commit}?per_page=100")
+    _require(
+        test_change["status"] == "ahead"
+        and test_change["ahead_by"] == 1
+        and test_change["merge_base_commit"]["sha"] == repair
+        and {item["filename"]: item["status"] for item in test_change["files"]}
+        == dict.fromkeys(MANIFEST["coverage_test_paths"], "modified")
+        and all(path.startswith("tests/") for path in MANIFEST["coverage_test_paths"]),
+        "coverage test commit changed the reviewed repair outside its tests",
+    )
     ancestry = _one(f"compare/{original}...{HEAD}?per_page=100")
     _require(ancestry["merge_base_commit"]["sha"] == original and ancestry["status"] == "ahead", "original PR lost")
     merge_sha = pr["merge_commit_sha"]
@@ -272,8 +284,8 @@ def _main() -> None:
     args = parser.parse_args()
     _require(MANIFEST["activation"] == "ready", "admission held pending exact final-base review")
     _require(
-        MANIFEST["candidate_parents"] == [BASE, MANIFEST["reviewed_repair"]],
-        "candidate must merge the exact reviewed repair into the protected base",
+        MANIFEST["candidate_parents"] == [BASE, MANIFEST["coverage_test_commit"]],
+        "candidate must merge the coverage-tested repair into the protected base",
     )
     review = MANIFEST["source_review"]
     _require(

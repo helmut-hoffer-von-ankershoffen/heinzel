@@ -2,22 +2,22 @@
 
 Astra reviewed the exact locator repair `e79108052f6d4071d1b0bb802c758d47c5aa3a33` on provisional base `b234067b172f33db59f98c9ea38808b3d5ab9bc5`. Its parent is the earlier composition `8558755d5144280e92fe4975875dd7aee3807f51`. The repair rejects embedded PATH separators, checks ownership and mode through each added directory and symlink hop, rejects absent or inaccessible directories, and uses the system default if no PATH entries remain. Explicit PATH entries keep their order. The 15-path candidate diff includes five Python production files and one TypeScript production file.
 
-The local post-#650 composition is `a607194a5b1afdf8518be84b4562a0f33dbd5e98` on actual protected main `6443f4b8cde047954cdd4a6eb190ce6471ce123e`, with `e79108052f6d4071d1b0bb802c758d47c5aa3a33` as its second parent and tree `b9be3c2ac3db4072b480a330c1ad81b490dd88f0`. All 15 affected paths and their blobs match the reviewed repair. The protected-base changes do not touch the owning test files or web lock. The project lock differs from the earlier run only by the Core version. The prior measurements remain diagnostics pending exact hosted results.
+The original post-#650 composition `a607194a5b1afdf8518be84b4562a0f33dbd5e98` used protected main `6443f4b8cde047954cdd4a6eb190ce6471ce123e` and the original reviewed repair. The new local candidate `7d983e9662f58fd3af2c779c3ca1a9ccf8a70576` keeps that base as its first parent. Its second parent `b3c1c513220da79a50e9d3d1c52d1e20d994aed5` adds tests to the reviewed repair. The candidate tree is `0722838ec82ed417118ee8d388ffeec0335c330e`. The new candidate differs from the earlier composition in three owning test files. All six affected production blobs, the coverage configuration and the dependency locks match the earlier composition. The candidate and helper remain held for independent source review.
 
 The doctor check, standard installer, updater and UI service all use the same locator. On the Mini, an isolated probe of the exact source set PATH to `/usr/bin:/bin:/usr/sbin:/sbin` and used an empty fixture HOME. Plain lookup found no uv. The doctor reported UP, and all four consumers selected the actual `/opt/homebrew/bin/uv`. The locator tests exercise the standalone user install, configured locations and explicit precedence. A fixture treats `/usr/local/bin` as trusted to check Intel Homebrew path selection. Actual Intel hardware remains unverified. The five local macOS tests passed. The hosted macOS evidence lane independently exercises the two fake-uv installer cases and three guarded service cases on the repinned candidate.
 
-The historical Python selection and nine new locator cases gave 525 passes and 76.86% aggregate locally. Add the existing uninstall, service-removal, UI refresh, announced update, tool policy and installation continuity suites, which own paths through the two under-covered modules. The revised 679-case selection passed on CPython 3.14.8 on the Mini.
+The prior 679-case Python selection covered 2109 of 2502 opportunities (84.29%). The current focused selection adds offline update and installer ownership tests, cached doctor cases and targeted assertions for artifact trust, receipt integrity and private web service failure handling. All 792 cases passed in an isolated Mini checkout on CPython 3.14.8.
 
 | Affected Python module | Covered statements and branches | Local coverage |
 | --- | ---: | ---: |
-| `heads/install.py` | 372/454 | 81.94% |
-| `kernel/_installation.py` | 883/1024 | 86.23% |
+| `heads/install.py` | 432/454 | 95.15% |
+| `kernel/_installation.py` | 928/1024 | 90.63% |
 | `kernel/_uv_locate.py` | 96/98 | 97.96% |
-| `modules/system/doctor/__init__.py` | 83/90 | 92.22% |
-| `modules/ui/_service.py` | 675/836 | 80.74% |
-| All five | 2109/2502 | 84.29% |
+| `modules/system/doctor/__init__.py` | 88/90 | 97.78% |
+| `modules/ui/_service.py` | 721/836 | 86.24% |
+| All five | 2265/2502 | 90.53% |
 
-The nine focused Vitest assertions passed with 60/64 source lines and 175/193 combined statements and branches on `web/src/updates/updateState.ts`. The locked project build group provides Node and the separate frozen measurement lock supplies the matching Vitest coverage provider. Local gitleaks scanned 594 commits and found no leaks. License, Python vulnerability and web vulnerability audits passed. Hosted Linux measurement, final-base source review and exact PR Sonar remain required. Sonar readback still names the current PR head `c25199bc0`.
+The exact candidate's nine Vitest assertions passed with 60/64 source lines and 175/193 combined statements and branches on `web/src/updates/updateState.ts`. The locked project build group provides Node and the separate frozen measurement lock supplies the matching Vitest coverage provider. Earlier local gitleaks, license, Python vulnerability and web vulnerability audits passed on the reviewed locator repair. Hosted Linux measurement, final candidate source review and exact PR Sonar remain required. The prior Sonar readback names `c25199bc0`.
 
 - Mac ARM [42777749675](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/runs/42777749675) passed five fake-uv and guarded service cases on the earlier `8558755d` composition.
 - Linux [42746011689](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/runs/42746011689) passed two original factory regressions on CPython 3.15.2 at `f73cb104`.
@@ -35,4 +35,4 @@ The final composition and observed pre-update GitHub test merge are pinned. Revi
 2. After independent ref readback, push the same bootstrap commit to `bootstrap/one-shot-683`. Its seven evidence jobs run with read-only repository permissions. Wait for terminal first-attempt success, then run `python3 -I research/focused-683/verify.py <reviewed-helper-sha> --evidence <run-id>` from that clean helper checkout.
 3. After review, pin the completed run as `ONE_SHOT_683_EVIDENCE_RUN_ID` and push the same helper commit to `bootstrap/one-shot-683-publish`. The separate publisher revalidates the exact completed run, job logs, artifact contents, source and required rules before writing any context. It verifies source and rules between successful writes and attempts to invalidate the statuses if any write or readback fails.
 
-The verifier adapts #650's bounded checks. It requires the exact seven named jobs and artifacts from the reviewed workflow SHA, successful upload-step bindings to artifact IDs and sizes, archive digests and file inventories, exact cases and lane identity, raw coverage floors, and genuine structural, security and Sonar success. Keep `CI OK`, `coverage-floor` and `merge-gate` as required contexts. Full final release-candidate CI retains its whole-project 80% floor and existing 90% `make test` threshold.
+The verifier adapts #650's bounded checks. It requires the exact seven named jobs and artifacts from the reviewed workflow SHA, successful upload-step bindings to artifact IDs and sizes, archive digests and file inventories, exact cases and lane identity, raw coverage floors, and genuine structural, security and Sonar success. Keep `CI OK`, `coverage-floor` and `merge-gate` as required contexts. Full final release-candidate CI separately verifies whole-project coverage with its 80% floor and 90% `make test` threshold.

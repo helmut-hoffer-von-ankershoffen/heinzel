@@ -35,6 +35,14 @@ def _source() -> None:
     base, head, tree = (MANIFEST[key] for key in ("base", "candidate", "tree"))
     _require(_git("rev-parse", "HEAD", "HEAD^{tree}").splitlines() == [head, tree], "candidate identity mismatch")
     _require(_git("show", "-s", "--format=%P", head).split() == MANIFEST["candidate_parents"], "parent drift")
+    test_commit = MANIFEST["coverage_test_commit"]
+    repair = MANIFEST["reviewed_repair"]
+    _require(_git("show", "-s", "--format=%P", test_commit) == repair, "coverage test commit parent drift")
+    _require(
+        _git("diff", "--no-renames", "--name-status", repair, test_commit).splitlines()
+        == [f"M\t{path}" for path in MANIFEST["coverage_test_paths"]],
+        "coverage test commit changed the reviewed repair outside its tests",
+    )
     subprocess.run(("git", "merge-base", "--is-ancestor", MANIFEST["current_pr_head"], head), check=True)
     changed = _git("diff", "--no-renames", "--name-status", base, head).splitlines()
     _require(changed == [f"{kind}\t{path}" for path, kind in MANIFEST["changed_paths"].items()], "scope drift")

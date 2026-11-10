@@ -8,13 +8,13 @@
   "current_test_merge_tree": "1678ed0295195723ae341f350f2c689dfdaa1506",
   "base_ref": "refs/heads/main",
   "base": "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
-  "candidate": "a607194a5b1afdf8518be84b4562a0f33dbd5e98",
-  "candidate_ref": "refs/heads/validation/683-post650-a607194a",
+  "candidate": "7d983e9662f58fd3af2c779c3ca1a9ccf8a70576",
+  "candidate_ref": "refs/heads/validation/683-coverage-7d983e96",
   "candidate_parents": [
     "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
-    "e79108052f6d4071d1b0bb802c758d47c5aa3a33"
+    "b3c1c513220da79a50e9d3d1c52d1e20d994aed5"
   ],
-  "tree": "b9be3c2ac3db4072b480a330c1ad81b490dd88f0",
+  "tree": "0722838ec82ed417118ee8d388ffeec0335c330e",
   "changed_paths": {
     "src/heinzel/heads/install.py": "M",
     "src/heinzel/kernel/_installation.py": "M",
@@ -25,6 +25,7 @@
     "tests/integration/ui_service_test.py": "M",
     "tests/integration/update_uv_minimal_path_test.py": "A",
     "tests/unit/ci_test.py": "M",
+    "tests/unit/heads/install_test.py": "M",
     "tests/unit/kernel/installation_test.py": "M",
     "tests/unit/kernel/uv_locate_test.py": "A",
     "tests/unit/modules/system_update_test.py": "M",
@@ -91,7 +92,13 @@
         "tests/unit/modules/ui_refresh_test.py",
         "tests/unit/modules/system_announced_test.py",
         "tests/unit/kernel/tool_policy_api_test.py",
-        "tests/unit/kernel/installation_continuity_test.py"
+        "tests/unit/kernel/installation_continuity_test.py",
+        "tests/integration/auto_update_real_uv_test.py",
+        "tests/integration/update_heads_real_uv_test.py",
+        "tests/integration/offline_python_preflight_test.py",
+        "tests/unit/heads/tool_install_test.py",
+        "tests/unit/heads/bootstrap_test.py::test_interactive_retained_app_checks_freshness_before_opening",
+        "tests/unit/modules/system_service_test.py::test_doctor_says_what_the_release_cache_knows"
       ],
       "deselect": [
         "tests/unit/kernel/installation_test.py::test_opt_in_current_installed_receipt_target_read_only",
@@ -123,7 +130,7 @@
       "os": "ubuntu-24.04",
       "checkout": "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
       "pr": 683,
-      "head": "a607194a5b1afdf8518be84b4562a0f33dbd5e98"
+      "head": "7d983e9662f58fd3af2c779c3ca1a9ccf8a70576"
     },
     "python315": {
       "os": "ubuntu-24.04",
@@ -189,12 +196,11 @@
     }
   ],
   "source_review": {
-    "decision": "GO",
-    "head": "a607194a5b1afdf8518be84b4562a0f33dbd5e98",
-    "tree": "b9be3c2ac3db4072b480a330c1ad81b490dd88f0",
+    "decision": "PENDING",
+    "head": "7d983e9662f58fd3af2c779c3ca1a9ccf8a70576",
+    "tree": "0722838ec82ed417118ee8d388ffeec0335c330e",
     "base": "6443f4b8cde047954cdd4a6eb190ce6471ce123e",
-    "scope": "Exact post-650 source composition review. All 15 affected blobs and path statuses match the reviewed repair. Hosted admission evidence remains pending.",
-    "reviewer": "independent-review"
+    "scope": "Independent review pending for the test-only extension of the reviewed updater repair and exact helper."
   },
   "reviewed_repair": "e79108052f6d4071d1b0bb802c758d47c5aa3a33",
   "current_test_merge_parents": [
@@ -217,5 +223,11 @@
     "Independently review and pin this exact bootstrap commit before any push to a bootstrap trigger ref.",
     "Verify the normal candidate validation ref, current PR snapshot and effective required rules.",
     "Serialize protected writers before the exact PR ref update, evidence run and status publication."
+  ],
+  "coverage_test_commit": "b3c1c513220da79a50e9d3d1c52d1e20d994aed5",
+  "coverage_test_paths": [
+    "tests/integration/ui_service_test.py",
+    "tests/unit/heads/install_test.py",
+    "tests/unit/kernel/installation_test.py"
   ]
 }
