@@ -15,9 +15,26 @@ REPO = Path(__file__).resolve().parents[2]
 def test_generated_audio_drives_visible_spectrum_and_capture_controls(tmp_path):
     """Exercise actual Web Audio, canvas, silence and cleanup at desktop and phone widths."""
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
+    home = tmp_path / "fictional-home"
+    home.mkdir()
+    temp = home / "tmp"
+    temp.mkdir()
+    environment = {
+        key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL", "PLAYWRIGHT_BROWSERS_PATH") if key in os.environ
+    }
+    environment.update(
+        {
+            "HOME": str(home),
+            "TMPDIR": str(temp),
+            "XDG_CONFIG_HOME": str(home / "config"),
+            "XDG_CACHE_HOME": str(home / "cache"),
+            "XDG_DATA_HOME": str(home / "data"),
+        }
+    )
     driven = subprocess.run(
         [sys.executable, str(REPO / "scripts/web_build.py"), "exec", "node", "e2e/audio-visualizer.mjs", str(shots)],
         cwd=REPO,
+        env=environment,
         capture_output=True,
         text=True,
         timeout=110,

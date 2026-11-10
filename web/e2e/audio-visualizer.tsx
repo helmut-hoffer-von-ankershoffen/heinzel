@@ -1,7 +1,12 @@
 // Test transport only: the production capture graph receives real generated audio, never microphone/system audio.
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
+import { MemoryRouter } from "react-router";
+import type { SchemaConfigReport } from "../src/api/client";
 import { AudioVisualizer } from "../src/audio/AudioVisualizer";
-import { setVizStage } from "../src/audio/viz/stage";
+import { Sidebar } from "../src/layout/Sidebar";
+import { PlayerCard } from "../src/sound/PlayerCard";
 import "../src/index.css";
 
 const fixture = {
@@ -45,22 +50,46 @@ Object.defineProperty(navigator, "mediaDevices", {
 });
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing fixture root");
+// Seed only the fictional setting needed by the real Sidebar. All unseeded queries stay disabled, and the
+// browser test refuses unexpected network requests, including any request to the local fixture's API.
+const client = new QueryClient({ defaultOptions: { queries: { enabled: false, retry: false } } });
+const config: SchemaConfigReport = {
+  files: [],
+  can_reveal: false,
+  file_manager: "Fixture",
+  settings: [
+    {
+      section: "hz",
+      key: "playful",
+      value: true,
+      default: true,
+      source: "default",
+      env: "HZ_PLAYFUL",
+      description: "Fictional fixture setting",
+    },
+  ],
+};
+client.setQueryData(["system", "config", "show"], config);
 createRoot(root).render(
   // Like the app shell: the workspace paints no background of its own (the page colour is on <html>), so the aurora
   // under the content shows through it.
-  <div className="flex h-dvh text-foreground">
-    <div className="min-w-0 flex-1 p-4">
-      <h1>Generated test audio</h1>
-      <p>No microphone, display or system audio is captured.</p>
-      {/* The sidebar's stage above the player, where the Halo and the Swarm stand (playful on, as by default). */}
-      <div
-        className="mt-4 w-64"
-        ref={(element) => setVizStage(element ? { element, playful: true } : null)}
-        data-viz-stage
-      />
-    </div>
-    <section aria-label="Audio visualizer" className="min-h-0 w-11 shrink-0 self-stretch border-l border-border">
-      <AudioVisualizer />
-    </section>
-  </div>,
+  <QueryClientProvider client={client}>
+    <MemoryRouter>
+      <div className="flex h-dvh text-foreground">
+        <aside aria-label="Main" className="h-full w-64 shrink-0 border-r border-border bg-sidebar">
+          <Sidebar collapsed={false} onToggle={() => {}} onSearch={() => {}} onNotifications={() => {}} />
+        </aside>
+        <div className="min-w-0 flex-1 p-4">
+          <h1>Generated test audio</h1>
+          <p>No microphone, display or system audio is captured.</p>
+        </div>
+        <PlayerCard title="Fictional player" watchUrl="https://example.invalid/watch" host="Fixture">
+          <div>Fictional player content</div>
+        </PlayerCard>
+        <section aria-label="Audio visualizer" className="min-h-0 w-11 shrink-0 self-stretch border-l border-border">
+          <AudioVisualizer />
+        </section>
+      </div>
+    </MemoryRouter>
+  </QueryClientProvider>,
 );
