@@ -256,10 +256,6 @@ jobs:
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
         run: uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require --text ""
-      - name: Prepare the pinned workflow linter
-        env:
-          GH_TOKEN: ${{ github.token }} # read-only download fallback for the pinned release asset
-        run: uv run --no-build --script scripts/tools.py install actionlint
       - run: make lint
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}

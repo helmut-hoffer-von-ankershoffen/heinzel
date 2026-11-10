@@ -63,8 +63,6 @@ PROTECTED_FILES = (
     "scripts/focused_coverage.py.lock",
     "scripts/pyyaml-build-requirements.txt",
     "scripts/release_candidate.py",
-    "scripts/tools.py",
-    "scripts/tools.toml",
     "uv.lock",
 )
 MAX_PLAN = 48 * 1024

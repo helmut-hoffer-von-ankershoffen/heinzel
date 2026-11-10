@@ -235,12 +235,6 @@ def _without_core_node_selection(text: str) -> str:
 def _without_focused_admission(text: str) -> str:
     """Keep the core's candidate-only routing out of the plugin workflow."""
     text = re.sub(r"\n  focused-tests:\n.*?(?=\n  ci-ok:)", "", text, flags=re.DOTALL)
-    text = re.sub(
-        r"\n      - name: Prepare the pinned workflow linter\n.*?(?=\n      - run: make lint)",
-        "",
-        text,
-        flags=re.DOTALL,
-    )
     text = re.sub(r"\n      - name: Require successful focused workload.*", "", text, flags=re.DOTALL) + "\n"
     text = re.sub(
         r"(?m)^    if: needs\.changes\.outputs\.full_release == 'true' && \((.*)\) # Core candidate-only$",
