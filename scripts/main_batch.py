@@ -4,7 +4,7 @@
 # ///
 """Validate a public main batch before delegating an intermediate CI run.
 
-Only the queue publisher can attest a batch. Unknown evidence runs full CI.
+Only the queue publisher can attest a batch. Unknown evidence keeps independent integration CI.
 The queue vendors this module to keep both readers on the same wire format.
 """
 
@@ -232,7 +232,8 @@ def _marker_state(proof: dict[str, Any], get: Callable[[str], Any]) -> str:
     payload = get(f"actions/runs/{proof['run']}/attempts/1/jobs?per_page=100")
     if not _valid_job_page(payload):
         return "invalid"
-    matches = [row for row in payload["jobs"] if row["name"] == f"Main batch full suite ({proof['base']})"]
+    markers = {f"Main batch {workload} ({proof['base']})" for workload in ("full suite", "focused scope")}
+    matches = [row for row in payload["jobs"] if row["name"] in markers]
     if not matches:
         return "waiting"
     if len(matches) != 1:

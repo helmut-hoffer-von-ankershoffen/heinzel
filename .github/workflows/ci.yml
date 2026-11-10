@@ -22,14 +22,9 @@ env:
   UV_FROZEN: "1"
   FORCE_COLOR: "1"
 
-# GitHub-hosted macOS runners are the scarce resource: a pull request waited longer for them than for anything else. So a
-# pull request runs portable tests on Linux, Python oldest and newest, plus a real macOS smoke job. Native/platform
-# and unknown changes also retain macOS setup, end-to-end and Electron checks. Every push to main, daily
-# run and dispatch keeps the full setup, Python/shard, end-to-end, notifier, macOS-only and Electron matrix, and
-# `CI OK` includes every scheduled job; macOS failures block after three clean full-suite main runs.
-# Canonical owner-repository release PRs select that full workload in one run; token-created PRs retain full dispatch.
-# Cheap checks cancel a failing same-repository pull request's run early; fork PRs finish with read-only tokens.
-# Provider-specific integration checks live with their owning plugins.
+# Ordinary changes and main baselines require a reviewed, exact focused scope.
+# The full matrix is reserved for the canonical release candidate. Cheap checks
+# still cancel failing same-repository PR runs. Fork workloads stay read-only.
 jobs:
   admission:
     name: Main batch admission
@@ -52,7 +47,7 @@ jobs:
         with:
           enable-cache: false
       - id: batch
-        name: Admit the full run unless explicit batch proof covers this commit
+        name: Resolve the aggregate base and any explicit batch delegation
         env:
           GH_TOKEN: ${{ github.token }}
         run: uv run --no-build --script scripts/main_batch.py
@@ -60,13 +55,13 @@ jobs:
   batch-full:
     permissions:
       contents: read
-    name: Main batch full suite (${{ needs.admission.outputs.base }})
-    needs: admission
-    if: needs.admission.outputs.full == 'true' && needs.admission.outputs.base != ''
+    name: Main batch focused scope (${{ needs.admission.outputs.base }})
+    needs: [admission, changes]
+    if: github.event_name == 'push' && needs.changes.outputs.focused_mode != '' && needs.admission.outputs.base != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
-      - run: echo 'The validated aggregate base selects the full batch suite.'
+      - run: echo 'The validated aggregate base selects the focused batch scope.'
 
   batch-delegated:
     permissions:
@@ -80,11 +75,12 @@ jobs:
       - name: Record delegation without claiming CI OK for this intermediate commit
         env:
           FINAL_RUN: ${{ needs.admission.outputs.run }}
-        run: echo "Full CI is recorded by final main run $FINAL_RUN" >> "$GITHUB_STEP_SUMMARY"
+        run: echo "Integration CI is recorded by final main run $FINAL_RUN" >> "$GITHUB_STEP_SUMMARY"
 
   changes:
     permissions:
       contents: read
+      pull-requests: read
     needs: admission
     if: github.event_name != 'push' || needs.admission.outputs.full != 'false'
     name: Changed paths
@@ -100,6 +96,9 @@ jobs:
       site_only: ${{ steps.paths.outputs.site_only }}
       macos_full: ${{ steps.paths.outputs.macos_full }}
       full_release: ${{ steps.release.outputs.full_release }}
+      focused_matrix: ${{ steps.focused.outputs.focused_matrix }}
+      focused_mode: ${{ steps.focused.outputs.focused_mode }}
+      focused_base: ${{ steps.focused.outputs.focused_base }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -109,8 +108,17 @@ jobs:
         with:
           enable-cache: false
       - id: release
-        name: Recognize the owner-repository canonical release candidate
+        name: Recognize the canonical open release candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 -I scripts/release_candidate.py select --output "$GITHUB_OUTPUT"
+      - id: focused
+        name: Resolve the exact reviewed focused plan
+        if: steps.release.outputs.full_release != 'true'
+        env:
+          FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
+          BATCH_BASE: ${{ needs.admission.outputs.base }}
+        run: python3 -I scripts/focused_plan.py
       - id: paths
         name: Heinzel Notifier is built always, except on a pull request that leaves its sources alone
         env:
@@ -230,7 +238,7 @@ jobs:
       contents: read
     name: Lint, contracts and types
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.focused_mode != '' # Core focused structural
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -239,9 +247,9 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-uv
         with:
-          enable-cache: true
+          enable-cache: ${{ needs.changes.outputs.full_release == 'true' }}
           cache-dependency-glob: uv.lock
-          save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
+          save-cache: false
       - name: Require the confidential terms
         # Without the secret the confidentiality check would silently pass; pull requests from forks have no secrets.
         if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
@@ -251,9 +259,14 @@ jobs:
       - run: make lint
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
-      - run: make managed-backend-setup managed-backend-check # private Node process owner; core only
+      - run: make managed-backend-setup # private Node process owner
+      - run: make managed-backend-static
+        if: needs.changes.outputs.full_release != 'true'
+      - run: make managed-backend-check
+        if: needs.changes.outputs.full_release == 'true'
       - run: make typecheck
-      - run: make test-web # the web app's component tests (Vitest with axe); core only
+      - if: needs.changes.outputs.full_release == 'true'
+        run: make test-web # full candidate component suite
 
   secrets:
     permissions:
@@ -277,7 +290,7 @@ jobs:
       contents: read
     name: make setup (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true') # Core candidate-only
     # What a contributor runs on Linux architectures and Apple-silicon macOS: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
     runs-on: ${{ matrix.os }}
@@ -305,7 +318,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.focused_mode != '' # Core focused structural
     name: Dependency audit
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -315,16 +328,16 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-uv
         with:
-          enable-cache: true
+          enable-cache: ${{ needs.changes.outputs.full_release == 'true' }}
           cache-dependency-glob: uv.lock
-          save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
+          save-cache: false
       - run: make audit
 
   test:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -380,7 +393,7 @@ jobs:
 
   coverage:
     needs: changes
-    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     name: Coverage
     # One measured run, in parallel with the matrix instead of after it.
     runs-on: ubuntu-24.04
@@ -424,7 +437,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     name: Performance tests
     # Timing assertions (linear time) run here only: on a loaded developer machine they flake, so neither the
     # pre-push hook nor the test matrix runs them.
@@ -449,7 +462,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.site_only == 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.site_only == 'true') # Core candidate-only
     name: Site tests
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -468,7 +481,7 @@ jobs:
   e2e:
     name: End-to-end ${{ matrix.suite }} (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -514,7 +527,8 @@ jobs:
     permissions:
       contents: read
     name: Plugin template
-    needs: lint # the slowest offline check runs only once the cheap ones pass
+    needs: [lint, changes] # the slowest offline check runs only once the cheap ones pass
+    if: needs.changes.outputs.full_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -534,7 +548,7 @@ jobs:
       contents: read
     name: Heinzel Notifier (macOS app)
     needs: changes
-    if: (github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.notifier == 'true' # ordinary pull requests: macos-smoke
+    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.notifier == 'true') # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -557,7 +571,7 @@ jobs:
       contents: read
     name: macOS-specific tests
     needs: changes
-    if: (github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
@@ -586,7 +600,7 @@ jobs:
     # Every app PR checks the CLI and macOS-only tests; full-macOS PRs also run the other platform jobs.
     # Build the notifier so the real-launch tests cannot silently skip.
     needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: needs.changes.outputs.full_release == 'true' && (github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 10
     env:
@@ -619,7 +633,7 @@ jobs:
       contents: read
     name: Electron (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.electron == 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.electron == 'true') # Core candidate-only
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -663,7 +677,7 @@ jobs:
       contents: read
     name: Build
     needs: [changes, notifier, macos-smoke]
-    if: ${{ !cancelled() && needs.changes.outputs.core == 'true' && needs.notifier.result != 'failure' && needs.macos-smoke.result != 'failure' }}
+    if: ${{ !cancelled() && needs.changes.outputs.full_release == 'true' && needs.changes.outputs.core == 'true' && needs.notifier.result != 'failure' && needs.macos-smoke.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -698,7 +712,7 @@ jobs:
       contents: read
     name: Plugin SDK candidate
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true') # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -718,7 +732,7 @@ jobs:
       contents: read
     name: Optional source plugins
     needs: changes
-    if: needs.changes.outputs.plugins == 'true' || needs.changes.outputs.contracts == 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.plugins == 'true' || needs.changes.outputs.contracts == 'true') # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -807,7 +821,7 @@ jobs:
       contents: read
     name: Public contract consumers
     needs: [changes, core-wheel]
-    if: needs.changes.outputs.contracts == 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.contracts == 'true') # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -1000,8 +1014,8 @@ jobs:
           if-no-files-found: error
 
   # The quarantine lane (scripts/quarantine.py): tests/quarantine.toml takes a known flake out of every required job
-  # for at most 7 days. The registry check is required, so an entry past its `until` fails `CI OK`; the lane itself
-  # runs where the full suite runs (main, schedule, dispatch, release candidates), reports and is NOT in `CI OK`.
+  # for at most 7 days. The required registry fails on an expired entry.
+  # The separate advisory quarantine lane runs on the full candidate.
   quarantine-registry:
     permissions:
       contents: read
@@ -1024,7 +1038,7 @@ jobs:
       contents: read
     name: Quarantine plan
     needs: changes
-    if: (github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -1046,7 +1060,7 @@ jobs:
     name: Quarantine (${{ matrix.os }})
     needs: [changes, quarantine-plan]
     # Non-blocking by design: not in `CI OK`, and `make test-quarantine` exits 0 whatever the tests do.
-    if: (github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.quarantine-plan.outputs.selected == 'true'
+    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.quarantine-plan.outputs.selected == 'true') # Core candidate-only
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -1081,12 +1095,54 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+  focused-tests:
+    name: Focused tests (${{ matrix.lane }})
+    needs: changes
+    if: needs.changes.outputs.focused_mode != ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.focused_matrix || '{"include":[]}') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: false
+          save-cache: false
+      - name: Use Ubuntu's primary archive for browser dependencies
+        if: runner.os == 'Linux' && matrix.kind == 'e2e'
+        run: sudo sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
+      - name: Install browser runtimes and host dependencies
+        if: matrix.kind == 'e2e'
+        run: make test-browser-deps
+      - name: Run the exact reviewed selection with fresh evidence
+        env:
+          FOCUSED_LANE: ${{ matrix.lane }}
+          FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
+          BATCH_BASE: ${{ needs.changes.outputs.focused_base }}
+          PYTHONPATH: .
+        run: uv run --no-build --frozen --script scripts/focused_coverage.py
+      - name: Upload focused CI evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: focused-pr-evidence-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/focused-evidence/
+          if-no-files-found: error
+          retention-days: 7
+
   ci-ok:
     permissions:
       contents: read
     name: CI OK
     if: always() && (github.event_name != 'push' || needs.admission.outputs.full != 'false')
-    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry]
+    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry, focused-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -1099,4 +1155,16 @@ jobs:
               success | skipped) ;;
               *) echo "A required job ended with: $result"; exit 1 ;;
             esac
+          done
+      - name: Require successful focused workload and all owning checks
+        if: needs.changes.outputs.focused_mode != ''
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          required=(admission changes lint secrets audit quarantine-registry focused-tests)
+          if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review); fi
+          for job in "${required[@]}"; do
+            jq -e --arg job "$job" '.[$job].result == "success"' <<< "$RESULTS" >/dev/null \
+              || { echo "::error::Reviewed focused job did not pass: $job"; exit 1; }
           done
