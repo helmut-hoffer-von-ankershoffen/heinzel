@@ -1,0 +1,25 @@
+// Observe a real doctor notice, then allow the isolated fixture's health check to recover.
+import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
+import { chromium } from "playwright-core";
+
+const [url, marker] = process.argv.slice(2);
+const browser = await chromium.launch({ headless: true });
+const page = await browser.newPage();
+try {
+  await page.addInitScript(() => {
+    window.__noticeEvents = 0;
+    window.addEventListener("hz:notices", () => { window.__noticeEvents += 1; });
+  });
+  await page.goto(url);
+  await page.getByRole("heading", { name: "Today" }).waitFor();
+  const widget = page.locator('[data-widget="notifications"]');
+  await widget.getByText("Heinzelmännchen is degraded").waitFor();
+  await page.waitForFunction(() => window.__noticeEvents > 0);
+  writeFileSync(marker, "observed");
+  await widget.waitFor({ state: "hidden", timeout: 30000 });
+  assert.equal(await widget.count(), 0);
+  console.log(JSON.stringify({ resolved: true }));
+} finally {
+  await browser.close();
+}
