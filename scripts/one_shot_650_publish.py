@@ -31,6 +31,7 @@ CONTEXTS = ("merge-gate", "coverage-floor", "CI OK")
 GITHUB_ACTIONS_APP = 15368
 GITHUB_ACTIONS_BOT = 41898282
 REPOSITORY_ID = 1431672693
+RULESET_ID = 25762292
 EXPECTED_JOBS = {
     *(
         f"Focused 650 {suite} ({os_name})"
@@ -123,7 +124,10 @@ def source_review() -> None:
 def verify_upload_step(job: dict[str, Any], name: str, artifact: dict[str, Any]) -> None:
     """Bind an artifact to its exact successful job step's authenticated log."""
     steps = [step for step in job["steps"] if step["name"] == "Upload exact attempt evidence"]
-    require(len(steps) == 1 and steps[0]["conclusion"] == "success", "missing successful upload step")
+    require(
+        len(steps) == 1 and steps[0]["status"] == "completed" and steps[0]["conclusion"] == "success",
+        "missing successful upload step",
+    )
     number = steps[0]["number"]
     require(type(number) is int and number > 0, "invalid upload step number")
     require(sum(step["number"] == number for step in job["steps"]) == 1, "duplicate upload step number")
@@ -183,6 +187,7 @@ def evidence(run_id: int) -> None:
                 "artifact provenance or size",
             )
             archive = api(f"actions/artifacts/{artifact['id']}/zip", binary=True)
+            require(len(archive) == artifact["size_in_bytes"], "artifact archive size mismatch")
             require(
                 artifact.get("digest") == "sha256:" + hashlib.sha256(archive).hexdigest(), "artifact digest mismatch"
             )
@@ -221,21 +226,16 @@ def publish_statuses(run_id: int) -> None:
         subprocess.CalledProcessError: GitHub rejected a request.
     """
     rules = api("rules/branches/main?per_page=100")
-    checks = [
-        check
-        for page in rules
-        for rule in page
-        if rule.get("type") == "required_status_checks"
-        for check in rule.get("parameters", {}).get("required_status_checks", [])
-    ]
-    for context in CONTEXTS:
-        matching = [check for check in checks if check.get("context") == context]
-        require(bool(matching), f"required context missing: {context}")
-        if context != "CI OK":
-            require(
-                all(item.get("integration_id") == GITHUB_ACTIONS_APP for item in matching),
-                "required app binding changed",
-            )
+    status_rules = [rule for page in rules for rule in page if rule.get("type") == "required_status_checks"]
+    require(len(status_rules) == 1 and status_rules[0].get("ruleset_id") == RULESET_ID, "effective ruleset changed")
+    params = status_rules[0].get("parameters", {})
+    require(params.get("strict_required_status_checks_policy") is False, "strict ruleset setting changed")
+    checks = params.get("required_status_checks", [])
+    expected = {"CI OK": None, "merge-gate": GITHUB_ACTIONS_APP, "coverage-floor": GITHUB_ACTIONS_APP}
+    require(len(checks) == len(expected), "required contexts changed")
+    require(
+        {item.get("context"): item.get("integration_id") for item in checks} == expected, "context bindings changed"
+    )
     url = f"https://github.com/{REPO}/actions/runs/{run_id}"
 
     def write(context: str, state: str) -> None:
@@ -262,6 +262,7 @@ def publish_statuses(run_id: int) -> None:
         response = json.loads(subprocess.run(command, check=True, capture_output=True).stdout)  # noqa: S603
         require(response.get("context") == context and response.get("state") == state, "status write not confirmed")
         require(response.get("target_url") == url, "status write URL mismatch")
+        require(type(response.get("id")) is int and response["id"] > 0, "invalid status write ID")
         status_pages = api(f"commits/{HEAD}/statuses?per_page=100")
         statuses = [status for page in status_pages for status in page]
         matching = [status for status in statuses if status.get("context") == context]
@@ -284,12 +285,19 @@ def publish_statuses(run_id: int) -> None:
             attempted.add(context)
             write(context, "success")
         source()
-    except (ValueError, OSError, subprocess.CalledProcessError, KeyError, json.JSONDecodeError):
+    except (ValueError, OSError, subprocess.CalledProcessError, KeyError, TypeError, zipfile.BadZipFile):
         for context in ("CI OK", "merge-gate", "coverage-floor"):
             if context in attempted:
                 try:
                     write(context, "failure")
-                except (ValueError, OSError, subprocess.CalledProcessError, KeyError, json.JSONDecodeError) as error:
+                except (
+                    ValueError,
+                    OSError,
+                    subprocess.CalledProcessError,
+                    KeyError,
+                    TypeError,
+                    zipfile.BadZipFile,
+                ) as error:
                     print(f"Status invalidation failed for {context}: {error}")
         raise
 

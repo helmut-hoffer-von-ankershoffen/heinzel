@@ -61,3 +61,27 @@ class TestUpdateRef:
 
     def test_hold_prevents_write_when_base_drifts(self):
         assert self.exercise(drift=True) == []
+
+
+def test_snapshot_rejects_test_merge_with_moved_base():
+    def api(path, *_args):
+        if path == "git/ref/heads/main":
+            return {"object": {"sha": updater.BASE}}
+        if path == f"git/ref/heads/{updater.BRANCH}":
+            return {"object": {"sha": updater.OLD}}
+        if path == "pulls/650":
+            return {
+                "state": "open",
+                "draft": False,
+                "merge_commit_sha": "merge",
+                "base": {"ref": "main", "repo": {"full_name": updater.REPO}},
+                "head": {"sha": updater.OLD, "ref": updater.BRANCH, "repo": {"full_name": updater.REPO}},
+            }
+        if path == f"git/commits/{updater.NEW}":
+            return {"tree": {"sha": updater.TREE}}
+        if path == "git/commits/merge":
+            return {"parents": [{"sha": "moved"}, {"sha": updater.OLD}], "tree": {"sha": "unused"}}
+        raise AssertionError(path)
+
+    with patch.object(updater, "api", side_effect=api), pytest.raises(ValueError, match="test merge parent drift"):
+        updater.snapshot(updater.OLD)

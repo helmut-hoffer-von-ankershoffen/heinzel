@@ -15,6 +15,7 @@ BASE = "b234067b172f33db59f98c9ea38808b3d5ab9bc5"
 OLD = "da281f90d4d1abeffd38a3d7430817e21cfa3d4a"
 NEW = "37ea58445ac9ac73f9b698de3bd852a2821e8501"
 BRANCH = "fix/five-flakes"
+TREE = "0f14c4c296ab267b89eef6eec59e28644d01d68b"
 
 
 def api(path: str, *args: str) -> Any:  # noqa: ANN401
@@ -35,8 +36,25 @@ def snapshot(expected: str) -> dict[str, Any]:
     if main != BASE or ref != expected or pr["head"]["sha"] != expected or pr["head"]["ref"] != BRANCH:
         msg = "base or PR head drift; stop"
         raise ValueError(msg)
-    if pr["state"] != "open" or pr["draft"] or pr["base"]["ref"] != "main":
-        msg = "PR state drift; stop"
+    if (
+        pr["state"] != "open"
+        or pr["draft"]
+        or pr["base"]["ref"] != "main"
+        or pr["base"]["repo"]["full_name"] != REPO
+        or pr["head"]["repo"]["full_name"] != REPO
+    ):
+        msg = "PR state or repository drift; stop"
+        raise ValueError(msg)
+    candidate = api(f"git/commits/{NEW}")
+    if candidate["tree"]["sha"] != TREE:
+        msg = "candidate tree drift; stop"
+        raise ValueError(msg)
+    merge = api(f"git/commits/{pr['merge_commit_sha']}")
+    if [parent["sha"] for parent in merge["parents"]] != [BASE, expected]:
+        msg = "test merge parent drift; stop"
+        raise ValueError(msg)
+    if expected == NEW and merge["tree"]["sha"] != TREE:
+        msg = "test merge tree drift; stop"
         raise ValueError(msg)
     return pr
 

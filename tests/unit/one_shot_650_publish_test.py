@@ -66,7 +66,15 @@ def test_status_publisher_sets_pending_then_reads_back_each_success():
         {"context": context, **({"integration_id": publisher.GITHUB_ACTIONS_APP} if context != "CI OK" else {})}
         for context in publisher.CONTEXTS
     ]
-    rules = [[{"type": "required_status_checks", "parameters": {"required_status_checks": checks}}]]
+    rules = [
+        [
+            {
+                "type": "required_status_checks",
+                "ruleset_id": publisher.RULESET_ID,
+                "parameters": {"required_status_checks": checks, "strict_required_status_checks_policy": False},
+            }
+        ]
+    ]
 
     def run(command, **_kwargs):
         state = next(arg.removeprefix("state=") for arg in command if arg.startswith("state="))
@@ -101,7 +109,12 @@ def test_status_publisher_sets_pending_then_reads_back_each_success():
 
 
 def test_exact_upload_step_binds_artifact_id_and_size():
-    job = {"id": 9, "steps": [{"number": 7, "name": "Upload exact attempt evidence", "conclusion": "success"}]}
+    job = {
+        "id": 9,
+        "steps": [
+            {"number": 7, "name": "Upload exact attempt evidence", "status": "completed", "conclusion": "success"}
+        ],
+    }
     artifact = {"id": 42, "size_in_bytes": 123}
     line = (
         b"2026-11-10T07:21:12.0071119Z Artifact focused has been successfully uploaded! "
@@ -126,7 +139,15 @@ def test_invalidation_continues_if_another_invalidation_fails():
         {"context": name, **({"integration_id": publisher.GITHUB_ACTIONS_APP} if name != "CI OK" else {})}
         for name in publisher.CONTEXTS
     ]
-    rules = [[{"type": "required_status_checks", "parameters": {"required_status_checks": checks}}]]
+    rules = [
+        [
+            {
+                "type": "required_status_checks",
+                "ruleset_id": publisher.RULESET_ID,
+                "parameters": {"required_status_checks": checks, "strict_required_status_checks_policy": False},
+            }
+        ]
+    ]
 
     def run(command, **_kwargs):
         state = next(arg.removeprefix("state=") for arg in command if arg.startswith("state="))
