@@ -1,5 +1,7 @@
-// Only a window created by this shell and its current main document may ask for lifecycle state.
-export function createLifecycleHandler({ windows, fromWebContents, connection, lifecycle }) {
+import { isOwnedUiNavigation } from "./ui-navigation.js";
+
+// Only a window created by this shell and its current main document may ask for state.
+function ownedHandler({ windows, fromWebContents, connection }, read) {
   return async (event) => {
     const window = fromWebContents(event.sender);
     const frame = event.senderFrame;
@@ -10,7 +12,15 @@ export function createLifecycleHandler({ windows, fromWebContents, connection, l
         !isOwnedUiNavigation(frame.url, connection())) {
       throw new Error("Unknown window or frame.");
     }
-    return lifecycle(connection());
+    return read(connection());
   };
 }
-import { isOwnedUiNavigation } from "./ui-navigation.js";
+
+export function createLifecycleHandler({ lifecycle, ...owner }) {
+  return ownedHandler(owner, lifecycle);
+}
+
+/** The desktop app's own version and install location, for the About dialog; nothing secret. */
+export function createAboutHandler({ about, ...owner }) {
+  return ownedHandler(owner, () => about());
+}

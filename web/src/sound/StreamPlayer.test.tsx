@@ -170,6 +170,27 @@ describe("stream recovery", () => {
 });
 
 describe("open on YouTube", () => {
+  it.each(["Play on YouTube", "Open on YouTube"])("desktop %s stops playback only after native handoff", (name) => {
+    vi.stubGlobal("heinzelDesktop", { externalLinks: true });
+    toggle();
+    mount();
+    openHelp();
+    const link = screen.getByRole("link", { name });
+    expect(link).toHaveAttribute("data-hz-external-action", "watch-video");
+    expect(link).toHaveAttribute("href", stream.watch_url);
+    fireEvent.click(link);
+    expect(soundState()).toMatchObject({ playing: true, started: true });
+    fireEvent(link, new Event("hz:external-opened", { bubbles: true }));
+    expect(soundState()).toMatchObject({ playing: false, started: false });
+  });
+
+  it("keeps both links out of a desktop shell without native handoff", () => {
+    vi.stubGlobal("heinzelDesktop", { titlebar: null });
+    mount();
+    openHelp();
+    expect(screen.queryByRole("link", { name: /on YouTube/ })).not.toBeInTheDocument();
+  });
+
   it("is one small icon in the card header with a tooltip, and no bottom row", () => {
     toggle();
     mount();
