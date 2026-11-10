@@ -254,9 +254,11 @@ describe("AudioVisualizer", () => {
     open();
     fireEvent.click(source("Microphone"));
     await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    const microphoneSignal = vi.mocked(captureMicrophone).mock.calls.at(-1)?.[0];
     expect(source("Shared audio")).not.toHaveAttribute("aria-disabled");
     fireEvent.click(source("Shared audio"));
     expect(captureAudio).toHaveBeenCalledOnce();
+    expect(microphoneSignal?.aborted).toBe(false);
     expect(micStop).not.toHaveBeenCalled();
     await act(async () => grant(captured));
     expect(micStop).toHaveBeenCalledOnce();
@@ -303,6 +305,57 @@ describe("AudioVisualizer", () => {
       await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
       expect(captureMicrophone).toHaveBeenCalledOnce();
       expect(screen.queryByRole("complementary", { name: "Let Heinzel see the music" })).not.toBeInTheDocument();
+    } finally {
+      if (realPermissions) Object.defineProperty(navigator, "permissions", realPermissions);
+      else delete (navigator as { permissions?: Permissions }).permissions;
+    }
+  });
+
+  it("does not resume a remembered microphone while visualisation is switched off", async () => {
+    localStorage.setItem("hz.audio.source", "mic");
+    const realPermissions = Object.getOwnPropertyDescriptor(navigator, "permissions");
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: { query: vi.fn(async () => ({ state: "granted" })) },
+    });
+    try {
+      act(() => setMaster(false));
+      vi.mocked(captureMicrophone).mockResolvedValue(listening);
+      render(<AudioVisualizer />);
+      act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+      expect(captureMicrophone).not.toHaveBeenCalled();
+      act(() => setMaster(true));
+      await waitFor(() => expect(captureMicrophone).toHaveBeenCalledOnce());
+    } finally {
+      if (realPermissions) Object.defineProperty(navigator, "permissions", realPermissions);
+      else delete (navigator as { permissions?: Permissions }).permissions;
+    }
+  });
+
+  it("does not restart a manually started microphone after its track ends", async () => {
+    const realPermissions = Object.getOwnPropertyDescriptor(navigator, "permissions");
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: { query: vi.fn(async () => ({ state: "granted" })) },
+    });
+    const track = new EventTarget();
+    Object.assign(track, { readyState: "live" });
+    const microphone = {
+      ...listening,
+      stream: { getTracks: () => [track], getAudioTracks: () => [track] },
+    } as unknown as typeof listening;
+    try {
+      vi.mocked(captureMicrophone).mockResolvedValue(microphone);
+      render(<AudioVisualizer />);
+      act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+      open();
+      fireEvent.click(source("Microphone"));
+      await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+      act(() => track.dispatchEvent(new Event("ended")));
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+      expect(captureMicrophone).toHaveBeenCalledOnce();
+      expect(source("Off")).toHaveAttribute("aria-checked", "true");
     } finally {
       if (realPermissions) Object.defineProperty(navigator, "permissions", realPermissions);
       else delete (navigator as { permissions?: Permissions }).permissions;

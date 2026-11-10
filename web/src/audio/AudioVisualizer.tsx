@@ -104,6 +104,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const current = useRef<CapturedAudio | null>(null);
   const request = useRef<AbortController | null>(null);
   const generation = useRef(0);
+  const resumed = useRef(false);
   const auroraCanvas = useRef<HTMLCanvasElement>(null);
   const railCanvas = useRef<HTMLCanvasElement>(null);
   const masterId = useId();
@@ -146,6 +147,8 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         return;
       }
       const previous = current.current;
+      request.current = null;
+      if (kind === "mic") resumed.current = true;
       current.current = captured;
       setSession(captured);
       setHasSignal(false);
@@ -198,9 +201,9 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   // A microphone the person already allowed and chose before listens again without another question.
   const framed = own.mode === "frame";
   // Once per page: a stopped or ended microphone never restarts itself.
-  const resumed = useRef(false);
   useEffect(() => {
-    if (!enabled || !framed || session || requesting || remembered !== "mic" || resumed.current) return;
+    if (!enabled || !settings.master || !framed || session || requesting || remembered !== "mic" || resumed.current)
+      return;
     let cancelled = false;
     void navigator.permissions
       ?.query({ name: "microphone" as PermissionName })
@@ -213,7 +216,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     return () => {
       cancelled = true;
     };
-  }, [enabled, framed, session, requesting, remembered, start]);
+  }, [enabled, settings.master, framed, session, requesting, remembered, start]);
   const ownAnalyser = own.mode === "analysed" ? own.analyser : null;
   const analyser = session?.analyser ?? ownAnalyser;
   const microphone = session?.label === "Microphone";
