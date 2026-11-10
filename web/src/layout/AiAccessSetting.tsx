@@ -4,10 +4,15 @@
 // applies at once: the running hz takes up the agent runner before its next call, so nothing asks for a restart.
 // Commands are for people who want them: only inside each card's Details.
 import { useQueryClient } from "@tanstack/react-query";
-import { Download, FlaskConical, RotateCw, Settings2, Trash2, X } from "lucide-react";
-import { type ReactNode, useId, useState, useSyncExternalStore } from "react";
-import type { SchemaAccessOption, SchemaAccessTestReport, SchemaExtraChange } from "@/api/client";
-import { api, unwrap } from "@/api/client";
+import { Download, FlaskConical, LogIn, RotateCw, Settings2, Trash2, X } from "lucide-react";
+import { type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import type {
+  SchemaAccessOption,
+  SchemaAccessTestReport,
+  SchemaChatGptSignInResult,
+  SchemaExtraChange,
+} from "@/api/client";
+import { api, authorityMiddleware, unwrap } from "@/api/client";
 import {
   useAiAccess,
   useAiKey,
@@ -17,6 +22,7 @@ import {
   useSetSetting,
   useTestAiAccess,
 } from "@/api/queries";
+import { authorityEpoch, sessionToken, subscribeAuthority } from "@/api/token";
 import { CopyCommand } from "@/components/common";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { type MessageKey, t } from "@/i18n";
@@ -494,16 +500,71 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
   );
 }
 
-/** A sign-in is the person's own, in their browser: hz never types credentials; it checks again when asked. */
+const SIGN_IN_OUTCOME: Record<SchemaChatGptSignInResult["outcome"], MessageKey> = {
+  connected: "aiAccess.signIn.connected",
+  declined: "aiAccess.signIn.declined",
+  failed: "aiAccess.signIn.failed",
+  cancelled: "aiAccess.signIn.cancelled",
+  expired: "aiAccess.signIn.expired",
+  "browser-unavailable": "aiAccess.signIn.browserUnavailable",
+};
+
+/** A local ChatGPT sign-in opens the system browser. Other sign-in methods keep their own setup instructions. */
 function SignInSetup({ option }: { option: SchemaAccessOption }) {
   const access = useAiAccess();
+  const epoch = useSyncExternalStore(subscribeAuthority, authorityEpoch);
+  const active = useRef<{ controller: AbortController; epoch: number } | null>(null);
+  const [waiting, setWaiting] = useState(false);
+  const [outcome, setOutcome] = useState<SchemaChatGptSignInResult["outcome"]>();
   const current = access.data?.options.find((item) => item.name === option.name) ?? option;
+  const local =
+    option.name === "chatgpt" &&
+    window.location.hostname === "127.0.0.1" &&
+    window.location.protocol === "http:" &&
+    sessionToken() != null;
+  const step = local
+    ? "aiAccess.signIn.localStep"
+    : option.name === "chatgpt"
+      ? "aiAccess.signIn.localRequired"
+      : "aiAccess.signIn.step";
+  useEffect(
+    () => () => {
+      if (active.current?.epoch === epoch) active.current.controller.abort();
+    },
+    [epoch],
+  );
+
+  const start = async () => {
+    if (active.current) return;
+    const controller = new AbortController();
+    active.current = { controller, epoch };
+    setWaiting(true);
+    setOutcome(undefined);
+    try {
+      const result = await unwrap(
+        api.POST("/ai/access/chatgpt-sign-in", { signal: controller.signal, middleware: authorityMiddleware(epoch) }),
+      );
+      if (!controller.signal.aborted) setOutcome(result.outcome);
+    } catch {
+      if (!controller.signal.aborted) setOutcome("failed");
+    } finally {
+      active.current = null;
+      setWaiting(false);
+      if (!controller.signal.aborted) void access.refetch();
+    }
+  };
+
   return (
     <>
-      <p className="text-sm">{t("aiAccess.signIn.step", { title: option.title })}</p>
+      <p className="text-sm">{t(step, { title: option.title })}</p>
       <p data-status-line="" className="text-ui-sm text-muted-foreground">
         {statusLine(current)}
       </p>
+      {(waiting || outcome) && (
+        <p role="status" className="text-ui-sm">
+          {t(waiting || !outcome ? "aiAccess.signIn.waiting" : SIGN_IN_OUTCOME[outcome])}
+        </p>
+      )}
       {current.fix && (
         <details className="text-ui-sm text-muted-foreground">
           <summary className="cursor-pointer select-none">{t("aiAccess.details")}</summary>
@@ -511,16 +572,36 @@ function SignInSetup({ option }: { option: SchemaAccessOption }) {
           <CopyCommand command={current.fix} />
         </details>
       )}
-      <PaneActions align="end" words="all">
-        <PaneAction
-          key="again"
-          icon={RotateCw}
-          type="button"
-          disabled={access.isFetching}
-          onClick={() => access.refetch()}
-        >
-          {t("lifecycle.checkAgain")}
-        </PaneAction>
+      <PaneActions align="end" words="all" className="flex-wrap">
+        {waiting && (
+          <PaneAction
+            key="cancel"
+            icon={X}
+            type="button"
+            onClick={() => {
+              active.current?.controller.abort();
+              setOutcome("cancelled");
+            }}
+          >
+            {t("lifecycle.cancel")}
+          </PaneAction>
+        )}
+        {!waiting && (
+          <PaneAction
+            key="again"
+            icon={RotateCw}
+            type="button"
+            disabled={access.isFetching}
+            onClick={() => access.refetch()}
+          >
+            {t("lifecycle.checkAgain")}
+          </PaneAction>
+        )}
+        {local && !waiting && current.setup === "sign-in" && (
+          <PaneAction key="sign-in" primary icon={LogIn} type="button" onClick={start}>
+            {t("aiAccess.signIn.continue")}
+          </PaneAction>
+        )}
       </PaneActions>
     </>
   );

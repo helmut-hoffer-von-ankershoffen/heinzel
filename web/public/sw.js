@@ -98,8 +98,13 @@ function remember(request, response) {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (event.request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) {
-    return; // the network, always: API data is never cached
+  if (
+    event.request.method !== "GET" ||
+    url.origin !== self.location.origin ||
+    url.pathname.startsWith("/api/") ||
+    url.pathname.startsWith("/auth/")
+  ) {
+    return; // API data and OAuth redirects always go straight to the network.
   }
   if (url.searchParams.has("hz-probe")) {
     return; // the offline page asking whether hz is back: the network's answer, never a cached copy

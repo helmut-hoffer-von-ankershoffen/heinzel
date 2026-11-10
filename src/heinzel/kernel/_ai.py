@@ -6,6 +6,7 @@ when asked (`test`). `[capabilities] ai_access` is the one choice; the `ai` modu
 """
 
 import math
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
@@ -14,6 +15,8 @@ from pydantic import BaseModel, Field, model_validator
 from heinzel.kernel._agents import AgentResult
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from heinzel.kernel._kernel import Kernel
 
 from heinzel.kernel._agents import Billing, Effort
@@ -159,3 +162,25 @@ class AiAccess(Protocol):
         A failing check is a result, not an error.
         """
         ...
+
+
+@dataclass(frozen=True, repr=False)
+class AiAccessWebAttempt:
+    """One OAuth launch and exchange for the local web head. Keep transaction data out of diagnostics."""
+
+    url: str
+    state: str
+    exchange: "Callable[[str, str | None], Awaitable[Callable[[], bool]]]"
+    """Verify a code and return the separate keychain commit. The commit reports whether plan usage was granted."""
+
+
+class AiAccessWebSignIn:
+    """An interactive local sign-in service selected by the trusted web head (ADR 0057)."""
+
+    def prepare_web_login(self, redirect_uri: str) -> AiAccessWebAttempt:
+        """Build a sign-in for the loopback redirect URI owned by the head.
+
+        Raises:
+            NotImplementedError: The built-in provider implements this service.
+        """
+        raise NotImplementedError
