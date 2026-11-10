@@ -5,7 +5,7 @@ import { chromium } from "playwright-core";
 const [url] = process.argv.slice(2);
 const browser = await chromium.launch();
 try {
-  for (const dismissal of ["close", "escape", "backdrop", "failure"]) {
+  for (const dismissal of ["close", "escape", "backdrop", "failure", "lost-response"]) {
     console.log(`dismissal: ${dismissal}`);
     const context = await browser.newContext({ serviceWorkers: "block" });
     const page = await context.newPage();
@@ -59,6 +59,9 @@ try {
       installStarted();
       await pending;
       if (dismissal === "failure") return route.fulfill({ status: 500, json: { error: "Fictional install failed" } });
+      if (dismissal === "lost-response" && installs === 1) return route.abort("connectionreset");
+      if (dismissal === "lost-response")
+        return route.fulfill({ json: { extra: "openai", done: false, restart_required: true } });
       await route.fulfill({ json: { extra: "openai", done: true, restart_required: true } });
     });
     await page.route("**/api/lifecycle", (route) =>
@@ -100,7 +103,8 @@ try {
       });
     } else await add.click();
     await started;
-    if (dismissal === "close" || dismissal === "failure") await dialog.getByRole("button", { name: "Close" }).click();
+    if (dismissal === "close" || dismissal === "failure" || dismissal === "lost-response")
+      await dialog.getByRole("button", { name: "Close" }).click();
     if (dismissal === "escape") {
       await dialog.getByRole("button", { name: "Close" }).focus();
       await page.keyboard.press("Escape");
@@ -117,10 +121,31 @@ try {
     assert.equal(await dialog.getByText("Applied").count(), 0, dismissal);
     assert.equal(installs, 1, dismissal);
     releaseInstall();
-    if (dismissal === "failure") {
-      await dialog.getByText("Fictional install failed").waitFor();
-      assert.equal(await dialog.getByRole("button", { name: "Add and restart" }).isEnabled(), true);
+    if (dismissal === "failure" || dismissal === "lost-response") {
+      await dialog.getByText("The server cannot confirm how this installation ended. Do not retry it yet.").waitFor();
+      if (dismissal === "failure") await dialog.getByText("Fictional install failed").waitFor();
+      assert.equal(await dialog.getByRole("button", { name: "Add and restart" }).isDisabled(), true);
       assert.equal(restarts, 0);
+      if (dismissal === "lost-response") {
+        await page.reload();
+        await page.locator("#splash").waitFor({ state: "hidden" });
+        await page.getByRole("button", { name: "Set up ChatGPT plan" }).click();
+        dialog = page.getByRole("dialog", { name: "Set up ChatGPT plan" });
+        await dialog.getByText("The server cannot confirm how this installation ended. Do not retry it yet.").waitFor();
+        assert.equal(await dialog.getByRole("button", { name: "Add and restart" }).isDisabled(), true);
+        assert.equal(installs, 1);
+        await dialog.getByRole("button", { name: "Resolve after checking" }).click();
+        await dialog.getByRole("button", { name: "I checked; clear this tab's receipt" }).click();
+        assert.equal(await dialog.getByRole("button", { name: "Add and restart" }).isEnabled(), true);
+        assert.equal(installs, 1);
+        await dialog.getByRole("button", { name: "Add and restart" }).click();
+        await Promise.race([
+          restartDone,
+          new Promise((_, reject) => setTimeout(() => reject(new Error("no restart after checked retry")), 15_000)),
+        ]);
+        assert.equal(installs, 2);
+        assert.equal(restarts, 1);
+      }
       await context.close();
       continue;
     }
@@ -139,4 +164,4 @@ try {
 } finally {
   await browser.close();
 }
-console.log("three dismissal paths passed; failure remained visible");
+console.log("three dismissal paths passed; failure and lost response remained visible");

@@ -2339,7 +2339,15 @@ def test_a_core_extra_already_installed_needs_no_install(make_kernel, tool_env):
     service = service_for(make_kernel, tool_env)
     service._installation.requirements = lambda: ["heinzel[openai]==0.1.0"]
     assert service.extra_command("openai") is None
-    assert service.add_extra("openai").model_dump() == {"extra": "openai", "done": False, "restart_required": False}
+    # The receipt alone cannot establish that the running process loaded the installed client.
+    assert service.add_extra("openai").model_dump() == {"extra": "openai", "done": False, "restart_required": True}
+
+
+def test_an_existing_core_extra_is_not_confirmed_while_an_install_is_running(make_kernel, tool_env):
+    service = service_for(make_kernel, tool_env)
+    service._installation.requirements = lambda: ["heinzel[openai]==0.1.0"]
+    with service._exclusive(), pytest.raises(HeinzelError, match="Another plugin change is running"):
+        service.add_extra("openai")
 
 
 def test_adding_a_core_extra_keeps_requirements_changed_before_mutation(make_kernel, tool_env, monkeypatch):

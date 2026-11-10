@@ -356,7 +356,15 @@ const PHASE: Record<ApplyPhase, MessageKey> = {
 
 // An install can finish after its initiating dialog unmounts; keep its error for the next dialog in this page.
 let clientInstallError: string | null = null;
+const CLIENT_INSTALL_PENDING = "hz.ai-client-install-pending.v1";
 const clientInstallListeners = new Set<() => void>();
+function clientInstallUncertain(): boolean {
+  try {
+    return window.sessionStorage.getItem(CLIENT_INSTALL_PENDING) !== null;
+  } catch {
+    return true;
+  }
+}
 function setClientInstallError(error: string | null) {
   clientInstallError = error;
   for (const listener of clientInstallListeners) listener();
@@ -373,9 +381,11 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
   const client = useQueryClient();
   const activation = usePluginActivation();
   const [phase, setPhase] = useState<ApplyPhase | null>(null);
+  const [resolving, setResolving] = useState(false);
   const error = useSyncExternalStore(subscribeClientInstallError, () => clientInstallError);
   const extra = option.client ?? "";
   const run = async () => {
+    if (clientInstallUncertain()) return;
     // The owner outlives this dialog. A second dialog cannot report a no-op as complete while the first still restarts.
     const release = acquirePluginChange();
     if (!release) return;
@@ -385,10 +395,17 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
         {
           confirmed: true,
           // The install runs before the restart, so the restarted hz loads the new client.
-          preserve: async () => {
+          preserve: async (signal) => {
+            // A lost response can hide a completed server-side installation. Keep the uncertainty across reloads.
+            try {
+              window.sessionStorage.setItem(CLIENT_INSTALL_PENDING, "pending");
+            } catch {
+              throw new Error(t("plugins.receiptStorageUnavailable"));
+            }
             const result = await unwrap(
               api.POST("/system/plugin/add-extra", {
                 params: { query: { extra: extra as SchemaExtraChange["extra"] } },
+                signal,
               }),
             );
             return result.restart_required;
@@ -402,6 +419,7 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
         },
       );
       completePluginRestart();
+      window.sessionStorage.removeItem(CLIENT_INSTALL_PENDING);
       // A concurrent install can make this request a successful no-op, with no restart phases emitted.
       setPhase("applied");
       await client.invalidateQueries({ queryKey: ["ai"] });
@@ -412,6 +430,7 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
     }
   };
   const running = activation.changing || (phase !== null && phase !== "applied" && error === null);
+  const uncertain = clientInstallUncertain();
   return (
     <>
       <p className="text-sm">{t("aiAccess.client.confirm", { needs: option.needs })}</p>
@@ -422,6 +441,31 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
         </p>
       )}
       {(error || activation.error) && <p className="text-sm text-bad">{error || activation.error}</p>}
+      {uncertain && !running && (
+        <>
+          <p className="text-sm text-bad">{t("plugins.operationUnknown")}</p>
+          <p className="text-ui-sm text-muted-foreground">{t("plugins.operationUnknownHelp")}</p>
+          <PaneAction
+            icon={RotateCw}
+            type="button"
+            onClick={() => {
+              if (!resolving) {
+                setResolving(true);
+                return;
+              }
+              try {
+                window.sessionStorage.removeItem(CLIENT_INSTALL_PENDING);
+                setClientInstallError(null);
+                setResolving(false);
+              } catch {
+                setClientInstallError(t("plugins.operationUnavailable"));
+              }
+            }}
+          >
+            {t(resolving ? "plugins.operationResolveConfirm" : "plugins.operationResolve")}
+          </PaneAction>
+        </>
+      )}
       <PaneActions align="end" words="all">
         <PaneAction key="cancel" icon={X} type="button" disabled={running} onClick={onClose}>
           {t("lifecycle.cancel")}
@@ -436,6 +480,7 @@ function ClientSetup({ option, onClose }: { option: SchemaAccessOption; onClose:
             activation.blocked ||
             activation.pending ||
             !!activation.observation ||
+            uncertain ||
             phase === "applied" ||
             !extra
           }

@@ -1057,9 +1057,14 @@ class PluginService:
         )
         requirement, _ = self._extra_requirements(extra)
         if extra in requirement.extras:
-            phases.note("install", label, "skipped", "It is installed already.")
-            phases.note("verify", "Checking that it is installed", "skipped")
-            return ExtraChange(extra=extra, done=False, restart_required=False)
+            # A receipt can describe an installation the running process has not loaded yet. Never claim that a
+            # restart is unnecessary, and do not observe the receipt while another installer is changing it.
+            with self._receipts.installing(), self._exclusive():
+                requirement, _ = self._extra_requirements(extra)
+                if extra in requirement.extras:
+                    phases.note("install", label, "skipped", "It is installed already.")
+                    phases.note("verify", "Checking that it is installed", "skipped")
+                    return ExtraChange(extra=extra, done=False, restart_required=True)
         with self._mutation() as mutation, self._receipts.installing(), self._exclusive():
             # The first read only decides whether this is a no-op. Build from the protected receipt.
             command = self.extra_command(extra)
