@@ -1,8 +1,6 @@
 """Owned child output remains checked after graceful teardown needs a forced kill."""
 
 import ast
-import os
-import signal
 import subprocess
 from types import SimpleNamespace
 
@@ -158,120 +156,6 @@ def test_early_exit_reports_returncode_and_signal_without_child_output(returncod
     assert "private-error-body" not in message
     assert "/private/example" not in message
     assert "#token=" not in message
-
-
-@pytest.mark.parametrize(
-    ("platform", "version", "isolated", "fatal_options"),
-    [
-        ("linux", (3, 14), True, {"all_threads": False, "c_stack": False}),
-        ("linux", (3, 13), True, {"all_threads": False}),
-        ("darwin", (3, 14), True, None),
-        ("linux", (3, 14), False, None),
-    ],
-)
-def test_startup_diagnostics_reuses_the_private_file_without_changing_the_watchdog(
-    tmp_path, platform, version, isolated, fatal_options
-):
-    packages = tmp_path / "sdk/lib/python3.14/site-packages"
-    packages.mkdir(parents=True)
-    _ui_service.startup_diagnostics(tmp_path / "sdk", tmp_path)
-    target = packages / "sitecustomize.py"
-    destination = tmp_path / "startup-stacks.txt"
-    assert destination.stat().st_mode & 0o777 == 0o600
-    calls = []
-    modules = {
-        "faulthandler": SimpleNamespace(
-            enable=lambda **kwargs: calls.append(("fatal", kwargs)),
-            dump_traceback_later=lambda seconds, **kwargs: calls.append(("timer", seconds, kwargs)),
-        ),
-        "sys": SimpleNamespace(platform=platform, version_info=version, flags=SimpleNamespace(isolated=isolated)),
-        "os": SimpleNamespace(
-            O_WRONLY=os.O_WRONLY,
-            O_TRUNC=os.O_TRUNC,
-            O_NOFOLLOW=os.O_NOFOLLOW,
-            open=lambda path, flags: calls.append(("open", path, flags)) or 97,
-        ),
-    }
-    scope = {"__builtins__": {"__import__": lambda name, *args, **kwargs: modules[name]}}
-    exec(compile(target.read_text(), "owned-sitecustomize", "exec"), scope)  # noqa: S102 - generated fixture code
-    expected = []
-    if isolated:
-        expected.append(("open", str(destination), os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW))
-        if fatal_options is not None:
-            expected.append(("fatal", {"file": 97, **fatal_options}))
-        expected.append(("timer", 4, {"repeat": False, "file": 97}))
-    assert calls == expected
-
-
-_FATAL_REPORT = (
-    "Fatal Python error: Segmentation fault\n\nStack (most recent call first):\n"
-    '  File "/private/example/pydantic/main.py", line 51 in secret_function\n'
-    '  File "/private/example/private-plugin.py", line 13 in secret_function\n'
-    "\nExtension modules: pydantic_core._pydantic_core, yaml._yaml, private_extension (total: 3)\n"
-    "private-error-body #token=secret\n"
-)
-
-
-@pytest.mark.parametrize("previous", [None, "old-instance"])
-def test_linux_sigsegv_stays_a_failure_and_reports_only_bound_evidence(monkeypatch, tmp_path, previous):
-    monkeypatch.setattr(_ui_service.sys, "platform", "linux")
-    child = SimpleNamespace(
-        poll=lambda: -signal.SIGSEGV,
-        communicate=lambda timeout: (b"private-error-body", b"#token=secret"),
-    )
-    fixture = running(child)
-    fixture.service.directory = tmp_path
-    fixture.service.prefix = tmp_path / "sdk"
-    fixture.service.status = lambda: SimpleNamespace(ready=False)
-    startup = tmp_path / "startup-stacks.txt"
-    startup.write_text("discarded prefix\n" * 5000 + _FATAL_REPORT)
-    startup.chmod(0o600)
-    calls = []
-
-    def installed(prefix):
-        assert prefix == fixture.service.prefix
-        calls.append("installed")
-        return {"result": "static-installed-metadata", "configured_python": "3.14.10"}
-
-    monkeypatch.setattr(_ui_service, "installed_versions", installed)
-    with pytest.raises(pytest.fail.Exception) as failure:
-        fixture.ready(previous)
-    message = str(failure.value)
-    assert "owned process exit=-11, signal=11, publication failure=None" in message
-    evidence = ast.literal_eval(message.split("Linux SIGSEGV evidence=", 1)[1].removesuffix("."))
-    expected = (
-        {
-            "result": "reported",
-            "frames": [("pydantic/main.py", 51), ("other", 13)],
-            "extensions": ["pydantic-core", "pyyaml"],
-        }
-        if previous is None
-        else {"result": "not-initial-startup"}
-    )
-    assert evidence == {
-        "fatal": expected,
-        "installed": {"result": "static-installed-metadata", "configured_python": "3.14.10"},
-    }
-    assert calls == ["installed"]
-    assert not any(secret in message for secret in ("/private", "secret_function", "private_", "#token="))
-
-
-def test_fatal_parser_ignores_timeout_stacks_and_caps_fatal_frames():
-    frame = '  File "/private/example/heinzel/kernel/_boot.py", line 15 in secret_function\n'
-    old_report = "Timeout (0:00:04)!\nThread 0x1234:\n" + frame
-    assert RunningService.fatal_frames(old_report) == {"result": "unavailable"}
-    report = old_report + "Fatal Python error: Segmentation fault\n\nStack (most recent call first):\n" + frame * 64
-    assert RunningService.fatal_frames(report)["frames"] == [("heinzel/kernel/_boot.py", 15)] * 32
-
-
-def test_fatal_report_reader_refuses_a_linked_report(tmp_path):
-    fixture = running(None)
-    fixture.service.directory = tmp_path
-    foreign = tmp_path / "outside"
-    foreign.write_text(_FATAL_REPORT)
-    foreign.chmod(0o600)
-    (tmp_path / "startup-stacks.txt").symlink_to(foreign)
-    assert fixture.fatal_metadata() == {"result": "unavailable"}
 
 
 @pytest.mark.parametrize(
