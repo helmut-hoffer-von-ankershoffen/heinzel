@@ -1,4 +1,6 @@
+import hashlib
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -500,3 +502,204 @@ def test_early_ci_guards_use_whole_owning_files_so_test_renames_do_not_break_pre
     }
     assert "tests/e2e" in partition
     assert partition[partition.index("-m") + 1] == "integration"
+
+
+@pytest.fixture
+def local_scope_packet(monkeypatch, tmp_path):
+    """Only disposable files are inspected; no desktop module is imported or collected."""
+    own = "tests/unit/owned_test.py"
+    hosted = "tests/unit/heads/desktop_installation_test.py"
+    for name in (own, hosted):
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# selection fixture only\n")
+    monkeypatch.setattr(scoped, "ROOT", tmp_path)
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "b" * 40)
+    monkeypatch.setattr(scoped, "resolve_tree", lambda: "c" * 40)
+    monkeypatch.setattr(scoped.subprocess, "check_output", lambda *_, **__: "")
+    monkeypatch.setattr(scoped_related, "related_tests", lambda _: [own, hosted])
+    packet = {
+        "schema": 1,
+        "base": "a" * 40,
+        "head": "b" * 40,
+        "tree": "c" * 40,
+        "owning": [own, hosted + "::test_safe"],
+        "hosted_only": [hosted + "::test_safe"],
+    }
+    path = tmp_path / "scope.json"
+
+    def bind(value=packet, raw=None):
+        data = raw if raw is not None else json.dumps(value).encode()
+        path.write_bytes(data)
+        monkeypatch.setenv("HZ_LOCAL_TEST_SCOPE", str(path))
+        monkeypatch.setenv("HZ_LOCAL_TEST_SCOPE_SHA256", hashlib.sha256(data).hexdigest())
+
+    bind()
+    return packet, bind, own, hosted
+
+
+def test_explicit_scope_keeps_all_local_owning_checks_and_only_declared_hosted_obligations(local_scope_packet):
+    packet, _, own, _ = local_scope_packet
+    assert scoped.local_python_scope([own], "a" * 40) == ([own], packet["hosted_only"])
+    assert scoped.python_overrides([own], [own]) == [
+        "WEB_TESTS=",
+        "MANAGED_CHECK=",
+        f"FAST_TYPES={scoped.TYPES}",
+        f"UNIT_TARGETS={own}",
+    ]
+
+
+@pytest.mark.parametrize("field", ["base", "head", "tree", "schema"])
+def test_explicit_scope_rejects_stale_source_and_boolean_schema(local_scope_packet, field):
+    packet, bind, own, _ = local_scope_packet
+    packet[field] = True if field == "schema" else "d" * 40
+    bind()
+    with pytest.raises(ValueError, match="exact base/head/tree"):
+        scoped.local_python_scope([own], "a" * 40)
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        "",
+        "--help",
+        "tests/unit/../bad_test.py",
+        "tests/unit/owned_test.py;id",
+        "tests/unit/owned_test.py --timeout=0",
+        "tests/e2e/owned_test.py",
+        4,
+    ],
+)
+def test_explicit_scope_rejects_options_commands_traversal_and_nonunit_selectors(local_scope_packet, selector):
+    packet, bind, own, _ = local_scope_packet
+    packet["owning"] = [selector]
+    packet["hosted_only"] = []
+    bind()
+    with pytest.raises(ValueError, match="invalid selector"):
+        scoped.local_python_scope([own], "a" * 40)
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "duplicate",
+        "empty",
+        "too-many",
+        "omitted-hosted",
+        "false-hosted",
+        "only-hosted",
+        "foreign",
+        "omitted-changed",
+        "unknown-field",
+    ],
+)
+def test_explicit_scope_rejects_incomplete_or_unbounded_owning_scope(local_scope_packet, problem):
+    packet, bind, own, _ = local_scope_packet
+    changed = [own]
+    if problem == "duplicate":
+        packet["owning"].append(own)
+    elif problem == "empty":
+        packet["owning"] = []
+    elif problem == "too-many":
+        packet["owning"] = [own] * 65
+    elif problem == "omitted-hosted":
+        packet["hosted_only"] = []
+    elif problem == "false-hosted":
+        packet["hosted_only"].append(own)
+    elif problem == "only-hosted":
+        packet["owning"] = packet["hosted_only"]
+    elif problem == "foreign":
+        packet["owning"].append("tests/unit/foreign_test.py")
+    elif problem == "omitted-changed":
+        changed.append("tests/unit/missing_test.py")
+    elif problem == "unknown-field":
+        packet["command"] = "anything"
+    bind()
+    with pytest.raises(ValueError, match="local scope"):
+        scoped.local_python_scope(changed, "a" * 40)
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "digest",
+        "missing-path",
+        "missing-digest",
+        "oversize",
+        "duplicate-json",
+        "dirty",
+        "missing-file",
+        "symlink",
+        "unmapped",
+    ],
+)
+def test_explicit_scope_rejects_unreviewed_bytes_or_unsafe_checkout(local_scope_packet, monkeypatch, tmp_path, problem):
+    _, bind, own, _ = local_scope_packet
+    changed = [own]
+    if problem == "digest":
+        monkeypatch.setenv("HZ_LOCAL_TEST_SCOPE_SHA256", "0" * 64)
+    elif problem == "missing-path":
+        monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE")
+    elif problem == "missing-digest":
+        monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE_SHA256")
+    elif problem == "oversize":
+        bind(raw=b" " * (scoped.LOCAL_SCOPE_MAX + 1))
+    elif problem == "duplicate-json":
+        bind(raw=b'{"schema":1,"schema":1}')
+    elif problem == "dirty":
+        monkeypatch.setattr(scoped.subprocess, "check_output", lambda *_, **__: own)
+    elif problem == "missing-file":
+        (tmp_path / own).unlink()
+    elif problem == "symlink":
+        (tmp_path / own).unlink()
+        (tmp_path / own).symlink_to(tmp_path / "scope.json")
+    elif problem == "unmapped":
+        monkeypatch.setattr(scoped_related, "related_tests", lambda _: None)
+    with pytest.raises(ValueError, match="local scope"):
+        scoped.local_python_scope(changed, "a" * 40)
+
+
+def test_explicit_scope_is_opt_in_and_does_not_change_legacy_selection(monkeypatch):
+    monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE", raising=False)
+    monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE_SHA256", raising=False)
+    assert scoped.local_python_scope(["scripts/scoped_checks.py"], "a" * 40) is None
+    monkeypatch.setattr(scoped_related, "related_tests", lambda _: ["tests/unit/scoped_checks_test.py"])
+    assert scoped.python_overrides(["scripts/scoped_checks.py"])[-1] == "UNIT_TARGETS=tests/unit/scoped_checks_test.py"
+
+
+def test_readonly_preview_matches_actual_normal_hook_commands(local_scope_packet, monkeypatch, capsys):
+    packet, _, own, _ = local_scope_packet
+    # main resolves the base independently; the packet still binds HEAD separately.
+    monkeypatch.setattr(scoped, "resolve_base", lambda ref: "b" * 40 if ref == "HEAD" else "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: [own])
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push", "--show-python-push-plan"])
+    calls = []
+    monkeypatch.setattr(
+        scoped, "run_check", lambda command, **kwargs: calls.append(command) or subprocess.CompletedProcess(command, 0)
+    )
+    with pytest.raises(SystemExit) as preview:
+        scoped.main()
+    assert preview.value.code == 0
+    assert calls == []
+    plan = json.loads(capsys.readouterr().out)
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    with pytest.raises(SystemExit) as executed:
+        scoped.main()
+    assert executed.value.code == 0
+    assert calls == [*plan["early_guards"], plan["check"]]
+    assert plan["early_guards"] == scoped.early_guard_commands([own])
+    assert plan["hosted_only"] == packet["hosted_only"]
+    assert plan["check"] == [
+        "make",
+        "check-fast",
+        "WEB_TESTS=",
+        "MANAGED_CHECK=",
+        f"FAST_TYPES={scoped.TYPES}",
+        f"UNIT_TARGETS={own}",
+    ]
+
+
+def test_explicit_local_python_scope_cannot_trim_web_checks(local_scope_packet):
+    _, _, own, _ = local_scope_packet
+    with pytest.raises(ValueError, match="only supported for the owning Python"):
+        scoped.local_python_scope([own, "web/src/changed.ts"], "a" * 40)
