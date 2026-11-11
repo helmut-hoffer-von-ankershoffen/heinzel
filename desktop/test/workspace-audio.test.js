@@ -158,7 +158,7 @@ test("a chosen system source loops back system audio with the own frame as video
   assert.deepEqual(f.responses, [{ video: f.frame, audio: "loopback" }]);
   assert.equal(f.controller.choose(f.sender, "workspace"), true);
   f.start(); await settled();
-  assert.equal(f.prompts[1].options.title, "Share workspace audio?", "a choice arms exactly one capture");
+  assert.equal(f.prompts[1].options.title, "Use app audio?", "a choice arms exactly one capture");
   f.reply(1); await settled();
   assert.deepEqual(f.responses[1], { video: f.frame, audio: f.frame, enableLocalEcho: true });
 });

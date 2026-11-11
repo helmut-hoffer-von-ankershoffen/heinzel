@@ -124,7 +124,7 @@ export async function captureAudio(signal: AbortSignal, system = false): Promise
       const tracks = stream?.getAudioTracks().filter((track) => track.readyState === "live") ?? [];
       if (!tracks.length)
         throw new Error(
-          `No audio was shared. Your browser or operating system may not offer audio for this source.${system ? "" : " Choose a tab with Share audio, or stop sharing."}`,
+          `No audio was shared. Your browser or operating system may not offer audio for this source.${system ? "" : desktop?.audioSource ? " Try app audio again, or stop listening." : " Choose a source with audio, or stop sharing."}`,
         );
       return tracks;
     };

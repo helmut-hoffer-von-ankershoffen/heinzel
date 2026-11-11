@@ -51,7 +51,52 @@ try {
     const pane = page.getByRole("region", { name: "Audio visualizer controls" });
     await pane.waitFor();
     assert.equal(await page.evaluate(() => window.audioFixture.requests), 0, "Opening help must not capture");
-    const share = pane.getByRole("radio", { name: "Shared audio", exact: true });
+    if (viewport.width === 1440) {
+      await page.evaluate(() => window.showFictionalFrame());
+      const prompt = page.getByRole("complementary", { name: "Let Heinzel see the music" });
+      await prompt.getByRole("button", { name: "Choose audio source…" }).waitFor();
+      for (const zoom of [1, 2]) {
+        await page.evaluate((value) => {
+          document.body.style.zoom = String(value);
+        }, zoom);
+        const bounds = await prompt.evaluate((element) => {
+          const container = element.getBoundingClientRect();
+          return [...element.querySelectorAll("button")].map((button) => {
+            const box = button.getBoundingClientRect();
+            return (
+              box.left >= container.left &&
+              box.right <= container.right &&
+              box.top >= container.top &&
+              box.bottom <= container.bottom
+            );
+          });
+        });
+        assert(bounds.every(Boolean), `Prompt buttons overflow at zoom ${zoom}`);
+      }
+      await page.evaluate(() => {
+        document.body.style.zoom = "";
+      });
+      await prompt.getByRole("button", { name: "Not now" }).click();
+    }
+    const share = pane.getByRole("radio", { name: "Choose audio source…", exact: true });
+    for (const zoom of [1, 2]) {
+      await page.evaluate((value) => {
+        document.body.style.zoom = String(value);
+      }, zoom);
+      const labels = await pane.locator('[role="radio"] span').evaluateAll((elements) =>
+        elements.map((element) => ({
+          text: element.textContent,
+          clipped: element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1,
+        })),
+      );
+      assert(
+        labels.every((label) => !label.clipped),
+        `${viewport.width}px zoom ${zoom}: ${JSON.stringify(labels)}`,
+      );
+    }
+    await page.evaluate(() => {
+      document.body.style.zoom = "";
+    });
     await share.click();
     await page.waitForFunction(() => document.querySelector("output")?.textContent?.startsWith("Visualizing"));
     assert.equal(await page.evaluate(() => window.audioFixture.options.preferCurrentTab), true);
@@ -249,7 +294,7 @@ try {
     await page.evaluate(() => {
       window.audioFixture.mode = "no-audio";
     });
-    await pane.getByRole("radio", { name: "Shared audio", exact: true }).click();
+    await pane.getByRole("radio", { name: "Choose audio source…", exact: true }).click();
     await page.waitForFunction(() => document.querySelector("output")?.textContent?.includes("No audio was shared"));
     assert(await pane.getByRole("status").isVisible());
     assert(
@@ -262,17 +307,17 @@ try {
     await page.evaluate(() => {
       window.audioFixture.mode = "deny";
     });
-    await pane.getByRole("radio", { name: "Shared audio", exact: true }).click();
+    await pane.getByRole("radio", { name: "Choose audio source…", exact: true }).click();
     await page.waitForFunction(() => document.querySelector("output")?.textContent?.includes("cancelled or blocked"));
     await page.screenshot({ path: join(shots, `audio-${viewport.width}-failure.png`) });
     const beforeUnsupported = await page.evaluate(() => {
       delete navigator.mediaDevices.getDisplayMedia;
       return window.audioFixture.requests;
     });
-    await pane.getByRole("radio", { name: "Shared audio", exact: true }).click();
+    await pane.getByRole("radio", { name: "Choose audio source…", exact: true }).click();
     // Not offered any more: the choice leaves the group and one line says why.
     await pane.getByText("Shared audio is not offered by this browser.", { exact: true }).waitFor();
-    assert.equal(await pane.getByRole("radio", { name: "Shared audio", exact: true }).count(), 0);
+    assert.equal(await pane.getByRole("radio", { name: "Choose audio source…", exact: true }).count(), 0);
     // The fixture offers no microphone either, so nothing is left to choose: no group, not a lone "Off".
     assert.equal(await pane.getByRole("radiogroup", { name: "Listen to" }).count(), 0);
     assert.equal(await pane.getByRole("radio", { name: "Microphone", exact: true }).count(), 0);
@@ -331,6 +376,59 @@ try {
     });
     await page.close();
     result.viewports.push(viewport.width);
+  }
+  for (const kind of ["app", "system"]) {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    page.on("pageerror", (error) => result.errors.push(String(error)));
+    await page.route("**/*", (route) => {
+      const url = new URL(route.request().url());
+      if (url.hostname === "127.0.0.1" && url.port === String(address.port) && !url.pathname.startsWith("/api/"))
+        return route.continue();
+      result.errors.push("Unexpected non-fixture browser request");
+      return route.abort();
+    });
+    await page.addInitScript((source) => {
+      window.fixtureSources = [];
+      window.heinzelDesktop = {
+        workspaceAudio: true,
+        systemAudio: async () => source === "system",
+        audioSource: async (name) => {
+          window.fixtureSources.push(name);
+          return true;
+        },
+      };
+    }, kind);
+    await page.goto(`http://127.0.0.1:${address.port}/e2e/audio-visualizer.html`);
+    await page
+      .getByRole("region", { name: "Audio visualizer", exact: true })
+      .getByRole("button", { name: /^Audio / })
+      .first()
+      .click();
+    const pane = page.getByRole("region", { name: "Audio visualizer controls" });
+    if (kind === "app") {
+      const app = pane.getByRole("radio", { name: "App audio", exact: true });
+      await app.click();
+      await page.waitForFunction(() => document.querySelector("output")?.textContent?.includes("app audio"));
+      assert.equal(await app.getAttribute("aria-checked"), "true");
+    } else {
+      await pane.getByRole("button", { name: "Use system audio" }).click();
+      await pane.getByRole("button", { name: "Stop listening" }).waitFor();
+      assert((await pane.locator("output").textContent()).includes("system audio"));
+    }
+    assert.deepEqual(await page.evaluate(() => window.fixtureSources), [kind === "app" ? "workspace" : "system"]);
+    if (kind === "app") await pane.getByRole("radio", { name: "Off", exact: true }).click();
+    else await pane.getByRole("button", { name: "Stop listening" }).click();
+    assert(
+      await page.evaluate(() =>
+        window.audioFixture.streams.every((stream) =>
+          stream.getTracks().every((track) => track.readyState === "ended"),
+        ),
+      ),
+    );
+    await page.evaluate(async () => {
+      await Promise.all(window.audioFixture.contexts.map((context) => context.close()));
+    });
+    await page.close();
   }
   assert.deepEqual(result.errors, []);
   console.log(JSON.stringify(result));

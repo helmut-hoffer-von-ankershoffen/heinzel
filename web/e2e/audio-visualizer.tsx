@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import type { SchemaConfigReport } from "../src/api/client";
 import { AudioVisualizer } from "../src/audio/AudioVisualizer";
+import { publishOwnAudio } from "../src/audio/own";
 import { Sidebar } from "../src/layout/Sidebar";
 import { PlayerCard } from "../src/sound/PlayerCard";
 import "../src/index.css";
@@ -19,6 +20,7 @@ const fixture = {
   options: null as object | null,
 };
 Object.assign(window, { audioFixture: fixture });
+Object.assign(window, { showFictionalFrame: () => publishOwnAudio({ mode: "frame", label: "Fictional player" }) });
 Object.defineProperty(navigator, "mediaDevices", {
   configurable: true,
   value: {

@@ -1,10 +1,10 @@
 import { isOwnedUiNavigation } from "./ui-navigation.js";
 
 const CONSENT = Object.freeze({
-  type: "question", title: "Share workspace audio?",
-  message: "Allow the visualizer to analyse audio playing in this Heinzelmännchen workspace?",
-  detail: "Only this workspace is shared, including its embedded player. No microphone or other app is captured. Audio stays in this window. Stop sharing in the visualizer to end capture.",
-  buttons: Object.freeze(["Don't allow", "Share workspace audio"]), defaultId: 0, cancelId: 0, noLink: true,
+  type: "question", title: "Use app audio?",
+  message: "Allow the visualizer to analyse audio playing in this Heinzelmännchen app window?",
+  detail: "Only this app window is shared, including its embedded player. No microphone or other app is captured. Audio stays in this window. Stop sharing in the visualizer to end capture.",
+  buttons: Object.freeze(["Don't allow", "Use app audio"]), defaultId: 0, cancelId: 0, noLink: true,
 });
 const SYSTEM_CONSENT = Object.freeze({
   type: "question", title: "Share system audio?",

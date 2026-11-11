@@ -262,11 +262,16 @@ const en = {
   "scheduledNotify.note":
     "Optional and off by default. At most one attempt per turn. Content may appear on this device; queued does not mean shown. Item identities come from the provider and do not guarantee complete source history.",
   "audio.visualizerHelp":
-    "Nothing is recorded or uploaded. The microphone hears the room; sharing a tab shows your browser's sharing bar.",
+    "Nothing is recorded or uploaded. The microphone hears the room. Your browser asks which audio source to share; choose Off to stop listening.",
+  "audio.visualizerHelpApp":
+    "Nothing is recorded or uploaded. App audio is limited to this app window and its embedded player; the microphone hears the room. Choose Off to stop listening.",
+  "audio.visualizerHelpAppOnly":
+    "Nothing is recorded or uploaded. App audio is limited to this app window and its embedded player. Choose Off to stop listening.",
   "audio.visualizerHelpMicrophone": "Nothing is recorded or uploaded. The microphone hears the room.",
   "audio.visualizerHelpSystem":
-    "Nothing is recorded or uploaded. Heinzel listens to the sound this computer plays, after you allow it each time.",
-  "audio.visualizerHelpShared": "Nothing is recorded or uploaded. Sharing a tab shows your browser's sharing bar.",
+    "Nothing is recorded or uploaded. Heinzel listens to the sound this computer plays, after you allow it each time. Stop listening ends capture.",
+  "audio.visualizerHelpShared":
+    "Nothing is recorded or uploaded. Your browser asks which audio source to share; choose Off to stop listening.",
   "audio.visualizerHelpOwn": "Nothing is recorded or uploaded. This browser shows Heinzel's own sound only.",
   "proposal.intro":
     "You write these terms for later review. They do not start a Heinzel or give approval; limits are not enforced. This preview cannot yet describe MCP, shell, or CLI permissions.",

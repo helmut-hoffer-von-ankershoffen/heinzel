@@ -15,6 +15,7 @@ export type Segment<T extends string> = {
 
 type Props<T extends string> = {
   readonly legend: string;
+  readonly wrapLabels?: boolean;
   readonly segments: readonly Segment<T>[];
   readonly value: T | null;
   readonly onSelect: (value: T) => void;
@@ -28,6 +29,7 @@ type Props<T extends string> = {
 
 export function SegmentedControl<T extends string>({
   legend,
+  wrapLabels = false,
   segments,
   value,
   onSelect,
@@ -105,7 +107,14 @@ export function SegmentedControl<T extends string>({
               )}
             >
               <Icon aria-hidden className={cn("size-4", busy === segment.value && "animate-spin")} />
-              <span className="max-w-full truncate">{segment.label}</span>
+              <span
+                className={cn(
+                  "max-w-full",
+                  wrapLabels ? "break-words whitespace-normal text-center leading-tight" : "truncate",
+                )}
+              >
+                {segment.label}
+              </span>
             </button>
           );
         })}

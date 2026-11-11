@@ -562,7 +562,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   if (!enabled) return null;
   const workspaceAudio =
     (window as Window & { heinzelDesktop?: { workspaceAudio?: boolean } }).heinzelDesktop?.workspaceAudio === true;
-  const sharedWord = workspaceAudio ? "Workspace audio" : "Shared audio";
+  const sharedWord = workspaceAudio ? "App audio" : "Shared audio";
   const looped = session?.label === "System audio";
   const listening: Source = session ? (microphone ? "mic" : looped ? "system" : "tab") : "off";
   const listeningTo = microphone ? "the microphone" : looped ? "system audio" : sharedWord.toLowerCase();
@@ -584,7 +584,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
       requesting === "mic" ? "microphone" : requesting === "system" ? "system audio" : sharedWord.toLowerCase();
     status = session
       ? `Listening to ${listeningTo}; waiting for ${requested}.`
-      : `Waiting for the browser to allow ${requested}.`;
+      : `Waiting for permission to use ${requested}.`;
     triggerLabel = "Audio request";
     controlWord = "Wait";
   } else if (session) {
@@ -607,7 +607,9 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
     triggerLabel = "Audio sharing active";
     controlWord = "On";
   } else if (framed) {
-    const picks = [listenable && "Microphone", sharing && "Shared audio"].filter(Boolean).join(" or ");
+    const picks = [listenable && "Microphone", sharing && (workspaceAudio ? "App audio" : "an audio source")]
+      .filter(Boolean)
+      .join(" or ");
     status = systemOnly
       ? "Off. Music in a player frame shows once you allow system audio."
       : picks
@@ -633,7 +635,9 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
   const sourceSegments: Segment<Source>[] = [
     { value: "off", label: "Off", icon: MicOff },
     ...(listenable ? [{ value: "mic" as const, label: "Microphone", icon: Mic }] : []),
-    ...(sharing ? [{ value: "tab" as const, label: sharedWord, icon: MonitorSpeaker }] : []),
+    ...(sharing
+      ? [{ value: "tab" as const, label: workspaceAudio ? "App audio" : "Choose audio source…", icon: MonitorSpeaker }]
+      : []),
   ];
   const mark = { ok: "text-ok", warn: "text-warn", bad: "text-bad", off: "text-muted-foreground" }[state] ?? "";
   return (
@@ -708,6 +712,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
               {/* Off is always there; with no source this browser can take, there is nothing to choose. */}
               {!systemOnly && system === false && sourceSegments.length > 1 && (
                 <SegmentedControl
+                  wrapLabels
                   legend="Listen to"
                   segments={sourceSegments}
                   value={listening}
@@ -733,13 +738,17 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
             {t(
               systemOnly
                 ? "audio.visualizerHelpSystem"
-                : sharing && listenable
-                  ? "audio.visualizerHelp"
-                  : sharing
-                    ? "audio.visualizerHelpShared"
-                    : listenable
-                      ? "audio.visualizerHelpMicrophone"
-                      : "audio.visualizerHelpOwn",
+                : workspaceAudio && sharing
+                  ? listenable
+                    ? "audio.visualizerHelpApp"
+                    : "audio.visualizerHelpAppOnly"
+                  : sharing && listenable
+                    ? "audio.visualizerHelp"
+                    : sharing
+                      ? "audio.visualizerHelpShared"
+                      : listenable
+                        ? "audio.visualizerHelpMicrophone"
+                        : "audio.visualizerHelpOwn",
             )}
           </p>
           <div className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground">
@@ -813,6 +822,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         )}
       {settings.master && framed && !session && !requesting && systemOnly && (
         <SourcePrompt
+          workspaceAudio={workspaceAudio}
           remembered="system"
           retry={Boolean(problem)}
           onTab={null}
@@ -828,6 +838,7 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
         (listenable || sharing) &&
         remembered !== "off" && (
           <SourcePrompt
+            workspaceAudio={workspaceAudio}
             remembered={remembered}
             retry={false}
             onTab={sharing ? () => choose("tab") : null}
@@ -843,12 +854,14 @@ export function AudioVisualizer({ enabled = true }: { readonly enabled?: boolean
  * landscape screen a floating card would cover the player it asks about, so there the question stays in the Audio
  * pane (its trigger reads "Share", with Share audio and Use microphone). */
 function SourcePrompt({
+  workspaceAudio,
   remembered,
   retry,
   onTab,
   onSystem,
   onMic,
 }: {
+  workspaceAudio: boolean;
   remembered: Remembered;
   /** The last request was declined: the same one button asks again. */
   retry: boolean;
@@ -867,7 +880,7 @@ function SourcePrompt({
       className="fixed right-12 bottom-14 z-(--layer-popover) w-64 max-sm:hidden [@media(max-height:40rem)]:hidden rounded-xl border border-border bg-popover p-3 text-xs text-foreground shadow-lg"
     >
       <p className="mb-2 font-medium">Let Heinzel see the music?</p>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {onSystem ? (
           <Button size="sm" variant={remembered === "mic" ? "outline" : "default"} onClick={onSystem}>
             {retry ? "Try again" : "Use system audio"}
@@ -875,7 +888,7 @@ function SourcePrompt({
         ) : (
           onTab && (
             <Button size="sm" variant={remembered === "mic" ? "outline" : "default"} onClick={onTab}>
-              Share this tab
+              {workspaceAudio ? "Use app audio" : "Choose audio source…"}
             </Button>
           )
         )}
