@@ -47,15 +47,15 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [more-itertools](#more-itertools-1121) | 11.2.1 | MIT |
 | [opentelemetry-api](#opentelemetry-api-1451) | 1.45.1 | Apache-2.0 |
 | [packaging](#packaging-263) | 26.3 | Apache-2.0 OR BSD-2-Clause |
-| [platformdirs](#platformdirs-4135) | 4.13.5 | MIT |
+| [platformdirs](#platformdirs-4140) | 4.14.0 | MIT |
 | [pluggy](#pluggy-170) | 1.7.0 | MIT |
 | [psutil](#psutil-722) | 7.2.2 | BSD-3-Clause |
 | [pycparser](#pycparser-312) | 3.12 | BSD-3-Clause |
-| [pydantic](#pydantic-2141) | 2.14.1 | MIT |
+| [pydantic](#pydantic-2142) | 2.14.2 | MIT |
 | [pydantic-ai-slim](#pydantic-ai-slim-2610) | 2.61.0 | MIT |
-| [pydantic-core](#pydantic-core-2501) | 2.50.1 | MIT |
+| [pydantic-core](#pydantic-core-2502) | 2.50.2 | MIT |
 | [pydantic-graph](#pydantic-graph-2610) | 2.61.0 | MIT |
-| [pydantic-settings](#pydantic-settings-2161) | 2.16.1 | MIT |
+| [pydantic-settings](#pydantic-settings-2162) | 2.16.2 | MIT |
 | [pygments](#pygments-2210) | 2.21.0 | BSD-2-Clause |
 | [pyjwt](#pyjwt-2151) | 2.15.1 | MIT |
 | [python-dateutil](#python-dateutil-300) | 3.0.0 | Apache-2.0 OR BSD |
@@ -1699,7 +1699,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 </details>
 
-### platformdirs 4.13.5
+### platformdirs 4.14.0
 
 - License: MIT
 - Homepage: <https://github.com/tox-dev/platformdirs>
@@ -1849,7 +1849,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 </details>
 
-### pydantic 2.14.1
+### pydantic 2.14.2
 
 - License: MIT
 - Homepage: <https://github.com/pydantic/pydantic>
@@ -1917,7 +1917,7 @@ SOFTWARE.
 
 </details>
 
-### pydantic-core 2.50.1
+### pydantic-core 2.50.2
 
 - License: MIT
 - Homepage: <https://github.com/pydantic/pydantic/tree/main/pydantic-core>
@@ -1985,7 +1985,7 @@ SOFTWARE.
 
 </details>
 
-### pydantic-settings 2.16.1
+### pydantic-settings 2.16.2
 
 - License: MIT
 - Homepage: <https://github.com/pydantic/pydantic-settings>
@@ -3729,7 +3729,7 @@ Bundled into the web app that `hz ui` serves: the production dependencies of [we
 | [decode-named-character-reference](#decode-named-character-reference-130) | 1.3.0 | MIT |
 | [dequal](#dequal-203) | 2.0.3 | MIT |
 | [devlop](#devlop-110) | 1.1.0 | MIT |
-| [elkjs](#elkjs-0120) | 0.12.0 | EPL-2.0 OR GPL-3.0-or-later |
+| [elkjs](#elkjs-0121) | 0.12.1 | EPL-2.0 OR GPL-3.0-or-later |
 | [escape-string-regexp](#escape-string-regexp-500) | 5.0.0 | MIT |
 | [estree-util-is-identifier-name](#estree-util-is-identifier-name-300) | 3.0.0 | MIT |
 | [extend](#extend-302) | 3.0.2 | MIT |
@@ -3743,7 +3743,7 @@ Bundled into the web app that `hz ui` serves: the production dependencies of [we
 | [is-hexadecimal](#is-hexadecimal-201) | 2.0.1 | MIT |
 | [is-plain-obj](#is-plain-obj-410) | 4.1.0 | MIT |
 | [longest-streak](#longest-streak-310) | 3.1.0 | MIT |
-| [lucide-react](#lucide-react-1610) | 1.61.0 | ISC |
+| [lucide-react](#lucide-react-1660) | 1.66.0 | ISC |
 | [markdown-table](#markdown-table-304) | 3.0.4 | MIT |
 | [mdast-util-find-and-replace](#mdast-util-find-and-replace-303) | 3.0.3 | MIT |
 | [mdast-util-from-markdown](#mdast-util-from-markdown-210) | 2.1.0 | MIT |
@@ -3799,7 +3799,7 @@ Bundled into the web app that `hz ui` serves: the production dependencies of [we
 | [react](#react-1931) | 19.3.1 | MIT |
 | [react-dom](#react-dom-1931) | 19.3.1 | MIT |
 | [react-markdown](#react-markdown-1010) | 10.1.0 | MIT |
-| [react-router](#react-router-850) | 8.5.0 | MIT |
+| [react-router](#react-router-851) | 8.5.1 | MIT |
 | [remark-gfm](#remark-gfm-401) | 4.0.1 | MIT |
 | [remark-parse](#remark-parse-1100) | 11.0.0 | MIT |
 | [remark-rehype](#remark-rehype-1112) | 11.1.2 | MIT |
@@ -3812,8 +3812,8 @@ Bundled into the web app that `hz ui` serves: the production dependencies of [we
 | [style-to-object](#style-to-object-1014) | 1.0.14 | MIT |
 | [supports-color](#supports-color-1022) | 10.2.2 | MIT |
 | [tailwind-merge](#tailwind-merge-370) | 3.7.0 | MIT |
-| [@tanstack/query-core](#tanstackquery-core-51045) | 5.104.5 | MIT |
-| [@tanstack/react-query](#tanstackreact-query-51045) | 5.104.5 | MIT |
+| [@tanstack/query-core](#tanstackquery-core-51050) | 5.105.0 | MIT |
+| [@tanstack/react-query](#tanstackreact-query-51050) | 5.105.0 | MIT |
 | [trim-lines](#trim-lines-301) | 3.0.1 | MIT |
 | [trough](#trough-220) | 2.2.0 | MIT |
 | [@types/d3-color](#typesd3-color-313) | 3.1.3 | MIT |
@@ -4860,7 +4860,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 </details>
 
-### elkjs 0.12.0
+### elkjs 0.12.1
 
 - License: EPL-2.0 OR GPL-3.0-or-later
 - Homepage: <https://github.com/kieler/elkjs#readme>
@@ -5551,7 +5551,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 </details>
 
-### lucide-react 1.61.0
+### lucide-react 1.66.0
 
 - License: ISC
 - Homepage: <https://lucide.dev>
@@ -7525,7 +7525,7 @@ SOFTWARE.
 
 </details>
 
-### react-router 8.5.0
+### react-router 8.5.1
 
 - License: MIT
 - Homepage: <https://github.com/remix-run/react-router#readme>
@@ -7963,7 +7963,7 @@ SOFTWARE.
 
 </details>
 
-### @tanstack/query-core 5.104.5
+### @tanstack/query-core 5.105.0
 
 - License: MIT
 - Homepage: <https://tanstack.com/query>
@@ -7997,7 +7997,7 @@ SOFTWARE.
 
 </details>
 
-### @tanstack/react-query 5.104.5
+### @tanstack/react-query 5.105.0
 
 - License: MIT
 - Homepage: <https://tanstack.com/query>
