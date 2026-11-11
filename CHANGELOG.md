@@ -20,6 +20,7 @@ Clearer restart progress, safer installation recovery, resolved Doctor notices, 
 ### 🧪 Testing
 
 - **system:** Keep a crash trace when the owned hz server segfaults ([#607](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/607)) ([5805834](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/580583455811ae7d342f4303849e98bcdee9f78b))
+- **ci:** Use existing hyphenated web test path ([#722](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/722)) ([5708136](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/5708136c9d6c2eaaf2bb92269e12bb8af96247ab))
 
 ## [0.9.36](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.36) - 2026-11-10
 
