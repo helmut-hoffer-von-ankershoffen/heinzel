@@ -25,7 +25,6 @@ FORMATTED_ALLOWED: dict[str, int] = {
     "src/heinzel/heads/web/_supervision.py": 1,
     "src/heinzel/kernel/_bindings.py": 1,
     "src/heinzel/kernel/_discovery.py": 1,
-    "src/heinzel/kernel/_kernel.py": 3,
     "src/heinzel/modules/ai/_usage.py": 1,
     "src/heinzel/modules/ai/access/_service.py": 2,
     "src/heinzel/modules/heinzel/_service.py": 2,

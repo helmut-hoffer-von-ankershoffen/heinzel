@@ -663,7 +663,14 @@ class Kernel:
         if record.origin.builtin:
             msg = f"Built-in module {record.qualname!r} can't be registered: {problem}"
             raise HeinzelError(msg)
-        logger.warning("Skipping module %r of %s: %s", record.qualname, record.origin.distribution, problem)
+        log_event(
+            logger,
+            "kernel.module.skipped",
+            level=logging.WARNING,
+            qualname=record.qualname,
+            distribution=record.origin.distribution,
+            problem=problem,
+        )
         self.errors[record.qualname] = f"Skipped: {problem}"
 
     def _provide(self, kind: type[Any], factory: Callable[..., Any], record: ModuleRecord) -> None:
@@ -702,7 +709,9 @@ class Kernel:
                 msg = f"Built-in module {record.qualname!r}: {problem}"
                 raise HeinzelError(msg)
             else:
-                logger.warning("Skipping an adapter of %r: %s", record.qualname, problem)
+                log_event(
+                    logger, "kernel.adapter.skipped", level=logging.WARNING, qualname=record.qualname, problem=problem
+                )
                 self.errors[record.qualname] = f"Adapter skipped: {problem}"
         return adapters
 
@@ -783,7 +792,9 @@ class Kernel:
         if record.origin.builtin:
             msg = f"Built-in module {record.qualname!r}: {problem}"
             raise HeinzelError(msg)
-        logger.warning("Module %r: %s", record.qualname, problem)
+        log_event(
+            logger, "kernel.requirement.skipped", level=logging.WARNING, qualname=record.qualname, problem=problem
+        )
         self.errors[record.qualname] = f"Requirement skipped: {problem}"
 
     def _is_disabled(self, qualname: str) -> bool:
