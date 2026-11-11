@@ -84,7 +84,7 @@ const RAW: Record<string, number> = {
   "../chat/Conversation.tsx": 1,
   "../chat/MessageInfo.tsx": 1,
   "../chat/ModelPicker.tsx": 3,
-  "../chat/SessionSwitcher.tsx": 4,
+  "../chat/SessionSwitcher.tsx": 2,
   "../components/ContributionToggle.tsx": 1,
   "../components/Contributions.tsx": 4,
   "../components/FooterItem.tsx": 1,

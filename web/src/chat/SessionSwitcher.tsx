@@ -9,6 +9,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useChatSessions } from "@/api/chat";
 import { api, problem, type SchemaChatSummary, type SchemaSessionSummary } from "@/api/client";
+import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { format, t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -162,28 +163,30 @@ export function SessionSwitcher({
             placeholder={t("chat.searchSessions")}
             aria-controls={listId}
           />
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={() => {
               setOpen(false);
               onNew();
             }}
-            className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent [&_svg]:size-4 [&_svg]:text-icon"
+            className="mt-1 h-auto w-full justify-start gap-2.5 px-2.5 py-1.5 font-normal [&_svg]:text-icon"
           >
             <Plus aria-hidden />
             {t("chat.new")}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="ghost"
             onClick={() => {
               setOpen(false);
               onCreatePersonal();
             }}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent [&_svg]:size-4 [&_svg]:text-icon"
+            className="h-auto w-full justify-start gap-2.5 px-2.5 py-1.5 font-normal [&_svg]:text-icon"
           >
             <Plus aria-hidden />
             {t("personal.create")}
-          </button>
+          </Button>
           <div id={listId} className="mt-1 max-h-80 overflow-y-auto">
             {personal.isError && (
               <p role="status" className="px-2.5 text-ui-sm">
