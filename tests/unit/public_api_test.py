@@ -261,6 +261,8 @@ KERNEL = [
     "AgentResult",
     "AgentRunner",
     "AiAccess",
+    "AiAccessWebAttempt",
+    "AiAccessWebSignIn",
     "ApprovalChannel",
     "AssetType",
     "Attachment",
