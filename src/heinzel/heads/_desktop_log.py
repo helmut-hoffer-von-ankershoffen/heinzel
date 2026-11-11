@@ -1,7 +1,7 @@
 """Structured log events for the desktop app flows (install, uninstall, open, recover).
 
-Built on `heinzel.kernel._logging.step` (ADR 0138): each step logs one start and one outcome event named
-`desktop.<operation>.<step>`, with the fields operation, step, phase, outcome (ok or error), duration_ms, and for a
+Built on `heinzel.kernel._logging.log_event` and correlation (ADR 0138), each step logs one start and one outcome
+event named `desktop.<operation>.<step>`, with operation, step, phase, outcome (ok or error), duration_ms, and for a
 failure the error type and the same two lines the person reads (happened, action). What the step itself reports (an
 installed, removed or deferred result) is the `state` field. No secrets: the flows handle only paths and versions.
 """
