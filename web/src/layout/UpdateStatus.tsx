@@ -8,8 +8,16 @@ import { t } from "@/i18n";
 import { type Phase, trackOperation } from "@/lib/operationRun";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
 import { checkNow, KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
-import { canVerifyUpdate, finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
+import {
+  canVerifyUpdate,
+  finishUpdate,
+  loadInstalledCore,
+  pendingUpdate,
+  readUpdateStatus,
+  startUpdate,
+} from "@/updates/controller";
 import { describe, partSegments } from "@/updates/updateState";
+import { reloadHeld, workOnScreen } from "@/updates/work";
 
 /** The update as the operation dialog shows it: the call the person confirmed with the update button. */
 const updateCall = () => ({
@@ -46,7 +54,8 @@ export function UpdateStatus() {
   const [problem, setProblem] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<"none" | "inspect" | "verify">("none");
   const [message, setMessage] = useState<string | null>(null);
-  const run = useCallback(async (resume: boolean) => {
+  /** `installed`: load that already installed core with a verified restart instead of installing anything. */
+  const run = useCallback(async (resume: boolean, installed?: string) => {
     if (active.current) return;
     const controller = new AbortController();
     active.current = controller;
@@ -54,21 +63,28 @@ export function UpdateStatus() {
     setProblem(null);
     setSteps([]);
     try {
+      const onPhase = (phase: string) => {
+        if (mounted.current) setPhase(phase);
+      };
       const answer = resume
         ? await finishUpdate(controller.signal)
-        : await trackOperation<string>(updateCall(), (report) =>
-            startUpdate(
-              controller.signal,
-              (phase) => {
-                if (mounted.current) setPhase(phase);
-              },
-              undefined,
-              (phases) => {
-                if (mounted.current) setSteps(phases);
-                report(phases);
-              },
-            ),
-          );
+        : installed
+          ? await loadInstalledCore(installed, controller.signal, onPhase, undefined, (phases) => {
+              if (mounted.current) setSteps(phases);
+            })
+          : await trackOperation<string>(updateCall(), (report) =>
+              startUpdate(
+                controller.signal,
+                (phase) => {
+                  if (mounted.current) setPhase(phase);
+                },
+                undefined,
+                (phases) => {
+                  if (mounted.current) setSteps(phases);
+                  report(phases);
+                },
+              ),
+            );
       if (mounted.current) {
         setSteps([]);
         setMessage(answer);
@@ -111,6 +127,31 @@ export function UpdateStatus() {
     };
   }, [run]);
   const status = query.data;
+  // A newer core is installed but this server still runs the old one (a restart was missed): load it by itself once
+  // per version in this tab, when nothing is open or running here and no other window of this app is doing it.
+  const installedCore = status?.installed ?? null;
+  const autoLoaded = useRef<string | null>(null);
+  const loadWaits = installedCore !== null && (reloadHeld() || workOnScreen());
+  useEffect(() => {
+    if (!installedCore || busy || recovery !== "none" || autoLoaded.current === installedCore) return;
+    const start = () => {
+      if (reloadHeld() || workOnScreen()) return false;
+      autoLoaded.current = installedCore;
+      const load = () => run(false, installedCore);
+      if (navigator.locks) {
+        void navigator.locks.request("hz-load-installed-core", { ifAvailable: true }, async (lock) => {
+          if (lock) await load();
+        });
+      } else void load();
+      return true;
+    };
+    if (start()) return;
+    // Open work holds the restart; look again shortly instead of waiting for the next status answer.
+    const wait = window.setInterval(() => {
+      if (start()) window.clearInterval(wait);
+    }, 2_000);
+    return () => window.clearInterval(wait);
+  }, [installedCore, busy, recovery, run]);
   const view = describe({
     status,
     statusFailed: query.isError,
@@ -134,7 +175,8 @@ export function UpdateStatus() {
     installed && !Number.isNaN(installed.getTime())
       ? installed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
       : null;
-  const canUpdate = status?.supported && !busy && recovery === "none";
+  const canUpdate = status?.supported && !busy && recovery === "none" && !installedCore;
+  const canLoad = installedCore !== null && !busy && recovery === "none";
   const label = view.available ? t("updates.availableLabel") : t("updates.title");
   const retry = useMutation({
     mutationFn: async () => {
@@ -157,6 +199,11 @@ export function UpdateStatus() {
               {t("updates.verify")}
             </PaneAction>
           )}
+          {canLoad && (
+            <PaneAction icon={RotateCcw} primary onClick={() => void run(false, installedCore)}>
+              {t("updates.loadInstalled", { version: installedCore })}
+            </PaneAction>
+          )}
           {canUpdate && (
             <PaneAction icon={Download} primary={view.count > 0} onClick={() => void run(false)}>
               {view.count > 1
@@ -175,6 +222,16 @@ export function UpdateStatus() {
       }
     >
       <div className="space-y-2 px-1.5 pb-1.5">
+        {installedCore && status && (
+          <div>
+            <p role="status">
+              {busy
+                ? t("updates.loadingInstalled", { version: installedCore })
+                : t("updates.installedNotLoaded", { version: installedCore, running: status.current })}
+            </p>
+            {loadWaits && !busy && <p className="text-xs text-muted-foreground">{t("updates.loadInstalledLater")}</p>}
+          </div>
+        )}
         {view.rows.map((row) => (
           <div key={row.id} className="flex items-start gap-2">
             {row.busy && <LoaderCircle aria-hidden className="mt-0.5 size-3.5 shrink-0 animate-spin" />}

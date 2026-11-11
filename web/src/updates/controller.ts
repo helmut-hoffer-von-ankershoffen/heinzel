@@ -8,6 +8,7 @@ import {
   type Lifecycle,
   type LifecycleTransport,
   lifecycleTransport,
+  RestartApplyError,
   restartAndApply,
 } from "@/lifecycle/controller";
 import { preserveUpdateWork } from "./work";
@@ -24,6 +25,8 @@ export type UpdateStatus = {
   last_ok_at?: string | null;
   check_failed?: boolean;
   reason: string | null;
+  /** The core the installation holds when it differs from the one this server loaded; older servers omit it. */
+  installed?: string | null;
 };
 export type Frontend = { version: string; identity: string; entrypoints: string[]; files: Record<string, string> };
 type Receipt = {
@@ -245,6 +248,55 @@ export async function startUpdate(
     save({ stage: "installed", result, running });
     return await reloadVerifiedUpdate(result, running, signal, transport, onPhase, steps);
   } catch (error) {
+    steps.failed(error);
+    throw error;
+  }
+}
+
+/**
+ * Load a core that is already installed but not running (a missed restart after an update elsewhere): restart this
+ * server once, require a new instance with exactly that version and the startup settings, then verify the files and
+ * reload through the same receipt as an update. Nothing is installed, so a failure changes nothing on disk.
+ */
+export async function loadInstalledCore(
+  installed: string,
+  signal: AbortSignal,
+  onPhase: (phase: string) => void = () => {},
+  transport = updateTransport,
+  onSteps: (phases: Phase[]) => void = () => {},
+): Promise<string> {
+  if (pendingUpdate()) throw new Error("An update needs verification; installation will not be repeated.");
+  if (!installed.trim()) throw new Error("The installed version is unknown; inspect the installation.");
+  const before = await bounded((signal) => transport.lifecycle.read(signal), signal, 4_000);
+  if (!before.restartable) throw new Error("This server cannot restart itself; quit Heinzel and open it again.");
+  if (before.version === installed) return `Heinzel ${installed} is running.`;
+  preserveUpdateWork();
+  const result: SchemaUpdateResult = {
+    updated: true,
+    before: before.version,
+    after: installed,
+    latest: null,
+    pinned_to: null,
+    next: [],
+    plugins: [],
+    message: `Heinzel ${installed} is running.`,
+  };
+  const steps = new UpdateSteps(onSteps);
+  try {
+    onPhase("Restarting and verifying hz…");
+    steps.mark("restart", "running");
+    // Record the attempt only right before the restart is sent: a refusal before that changed nothing, and leaves
+    // nothing to verify. After it, the outcome is observed, never replayed.
+    const running = await restartAndApply(
+      { confirmed: true, version: installed },
+      { signal, transport: transport.lifecycle, onObservation: () => save({ stage: "installed", result }) },
+    );
+    steps.mark("restart", "done");
+    save({ stage: "installed", result, running });
+    return await reloadVerifiedUpdate(result, running, signal, transport, onPhase, steps);
+  } catch (error) {
+    // The old server kept answering past its grace: it never restarted, so loading again later is safe.
+    if (error instanceof RestartApplyError && error.kind === "stale") sessionStorage.removeItem(KEY);
     steps.failed(error);
     throw error;
   }
