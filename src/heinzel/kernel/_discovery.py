@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from heinzel import __version__
 from heinzel.kernel._installation import CORE_DISTRIBUTION
 from heinzel.kernel._kernel import ModuleRecord, Origin
+from heinzel.kernel._logging import log_event
 from heinzel.kernel._module import Module
 
 BUILTIN_PACKAGE = "heinzel.modules"
@@ -78,7 +79,7 @@ def discover(
 
 
 def _skip(errors: dict[str, str], name: str, problem: str) -> None:
-    logger.warning("Skipping plugin %r: %s", name, problem)
+    log_event(logger, "kernel.discovery.skipped", level=logging.WARNING, plugin=name, problem=problem)
     errors[name] = problem
 
 
