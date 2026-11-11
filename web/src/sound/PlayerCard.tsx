@@ -21,7 +21,7 @@ const HEADER = 44;
 const DRAG_PX = 6;
 const STEP = 16;
 
-type Props = { title: string; watchUrl: string; host: string; children: ReactNode };
+type Props = { title: string; watchUrl?: string; host: string; children: ReactNode };
 
 export function PlayerCard({ title, watchUrl, host, children }: Props) {
   const pref = useDockPref();
@@ -224,9 +224,11 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
               </PaneAction>
             )
           )}
-          <PaneAction ghost icon={ExternalLink} href={watchUrl} onClick={stop}>
-            {t("sound.openOn", { host })}
-          </PaneAction>
+          {watchUrl && (
+            <PaneAction ghost icon={ExternalLink} href={watchUrl} onClick={stop}>
+              {t("sound.openOn", { host })}
+            </PaneAction>
+          )}
           <PaneAction ghost icon={X} onClick={stop}>
             {t("sound.close")}
           </PaneAction>

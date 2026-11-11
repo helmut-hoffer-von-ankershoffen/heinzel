@@ -422,7 +422,10 @@ const en = {
   "sound.accountHelp":
     "Use the same browser profile where you signed in to YouTube, then retry. Embedded sign-in may still be restricted.",
   "sound.desktopHelp":
-    "Heinzel desktop has its own browser session. To use your Chrome sign-in, open Heinzel in the same Chrome profile where you signed in to YouTube, then choose Use YouTube sign-in.",
+    "Heinzel desktop has its own browser session. Copy this video link and open it in the Chrome profile where you signed in to YouTube.",
+  "sound.copyYouTubeLink": "Copy YouTube link",
+  "sound.linkCopied": "Link copied. Paste it into your signed-in Chrome profile.",
+  "sound.copyFailed": "Couldn't copy the link. Select and copy it below.",
   "sound.accountPlayer": "Use YouTube sign-in",
   "sound.privatePlayer": "Use private player",
   "sound.playOnYouTube": "Play on YouTube",

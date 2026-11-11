@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaSoundscapeView } from "@/api/client";
@@ -64,15 +64,47 @@ describe("stream recovery", () => {
     expect(screen.queryByText(/Heinzel desktop has its own browser session/)).toBeNull();
   });
 
-  it("explains the separate Electron session before and after choosing the account player", () => {
+  it("offers desktop copy recovery without offering the account player", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("heinzelDesktop", { lifecycle: vi.fn() });
+    vi.stubGlobal("navigator", {
+      userAgent: "fixture",
+      platform: "fixture",
+      maxTouchPoints: 0,
+      clipboard: { writeText },
+    });
+    rememberYouTubeAccount(true);
+    mount();
+    expect(new URL(player().src).origin).toBe(ORIGIN);
+    openHelp();
+    expect(screen.getByText(/Heinzel desktop has its own browser session/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Use YouTube sign-in" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Play on YouTube" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Copy YouTube link" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Link copied"));
+    expect(writeText).toHaveBeenCalledExactlyOnceWith("https://www.youtube.com/watch?v=tRsQsTMvPNg");
+  });
+
+  it("reaches desktop copy recovery by keyboard", async () => {
+    const user = userEvent.setup();
     vi.stubGlobal("heinzelDesktop", { lifecycle: vi.fn() });
     mount();
+    info().focus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Copy YouTube link" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("status")).toHaveTextContent("Link copied");
+  });
+
+  it.each(["denied", "unavailable"])("offers a selectable URL if clipboard is %s", async (mode) => {
+    vi.stubGlobal("heinzelDesktop", { lifecycle: vi.fn() });
+    const clipboard = mode === "denied" ? { writeText: vi.fn().mockRejectedValue(new Error("denied")) } : undefined;
+    vi.stubGlobal("navigator", { userAgent: "fixture", platform: "fixture", maxTouchPoints: 0, clipboard });
+    mount();
     openHelp();
-    expect(screen.getByText(/Heinzel desktop has its own browser session/)).toBeInTheDocument();
-    expect(screen.getByText(/same Chrome profile where you signed in to YouTube/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Use YouTube sign-in" }));
-    openHelp();
-    expect(screen.getByText(/Heinzel desktop has its own browser session/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Copy YouTube link" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Couldn't copy"));
+    expect(screen.getByText("https://www.youtube.com/watch?v=tRsQsTMvPNg")).toHaveClass("select-all");
   });
 
   it("uses mute and pause on iPhone when the stream cannot change its volume", () => {
@@ -196,15 +228,17 @@ describe("stream recovery", () => {
   });
 });
 
-describe("open on YouTube", () => {
-  it("is one small icon in the card header with a tooltip, and no bottom row", () => {
-    toggle();
+describe("video link placement", () => {
+  it("retains the header link in a browser and no bottom row", () => {
     mount();
-    const link = screen.getByRole("link", { name: "Open on YouTube" });
-    expect(link.closest("header")).not.toBeNull();
-    expect(link).toHaveAttribute("title", "Open on YouTube");
-    expect(link.textContent?.trim()).toBe("");
+    expect(screen.getByRole("link", { name: "Open on YouTube" }).closest("header")).not.toBeNull();
     expect(player().closest("section")?.lastElementChild).toBe(player().parentElement);
+  });
+
+  it("does not expose a nonfunctional permanent desktop header link", () => {
+    vi.stubGlobal("heinzelDesktop", { lifecycle: vi.fn() });
+    mount();
+    expect(screen.queryByRole("link", { name: "Open on YouTube" })).toBeNull();
   });
 });
 
