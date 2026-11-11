@@ -99,9 +99,9 @@ export async function exercisePluginGallery(page, requests, shots, name) {
   };
   await visiblePreview("Harbor UI preview");
   await page.screenshot({ path: join(shots, `${name}-plugin-gallery-ui.png`) });
-  const cli = gallery.getByRole("button", { name: "CLI: Harbor CLI preview", exact: true });
+  const cli = gallery.getByRole("radio", { name: "CLI: Harbor CLI preview", exact: true });
   await cli.focus();
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Space");
   const selected = gallery.getByRole("img", { name: "Harbor CLI preview", exact: true });
   await selected.evaluate((element) => element.decode());
   await visiblePreview("Harbor CLI preview");
@@ -111,7 +111,7 @@ export async function exercisePluginGallery(page, requests, shots, name) {
       .count(),
     1,
   );
-  assert.equal(await cli.getAttribute("aria-pressed"), "true");
+  assert.equal(await cli.isChecked(), true);
   assert.equal(
     await gallery.getByRole("link", { name: "Open full size: Harbor CLI preview" }).getAttribute("href"),
     `${imageBase}cli.png`,
@@ -125,7 +125,7 @@ export async function exercisePluginGallery(page, requests, shots, name) {
   const content = dialog.locator("[data-settings-content]");
   const sizing = await content.evaluate((element) => ({ width: element.clientWidth, scroll: element.scrollWidth }));
   assert.ok(sizing.scroll <= sizing.width + 1, `Gallery overflows its settings pane: ${JSON.stringify(sizing)}`);
-  const target = await cli.boundingBox();
+  const target = await cli.locator("..").boundingBox();
   assert.ok(target && target.width >= 24 && target.height >= 24, "Screenshot chooser needs usable touch targets");
   await page.evaluate(axeSource);
   const violations = await gallery.evaluate(

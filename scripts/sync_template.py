@@ -184,7 +184,8 @@ def _without_batch_admission(text: str) -> str:
 def _without_core_browser_setup(text: str) -> str:
     """Plugins have neither the core web head nor its browser dependency steps."""
     text = re.sub(
-        r"\n      - name: Use Ubuntu's primary archive for browser dependencies\n"
+        r"\n      - name: (?:Use Ubuntu's primary archive for browser dependencies|"
+        r"Select the verified alternate mirror for Ubuntu browser dependencies)\n"
         r"        if: [^\n]*\n        run: [^\n]*",
         "",
         text,

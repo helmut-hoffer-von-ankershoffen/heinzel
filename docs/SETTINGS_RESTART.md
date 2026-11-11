@@ -95,6 +95,7 @@ set of modules truly needs a restart.
 | `system.notify.repeat_hours` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `system.notify.native` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `system.plugin.catalog_sources` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
+| `system.plugin.catalog_feed` | yes | The plugin service retains its settings until restart. |
 | `system.plugin.github_token` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `system.runner.model` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `system.runner.claude_executable` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
