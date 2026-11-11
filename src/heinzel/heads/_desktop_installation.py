@@ -188,7 +188,7 @@ def _applications_directory(applications: Path, home: Path) -> None:
         _owned_directory(applications)
     elif applications != SYSTEM_APPLICATIONS or not system_applications_usable(applications):
         msg = f"The desktop installer cannot safely use {applications}."
-        raise DesktopInstallationError(msg)
+        raise DesktopInstallationError(msg, say.unsafe_folder(applications))
 
 
 def _locate(home: Path, config: Path) -> tuple[Path, _Receipt | None]:
@@ -222,7 +222,7 @@ def _owned_directory(path: Path) -> None:
     info = path.lstat()
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
         msg = f"The desktop installer cannot safely use {path}."
-        raise DesktopInstallationError(msg)
+        raise DesktopInstallationError(msg, say.unsafe_folder(path))
 
 
 @contextmanager
@@ -232,7 +232,7 @@ def _open_lock(path: Path) -> Generator[int]:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_mode & 0o077:
             msg = "The desktop installer could not establish a safe installation lock."
-            raise DesktopInstallationError(msg)
+            raise DesktopInstallationError(msg, say.no_safe_start())
         yield fd
     finally:
         os.close(fd)

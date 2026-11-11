@@ -107,6 +107,22 @@ def untrusted_record(path: Path) -> Problem:
     )
 
 
+def unsafe_folder(path: Path) -> Problem:
+    """A folder hz would install into is not private to the person (wrong owner, permissions or kind)."""
+    return Problem(
+        f"hz will not install into {path}: it is not a plain folder that only you can change.",
+        "Fix who owns it and who can write to it, then run hz app install again.",
+    )
+
+
+def no_safe_start() -> Problem:
+    """The file that keeps two installs from running at once is not what hz expects."""
+    return Problem(
+        "hz could not start the install safely: a file it needs has the wrong owner or permissions.",
+        "Run hz app install --details and report what it prints.",
+    )
+
+
 def busy() -> Problem:
     """Another install holds the installer, or a leftover file name is taken."""
     return Problem("Another hz app install seems to be running.", "Wait for it, or run hz app install --details.")
