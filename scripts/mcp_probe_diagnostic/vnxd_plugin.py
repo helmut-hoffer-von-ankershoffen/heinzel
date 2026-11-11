@@ -30,6 +30,12 @@ def classify(raw: bytes) -> str:
     return "_".join(categories) if categories else "other"
 
 
+def record_negative_clock(phase: str) -> None:
+    """Record an optional monotonic timestamp without changing the probe result."""
+    with contextlib.suppress(OSError):
+        (Path(os.environ["VNXD_PHASE_DIR"]) / f"negative.{phase}").write_text(str(time.monotonic_ns()))
+
+
 def collect_sample(  # noqa: PLR0913 - explicit state for bounded sampler cleanup
     pid: int,
     phase_dir: Path,
@@ -84,6 +90,12 @@ def phase_record(case: str, phase: str, outcome: str, exc: BaseException | None,
 def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[Any]) -> Generator[None, Any, None]:
     """Persist only the outcome of each requested case and test phase."""
     result = yield
+    if item.nodeid.endswith("companion_test.py::test_cpu_companion"):
+        if call.when == "call":
+            report = result.get_result()
+            if report.outcome in ("passed", "failed", "skipped"):
+                (Path(os.environ["VNXD_PHASE_DIR"]) / "companion.call").write_text(report.outcome)
+        return
     if TARGET not in item.nodeid or call.when not in ("setup", "call", "teardown"):
         return
     report = result.get_result()
@@ -118,6 +130,8 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, Any, None]:  # noq
             super().__init__(args, *a, **kw)
             if isinstance(args, (tuple, list)) and list(args[1:4]) == ["-I", "-m", PROBE]:
                 observed["start"] = time.monotonic()
+                if "[False]" in item.nodeid:
+                    record_negative_clock("start")
                 thread = threading.Thread(target=sample, args=(self.pid,), daemon=True)
                 try:
                     thread.start()
@@ -132,6 +146,8 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, Any, None]:  # noq
             finally:
                 if observed["start"] is not None:
                     observed["elapsed"] = round((time.monotonic() - observed["start"]) * 1000)
+                    if "[False]" in item.nodeid:
+                        record_negative_clock("end")
                     done.set()
 
     subprocess.Popen = Observed

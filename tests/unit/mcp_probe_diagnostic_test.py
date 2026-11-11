@@ -71,7 +71,8 @@ def test_sample_classification_is_allowlisted_and_discards_content():
     assert plugin.classify(b"secret-fixture unknown") == "other"
 
 
-def test_probe_continues_if_monitor_thread_cannot_start(monkeypatch, tmp_path):
+@pytest.mark.parametrize("case", ["True", "False"])
+def test_probe_continues_if_monitor_thread_cannot_start(monkeypatch, tmp_path, case):
     import subprocess
     import sys
     import threading
@@ -92,7 +93,7 @@ def test_probe_continues_if_monitor_thread_cannot_start(monkeypatch, tmp_path):
 
     monkeypatch.setattr(threading.Thread, "start", fail_start)
     original = subprocess.Popen
-    hook = plugin.pytest_runtest_call(SimpleNamespace(nodeid=plugin.TARGET + "[True]"))
+    hook = plugin.pytest_runtest_call(SimpleNamespace(nodeid=plugin.TARGET + f"[{case}]"))
     next(hook)
     try:
         subprocess.run(
@@ -105,7 +106,9 @@ def test_probe_continues_if_monitor_thread_cannot_start(monkeypatch, tmp_path):
         with pytest.raises(StopIteration):
             next(hook)
     assert subprocess.Popen is original
-    assert "sample=unavailable" in (tmp_path / "true").read_text()
+    assert "sample=unavailable" in (tmp_path / case.lower()).read_text()
+    if case == "False":
+        assert int((tmp_path / "negative.start").read_text()) < int((tmp_path / "negative.end").read_text())
 
 
 @pytest.mark.parametrize("fail", [False, True])
@@ -181,3 +184,47 @@ def test_phase_records_expose_only_fixed_failure_kind(outcome, exception, kind):
     result = plugin.phase_record("false", "call", outcome, exception, 1.234)
     assert result == f"VNXD case=false phase=call outcome={outcome} kind={kind} duration_ms=1234"
     assert "private" not in result
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ((1_000_000, 9_000_000, 3_000_000, 7_000_000), 4),
+        ((1_000_000, 3_000_000, 3_000_000, 7_000_000), 0),
+        ((1_000_000, 3_000_000, 5_000_000, 7_000_000), 0),
+        ((3_000_000, 1_000_000, 3_000_000, 7_000_000), None),
+        ((1_000_000, 3_000_000, "not-numeric", 7_000_000), None),
+    ],
+)
+def test_overlap_receipt_requires_two_valid_overlapping_intervals(tmp_path, values, expected):
+    overlap_spec = importlib.util.spec_from_file_location(
+        "mcp_diagnostic_overlap", Path(__file__).resolve().parents[2] / "scripts/mcp_probe_diagnostic/overlap.py"
+    )
+    assert overlap_spec
+    assert overlap_spec.loader
+    overlap = importlib.util.module_from_spec(overlap_spec)
+    overlap_spec.loader.exec_module(overlap)
+    names = ("negative.start", "negative.end", "companion.start", "companion.end")
+    assert overlap.overlap_milliseconds(tmp_path) is None
+    for name, value in zip(names, values, strict=True):
+        (tmp_path / name).write_text(str(value))
+    assert overlap.overlap_milliseconds(tmp_path) == expected
+
+
+def test_companion_records_a_bounded_synthetic_interval(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    companion_spec = importlib.util.spec_from_file_location(
+        "mcp_diagnostic_companion",
+        Path(__file__).resolve().parents[2] / "scripts/mcp_probe_diagnostic/companion_test.py",
+    )
+    assert companion_spec
+    assert companion_spec.loader
+    companion = importlib.util.module_from_spec(companion_spec)
+    companion_spec.loader.exec_module(companion)
+    times = iter((100, 200, 3_500_000_100, 3_500_000_200))
+    monkeypatch.setattr(companion, "time", SimpleNamespace(monotonic_ns=lambda: next(times)))
+    monkeypatch.setenv("VNXD_PHASE_DIR", str(tmp_path))
+    companion.test_cpu_companion()
+    assert (tmp_path / "companion.start").read_text() == "100"
+    assert (tmp_path / "companion.end").read_text() == "3500000200"
