@@ -443,6 +443,7 @@ describe("Footer items are icons with a state and a pane", () => {
     const pane = await screen.findByRole("region", { name: "v0.4.0" });
     const about = within(pane).getByRole("region", { name: "About Heinzelmännchen" });
     expect(within(about).getByRole("img", { name: "Heinzelmännchen" })).toBeInTheDocument();
+    expect(within(about).getByTestId("heinzel-swarm")).toBeInTheDocument();
     const tagline = within(about).getByText("Heinzels accelerating product teams,");
     expect(tagline.parentElement).toHaveClass("text-[10px]");
     expect(within(about).getByText("like the little elves from Cologne")).toBeInTheDocument();
@@ -454,5 +455,32 @@ describe("Footer items are icons with a state and a pane", () => {
       "href",
       "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.4.0",
     );
+  });
+
+  it("shows the backend version, and the desktop app's only inside the desktop app", async () => {
+    mockApi(states);
+    window.innerWidth = 1280;
+    const user = userEvent.setup();
+    const { unmount } = renderAt("/doctor");
+    await user.click(
+      await within((await screen.findByRole("contentinfo")) as HTMLElement).findByRole("button", { name: "v0.4.0" }),
+    );
+    const pane = await screen.findByRole("region", { name: "v0.4.0" });
+    expect(within(pane).getByText("Backend v0.4.0")).toBeInTheDocument();
+    expect(within(pane).queryByText(/Desktop app/)).not.toBeInTheDocument();
+    unmount();
+    Object.defineProperty(window, "heinzelDesktop", {
+      value: { about: async () => ({ version: "0.9.38", path: "/Applications/H.app" }) },
+      configurable: true,
+    });
+    try {
+      renderAt("/doctor");
+      await user.click(
+        await within((await screen.findByRole("contentinfo")) as HTMLElement).findByRole("button", { name: "v0.4.0" }),
+      );
+      expect(await screen.findByText("Desktop app v0.9.38")).toBeInTheDocument();
+    } finally {
+      Reflect.deleteProperty(window, "heinzelDesktop");
+    }
   });
 });

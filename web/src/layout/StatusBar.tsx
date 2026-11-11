@@ -8,7 +8,7 @@ import { token } from "@/api/token";
 import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
 import { FooterItem } from "@/components/FooterItem";
 import { FooterLayout, FooterMore, FooterPart } from "@/components/FooterLayout";
-import { HeinzelAvatar } from "@/components/HeinzelAvatar";
+import { HeinzelSwarm } from "@/components/HeinzelSwarm";
 import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
 import { zoneTime } from "@/lib/zoneTime";
@@ -69,9 +69,24 @@ function installedReleaseNotes(changelog: string, version: string): string | nul
   return changelog.slice(start, end).trim() || null;
 }
 
+type DesktopBridge = { about?: () => Promise<{ version: string }> };
+
+/** The desktop app's own version, only inside the desktop app (the bridge `about`); null in a plain browser. */
+function useDesktopVersion() {
+  const about = (window as Window & { heinzelDesktop?: DesktopBridge }).heinzelDesktop?.about;
+  return useQuery({
+    queryKey: ["desktop", "about"],
+    queryFn: async () => (await about?.())?.version ?? null,
+    enabled: Boolean(about),
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
 /** The installed version, its mascot, concise tagline and release link. */
 function ReleaseNotes({ version }: { version: string }) {
   const changelog = useChangelog(false);
+  const desktop = useDesktopVersion().data;
   const notes = typeof changelog.data === "string" ? installedReleaseNotes(changelog.data, version) : null;
   return (
     <div className="px-1.5 pb-1" aria-busy={changelog.isPending}>
@@ -79,10 +94,14 @@ function ReleaseNotes({ version }: { version: string }) {
         aria-label={t("status.about")}
         className="mb-2 flex items-center justify-between gap-2 border-b border-border pb-2"
       >
-        <HeinzelAvatar label={t("app.name")} className="h-10 w-7 shrink-0" />
+        <span role="img" aria-label={t("app.name")} className="shrink-0">
+          <HeinzelSwarm className="size-10" />
+        </span>
         <p className="min-w-0 flex-1 text-[10px] leading-tight font-medium">
           <span className="block">{t("status.tagline")}</span>
           <span className="block">{t("status.origin")}</span>
+          <span className="mt-1 block text-muted-foreground">{t("status.backend", { version })}</span>
+          {desktop && <span className="block text-muted-foreground">{t("status.desktop", { version: desktop })}</span>}
         </p>
         <a
           href={`${RELEASES}/v${version}`}
