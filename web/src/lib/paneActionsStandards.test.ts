@@ -83,7 +83,7 @@ const UNNAMED_ICONS: Record<string, number> = {};
 const RAW: Record<string, number> = {
   "../chat/Conversation.tsx": 1,
   "../chat/MessageInfo.tsx": 1,
-  "../chat/ModelPicker.tsx": 3,
+  "../chat/ModelPicker.tsx": 2,
   "../chat/SessionSwitcher.tsx": 4,
   "../components/ContributionToggle.tsx": 1,
   "../components/Contributions.tsx": 4,
