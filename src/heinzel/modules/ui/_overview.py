@@ -1,40 +1,16 @@
 """Fast local web server observation for the interactive CLI."""
 
-import os
 import sys
 import time
 from pathlib import Path
 
 from pydantic import JsonValue, TypeAdapter
 
-from heinzel.kernel import Config, LocalObservation, Settings, WebOverview, private_read
-from heinzel.modules.system.daemon._service import bounded_manager_command
+from heinzel.kernel import Config, HeinzelError, LocalObservation, Settings, WebOverview, private_read
+from heinzel.modules.system.daemon._overview import loaded
 from heinzel.modules.ui._service import LABEL, UNIT
 
 MAX_PORT = 65535
-
-
-def _loaded(platform: str, deadline: float) -> bool | None:
-    if platform == "darwin":
-        command = ["/bin/launchctl", "list"]
-        environment = {"PATH": "/usr/bin:/bin", "LANG": "C"}
-    else:
-        command = ["/usr/bin/systemctl", "--user", "is-active", "--quiet", UNIT]
-        environment = {"PATH": "/usr/bin:/bin", "LANG": "C", "XDG_RUNTIME_DIR": f"/run/user/{os.getuid()}"}
-    if deadline - time.monotonic() <= 0:
-        return None
-    try:
-        result = bounded_manager_command(command, deadline=deadline, env=environment)
-    except OSError:
-        return None
-    if result.truncated:
-        return None
-    if platform == "darwin":
-        lines = result.stdout.splitlines()
-        if result.returncode != 0 or not lines or lines[0].split() != ["PID", "Status", "Label"]:
-            return None
-        return any(line.split()[-1:] == [LABEL] for line in lines[1:])
-    return result.returncode == 0 if result.returncode in (0, 3) else None
 
 
 def _port(state_dir: Path) -> int | None:
@@ -51,13 +27,13 @@ def observe(state_dir: Path, platform: str = sys.platform, *, deadline: float | 
         port = _port(state_dir)
     except FileNotFoundError:
         return LocalObservation("not installed", "run `hz ui install` to keep it running")
-    except Exception:  # noqa: BLE001 - any unreadable record is unknown, never an error on the start screen
+    except (OSError, ValueError, HeinzelError):
         return LocalObservation("unknown", "run `hz ui status` for details")
     where = f"port {port}" if port else ""
-    loaded = _loaded(platform, deadline if deadline is not None else time.monotonic() + 0.2)
-    if loaded is None:
+    state = loaded(platform, deadline if deadline is not None else time.monotonic() + 0.2, LABEL, UNIT)
+    if state is None:
         return LocalObservation("unknown", "run `hz ui status` for details")
-    return LocalObservation("running" if loaded else "stopped", where)
+    return LocalObservation("running" if state else "stopped", where)
 
 
 class WebOverviewService(WebOverview):

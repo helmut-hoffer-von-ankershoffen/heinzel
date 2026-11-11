@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from heinzel.modules.system.daemon import _overview as daemon_overview
 from heinzel.modules.ui import _overview
 from heinzel.modules.ui._service import LABEL
 
@@ -22,7 +23,7 @@ def _record(state, port=8737):
 
 def _manager(monkeypatch, stdout, code=0):
     monkeypatch.setattr(
-        _overview,
+        daemon_overview,
         "bounded_manager_command",
         lambda *a, **k: SimpleNamespace(stdout=stdout, returncode=code, truncated=False),
     )
