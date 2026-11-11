@@ -1,9 +1,11 @@
 """`system.ui` runs each contribution in isolation and builds what only the server may say (ADR 0056)."""
 
+import logging
 from typing import Annotated
 
 import pytest
 from pydantic import Field
+from typer.testing import CliRunner
 
 from heinzel import (
     CardWidget,
@@ -19,6 +21,7 @@ from heinzel import (
     StatusItem,
     WidgetAction,
 )
+from heinzel.heads.cli import build
 from heinzel.kernel import user_config_dir
 from heinzel.modules.system.ui import UiService
 from heinzel.modules.system.ui import contributions as health
@@ -304,6 +307,55 @@ def test_show_and_hide_write_the_person_s_choice_per_slot(service):
     assert single["acme:sync-now"] == {"header": False}
     info = next(i for i in service.listing() if i.id == "acme:sync-now")
     assert (info.kind, info.title, info.defaults) == ("action", "Sync reviews", {"header": True})
+
+
+def test_cli_restore_today_restores_all_hidden_widgets_and_keeps_other_choices(make_kernel, caplog):
+    kernel = make_kernel(builtins=True, acme=acme())
+    service = kernel.resolve(UiService)
+    service.show("acme:wrong-type", "today", shown=False)
+    service.show("acme:writes", "today", shown=False)
+    service.show("acme:down", "footer", shown=False)
+
+    with caplog.at_level(logging.INFO, logger="heinzel.system.ui"):
+        result = CliRunner().invoke(build(kernel), ["system", "ui", "restore-today"])
+    assert result.exit_code == 0, result.output
+    choices = service.chosen()
+    assert choices["acme:wrong-type"]["today"] is True
+    assert choices["acme:writes"]["today"] is True
+    assert choices["acme:down"]["footer"] is False
+    records = [record for record in caplog.records if record.message == "system.ui.restore_today"]
+    assert [record.phase for record in records] == ["start", "end"]
+    assert records[-1].outcome == "ok"
+    assert records[-1].requested == 2
+    service.show("acme:wrong-type", "today", shown=False)
+    single = CliRunner().invoke(build(kernel), ["system", "ui", "show", "acme:wrong-type", "--slot", "today"])
+    assert single.exit_code == 0, single.output
+    assert service.chosen()["acme:wrong-type"]["today"] is True
+
+
+def test_restore_today_preserves_environment_choice_and_other_user_settings(service, monkeypatch):
+    service.show("acme:wrong-type", "today", shown=False)
+    monkeypatch.setenv("HZ_SYSTEM_UI__CONTRIBUTIONS", '{"acme:writes": {"today": false}}')
+    result = {item.id: item.slots for item in service.restore_today()}
+    assert result["acme:writes"]["today"] is False  # the environment still has precedence
+    monkeypatch.delenv("HZ_SYSTEM_UI__CONTRIBUTIONS")
+    assert service.chosen()["acme:wrong-type"]["today"] is True
+    assert service.chosen()["acme:writes"]["today"] is True
+
+
+def test_restore_today_refuses_invalid_user_configuration_without_overwriting(service, caplog):
+    service.show("acme:wrong-type", "today", shown=False)
+    path = user_config_dir() / "config.toml"
+    path.write_text('[system.ui.contributions."acme:wrong-type"]\ntoday = "maybe"\n', encoding="utf-8")
+    with (
+        caplog.at_level(logging.INFO, logger="heinzel.system.ui"),
+        pytest.raises(HeinzelError, match="isn't valid; fix or remove it first"),
+    ):
+        service.restore_today()
+    assert 'today = "maybe"' in path.read_text(encoding="utf-8")
+    records = [record for record in caplog.records if record.message == "system.ui.restore_today"]
+    assert [record.phase for record in records] == ["start", "end"]
+    assert records[-1].outcome == "error"
 
 
 def test_show_refuses_an_unknown_id_or_slot(service):

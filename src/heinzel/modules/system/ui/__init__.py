@@ -220,6 +220,15 @@ def show(service: UiService, item: ItemId, slot: Slot = None) -> list[Contributi
     return service.show(item, slot, shown=True)
 
 
+@module.operation(name="restore-today", read_only=False, render=render_listing, heads={"cli"})
+def restore_today(service: UiService) -> list[ContributionInfo]:
+    """Restore hidden Today widgets in your user settings, like Restore all in the app.
+
+    Higher-priority environment settings can still keep a widget hidden.
+    """
+    return service.restore_today()
+
+
 @module.operation(read_only=False, render=render_listing, heads=HEADS)
 def hide(service: UiService, item: ItemId, slot: Slot = None) -> list[ContributionInfo]:
     """Hide a contribution from a slot of the web app, such as the clock from the footer.

@@ -4151,6 +4151,7 @@ $ hz system ui [OPTIONS] COMMAND [ARGS]...
 * `hide`: (expert) Hide a contribution from a slot...
 * `list`: (expert) List every contribution to the...
 * `navigation`: (expert) List active providers&#x27; navigation...
+* `restore-today`: (expert) Restore hidden Today widgets in...
 * `show`: (expert) Show a contribution in a slot of...
 * `status`: (expert) List the status items modules add...
 * `views`: (expert) List active installed views,...
@@ -4218,6 +4219,22 @@ $ hz system ui list [OPTIONS]
 
 ```console
 $ hz system ui navigation [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system ui restore-today`
+
+(expert) Restore hidden Today widgets in your user settings, like Restore all in the app.
+
+**Usage**:
+
+```console
+$ hz system ui restore-today [OPTIONS]
 ```
 
 **Options**:

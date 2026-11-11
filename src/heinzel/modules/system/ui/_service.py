@@ -34,6 +34,7 @@ from heinzel import (
     clean_text,
 )
 from heinzel.kernel import Badge, Effect, LayerLet, OperationCall, Widget, operation_path, public_parameters
+from heinzel.kernel._logging import get_logger, step
 from heinzel.kernel._text import display_name
 from heinzel.modules.system.ui._models import (
     ActionEntry,
@@ -46,6 +47,8 @@ from heinzel.modules.system.ui._models import (
     ViewEntry,
     WidgetEntry,
 )
+
+log = get_logger("system.ui")
 
 HEAD = "web"
 """The head the app calls operations through; a source or an operation effect must be exposed there."""
@@ -179,6 +182,22 @@ class UiService:
         chosen[item] = decided
         self._editor.write(KEY, chosen, "user")
         return self.listing()
+
+    def restore_today(self) -> list[ContributionInfo]:
+        """Restore every normally visible Today widget hidden by its effective setting."""
+        with step(log, "system.ui.restore_today") as restoring:
+            chosen = self._in_user_file()
+            hidden = [
+                info.id
+                for info in self.listing()
+                if info.kind == "widget" and info.slots.get("today") is False and info.defaults.get("today") is True
+            ]
+            if hidden:
+                for item in hidden:
+                    chosen.setdefault(item, {})["today"] = True
+                self._editor.write(KEY, chosen, "user")
+            restoring.note(requested=len(hidden))
+            return self.listing()
 
     def contributions[L: ContributionLet](self, kind: type[L]) -> list[Contribution]:
         """Every contribution of a kind, sorted by order, then id."""
