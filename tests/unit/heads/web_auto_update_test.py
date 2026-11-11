@@ -924,3 +924,194 @@ def test_the_plan_keeps_plugin_commits_what_it_follows_and_what_waits_across_a_r
     )
     auto.done(again, "Updated.")
     assert (again.plugins, again.plugin_commits, again.followed) == ({}, {}, ["heinzel-maps"])
+
+
+def test_desktop_refresh_only_updates_an_existing_installation(make_kernel, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from heinzel.heads import _desktop_installation
+
+    made, _, _, kernel = updater(make_kernel, tmp_path)
+    calls = []
+    receipt = kernel.resolve(Installation)
+    monkeypatch.setattr(auto.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(auto.os.path, "lexists", lambda _: True)
+    monkeypatch.setattr(receipt, "tool_entrypoints", lambda: [Path("/isolated/bin/hz")], raising=False)
+    monkeypatch.setattr(_desktop_installation, "install_desktop", lambda *a, **kw: calls.append((a, kw)) or "updated")
+    made._refresh_desktop()
+    assert calls == [(("1.0.0", Path("/isolated/bin/hz")), {"update_only": True})]
+    monkeypatch.setattr(auto.os.path, "lexists", lambda _: False)
+    made._refresh_desktop()
+    assert len(calls) == 1
+    monkeypatch.setattr(auto.platform, "system", lambda: "Linux")
+    made._refresh_desktop()
+    assert len(calls) == 1
+
+    # An installed tool without an hz entry point must not create an app.
+    monkeypatch.setattr(auto.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(auto.os.path, "lexists", lambda _: True)
+    monkeypatch.setattr(receipt, "tool_entrypoints", lambda: [SimpleNamespace(name="other")], raising=False)
+    made._refresh_desktop()
+    assert len(calls) == 1
+
+
+def test_plugin_repair_restarts_only_after_success_and_contains_restart_errors(caplog):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from heinzel import HeinzelError
+
+    operation = SimpleNamespace(name=auto.REPAIR_OPERATION[1], func=lambda: None)
+    record = SimpleNamespace(qualname=auto.REPAIR_OPERATION[0])
+
+    class Kernel:
+        available_now = True
+        result = SimpleNamespace(needs=["missing"], message="installed", restart_required=True)
+
+        def lets(self, _kind):
+            return [(record, operation)]
+
+        def available(self, _func):
+            return self.available_now
+
+        def resolve(self, _kind):
+            return SimpleNamespace(local=lambda _name: nullcontext())
+
+        def invoke(self, _operation, **kwargs):
+            assert kwargs == {"automatic": True}
+            if isinstance(self.result, Exception):
+                raise self.result
+            return self.result
+
+    kernel = Kernel()
+    made = AutoUpdater.__new__(AutoUpdater)
+    made._kernel = kernel
+    calls = []
+    made._restart = lambda: calls.append("restart")
+    made._repair_plugins()
+    assert calls == ["restart"]
+    kernel.result = HeinzelError("busy")
+    made._repair_plugins()
+    assert calls == ["restart"]
+    kernel.available_now = False
+    made._repair_plugins()
+    assert calls == ["restart"]
+    kernel.available_now = True
+    kernel.result = SimpleNamespace(needs=[], restart_required=True)
+
+    def failed_restart():
+        message = "restart failed"
+        raise RuntimeError(message)
+
+    made._restart = failed_restart
+    made._repair_plugins()
+    assert any(getattr(record, "error", None) == "restart failed" for record in caplog.records)
+
+
+def test_announced_update_forwards_exact_versions_and_recovery_handles_failure(caplog):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    operation = SimpleNamespace(name=auto.UPDATE_OPERATION)
+    record = SimpleNamespace(qualname=auto.UPDATE_MODULE)
+
+    class Kernel:
+        def __init__(self):
+            self.calls = []
+            self.broken = False
+
+        def lets(self, _kind):
+            return [(record, operation)]
+
+        def resolve(self, _kind):
+            return SimpleNamespace(local=lambda _name: nullcontext())
+
+        def invoke(self, _operation, **kwargs):
+            self.calls.append(kwargs)
+            if self.broken:
+                message = "recovery failed"
+                raise RuntimeError(message)
+            return "installed"
+
+    kernel = Kernel()
+    made = AutoUpdater.__new__(AutoUpdater)
+    made._kernel = kernel
+    news = {
+        "core": "2.0",
+        "plugins": {"heinzel-example": "3.0"},
+        "commit": "abc",
+        "plugin_commits": {"heinzel-example": "def"},
+    }
+    assert made._update(news) == "installed"
+    assert kernel.calls == [
+        {"core": "2.0", "plugins": ["heinzel-example==3.0"], "commit": "abc", "plugin_commits": ["heinzel-example@def"]}
+    ]
+    operation.name = auto.RECOVER_OPERATION
+    kernel.broken = True
+    made._recover_with_lock()
+    assert "finishing an interrupted automatic update failed" in caplog.text
+    operation.name = "unrelated"
+    with pytest.raises(RuntimeError, match="system module is off"):
+        made._update(news)
+
+
+def test_unreadable_plugin_receipt_is_reported_and_not_interpreted_as_safe(make_kernel, tmp_path):
+    made, _, _, kernel = updater(make_kernel, tmp_path)
+    receipt = kernel.resolve(Installation)
+
+    def unreadable():
+        message = "receipt unavailable"
+        raise OSError(message)
+
+    receipt.plugin_pins = unreadable
+    assert made.by_hand() == ["the plugins (the uv receipt can't be read)"]
+    assert made.holds() == []
+
+
+def test_update_loop_logs_failed_tick_and_continues_without_starting_a_thread(make_kernel, tmp_path, caplog):
+    made, _, _, _ = updater(make_kernel, tmp_path)
+
+    class Stop:
+        calls = 0
+
+        def wait(self, seconds):
+            assert seconds == auto.STEP_SECONDS
+            self.calls += 1
+            return self.calls > 1
+
+    def broken_tick():
+        message = "tick failed"
+        raise RuntimeError(message)
+
+    made._stop = Stop()
+    made.tick = broken_tick
+    made._run()
+    assert made._stop.calls == 2
+    assert "automatic update step failed" in caplog.text
+
+
+def test_manual_recheck_when_auto_updates_are_off_still_checks_core_but_is_throttled(
+    make_kernel, tmp_path, monkeypatch
+):
+    made, clock, _, _ = updater(make_kernel, tmp_path, on=False)
+    calls = []
+
+    class Cache:
+        error = None
+
+        def __init__(self, _path):
+            pass
+
+        def refresh(self, source, timeout):
+            calls.append((source, timeout))
+
+    monkeypatch.setattr(auto, "ReleaseCache", Cache)
+    first = made.recheck()
+    assert first.core_checked is True
+    assert first.plugins_checked is False
+    assert len(calls) == 1
+    made.recheck()
+    assert len(calls) == 1
+    clock.now += timedelta(seconds=11)
+    made.recheck()
+    assert len(calls) == 2

@@ -3244,6 +3244,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/plugin/showcase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview an owning public plugin's UI and CLI screenshots without installing it.
+         * @description Preview an owning public plugin's UI and CLI screenshots without installing it.
+         *
+         *     Raises:
+         *         HeinzelError: If the specification or public media is unsafe.
+         *         OSError: If public source metadata cannot be read.
+         *         ValueError: If public metadata is malformed.
+         */
+        get: operations["system_plugin_showcase"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/plugin/unbind": {
         parameters: {
             query?: never;
@@ -4180,6 +4205,17 @@ export interface paths {
          *     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
          *     version, the error names it and the previous version stays installed.
          *
+         *     Why it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)
+         *     run in the web server. About every 30 minutes it looks for the newest published stable release (not a draft or
+         *     prerelease) and installs it once it is `auto_update_min_age_hours` old (plugins:
+         *     `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait. The desktop
+         *     app is not part of the tool: it updates itself at the web server's next automatic update check, or now with
+         *     `hz app install`. The output says which applies.
+         *
+         *     Each step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds
+         *     only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so
+         *     the output still parses.
+         *
          *     Raises:
          *         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
          */
@@ -4905,6 +4941,32 @@ export interface components {
              * @enum {string}
              */
             state: "retained" | "expired";
+        };
+        /**
+         * AutomaticUpdates
+         * @description The automatic-updates setting, as an update run by hand reports it.
+         */
+        AutomaticUpdates: {
+            /**
+             * Check Every Minutes
+             * @description How often the web server checks for the newest stable release.
+             */
+            check_every_minutes: number;
+            /**
+             * Core Min Age Hours
+             * @description How old a stable release of hz must be before it is installed.
+             */
+            core_min_age_hours: number;
+            /**
+             * Enabled
+             * @description The setting `auto_update`: whether hz updates itself and its plugins.
+             */
+            enabled: boolean;
+            /**
+             * Plugin Min Age Hours
+             * @description How old a plugin's release must be before it is installed.
+             */
+            plugin_min_age_hours: number;
         };
         /**
          * AvailablePlugin
@@ -11122,6 +11184,28 @@ export interface components {
             restart_required: boolean;
         };
         /**
+         * PluginScreenshot
+         * @description An owning public project's immutable raster screenshot.
+         */
+        PluginScreenshot: {
+            /**
+             * Caption
+             * @description The owner's description of the actual capture.
+             */
+            caption: string;
+            /**
+             * Surface
+             * @description Whether the image shows the interface or command line.
+             * @enum {string}
+             */
+            surface: "ui" | "cli";
+            /**
+             * Url
+             * @description A checked immutable public GitHub raster asset URL.
+             */
+            url: string;
+        };
+        /**
          * PluginSearch
          * @description Plugins one can install, and what kept the search from being complete.
          */
@@ -11136,6 +11220,54 @@ export interface components {
              * @description Sources that could not be searched, e.g. GitHub while offline.
              */
             warnings: string[];
+        };
+        /**
+         * PluginShowcase
+         * @description Media preview of one public source, read without installing its implementation.
+         */
+        PluginShowcase: {
+            /**
+             * Notice
+             * @description Why previews are unavailable or how to interpret declared media.
+             * @default
+             */
+            notice: string;
+            /**
+             * Revision
+             * @description The immutable public source revision, when available.
+             */
+            revision?: string | null;
+            /**
+             * Screenshots
+             * @description UI and CLI previews before installation.
+             */
+            screenshots?: components["schemas"]["PluginScreenshot"][];
+            /**
+             * Soundscapes
+             * @description Explicit links; nothing plays automatically.
+             */
+            soundscapes?: components["schemas"]["PluginSoundscape"][];
+            /**
+             * Title
+             * @description The owning project's display title.
+             */
+            title: string;
+        };
+        /**
+         * PluginSoundscape
+         * @description A public plugin's declared YouTube soundscape.
+         */
+        PluginSoundscape: {
+            /**
+             * Title
+             * @description The soundscape's declared title.
+             */
+            title: string;
+            /**
+             * Url
+             * @description A YouTube watch link constructed from a checked video identity.
+             */
+            url: string;
         };
         /**
          * PluginUpdate
@@ -11153,6 +11285,12 @@ export interface components {
              */
             before: string | null;
             /**
+             * Checked
+             * @description Whether the update asked for its newest version; false when the plugin update stopped before it.
+             * @default true
+             */
+            checked: boolean;
+            /**
              * Disabled
              * @description Whether the plugin does not work with the new hz at all and was taken out of the installation: it is not loaded until a release that allows the new hz is added (`next`).
              * @default false
@@ -11168,6 +11306,11 @@ export interface components {
              * @description Commands that bring a failed plugin back.
              */
             next?: string[];
+            /**
+             * Pinned
+             * @description The tag, commit, file or exact version its install spec pins it to, so an update cannot move it; none if it follows a branch or the package index.
+             */
+            pinned?: string | null;
             /**
              * Reason
              * @description Why it failed, and what became of it.
@@ -12031,6 +12174,11 @@ export interface components {
         ResolveWhen: {
             /** @description Holds once a capability reports a state. */
             capability?: components["schemas"]["CapabilityState"] | null;
+            /**
+             * Checks Up
+             * @description Holds once every named health check (`<module>: <check>`) is up again in `hz system doctor`.
+             */
+            checks_up?: string[] | null;
             /**
              * Installed Version At Least
              * @description Holds once the hz installed on this machine (on disk, not the running process) is at least this.
@@ -15401,6 +15549,8 @@ export interface components {
              * @description Heinzelmännchen version installed now; the same as `before` if nothing changed.
              */
             after: string;
+            /** @description Whether automatic updates are on and what they install, so a run by hand says why it was needed. */
+            automatic?: components["schemas"]["AutomaticUpdates"] | null;
             /**
              * Before
              * @description Heinzelmännchen version installed before.
@@ -16830,6 +16980,7 @@ export type SchemaAgentResult = components['schemas']['AgentResult'];
 export type SchemaAssetTypeDoc = components['schemas']['AssetTypeDoc'];
 export type SchemaAssetView = components['schemas']['AssetView'];
 export type SchemaAttachmentRef = components['schemas']['AttachmentRef'];
+export type SchemaAutomaticUpdates = components['schemas']['AutomaticUpdates'];
 export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
 export type SchemaAvatar = components['schemas']['Avatar'];
 export type SchemaAvatarSlot = components['schemas']['AvatarSlot'];
@@ -17007,7 +17158,10 @@ export type SchemaPluginPage = components['schemas']['PluginPage'];
 export type SchemaPluginPending = components['schemas']['PluginPending'];
 export type SchemaPluginPendingChange = components['schemas']['PluginPendingChange'];
 export type SchemaPluginRepair = components['schemas']['PluginRepair'];
+export type SchemaPluginScreenshot = components['schemas']['PluginScreenshot'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
+export type SchemaPluginShowcase = components['schemas']['PluginShowcase'];
+export type SchemaPluginSoundscape = components['schemas']['PluginSoundscape'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaPrerequisiteCheck = components['schemas']['PrerequisiteCheck'];
 export type SchemaPrerequisiteDefinition = components['schemas']['PrerequisiteDefinition'];
@@ -21998,6 +22152,38 @@ export interface operations {
             };
         };
     };
+    system_plugin_showcase: {
+        parameters: {
+            query: {
+                /** @description The selected catalog plugin's install specification. */
+                spec: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginShowcase"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_plugin_unbind: {
         parameters: {
             query: {
@@ -23329,7 +23515,7 @@ export interface operations {
             query?: {
                 /** @description Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel. */
                 source?: string | null;
-                /** @description Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit. */
+                /** @description Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest published stable release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit. */
                 channel?: ("stable" | "edge" | "main" | "release") | null;
             };
             header?: never;

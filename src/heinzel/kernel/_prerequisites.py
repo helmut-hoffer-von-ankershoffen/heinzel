@@ -214,7 +214,11 @@ class PrerequisiteService(ServiceContract):
         raise NotImplementedError
 
     def check(
-        self, module: str | None = None, *, context: PrerequisiteContext = "setup", probe: bool = True
+        self,
+        module: str | None = None,
+        *,
+        context: PrerequisiteContext = "setup",
+        probe: bool = True,
     ) -> PrerequisiteReport:
         """Check applicable tools locally without installation or authentication.
 

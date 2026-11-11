@@ -46,7 +46,7 @@ export function useChangeDaemon() {
     retry: false,
     onSuccess: async (answer) => {
       await client.cancelQueries({ queryKey: daemonStatusKey });
-      if ("paused" in answer)
+      if (answer !== null && typeof answer === "object" && "paused" in answer)
         client.setQueryData<SchemaDaemonStatus>(daemonStatusKey, (status) =>
           status ? { ...status, paused: answer.paused } : status,
         );

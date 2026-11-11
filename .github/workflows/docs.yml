@@ -9,6 +9,7 @@ on:
     paths:
       - docs/**
       - scripts/site_*.py
+      - scripts/ubuntu_browser_mirror.*
       - scripts/mkdocs_hooks.*
       - scripts/adr_index.*
       - mkdocs.yml
@@ -17,6 +18,7 @@ on:
     paths:
       - docs/**
       - scripts/site_*.py
+      - scripts/ubuntu_browser_mirror.*
       - scripts/mkdocs_hooks.*
       - scripts/adr_index.*
       - mkdocs.yml
@@ -66,7 +68,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: false # this job pushes a branch, and a poisoned cache must not be able to reach it (zizmor)
       - name: Fonts for the terminal recordings
@@ -108,13 +110,16 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: false # the site is published, and a poisoned cache must not be able to reach it (zizmor)
       # The hosted Azure mirror exhausted the existing browser-install deadline while fetching packages.
       # Change only its transport endpoint; suites, components and Ubuntu archive signing keys stay intact.
       - name: Use Ubuntu's primary archive for browser dependencies
         run: sudo sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources
+      - name: Select the verified alternate mirror for Docs dependencies
+        if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+        run: make -f scripts/ubuntu_browser_mirror.mk
       - name: Build and verify the product site or a standalone documentation site
         env:
           GH_TOKEN: ${{ github.token }}

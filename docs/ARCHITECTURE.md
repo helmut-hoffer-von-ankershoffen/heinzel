@@ -92,7 +92,7 @@ machine's writer branch `hz/<handle>/<machine>` of the person's own state reposi
 **Head.** A view that boots the kernel and exposes operations ([ADR 0019](adr/0019-mcp-and-rest-heads.md)). All heads
 share one exposure rule (`heinzel.heads._exposure`): the same path, public parameters and `heads=` restrictions. The
 **MCP head** makes each operation a tool (`system_doctor`), the **REST head** an endpoint (`GET /system/doctor`,
-OpenAPI at `/docs`). An operation declared `private=True` is omitted from public REST and network MCP and
+OpenAPI at `/docs`). Over streamable HTTP the MCP head needs a per-agent bearer token with a `read` or `write` scope, checked against each operation's `read_only` and logged with its actor per call ([ADR 0142](adr/0142-mcp-over-http-takes-per-agent-bearer-tokens-with-read-and-write-scopes.md)). An operation declared `private=True` is omitted from public REST and network MCP and
 requires trusted identity before dependency injection or execution. `hz system serve api --private` exposes those
 operations behind a server-scoped expiring bearer, written once to an owner-only file. A server restart retires its old credentials; credentials expire after
 twelve hours, and their raw values never appear in generated tool results or status output. The client sends it in the

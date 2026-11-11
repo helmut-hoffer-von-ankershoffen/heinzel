@@ -52,7 +52,7 @@ export function HealthStatus() {
               {check.module} · {check.name}
             </p>
             <p className="break-words text-muted-foreground">{check.detail}</p>
-            {check.fix && <p className="mt-0.5 break-words">{check.fix}</p>}
+            {check.fix && check.fix !== check.detail && <p className="mt-0.5 break-words">{check.fix}</p>}
           </div>
         ))}
         {problems.length > 3 && <p>{t("health.more", { count: problems.length - 3 })}</p>}

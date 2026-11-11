@@ -56,14 +56,18 @@ export function useSeen(): [string, (id: string) => void] {
   return [seen, mark];
 }
 
-/** New notices arrive over the app's stream as `hz:notice` events; the list is read again at once. */
+/** Re-read when a notice arrives or the stream reports a changed list. */
 export function useLiveNotices() {
   const notices = useNotices();
   const { refetch } = notices;
   useEffect(() => {
     const again = () => void refetch();
     window.addEventListener("hz:notice", again);
-    return () => window.removeEventListener("hz:notice", again);
+    window.addEventListener("hz:notices", again);
+    return () => {
+      window.removeEventListener("hz:notice", again);
+      window.removeEventListener("hz:notices", again);
+    };
   }, [refetch]);
   return notices;
 }

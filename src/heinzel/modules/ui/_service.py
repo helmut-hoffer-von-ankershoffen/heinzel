@@ -40,6 +40,7 @@ from heinzel.kernel import (
 )
 from heinzel.kernel._offline_uv import verified_installed_path
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
+from heinzel.kernel._uv_locate import find_uv
 from heinzel.modules.ui._historical_launcher import HistoricalLauncher
 from heinzel.modules.ui._launcher_transition import Action, LauncherTransition
 from heinzel.modules.ui._profile import (
@@ -152,7 +153,7 @@ class WebService:
         self.home = home
         self.executable = executable
         self.prefix = prefix or home / "tool"
-        self.uv = uv or Path(shutil.which("uv") or "/usr/bin/uv")
+        self.uv = uv or Path(find_uv() or "/usr/bin/uv")
         self.profile = profile if profile is not None else default_profile(home, state, self.prefix, executable)
         self.unsupported = unsupported
         self._clock, self._sleep = clock, sleep
