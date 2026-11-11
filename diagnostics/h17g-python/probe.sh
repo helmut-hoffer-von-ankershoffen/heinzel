@@ -58,7 +58,17 @@ probe_route() {
   cp "$conf/ubuntu.sources" "$out/$route-ubuntu.sources"
   cp "$conf/apt-mirrors.txt" "$out/$route-apt-mirrors.txt"
   opts=(-o Dir::Etc::sourcelist=/dev/null -o "Dir::Etc::sourceparts=$conf" -o "Dir::State::lists=$lists" -o "Dir::Cache::archives=$archives" -o Dir::Cache::pkgcache= -o Dir::Cache::srcpkgcache= -o Acquire::Retries=0 -o Acquire::http::Timeout=8 -o Acquire::https::Timeout=8 -o APT::Update::Error-Mode=any -o Acquire::Check-Date=true -o Acquire::Check-Valid-Until=true -o Acquire::AllowInsecureRepositories=false -o APT::Get::AllowUnauthenticated=false)
-  timeout -k 2s 35s sudo apt-get "${opts[@]}" update > "$out/$route-update.log" 2>&1
+  # Only the isolated index update gets one retry; package download and the
+  # original Docs installer retain their own existing retry behavior.
+  update_opts=("${opts[@]}" -o Acquire::Retries=1 -o Acquire::Languages=none -o Acquire::IndexTargets::deb::CNF::DefaultEnabled=false -o Acquire::IndexTargets::deb::Packages::DefaultEnabled=true)
+  # Confirm the runner's CNF target is only command-not-found metadata before disabling it.
+  apt-config "${update_opts[@]}" shell CNF_META 'Acquire::IndexTargets::deb::CNF::MetaKey' RETRIES 'Acquire::Retries' LANGUAGES 'Acquire::Languages' CNF_ENABLED 'Acquire::IndexTargets::deb::CNF::DefaultEnabled' PACKAGES_ENABLED 'Acquire::IndexTargets::deb::Packages::DefaultEnabled' > "$out/$route-apt-config.log" 2>&1 || return 1
+  grep -Fq '$(COMPONENT)/cnf/Commands-$(NATIVE_ARCHITECTURE)' "$out/$route-apt-config.log" || { printf '%s\n' 'CNF_TARGET_UNCONFIRMED'; return 1; }
+  grep -Fxq "RETRIES='1'" "$out/$route-apt-config.log" || return 1
+  grep -Fxq "LANGUAGES='none'" "$out/$route-apt-config.log" || return 1
+  grep -Fxq "CNF_ENABLED='false'" "$out/$route-apt-config.log" || return 1
+  grep -Fxq "PACKAGES_ENABLED='true'" "$out/$route-apt-config.log" || return 1
+  timeout -k 2s 35s sudo apt-get "${update_opts[@]}" update > "$out/$route-update.log" 2>&1
   update_rc=$?
   printf 'SIGNED_UPDATE_RC=%s\n' "$update_rc"
   if grep -Eiq 'unsandboxed as root|couldn.t be accessed by user ._apt.|permission denied' "$out/$route-update.log"; then
@@ -78,6 +88,10 @@ probe_route() {
     fi
   done
   if [[ $missing != 0 ]]; then printf '%s\n' 'PACKAGE_FETCH=NOT_ATTEMPTED'; return 1; fi
+  # APT reports the actual downloaded target paths and trust state; compare each
+  # to every configured amd64 Packages index advertised by the signed pockets.
+  timeout -k 2s 10s sudo apt-get "${update_opts[@]}" indextargets --format '$(RELEASE)|$(COMPONENT)|$(ARCHITECTURE)|$(TRUSTED)|$(FILENAME)' 'Identifier: Packages' > "$out/$route-packages-targets.log" 2>&1 || return 1
+  python3 "${RUNNER_TEMP:?}/h17g-python-check-indexes.py" "$conf/ubuntu.sources" "$lists" "$out/$route-packages-targets.log" > "$out/$route-packages-proof.log" 2>&1 || return 1
   (cd "$download" && timeout -k 2s 10s sudo apt-get "${opts[@]}" --print-uris download libnss3:amd64) > "$out/$route-uris.log" 2>&1 || return 1
   expected=$(python3 -c 'import re,sys; s=open(sys.argv[1]).read(); x=set(re.findall(r"SHA256:([0-9a-fA-F]{64})",s)); sys.exit(2) if len(x)!=1 else print(x.pop().lower())' "$out/$route-uris.log") || return 1
   printf '%s  libnss3.deb\n' "$expected" > "$out/$route-expected.sha256"
