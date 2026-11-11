@@ -56,7 +56,7 @@ describe("index.html's splash", () => {
     expect(document.documentElement.classList.contains("dark")).toBe(false);
   });
 
-  it("paints the last theme, mode, logo and version the app remembered", () => {
+  it("paints the last theme, mode and logo without presenting the remembered version as current", () => {
     localStorage.setItem("hz.theme", "dark");
     remember({ ...themeSnapshot(acmeTheme), version: "0.9.1" });
     paint();
@@ -68,7 +68,8 @@ describe("index.html's splash", () => {
     const logo = document.querySelector('#splash-brand img[src^="/theme-assets/"]');
     expect(logo).toHaveAttribute("src", acmeTheme.logo?.dark);
     expect(logo).toHaveAttribute("alt", acmeTheme.logo?.alt);
-    expect(document.getElementById("splash-version")?.textContent).toBe("v0.9.1");
+    expect(document.getElementById("splash-version")?.textContent).toBe("");
+    expect(readSnapshot().version).toBe("0.9.1");
     for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
       expect(meta).toHaveAttribute("content", acmeTheme.dark.background);
     }

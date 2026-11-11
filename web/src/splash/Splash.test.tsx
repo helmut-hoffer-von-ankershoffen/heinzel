@@ -20,6 +20,7 @@ import { createSplashStore } from "./store";
 
 const page = readFileSync(join(process.cwd(), "index.html"), "utf8"); // vitest runs in web/
 const markup = /<div id="splash"[\s\S]*?<\/div>\s*(?=<script>)/.exec(page)?.[0] ?? "";
+const bootstrap = /<script>([\s\S]*?)<\/script>/.exec(page)?.[1] ?? "";
 const ok: ProbeResult = { kind: "ok", info: { version: "0.9.1" } };
 const gone: ProbeResult = { kind: "unreachable" };
 
@@ -64,6 +65,23 @@ afterEach(() => {
 });
 
 describe("the splash", () => {
+  it("keeps the remembered version hidden until the current server answers", async () => {
+    localStorage.setItem("hz.splash", JSON.stringify({ version: "0.9.34" }));
+    new Function(bootstrap)();
+    expect(line()).toBe("Starting…");
+    expect(document.getElementById("splash-version")?.textContent).toBe("");
+    expect(JSON.parse(localStorage.getItem("hz.splash") ?? "{}").version).toBe("0.9.34");
+    let answer: (result: ProbeResult) => void = () => undefined;
+    const reload = vi.fn();
+    mount(() => new Promise<ProbeResult>((resolve) => (answer = resolve)), createSplashStore(), reload);
+    await passes(0);
+    expect(document.getElementById("splash-version")?.textContent).toBe("");
+    await act(async () => answer({ kind: "ok", info: { version: "0.9.36" } }));
+    expect(document.getElementById("splash-version")?.textContent).toBe("v0.9.36");
+    expect(JSON.parse(localStorage.getItem("hz.splash") ?? "{}").version).toBe("0.9.36");
+    expect(reload).not.toHaveBeenCalled();
+    localStorage.clear();
+  });
   it("connects, opens, then fades out once the theme is on the page, never before its least time", async () => {
     const probe = vi.fn(async () => ok);
     const { store, refresh } = mount(probe);
@@ -240,18 +258,21 @@ describe("the splash", () => {
   });
 
   it("loads the new app when hz comes back as another version than this page last knew", async () => {
-    localStorage.setItem("hz.splash", JSON.stringify({ version: "0.9.21" }));
+    localStorage.setItem("hz.splash", JSON.stringify({ version: "0.9.34" }));
     const reload = vi.fn();
     let calls = 0;
-    mount(async () => (++calls > 2 ? { kind: "ok", info: { version: "0.9.22" } } : gone), createSplashStore(), reload);
+    mount(async () => (++calls > 2 ? { kind: "ok", info: { version: "0.9.36" } } : gone), createSplashStore(), reload);
+    await passes(1);
+    expect(document.getElementById("splash-version")?.textContent).toBe("");
+    expect(JSON.parse(localStorage.getItem("hz.splash") ?? "{}").version).toBe("0.9.34");
     await passes(60_000);
     expect(reload).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(localStorage.getItem("hz.splash") ?? "{}").version).toBe("0.9.22");
+    expect(JSON.parse(localStorage.getItem("hz.splash") ?? "{}").version).toBe("0.9.36");
     localStorage.clear();
   });
 
   it("shows no remembered version while hz cannot be reached: an old build's number is not the one connecting", async () => {
-    // index.html paints the last start's version before the app loads; a phone that cannot reach hz cleared nothing.
+    // Even an already displayed version must be cleared when a new startup cannot reach hz.
     const shown = () => document.getElementById("splash-version");
     (shown() as HTMLElement).textContent = "v0.7.30";
     let calls = 0;
