@@ -307,25 +307,26 @@ it.each([
   ).toBe(true);
 });
 
-it.each([plan, { ...plan, phase: "off", enabled: false }, { status: 503, body: {} }])(
-  "does not call an empty, disabled or failed plan current (case %#)",
-  async (answer) => {
-    mockApi({
-      ...shell,
-      "/api/update-status": { ...status, latest: status.current, available: false },
-      "/api/auto-update": answer,
-    });
-    renderAt("/");
-    await userEvent.setup().click(await screen.findByRole("button", { name: "Updates, off" }));
-    expect(screen.queryByText(/up to date/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
-    const manual = screen.getByRole("button", { name: "Manually update…" });
-    // Switches stay in the body; the action sits in the bottom row under the divider (design/README.md).
-    expect(manual.closest("[data-pane-actions]")).toHaveClass("border-t");
-    for (const toggle of screen.queryAllByRole("switch")) expect(toggle.closest("[data-pane-actions]")).toBeNull();
-    expect(startUpdate).not.toHaveBeenCalled();
-  },
-);
+it.each([
+  { state: "empty", answer: plan },
+  { state: "disabled", answer: { ...plan, phase: "off", enabled: false } },
+  { state: "failed", answer: { status: 503, body: {} } },
+])("does not label the update plan current when its state is $state", async ({ answer }) => {
+  mockApi({
+    ...shell,
+    "/api/update-status": { ...status, latest: status.current, available: false },
+    "/api/auto-update": answer,
+  });
+  renderAt("/");
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Updates, off" }));
+  expect(screen.queryByText(/up to date/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
+  const manual = screen.getByRole("button", { name: "Manually update…" });
+  // Switches stay in the body; the action sits in the bottom row under the divider (design/README.md).
+  expect(manual.closest("[data-pane-actions]")).toHaveClass("border-t");
+  for (const toggle of screen.queryAllByRole("switch")) expect(toggle.closest("[data-pane-actions]")).toBeNull();
+  expect(startUpdate).not.toHaveBeenCalled();
+});
 
 it("observes the live plan instead of the indefinitely cached installation facts", async () => {
   mockApi({
