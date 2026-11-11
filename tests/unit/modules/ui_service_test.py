@@ -1,6 +1,7 @@
 """`system.ui` runs each contribution in isolation and builds what only the server may say (ADR 0056)."""
 
 import logging
+import tomllib
 from typing import Annotated
 
 import pytest
@@ -309,7 +310,10 @@ def test_show_and_hide_write_the_person_s_choice_per_slot(service):
     assert (info.kind, info.title, info.defaults) == ("action", "Sync reviews", {"header": True})
 
 
-def test_cli_restore_today_restores_all_hidden_widgets_and_keeps_other_choices(make_kernel, caplog):
+def test_cli_restore_today_restores_all_hidden_widgets_and_keeps_other_choices(
+    make_kernel, caplog, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
     kernel = make_kernel(builtins=True, acme=acme())
     service = kernel.resolve(UiService)
     service.show("acme:wrong-type", "today", shown=False)
@@ -323,6 +327,14 @@ def test_cli_restore_today_restores_all_hidden_widgets_and_keeps_other_choices(m
     assert choices["acme:wrong-type"]["today"] is True
     assert choices["acme:writes"]["today"] is True
     assert choices["acme:down"]["footer"] is False
+    saved = tomllib.loads((tmp_path / "config.toml").read_text(encoding="utf-8"))["system"]["ui"]["contributions"]
+    assert saved["acme:wrong-type"]["today"] is True
+    assert saved["acme:writes"]["today"] is True
+    assert saved["acme:down"]["footer"] is False
+    restarted = make_kernel(builtins=True, acme=acme()).resolve(UiService).chosen()
+    assert restarted["acme:wrong-type"]["today"] is True
+    assert restarted["acme:writes"]["today"] is True
+    assert restarted["acme:down"]["footer"] is False
     records = [record for record in caplog.records if record.message == "system.ui.restore_today"]
     assert [record.phase for record in records] == ["start", "end"]
     assert records[-1].outcome == "ok"
