@@ -130,6 +130,33 @@ def test_rate_limit_is_explained_not_retried(server, tmp_path):
     assert not [line for line in notes.lines if line.startswith("note:")]
 
 
+def test_an_exact_git_core_commit_must_match_the_published_desktop(monkeypatch, tmp_path):
+    archive = "heinzel-desktop-1.2.3-darwin-arm64.tar.gz"
+    commit = "a" * 40
+    documents = {
+        release.MANIFEST_NAME: {
+            "schema": 1,
+            "version": "1.2.3",
+            "commit": commit,
+            "platform": "darwin",
+            "arch": "arm64",
+            "archive": {"name": archive, "size": 1, "sha256": "c" * 64},
+        },
+        release.CORE_MANIFEST_NAME: {
+            "version": "1.2.3",
+            "commit": commit,
+            "producer": {"run_id": 1, "attempt": 1, "source_ref": "refs/tags/v1.2.3", "workflow": "publish.yml"},
+        },
+        release.PROOF_NAME: {},
+    }
+    monkeypatch.setattr(release.shutil, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(release, "_release_assets", lambda _tag, names, _reporter: dict.fromkeys(names))
+    monkeypatch.setattr(release, "_download", lambda path, *_: path.write_text(json.dumps(documents[path.name])))
+    monkeypatch.setattr(release, "_verify", lambda *_: pytest.fail("The mismatched commit must be refused first"))
+    with pytest.raises(release.HeinzelError, match="manifest names a different artifact"):
+        release.fetch_archive("1.2.3", tmp_path, expected_commit="b" * 40)
+
+
 def _steps(console: Console, header: str | None = None) -> StepReporter:
     return StepReporter(console, header=header, rows=copy.install_rows(keep_quarantine=False))
 

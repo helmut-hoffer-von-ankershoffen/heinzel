@@ -135,6 +135,24 @@ def inspect_core_version(prefix: Path) -> str:
         return version
 
 
+def inspect_core_git_commit(prefix: Path) -> str:
+    """Read the exact git commit from the core distribution's verified metadata location.
+
+    Raises:
+        HeinzelError: If there is no unique core distribution with a full git commit.
+    """
+    msg = "The installed Core release commit could not be verified."
+    try:
+        [(_, direct)] = _selected_metadata(_locations(prefix), {"heinzel"}, set()).get("heinzel", [])
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise HeinzelError(msg) from exc
+    vcs = direct.get("vcs_info") if direct else None
+    commit = vcs.get("commit_id") if isinstance(vcs, dict) and vcs.get("vcs") == "git" else None
+    if not isinstance(commit, str) or not re.fullmatch(r"[a-f0-9]{40}", commit):
+        raise HeinzelError(msg)
+    return commit
+
+
 def inspect_versions(prefix: Path, names: Sequence[str]) -> dict[str, str]:
     """Observe the installed version of each distribution that has exactly one, without starting its interpreter.
 

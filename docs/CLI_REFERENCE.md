@@ -196,6 +196,7 @@ $ hz app [OPTIONS] COMMAND [ARGS]...
 * `open`: Open the desktop app, installing it first...
 * `refresh`: Refresh the managed app after an orderly...
 * `uninstall`: Remove the managed desktop app and keep...
+* `update`: Update the installed desktop app to match...
 
 ### `hz app doctor`
 
@@ -284,6 +285,27 @@ Raises:
 
 ```console
 $ hz app uninstall [OPTIONS]
+```
+
+**Options**:
+
+* `--details`: Also print the installer&#x27;s full diagnosis (paths and internal state) when something fails.
+* `--help`: Show this message and exit.
+
+### `hz app update`
+
+Update the installed desktop app to match this version of Heinzel.
+
+Use hz system update for CLI and plugin updates.
+If the desktop app is open, quit it and run hz app update again.
+
+Raises:
+    typer.Exit: If there is no managed app or the update cannot finish now.
+
+**Usage**:
+
+```console
+$ hz app update [OPTIONS]
 ```
 
 **Options**:

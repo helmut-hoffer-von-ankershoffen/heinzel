@@ -205,6 +205,10 @@ hz system config set hz.auto_update false  # stop the running web app updating h
 hz system agent install               # install the skills for coding agents
 ```
 
+On Apple silicon Macs, `hz system update` also refreshes the managed desktop app when Core comes from an exact
+official stable GitHub tag. Run `hz app update` to refresh the app separately in its current Applications folder.
+If the app is open, quit it and repeat the command.
+
 Every operation takes `--json` (or `--format json`; `HZ_OUTPUT_FORMAT=json` makes it the default) for scripts and
 agents; the long-running `serve` commands are the exception. Exit codes: `0` success, `1` an error with a readable message, `2` a usage error, `78` invalid
 configuration; `hz ui serve` exits `0` when Ctrl-C stops it, an interrupted `hz setup` `130`. All commands: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).

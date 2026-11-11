@@ -4120,9 +4120,11 @@ export interface paths {
          *     Why it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)
          *     run in the web server. About every 30 minutes it looks for the newest published stable release (not a draft or
          *     prerelease) and installs it once it is `auto_update_min_age_hours` old (plugins:
-         *     `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait. The desktop
-         *     app is not part of the tool: it updates itself at the web server's next automatic update check, or now with
-         *     `hz app install`. The output says which applies.
+         *     `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait.
+         *
+         *     On Apple silicon Macs, the CLI also refreshes an existing managed desktop app when Core comes from an exact
+         *     official stable GitHub tag and background services are ready. If the app is in use, quit it and run
+         *     `hz system update` again. The result describes the bundle on disk. Run `hz app update` for a desktop-only update.
          *
          *     Each step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds
          *     only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so
@@ -8237,7 +8239,7 @@ export interface components {
         };
         /**
          * HeadRefresh
-         * @description What one installed head runs after an update; only `verified` is evidence of the target version.
+         * @description What happened to one head; only `verified` is evidence of its running version.
          */
         HeadRefresh: {
             /**
@@ -8254,10 +8256,10 @@ export interface components {
             head: "daemon" | "web" | "notifier" | "desktop";
             /**
              * Status
-             * @description verified: its live process reported the target version; pending: requested, not yet observed; failed: it reported another version or could not restart; not-installed: nothing to refresh; self: the process that ran the update hosts this head and restarts itself afterwards.
+             * @description verified: its live process reported the target version; pending: deferred or unobserved; failed: the head could not be refreshed or verified; not-installed: nothing to refresh; self: the process that ran the update hosts this head and restarts itself afterwards; on-disk: the desktop bundle was checked on disk.
              * @enum {string}
              */
-            status: "verified" | "pending" | "failed" | "not-installed" | "self";
+            status: "verified" | "pending" | "failed" | "not-installed" | "self" | "on-disk";
             /**
              * Version
              * @description The version its live process reported, when observed.
@@ -15178,7 +15180,7 @@ export interface components {
             before: string;
             /**
              * Heads
-             * @description What each installed long-running head runs after the update, as its live process reported it.
+             * @description Live daemon and web handover outcomes and the manual CLI's managed desktop bundle outcome.
              */
             heads?: components["schemas"]["HeadRefresh"][];
             /**

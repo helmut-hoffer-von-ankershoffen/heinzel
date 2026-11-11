@@ -346,7 +346,9 @@ def _run_gh(gh: str, asset: Path, proof: Path, core: _CoreManifest) -> subproces
     )
 
 
-def fetch_archive(version: str, directory: Path, reporter: Reporter = SILENT) -> Path:
+def fetch_archive(
+    version: str, directory: Path, reporter: Reporter = SILENT, *, expected_commit: str | None = None
+) -> Path:
     """Download the exact stable version and authenticate both desktop artifacts.
 
     Raises:
@@ -381,6 +383,7 @@ def fetch_archive(version: str, directory: Path, reporter: Reporter = SILENT) ->
                 core.version != version
                 or manifest.version != version
                 or manifest.commit != core.commit
+                or (expected_commit is not None and core.commit != expected_commit)
                 or manifest.archive.name != archive.name
             ):
                 msg = "The desktop release manifest names a different artifact."

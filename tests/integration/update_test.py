@@ -7,14 +7,19 @@ An isolated Python wrapper answers the target version and plugin-list probes wit
 import json
 import os
 import sys
+from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
 
 from heinzel import __version__
-from heinzel.heads.cli import build
+from heinzel.heads.cli import _command, _desktop_update, build
+from heinzel.kernel import DesktopHeadRefresh, OperationLet
 from heinzel.modules.system import _github
+from heinzel.modules.system._models import UpdateResult
+from heinzel.modules.system._update import UpdateService
 
 pytestmark = pytest.mark.integration
 
@@ -167,7 +172,9 @@ def github_releases(monkeypatch, *tags):
 
 
 @pytest.fixture
-def app(make_kernel):
+def app(make_kernel, monkeypatch):
+    # The desktop cases exercise this port explicitly, independent of the host running the tests.
+    monkeypatch.setattr(_command, "_desktop_scope", lambda *_: nullcontext())
     return build(make_kernel(builtins=True))
 
 
@@ -182,9 +189,44 @@ def test_update_help_explains_automatic_updates_desktop_handoff_and_progress(app
     help_text = " ".join(result.stdout.split())
     assert "hz system config set auto_update true" in help_text
     assert "About every 30 minutes" in help_text
-    assert "hz app install" in help_text
+    assert "quit it and run `hz system update` again" in help_text
+    assert "hz app update" in help_text
     assert "each step goes to stderr as one JSON object per line" in help_text
     assert "2>&1" in help_text
+
+
+def test_only_the_cli_call_can_pass_the_desktop_port_on_a_shared_kernel(make_kernel, monkeypatch):
+    kernel = make_kernel(builtins=True)
+    received = []
+
+    def update(_source, *, channel, desktop):
+        received.append(desktop)
+        return UpdateResult(
+            before=__version__,
+            after=__version__,
+            latest=None,
+            pinned_to=None,
+            updated=False,
+            message="Current Core.",
+            next=[],
+        )
+
+    adapter = DesktopHeadRefresh(lambda: True, lambda _: True, lambda *_: pytest.fail("unexpected desktop call"))
+    kernel.bind(UpdateService, SimpleNamespace(update=update))
+    monkeypatch.setattr(_command, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(_command, "platform", SimpleNamespace(machine=lambda: "arm64"))
+    monkeypatch.setattr(_desktop_update, "desktop_update", lambda active: adapter if active is kernel else None)
+    app = build(kernel)
+    assert not kernel.provides(DesktopHeadRefresh)
+    operation = next(
+        op for record, op in kernel.lets(OperationLet) if (record.qualname, op.name) == ("system", "update")
+    )
+
+    kernel.invoke(operation)
+    result = runner.invoke(app, ["system", "update", "--json"])
+    assert result.exit_code == 0, result.output
+    kernel.invoke(operation)  # same cached UpdateService, from the API invocation boundary
+    assert received == [None, adapter, None]
 
 
 def test_a_tag_pinned_install_updates_to_the_latest_release_and_keeps_plugins(app, env, monkeypatch):

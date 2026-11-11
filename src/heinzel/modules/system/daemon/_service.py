@@ -52,6 +52,7 @@ from heinzel.kernel import (
     DaemonHandoverPlan,
     DaemonHandoverRequest,
     DaemonMutationScope,
+    HeadRefresh,
     Installation,
     MaintenanceLocks,
     ProcessOutcome,
@@ -1963,6 +1964,56 @@ class DaemonService:
     def job_running(self) -> bool:
         """Whether a tick holds the tick lock now, i.e. is running jobs (ADR 0116)."""
         return held(self.state_dir / "tick.lock")
+
+    def inspect_update_head(self, target: str) -> HeadRefresh:
+        """Observe owned activation and the last fresh, same-boot scheduled tick without starting one."""
+        advice = "Check `hz system daemon status`; run `hz system daemon restart` if it needs a fresh tick."
+        pending = HeadRefresh(
+            head="daemon", status="pending", detail=f"A current owned daemon tick is unverified. {advice}"
+        )
+        try:
+            if self._handover_pending():
+                return pending
+            manager = self.owned_manager_state(self._shim(dry_run=False).parent)
+        except (OSError, ValueError, HeinzelError, subprocess.SubprocessError):
+            return HeadRefresh(
+                head="daemon", status="failed", detail=f"Daemon ownership could not be verified. {advice}"
+            )
+        if manager.pid is None and (not manager.active or self.paused):
+            return HeadRefresh(head="daemon", status="not-installed", detail="No owned daemon is active.")
+        version = self._fresh_scheduled_tick_version()
+        if version is None:
+            return pending
+        if version != target:
+            return HeadRefresh(
+                head="daemon",
+                status="failed",
+                version=version,
+                detail=f"The last owned daemon tick ran hz {version}. {advice}",
+            )
+        return HeadRefresh(
+            head="daemon", status="verified", version=version, detail="The latest owned daemon tick reported it."
+        )
+
+    def _fresh_scheduled_tick_version(self) -> str | None:
+        try:
+            heartbeat = TypeAdapter(dict[str, str | int]).validate_json(private_read(self.state_dir / "heartbeat.json"))
+            completed = datetime.fromisoformat(str(heartbeat["completed_at"]))
+            _, boot_ns = self._host_boot_evidence()
+            fresh = timedelta(0) <= self._clock() - completed <= timedelta(minutes=STALE_TICKS * self._interval())
+        except (OSError, ValueError, TypeError, KeyError, HeinzelError):
+            return None
+        version = heartbeat.get("version")
+        if (
+            heartbeat.get("source") != "scheduled"
+            or not isinstance(version, str)
+            or not fresh
+            or boot_ns is None
+            or completed.timestamp() * 1_000_000_000 < boot_ns
+            or not self._handover_marker_valid(self._read_state("install.json"))
+        ):
+            return None
+        return version
 
     def status(self) -> DaemonStatus:
         """Installed, loaded, paused, last tick and failing jobs; runs launchctl or systemctl only when installed."""

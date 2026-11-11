@@ -16,7 +16,7 @@ from heinzel import HeinzelError, Settings, __version__
 from heinzel.heads import _desktop_messages as say
 from heinzel.heads._desktop_log import problem_fields, step
 from heinzel.heads.cli._progress import StepReporter
-from heinzel.heads.cli._render import message
+from heinzel.heads.cli._render import message, terminal_safe
 from heinzel.kernel import KERNEL_SECTION, Installation, Kernel
 
 
@@ -256,6 +256,43 @@ def _where_installed() -> Path:
     return SYSTEM_APPLICATIONS if system_applications_usable() else Path.home() / "Applications"
 
 
+def _update_app(kernel: Kernel, output: Console, error: Console, *, details: bool) -> None:
+    """Update a managed app in place to the running CLI's version.
+
+    Raises:
+        typer.Exit: If there is no managed app or the update cannot finish now.
+    """
+    from heinzel.heads._desktop_installation import install_desktop  # noqa: PLC0415 - native update only
+
+    steps = StepReporter(
+        error, header=say.UPDATE_HEADER.format(version=__version__), rows=say.install_rows(keep_quarantine=False)
+    )
+    try:
+        with step("update", "run", version=__version__) as result:
+            state = install_desktop(
+                __version__, desktop_executable(kernel), update_only=True, explicit_update=True, reporter=steps
+            )
+            problem = say.UPDATE_PROBLEMS.get(state)
+            result.update(outcome=state, **problem_fields(problem))
+    except KeyboardInterrupt as exc:
+        steps.close(complete=False)
+        error.print(say.CANCELLED_UPDATE)
+        raise typer.Exit(130) from exc
+    except (HeinzelError, OSError, SubprocessError) as exc:
+        steps.close(complete=False)
+        detail = str(exc) if isinstance(exc, HeinzelError) else say.UPDATE_FAILED
+        failure = say.update_failure(detail, getattr(exc, "problem", None))
+        for line in failure.lines():
+            error.print(terminal_safe(line), markup=False, soft_wrap=True)
+        if details or os.environ.get("HZ_DEBUG"):
+            error.print(terminal_safe(str(exc)), markup=False, soft_wrap=True)
+        raise typer.Exit(1) from exc
+    steps.close(complete=state == "updated")
+    if problem is not None:
+        _say(error, problem)
+    output.print(say.UPDATE_RESULTS[state].format(version=__version__), markup=False, soft_wrap=True)
+
+
 def _open_app(kernel: Kernel, output: Console, error: Console, *, details: bool = False) -> Path:
     """Open the app hz manages, installing it first when it is not there yet; never launch a broken copy.
 
@@ -372,6 +409,18 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
             typer.Exit: If the app cannot be installed now.
         """
         _install_app(kernel, output, error, keep_quarantine=keep_quarantine, replace=replace, yes=yes, details=details)
+
+    @app.command("update")
+    def update(details: Annotated[bool, typer.Option("--details", help=_DETAILS_HELP)] = False) -> None:
+        """Update the installed desktop app to match this version of Heinzel.
+
+        Use hz system update for CLI and plugin updates.
+        If the desktop app is open, quit it and run hz app update again.
+
+        Raises:
+            typer.Exit: If there is no managed app or the update cannot finish now.
+        """
+        _update_app(kernel, output, error, details=details)
 
     @app.command("open")
     def open_app(

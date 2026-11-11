@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
 
+from heinzel.kernel._head_refresh import HeadRefresh
+
 
 class DaemonStatusAttestation(Protocol):
     """The version facts another module may check before enabling durable work."""
@@ -101,3 +103,5 @@ class DaemonInstallationLifecycle:
     quiescent: Callable[[Path], AbstractContextManager[None]]
     recover_quiescent: Callable[[Path], None]
     mutation: Callable[[Callable[[], bool], Callable[[], str]], AbstractContextManager[DaemonMutationScope]]
+    inspect: Callable[[str], HeadRefresh] | None = None
+    """Observe owned daemon readiness without requesting a handover or starting a tick."""

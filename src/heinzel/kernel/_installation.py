@@ -821,6 +821,14 @@ class Installation:
         """
         return _installation_continuity.fingerprint(self.prefix, self._continuity_authority, strict_identity=True)
 
+    def installed_core_git_commit(self) -> str:
+        """Read the installed core's git commit without starting the tool.
+
+        Raises:
+            HeinzelError: If the installed core's git commit cannot be established.
+        """
+        return _installed_metadata.inspect_core_git_commit(self.prefix)
+
     def verify_installed_requirements(
         self,
         requirements: list[str],

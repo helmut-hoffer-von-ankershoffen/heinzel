@@ -41,6 +41,7 @@ from heinzel.kernel import (
     DaemonHandoverRequest,
     DaemonInstallationLifecycle,
     DaemonMutationScope,
+    DesktopHeadRefresh,
     HeadRefresh,
     Installation,
     ReleaseSource,
@@ -74,8 +75,8 @@ DAEMON_SECONDS = 90.0
 DAEMON_POLL_SECONDS = 1.0
 DESKTOP_RECEIPT = Path(".config/heinzel/desktop-installation.json")
 """Under the home folder: the managed Mac app's receipt (`heinzel.heads._desktop_installation`)."""
-SETTLED = frozenset({"verified", "not-installed", "self"})
-"""Head outcomes that leave nothing running older code; `pending` and `failed` do not."""
+SETTLED = frozenset({"verified", "not-installed", "self", "on-disk"})
+"""Completed head outcomes. The desktop outcome records only the bundle on disk."""
 
 PLACEHOLDER_TAG = "vX.Y.Z"
 """Stands in for the latest release tag in a suggested command when the package source couldn't be asked."""
@@ -156,6 +157,7 @@ class UpdateService:
         self._lifecycle = lifecycle
         self._require_lifecycle = require_lifecycle
         self._web = web
+        self._desktop_generation: str | None = None
         self._clock, self._sleep = clock, sleep
         self._home = home
         self._handover: tuple[DaemonHandoverPlan, DaemonHandoverRequest] | None = None
@@ -254,6 +256,7 @@ class UpdateService:
         scope.verified_complete(candidate)
         handover = scope.request(plan)
         self._handover = (plan, handover)
+        self._desktop_generation = candidate
         if handover.requested:
             message = f"{result.message}\nThe daemon handover was requested; a fresh service tick is pending."
             return result.model_copy(update={"message": message})
@@ -342,6 +345,7 @@ class UpdateService:
                 if scope is not None and plan is not None:
                     self._finish_mutation(scope, plan, generation, result)
         heads = self._refresh_heads(target)
+        heads.extend(self._later_desktop())
         return AnnouncedUpdate(
             updated=True,
             after=target,
@@ -569,13 +573,17 @@ class UpdateService:
         return AnnouncedUpdate(updated=False, after=current, restored=True, refused=bool(refused), message=message)
 
     def update(
-        self, source: str | None = None, current: str = __version__, channel: UpdateChannel = "stable"
+        self,
+        source: str | None = None,
+        current: str = __version__,
+        channel: UpdateChannel = "stable",
+        *,
+        desktop: DesktopHeadRefresh | None = None,
     ) -> UpdateResult:
         """Update to the latest release, or reinstall from `source`; `current` is the version running now.
 
-        After a change, every installed long-running head is moved onto the installed code through its own owned
-        restart path and asked which version its live process loaded (`heads`): the daemon's handover tick and the
-        persistent web server. The update is complete only when each is verified; the message says which aren't.
+        After a change, the daemon and persistent web server are asked which version their owned restart paths
+        loaded. The manual CLI also checks the managed desktop bundle for the verified stable Core generation.
 
         `channel` is where the installation follows: `edge` (the newest edge release's wheel, verified by digest) or
         stable, which `release` also names: the releases (a pin to the newest release tag, which every later
@@ -587,8 +595,11 @@ class UpdateService:
                 asked for, or the install fails, naming the plugins that block it; Heinzelmännchen still works.
         """
         self._handover = None
+        self._desktop_generation = None
         pins = self._installation.plugin_pins()
-        steps = self._steps = _Steps(self._progress, [canonicalize_name(p.name) for p in pins])
+        steps = self._steps = _Steps(
+            self._progress, [canonicalize_name(p.name) for p in pins], desktop=desktop is not None
+        )
         try:
             steps.start("check")
             try:
@@ -597,13 +608,26 @@ class UpdateService:
                 steps.fail(str(exc).splitlines()[0])
                 raise
             steps.installed(result)
-            if not result.updated:  # nothing changed, so every head already runs what is installed
+            desktop_result = self._desktop_preflight(desktop, result.after, source, channel) if desktop else None
+            heads: list[HeadRefresh] = []
+            if result.updated:
+                steps.start("heads")
+                heads = self._refresh_heads(result.after)
+                steps.restarted(heads)
+            elif desktop is not None and desktop_result is None:
+                steps.start("heads", label="Checking background services")
+                heads = self._inspect_heads(result.after)
+                steps.restarted(heads)
+            else:
                 steps.skip("heads", "Nothing changed, so nothing restarts.")
-                return result
-            steps.start("heads")
-            heads = self._refresh_heads(result.after)
-            steps.restarted(heads)
-            return result.model_copy(update={"heads": heads, "message": _with_heads(result.message, heads)})
+            if desktop is not None:
+                outcome = desktop_result or self._refresh_desktop(desktop, result.after, heads)
+                steps.desktop(outcome)
+                heads.append(outcome)
+            elif result.updated:
+                heads.extend(self._later_desktop())
+            message = _with_heads(result.message, heads, manual_desktop=desktop is not None)
+            return result.model_copy(update={"heads": heads, "message": message})
         finally:
             self._steps = None
 
@@ -616,6 +640,7 @@ class UpdateService:
         if source is not None:
             return self._install(source, pin, plugins, current=current, latest=None, target=source, automatic=False)
         generation = self._automatic_generation(current)
+        self._desktop_generation = generation
         if channel == "main":
             result = self._install(
                 self._at(pin, DEFAULT_BRANCH),
@@ -1456,16 +1481,85 @@ class UpdateService:
                         "`hz ui status`.",
                     )
                 )
-        if self._desktop_installed():
-            heads.append(
+        return heads
+
+    def _later_desktop(self) -> list[HeadRefresh]:
+        """Describe the existing automatic or explicit installer path for heads other than the manual CLI."""
+        return (
+            [
                 HeadRefresh(
                     head="desktop",
                     status="pending",
-                    detail="Not updated by this command: the desktop app updates itself at the web server's next "
-                    "automatic update check, if automatic updates are on. Update it now with `hz app install`.",
+                    detail="The web server can refresh the bundle on a later check when automatic updates are on. "
+                    "To update the bundle separately, run `hz app update`.",
                 )
+            ]
+            if self._desktop_installed()
+            else []
+        )
+
+    def _inspect_heads(self, target: str) -> list[HeadRefresh]:
+        """A desktop-only retry checks readiness even if this invocation changed no Core or plugin files."""
+        inspections: list[tuple[Literal["daemon", "web"], Callable[[str], HeadRefresh] | None, str]] = [
+            ("daemon", self._lifecycle.inspect if self._lifecycle else None, "hz system daemon status"),
+            ("web", self._web.inspect if self._web else None, "hz ui status"),
+        ]
+        heads: list[HeadRefresh] = []
+        for head, inspect, command in inspections:
+            try:
+                observed = inspect(target) if inspect is not None else None
+            except Exception:  # noqa: BLE001 - an unobservable head stays unverified
+                observed = None
+            heads.append(
+                observed or HeadRefresh(head=head, status="failed", detail=f"Readiness is unverified. Run `{command}`.")
             )
         return heads
+
+    def _desktop_preflight(
+        self,
+        desktop: DesktopHeadRefresh,
+        target: str,
+        source: str | None,
+        channel: UpdateChannel,
+    ) -> HeadRefresh | None:
+        """Find work for the desktop before spending time observing background services."""
+        try:
+            if not desktop.present():
+                return HeadRefresh(
+                    head="desktop", status="not-installed", detail="No managed desktop app is installed."
+                )
+            if source is None and channel not in {"stable", "release"}:
+                return HeadRefresh(
+                    head="desktop",
+                    status="pending",
+                    detail="To update the managed desktop, use `hz system update --channel stable`.",
+                )
+            if not desktop.eligible(target):
+                return HeadRefresh(
+                    head="desktop",
+                    status="pending",
+                    detail="The Core receipt must identify an exact official stable GitHub tag for a combined update. "
+                    "To update the bundle separately, run `hz app update`.",
+                )
+        except (HeinzelError, OSError, ValueError, RuntimeError):
+            return _desktop_failure()
+        return None
+
+    def _refresh_desktop(self, desktop: DesktopHeadRefresh, target: str, heads: Sequence[HeadRefresh]) -> HeadRefresh:
+        """Use the verified new CLI only once both background heads are observed or absent."""
+        generation = self._desktop_generation
+        settled = {head.head for head in heads if head.status in {"verified", "not-installed"}}
+        if generation is None or not {"daemon", "web"}.issubset(settled):
+            return HeadRefresh(
+                head="desktop",
+                status="pending",
+                detail="Finish verifying Core and its background services, then run `hz system update` again.",
+            )
+        try:
+            self._start_step("desktop")
+            return desktop.refresh(target, generation)
+        except (HeinzelError, OSError, ValueError, RuntimeError):
+            return _desktop_failure()
 
     def _desktop_installed(self) -> bool:
         try:
@@ -1561,25 +1655,29 @@ class _Steps:
     Every step is real work or a real outcome: each plugin is reported once the install says what became of it.
     """
 
-    def __init__(self, progress: Progress, plugins: Sequence[str]) -> None:
+    def __init__(self, progress: Progress, plugins: Sequence[str], *, desktop: bool = False) -> None:
         self._labels = {
             "check": "Finding the newest version",
             "install": "Installing the update",
             **{f"plugin:{name}": f"Plugin {name}" for name in plugins},
             "heads": "Moving the background services onto it",
         }
+        if desktop:
+            self._labels["desktop"] = "Updating the managed desktop app"
         self._phases = Phases(progress, list(self._labels.items()), operation="system.update")
         self._running: str | None = None
 
     def _note(self, id_: str, state: State, detail: str | None = None) -> None:
         self._phases.note(id_, self._labels[id_], state, detail)
 
-    def start(self, id_: str) -> None:
+    def start(self, id_: str, *, label: str | None = None) -> None:
         """Run `id_`; the step that ran before it is done (a second start of a running step changes nothing)."""
         if self._running == id_:
             return
         if self._running is not None:
             self._note(self._running, "done")
+        if label is not None:
+            self._labels[id_] = label
         self._running = id_
         self._note(id_, "running")
 
@@ -1613,11 +1711,17 @@ class _Steps:
     def restarted(self, heads: Sequence[HeadRefresh]) -> None:
         """Finish the restart: a warning names the first service not verified on the new version."""
         self._running = None
-        failed = next((head for head in heads if head.status == "failed"), None)
-        if failed is not None:
-            self._note("heads", "warn", failed.detail)
+        unsettled = next((head for head in heads if head.status not in SETTLED), None)
+        if unsettled is not None:
+            self._note("heads", "warn", unsettled.detail)
         else:
             self._note("heads", "done")
+
+    def desktop(self, outcome: HeadRefresh) -> None:
+        """Report the bundle on disk, or why the desktop work is deferred or failed."""
+        self._running = None
+        states: dict[str, State] = {"on-disk": "done", "not-installed": "skipped", "failed": "failed"}
+        self._note("desktop", states.get(outcome.status, "warn"), outcome.detail)
 
 
 def _sentence(text: str) -> str:
@@ -1643,15 +1747,30 @@ def _plugin_step(update: PluginUpdate) -> tuple[State, str]:
     return "warn", f"Held back at {update.before or 'its version'}: it does not allow the new hz yet"
 
 
-def _with_heads(message: str, heads: list[HeadRefresh]) -> str:
+def _desktop_failure() -> HeadRefresh:
+    return HeadRefresh(
+        head="desktop",
+        status="failed",
+        detail="The managed desktop update could not be verified. Run `hz app doctor`, then retry `hz system update`.",
+    )
+
+
+def _with_heads(message: str, heads: list[HeadRefresh], *, manual_desktop: bool = False) -> str:
     """`message`, with one line per installed head and, unless every one is settled, that the update isn't done."""
-    shown = [head for head in heads if head.status != "not-installed"]
+    shown = [head for head in heads if head.status != "not-installed" or (manual_desktop and head.head == "desktop")]
     if not shown:
         return message
     if any(head.head == "daemon" for head in shown):  # its own line says what the handover did
         message = message.replace(PENDING_TICK, "")
-    lines = [f"{HEAD_LABELS[head.head]}: {head.status}. {head.detail}".rstrip() for head in shown]
-    if any(head.status not in SETTLED for head in shown):
+    lines = [
+        f"{HEAD_LABELS[head.head]}: {head.detail}"
+        if manual_desktop and head.head == "desktop"
+        else f"{HEAD_LABELS[head.head]}: {head.status}. {head.detail}".rstrip()
+        for head in shown
+    ]
+    if manual_desktop and any(head.head == "desktop" and head.status not in SETTLED for head in shown):
+        lines.append("Some update steps need attention. The lines above say what to do next.")
+    elif any(head.status not in SETTLED for head in shown):
         lines.append("Not everything runs the new version yet; the lines above say what finishes it.")
     return "\n".join([message, *lines])
 

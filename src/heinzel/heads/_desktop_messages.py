@@ -1,4 +1,4 @@
-"""What `hz app install`, `uninstall` and `doctor` say to a person, in one place.
+"""What the `hz app` commands say to a person, in one place.
 
 Every failure is two lines: what happened, in the person's words (app, folder, download, open), and the one command
 or action that fixes it. Internal names stay in the exception's details, shown only with `--details` or HZ_DEBUG=1.
@@ -27,6 +27,7 @@ class Problem:
 
     happened: str
     action: str
+    update_action: str = "Run hz app update --details for more information."
 
     def lines(self) -> list[str]:
         """The two lines, in order."""
@@ -66,6 +67,12 @@ def foreign_copy(app: Path, *, everyone: bool) -> Problem:
         f"There is already a {app.name} in {folder(app.parent, everyone=everyone)} that hz did not install.",
         "Run hz app install --replace to move it to the Trash (nothing is deleted) and install a verified copy.",
     )
+
+
+def binding_mismatch() -> Problem:
+    """The app matches the CLI version and is linked to a different CLI installation."""
+    action = "Run hz app install from this CLI installation. Run hz app update --details for the exact command."
+    return Problem("The desktop app uses a different installation of hz.", action, update_action=action)
 
 
 def trashed_copy(app: Path, name: str) -> str:
@@ -109,7 +116,11 @@ def untrusted_record(path: Path) -> Problem:
 
 def busy() -> Problem:
     """Another install holds the installer, or a leftover file name is taken."""
-    return Problem("Another hz app install seems to be running.", "Wait for it, or run hz app install --details.")
+    return Problem(
+        "Another hz app install seems to be running.",
+        "Wait for it, or run hz app install --details.",
+        update_action="Wait for it to finish, then run hz app update again.",
+    )
 
 
 def would_not_open(app: Path) -> Problem:
@@ -287,8 +298,29 @@ DOCTOR_FIX = "Run hz app doctor --fix to repair it."
 
 # Failures: a headline; the detail comes from the step that failed.
 CANCELLED_INSTALL = "Cancelled. Nothing was installed; run hz app install to try again."
+CANCELLED_UPDATE = "Cancelled. Run hz app update to try again."
 CANCELLED_UNINSTALL = "Cancelled. The app was left as it was."
 INSTALL_FAILED = "Desktop installation failed."
 UNINSTALL_FAILED = "Desktop uninstall failed."
 CHECK_FAILED = "Desktop check failed."
 UPDATE_FAILED = "Desktop update failed."
+UPDATE_HEADER = "Updating the Heinzelmännchen desktop app to {version}"
+UPDATE_PROBLEMS = {
+    "absent": Problem("No managed Heinzelmännchen desktop app is installed.", "Run hz app install to install it."),
+    "deferred": Problem("The Heinzelmännchen desktop app is in use.", "Quit it, then run hz app update again."),
+}
+UPDATE_RESULTS = {
+    "current": "The desktop app already matches hz {version}.",
+    "newer": "The desktop app is newer than hz {version}.",
+    "updated": "Updated the Heinzelmännchen desktop app to {version}.",
+}
+
+
+def update_failure(detail: str, problem: Problem | None = None) -> Problem:
+    """Give the update command's action for a shared installer or release failure."""
+    if problem is not None:
+        return Problem(problem.happened, problem.update_action)
+    # Release errors without a Problem can include their own retry advice for the install command.
+    if "hz app install" in detail:
+        return Problem(UPDATE_FAILED, detail.replace("hz app install", "hz app update"))
+    return Problem(detail, "Run hz app update to try again.")

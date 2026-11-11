@@ -11,6 +11,7 @@ from heinzel.kernel import (
     KERNEL_SECTION,
     CoreMetadataVerifier,
     DaemonInstallationLifecycle,
+    DesktopHeadRefresh,
     Installation,
     OfflineUninstall,
     PluginReleases,
@@ -84,7 +85,12 @@ def _update_service(installation: Installation, releases: ReleaseSource, kernel:
     lifecycle = kernel.resolve(DaemonInstallationLifecycle) if kernel.provides(DaemonInstallationLifecycle) else None
     web = kernel.resolve(WebHeadRefresh) if kernel.provides(WebHeadRefresh) else None
     return UpdateService(
-        installation, releases, lifecycle=lifecycle, require_lifecycle=True, web=web, progress=kernel.resolve(Progress)
+        installation,
+        releases,
+        lifecycle=lifecycle,
+        require_lifecycle=True,
+        web=web,
+        progress=kernel.resolve(Progress),
     )
 
 
@@ -179,9 +185,11 @@ def update(
     Why it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)
     run in the web server. About every 30 minutes it looks for the newest published stable release (not a draft or
     prerelease) and installs it once it is `auto_update_min_age_hours` old (plugins:
-    `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait. The desktop
-    app is not part of the tool: it updates itself at the web server's next automatic update check, or now with
-    `hz app install`. The output says which applies.
+    `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait.
+
+    On Apple silicon Macs, the CLI also refreshes an existing managed desktop app when Core comes from an exact
+    official stable GitHub tag and background services are ready. If the app is in use, quit it and run
+    `hz system update` again. The result describes the bundle on disk. Run `hz app update` for a desktop-only update.
 
     Each step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds
     only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so
@@ -197,7 +205,7 @@ def update(
         core_min_age_hours=settings.auto_update_min_age_hours,
         plugin_min_age_hours=settings.auto_update_plugin_min_age_hours,
     )
-    result = service.update(source, channel=channel or settings.update_channel)
+    result = service.update(source, channel=channel or settings.update_channel, desktop=DesktopHeadRefresh.current())
     return result.model_copy(update={"automatic": automatic})
 
 

@@ -3,12 +3,14 @@
 Every case uses a fake home and a fake system Applications folder; bundles are inert files and nothing is launched.
 """
 
+import json
 import os
 import plistlib
 import shutil
 import struct
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -17,7 +19,7 @@ from heinzel.heads import _desktop_installation as desktop
 pytestmark = pytest.mark.unit
 
 
-def _fetch(version: str, directory: Path, _reporter: object = None) -> Path:
+def _fetch(version: str, directory: Path, _reporter: object = None, *, expected_commit: str | None = None) -> Path:
     archive = directory / "archive"
     archive.write_text(version)
     return archive
@@ -136,6 +138,101 @@ def test_automatic_update_keeps_the_app_where_it_is(mac):
     system.chmod(0o755)
     assert desktop.install_desktop("1.0.1", executable, update_only=True, home=home) == "updated"
     assert _bundles(home, system) == [home / "Applications" / desktop.BUNDLE_NAME]
+
+
+def test_explicit_update_only_downloads_when_the_owned_app_is_older(mac, monkeypatch):
+    home, system, executable = mac
+    system.chmod(0o555)
+    desktop.install_desktop("1.0.1", executable, home=home)
+    system.chmod(0o755)
+    app = home / "Applications" / desktop.BUNDLE_NAME
+    replacement_cli = home / "new-hz"
+    replacement_cli.touch(mode=0o700)
+    commit = "a" * 40
+    fetch = Mock(wraps=desktop.fetch_archive)
+    monkeypatch.setattr(desktop, "fetch_archive", fetch)
+
+    def update(version, cli=executable):
+        return desktop.install_desktop(
+            version, cli, update_only=True, explicit_update=True, home=home, expected_commit=commit
+        )
+
+    monkeypatch.setattr(desktop, "_in_use", lambda _bundle: True)
+    assert update("1.0.0") == "newer"
+    assert update("1.0.1") == "current"
+    assert update("1.0.2", replacement_cli) == "deferred"
+    assert (app / "release").read_text() == "1.0.1"
+    fetch.assert_not_called()
+
+    monkeypatch.setattr(desktop, "_in_use", lambda _bundle: False)
+    assert update("1.0.2", replacement_cli) == "updated"
+    assert (app / "release").read_text() == "1.0.2"
+    assert _bundles(home, system) == [app]
+    fetch.assert_called_once()
+    assert fetch.call_args.args[0] == "1.0.2"
+    assert fetch.call_args.kwargs == {"expected_commit": commit}
+
+
+def test_explicit_update_refuses_a_same_version_app_bound_to_another_cli(mac, monkeypatch):
+    home, system, executable = mac
+    assert desktop.install_desktop("1.0.1", executable, home=home) == "installed"
+    app = system / desktop.BUNDLE_NAME
+    inode = app.stat().st_ino
+    receipt, binding = _record(home)
+    old = (receipt.read_bytes(), binding.read_bytes())
+    replacement_cli = home / "new hz"
+    replacement_cli.touch(mode=0o700)
+    fetch = Mock()
+    monkeypatch.setattr(desktop, "fetch_archive", fetch)
+
+    with pytest.raises(desktop.DesktopBindingMismatchError) as failure:
+        desktop.install_desktop(
+            "1.0.1", replacement_cli, update_only=True, explicit_update=True, home=home, expected_commit="a" * 40
+        )
+
+    assert f"'{replacement_cli}' app install" in str(failure.value)
+    assert app.stat().st_ino == inode
+    assert (receipt.read_bytes(), binding.read_bytes()) == old
+    fetch.assert_not_called()
+
+
+@pytest.mark.parametrize("update_only", [False, True], ids=["explicit-install", "automatic-update"])
+def test_install_and_automatic_update_repair_an_existing_same_version_binding(mac, update_only):
+    home, system, executable = mac
+    assert desktop.install_desktop("1.0.1", executable, home=home) == "installed"
+    replacement_cli = home / "new-hz"
+    replacement_cli.touch(mode=0o700)
+
+    assert desktop.install_desktop("1.0.1", replacement_cli, update_only=update_only, home=home) == "updated"
+
+    _receipt, binding = _record(home)
+    assert json.loads(binding.read_text())["executable"] == str(replacement_cli)
+    assert desktop.desktop_location(home) == system / desktop.BUNDLE_NAME
+
+
+@pytest.mark.parametrize("system_usable", [True, False], ids=["foreign-user-app", "foreign-system-app"])
+def test_explicit_update_reports_a_foreign_app_even_in_the_other_folder(mac, monkeypatch, system_usable):
+    home, system, executable = mac
+    if not system_usable:
+        system.chmod(0o555)
+    fetch = Mock()
+    monkeypatch.setattr(desktop, "fetch_archive", fetch)
+    assert desktop.install_desktop("1.0.0", executable, update_only=True, explicit_update=True, home=home) == "absent"
+    foreign = (home / "Applications" if system_usable else system) / desktop.BUNDLE_NAME
+    system.chmod(0o755)
+    foreign.mkdir(parents=True)
+    (foreign / "theirs").touch()
+    if not system_usable:
+        system.chmod(0o555)
+
+    with pytest.raises(desktop.DesktopInstallationError) as failure:
+        desktop.install_desktop("1.0.0", executable, update_only=True, explicit_update=True, home=home)
+
+    assert failure.value.problem is not None
+    assert "that hz did not install" in failure.value.problem.happened
+    assert (foreign / "theirs").is_file()
+    assert _bundles(home, system) == [foreign]
+    fetch.assert_not_called()
 
 
 def test_a_running_app_is_not_moved(mac, monkeypatch):

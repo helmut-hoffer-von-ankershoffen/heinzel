@@ -1,7 +1,10 @@
 """Turn an `OperationLet` into a Typer command."""
 
 import inspect
+import platform
+import sys
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from datetime import date, datetime, time
 from enum import StrEnum
 from types import UnionType
@@ -35,6 +38,14 @@ def has_terminal() -> bool:
     from heinzel.heads.cli._setup import has_terminal as terminal_available  # noqa: PLC0415 - only when executing a command
 
     return terminal_available()
+
+
+def _desktop_scope(kernel: Kernel, module: str, name: str) -> AbstractContextManager[None]:
+    if (module, name) != ("system", "update") or sys.platform != "darwin" or platform.machine() != "arm64":
+        return nullcontext()
+    from heinzel.heads.cli._desktop_update import desktop_update  # noqa: PLC0415 - only the actual manual update
+
+    return desktop_update(kernel).invocation()
 
 
 def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prologue and epilogue
@@ -99,7 +110,8 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
             with kernel.resolve(CurrentUser).local(identity):
                 mark_presence(kernel, module)
                 try:
-                    result = kernel.invoke(operation, **kwargs)
+                    with _desktop_scope(kernel, module, operation.name):
+                        result = kernel.invoke(operation, **kwargs)
                 finally:
                     progress.finish()
         except HeinzelError as exc:

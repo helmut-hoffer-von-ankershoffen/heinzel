@@ -162,6 +162,25 @@ def make(make_kernel, settings, tmp_path, bin_dir):
 # Installing
 
 
+def test_desktop_retry_observes_only_the_owned_daemons_fresh_scheduled_tick(make, bin_dir, monkeypatch):
+    runner = Runner(bin_dir)
+    daemon = make(runner=runner)
+    assert daemon.inspect_update_head(__version__).status == "not-installed"
+    daemon.install(FIVE_MINUTES, notifier=False)
+    before = runner.verbs()
+    monkeypatch.setattr(daemon, "_host_boot", lambda: ("boot", int((T0.timestamp() - 60) * 1_000_000_000)))
+    assert daemon.inspect_update_head(__version__).status == "pending"
+    tick = {"source": "scheduled", "version": __version__, "completed_at": T0.isoformat()}
+    daemon._write_state("heartbeat.json", tick)
+    assert daemon.inspect_update_head(__version__).status == "verified"
+    assert daemon.inspect_update_head("0.0.1").status == "failed"
+    daemon._write_state("heartbeat.json", tick | {"source": "manual"})
+    assert daemon.inspect_update_head(__version__).status == "pending"
+    daemon._write_state("heartbeat.json", tick | {"completed_at": (T0 - FIVE_MINUTES).isoformat()})
+    assert daemon.inspect_update_head(__version__).status == "pending"
+    assert runner.verbs() == before
+
+
 @pytest.mark.macos_specific
 def test_install_on_macos_writes_and_bootstraps_the_launch_agent(make, bin_dir, tmp_path):
     runner = Runner(bin_dir)

@@ -180,10 +180,12 @@ def _root(kernel: Kernel, *, plain: bool) -> tuple[typer.Typer, "_Mount"]:
             ),
         ] = False,
     ) -> None:
+        handler = RichHandler(console=err_console, show_path=False)
+        handler.addFilter(lambda _: not progress.as_json)
         logging.basicConfig(
             level=kernel.settings.log_level,
             format="%(message)s",
-            handlers=[RichHandler(console=err_console, show_path=False)],
+            handlers=[handler],
         )
 
     progress = ConsoleProgress(err_console, playful=_playful.allowed(kernel.settings, err_console))
@@ -236,6 +238,10 @@ def show(kernel: Kernel, output: Console) -> None:
 
 def main() -> None:
     """Entry point of the `hz` executable."""
+    if sys.argv[1:2] == ["--_refresh-managed-desktop"]:
+        from heinzel.heads.cli._desktop_update import run_desktop_update  # noqa: PLC0415 - post-update child only
+
+        sys.exit(run_desktop_update(sys.argv[2:]))
     if sys.argv[1:3] == ["system", "uninstall"]:
         from heinzel.heads.cli._uninstall import main as uninstall_main  # noqa: PLC0415 - parse maintenance before discovery
 

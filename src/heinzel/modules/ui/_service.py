@@ -859,6 +859,29 @@ class WebService:
             return False
         return not installation_mutation_pending(self.prefix, self.directory.parent)
 
+    def inspect_update_head(self, target: str) -> HeadRefresh:
+        """Observe the exact owned live server without issuing a restart."""
+        status = self.status()
+        advice = "Check `hz ui status`; run `hz ui restart` if the owned server needs to reload."
+        if not status.installed:
+            if status.problem or any(
+                os.path.lexists(path) for path in (self.marker, self.unit, self.launcher, self.runtime)
+            ):
+                return HeadRefresh(head="web", status="failed", detail=f"Web service ownership is unverified. {advice}")
+            return HeadRefresh(head="web", status="not-installed")
+        if not status.ready or not status.loaded:
+            return HeadRefresh(head="web", status="pending", detail=f"The owned web server is not ready. {advice}")
+        if status.version != target:
+            return HeadRefresh(
+                head="web",
+                status="failed",
+                version=status.version,
+                detail=f"The owned web server reports hz {status.version}. {advice}",
+            )
+        return HeadRefresh(
+            head="web", status="verified", version=status.version, detail="The owned web server reports it."
+        )
+
     def refresh(self, target: str) -> HeadRefresh:
         """After an update: restart the owned web server, then observe its successor.
 

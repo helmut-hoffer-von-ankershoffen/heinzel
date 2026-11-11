@@ -6,6 +6,7 @@ import json
 import os
 import platform
 import plistlib
+import shlex
 import shutil
 import stat
 import struct
@@ -73,7 +74,7 @@ LOCK_WAIT = 120.0
 _LOCK_NOTE_AFTER = 1.0
 SYSTEM_APPLICATIONS = Path("/Applications")
 """Where Finder, Launchpad and Spotlight expect apps; used whenever this user may write there without a password."""
-type DesktopInstallStatus = Literal["installed", "updated", "current", "deferred", "absent"]
+type DesktopInstallStatus = Literal["installed", "updated", "current", "newer", "deferred", "absent"]
 
 
 class DesktopInstallationError(HeinzelError):
@@ -89,6 +90,16 @@ class DesktopInstallationError(HeinzelError):
 
 class LeftoverInstallError(DesktopInstallationError):
     """An earlier install is recorded but its app is gone; `forget=True` sets the record aside and continues."""
+
+
+class DesktopBindingMismatchError(DesktopInstallationError):
+    """The same-version app uses a different CLI installation."""
+
+    def __init__(self, bound: str, executable: Path) -> None:
+        super().__init__(
+            f"The app uses {bound}.\n{shlex.quote(str(executable))} app install",
+            say.binding_mismatch(),
+        )
 
 
 class _Receipt(BaseModel):
@@ -191,21 +202,26 @@ def _applications_directory(applications: Path, home: Path) -> None:
         raise DesktopInstallationError(msg)
 
 
-def _locate(home: Path, config: Path) -> tuple[Path, _Receipt | None]:
+def _locate(home: Path, config: Path, *, report_conflicts: bool = False) -> tuple[Path, _Receipt | None]:
     """Find the owned bundle in /Applications or ~/Applications, else where a new one would go.
 
     Raises:
         DesktopInstallationError: If the receipt matches neither location or the target is not ours.
     """
     candidates = _bundles(home)
+    conflict = None
     for bundle in candidates:
         if os.path.lexists(bundle):
             try:
                 record = _owned_installation(bundle, config)
-            except DesktopInstallationError:
+            except DesktopInstallationError as exc:
+                if conflict is None:
+                    conflict = exc
                 continue
             if record is not None:
                 return bundle, record
+    if report_conflicts and conflict is not None:
+        raise conflict
     target = candidates[0] if system_applications_usable() else candidates[1]
     if target == candidates[0] and os.path.lexists(target) and _read_metadata(config / _RECEIPT) is None:
         msg = _MSG_FOREIGN.format(target=target)
@@ -726,27 +742,45 @@ def desktop_location(home: Path | None = None) -> Path | None:
     return None if installed is None else installed[0]
 
 
+def desktop_installation_record_exists() -> bool:
+    """Whether a managed install or interrupted transaction needs inspection by the installer."""
+    config = Path.home() / ".config" / "heinzel"
+    for name in (_RECEIPT, _BINDING, _JOURNAL):
+        try:
+            (config / name).lstat()
+        except FileNotFoundError:
+            continue
+        return True
+    return False
+
+
 def install_desktop(  # noqa: PLR0913 - keyword-only options of one CLI command
     version: str,
     executable: Path,
     *,
     update_only: bool = False,
+    explicit_update: bool = False,
     home: Path | None = None,
     reporter: Reporter = SILENT,
     keep_quarantine: bool = False,
     replace: bool = False,
     forget: bool = False,
     notes: list[str] | None = None,
+    expected_commit: str | None = None,
 ) -> DesktopInstallStatus:
     """Install or refresh a verified desktop release, or defer if the bundle is in use.
 
     With `forget`, a record whose app is gone is set aside first (without it, LeftoverInstallError says so). With
     `replace`, an app this installer did not install is moved to the Trash first. Both are appended to `notes`.
+    An `explicit_update` reports newer releases, unowned copies in either Applications folder and mismatched
+    same-version CLI bindings. Background callers of `update_only` receive `current` for a newer bundle.
+    When supplied, `expected_commit` binds a replacement to the verified Core release commit.
     Every step logs a start and an outcome event (`desktop.install.*`).
     """
     _check_platform()
     home = (home or Path.home()).resolve(strict=True)
     notes = [] if notes is None else notes
+    update_only = update_only or explicit_update
     options = {"version": version, "update_only": update_only, "replace": replace, "forget": forget}
     with step("install", "run", **options) as result, _locked_config(home, reporter) as config:
         state = _install_steps(
@@ -757,9 +791,11 @@ def install_desktop(  # noqa: PLR0913 - keyword-only options of one CLI command
             notes,
             reporter,
             update_only=update_only,
+            explicit_update=explicit_update,
             replace=replace,
             forget=forget,
             keep_quarantine=keep_quarantine,
+            expected_commit=expected_commit,
         )
         result["outcome"] = state
         return state
@@ -774,9 +810,11 @@ def _install_steps(  # noqa: PLR0913, PLR0917 - the options of install_desktop, 
     reporter: Reporter,
     *,
     update_only: bool,
+    explicit_update: bool,
     replace: bool,
     forget: bool,
     keep_quarantine: bool,
+    expected_commit: str | None,
 ) -> DesktopInstallStatus:
     if os.path.lexists(home / "Applications"):
         _owned_directory(home / "Applications")
@@ -796,13 +834,14 @@ def _install_steps(  # noqa: PLR0913, PLR0917 - the options of install_desktop, 
             result["set_aside"] = len(forgotten)
         notes += forgotten
     with step("install", "locate") as result:
-        bundle, existing = _locate(home, config)
+        bundle, existing = _locate(home, config, report_conflicts=explicit_update)
         result.update({"path": str(bundle), "installed": existing is not None})
     if update_only:
         if existing is None:
             return "absent"
         if VERSION.fullmatch(version) and _version_parts(existing.release) > _version_parts(version):
-            return "current"
+            _confirm_installed(bundle, config, reporter)
+            return "newer" if explicit_update else "current"
     elif existing is not None:
         with step("install", "migrate", path=str(bundle)) as result:
             bundle = _migrate(bundle, config)
@@ -810,7 +849,15 @@ def _install_steps(  # noqa: PLR0913, PLR0917 - the options of install_desktop, 
     _applications_directory(bundle.parent, home)
     with step("install", "release", path=str(bundle), version=version) as result:
         state = _install_release(
-            version, executable, bundle, config, existing, reporter, keep_quarantine=keep_quarantine
+            version,
+            executable,
+            bundle,
+            config,
+            existing,
+            reporter,
+            keep_quarantine=keep_quarantine,
+            explicit_update=explicit_update,
+            expected_commit=expected_commit,
         )
         result["outcome"] = state
     if state != "deferred":
@@ -837,6 +884,8 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
     reporter: Reporter = SILENT,
     *,
     keep_quarantine: bool,
+    explicit_update: bool,
+    expected_commit: str | None,
 ) -> DesktopInstallStatus:
     if (
         not VERSION.fullmatch(version)
@@ -846,12 +895,19 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
     ):
         msg = "Desktop installation requires a stable release and an absolute, executable hz path."
         raise DesktopInstallationError(msg)
-    if existing and existing.release == version and existing.executable == str(executable):
-        return "current"
+    if existing and existing.release == version:
+        if existing.executable == str(executable):
+            return "current"
+        if explicit_update:
+            raise DesktopBindingMismatchError(existing.executable, executable)
     if existing and _in_use(bundle):
         return "deferred"
     with _staging(bundle.parent, config) as (staging, files):
-        archive = fetch_archive(version, staging, reporter)
+        archive = (
+            fetch_archive(version, staging, reporter)
+            if expected_commit is None
+            else fetch_archive(version, staging, reporter, expected_commit=expected_commit)
+        )
         expanded = staging / "expanded"
         expanded.mkdir(mode=0o700)
         with reporter.phase(say.EXTRACT):

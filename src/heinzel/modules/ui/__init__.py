@@ -45,7 +45,10 @@ def _web_head_refresh(kernel: Kernel) -> WebHeadRefresh:
             )
         return service.refresh(target)
 
-    return WebHeadRefresh(refresh=refresh)
+    def inspect(target: str) -> HeadRefresh:
+        return kernel.resolve(WebService).inspect_update_head(target)
+
+    return WebHeadRefresh(refresh=refresh, inspect=inspect)
 
 
 module.service(WebHeadRefresh, _web_head_refresh)

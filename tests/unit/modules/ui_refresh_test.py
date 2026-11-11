@@ -105,6 +105,33 @@ def test_nothing_installed_is_nothing_to_refresh(tmp_path):
     assert restarts == []
 
 
+@pytest.mark.parametrize(
+    ("snapshot", "expected"),
+    [
+        (ready("a" * 32, "0.9.26"), "verified"),
+        (ready("a" * 32, "0.9.22"), "failed"),
+        (WebStatus(installed=True, loaded=True, ready=False), "pending"),
+        (WebStatus(installed=False, loaded=False, ready=False, problem="unknown owner"), "failed"),
+        (WebStatus(installed=False, loaded=False, ready=False), "not-installed"),
+    ],
+)
+def test_desktop_retry_inspects_web_readiness_without_restart(tmp_path, snapshot, expected):
+    web, restarts, clock = service(tmp_path, [snapshot])
+    result = web.inspect_update_head("0.9.26")
+    assert result.status == expected
+    assert result.version == (snapshot.version if snapshot.ready else None)
+    assert not restarts
+    assert clock.now == 0
+
+
+def test_unverified_web_record_prevents_claiming_absence(tmp_path):
+    web, restarts, _ = service(tmp_path, [WebStatus(installed=False, loaded=False, ready=False)])
+    web.marker.parent.mkdir(parents=True)
+    web.marker.write_text("unverified")
+    assert web.inspect_update_head("0.9.26").status == "failed"
+    assert not restarts
+
+
 def _restartable(tmp_path, repair=None):
     prefix = tmp_path / "tool"
     prefix.mkdir()

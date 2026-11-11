@@ -134,7 +134,7 @@ class UpdateResult(BaseModel):
     )
     heads: list[HeadRefresh] = Field(
         default_factory=list[HeadRefresh],
-        description="What each installed long-running head runs after the update, as its live process reported it.",
+        description="Live daemon and web handover outcomes and the manual CLI's managed desktop bundle outcome.",
     )
 
 

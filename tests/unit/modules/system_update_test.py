@@ -11,7 +11,7 @@ from heinzel.kernel import CorePin, EdgeRelease, Installation, ReleaseCache, Rel
 from heinzel.modules.system._github import asset_host
 from heinzel.modules.system._models import UpdateResult
 from heinzel.modules.system._service import _edge_release, _published_version
-from heinzel.modules.system._update import UpdateService, blocking_plugins
+from heinzel.modules.system._update import DESKTOP_RECEIPT, UpdateService, blocking_plugins
 
 pytestmark = pytest.mark.unit
 
@@ -1423,12 +1423,8 @@ def _edge_pin():
 
 def _channels(pin, releases):
     """A service seeing `pin`, whose install step is recorded instead of run."""
-    service = object.__new__(UpdateService)
-    service._progress = Progress()
-    service._installation = SimpleNamespace(
-        core_pin=lambda: pin, requirements=lambda: [pin.requirement], plugin_pins=list
-    )
-    service._releases = releases
+    installation = SimpleNamespace(core_pin=lambda: pin, requirements=lambda: [pin.requirement], plugin_pins=list)
+    service = UpdateService(installation, releases)
     service._automatic_generation = lambda _current: None
     service._with_plugins = lambda result, *_a: result
     service.installs = []
@@ -1702,6 +1698,12 @@ class HandingOverLifecycle(FakeMutationLifecycle):
             return None
         return DaemonHandoverObservation(request_id, self.version, "d" * 64, (), "now", "old", "new")
 
+    def inspect(self, target):
+        from heinzel.kernel import HeadRefresh
+
+        self.events.append(f"inspect daemon {target}")
+        return HeadRefresh(head="daemon", status="verified" if self.version == target else "pending")
+
 
 class FakeClock:
     def __init__(self):
@@ -1733,7 +1735,13 @@ def _web(events, outcome):
             raise outcome
         return HeadRefresh(head="web", status=outcome, version=version if outcome == "verified" else "0.2.0")
 
-    return WebHeadRefresh(refresh=refresh)
+    def inspect(version):
+        events.append(f"inspect web {version}")
+        if isinstance(outcome, Exception):
+            raise outcome
+        return HeadRefresh(head="web", status=outcome, version=version if outcome == "verified" else "0.2.0")
+
+    return WebHeadRefresh(refresh=refresh, inspect=inspect)
 
 
 def test_after_an_update_the_daemon_and_the_web_server_are_verified_on_the_new_version(tmp_path):
@@ -1780,6 +1788,21 @@ def test_a_head_that_does_not_report_the_new_version_is_never_claimed(tmp_path):
     assert clock.now == pytest.approx(90.0)  # bounded: the daemon's first tick may run long jobs first
     assert "hz system daemon status" in result.message
     assert "Not everything runs the new version yet" in result.message
+
+
+def test_system_update_leaves_the_desktop_pending_and_names_the_desktop_update_command(tmp_path, monkeypatch):
+    monkeypatch.setattr("heinzel.modules.system._update.platform.system", lambda: "Darwin")
+    receipt = tmp_path / DESKTOP_RECEIPT
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text("desktop install record")
+    service = UpdateService(_heads_target(tmp_path, []), FakeReleases("0.4.0"), home=tmp_path)
+
+    result = service.update(current="0.2.0")
+
+    assert result.updated
+    assert [(head.head, head.status) for head in result.heads] == [("desktop", "pending")]
+    assert "hz app update" in result.message
+    assert receipt.read_text() == "desktop install record"
 
 
 def test_a_daemon_that_restarts_into_another_version_fails_and_a_raising_web_head_is_reported(tmp_path):
@@ -1991,17 +2014,157 @@ def test_an_up_to_date_hz_skips_installing_and_restarting(tmp_path):
     assert steps["heads"] == ("skipped", "Nothing changed, so nothing restarts.")
 
 
+def _desktop(events, status="on-disk", *, present=True, eligible=True):
+    from heinzel.kernel import DesktopHeadRefresh, HeadRefresh
+
+    def refresh(version, generation):
+        events.append(("desktop", version, generation))
+        return HeadRefresh(head="desktop", status=status, detail=f"Desktop outcome for {version}")
+
+    return DesktopHeadRefresh(present=lambda: present, eligible=lambda _target: eligible, refresh=refresh)
+
+
+def test_desktop_uses_the_completed_generation_after_daemon_and_web(tmp_path):
+    events = []
+    lifecycle = HandingOverLifecycle(events, version="0.4.0", ticks=1)
+    result = UpdateService(
+        _heads_target(tmp_path, events),
+        FakeReleases("0.4.0"),
+        lifecycle=lifecycle,
+        web=_web(events, "verified"),
+    ).update(current="0.2.0", desktop=_desktop(events))
+    assert events.index("exit") < events.index("web 0.4.0")
+    assert lifecycle.looks == 1
+    assert events[-1] == ("desktop", "0.4.0", "a" * 64)
+    assert [(head.head, head.status, head.version) for head in result.heads] == [
+        ("daemon", "verified", "0.4.0"),
+        ("web", "verified", "0.4.0"),
+        ("desktop", "on-disk", None),
+    ]
+
+
+def test_plugin_only_mutation_precedes_a_desktop_check_for_the_same_core(tmp_path):
+    events = []
+    uv = FakeUv("0.2.0")
+    uv.available = {"heinzel-acme": "1.1.0"}
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text().replace(f'git = "{REPO}-acme?rev=v1.0.0"', 'specifier = ">=1"'))
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: True  # type: ignore[method-assign]
+    target.record_startup_state = lambda *, expected: None  # type: ignore[method-assign]
+    result = UpdateService(
+        target,
+        FakeReleases("0.2.0"),
+        lifecycle=HandingOverLifecycle(events, version="0.2.0", ticks=1),
+        web=_web(events, "verified"),
+    ).update(current="0.2.0", desktop=_desktop(events))
+    assert result.updated
+    assert result.before == result.after == "0.2.0"
+    assert result.plugins[0].after == "1.1.0"
+    assert events[-2:] == ["web 0.2.0", ("desktop", "0.2.0", "a" * 64)]
+
+
+@pytest.mark.parametrize(("status", "phase"), [("on-disk", "done"), ("pending", "warn"), ("failed", "failed")])
+def test_current_core_retries_desktop_without_restarting_services(tmp_path, status, phase):
+    events = []
+    progress = RecordingProgress()
+    lifecycle = HandingOverLifecycle(events, version="0.2.0", ticks=1)
+    result = UpdateService(
+        _heads_target(tmp_path, events),
+        FakeReleases("0.2.0"),
+        lifecycle=lifecycle,
+        web=_web(events, "verified"),
+        progress=progress,
+    ).update(current="0.2.0", desktop=_desktop(events, status))
+    assert not result.updated
+    assert events == ["inspect daemon 0.2.0", "inspect web 0.2.0", ("desktop", "0.2.0", "a" * 64)]
+    assert result.heads[-1].status == status
+    assert ("need attention" in result.message) == (status != "on-disk")
+    steps = final_steps(progress)
+    assert steps["heads"][0] == "done"
+    assert steps["desktop"][0] == phase
+
+
+@pytest.mark.parametrize(("present", "eligible", "status"), [(False, True, "not-installed"), (True, False, "pending")])
+def test_desktop_is_not_started_without_a_managed_app_and_eligible_source(tmp_path, present, eligible, status):
+    events = []
+    result = UpdateService(
+        _heads_target(tmp_path, events),
+        FakeReleases("0.2.0"),
+        lifecycle=HandingOverLifecycle(events, version="0.2.0"),
+    ).update(current="0.2.0", desktop=_desktop(events, present=present, eligible=eligible))
+    assert events == []
+    assert result.heads[0].status == status
+
+
+def test_failed_service_handover_defers_desktop(tmp_path):
+    events = []
+    progress = RecordingProgress()
+    result = UpdateService(
+        _heads_target(tmp_path, events),
+        FakeReleases("0.4.0"),
+        lifecycle=HandingOverLifecycle(events, version="0.4.0", ticks=1),
+        web=_web(events, "pending"),
+        progress=progress,
+    ).update(current="0.2.0", desktop=_desktop(events))
+    assert events[-1] == "web 0.4.0"
+    assert result.heads[-1].status == "pending"
+    assert final_steps(progress)["heads"][0] == final_steps(progress)["desktop"][0] == "warn"
+
+
+@pytest.mark.parametrize("web_status", ["pending", "failed"])
+def test_noop_retry_keeps_desktop_pending_while_web_is_unverified(tmp_path, web_status):
+    events = []
+    progress = RecordingProgress()
+    result = UpdateService(
+        _heads_target(tmp_path, events),
+        FakeReleases("0.2.0"),
+        lifecycle=HandingOverLifecycle(events, version="0.2.0", ticks=1),
+        web=_web(events, web_status),
+        progress=progress,
+    ).update(current="0.2.0", desktop=_desktop(events))
+    assert not result.updated
+    assert events == ["inspect daemon 0.2.0", "inspect web 0.2.0"]
+    assert [(head.head, head.status) for head in result.heads] == [
+        ("daemon", "verified"),
+        ("web", web_status),
+        ("desktop", "pending"),
+    ]
+    assert final_steps(progress)["heads"][0] == final_steps(progress)["desktop"][0] == "warn"
+
+
+def test_noop_retry_requires_both_read_only_observers(tmp_path):
+    events = []
+    result = UpdateService(
+        _heads_target(tmp_path, events),
+        FakeReleases("0.2.0"),
+        lifecycle=HandingOverLifecycle(events, version="0.2.0", ticks=1),
+    ).update(current="0.2.0", desktop=_desktop(events))
+    assert events == ["inspect daemon 0.2.0"]
+    assert [(head.head, head.status) for head in result.heads] == [
+        ("daemon", "verified"),
+        ("web", "failed"),
+        ("desktop", "pending"),
+    ]
+
+
 def test_a_failed_update_marks_the_step_that_failed(tmp_path):
     uv = FakeUv("0.2.0")
     progress = RecordingProgress()
+    events = []
     service = UpdateService(
-        installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv), FakeReleases(OSError("offline")), progress=progress
+        installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv),
+        FakeReleases(OSError("offline")),
+        progress=progress,
     )
     with pytest.raises(HeinzelError):
-        service.update(current="0.2.0")
+        service.update(current="0.2.0", desktop=_desktop(events))
     steps = final_steps(progress)
     assert steps["check"][0] == "failed"
     assert steps["install"] == ("pending", None)
+    assert steps["desktop"] == ("pending", None)
+    assert not events
 
 
 def _step_events(caplog):
