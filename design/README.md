@@ -24,6 +24,21 @@ follows from it:
 
 ## Decisions
 
+- **Pane microcopy (2026-11-08).** A control in a pane, card, popover or settings row has at most one status
+  line, and the status line says state first ("Turning on...", "Off", the URL), then the one thing to do
+  ("Sign in to Tailscale, then try again."). No sentence in a pane is longer than about 60 characters
+  (`contrib.toggle.*`, `daemon.*`, `lifecycle.*`, `notify.*`, `updates.*`, `pluginsPending.*`, provider `status`
+  and `DetailLine.text`); longer content belongs in Details (a disclosure), a tooltip, the CLI `--json` `message`
+  or docs. No internal state words reach the person: not *requested, applied, verified, owning, apply, intent,
+  mapping, origin, handler, instance, readiness*; say what they see ("on", "not finished", "the link", "the port").
+  A switch shows the person's choice; readiness is the status line, never the switch's word. Text under a control
+  explains the state, never names a second place to go ("from the owning web app"); if the fix is elsewhere, the
+  button takes them there. Every pane has exactly one primary action, an icon button with tooltip and aria-label
+  for a simple action (Copy, Open) or icon+text for a verb that changes something (Restart hz); never a text link.
+  Copy from a backend `message` is never shown raw: the contract carries a short `status`/`problem` (<= 60) and the
+  long `explanation` separately, and the kernel validates the short fields. `web/src/test/copy-standards.test.ts`
+  fails a new violation;
+  an allowlist entry needs a reason in the test file.
 - **Integrated title bar (2026-11-07).** The macOS desktop app draws no native title bar: the window's top 44 px is
   one row in the sidebar colour with a hairline below, made of the sidebar's first line (traffic lights in the first
   80 px, then the navigation toggle, Home, Bell and Search), the main column's top bar and the side panel's tabs (or

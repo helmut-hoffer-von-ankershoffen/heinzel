@@ -128,7 +128,7 @@ describe("OperationDialog", () => {
   });
 
   it.each([
-    [true, "Restart requested. If the service is active, its next tick will confirm the version."],
+    [true, "Restart sent. Waiting for the daemon's next check-in."],
     [false, "The daemon was not restarted. Install it and try again."],
     [null, "The restart result is unavailable. Check the daemon status."],
   ])("reports the streamed restart outcome %s accurately", async (restarted, message) => {
@@ -267,7 +267,7 @@ describe("OperationDialog", () => {
       expect(await screen.findByText("Restarting the daemon…", { selector: "output" })).toBeInTheDocument();
       if (failure === "disconnect") await live.close();
       else await act(async () => timeout.abort(new DOMException("Timed out", "TimeoutError")));
-      expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+      expect(await screen.findByRole("alert")).toHaveTextContent("Restart unconfirmed");
       await user.click(screen.getByRole("button", { name: "Footer restart" }));
       await act(async () => startOperation(() => {}));
       const drive = {
@@ -283,7 +283,7 @@ describe("OperationDialog", () => {
       await expect(trackOperation(DAEMON_INSTALL, drive.run)).rejects.toThrow("outcome is unconfirmed");
       expect(drive.run).not.toHaveBeenCalled();
       expect(live.fetchMock).toHaveBeenCalledOnce();
-      expect(screen.getByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+      expect(screen.getByRole("alert")).toHaveTextContent("Restart unconfirmed");
       await user.click(screen.getByRole("button", { name: "Close" }));
       timer.mockRestore();
       const next = liveStream();

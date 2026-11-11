@@ -532,7 +532,7 @@ describe("PluginsSection", () => {
     const saved = JSON.stringify({ pending: { action: "remove", name: "heinzel-clock" }, phases: [] });
     sessionStorage.setItem(key, saved);
     show();
-    expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Restart unconfirmed");
     expect(sessionStorage.getItem(key)).toBe(saved);
 
     await userEvent.setup().click(screen.getByRole("button", { name: "Close" }));
@@ -1624,7 +1624,7 @@ describe("PluginGallery", () => {
       </Providers>,
     );
     await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
-    expect(screen.getByText("Private-source previews remain in their owning repository.")).toBeInTheDocument();
+    expect(screen.getByText("Private previews stay in the plugin's repository.")).toBeInTheDocument();
     expect(calls).toHaveLength(0);
     expect(container.querySelectorAll("img,iframe")).toHaveLength(0);
   });
@@ -1742,7 +1742,7 @@ it("never resolves an unknown installed source through another same-name catalog
     </Providers>,
   );
   await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
-  expect(screen.getByText(/no public GitHub source to preview/)).toBeInTheDocument();
+  expect(screen.getByText(/No public GitHub preview/)).toBeInTheDocument();
   expect(calls).toHaveLength(0);
   expect(screen.queryByRole("img")).not.toBeInTheDocument();
 });
