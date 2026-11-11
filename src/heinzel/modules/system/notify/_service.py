@@ -256,7 +256,13 @@ class NotifyService(Notifications):
         try:
             return self.store.change(now, record)
         except OSError:
-            logger.warning("can't record a notice in %s", self.store.directory, exc_info=True)
+            log_event(
+                _EVENTS,
+                "notify.store.record_failed",
+                level=logging.WARNING,
+                exc_info=True,
+                directory=str(self.store.directory),
+            )
             return None
 
     def emit_once(  # noqa: PLR0913 - the notice fields match emit
@@ -301,7 +307,13 @@ class NotifyService(Notifications):
         try:
             return self.store.change_once(now, key, record, expires=expires)
         except OSError:
-            logger.warning("can't record a durable notice in %s", self.store.directory, exc_info=True)
+            log_event(
+                _EVENTS,
+                "notify.store.record_once_failed",
+                level=logging.WARNING,
+                exc_info=True,
+                directory=str(self.store.directory),
+            )
             return False
 
     def withdraw(self, key: str) -> bool:
@@ -315,7 +327,13 @@ class NotifyService(Notifications):
         try:
             self.store.change(self._clock(), suppress)
         except OSError:
-            logger.warning("can't withdraw a notice in %s", self.store.directory, exc_info=True)
+            log_event(
+                _EVENTS,
+                "notify.store.withdraw_failed",
+                level=logging.WARNING,
+                exc_info=True,
+                directory=str(self.store.directory),
+            )
             return False
         return True
 
@@ -328,7 +346,13 @@ class NotifyService(Notifications):
         try:
             return self.store.forget_completed(self._clock(), keys)
         except OSError:
-            logger.warning("can't compact a completed durable notice in %s", self.store.directory, exc_info=True)
+            log_event(
+                _EVENTS,
+                "notify.store.compact_failed",
+                level=logging.WARNING,
+                exc_info=True,
+                directory=str(self.store.directory),
+            )
             return False
 
     def has_once(self, key: str) -> bool | None:
@@ -336,7 +360,13 @@ class NotifyService(Notifications):
         try:
             return self.store.has_once(key)
         except OSError:
-            logger.warning("can't inspect a durable notice in %s", self.store.directory, exc_info=True)
+            log_event(
+                _EVENTS,
+                "notify.store.inspect_failed",
+                level=logging.WARNING,
+                exc_info=True,
+                directory=str(self.store.directory),
+            )
             return None
 
     # What heads call -------------------------------------------------------------------------------------------------
@@ -400,7 +430,13 @@ class NotifyService(Notifications):
         try:
             resolved = self.store.change(now, mark)
         except OSError:
-            logger.warning("can't resolve notices in %s", self.store.directory, exc_info=True)
+            log_event(
+                _EVENTS,
+                "notify.store.resolve_failed",
+                level=logging.WARNING,
+                exc_info=True,
+                directory=str(self.store.directory),
+            )
             return 0
         for notice_id in marked:
             log_event(
@@ -576,13 +612,19 @@ class NotifyService(Notifications):
             if install:  # missing or an older build: put the bundled one in place, no command to type
                 installed = notifier.app.ensure()
                 if installed.state in {"outdated", "missing"} and installed.detail:
-                    logger.warning("Heinzel Notifier is %s: %s", installed.state, installed.detail)
+                    log_event(
+                        _EVENTS,
+                        "notify.notifier.install_incomplete",
+                        level=logging.WARNING,
+                        state=installed.state,
+                        detail=installed.detail,
+                    )
             ended = notifier.app.clean()
         except Exception:
             logger.exception("looking after Heinzel Notifier failed")
             return
         if ended:
-            logger.warning("ended %d leftover Heinzel Notifier process(es)", ended)
+            log_event(_EVENTS, "notify.notifier.ended_leftovers", level=logging.WARNING, count=ended)
         self._forget_stray_copies(notifier.app)
 
     def _forget_stray_copies(self, app: NotifierApp) -> int:
@@ -605,7 +647,7 @@ class NotifyService(Notifications):
             logger.exception("making macOS forget stray Heinzel Notifier copies failed")
             return 0
         if forgotten:
-            logger.warning("macOS forgot %d stray Heinzel Notifier cop(ies)", forgotten)
+            log_event(_EVENTS, "notify.notifier.forgot_strays", level=logging.WARNING, count=forgotten)
         return forgotten
 
     def recover(self, *, apply: bool) -> Recovered:
