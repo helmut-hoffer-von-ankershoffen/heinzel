@@ -2,8 +2,9 @@ import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AboutDialog, detailsText } from "./AboutDialog";
 import { requestMenuAction } from "./menu";
@@ -35,7 +36,9 @@ vi.mock("@/api/queries", () => ({ useInfo: () => ({ data: current, isError: fals
 const show = () =>
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <AboutDialog />
+      <StrictMode>
+        <AboutDialog />
+      </StrictMode>
     </QueryClientProvider>,
   );
 
@@ -105,6 +108,75 @@ describe("About dialog", () => {
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining("plugin heinzel-a 0.4.0 PyPI"));
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("contains forward and backward keyboard focus and restores its opener on Escape", async () => {
+    const user = userEvent.setup();
+    const opener = document.createElement("button");
+    opener.textContent = "Open About";
+    document.body.prepend(opener);
+    const showModal = vi.spyOn(HTMLDialogElement.prototype, "showModal");
+    try {
+      show();
+      opener.focus();
+      act(() => requestMenuAction("about"));
+      const dialog = screen.getByRole("dialog", { name: "Heinzelmännchen" });
+      expect(showModal).toHaveBeenCalledOnce();
+      expect(dialog).toHaveAttribute("open");
+      const close = within(dialog).getByRole("button", { name: "Close" });
+      expect(close).toHaveFocus();
+      await user.tab();
+      expect(within(dialog).getByRole("button", { name: "Copy details" })).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(close).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(within(dialog).getByRole("link", { name: "Source repository" })).toHaveFocus();
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(opener).toHaveFocus();
+    } finally {
+      opener.remove();
+    }
+  });
+
+  it("skips unavailable controls and restores focus after native cancellation", async () => {
+    const user = userEvent.setup();
+    current = null;
+    const opener = document.createElement("button");
+    document.body.prepend(opener);
+    try {
+      show();
+      opener.focus();
+      act(() => requestMenuAction("about"));
+      const dialog = screen.getByRole("dialog");
+      expect(within(dialog).getByRole("button", { name: "Copy details" })).toBeDisabled();
+      await user.tab();
+      expect(within(dialog).getByRole("link", { name: "Source repository" })).toHaveFocus();
+      fireEvent(dialog, new Event("cancel", { bubbles: false, cancelable: true }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(opener).toHaveFocus();
+    } finally {
+      opener.remove();
+    }
+  });
+
+  it("restores connected focus on unmount and leaves existing background inertness intact", () => {
+    const opener = document.createElement("button");
+    const background = document.createElement("section");
+    background.setAttribute("inert", "");
+    document.body.prepend(opener, background);
+    try {
+      const mounted = show();
+      opener.focus();
+      act(() => requestMenuAction("about"));
+      expect(background).toHaveAttribute("inert");
+      mounted.unmount();
+      expect(opener).toHaveFocus();
+      expect(background).toHaveAttribute("inert");
+    } finally {
+      opener.remove();
+      background.remove();
+    }
   });
 
   it("shows versions with their dates, a first-party chip, and nothing for an unknown date", () => {

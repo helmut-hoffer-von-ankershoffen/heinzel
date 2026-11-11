@@ -1,7 +1,7 @@
 // About Heinzelmännchen: what is installed, in one dialog, opened from the footer version or the desktop app menu.
 import { useQuery } from "@tanstack/react-query";
 import { Copy, ExternalLink, FileText, X } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useInfo } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
@@ -64,6 +64,9 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 /** Mounted once; opens on the `about` menu action and copies the details on `copy`. */
 export function AboutDialog() {
   const [open, setOpen] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
   const info = useInfo();
   const desktop = useDesktop(true);
   const [copied, setCopied] = useState(false);
@@ -72,11 +75,25 @@ export function AboutDialog() {
   useEffect(
     () =>
       onMenuAction(["about", "copy"], (action) => {
-        if (action === "about") setOpen(true);
-        else if (details) void navigator.clipboard.writeText(details);
+        if (action === "about") {
+          if (!dialog.current) {
+            returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            setOpen(true);
+          }
+        } else if (details) void navigator.clipboard.writeText(details);
       }),
     [details],
   );
+  useLayoutEffect(() => {
+    const element = dialog.current;
+    if (!open || !element) return;
+    element.showModal();
+    closeButton.current?.focus();
+    return () => {
+      element.close();
+      if (returnFocus.current?.isConnected) returnFocus.current.focus();
+    };
+  }, [open]);
   if (!open) return null;
   const close = () => setOpen(false);
   const copy = async () => {
@@ -87,20 +104,40 @@ export function AboutDialog() {
   };
   const data = info.data;
   return createPortal(
-    // biome-ignore lint/a11y/noStaticElementInteractions: a click on the backdrop closes it; Escape and the close button do for keyboards
-    <div
-      className="viewport-overlay fixed z-(--layer-modal) flex items-center justify-center bg-black/50 p-4"
-      onMouseDown={close}
+    <dialog
+      ref={dialog}
+      data-hz-about-dialog=""
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="viewport-overlay fixed z-(--layer-modal) m-0 flex max-h-none max-w-none items-center justify-center border-0 bg-transparent p-4 text-foreground backdrop:bg-black/50"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) close();
+      }}
+      onCancel={(event) => {
+        event.preventDefault();
+        close();
+      }}
+      onClose={close}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          close();
+        }
+        if (event.key !== "Tab") return;
+        const controls = event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled), a[href]");
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }}
     >
-      <div
-        role="dialog"
-        data-hz-about-dialog=""
-        aria-modal="true"
-        aria-labelledby={titleId}
-        onKeyDown={(event) => event.key === "Escape" && close()}
-        onMouseDown={(event) => event.stopPropagation()}
-        className="flex max-h-full w-[min(32rem,100%)] flex-col overflow-hidden rounded-xl border border-border bg-popover text-sm shadow-2xl"
-      >
+      {/* The native modal makes the background inert; this panel stops backdrop clicks. */}
+      <div className="flex max-h-full w-[min(32rem,100%)] flex-col overflow-hidden rounded-xl border border-border bg-popover text-sm shadow-2xl">
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           <header className="flex items-center gap-3">
             <HeinzelAvatar view="head" label={t("app.name")} className="size-12" />
@@ -186,13 +223,13 @@ export function AboutDialog() {
             <PaneAction key="repository" icon={ExternalLink} href={REPOSITORY}>
               {t("about.repository")}
             </PaneAction>
-            <PaneAction key="close" icon={X} className="ml-auto" onClick={close} autoFocus>
+            <PaneAction key="close" ref={closeButton} icon={X} className="ml-auto" onClick={close} autoFocus>
               {t("op.close")}
             </PaneAction>
           </PaneActions>
         </footer>
       </div>
-    </div>,
+    </dialog>,
     document.body,
   );
 }
