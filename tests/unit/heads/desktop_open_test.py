@@ -280,3 +280,11 @@ def test_doctor_reports_failure_in_json_without_claiming_installed(monkeypatch):
     assert _exit_code(lambda: _app._doctor(output, error, fix=False, as_json=True)) == 1
     assert '"installed": null' in out.getvalue()
     assert "fictional doctor failure" in err.getvalue()
+
+
+def test_doctor_reports_absent_install_in_json_and_exits_nonzero(monkeypatch):
+    monkeypatch.setattr(desktop, "doctor_desktop", lambda **_kwargs: (None, []))
+    output, error, out, err = _consoles()
+    assert _exit_code(lambda: _app._doctor(output, error, fix=False, as_json=True)) == 1
+    assert '"installed": false' in out.getvalue()
+    assert say.NOT_INSTALLED_FOR_DOCTOR in err.getvalue()
