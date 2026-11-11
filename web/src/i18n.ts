@@ -1256,7 +1256,7 @@ const en = {
   "autoUpdate.reconnect": "This window reconnects by itself when hz is back.",
   "autoUpdate.ok": "OK",
   "autoUpdate.setting": "Automatic updates",
-  "autoUpdate.byHand": "Manual updates: {plugins}",
+  "autoUpdate.byHand": "Not updated automatically, update by hand: {plugins}",
   "calendar.title": "Calendar",
   "calendar.close": "Close calendar",
   "calendar.agenda": "Agenda",
