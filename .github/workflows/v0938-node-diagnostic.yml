@@ -1,0 +1,94 @@
+name: v0.9.38 preload fixture diagnostic
+
+on:
+  push:
+    branches: [validation/v0938-node-24ea]
+
+permissions:
+  contents: read
+
+jobs:
+  node-fixture:
+    name: Node preload fixture diagnostic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind transport and fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture=24ea6df215c023c1cb16d4bdf8e071f64025b0cc
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_REF" = refs/heads/validation/v0938-node-24ea
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse "$fixture^{tree}")" = 7b9bedcbe043cb0f96952008258e389c04026525
+          test "$(git diff --name-only "$fixture" HEAD)" = .github/workflows/v0938-node-diagnostic.yml
+          test -z "$(git status --porcelain)"
+          sha256sum -c <<'CHECKSUMS'
+          93c2b6644ed0fcfd60ee9a3c287af2b5701441392a9a535050715b44f33ffd55  desktop/test/window-options.test.js
+          2ed25ea18c6cc83ae5ba6f40f1c619f87306925919d29755ea908a86e2833979  desktop/src/preload.cjs
+          37fad92f95883f93c0b1041bd893f1605aa88fc61c36c39150d05e59ad1c1f28  desktop/src/window-options.js
+          4cfa43ef0fa276d0765ea985bbbb22d7437e962c481adafd1c860ae315bc8776  desktop/src/main.js
+          6689c83d471574940c8486f69c15661e19304fbe3504d9c5af060f14019d3cef  desktop/package.json
+          CHECKSUMS
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.19.0
+      - name: Run exact Node fixture
+        id: node
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = v24.19.0
+          binary="$(command -v node)"
+          out="$RUNNER_TEMP/v0938-node-diagnostic"
+          mkdir -m 700 "$out" "$out/home" "$out/tmp"
+          {
+            printf 'transport=%s\nfixture=%s\ntree=%s\n' "$GITHUB_SHA" 24ea6df215c023c1cb16d4bdf8e071f64025b0cc 7b9bedcbe043cb0f96952008258e389c04026525
+            node --version
+            sha256sum "$binary" desktop/test/window-options.test.js desktop/src/preload.cjs desktop/src/window-options.js desktop/src/main.js desktop/package.json
+          } > "$out/identity.txt"
+          if env -i PATH="$(dirname "$binary"):/usr/bin:/bin" HOME="$out/home" TMPDIR="$out/tmp" \
+            "$binary" --test --test-timeout=45000 --test-reporter=junit \
+            --test-reporter-destination="$out/junit.xml" desktop/test/window-options.test.js; then
+            code=0
+          else
+            code=$?
+          fi
+          printf '%s\n' "$code" > "$out/node.exit"
+          if [ -f "$out/junit.xml" ] && [ "$(wc -c < "$out/junit.xml")" -gt 1048576 ]; then
+            rm "$out/junit.xml"
+            printf 'JUnit exceeded the 1 MiB bound\n' > "$out/junit.omitted"
+            if [ "$code" -eq 0 ]; then exit 1; fi
+          fi
+          if [ "$code" -ne 0 ]; then exit "$code"; fi
+          git diff --quiet HEAD -- desktop/test/window-options.test.js desktop/src/preload.cjs desktop/src/window-options.js desktop/src/main.js desktop/package.json
+          test -f "$out/junit.xml"
+          python3 - "$out/junit.xml" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          data = open(sys.argv[1], 'rb').read()
+          assert data and b'<!DOCTYPE' not in data.upper() and b'<!ENTITY' not in data.upper()
+          cases = list(ET.fromstring(data).iter('testcase'))
+          assert len(cases) == 5
+          assert len({(c.get('classname'), c.get('name')) for c in cases}) == 5
+          assert all(c.get('classname') and c.get('name') for c in cases)
+          assert not any(e.tag in {'failure', 'error', 'skipped'} for c in cases for e in c)
+          PY
+          exit "$code"
+      - name: Upload bounded diagnostic evidence
+        if: ${{ always() && steps.node.outcome != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: v0938-node-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/v0938-node-diagnostic/identity.txt
+            ${{ runner.temp }}/v0938-node-diagnostic/node.exit
+            ${{ runner.temp }}/v0938-node-diagnostic/junit.xml
+            ${{ runner.temp }}/v0938-node-diagnostic/junit.omitted
+          if-no-files-found: error
+          retention-days: 3
