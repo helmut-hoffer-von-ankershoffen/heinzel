@@ -1860,20 +1860,63 @@ def ui_open_plugins(browser, case, *, deadline=None):
     )
 
 
-def ui_apply(browser, what, expected):
-    """Confirm the change, then verify its row in the restarted page within the original 360-second budget."""
-    browser.click("button", "Restart and apply")
-    browser.wait(browser.exists("button", "Restart and apply Plugins"), f"the restart confirmation of {what}", 30)
+def plugin_dialog(action, stage):
+    """Locate the genuine operation dialog, bound to this plugin action and stage."""
+    return f'[role="dialog"][data-operation="/system/plugin/{action}"][data-stage="{stage}"]'
+
+
+def plugin_preview(browser, action, name, timeout):
+    """Read the one confirmation, including code/removal and restart consent, before any write."""
+    selector = plugin_dialog(action, "confirm")
+    text = browser.wait(
+        f"document.querySelector({json.dumps(selector)})?.innerText",
+        f"the {action} preview of {name}",
+        timeout,
+    )
+    title = f"Install {name}" if action == "add" else f"Remove {name}?"
+    consent = (
+        "Runs as code on this computer with your permissions."
+        if action == "add"
+        else "Its modules stop and its files are deleted."
+    )
+    for fragment in [title, consent, "hz restarts and this page reloads itself."]:
+        check(fragment in text, f"The {action} preview lacks {fragment!r}: {redact(text)[-500:]!r}")
+    if action == "add":
+        check("Your open work is preserved." in text, "The install preview does not promise to preserve open work")
+    check(browser.present(f"{selector} button", "Cancel"), "The plugin confirmation has no Cancel action")
+    check(
+        browser.present(f"{selector} button", "Install" if action == "add" else "Remove"),
+        "The plugin confirmation has no matching action",
+    )
+    return text
+
+
+def ui_apply(browser, what, expected, *, action="add"):
+    """Confirm once, observe reload and successful verification, then check the row in the same 360-second budget."""
     deadline = time.monotonic() + 360
-    # The old document can briefly show the installed version before reload closes Settings.
+    # The old document can show a matching row; neither it nor an unfinished/failed dialog proves the change.
     browser.evaluate("window.__hzAcceptancePluginRestart = true")
-    browser.click("button", "Restart and apply Plugins", timeout=ui_remaining(deadline, 60))
+    selector = plugin_dialog(action, "confirm")
+    browser.click(f"{selector} button", "Install" if action == "add" else "Remove", timeout=ui_remaining(deadline, 60))
     browser.wait(
         "window.__hzAcceptancePluginRestart === undefined&&" + ("!!" + account_trigger(browser)),
         f"the new document after {what}",
         ui_remaining(deadline, 360),
     )
-    ui_open_plugins(browser, None, deadline=deadline)
+    # The final check resumes when Plugins mounts. The URL normally retains Settings; a restored workspace can close it.
+    if not browser.evaluate("new URLSearchParams(location.search).has('settings')"):
+        ui_open_plugins(browser, None, deadline=deadline)
+    done, failed = plugin_dialog(action, "done"), plugin_dialog(action, "failed")
+    browser.wait(
+        f"!!(document.querySelector({json.dumps(done)})||document.querySelector({json.dumps(failed)}))",
+        f"the verified outcome of {what}",
+        ui_remaining(deadline, 360),
+    )
+    problem = browser.evaluate(f"document.querySelector({json.dumps(failed)})?.innerText")
+    check(not problem, f"The plugin change failed: {redact(problem or '')[-500:]}")
+    browser.click(f"{done} button", "Done", timeout=ui_remaining(deadline, 60))
+    if not browser.evaluate("document.body.innerText.includes('Installed on this machine')"):
+        ui_open_plugins(browser, None, deadline=deadline)
     browser.wait(expected, f"the row after {what}", ui_remaining(deadline, 360))
 
 
@@ -1907,14 +1950,15 @@ def ui_settle(browser, case):
 
 def ui_add(browser, case, spec, shot, expect_detail):
     ui_settle(browser, case)
+    before = plugin_map(case, f"{shot}-before-preview")
     if not browser.evaluate("!!document.querySelector(\"input[placeholder*='git+https']\")"):
         browser.click("button", "Add")
     browser.type_into("input[placeholder*='git+https']", spec)
     browser.press("Enter", "Enter", 13)
-    browser.wait("document.body.innerText.includes('Install this plugin?')", f"the preview of {spec}", 90)
-    text = browser.evaluate("document.body.innerText")
+    text = plugin_preview(browser, "add", expect_detail[0], 90)
     for fragment in expect_detail:
         check(fragment in text, f"The preview of {spec} lacks {fragment!r}; the page says: {redact(text)[-500:]!r}")
+    check(plugin_map(case, f"{shot}-after-preview") == before, "Preview changed the installed plugin inventory")
     browser.shot(shot)
     return text
 
@@ -2007,9 +2051,14 @@ def case_plugin_ui(case):
         browser = holder["browser"]
         ui_settle(browser, case)
         browser.click("button", "Remove heinzel-example")
-        browser.wait("document.body.innerText.includes('Remove heinzel-example?')", "the removal question", 30)
+        plugin_preview(browser, "remove", "heinzel-example", 30)
         browser.shot("06-remove-ask")
-        ui_apply(browser, "the removal", "!document.querySelector(\"button[aria-label='Remove heinzel-example']\")")
+        ui_apply(
+            browser,
+            "the removal",
+            "!document.querySelector(\"button[aria-label='Remove heinzel-example']\")",
+            action="remove",
+        )
         expect_plugins(case, heinzel_example=None)
         check("heinzel-example" not in plugin_map(case, "plugins-after-ui-remove"), "The CLI still has the plugin")
         return {"screenshot": browser.shot("07-removed"), "isolated_server": server_state("after-remove")}
