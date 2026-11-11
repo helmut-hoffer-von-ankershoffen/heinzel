@@ -12,24 +12,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Start source-bound evidence
-        shell: bash
-        run: |
-          mkdir -p "$RUNNER_TEMP/h17g"
-          printf 'RUN_ID=%s ATTEMPT=%s WORKFLOW_SHA=%s IMAGE_OS=%s IMAGE_VERSION=%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_WORKFLOW_SHA" "${ImageOS:-unknown}" "${ImageVersion:-unknown}" > "$RUNNER_TEMP/h17g/bootstrap.log"
-      # Diagnostic workflow/source runs only on its exact push ref.
+      # The exact committed push ref supplies only this diagnostic, never candidate code.
       - name: Checkout diagnostic ref
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Pin and save reviewed probe
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s  %s\n' '04a00c271ca3a3e5e5fe1853fe34b0448e8a161f2debb4f6e976832a0ea9f4d7' 'diagnostics/h17g/probe.sh' | sha256sum -c -
-          cp diagnostics/h17g/probe.sh "$RUNNER_TEMP/h17g-probe.sh"
-          sha256sum diagnostics/h17g/probe.sh .github/workflows/h17g-diagnostic.yml >> "$RUNNER_TEMP/h17g/bootstrap.log"
+      - name: Pin probe and preserve bootstrap
+        run: make -f diagnostics/h17g/diagnostic.mk pin
       - name: Checkout immutable candidate source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -37,12 +27,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Verify candidate source before setup
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = 700d2d634062b41c6336ad2774ec53a4b385b25b
-          printf 'CANDIDATE=%s\n' "$(git rev-parse HEAD)" >> "$RUNNER_TEMP/h17g/bootstrap.log"
-          sha256sum .github/workflows/ci.yml scripts/web_build.py Makefile uv.lock web/pnpm-lock.yaml >> "$RUNNER_TEMP/h17g/bootstrap.log"
+        run: make -f "$RUNNER_TEMP/h17g.mk" verify
       - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
@@ -58,7 +43,7 @@ jobs:
         shell: bash
         env:
           CACHE_HIT: ${{ steps.browser-cache.outputs.cache-hit }}
-        run: bash "$RUNNER_TEMP/h17g-probe.sh"
+        run: make -f "$RUNNER_TEMP/h17g.mk" probe
       - name: Preserve diagnostic logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
