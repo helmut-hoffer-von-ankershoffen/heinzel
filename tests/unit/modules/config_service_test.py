@@ -178,6 +178,64 @@ def test_transactional_updates_preserve_independent_concurrent_choices(make_kern
     assert tomllib.loads(paths[0].read_text(encoding="utf-8"))["tables"]["limits"] == {"first": 1, "second": 1}
 
 
+def test_transaction_validates_and_persists_in_place_changes(make_kernel, tmp_path, monkeypatch):
+    class Tables(ModuleSettings):
+        """A shared mutable setting."""
+
+        limits: dict[str, int] = Field(default_factory=dict)
+
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    module = Module("tables", "x")
+    module.settings(Tables)
+    service = ConfigService(make_kernel(tables=module))
+    path = service.write("tables.limits", {"first": 1})
+
+    def add(current):
+        current["second"] = 2
+        return current
+
+    service.update("tables.limits", add)
+    original = path.read_bytes()
+    assert tomllib.loads(original.decode())["tables"]["limits"] == {"first": 1, "second": 2}
+
+    def invalid(current):
+        current["bad"] = "invalid"
+        return current
+
+    with pytest.raises(HeinzelError, match="Invalid value"):
+        service.update("tables.limits", invalid)
+    assert path.read_bytes() == original
+
+    def fail(current):
+        current["first"] = 9
+        msg = "stop"
+        raise RuntimeError(msg)
+
+    with pytest.raises(RuntimeError, match="stop"):
+        service.update("tables.limits", fail)
+    assert path.read_bytes() == original
+    service.write("tables.limits", {"after": 3})  # the lock was released
+    assert tomllib.loads(path.read_text(encoding="utf-8"))["tables"]["limits"] == {"after": 3}
+
+
+def test_transaction_validates_unchanged_existing_values(make_kernel, tmp_path, monkeypatch):
+    class Tables(ModuleSettings):
+        """A shared mutable setting."""
+
+        limits: dict[str, int] = Field(default_factory=dict)
+
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    module = Module("tables", "x")
+    module.settings(Tables)
+    service = ConfigService(make_kernel(tables=module))
+    path = tmp_path / "config.toml"
+    path.write_text('[tables.limits]\ninvalid = "not a number"\n', encoding="utf-8")
+    original = path.read_bytes()
+    with pytest.raises(HeinzelError, match="Invalid value"):
+        service.update("tables.limits", lambda current: current)
+    assert path.read_bytes() == original
+
+
 def test_write_drops_none_and_refuses_it_alone(kernel, tmp_path, monkeypatch):
     monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
     service = ConfigService(kernel)

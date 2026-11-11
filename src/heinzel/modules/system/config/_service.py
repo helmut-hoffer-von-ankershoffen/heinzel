@@ -222,9 +222,7 @@ class ConfigService(ConfigEditor):
             path = self._scope_file(scope)
             stored = _table(_load(path), section).unwrap().get(name, {})
             updated = transform(stored)
-            if updated != stored:
-                return self._write(key, updated, scope)
-            return path
+            return self._write(key, updated, scope, skip_unchanged=True)
 
     def change_list(
         self,
@@ -267,7 +265,7 @@ class ConfigService(ConfigEditor):
                 removed=frozenset(ordered) - frozenset(changed),
             )
 
-    def _write(self, key: str, value: object, scope: Scope = "user") -> Path:
+    def _write(self, key: str, value: object, scope: Scope = "user", *, skip_unchanged: bool = False) -> Path:
         """Validate a value (JSON-compatible, or a pydantic model) for the setting `key` and write it to the file.
 
         What setup steps call through `ConfigEditor` (ADR 0032); `set` parses text and calls this.
@@ -297,7 +295,10 @@ class ConfigService(ConfigEditor):
             raise HeinzelError(msg) from exc
         path = self._scope_file(scope)
         document = _load(path)
-        _table(document, section)[name] = parsed
+        table = _table(document, section)
+        if skip_unchanged and table.unwrap().get(name, {}) == parsed:
+            return path
+        table[name] = parsed
         _save(path, document)
         return path
 
