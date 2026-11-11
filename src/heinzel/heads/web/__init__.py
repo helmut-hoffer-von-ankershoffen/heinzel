@@ -253,8 +253,8 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     )
     app.state.lifecycle = endpoints.state.lifecycle
     add_pairing(endpoints, paired)
-    add_updates(endpoints, kernel, static, restartable=restart is not None)
     app.state.auto_update = AutoUpdater(kernel, restart=restart, activity=activity)
+    add_updates(endpoints, kernel, static, restartable=restart is not None, busy=app.state.auto_update.busy)
     add_auto_update(endpoints, app.state.auto_update)
     add_stream(endpoints, kernel, stopping)  # behind the same middleware: Host, Origin and the token
 

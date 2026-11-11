@@ -14,6 +14,7 @@ beforeEach(() => {
   vi.mocked(startUpdate).mockClear();
   vi.mocked(loadInstalledCore).mockClear();
   document.body.innerHTML = "";
+  localStorage.clear();
 });
 // The installation holds 0.2.0 while this server still runs 0.1.0: a restart was missed.
 const status = {
@@ -24,6 +25,7 @@ const status = {
   supported: true,
   reason: null,
   installed: "0.2.0",
+  idle: true,
 };
 
 it("loads an installed but not running core by itself once, without installing", async () => {
@@ -49,4 +51,35 @@ it("waits while work is open and offers loading it by hand instead of a refused 
   await userEvent.setup().click(screen.getByRole("button", { name: "Load Heinzel 0.2.0" }));
   expect(loadInstalledCore).toHaveBeenCalledTimes(1);
   expect(startUpdate).not.toHaveBeenCalled();
+});
+
+it("starts within the 2 s wait once the open work closes", async () => {
+  const open = document.createElement("div");
+  open.setAttribute("role", "alertdialog");
+  document.body.append(open);
+  mockApi({ ...shell, "/api/update-status": status });
+  renderAt("/");
+  await screen.findByRole("button", { name: /Updates available/ });
+  expect(loadInstalledCore).not.toHaveBeenCalled();
+  open.remove();
+  await waitFor(() => expect(loadInstalledCore).toHaveBeenCalledTimes(1), { timeout: 3_500 });
+});
+
+it("does not restart on its own while the server is busy, but loading by hand stays available", async () => {
+  mockApi({ ...shell, "/api/update-status": { ...status, idle: false } });
+  renderAt("/");
+  await userEvent.setup().click(await screen.findByRole("button", { name: /Updates available/ }));
+  expect(await screen.findByText("It restarts by itself once nothing is open or running here.")).toBeInTheDocument();
+  expect(loadInstalledCore).not.toHaveBeenCalled();
+  await userEvent.setup().click(screen.getByRole("button", { name: "Load Heinzel 0.2.0" }));
+  expect(loadInstalledCore).toHaveBeenCalledTimes(1);
+});
+
+it("does not restart on its own again after another window already tried this version", async () => {
+  localStorage.setItem("hz.update.autoLoaded", "0.2.0");
+  mockApi({ ...shell, "/api/update-status": status });
+  renderAt("/");
+  await screen.findByRole("button", { name: /Updates available/ });
+  await new Promise((resolve) => setTimeout(resolve, 2_300));
+  expect(loadInstalledCore).not.toHaveBeenCalled();
 });

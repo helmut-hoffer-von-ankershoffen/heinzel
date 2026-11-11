@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import stat
+from collections.abc import Callable
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from importlib import metadata
@@ -61,6 +62,11 @@ class UpdateStatus(BaseModel):
         default=None,
         description="The core version the installation holds when it differs from the one this server loaded, so a "
         "verified restart of this server loads it; None when they match or the installation can't be verified.",
+    )
+    idle: bool = Field(
+        default=True,
+        description="Whether no chat answer, install or daemon job runs now, the same check automatic updates wait "
+        "for; the app restarts on its own only while idle.",
     )
 
 
@@ -177,7 +183,14 @@ def _installed_core(installation: Installation) -> str | None:
     return installed if differs else None
 
 
-def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartable: bool) -> None:
+def add_updates(
+    app: FastAPI,
+    kernel: Kernel,
+    static: Path | None,
+    *,
+    restartable: bool,
+    busy: Callable[[], bool] = lambda: False,
+) -> None:
     """Expose only authenticated transport facts; never refresh releases or run the updater during a read."""
     frontend = _frontend(static)
     installation = kernel.resolve(Installation)
@@ -215,6 +228,7 @@ def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartabl
             check_failed=enabled and cache.error is not None,
             reason=reason,
             installed=_installed_core(installation) if restartable else None,
+            idle=not busy(),
         )
 
     @app.get("/frontend", tags=["web"])

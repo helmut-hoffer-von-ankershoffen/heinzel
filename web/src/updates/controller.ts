@@ -4,6 +4,7 @@ import { token } from "@/api/token";
 import { mergePhase, type Phase, type PhaseState, parsePhase } from "@/lib/operationRun";
 import { compareCodeUnits } from "@/lib/sort";
 import {
+  type ApplyOptions,
   clearOwnedShellCaches,
   type Lifecycle,
   type LifecycleTransport,
@@ -27,10 +28,14 @@ export type UpdateStatus = {
   reason: string | null;
   /** The core the installation holds when it differs from the one this server loaded; older servers omit it. */
   installed?: string | null;
+  /** Whether no chat answer, install or daemon job runs on the server now; older servers omit it. */
+  idle?: boolean;
 };
 export type Frontend = { version: string; identity: string; entrypoints: string[]; files: Record<string, string> };
 type Receipt = {
   stage: "uncertain" | "installed" | "reloading";
+  /** Loading an already installed core: nothing was installed, so an unverifiable attempt can be dropped. */
+  load?: boolean;
   result?: SchemaUpdateResult;
   running?: Lifecycle;
   frontend?: Frontend;
@@ -143,6 +148,7 @@ function save(receipt: Receipt): void {
 
 export function pendingUpdate(): Receipt | null {
   const text = sessionStorage.getItem(KEY);
+  if (text && dropUnverifiableLoad(text)) return null;
   if (!text) return null;
   try {
     const value = JSON.parse(text) as Receipt;
@@ -151,6 +157,21 @@ export function pendingUpdate(): Receipt | null {
   } catch {
     throw new Error("Saved update recovery data is invalid; inspect the installation before another update.");
   }
+}
+
+/**
+ * A load attempt that did not reach a verified replacement (refused, wrong version, timed out, or the tab reloaded
+ * while it was being observed) installed nothing, so it leaves no recovery to inspect: drop it and offer loading again.
+ */
+function dropUnverifiableLoad(text: string): boolean {
+  try {
+    const receipt = JSON.parse(text) as Receipt;
+    if (receipt.load !== true || canVerifyUpdate(receipt)) return false;
+  } catch {
+    return false;
+  }
+  sessionStorage.removeItem(KEY);
+  return true;
 }
 
 async function bounded<T>(run: (signal: AbortSignal) => Promise<T>, owner: AbortSignal, timeout: number): Promise<T> {
@@ -264,6 +285,8 @@ export async function loadInstalledCore(
   onPhase: (phase: string) => void = () => {},
   transport = updateTransport,
   onSteps: (phases: Phase[]) => void = () => {},
+  /** Restart timing; the defaults are the lifecycle controller's. */
+  timing: Pick<ApplyOptions, "timeout" | "interval" | "staleAfter" | "requestTimeout" | "readinessTimeout"> = {},
 ): Promise<string> {
   if (pendingUpdate()) throw new Error("An update needs verification; installation will not be repeated.");
   if (!installed.trim()) throw new Error("The installed version is unknown; inspect the installation.");
@@ -289,14 +312,20 @@ export async function loadInstalledCore(
     // nothing to verify. After it, the outcome is observed, never replayed.
     const running = await restartAndApply(
       { confirmed: true, version: installed },
-      { signal, transport: transport.lifecycle, onObservation: () => save({ stage: "installed", result }) },
+      {
+        ...timing,
+        signal,
+        transport: transport.lifecycle,
+        onObservation: () => save({ stage: "installed", load: true, result }),
+      },
     );
     steps.mark("restart", "done");
-    save({ stage: "installed", result, running });
-    return await reloadVerifiedUpdate(result, running, signal, transport, onPhase, steps);
+    save({ stage: "installed", load: true, result, running });
+    return await reloadVerifiedUpdate(result, running, signal, transport, onPhase, steps, true);
   } catch (error) {
-    // The old server kept answering past its grace: it never restarted, so loading again later is safe.
-    if (error instanceof RestartApplyError && error.kind === "stale") sessionStorage.removeItem(KEY);
+    // Stale (never restarted), refused, wrong version or timed out: nothing was installed and no verified
+    // replacement exists, so leave no receipt to inspect; loading again stays available.
+    if (error instanceof RestartApplyError) sessionStorage.removeItem(KEY);
     steps.failed(error);
     throw error;
   }
@@ -309,6 +338,7 @@ async function reloadVerifiedUpdate(
   transport: UpdateTransport,
   onPhase: (phase: string) => void = () => {},
   steps?: UpdateSteps,
+  load?: boolean,
 ): Promise<string> {
   steps?.mark("frontend", "running");
   const frontend = await bounded((signal) => transport.frontend(signal), signal, 4_000);
@@ -318,7 +348,7 @@ async function reloadVerifiedUpdate(
   await bounded(() => transport.clean(), signal, 15_000);
   steps?.mark("frontend", "done");
   preserveUpdateWork();
-  save({ stage: "reloading", result, running, frontend });
+  save({ stage: "reloading", ...(load ? { load } : {}), result, running, frontend });
   steps?.mark("reload", "running");
   transport.reload();
   return "Reloading to verify the updated app…";
@@ -356,7 +386,8 @@ export async function finishUpdate(signal: AbortSignal, transport = updateTransp
   const running = await bounded((signal) => transport.lifecycle.read(signal), signal, 4_000);
   if (running.instance !== expected.instance || running.version !== result.after)
     throw new Error("The reloaded app is not connected to the verified replacement version.");
-  if (receipt.stage === "installed") return reloadVerifiedUpdate(result, running, signal, transport);
+  if (receipt.stage === "installed")
+    return reloadVerifiedUpdate(result, running, signal, transport, undefined, undefined, receipt.load);
   const frontend = await bounded((signal) => transport.frontend(signal), signal, 4_000);
   if (frontend.version !== running.version || frontend.identity !== receipt.frontend?.identity)
     throw new Error("The frontend build changed before reload verification completed.");

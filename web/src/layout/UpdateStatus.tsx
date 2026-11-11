@@ -7,6 +7,7 @@ import { Progress, type ProgressSegment } from "@/components/Progress";
 import { t } from "@/i18n";
 import { type Phase, trackOperation } from "@/lib/operationRun";
 import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
+import { autoLoadInstalledCore } from "@/updates/autoLoad";
 import { checkNow, KEY, useAutoUpdateStatus } from "@/updates/autoUpdateApi";
 import {
   canVerifyUpdate,
@@ -127,30 +128,37 @@ export function UpdateStatus() {
     };
   }, [run]);
   const status = query.data;
-  // A newer core is installed but this server still runs the old one (a restart was missed): load it by itself once
-  // per version in this tab, when nothing is open or running here and no other window of this app is doing it.
+  // A newer core is installed but this server still runs the old one (a restart was missed): load it on its own once
+  // per version across windows, when the server is idle, nothing is open or running here and no other window acts.
   const installedCore = status?.installed ?? null;
-  const autoLoaded = useRef<string | null>(null);
-  const loadWaits = installedCore !== null && (reloadHeld() || workOnScreen());
+  const loadWaits = installedCore !== null && (status?.idle === false || reloadHeld() || workOnScreen());
   useEffect(() => {
-    if (!installedCore || busy || recovery !== "none" || autoLoaded.current === installedCore) return;
-    const start = () => {
-      if (reloadHeld() || workOnScreen()) return false;
-      autoLoaded.current = installedCore;
-      const load = () => run(false, installedCore);
-      if (navigator.locks) {
-        void navigator.locks.request("hz-load-installed-core", { ifAvailable: true }, async (lock) => {
-          if (lock) await load();
-        });
-      } else void load();
-      return true;
+    if (!installedCore || busy || recovery !== "none") return;
+    let attempting = false;
+    let done = false;
+    const wait = window.setInterval(() => void start(), 2_000);
+    async function start() {
+      if (attempting || done) return;
+      attempting = true;
+      try {
+        const outcome = await autoLoadInstalledCore(
+          installedCore as string,
+          (version) => run(false, version),
+          () => readUpdateStatus(new AbortController().signal),
+        );
+        done = outcome !== "held" && outcome !== "elsewhere";
+      } catch {
+        // the status could not be read: ask again with the next round
+      } finally {
+        attempting = false;
+        if (done) window.clearInterval(wait);
+      }
+    }
+    void start();
+    return () => {
+      done = true;
+      window.clearInterval(wait);
     };
-    if (start()) return;
-    // Open work holds the restart; look again shortly instead of waiting for the next status answer.
-    const wait = window.setInterval(() => {
-      if (start()) window.clearInterval(wait);
-    }, 2_000);
-    return () => window.clearInterval(wait);
   }, [installedCore, busy, recovery, run]);
   const view = describe({
     status,

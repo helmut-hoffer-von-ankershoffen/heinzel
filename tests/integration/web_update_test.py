@@ -82,6 +82,7 @@ def test_update_facts_are_authenticated_cache_only_and_keep_source_intent(make_k
         "check_failed": False,
         "reason": None,
         "installed": None,
+        "idle": True,
     }
 
 
@@ -252,3 +253,15 @@ def test_a_newer_installed_core_is_reported_only_when_verified(make_kernel, tmp_
 
 def test_a_server_that_cannot_restart_reports_no_installed_core(make_kernel, tmp_path):
     assert _installed(make_kernel, tmp_path, "999.0.0", restart=False) is None
+
+
+def test_the_status_says_when_server_work_holds_an_automatic_restart(make_kernel, tmp_path):
+    app = client(make_kernel, tmp_path, installation=Upgraded(tmp_path, "999.0.0"))
+    activity = app.app.state.auto_update._activity
+    activity.enter("POST /api/chat")
+    try:
+        held = app.get("/api/update-status", headers=AUTH).json()
+    finally:
+        activity.leave("POST /api/chat")
+    assert (held["installed"], held["idle"]) == ("999.0.0", False)
+    assert app.get("/api/update-status", headers=AUTH).json()["idle"] is True

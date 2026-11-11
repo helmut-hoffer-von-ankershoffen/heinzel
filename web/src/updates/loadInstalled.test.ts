@@ -96,3 +96,71 @@ it("never starts a second restart while a recorded one awaits verification", asy
   );
   expect(transport.lifecycle.restart).not.toHaveBeenCalled();
 });
+
+const fast = { timeout: 200, interval: 5, staleAfter: 40, requestTimeout: 50, readinessTimeout: 100 };
+
+it.each([
+  [
+    "a refused restart",
+    (transport: UpdateTransport) => {
+      transport.lifecycle.restart = vi.fn(async () => {
+        throw new Error("This server can't restart itself");
+      });
+    },
+  ],
+  [
+    "a restart into the wrong version",
+    (transport: UpdateTransport) => {
+      let restarted = false;
+      transport.lifecycle.read = vi.fn(async () => (restarted ? { ...after, version: "0.1.5" } : before));
+      transport.lifecycle.restart = vi.fn(async () => {
+        restarted = true;
+        return { restarting: true, instance: before.instance };
+      });
+    },
+  ],
+  [
+    "a restart that never answers again",
+    (transport: UpdateTransport) => {
+      let restarted = false;
+      transport.lifecycle.read = vi.fn(async () => {
+        if (restarted) throw new TypeError("Failed to fetch");
+        return before;
+      });
+      transport.lifecycle.restart = vi.fn(async () => {
+        restarted = true;
+        return { restarting: true, instance: before.instance };
+      });
+    },
+  ],
+  [
+    "an old server that keeps answering (stale)",
+    (transport: UpdateTransport) => {
+      transport.lifecycle.restart = vi.fn(async () => ({ restarting: true, instance: before.instance }));
+    },
+  ],
+])("%s leaves no receipt to inspect, so loading again stays available", async (_name, arrange) => {
+  const { transport } = setup();
+  arrange(transport);
+  await expect(
+    loadInstalledCore("0.2.0", new AbortController().signal, vi.fn(), transport, vi.fn(), fast),
+  ).rejects.toThrow();
+  expect(transport.lifecycle.restart).toHaveBeenCalledTimes(1);
+  expect(pendingUpdate()).toBeNull();
+  expect(transport.reload).not.toHaveBeenCalled();
+});
+
+it("drops a load receipt the tab reloaded away from before verification, instead of asking to inspect", () => {
+  sessionStorage.setItem(
+    "hz.update.receipt",
+    JSON.stringify({ stage: "installed", load: true, result: { updated: true, after: "0.2.0", message: "x" } }),
+  );
+  expect(pendingUpdate()).toBeNull();
+  expect(sessionStorage.getItem("hz.update.receipt")).toBeNull();
+});
+
+it("keeps an install receipt without a verified replacement for inspection", () => {
+  const receipt = JSON.stringify({ stage: "installed", result: { updated: true, after: "0.2.0", message: "x" } });
+  sessionStorage.setItem("hz.update.receipt", receipt);
+  expect(pendingUpdate()?.stage).toBe("installed");
+});
