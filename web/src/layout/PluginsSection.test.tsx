@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +19,20 @@ import { expectAccessible } from "@/test/render";
 import { CandidateDetails, ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
 
 const PINNED = `heinzel-crm @ git+https://github.com/acme-example/heinzel-crm@${"b".repeat(40)}`;
+
+// Use the acceptance harness's actual selectors against the real React dialogs, never hand-built dialog HTML.
+const acceptanceDialogs: Record<string, Record<string, string>> = JSON.parse(
+  execFileSync(
+    "python3",
+    [
+      "-I",
+      "-c",
+      "import json,runpy,sys; h=runpy.run_path(sys.argv[1]); print(json.dumps({a:{s:h['plugin_dialog'](a,s) for s in ['confirm','running','done','failed']} for a in ['add','remove']}))",
+      resolve("../scripts/acceptance/run_acceptance.py"),
+    ],
+    { encoding: "utf8", timeout: 5_000 },
+  ),
+);
 
 const installed = {
   distribution: "heinzel-clock",
@@ -990,11 +1006,16 @@ describe("PluginsSection", () => {
   });
 
   it("shows what a spec would install first, and installs the pinned requirement only on confirm", async () => {
+    let installedNow = false;
     const calls = serve((url) => {
       if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
+        if (url.searchParams.get("confirm") === "true") installedNow = true;
         return {
           body: change("add", url.searchParams.get("confirm") === "true"),
         };
+      }
+      if (url.pathname === "/api/system/plugin/list" && installedNow) {
+        return { body: [installed, { ...installed, distribution: "heinzel-crm", name: "crm", version: "1.2.0" }] };
       }
       return base(url);
     });
@@ -1002,12 +1023,15 @@ describe("PluginsSection", () => {
     const reload = vi.fn();
     // The confirmed install answers after a moment, so its running view can be read.
     confirmedStreamDelay = 300;
-    show({ reload, restartInterval: 1 });
+    const mounted = show({ reload, restartInterval: 1 });
     await user.click(screen.getByRole("button", { name: "Add" }));
     await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
     await user.click(screen.getByRole("button", { name: "Install" }));
 
     const preview = await dialog(/Install heinzel-crm/);
+    expect(document.querySelector(acceptanceDialogs.add?.confirm ?? "")).toBe(preview);
+    expect(document.querySelector(acceptanceDialogs.remove?.confirm ?? "")).toBeNull();
+    expect(document.querySelector(acceptanceDialogs.add?.done ?? "")).toBeNull();
     expectNoOldConfirmation();
     // One question: Cancel, then Install, beside the title row's Close; the dialog opens on Cancel.
     expect(
@@ -1045,6 +1069,8 @@ describe("PluginsSection", () => {
     expect(adds()).toHaveLength(1);
     await user.click(within(preview).getByRole("button", { name: "Install" }));
     const running = await dialog(/Installing heinzel-crm/);
+    expect(document.querySelector(acceptanceDialogs.add?.running ?? "")).toBe(running);
+    expect(document.querySelector(acceptanceDialogs.add?.confirm ?? "")).toBeNull();
     expect(within(running).getByText(/Step \d of 6: /)).toBeInTheDocument();
     expect(within(running).getByRole("progressbar")).toBeInTheDocument();
     const steps = within(within(running).getByRole("list", { name: /steps/i })).getAllByRole("listitem");
@@ -1073,6 +1099,15 @@ describe("PluginsSection", () => {
     const saved = JSON.parse(sessionStorage.getItem("hz.plugin-operation.v1") ?? "null");
     expect(saved?.pending?.action).toBe("add");
     expect(saved?.phases?.find((phase: { id: string }) => phase.id === "reload")?.state).toBe("running");
+    // A fresh mount, as after the document reload, must finish the stored operation without another write.
+    mounted.unmount();
+    resetOperationRun();
+    show({ reload, restartInterval: 1 });
+    const completed = await dialog(/Installed heinzel-crm/);
+    expect(document.querySelector(acceptanceDialogs.add?.done ?? "")).toBe(completed);
+    expect(document.querySelector(acceptanceDialogs.add?.failed ?? "")).toBeNull();
+    expect(adds()).toHaveLength(2);
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(1);
     await choose(user, /Installed heinzel-crm/, "Done");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expectNoOldConfirmation();
@@ -1194,8 +1229,15 @@ describe("PluginsSection", () => {
     await choose(user, /Install heinzel-crm/, "Cancel");
     await waitFor(() => expect(remove).toBeEnabled());
     await user.click(remove);
+    const removal = await dialog(/Remove heinzel-clock\?/);
+    expect(document.querySelector(acceptanceDialogs.remove?.confirm ?? "")).toBe(removal);
+    expect(document.querySelector(acceptanceDialogs.add?.confirm ?? "")).toBeNull();
+    expect(within(removal).getByText("Its modules stop and its files are deleted.")).toBeInTheDocument();
+    expect(within(removal).getByText("hz restarts and this page reloads itself.")).toBeInTheDocument();
     await choose(user, /Remove heinzel-clock\?/, "Remove");
-    await dialog(/Removed heinzel-clock/);
+    const removalDone = await dialog(/Removed heinzel-clock/);
+    expect(document.querySelector(acceptanceDialogs.remove?.done ?? "")).toBe(removalDone);
+    expect(document.querySelector(acceptanceDialogs.remove?.failed ?? "")).toBeNull();
 
     const writes = () =>
       calls

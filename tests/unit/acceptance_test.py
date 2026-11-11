@@ -627,3 +627,85 @@ def test_account_navigation_requires_real_tab_enter_and_the_bound_menu_identity(
     harness.ui_open_plugins(browser, None)
     assert browser.tabs == 2
     assert browser.opened
+
+
+@pytest.mark.parametrize("action", ["add", "remove"])
+def test_plugin_preview_requires_action_bound_consent_and_cancel_before_writing(action):
+    title = "Install heinzel-example" if action == "add" else "Remove heinzel-example?"
+    permission = (
+        "Runs as code on this computer with your permissions."
+        if action == "add"
+        else "Its modules stop and its files are deleted."
+    )
+    text = f"{title}\n{permission}\nhz restarts and this page reloads itself.\nYour open work is preserved."
+    selector = harness.plugin_dialog(action, "confirm")
+
+    class Preview:
+        def wait(self, expression, _what, timeout):
+            assert json.dumps(selector) in expression
+            assert timeout == 30
+            return text
+
+        def present(self, buttons, name):
+            assert buttons == f"{selector} button"
+            return name in ("Cancel", "Install" if action == "add" else "Remove")
+
+    assert harness.plugin_preview(Preview(), action, "heinzel-example", 30) == text
+    text = text.replace("hz restarts and this page reloads itself.", "")
+    with pytest.raises(harness.StepFailed, match="preview lacks"):
+        harness.plugin_preview(Preview(), action, "heinzel-example", 30)
+
+
+@pytest.mark.parametrize("action", ["add", "remove"])
+@pytest.mark.parametrize("failure", [None, "The exact installed plugin could not be verified"])
+@pytest.mark.parametrize("settings_open", [True, False])
+def test_plugin_apply_requires_one_confirmation_new_document_and_success(action, failure, settings_open, monkeypatch):
+    monkeypatch.setattr(harness.time, "monotonic", lambda: 100)
+    navigation = []
+    monkeypatch.setattr(harness, "ui_open_plugins", lambda *_args, **kwargs: navigation.append(kwargs["deadline"]))
+
+    class Change:
+        locate = staticmethod(harness.Browser.locate)
+
+        def __init__(self):
+            self.clicks, self.waits, self.marker = [], [], False
+
+        def evaluate(self, expression):
+            if expression == "window.__hzAcceptancePluginRestart = true":
+                self.marker = True
+                return None
+            if expression == "new URLSearchParams(location.search).has('settings')":
+                return settings_open
+            if expression == "document.body.innerText.includes('Installed on this machine')":
+                return True
+            selector = json.dumps(harness.plugin_dialog(action, "failed"))
+            assert expression == f"document.querySelector({selector})?.innerText"
+            return failure
+
+        def click(self, selector, name, **kwargs):
+            assert self.marker
+            assert kwargs["timeout"] <= 60
+            self.clicks.append((selector, name))
+
+        def wait(self, expression, _what, timeout):
+            assert timeout <= 360
+            self.waits.append(expression)
+            return True
+
+    browser = Change()
+    if failure:
+        with pytest.raises(harness.StepFailed, match=failure):
+            harness.ui_apply(browser, "the fixture change", "installed-row", action=action)
+        assert navigation == ([] if settings_open else [460])
+        assert len(browser.clicks) == 1
+    else:
+        harness.ui_apply(browser, "the fixture change", "installed-row", action=action)
+        assert navigation == ([] if settings_open else [460])
+        assert browser.clicks == [
+            (f"{harness.plugin_dialog(action, 'confirm')} button", "Install" if action == "add" else "Remove"),
+            (f"{harness.plugin_dialog(action, 'done')} button", "Done"),
+        ]
+        assert browser.waits[-1] == "installed-row"
+    assert "window.__hzAcceptancePluginRestart === undefined" in browser.waits[0]
+    assert 'data-stage=\\"done\\"' in browser.waits[1]
+    assert 'data-stage=\\"failed\\"' in browser.waits[1]
