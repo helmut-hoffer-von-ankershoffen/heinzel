@@ -1,7 +1,7 @@
 // Actual component and lifecycle client in fresh browsers, with only a synthetic backend.
 import assert from "node:assert/strict";
 import { chromium, webkit } from "playwright-core";
-import { createServer } from "vite";
+import { guardFixturePage, requestUrl, startFixture } from "./local-fixture.mjs";
 
 const id = "z".repeat(43);
 const candidate = {
@@ -35,7 +35,7 @@ let checks = 0,
   writes = 0;
 const unexpected = [];
 const handler = (req, res, next) => {
-  const url = new URL(req.url, "http://fixture");
+  const url = requestUrl(req.url);
   if (!url.pathname.startsWith("/api/")) return next();
   res.setHeader("Content-Type", "application/json");
   const send = (body, status = 200) => {
@@ -65,22 +65,8 @@ const handler = (req, res, next) => {
   unexpected.push(`${req.method} ${req.url}`);
   return send({ error: "unexpected request" }, 500);
 };
-const server = await createServer({
-  server: { host: "127.0.0.1", port: 0 },
-  plugins: [
-    {
-      name: "fixture-api",
-      configureServer: (server) => {
-        server.middlewares.use(handler);
-      },
-    },
-  ],
-});
-await server.listen();
-const address = server.httpServer.address();
-assert(address && typeof address !== "string");
-const origin = `http://127.0.0.1:${address.port}`,
-  outcomes = [];
+const { server, origin } = await startFixture(handler);
+const outcomes = [];
 try {
   for (const [name, engine] of [
     ["chromium", chromium],
@@ -92,15 +78,10 @@ try {
     const browser = await engine.launch(),
       context = await browser.newContext(),
       page = await context.newPage();
-    const blocked = [],
-      errors = [];
+    let guards = { blocked: [], errors: [] };
     try {
-      page.on("pageerror", (error) => errors.push(String(error)));
-      await page.route("**/*", (route) => {
-        if (new URL(route.request().url()).origin === origin) return route.continue();
-        blocked.push(route.request().url());
-        return route.abort();
-      });
+      guards = await guardFixturePage(page, origin);
+      const { blocked, errors } = guards;
       await page.addInitScript(
         ({ id }) => {
           sessionStorage.setItem("hz.token", "fixture-token");
@@ -141,7 +122,7 @@ try {
           restartPosts,
           writes,
           unexpected,
-          errors,
+          errors: guards.errors,
         }),
       );
       throw error;

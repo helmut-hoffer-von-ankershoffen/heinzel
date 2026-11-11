@@ -264,6 +264,68 @@ function base(url: URL): { status?: number; body: unknown } | undefined {
   }
 }
 
+function seedAcknowledgedRestart(operationId: string) {
+  sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+  sessionStorage.setItem(
+    "hz.plugin-add-restart.v1",
+    JSON.stringify({
+      operation_id: operationId,
+      acknowledged: true,
+      observation: { retired: ["old"], version: "0.9.23", settings: [] },
+    }),
+  );
+}
+
+function serveFailedVerification(operationId: string) {
+  let verifies = 0;
+  const calls = serve((url) => {
+    if (url.pathname === "/api/system/plugin/operation")
+      return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
+    if (url.pathname === "/api/lifecycle")
+      return { body: { instance: "replacement", version: "0.9.23", restartable: true } };
+    if (url.pathname === "/api/lifecycle/verify")
+      return ++verifies === 1
+        ? { status: 403, body: { error: "verification failed" } }
+        : { body: { instance: "replacement", version: "0.9.23", matches: true, mismatched: [] } };
+    return base(url);
+  });
+  return { calls, verifies: () => verifies };
+}
+
+function serveDiscoverInstall(withOther: boolean, needsRestart: boolean) {
+  let done = false;
+  const crm = { ...installed, distribution: "heinzel-crm", name: "crm", version: "1.2.0", summary: "CRM notes." };
+  const discovered = {
+    name: "heinzel-crm",
+    short_name: "crm",
+    description: "CRM notes.",
+    source: "github",
+    install_spec: candidate.spec,
+    installed: false,
+    community: true,
+  };
+  const other = {
+    name: "heinzel-other",
+    short_name: "other",
+    description: "Another plugin.",
+    source: "github",
+    install_spec: "heinzel-other",
+    installed: false,
+    community: true,
+  };
+  return serve((url) => {
+    if (url.pathname === "/api/system/plugin/list") return { body: done ? [installed, crm] : [installed] };
+    if (url.pathname === "/api/system/plugin/search")
+      return { body: { plugins: withOther ? [discovered, other] : [discovered], warnings: [] } };
+    if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
+      done = url.searchParams.get("confirm") === "true";
+      const extra = { plugins: done ? [installed, crm] : [installed] };
+      return { body: change("add", done, needsRestart ? extra : { ...extra, restart_required: false }) };
+    }
+    return base(url);
+  });
+}
+
 function show(props: Parameters<typeof PluginsSection>[0] = {}) {
   sessionStorage.setItem("hz.token", "test-token");
   return render(
@@ -304,28 +366,9 @@ afterEach(() => vi.unstubAllGlobals());
 describe("PluginsSection", () => {
   it("recovers an acknowledged restart on remount after closing failed verification", async () => {
     const operationId = "acknowledged-restart";
-    sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
     const key = "hz.plugin-add-restart.v1";
-    sessionStorage.setItem(
-      key,
-      JSON.stringify({
-        operation_id: operationId,
-        acknowledged: true,
-        observation: { retired: ["old"], version: "0.9.23", settings: [] },
-      }),
-    );
-    let verifies = 0;
-    const calls = serve((url) => {
-      if (url.pathname === "/api/system/plugin/operation")
-        return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
-      if (url.pathname === "/api/lifecycle")
-        return { body: { instance: "replacement", version: "0.9.23", restartable: true } };
-      if (url.pathname === "/api/lifecycle/verify")
-        return ++verifies === 1
-          ? { status: 403, body: { error: "verification failed" } }
-          : { body: { instance: "replacement", version: "0.9.23", matches: true, mismatched: [] } };
-      return base(url);
-    });
+    seedAcknowledgedRestart(operationId);
+    const { calls, verifies } = serveFailedVerification(operationId);
     const reload = vi.fn();
     const first = show({ reload, restartInterval: 1 });
     const failed = await dialog(/Installing heinzel-crm/);
@@ -344,7 +387,7 @@ describe("PluginsSection", () => {
         2,
       ),
     );
-    await waitFor(() => expect(verifies).toBe(2), {
+    await waitFor(() => expect(verifies()).toBe(2), {
       timeout: 1000,
       onTimeout: (error) => error,
     });
@@ -614,35 +657,7 @@ describe("PluginsSection", () => {
   });
 
   it("moves a completed install to Installed and reconciles a stale Discover snapshot without restarting", async () => {
-    let done = false;
-    const crm = { ...installed, distribution: "heinzel-crm", name: "crm", version: "1.2.0", summary: "CRM notes." };
-    const calls = serve((url) => {
-      if (url.pathname === "/api/system/plugin/list") return { body: done ? [installed, crm] : [installed] };
-      if (url.pathname === "/api/system/plugin/search")
-        return {
-          body: {
-            plugins: [
-              {
-                name: "heinzel-crm",
-                short_name: "crm",
-                description: "CRM notes.",
-                source: "github",
-                install_spec: candidate.spec,
-                installed: false,
-                community: true,
-              },
-            ],
-            warnings: [],
-          },
-        };
-      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
-        done = url.searchParams.get("confirm") === "true";
-        return {
-          body: change("add", done, { plugins: done ? [installed, crm] : [installed], restart_required: false }),
-        };
-      }
-      return base(url);
-    });
+    const calls = serveDiscoverInstall(false, false);
     const reload = vi.fn();
     const user = userEvent.setup();
     show({ reload });
@@ -718,42 +733,7 @@ describe("PluginsSection", () => {
   });
 
   it("restarts once and reloads after a Discover install whose row leaves the list", async () => {
-    let done = false;
-    const crm = { ...installed, distribution: "heinzel-crm", name: "crm", version: "1.2.0", summary: "CRM notes." };
-    const calls = serve((url) => {
-      if (url.pathname === "/api/system/plugin/list") return { body: done ? [installed, crm] : [installed] };
-      if (url.pathname === "/api/system/plugin/search")
-        return {
-          body: {
-            plugins: [
-              {
-                name: "heinzel-crm",
-                short_name: "crm",
-                description: "CRM notes.",
-                source: "github",
-                install_spec: candidate.spec,
-                installed: false,
-                community: true,
-              },
-              {
-                name: "heinzel-other",
-                short_name: "other",
-                description: "Another plugin.",
-                source: "github",
-                install_spec: "heinzel-other",
-                installed: false,
-                community: true,
-              },
-            ],
-            warnings: [],
-          },
-        };
-      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
-        done = url.searchParams.get("confirm") === "true";
-        return { body: change("add", done, { plugins: done ? [installed, crm] : [installed] }) };
-      }
-      return base(url);
-    });
+    const calls = serveDiscoverInstall(true, true);
     // The restart request takes a moment, as over a real connection, while the installed row leaves Discover.
     restartDelay = 50;
     const reload = vi.fn();
@@ -964,29 +944,8 @@ describe("PluginsSection", () => {
     await act(async () => {
       await trackOperation(DAEMON_INSTALL, async () => ({ installed: true }));
     });
-    sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
-    sessionStorage.setItem(
-      "hz.plugin-add-restart.v1",
-      JSON.stringify({
-        operation_id: operationId,
-        acknowledged: true,
-        observation: { retired: ["old"], version: "0.9.23", settings: [] },
-      }),
-    );
-    let verifies = 0;
-    const calls = serve((url) => {
-      if (url.pathname === "/api/system/plugin/operation")
-        return { body: { operation_id: operationId, status: "completed", candidate, result: change("add", true) } };
-      if (url.pathname === "/api/lifecycle")
-        return { body: { instance: "replacement", version: "0.9.23", restartable: true } };
-      if (url.pathname === "/api/lifecycle/verify") {
-        verifies += 1;
-        return verifies === 1
-          ? { status: 403, body: { error: "verification failed" } }
-          : { body: { instance: "replacement", version: "0.9.23", matches: true, mismatched: [] } };
-      }
-      return base(url);
-    });
+    seedAcknowledgedRestart(operationId);
+    const { calls, verifies } = serveFailedVerification(operationId);
     const reload = vi.fn();
     show({ reload, restartInterval: 1 });
     await waitFor(() =>
@@ -1000,7 +959,7 @@ describe("PluginsSection", () => {
     const failed = await dialog(/Installing heinzel-crm/);
     await user.click(await within(failed).findByRole("button", { name: "Try again" }));
     await waitFor(() => expect(reload).toHaveBeenCalledOnce());
-    expect(verifies).toBe(2);
+    expect(verifies()).toBe(2);
     expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
     expect(calls.filter((request) => new URL(request.url).searchParams.get("confirm") === "true")).toHaveLength(0);
   });

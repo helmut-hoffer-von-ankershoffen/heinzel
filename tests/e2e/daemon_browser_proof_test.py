@@ -30,3 +30,22 @@ def test_daemon_restart_and_plugin_recovery_browser_contract(script, tmp_path):
         check=False,
     )
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
+
+
+@pytest.mark.timeout(60)
+def test_daemon_browser_fixture_request_guard(tmp_path):
+    """Keep the browser proof's loopback-only request boundary under test."""
+    home = tmp_path / "home"
+    home.mkdir()
+    env = os.environ.copy()
+    env.update(HOME=str(home), PLAYWRIGHT_BROWSERS_PATH=str(BROWSER_CACHE))
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/web_build.py"), "exec", "node", "--test", "e2e/local-fixture.test.mjs"],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=45,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + "\n" + result.stderr

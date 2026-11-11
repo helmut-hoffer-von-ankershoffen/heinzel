@@ -92,6 +92,21 @@ function show(
   return { ...view, calls, user: userEvent.setup() };
 }
 
+async function startStreamingRestart(body: ReadableStream<Uint8Array>) {
+  const { calls } = mockApi({
+    "/api/system/daemon/status": { ...running, loaded: false },
+    "/api/stream/system/daemon/restart": new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
+  });
+  render(
+    <Providers client={queryClient()}>
+      <DaemonSettings />
+    </Providers>,
+  );
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Restart" }));
+  await screen.findByText("Restarting the daemon…", { selector: "output" });
+  return calls;
+}
+
 beforeEach(() => {
   sessionStorage.setItem("hz.token", "test-token");
 });
@@ -263,6 +278,7 @@ describe("Daemon Settings", () => {
     expect(screen.getByText("0")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("not loaded");
     await user.click(screen.getByRole("button", { name: "Restart" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(await screen.findByText("2.0.0")).toBeInTheDocument();
     expect(screen.getByText("Checking the service")).toBeInTheDocument();
     expect(
@@ -279,17 +295,7 @@ describe("Daemon Settings", () => {
         stream = controller;
       },
     });
-    const { calls } = mockApi({
-      "/api/system/daemon/status": { ...running, loaded: false },
-      "/api/stream/system/daemon/restart": new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
-    });
-    render(
-      <Providers client={queryClient()}>
-        <DaemonSettings />
-      </Providers>,
-    );
-    await userEvent.setup().click(await screen.findByRole("button", { name: "Restart" }));
-    await screen.findByText("Restarting the daemon…", { selector: "output" });
+    const calls = await startStreamingRestart(body);
     expect(
       calls.filter((request) => new URL(request.url).pathname === "/api/stream/system/daemon/restart"),
     ).toHaveLength(1);
@@ -326,17 +332,7 @@ describe("Daemon Settings", () => {
       .spyOn(AbortSignal, "timeout")
       .mockImplementation((ms) => (ms === 30_000 ? timeout.signal : originalTimeout(ms)));
     const body = new ReadableStream<Uint8Array>({ start() {} });
-    const { calls } = mockApi({
-      "/api/system/daemon/status": { ...running, loaded: false },
-      "/api/stream/system/daemon/restart": new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
-    });
-    render(
-      <Providers client={queryClient()}>
-        <DaemonSettings />
-      </Providers>,
-    );
-    await userEvent.setup().click(await screen.findByRole("button", { name: "Restart" }));
-    await screen.findByText("Restarting the daemon…", { selector: "output" });
+    const calls = await startStreamingRestart(body);
     expect(timer).toHaveBeenCalledWith(30_000);
     await act(async () => timeout.abort(new DOMException("Timed out", "TimeoutError")));
     expect(await screen.findByRole("alert")).toHaveTextContent("restart is still unconfirmed");
@@ -357,17 +353,7 @@ describe("Daemon Settings", () => {
         controller = c;
       },
     });
-    const { calls } = mockApi({
-      "/api/system/daemon/status": { ...running, loaded: false },
-      "/api/stream/system/daemon/restart": new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
-    });
-    render(
-      <Providers client={queryClient()}>
-        <DaemonSettings />
-      </Providers>,
-    );
-    await userEvent.setup().click(await screen.findByRole("button", { name: "Restart" }));
-    await screen.findByText("Restarting the daemon…", { selector: "output" });
+    const calls = await startStreamingRestart(body);
     await act(async () => {
       controller.enqueue(
         new TextEncoder().encode(

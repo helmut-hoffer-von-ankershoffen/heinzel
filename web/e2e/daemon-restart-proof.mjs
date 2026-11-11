@@ -1,7 +1,7 @@
 // Real browser and streaming HTTP, synthetic backend, no external requests.
 import assert from "node:assert/strict";
 import { chromium, webkit } from "playwright-core";
-import { createServer } from "vite";
+import { guardFixturePage, requestUrl, startFixture } from "./local-fixture.mjs";
 
 let active = null,
   restarts = 0,
@@ -33,7 +33,7 @@ const handler = (req, res, next) => {
       }),
     );
   }
-  if (new URL(req.url, "http://fixture").pathname === "/api/stream/system/daemon/restart" && req.method === "POST") {
+  if (requestUrl(req.url).pathname === "/api/stream/system/daemon/restart" && req.method === "POST") {
     restarts++;
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
     res.write(
@@ -45,22 +45,8 @@ const handler = (req, res, next) => {
   unexpected.push(`${req.method} ${req.url}`);
   res.writeHead(500).end("unexpected request");
 };
-const server = await createServer({
-  server: { host: "127.0.0.1", port: 0 },
-  plugins: [
-    {
-      name: "fixture-api",
-      configureServer: (server) => {
-        server.middlewares.use(handler);
-      },
-    },
-  ],
-});
-await server.listen();
-const address = server.httpServer.address();
-assert(address && typeof address !== "string");
-const origin = `http://127.0.0.1:${address.port}`,
-  outcomes = [];
+const { server, origin } = await startFixture(handler);
+const outcomes = [];
 try {
   for (const [name, engine] of [
     ["chromium", chromium],
@@ -73,15 +59,8 @@ try {
         active = null;
         expert = result === true;
         const context = await browser.newContext(),
-          page = await context.newPage(),
-          blocked = [],
-          errors = [];
-        page.on("pageerror", (error) => errors.push(String(error)));
-        await page.route("**/*", (route) => {
-          if (new URL(route.request().url()).origin === origin) return route.continue();
-          blocked.push(route.request().url());
-          return route.abort();
-        });
+          page = await context.newPage();
+        const { blocked, errors } = await guardFixturePage(page, origin);
         await page.addInitScript(() => sessionStorage.setItem("hz.token", "fixture-token"));
         await page.goto(`${origin}/e2e/daemon-restart-proof.html`);
         const restart = page.getByRole("button", { name: "Restart", exact: true });
