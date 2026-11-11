@@ -83,6 +83,30 @@ async function explain(page) {
   );
   note(`document ${documentState}`);
 }
+// A controlled WebKit replay showed that closing the context interrupted a delayed worker cache write.
+// Wait for the active worker, the cached offline page, and copies of the worker-served assets observed in resource
+// timing before closing. The cause of the blank navigation in #648 (bead zd4) remains unknown.
+async function settleWorker(page) {
+  await until(
+    () =>
+      page.evaluate(async () => {
+        const registration = await navigator.serviceWorker?.getRegistration("/");
+        if (registration?.active?.state !== "activated" || registration.installing || registration.waiting)
+          return false;
+        if (!(await caches.match("/offline.html"))) return false;
+        // Only what went through the worker is copied: not the assets of a page it took over after they loaded.
+        const assets = performance
+          .getEntriesByType("resource")
+          .filter((entry) => entry.workerStart > 0)
+          .map((entry) => new URL(entry.name))
+          .filter((address) => address.origin === location.origin && address.pathname.startsWith("/assets/"));
+        const kept = await Promise.all(assets.map((address) => caches.match(address.href)));
+        return kept.every(Boolean);
+      }),
+    { timeout: 20000, interval: 200, message: "The service worker never settled: active, with its copies written" },
+  );
+  note("worker settled");
+}
 let current;
 try {
   if (mode === "stale" && step === "open") {
@@ -140,6 +164,7 @@ try {
     await page.waitForTimeout(500);
     afterRestart = (await ready.count()) > 0 && (await failed.count()) === 0;
   }
+  await settleWorker(page);
   console.log(JSON.stringify({ step, signedIn, afterRestart, ...stored }));
 } catch (error) {
   if (current) await explain(current);

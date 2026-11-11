@@ -108,6 +108,11 @@ installs them first, one step each, and only offers the recommended ones. `hz sy
 automatic updater runs once per plugin version, installs required plugins an installation lacks. Neither signs in:
 your `hz system doctor` checks keep naming the sign-in step.
 
+To prove a company plugin on a clean profile, run `scripts/acme_setup_e2e.py --hz <hz>`: it adds `acme` from the
+plugin catalog under a throwaway HOME (never your live profile) and asserts `heinzel-github` and `heinzel-atlassian`
+came with it. It signs in nowhere. Those steps are yours, once: `gh auth login` and `acli jira auth login --web`
+(then `acli confluence auth login --web` if you use Confluence); `hz system doctor` names whichever is still open.
+
 ## Declare the programs your plugin needs
 
 If a feature runs an external command line (a VPN client, a vendor CLI), declare it in the module that owns the
@@ -321,3 +326,27 @@ mode 0600 for records, and an atomic replacement of a freshly written regular fi
 identity, error message or other arbitrary detail. Core ignores unsafe, oversized, malformed, future or expired
 records; even fresh evidence is labeled **last observed**, never current reachability. See
 [ADR 0119](adr/0119-interactive-cli-reads-local-overview-records.md).
+
+## Preview screenshots before installation
+
+In Settings → Plugins, open **Screenshots** for a discovered or installed public GitHub plugin. Choose UI or CLI
+captures, or open a capture at full size. `hz system plugin showcase harbor --json` returns the same declared media
+without installing the plugin. Private and unknown installed sources stay in their owning repositories.
+
+Declare captures in the owning project's `pyproject.toml`:
+
+```toml
+[[tool.heinzel.catalog.screenshots]]
+path = "docs/assets/interface.png"
+surface = "ui"
+caption = "The plugin's interface"
+
+[[tool.heinzel.catalog.screenshots]]
+path = "docs/assets/terminal.webp"
+surface = "cli"
+caption = "The plugin's terminal output"
+```
+
+Use at most eight regular PNG, JPG or WebP files of at most 2 MiB each, inside the project. Captions are plain text,
+at most 180 characters. The preview uses the owning public source at an immutable revision and never executes the
+plugin. Stream soundscapes may provide explicit YouTube links; opening a gallery starts no playback.

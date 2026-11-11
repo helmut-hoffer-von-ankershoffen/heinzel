@@ -26,7 +26,10 @@ pytestmark = pytest.mark.unit
     ("payload", "accepted"),
     [(["x"] * 3999, True), (["x"] * 4000, False), (["é" * 7998], True), (["é" * 7999], False)],
 )
-def test_result_keeps_every_value_within_the_16000_utf8_byte_limit(make_kernel, tmp_path, payload, accepted):
+@pytest.mark.parametrize("projection", [None, lambda text, limit: text], ids=["ordinary", "unbounded-projection"])
+def test_result_keeps_every_value_within_the_16000_utf8_byte_limit(
+    make_kernel, tmp_path, payload, accepted, projection
+):
     module = Module("fixture", "Bounded result")
 
     @module.operation()
@@ -42,7 +45,13 @@ def test_result_keeps_every_value_within_the_16000_utf8_byte_limit(make_kernel, 
         crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1))
         session = crud.new_chat("bounded").session_id
         catalog = HostToolCatalog(
-            kernel, current, crud, session, frozenset({"fixture:inspect"}), verified_code=lambda _: "a" * 64
+            kernel,
+            current,
+            crud,
+            session,
+            frozenset({"fixture:inspect"}),
+            verified_code=lambda _: "a" * 64,
+            oversized_result=projection,
         )
         descriptor = catalog.preview()[0]
         grant = ModelGrant(
@@ -106,6 +115,22 @@ def test_granted_read_fences_code_owner_turn_and_model_arguments(make_kernel, tm
         no_verifier = HostToolCatalog(kernel, current, crud, session, allowed)
         with pytest.raises(HeinzelError, match="verified implementation"):
             no_verifier.preview()
+        for invalid_identity in (None, "", "g" * 64):
+            invalid = HostToolCatalog(
+                kernel, current, crud, session, allowed, verified_code=lambda _, value=invalid_identity: value
+            )
+            with pytest.raises(HeinzelError, match="verified implementation"):
+                invalid.preview()
+
+        def failing_verifier(_item):
+            msg = "PRIVATE_VERIFIER_SECRET"
+            raise RuntimeError(msg)
+
+        failed = HostToolCatalog(kernel, current, crud, session, allowed, verified_code=failing_verifier)
+        with pytest.raises(HeinzelError, match="verified implementation") as error:
+            failed.preview()
+        assert "PRIVATE_VERIFIER_SECRET" not in str(error.value)
+        assert error.value.__suppress_context__
         code_identity = ["a" * 64]
         catalog = HostToolCatalog(kernel, current, crud, session, allowed, verified_code=lambda _item: code_identity[0])
         preview = catalog.preview()
@@ -142,12 +167,17 @@ def test_granted_read_fences_code_owner_turn_and_model_arguments(make_kernel, tm
         grants = ModelGrants(crud)
         grants.propose(session, grant)
         grants.approve(session, "grant", grants.issue(session, "grant", "fixture-human-review"))
+        assert catalog.approved_preview(session, grant) == preview
+        with pytest.raises(HeinzelError, match="current grant"):
+            catalog.approved_preview("different-session", grant)
         with repo.main_writer(session) as writer:
             with pytest.raises(HeinzelError, match="unavailable"):
                 catalog.invoke(grant, "fixture:fetch", {"path": "/private"}, turn_writer=writer)
             with pytest.raises(HeinzelError, match="Invalid operation"):
                 catalog.invoke(grant, "fixture:inspect", {"current": "injected"}, turn_writer=writer)
             code_identity[0] = "b" * 64
+            with pytest.raises(HeinzelError, match="unavailable or has changed"):
+                catalog.approved_preview(session, grant)
             with pytest.raises(HeinzelError, match="schema changed"):
                 catalog.invoke(grant, "fixture:inspect", {}, turn_writer=writer)
             code_identity[0] = "a" * 64
@@ -186,6 +216,15 @@ def test_granted_read_fences_code_owner_turn_and_model_arguments(make_kernel, tm
         stranger = CallIdentity(
             Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read"})
         )
+        with pytest.raises(HeinzelError, match="owner cannot be verified"):
+            HostToolCatalog(
+                kernel,
+                CurrentUser(tmp_path / "unbound-identity"),
+                crud,
+                session,
+                allowed,
+                verified_code=lambda _: "a" * 64,
+            )
         with current.using(stranger), pytest.raises(HeinzelError, match="different owner"):
             catalog.preview()
         with current.using(stranger), pytest.raises(HeinzelError, match="different owner"):

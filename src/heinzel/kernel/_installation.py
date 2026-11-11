@@ -12,7 +12,6 @@ import json
 import os
 import re
 import shlex
-import shutil
 import stat
 import subprocess
 import sys
@@ -44,6 +43,7 @@ from heinzel.kernel import _installation_continuity, _installed_metadata
 from heinzel.kernel._credentials import subprocess_environment
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._progress import Progress
+from heinzel.kernel._uv_locate import find_uv, missing_uv_message, with_search_path
 
 RECEIPT_FILENAME = "uv-receipt.toml"
 _MAX_RECEIPT_BYTES = 1024 * 1024
@@ -119,7 +119,7 @@ def _read_tool_receipt_bytes(prefix: Path) -> bytes:
 
 def _run(command: Sequence[str], environment: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     """Run a command; a timeout becomes exit code 124 (as with timeout(1)), so callers handle it like any failure."""
-    env = subprocess_environment() | dict(environment or {})
+    env = with_search_path(subprocess_environment() | dict(environment or {}))
     try:
         return subprocess.run(  # noqa: S603 - trusted parts, no shell
             command, capture_output=True, text=True, check=False, timeout=COMMAND_TIMEOUT, env=env
@@ -640,13 +640,13 @@ class Installation:
             progress: Shows that a command is running.
             prefix: Environment Heinzelmännchen runs in; defaults to `sys.prefix`.
             runner: Runs a command and returns the completed process.
-            uv: Path to the uv executable; defaults to the one on `PATH`.
+            uv: Path to the uv executable; defaults to the one on `PATH` or in uv's standard install directories.
         """
         self._progress = progress
         self.prefix = prefix or Path(sys.prefix)
         self._runner = runner
         self._exact_runner: Runner = _run_exact
-        self._uv = uv or shutil.which("uv")
+        self._uv = uv or find_uv()
         self._tool_scope: ContextVar[
             tuple[
                 dict[str, str],
@@ -1383,7 +1383,7 @@ class Installation:
                 check=False,
                 timeout=HZ_TIMEOUT,
                 # A probe, not a person: no update check (ADR 0031) to wait for or to spend a request on.
-                env=subprocess_environment() | {"HZ_UPDATE_CHECK": "false"},
+                env=with_search_path(subprocess_environment()) | {"HZ_UPDATE_CHECK": "false"},
             )
         except subprocess.TimeoutExpired as exc:
             msg = f"`hz {' '.join(args)}` did not finish within {HZ_TIMEOUT}s after the change."
@@ -1404,6 +1404,5 @@ class Installation:
             HeinzelError: If uv is not installed.
         """
         if not self._uv:
-            msg = "uv is required to manage Heinzelmännchen's installation: https://docs.astral.sh/uv/"
-            raise HeinzelError(msg)
+            raise HeinzelError(missing_uv_message())
         return self._uv

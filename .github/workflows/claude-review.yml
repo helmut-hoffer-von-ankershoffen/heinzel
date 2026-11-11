@@ -57,7 +57,7 @@ jobs:
       - id: light
         if: steps.tier.outputs.tier == 'light'
         continue-on-error: true # judged by the verdict step
-        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+        uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d # v1.0.266
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
@@ -70,7 +70,7 @@ jobs:
       - id: full
         if: steps.tier.outputs.tier == 'full'
         continue-on-error: true # judged by the verdict step
-        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+        uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d # v1.0.266
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
@@ -80,7 +80,7 @@ jobs:
             Use the review skill on this pull request (compare against origin/${{ github.base_ref }}).
             Post the merged findings and the GO / NO-GO verdict as one pull request comment.
             The comment is public: never quote a confidential term, refer to it by file and line.
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: false
       - name: Judge the review

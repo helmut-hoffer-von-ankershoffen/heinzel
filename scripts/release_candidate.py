@@ -35,6 +35,7 @@ VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)")
 SHA = re.compile(r"[0-9a-f]{40}")
 DIGEST = re.compile(r"[0-9a-f]{64}")
 MAX_JOBS = 1000
+PR_PAGE_SIZE = 100
 MAX_PROOF = 64 * 1024
 CONSUMERS = ("atlassian", "clock", "example", "github", "google", "resource", "tailscale", "theme", "weather", "zoom")
 
@@ -102,6 +103,53 @@ def release_version(event: str, repository: str, ref: str, payload: dict[str, An
     if event == "pull_request" and payload["pull_request"].get("title") != f"chore(release): v{version}":
         return None
     return version
+
+
+def dispatch_pull(
+    head: str,
+    ref: str,
+    get: Callable[[str], Any],
+) -> dict[str, Any]:
+    """Find the unique open canonical release PR for an exact candidate dispatch."""
+    require(valid_sha(head), "candidate dispatch requires the exact source head")
+    pulls = get(f"commits/{head}/pulls?per_page={PR_PAGE_SIZE}")
+    require(isinstance(pulls, list) and len(pulls) < PR_PAGE_SIZE, "candidate pull request lookup may be truncated")
+    matches = [
+        pr
+        for pr in pulls
+        if pr["state"] == "open"
+        and pr["draft"] is False
+        and pr["head"]["sha"] == head
+        and pr["head"]["ref"] == ref
+        and valid_sha(pr["base"]["sha"])
+        and release_version("pull_request", REPOSITORY, "", {"pull_request": pr})
+    ]
+    require(len(matches) == 1, "dispatch has no unique canonical open release PR")
+    return matches[0]
+
+
+def select_release() -> bool:
+    """Recognize a canonical non-draft candidate without executing any focused code."""
+    event, repository, ref, payload = context()
+    if not release_version(event, repository, ref, payload):
+        return False
+    if event == "pull_request":
+        pr = payload["pull_request"]
+        require(
+            pr.get("state") == "open"
+            and pr.get("draft") is False
+            and valid_sha(pr["head"].get("sha"))
+            and valid_sha(pr["base"].get("sha"))
+            and pr["head"]["sha"] != pr["base"]["sha"],
+            "candidate requires an exact open non-draft release PR",
+        )
+    else:
+
+        def get(path: str) -> Any:  # noqa: ANN401 - the GitHub JSON response is validated at the source boundary
+            return json.loads(command(["gh", "api", f"repos/{REPOSITORY}/{path}"]))
+
+        dispatch_pull(os.environ["GITHUB_SHA"], ref, get)
+    return True
 
 
 def context() -> tuple[str, str, str, dict[str, Any]]:
@@ -200,9 +248,10 @@ def expected_jobs(event: str) -> dict[str, str]:
         *[f"Consumer (heinzel-{name})" for name in CONSUMERS],
     }
     skipped = {
-        "Main batch full suite (${{ needs.admission.outputs.base }})",
+        "Main batch focused scope (${{ needs.admission.outputs.base }})",
         "Main batch delegated to ${{ needs.admission.outputs.run }}",
         "Site tests",
+        "Focused tests (${{ matrix.lane }})",
         "macOS smoke",
         "Source plugin (${{ matrix.name }})",
         *[
@@ -212,6 +261,52 @@ def expected_jobs(event: str) -> dict[str, str]:
     }
     (success if event == "pull_request" else skipped).update(("Conventional commits", "Dependency review"))
     return dict.fromkeys(success, "success") | dict.fromkeys(skipped, "skipped")
+
+
+QUARANTINE_REGISTRY = "Quarantine registry"
+QUARANTINE_PLAN = "Quarantine plan"
+QUARANTINE_RUNS = frozenset({"Quarantine (ubuntu-24.04)", "Quarantine (macos-latest)"})
+QUARANTINE_IDLE = "Quarantine (${{ matrix.os }})"
+
+
+def quarantine_lane(jobs: list[dict[str, Any]], run_id: object, head: str) -> list[dict[str, Any]]:
+    """Check the quarantine lane's jobs and return the others for the exact inventory.
+
+    The lane (tests/quarantine.toml, scripts/quarantine.py) is absent from a workflow that predates it. Otherwise the
+    required registry check passed, and the non-blocking plan and lane jobs ran on this run's first attempt: both OS
+    jobs, whatever their tests did, or the one skipped placeholder when nothing is quarantined. A lane failure never
+    refuses a candidate; a missing, extra or rerun lane job does.
+
+    Raises:
+        CandidateError: The lane's jobs are incomplete, duplicated, rerun or the registry check did not pass.
+    """
+    names = {QUARANTINE_REGISTRY, QUARANTINE_PLAN, QUARANTINE_IDLE, *QUARANTINE_RUNS}
+    lane = [job for job in jobs if job.get("name") in names]
+    if not lane:
+        return jobs
+    found = sorted(str(job.get("name")) for job in lane)
+    require(
+        found
+        in (
+            sorted({QUARANTINE_REGISTRY, QUARANTINE_PLAN, *QUARANTINE_RUNS}),
+            sorted({QUARANTINE_REGISTRY, QUARANTINE_PLAN, QUARANTINE_IDLE}),
+        ),
+        "missing, extra or duplicated quarantine lane jobs",
+    )
+    for job in lane:
+        # A lane job that hit its time limit ends cancelled; it still never blocks the candidate.
+        allowed = {"success"} if job["name"] == QUARANTINE_REGISTRY else {"success", "failure", "skipped", "cancelled"}
+        if job["name"] == QUARANTINE_IDLE:
+            allowed = {"skipped"}
+        require(
+            job.get("run_id") == run_id
+            and job.get("run_attempt") == 1
+            and job.get("head_sha") == head
+            and job.get("status") == "completed"
+            and job.get("conclusion") in allowed,
+            "quarantine lane job failed its registry check, changed or reran",
+        )
+    return [job for job in jobs if job.get("name") not in names]
 
 
 def job_inventory(get: Callable[[str], Any], run_id: int) -> list[dict[str, Any]]:
@@ -319,6 +414,7 @@ def validate(evidence: dict[str, Any], expected: ExpectedCandidate, approved_sou
             proof.get("pr") is None and proof.get("source_commit") == expected_head,
             "dispatch source differs from the exact release head",
         )
+    jobs = quarantine_lane(jobs, run["id"], expected_head)
     inventory = expected_jobs(event)
     require(
         len(jobs) == len(inventory) and {job.get("name") for job in jobs} == set(inventory),
@@ -489,9 +585,9 @@ def main() -> int:
     checking.add_argument("--recorder-sha256", required=True)
     args = parser.parse_args()
     if args.command == "select":
-        version = release_version(*context())
+        selected = select_release()
         with args.output.open("a") as output:
-            output.write(f"full_release={'true' if version else 'false'}\n")
+            output.write(f"full_release={str(selected).lower()}\n")
     elif args.command == "verify":
 
         def get(path: str) -> Any:  # noqa: ANN401 - the GitHub JSON response is validated at the evidence boundary
