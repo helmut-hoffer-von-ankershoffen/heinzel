@@ -225,9 +225,8 @@ function Layout() {
   // About, Updates and Copy are handled where they live. Reveal the footer first if the terminal covers it.
   useEffect(
     () =>
-      onMenuAction(["settings", "daemon", "changelog", "doctor", "updates"], (action) => {
-        if (action === "doctor") navigate("/doctor");
-        else if (action === "updates") setTerminalFull(false);
+      onMenuAction(["settings", "daemon", "changelog", "updates"], (action) => {
+        if (action === "updates") setTerminalFull(false);
         else
           setParams((current) => {
             const next = new URLSearchParams(current);
@@ -236,7 +235,7 @@ function Layout() {
             return next;
           });
       }),
-    [navigate, setParams],
+    [setParams],
   );
   const requestedView = panelViews.find((view) => view.id === params.get("panel"));
   const viewOpen = Boolean(requestedView);
@@ -405,6 +404,14 @@ function Layout() {
     },
     [beside, full, hasChatLink, location.pathname, requestScroll, requestedId, selectedPanel, setParams, panelViews],
   );
+  useEffect(
+    () =>
+      onMenuAction(["doctor"], () => {
+        selectPanel("page");
+        navigate("/doctor");
+      }),
+    [navigate, selectPanel],
+  );
   const closeView = (id: string) => {
     pageScroll.current?.();
     setRetainedViews((current) => current.filter((entry) => entry !== id));
@@ -509,10 +516,13 @@ function Layout() {
               next.set("panel", action);
               return next;
             });
-          else navigate(GO[action] ?? "/");
+          else {
+            selectPanel("page");
+            navigate(GO[action] ?? "/");
+          }
         },
       ),
-    [navigate, setNavOpen, setParams],
+    [navigate, selectPanel, setNavOpen, setParams],
   );
   return (
     <div

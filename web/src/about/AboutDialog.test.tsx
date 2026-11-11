@@ -78,11 +78,12 @@ describe("About dialog", () => {
     expect(screen.getByRole("cell", { name: long })).toHaveClass("break-all");
   });
 
-  it("gives the hz --version lines plus daemon, and the desktop app when there is one", () => {
+  it("labels the serving version without claiming the daemon is running", () => {
     const text = detailsText(info as never, { version: "0.9.29", path: "/Applications/H.app" });
     expect(text).toContain("hz 1.2.3\n");
     expect(text).toContain("installation uv tool (installed 2026-11-08)");
-    expect(text).toContain("daemon running 1.2.3");
+    expect(text).toContain("web server hz 1.2.3");
+    expect(text).not.toMatch(/daemon/i);
     expect(text).toContain("desktop 0.9.29 /Applications/H.app");
     expect(text).toContain("plugin heinzel-b 0.4.0 git");
   });
@@ -94,6 +95,8 @@ describe("About dialog", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     act(() => requestMenuAction("about"));
     expect(screen.getByRole("dialog", { name: "Heinzelmännchen" })).toBeInTheDocument();
+    expect(screen.getByText("Web server")).toBeInTheDocument();
+    expect(screen.queryByText(/daemon/i)).not.toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "heinzel-b" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /copy details/i }));
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining("plugin heinzel-a 0.4.0 PyPI"));

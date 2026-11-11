@@ -312,6 +312,34 @@ describe("Desktop menu actions", () => {
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 
+  it.each(["doctor", "go:plugins"] as const)("reveals the page for %s from a full-screen terminal", async (action) => {
+    vi.stubGlobal("innerWidth", 1440);
+    mockApi({ ...answers, "/api/system/config/show": config });
+    renderAt("/doctor");
+    act(() => requestMenuAction("terminal"));
+    const terminal = await screen.findByRole("tabpanel", { name: "Terminal" });
+    expect(terminal.closest("[data-placement]")).toHaveAttribute("data-placement", "beside");
+    await userEvent.setup().click(within(terminal).getByRole("button", { name: "Full screen" }));
+    const main = document.querySelector("main") as HTMLElement;
+    expect(main.parentElement).toHaveAttribute("inert");
+    act(() => requestMenuAction(action));
+    await waitFor(() => expect(main.parentElement).not.toHaveAttribute("inert"));
+    expect(terminal).not.toBeVisible();
+  });
+
+  it("selects Page for a narrow Go action even on the current route", async () => {
+    vi.stubGlobal("innerWidth", 640);
+    mockApi({ ...answers, "/api/system/config/show": config });
+    renderAt("/plugins");
+    await waitFor(() => expect(document.querySelector("footer")).not.toBeNull());
+    act(() => requestMenuAction("terminal"));
+    const terminal = await screen.findByRole("tabpanel", { name: "Terminal" });
+    expect(terminal.closest("[data-placement]")).toHaveAttribute("data-placement", "below");
+    expect(terminal.closest("[data-active]")).toHaveAttribute("data-active", "terminal");
+    act(() => requestMenuAction("go:plugins"));
+    await waitFor(() => expect(terminal.closest("[data-active]")).toHaveAttribute("data-active", "page"));
+  });
+
   it("reveals Updates from the desktop menu when a full-screen terminal hides the narrow footer", async () => {
     vi.stubGlobal("innerWidth", 640);
     const { calls } = mockApi({

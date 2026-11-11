@@ -24,7 +24,7 @@ const isFirstParty = (repository: string | null) =>
 /** The installed plugins, one row per distribution, as the API lists them. */
 export const pluginsOf = (info: Info) => info.plugins ?? [];
 
-/** The same lines as `hz --version`, plus the daemon and the desktop app. */
+/** The serving Core's version details and, when available, the desktop app. */
 export function detailsText(info: Info, desktop: Desktop | null): string {
   const lines = [`hz ${info.version}`];
   if (info.repository) lines.push(`repository ${info.repository}`);
@@ -32,7 +32,7 @@ export function detailsText(info: Info, desktop: Desktop | null): string {
     `python ${info.python_version} (${info.python_executable})`,
     `platform ${info.platform}`,
     `installation ${info.installation}${info.installed ? ` (installed ${info.installed})` : ""}`,
-    `daemon running ${info.version}`,
+    `web server hz ${info.version}`,
   );
   if (desktop) lines.push(`desktop ${desktop.version} ${desktop.path}`);
   for (const plugin of pluginsOf(info))
@@ -113,7 +113,7 @@ export function AboutDialog() {
           {data ? (
             <>
               <dl className="mt-4">
-                <Row label={t("about.version")}>
+                <Row label={t("about.webServer")}>
                   hz {data.version}
                   {data.installed && (
                     <span className="block text-xs text-muted-foreground">
@@ -127,7 +127,6 @@ export function AboutDialog() {
                     <span className="block text-xs text-muted-foreground">{desktop.data.path}</span>
                   </Row>
                 )}
-                <Row label={t("about.daemon")}>{t("about.daemonRunning", { version: data.version })}</Row>
                 <Row label={t("about.python")}>{data.python_version}</Row>
                 <Row label={t("about.platform")}>{data.platform}</Row>
                 <Row label={t("about.installation")}>{data.installation}</Row>
