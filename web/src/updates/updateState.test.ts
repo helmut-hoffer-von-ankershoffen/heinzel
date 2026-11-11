@@ -162,12 +162,12 @@ it("says a newer release waits for its acceptance, and only while it is held", (
   });
   expect(view.rows.map((row) => [row.id, row.tone, row.text])).toEqual([
     ["core", "warn", "Heinzel 0.9.31 is available"],
-    ["core-held", "off", "Heinzel 0.9.31 isn't accepted yet, so it won't update itself; you can still update by hand"],
+    ["core-held", "off", "Heinzel 0.9.31 isn't accepted yet; update by hand"],
   ]);
   expect(texts({ plan: { ...plan, core_held: null } })).toEqual(["Heinzel 0.9.27 is up to date · checked 10:32"]);
   expect(
     texts({ plan: { ...plan, phase: "off", reason: "Automatic updates are off.", core_held: "0.9.31" } }),
-  ).not.toContain("Heinzel 0.9.31 isn't accepted yet, so it won't update itself; you can still update by hand");
+  ).not.toContain("Heinzel 0.9.31 isn't accepted yet; update by hand");
 });
 
 it("tells a failed update once, not again as the plan's message", () => {
