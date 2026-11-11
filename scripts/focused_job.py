@@ -210,13 +210,15 @@ def native_identity(env: dict[str, str]) -> bool:
             return subprocess.check_output(["git", *args], cwd=ROOT, text=True, timeout=10).strip()  # noqa: S603, S607
 
         head = git("rev-parse", "HEAD")
-        parent = git("rev-parse", "HEAD^")
+        parent = git("merge-base", head, NATIVE_PARENT)
+        if parent != NATIVE_PARENT or git("rev-list", "--merges", f"{parent}..{head}"):
+            return False
         changed = set(git("diff", "--name-only", parent, head).splitlines())
     except (OSError, subprocess.SubprocessError):
         return False
     authorized = native_authorized(env, head, parent, changed)
     if authorized:
-        print(f"VNXD identity head={head} parent={parent}")
+        print(f"VNXD identity head={head} source={parent}")
     return authorized
 
 
