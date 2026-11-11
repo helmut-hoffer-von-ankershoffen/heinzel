@@ -175,6 +175,17 @@ def test_the_built_page_keeps_the_splash_script_as_written():
     assert [script_hash(source) for source in inline] == [web.SPLASH_SCRIPT], "the build is stale: make web-build"
 
 
+def test_served_splash_script_matches_the_response_csp(kernel, tmp_path):
+    page = (REPO / "web" / "index.html").read_text(encoding="utf-8")
+    (tmp_path / "index.html").write_text(page, encoding="utf-8")
+    client = TestClient(web.build(kernel, port=8000, token=TOKEN, static=tmp_path), base_url=BASE)
+    response = client.get("/")
+    assert response.status_code == 200
+    scripts = inline_scripts(response.text)
+    assert len(scripts) == 1
+    assert script_sources(response.headers["Content-Security-Policy"]) == ["'self'", script_hash(scripts[0])]
+
+
 def test_caching_api_answers_never_and_hashed_assets_forever(client):
     assert client.get("/api/notes/title", headers=AUTH).headers["Cache-Control"] == "no-store"
     assert "immutable" in client.get("/assets/app-1234.js").headers["Cache-Control"]

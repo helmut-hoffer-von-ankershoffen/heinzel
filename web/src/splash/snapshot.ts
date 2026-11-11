@@ -1,5 +1,5 @@
-// What the splash in index.html needs before React loads: the last theme's colours, font and logo, and hz's version,
-// kept in localStorage under `hz.splash`. index.html's inline script reads the same shape; keep the two in step.
+// The last theme's colours, font and logo for the first paint, plus the last confirmed version for reconnect checks.
+// Kept in localStorage under `hz.splash`; index.html never presents the remembered version as the running server.
 import type { SchemaThemeView } from "@/api/client";
 
 export const SNAPSHOT_KEY = "hz.splash";

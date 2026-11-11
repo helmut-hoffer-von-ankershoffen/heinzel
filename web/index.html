@@ -173,10 +173,6 @@
           if (typeof saved.font === "string" && /^[A-Za-z0-9 ,"._-]{1,300}$/.test(saved.font)) {
             root.style.setProperty("--splash-font", saved.font);
           }
-          const version = document.getElementById("splash-version");
-          if (version && typeof saved.version === "string" && /^[0-9A-Za-z.+-]{1,40}$/.test(saved.version)) {
-            version.textContent = `v${saved.version}`;
-          }
           const logo = saved.logo;
           const src = logo?.[dark ? "dark" : "light"];
           const brand = document.getElementById("splash-brand");
