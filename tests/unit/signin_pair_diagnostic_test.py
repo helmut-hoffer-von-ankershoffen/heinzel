@@ -238,6 +238,7 @@ def test_diagnostic_workflow_guards_before_setup_and_never_uploads_raw_output():
     assert diagnostic["if"] == "github.ref_name == 'ci/706-signin-pair-diagnostic'"
     assert "env -i " in diagnostic["run"]
     assert "LANG LC_ALL UV_PYTHON PLAYWRIGHT_BROWSERS_PATH SYSTEMROOT" in diagnostic["run"]
+    assert 'declare -p "$key"' in diagnostic["run"]
     assert "GITHUB_TOKEN" not in diagnostic.get("env", {})
     assert "> /dev/null 2>&1" in diagnostic["run"]
     generic = steps[names.index("Run the selection")]
@@ -249,3 +250,19 @@ def test_diagnostic_workflow_guards_before_setup_and_never_uploads_raw_output():
     assert "github.ref_name != 'ci/706-signin-pair-diagnostic'" in setup["with"]["enable-cache"]
     cache = steps[names.index("Reuse the browsers this lockfile's Playwright installs")]
     assert "github.ref_name != 'ci/706-signin-pair-diagnostic'" in cache["if"]
+
+
+def test_host_shell_preserves_unset_versus_empty_environment_values():
+    script = (
+        'for key in LANG LC_ALL; do if declare -p "$key" >/dev/null 2>&1; '
+        'then printf "%s=<%s>\\n" "$key" "${!key}"; fi; done'
+    )
+    run = subprocess.run(
+        ["/bin/bash", "-c", script],
+        env={"PATH": "/usr/bin:/bin", "LANG": ""},
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=True,
+    )
+    assert run.stdout == "LANG=<>\n"
