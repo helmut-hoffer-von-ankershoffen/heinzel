@@ -148,11 +148,12 @@ export function NotificationTest({
                 ) : (
                   <X aria-hidden className="mt-0.5 size-4 shrink-0 text-warn" />
                 )}
-                <span className="min-w-0 flex-1 basis-40">
+                <div className="min-w-0 flex-1 basis-40">
                   <span className="font-medium">{row.label}</span>
                   <span className="sr-only">{row.ok ? t("notify.works") : t("notify.blocked")}</span>
                   <span className="block text-muted-foreground">{row.detail}</span>
-                </span>
+                  {row.key === "browser" && browser === "install" && <NotificationInstallHelp />}
+                </div>
                 {row.action}
               </li>
             ))}
@@ -200,5 +201,14 @@ export function NotificationTest({
         {children}
       </PaneActions>
     </div>
+  );
+}
+
+export function NotificationInstallHelp() {
+  return (
+    <details className="text-xs text-muted-foreground">
+      <summary className="cursor-pointer">{t("contrib.toggle.details")}</summary>
+      <p>{t("notify.installDetails")}</p>
+    </details>
   );
 }

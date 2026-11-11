@@ -1613,7 +1613,7 @@ describe("PluginGallery", () => {
       </Providers>,
     );
     await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
-    expect(screen.getByText("Private-source previews remain in their owning repository.")).toBeInTheDocument();
+    expect(screen.getByText("Private previews stay in their repository.")).toBeInTheDocument();
     expect(calls).toHaveLength(0);
     expect(container.querySelectorAll("img,iframe")).toHaveLength(0);
   });

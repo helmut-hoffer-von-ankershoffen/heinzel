@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { ExternalAnchor } from "@/components/PaneActions";
 import { t } from "@/i18n";
 
 /** Ordinary browser links receive only a trusted-click handoff in the isolated native shell. */
@@ -25,17 +26,9 @@ export function PublicMediaLink({
   }, []);
   return (
     <>
-      <a
-        ref={anchor}
-        href={href}
-        aria-label={label}
-        className={className}
-        data-hz-public-media=""
-        target="_blank"
-        rel="noreferrer noopener"
-      >
+      <ExternalAnchor ref={anchor} href={href} aria-label={label} className={className} data-hz-public-media="">
         {children}
-      </a>
+      </ExternalAnchor>
       {failed && (
         <p role="alert" className="text-sm text-muted-foreground">
           {t("plugins.mediaOpenFailed")}

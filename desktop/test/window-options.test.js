@@ -37,7 +37,10 @@ function loadPreload(platform) {
     removeListener: (channel, listener) => { if (listeners.get(channel) === listener) listeners.delete(channel); },
   };
   const contextBridge = { exposeInMainWorld: (name, value) => { exposed[name] = value; } };
+  const window = {};
+  window.top = window;
   runInNewContext(preload, {
+    window, document: { addEventListener() {} },
     require: (name) => { assert.equal(name, "electron"); return { contextBridge, ipcRenderer }; },
     globalThis: { navigator: { platform } },
   });

@@ -128,7 +128,7 @@ describe("OperationDialog", () => {
   });
 
   it.each([
-    [true, "Restart requested. If the service is active, its next tick will confirm the version."],
+    [true, "Restart sent. Active service confirms version on next tick."],
     [false, "The daemon was not restarted. Install it and try again."],
     [null, "The restart result is unavailable. Check the daemon status."],
   ])("reports the streamed restart outcome %s accurately", async (restarted, message) => {

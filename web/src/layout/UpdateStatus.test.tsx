@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
+import { requestMenuAction } from "@/about/menu";
 import type { Phase, PhaseState } from "@/lib/operationRun";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
@@ -322,6 +323,7 @@ it.each([
   expect(screen.queryByText(/up to date/)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
   const manual = screen.getByRole("button", { name: "Manually update…" });
+  expect(manual).toHaveClass("pointer-coarse:min-h-[44px]", "pointer-coarse:min-w-[44px]");
   // Switches stay in the body; the action sits in the bottom row under the divider (design/README.md).
   expect(manual.closest("[data-pane-actions]")).toHaveClass("border-t");
   for (const toggle of screen.queryAllByRole("switch")) expect(toggle.closest("[data-pane-actions]")).toBeNull();
@@ -350,6 +352,52 @@ it("observes the live plan instead of the indefinitely cached installation facts
   expect(await screen.findByText("heinzel-example 2.0.0 is available")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Update now" })).toBeInTheDocument();
   expect(startUpdate).not.toHaveBeenCalled();
+});
+
+it.each(["button", "menu"] as const)("refreshes a failed plugin lookup through the %s", async (source) => {
+  const logs = vi.spyOn(console, "info").mockImplementation(() => {});
+  let fresh = false;
+  const updated = { ...plan, plugins_checked: true, core_checked: true, plugins: { "heinzel-example": "2.0.0" } };
+  const { calls } = mockApi({
+    ...shell,
+    "/api/update-status": status,
+    "/api/auto-update": () => (fresh ? updated : { ...plan, plugins_checked: false }),
+    "/api/auto-update/check": () => {
+      fresh = true;
+      return updated;
+    },
+  });
+  const user = userEvent.setup();
+  renderAt("/");
+  const icon = await screen.findByRole("button", { name: "Updates available, warning" });
+  if (source === "button") {
+    await user.click(icon);
+    await user.click(await screen.findByRole("button", { name: "Check for updates" }));
+  } else {
+    act(() => requestMenuAction("updates"));
+  }
+  expect(await screen.findByText("heinzel-example 2.0.0 is available")).toBeInTheDocument();
+  const checks = calls.filter((call) => new URL(call.url).pathname === "/api/auto-update/check");
+  expect(checks).toHaveLength(1);
+  expect(checks[0]?.method).toBe("POST");
+  expect(calls.some((call) => call.url.endsWith("/api/system/release"))).toBe(false);
+  await waitFor(() =>
+    expect(logs).toHaveBeenCalledWith(JSON.stringify({ event: "web.update.check", outcome: "done" })),
+  );
+  expect(logs).toHaveBeenCalledWith(JSON.stringify({ event: "web.update.check", outcome: "start" }));
+  logs.mockRestore();
+});
+
+it("shows when the update check fails", async () => {
+  const logs = vi.spyOn(console, "info").mockImplementation(() => {});
+  mockApi({ ...shell, "/api/update-status": status, "/api/auto-update/check": { status: 503, body: {} } });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
+  await user.click(await screen.findByRole("button", { name: "Check for updates" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("The check for updates did not finish.");
+  expect(logs).toHaveBeenCalledWith(JSON.stringify({ event: "web.update.check", outcome: "failed" }));
+  logs.mockRestore();
 });
 
 const planWith = {

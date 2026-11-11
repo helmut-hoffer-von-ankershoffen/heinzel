@@ -281,9 +281,7 @@ describe("Daemon Settings", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(await screen.findByText("2.0.0")).toBeInTheDocument();
     expect(screen.getByText("Checking the service")).toBeInTheDocument();
-    expect(
-      screen.getByText("Restart requested. If the service is active, its next tick will confirm the version."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Restart sent. Active service confirms version on next tick.")).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });
 
@@ -318,9 +316,7 @@ describe("Daemon Settings", () => {
       );
       stream.close();
     });
-    expect(
-      await screen.findByText("Restart requested. If the service is active, its next tick will confirm the version."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Restart sent. Active service confirms version on next tick.")).toBeInTheDocument();
     expect(screen.getByText("Checking the service")).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });
@@ -410,9 +406,7 @@ describe("Daemon Settings", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Restart" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(
-      await screen.findByText("Restart requested. If the service is active, its next tick will confirm the version."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Restart sent. Active service confirms version on next tick.")).toBeInTheDocument();
   });
 
   it.each([false, true])("shows the restart command only in expert mode=%s", async (expert) => {
@@ -433,9 +427,7 @@ describe("Daemon Settings", () => {
     );
     await user.click(await screen.findByRole("button", { name: "Restart" }));
     expect(await screen.findByText("The daemon was not restarted. Install it and try again.")).toBeInTheDocument();
-    expect(
-      screen.queryByText("Restart requested. If the service is active, its next tick will confirm the version."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Restart sent. Active service confirms version on next tick.")).not.toBeInTheDocument();
   });
 
   it.each([null, false, 0, "unexpected"])("reports an unknown restart result for %s", async (response) => {
@@ -448,9 +440,7 @@ describe("Daemon Settings", () => {
       await user.click(restart);
     }
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
-    expect(
-      screen.queryByText("Restart requested. If the service is active, its next tick will confirm the version."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Restart sent. Active service confirms version on next tick.")).not.toBeInTheDocument();
   });
 
   it("shows the failed step and its detail alongside the plain failure message", async () => {

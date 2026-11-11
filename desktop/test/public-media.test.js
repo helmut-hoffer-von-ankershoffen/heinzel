@@ -64,35 +64,51 @@ test("only the current owning main frame hands off media and opener failures sta
 });
 
 test("the isolated preload exposes no opener and requires trusted activated primary anchor clicks", async () => {
-  let click, exposed;
+  const handlers = new Map();
+  let exposed;
   const invoked = [], results = [];
   class Element {}
   class Anchor extends Element {
     href = sound;
+    target = "_blank";
+    get origin() { return new URL(this.href).origin; }
+    get protocol() { return new URL(this.href).protocol; }
     dispatchEvent(event) { results.push(event.detail); }
     closest() { return this; }
+    hasAttribute(name) { return name === "data-hz-public-media"; }
+    getAttribute() { return null; }
   }
   const activation = { isActive: true };
+  const window = { location: { origin: connection.origin } };
+  window.top = window;
   const context = vm.createContext({
     require: () => ({ contextBridge: { exposeInMainWorld: (_name, api) => { exposed = api; } },
-      ipcRenderer: { invoke: async (channel, url) => { invoked.push([channel, url]); return false; } } }),
-    document: { addEventListener: (name, handler, capture) => { assert.equal(name, "click"); assert.equal(capture, true); click = handler; } },
-    navigator: { userActivation: activation }, Element, HTMLAnchorElement: Anchor,
-    CustomEvent: class { constructor(name, options) { this.name = name; this.detail = options.detail; } },
+      ipcRenderer: { invoke: async (...args) => { invoked.push(args); return false; } } }),
+    document: { addEventListener: (name, handler, capture = false) => {
+      const key = `${name}:${capture}`;
+      handlers.set(key, [...(handlers.get(key) ?? []), handler]);
+    } },
+    window, navigator: { userActivation: activation }, Element, HTMLAnchorElement: Anchor, URL,
+    Event, CustomEvent: class { constructor(name, options) { this.name = name; this.detail = options.detail; } },
   });
   vm.runInContext(readFileSync(new URL("../src/preload.cjs", import.meta.url), "utf8"), context);
-  assert.deepEqual(Object.keys(exposed), ["workspaceAudio", "titlebar", "browser", "lifecycle", "onFullscreen"]);
+  assert.deepEqual(Object.keys(exposed), ["workspaceAudio", "externalLinks", "titlebar", "browser", "lifecycle", "about", "onFullscreen"]);
   const anchor = new Anchor();
   let prevented = 0;
-  const event = { isTrusted: true, button: 0, target: anchor, preventDefault: () => { prevented++; } };
-  click({ ...event, isTrusted: false });
-  click({ ...event, button: 1 });
-  click({ ...event, target: {} });
+  const fire = (fields = {}) => {
+    const event = { type: "click", isTrusted: true, button: 0, target: anchor, defaultPrevented: false,
+      preventDefault() { prevented++; this.defaultPrevented = true; }, ...fields };
+    for (const handler of handlers.get("click:true") ?? []) handler(event);
+    for (const handler of handlers.get("click:false") ?? []) handler(event);
+  };
+  fire({ isTrusted: false });
+  fire({ button: 1 });
+  fire({ target: {} });
   activation.isActive = false;
-  click(event);
+  fire();
   activation.isActive = true;
   assert.deepEqual(invoked, []);
-  click(event);
+  fire();
   await Promise.resolve();
   assert.deepEqual(invoked, [["hz:public-media", sound]]);
   assert.equal(prevented, 1);

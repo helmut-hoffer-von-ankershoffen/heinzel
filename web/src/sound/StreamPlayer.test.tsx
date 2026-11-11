@@ -66,7 +66,7 @@ describe("stream recovery", () => {
 
   it("offers desktop copy recovery without offering the account player", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("heinzelDesktop", { lifecycle: vi.fn() });
+    vi.stubGlobal("heinzelDesktop", { lifecycle: vi.fn(), externalLinks: true });
     vi.stubGlobal("navigator", {
       userAgent: "fixture",
       platform: "fixture",
@@ -258,7 +258,7 @@ describe("video link placement", () => {
   });
 
   it("does not expose a nonfunctional permanent desktop header link", () => {
-    vi.stubGlobal("heinzelDesktop", { lifecycle: vi.fn() });
+    vi.stubGlobal("heinzelDesktop", { lifecycle: vi.fn(), externalLinks: true });
     mount();
     expect(screen.queryByRole("link", { name: "Open on YouTube" })).toBeNull();
   });

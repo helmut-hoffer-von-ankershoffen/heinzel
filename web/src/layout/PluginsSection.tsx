@@ -1278,14 +1278,15 @@ function GalleryContents({ spec }: { spec: string }) {
                 <fieldset className="flex min-w-0 flex-wrap gap-2">
                   <legend className="sr-only">{t("plugins.chooseScreenshot")}</legend>
                   {shots.map((image, index) => (
-                    <button
+                    <Button
                       key={`${image.url}-${image.caption}-${image.surface}`}
                       type="button"
                       aria-pressed={selected === index}
                       aria-label={`${image.surface.toUpperCase()}: ${image.caption}`}
                       onClick={() => setSelected(index)}
+                      variant="ghost"
                       className={cn(
-                        "min-h-11 rounded-md border border-border p-1",
+                        "block h-auto min-h-11 rounded-md border border-border p-1",
                         selected === index && "ring-2 ring-ring",
                       )}
                     >
@@ -1297,7 +1298,7 @@ function GalleryContents({ spec }: { spec: string }) {
                         className="h-14 w-24 rounded-sm object-contain"
                       />
                       <span className="block text-xs">{image.surface.toUpperCase()}</span>
-                    </button>
+                    </Button>
                   ))}
                 </fieldset>
                 <figure className="min-w-0">

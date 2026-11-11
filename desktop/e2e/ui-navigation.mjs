@@ -105,7 +105,7 @@ async function run(redirectOnStart) {
       const page = await app.firstWindow({ timeout: 30_000 });
       await page.locator("p").waitFor();
       assert.deepEqual(await page.evaluate(() => Object.keys(window.heinzelDesktop)), [
-        "workspaceAudio", "titlebar", "browser", "lifecycle", "onFullscreen",
+        "workspaceAudio", "externalLinks", "titlebar", "browser", "lifecycle", "about", "onFullscreen",
       ]);
       await page.evaluate(() => document.querySelector("#sound").click());
       assert.equal(await readFile(join(root, "public-media"), "utf8").catch(() => ""), "", "A scripted click reached the OS opener.");
@@ -127,9 +127,11 @@ async function run(redirectOnStart) {
       await page.evaluate((url) => { window.open(url, "_blank"); }, `http://127.0.0.1:${target.address().port}/target`);
       assert.equal(app.windows().length, 1, "A denied popup created another native window.");
       assert.equal((await readFile(join(root, "public-media"), "utf8")).trim().split("\n").length, 3);
-      await app.evaluate(({ BrowserWindow }) => {
+      await app.evaluate(({ BrowserWindow, shell }) => {
         const contents = BrowserWindow.getAllWindows()[0].webContents;
         globalThis.navigationEvents = [];
+        globalThis.externalOpens = [];
+        shell.openExternal = async (url) => { globalThis.externalOpens.push(url); };
         for (const name of ["will-navigate", "will-redirect"]) contents.on(name, (event) => {
           globalThis.navigationEvents.push({ name, url: event.url, isMainFrame: event.isMainFrame });
         });
@@ -142,6 +144,7 @@ async function run(redirectOnStart) {
       await waitEvent(app, "will-redirect", targetUrl);
       assert.equal(targetRequests, 0);
       assert.equal(new URL(page.url()).origin, `http://127.0.0.1:${source.address().port}`);
+      await proveExternalActions(app, page);
       const exited = new Promise((done) => processHandle.once("exit", done));
       await page.close();
       await withTimeout(exited, 15_000, "Electron did not exit after closing its window.");
@@ -165,6 +168,49 @@ async function run(redirectOnStart) {
       loadPid: async () => Number(await readFile(join(root, "owned-pid"), "utf8")), processExists,
       remove: (directory) => rm(directory, { recursive: true, force: true }) }));
   }
+}
+async function proveExternalActions(app, page) {
+  const meet = "https://meet.google.com/abc-defg-hij";
+  const watch = "https://www.youtube.com/watch?v=tRsQsTMvPNg";
+  const publicUrl = "https://example.com/ordinary";
+  await page.evaluate(({ meet, watch, publicUrl }) => {
+    document.body.insertAdjacentHTML("beforeend", `
+      <a id="join" data-hz-external-action="join-meeting" target="_blank" href="${meet}">Join</a>
+      <a id="watch" data-hz-external-action="watch-video" target="_blank" href="${watch}&amp;unused=1">Watch</a>
+      <a id="ordinary" href="${publicUrl}">Ordinary link</a>
+      <button id="popup">Open a scripted popup</button>
+      <a id="bad-action" data-hz-external-action="watch-video" target="_blank" href="${meet}">Wrong provider</a>
+      <iframe title="Untrusted fixture" sandbox="allow-forms allow-popups" srcdoc='
+        <form action="${meet}" target="_blank"><button>Submit popup</button></form>
+        <a data-hz-external-action="join-meeting" target="_blank" href="${meet}">Subframe link</a>
+      '></iframe>`);
+    document.addEventListener("hz:external-opened", (event) => { event.target.dataset.handoff = "complete"; });
+    document.querySelector("#popup").addEventListener("click", () => window.open(publicUrl, "_blank"));
+    document.querySelector("#join").click();
+    document.querySelector("#ordinary").click();
+    window.open(meet, "_blank");
+  }, { meet, watch, publicUrl });
+  await page.locator("#popup").click();
+  await page.locator("#bad-action").click();
+  const frame = page.frameLocator("iframe");
+  await frame.getByRole("button", { name: "Submit popup" }).click();
+  await frame.getByRole("link", { name: "Subframe link" }).click();
+  assert.deepEqual(await app.evaluate(() => globalThis.externalOpens), []);
+  assert.equal(app.windows().length, 1);
+  await page.locator("#join").click();
+  await page.locator("#join[data-handoff=complete]").waitFor();
+  // Wait one actual throttle interval before the next eligible gesture.
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  await page.locator("#watch").press("Enter");
+  await page.locator("#watch[data-handoff=complete]").waitFor();
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  await page.locator("#ordinary").click({ button: "middle" });
+  await withTimeout((async () => {
+    while (!(await app.evaluate((_, href) => globalThis.externalOpens.includes(href), publicUrl)))
+      await new Promise((resolve) => setTimeout(resolve, 50));
+  })(), 5000, "A trusted middle-click did not hand off the ordinary link.");
+  assert.deepEqual(await app.evaluate(() => globalThis.externalOpens), [meet, watch, publicUrl]);
+  assert.equal(app.windows().length, 1);
 }
 async function waitEvent(app, name, url) {
   await withTimeout((async () => {

@@ -58,7 +58,7 @@ def git_objects(focused_plan, monkeypatch):
 
 
 def test_reviewed_plan_accepts_hyphenated_owning_web_paths(focused_plan, git_objects):
-    paths = ["web/src/test/choices-standards.test.ts", "web/src/lib/pane-actions-standards.test.ts"]
+    paths = ["web/src/test/choices-standards.test.ts", "web/src/lib/mobile-standards.test.ts"]
     assert focused_plan._selections({"selection": {"web": paths}}, MERGE) == {"web": tuple(paths)}
 
 
