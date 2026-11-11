@@ -381,6 +381,7 @@ class PydanticAiAccess:
 
 API_KEY = CredentialLet(
     name="api-key",
+    required=False,
     purpose="An API key for the model API `[ai.access]` names: from the vendor's console (e.g. console.anthropic.com, "
     "platform.openai.com) or the endpoint's own; optional for a local server",
 )

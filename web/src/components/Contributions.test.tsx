@@ -1,8 +1,11 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { assertActionStructure } from "@/components/PaneActions";
 import { shell } from "@/test/fixtures";
+import { expectPane } from "@/test/pane";
 import { eventStream, expectAccessible, mockApi, renderAt } from "@/test/render";
+import { axisLabel, type ChartData } from "./ChartBody";
 import { ICONS, liveText, widgetText } from "./Contributions";
 
 const entry = { module: "acme", plugin: "heinzel-acme", order: 500, refresh: 60, problem: null };
@@ -170,6 +173,54 @@ describe("Contributions", () => {
     },
   );
 
+  it("keeps a switch's longer lines in Details instead of bullets under it", async () => {
+    const call = (operation: string) => ({
+      method: "POST",
+      path: `/acme/${operation}`,
+      query: {},
+      body: {},
+      command: `hz acme ${operation}`,
+      summary: `${operation} sharing`,
+      read_only: false,
+    });
+    mockApi({
+      ...answers,
+      "/api/system/ui/status": [
+        {
+          ...entry,
+          id: "acme:share",
+          slots: { footer: true },
+          item: {
+            text: "Sharing",
+            icon: "link",
+            tone: "neutral",
+            detail: [{ text: "A longer explanation that belongs on demand only.", tone: "neutral" }],
+            toggle: {
+              label: "Share over Acme",
+              checked: false,
+              requested: true,
+              enable: { operation: "enable", arguments: {}, call: call("enable") },
+              disable: { operation: "disable", arguments: {}, call: call("disable") },
+              apply_settings: {},
+              status: null,
+              problem: null,
+            },
+          },
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await user.hover(await screen.findByRole("button", { name: /^Sharing/ }));
+    const control = await screen.findByRole("switch", { name: "Share over Acme" });
+    expect(control).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Turning on…");
+    expect(screen.getByText("A longer explanation that belongs on demand only.")).not.toBeVisible();
+    await user.click(screen.getByText("Details"));
+    expect(screen.getByText("Details").closest("details")).toHaveAttribute("open");
+    expect(screen.getByText("A longer explanation that belongs on demand only.")).toBeVisible();
+  });
+
   it("names a footer clock's pane by its zone, without a heading that repeats the time", async () => {
     mockApi({
       ...answers,
@@ -199,6 +250,7 @@ describe("Contributions", () => {
     expect(within(pane).queryByText(/^Berlin \d\d:\d\d:\d\d$/)).not.toBeInTheDocument();
     expect(within(pane).getByText("New York")).toBeInTheDocument();
     expect(within(pane).getByRole("button", { name: "Open" })).toBeInTheDocument();
+    await expectPane(pane);
   });
 
   it("asks before a write and runs exactly the call the server built", async () => {
@@ -207,7 +259,7 @@ describe("Contributions", () => {
     renderAt("/doctor");
     await user.hover(await screen.findByRole("button", { name: /^3 reviews/ }));
     await user.click(await screen.findByRole("button", { name: "Sync" }));
-    const dialog = await screen.findByRole("alertdialog", { name: "Sync the reviews." });
+    const dialog = await screen.findByRole("dialog", { name: "Sync the reviews." });
     expect(within(dialog).getByText("hz acme sync --dry-run true")).toBeInTheDocument();
     expect(calls.some((call) => new URL(call.url).pathname === "/api/stream/acme/sync")).toBe(false);
     await user.click(within(dialog).getByRole("button", { name: "Run it" }));
@@ -224,6 +276,14 @@ describe("Contributions", () => {
     expect(await screen.findByRole("button", { name: "Team clock (2)" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Hidden/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Weather map" })).toBeInTheDocument();
+    const team = screen.getByRole("button", { name: "Team clock (2)" });
+    const hint = screen
+      .getAllByRole("tooltip", { hidden: true })
+      .find((tip) => tip.id === team.getAttribute("aria-describedby"));
+    if (!hint) throw new Error("the badge hover pane is missing");
+    expect(hint).toHaveTextContent("Badge 2: the count this button currently shows");
+    expect(hint).toHaveClass("hidden", "group-hover/badge:block", "group-focus-within/badge:block");
+    expect(screen.getByRole("button", { name: "Weather map" })).not.toHaveAttribute("aria-describedby");
     expect(screen.queryByRole("button", { name: "Open weather report" })).not.toBeInTheDocument();
   });
 
@@ -263,7 +323,7 @@ describe("Contributions", () => {
     renderAt("/doctor");
     await user.hover(await screen.findByRole("button", { name: /Edit personal helper/ }));
     await user.click(await screen.findByRole("button", { name: "Run" }));
-    const dialog = await screen.findByRole("alertdialog", { name: "Save the helper." });
+    const dialog = await screen.findByRole("dialog", { name: "Save the helper." });
     expect(calls.some((call) => new URL(call.url).pathname === "/api/stream/harbor/profile")).toBe(false);
     await user.click(within(dialog).getByRole("button", { name: "Run it" }));
     await waitFor(() =>
@@ -277,13 +337,93 @@ describe("Contributions", () => {
 
   it("puts widgets on Today, with Ask about it and dismiss", async () => {
     mockApi(answers);
-    const user = userEvent.setup();
     renderAt("/");
     const card = (await screen.findByText("2/3")).closest("li") as HTMLElement;
     expect(within(card).getByText("Zones at work now")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Weather" })).toBeInTheDocument();
-    await user.click(within(card).getByRole("button", { name: "Dismiss Zones at work now" }));
-    expect(screen.queryByText("2/3")).not.toBeInTheDocument();
+    const ask = within(card).getByRole("button", { name: "Ask about it" });
+    // A card with nothing else to offer leads with it: words in the bottom row; Dismiss is the corner's chrome.
+    expect(ask).toHaveTextContent("Ask about it");
+    expect(ask.closest("[data-pane-actions]")).not.toBeNull();
+    const dismiss = within(card).getByRole("button", { name: "Hide Zones at work now" });
+    expect(dismiss.closest("[data-pane-chrome]")).toHaveClass("absolute", "top-1.5", "right-1.5");
+    assertActionStructure(card);
+  });
+
+  /** A server that remembers `hide` and `show` for the today slot, as the user file does. */
+  function stateful() {
+    const off = new Set<string>();
+    const widgetsNow = () => widgets.map((w) => ({ ...w, slots: { today: !off.has(w.id) } }));
+    const listNow = () =>
+      widgets.map((w) => ({
+        id: w.id,
+        module: w.module,
+        kind: "widget",
+        title: w.id === "acme:at-work" ? "Zones at work" : w.id,
+        slots: { today: !off.has(w.id) },
+        defaults: { today: true },
+      }));
+    const item = (request: Request) => new URL(request.url).searchParams.get("item") ?? "";
+    return mockApi({
+      ...answers,
+      "/api/system/ui/widgets": (request: Request) => {
+        const only = new URL(request.url).searchParams.get("item");
+        return widgetsNow().filter((w) => !only || w.id === only);
+      },
+      "/api/system/ui/list": () => listNow(),
+      "/api/system/ui/hide": (request: Request) => {
+        off.add(item(request));
+        return listNow();
+      },
+      "/api/system/ui/show": (request: Request) => {
+        off.delete(item(request));
+        return listNow();
+      },
+    });
+  }
+
+  it("hides a widget with Hide, says so with Undo, and Undo brings it back", async () => {
+    const { calls } = stateful();
+    const user = userEvent.setup();
+    renderAt("/");
+    const card = (await screen.findByText("2/3")).closest("li") as HTMLElement;
+    expect(screen.queryByRole("button", { name: /^Hidden widgets/ })).not.toBeInTheDocument();
+    await user.click(within(card).getByRole("button", { name: "Hide Zones at work now" }));
+    await waitFor(() => expect(screen.queryByText("2/3")).not.toBeInTheDocument());
+    const hide = calls.find((call) => new URL(call.url).pathname === "/api/system/ui/hide");
+    expect(hide?.method).toBe("POST");
+    expect(new URL(hide?.url ?? "http://x").searchParams.get("slot")).toBe("today");
+    const toast = await screen.findByRole("status", { name: "" });
+    expect(toast).toHaveTextContent("Hidden.");
+    await user.click(within(toast).getByRole("button", { name: "Undo" }));
+    expect(await screen.findByText("2/3")).toBeInTheDocument();
+  });
+
+  it("lists hidden widgets on Today with a count, restores one or all, and goes away when none is hidden", async () => {
+    stateful();
+    const user = userEvent.setup();
+    renderAt("/");
+    await screen.findByText("2/3");
+    for (const [id, name] of [
+      ["acme:at-work", "Zones at work now"],
+      ["acme:wide", "Roadmap"],
+    ]) {
+      const li = document.querySelector(`[data-widget="${id}"]`) as HTMLElement;
+      await user.click(within(li).getByRole("button", { name: `Hide ${name}` }));
+    }
+    const control = await screen.findByRole("button", { name: "Hidden widgets (2)" });
+    expect(control).toHaveTextContent("");
+    await user.click(control);
+    const dialog = await screen.findByRole("dialog", { name: "Hidden widgets" });
+    expect(within(dialog).getByText("Zones at work")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("acme")).toHaveLength(2);
+    assertActionStructure(dialog);
+    await user.click(within(dialog).getByRole("button", { name: "Restore Zones at work" }));
+    expect(await screen.findByText("2/3")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Hidden widgets (1)" })).toBeInTheDocument();
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Restore all" }));
+    await screen.findByText("Roadmap");
+    await waitFor(() => expect(screen.queryByRole("button", { name: /^Hidden widgets/ })).not.toBeInTheDocument());
   });
 
   it("shows one card per contribution id, however often the list repeats it", async () => {
@@ -312,6 +452,70 @@ describe("Contributions", () => {
     expect(within(card).getByText("Light traffic")).toBeInTheDocument();
     expect(within(card).getByRole("img", { name: /Your Heinzelmännchen.*sunglasses.*scarf/ })).toBeInTheDocument();
     await expectAccessible(card.parentElement as HTMLElement);
+  });
+});
+
+describe("Chart widget", () => {
+  const chart: ChartData = {
+    kind: "chart",
+    title: "Temperature today",
+    summary: "Warms from 10 to 14 degrees by 16:00; rain likely at noon.",
+    unit: "°C",
+    tone: "neutral",
+    series: [
+      { at: "2026-11-07T12:00", value: 10 },
+      { at: "2026-11-07T14:00", value: 12 },
+      { at: "2026-11-07T16:00", value: 14 },
+    ],
+    bars: [0.9, 0.2, 0],
+    bars_label: "Rain chance",
+    range: { low: 9, high: 15 },
+    now: "2026-11-07T14:00",
+  };
+
+  it("draws an image named by the title and described by the summary, with axes, bars and a now marker", async () => {
+    mockApi({
+      ...answers,
+      "/api/system/ui/widgets": [{ ...entry, id: "acme:temp", slots: { today: true }, refresh: 300, widget: chart }],
+    });
+    renderAt("/");
+    const img = await screen.findByRole("img", { name: "Temperature today" });
+    expect(img).toHaveAccessibleDescription(chart.summary);
+    expect(screen.getAllByRole("row")).toHaveLength(chart.series.length + 1); // a header row and one row per point
+    expect(img.querySelectorAll("polyline")).toHaveLength(1);
+    expect(img.querySelectorAll("rect")).toHaveLength(4);
+    expect(img.querySelector("line[stroke-dasharray]")).toBeInTheDocument();
+    expect(screen.getAllByText("12:00").length).toBeGreaterThan(0); // an axis label and the table row
+    expect(img.querySelectorAll("text")).toHaveLength(0); // labels are HTML, so they follow the text size
+    // bars keep 3:1 against the card and are not outlined in the line colour
+    expect(img.querySelector("rect.opacity-70.stroke-none")).toBeInTheDocument();
+    expect(img.querySelector("rect.opacity-10.stroke-none")).toBeInTheDocument();
+    expect(img.querySelectorAll("g.stroke-muted-foreground line")).toHaveLength(2); // a visible range band
+    expect(screen.getByText("9 to 15 °C · Rain chance")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Time" })).toBeInTheDocument();
+    expect((img.closest("li") as HTMLElement).dataset.size).toBe("medium");
+    await expectAccessible((img.closest("li") as HTMLElement).parentElement as HTMLElement);
+  });
+
+  it("draws a two-point series with each label once", async () => {
+    const two: ChartData = { ...chart, series: chart.series.slice(0, 2), bars: [0.9, 0.2], now: "2026-11-07T12:00" };
+    mockApi({
+      ...answers,
+      "/api/system/ui/widgets": [{ ...entry, id: "acme:two", slots: { today: true }, refresh: 300, widget: two }],
+    });
+    renderAt("/");
+    const img = await screen.findByRole("img", { name: "Temperature today" });
+    const labels = (img.parentElement as HTMLElement).querySelectorAll("div[aria-hidden] span");
+    expect([...labels].map((label) => label.textContent)).toEqual(["12:00", "14:00"]);
+  });
+
+  it("reads as its title and summary when asked about", () => {
+    expect(widgetText(chart)).toBe(`Temperature today: ${chart.summary}`);
+  });
+
+  it("labels a plain-label axis as given", () => {
+    expect(axisLabel("Mon")).toBe("Mon");
+    expect(axisLabel("2026-11-07T09:30:00+01:00")).toBe("09:30");
   });
 });
 

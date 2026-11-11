@@ -10,7 +10,6 @@ from typing import Annotated
 
 from pydantic import Field
 from rich.console import Group, RenderableType
-from rich.markdown import Markdown
 from rich.table import Table
 from rich.text import Text
 
@@ -62,6 +61,8 @@ def render_list(result: SkillList) -> RenderableType:
 
 def render_show(result: SkillDetail) -> RenderableType:
     """A skill's origin, files and hints, then its body."""
+    from rich.markdown import Markdown  # noqa: PLC0415 - only terminal skill-body rendering needs Markdown
+
     view = result.skill
     lines = [f"{view.name} — {view.plugin or view.module or 'your skills'} ({view.source})", view.description]
     if view.files:

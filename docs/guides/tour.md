@@ -19,7 +19,8 @@ maintains.
 
 ## Keep useful commands beside the work.
 
-The terminal opens beside the page you are on, with a tab for each command.
+The terminal opens beside the page you are on, with a tab for each command. On a phone, use the scrollable key row
+for Escape, Tab, Ctrl+C, Ctrl+Z, Ctrl+D and the arrow keys.
 
 <!-- hz:tour-story terminal -->
 ![Two terminal tabs in the local demo: hz graph and hz drafts, beside the contract.](../assets/tour/terminal-tabs.png)

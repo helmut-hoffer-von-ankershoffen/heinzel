@@ -1,13 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { probeServer } from "@/splash/Splash";
+import { api, authorityMiddleware } from "./client";
 import { dropRefusedDevice, dropStaleSession } from "./device";
-import { DEVICE_KEY, deviceToken, sessionToken } from "./token";
+import { authorityEpoch, DEVICE_KEY, deviceToken, sessionToken } from "./token";
 
 beforeEach(() => {
   sessionStorage.clear();
   localStorage.clear();
 });
 afterEach(() => vi.restoreAllMocks());
+
+it("does not send a scoped decision if authority rotates while the request is queued", async () => {
+  sessionStorage.setItem("hz.token", "original-token");
+  const fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  const decision = api.POST("/system/runner/chat/confirm", {
+    params: { query: { session: "chat", action: "draft-share" } },
+    middleware: authorityMiddleware(authorityEpoch()),
+  });
+  sessionStorage.setItem("hz.token", "replacement-token");
+  await expect(decision).rejects.toThrow("Browser authority changed");
+  expect(fetcher).not.toHaveBeenCalled();
+});
 
 describe("a window that outlived hz ui", () => {
   it("uses the device token once hz ui refuses the old session token", async () => {

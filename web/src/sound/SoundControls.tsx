@@ -1,11 +1,12 @@
 // The sound's controls (ADR 0058): one visible speaker beside the light/dark toggle opens the soundscape picker; the
 // picker also has Play/Pause and stays open while a soundscape is picked (it plays at once), and Settings → General exposes the same choices.
-import { Check, Pause, Play, Volume, Volume2, VolumeX } from "lucide-react";
+import { Check, Pause, Play, Settings2, Volume, Volume2, VolumeX } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { SchemaSoundList, SchemaSoundscapeView } from "@/api/client";
 import { useThemes } from "@/api/queries";
-import { SettingsShortcut } from "@/components/SettingsShortcut";
+import { PaneAction, PaneActions, PaneTitle } from "@/components/PaneActions";
+import { useSettingsTarget } from "@/components/SettingsShortcut";
 import { t } from "@/i18n";
 import { Switch } from "@/layout/SettingControls";
 import { isIOS } from "@/lib/browser";
@@ -206,6 +207,7 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
   const press = useRef<ReturnType<typeof setTimeout>>(undefined);
   const pressed = useRef(false);
   const current = effective(list.data);
+  const settingsTarget = useSettingsTarget("hz");
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => {
@@ -230,29 +232,7 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
     <div ref={ref} className={cn("relative flex items-center", compact && "flex-col")}>
       {open && list.data && (
         <Popover anchor={ref} side={compact ? "right" : "above"} dialog={dialog}>
-          <div className="flex items-center gap-2 px-2.5 pt-1 pb-1.5">
-            <p className="flex-1 text-ui-sm text-muted-foreground">{t("sound.title")}</p>
-            <button
-              type="button"
-              disabled={!current}
-              onClick={() => {
-                toggle(current?.name);
-              }}
-              aria-label={
-                current
-                  ? sound.playing
-                    ? t("sound.pause", { title: current.title })
-                    : t("sound.play", { title: current.title })
-                  : t("sound.choose")
-              }
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-ui-sm hover:bg-accent disabled:opacity-50"
-            >
-              {sound.playing ? <Pause aria-hidden className="size-4" /> : <Play aria-hidden className="size-4" />}
-              {sound.playing
-                ? t("sound.pause", { title: current?.title ?? "" })
-                : t("sound.play", { title: current?.title ?? "" })}
-            </button>
-          </div>
+          <PaneTitle>{t("sound.title")}</PaneTitle>
           <SoundChoices list={list.data} />
           <Notes list={list.data} />
           <hr className="mx-2 my-1 border-border" />
@@ -261,24 +241,34 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
           <Toggle list={list.data} field="follow_theme" label={t("sound.followTheme")} />
           <Toggle list={list.data} field="mute_in_meetings" label={t("sound.muteInMeetings")} />
           {sound.problem && <p className="px-2.5 py-1 text-ui-sm text-bad">{sound.problem}</p>}
-          <hr className="mx-2 my-1 border-border" />
-          <div className="flex justify-end px-1">
-            <SettingsShortcut section="hz" label={t("sound.more")} onClick={() => setOpen(false)} />
-          </div>
+          <PaneActions>
+            <PaneAction
+              key="play"
+              icon={sound.playing ? Pause : Play}
+              disabled={!current}
+              onClick={() => toggle(current?.name)}
+            >
+              {current
+                ? sound.playing
+                  ? t("sound.pause", { title: current.title })
+                  : t("sound.play", { title: current.title })
+                : t("sound.choose")}
+            </PaneAction>
+            <PaneAction key="more" icon={Settings2} to={settingsTarget} onClick={() => setOpen(false)}>
+              {t("sound.more")}
+            </PaneAction>
+          </PaneActions>
         </Popover>
       )}
       {compact && current && (
-        <button
-          type="button"
+        <PaneAction
+          ghost
+          icon={sound.playing ? Pause : Play}
+          className="text-icon"
           onClick={() => toggle(current.name)}
-          aria-label={
-            sound.playing ? t("sound.pause", { title: current.title }) : t("sound.play", { title: current.title })
-          }
-          title={sound.playing ? t("sound.pause", { title: current.title }) : t("sound.play", { title: current.title })}
-          className="flex size-9 items-center justify-center rounded-lg text-icon hover:bg-accent/70"
         >
-          {sound.playing ? <Pause aria-hidden className="size-4" /> : <Play aria-hidden className="size-4" />}
-        </button>
+          {sound.playing ? t("sound.pause", { title: current.title }) : t("sound.play", { title: current.title })}
+        </PaneAction>
       )}
       <button
         ref={opener}
@@ -352,12 +342,11 @@ export function SoundSettings() {
       <p className="mb-2 text-sm text-muted-foreground">{t("sound.help")}</p>
       <SoundChoices list={list.data} />
       <Notes list={list.data} />
-      <div className="mt-2 border-t border-border/70 pt-2">
-        <VolumeSlider list={list.data} />
-        <Toggle list={list.data} field="follow_theme" label={t("sound.followTheme")} />
-        <Toggle list={list.data} field="mute_in_meetings" label={t("sound.muteInMeetings")} />
-        <Toggle list={list.data} field="duck_while_typing" label={t("sound.duckWhileTyping")} />
-      </div>
+      <hr className="my-2 border-border/70" />
+      <VolumeSlider list={list.data} />
+      <Toggle list={list.data} field="follow_theme" label={t("sound.followTheme")} />
+      <Toggle list={list.data} field="mute_in_meetings" label={t("sound.muteInMeetings")} />
+      <Toggle list={list.data} field="duck_while_typing" label={t("sound.duckWhileTyping")} />
     </section>
   );
 }

@@ -23,7 +23,7 @@ class ExpertService:
         Raises:
             HeinzelError: If a configuration file is not valid TOML.
         """
-        # Read now, not from the settings of boot: `hz ui` keeps running while a terminal switches the mode.
+        # Read now, not from the settings of boot: `hz ui serve` keeps running while a terminal switches the mode.
         config = Config.load()
         expert = config.settings(Settings, "hz").expert
         note, next_steps = None, ["hz system expert off" if expert else "hz system expert on"]

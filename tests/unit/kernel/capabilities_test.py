@@ -1,7 +1,7 @@
 """Capability specs and requirement strings (ADR 0028)."""
 
 import inspect
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import get_type_hints
 
 import pytest
@@ -10,11 +10,13 @@ from pydantic import ValidationError
 from heinzel.kernel import CAPABILITIES, Requirement
 from heinzel.kernel._capabilities import capability_of, parse_requirements
 from heinzel.kernel._protocols import (
+    Attachment,
     Calendar,
     Chat,
     Directory,
     Documents,
     Event,
+    Issue,
     Mail,
     MailContent,
     MailMessage,
@@ -49,13 +51,45 @@ def test_issues_are_the_trackers_not_the_code_hosts():
     assert CAPABILITIES["code-host"].methods == {"merged_pull_requests": "read"}
 
 
-def test_only_calendar_chat_documents_and_mail_can_write():
+def test_only_calendar_chat_documents_mail_and_the_tracker_can_write():
     assert {name for name, spec in CAPABILITIES.items() if "write" in spec.modes} == {
         "calendar",
         "chat",
         "documents",
         "mail",
+        "tracker",
     }
+
+
+def test_the_tracker_reads_what_changed_and_writes_every_step_of_an_issue_naming_its_actor():
+    """ADR 0141: create, claim, transition, note, attach and close are writes; each says who does it."""
+    assert CAPABILITIES["tracker"].methods == {
+        "issues_updated": "read",
+        "create": "write",
+        "claim": "write",
+        "transition": "write",
+        "note": "write",
+        "attach": "write",
+        "close": "write",
+    }
+    assert CAPABILITIES["tracker"].protocol is Tracker
+    for method in ("claim", "transition", "note", "attach", "close"):
+        assert "actor" in inspect.signature(getattr(Tracker, method)).parameters, f"tracker.{method} names no actor"
+    assert "reporter" in inspect.signature(Tracker.create).parameters, "create's actor is its reporter"
+    assert get_type_hints(Tracker.attach)["return"] is Attachment
+    assert not any("delete" in method for method in CAPABILITIES["tracker"].methods)
+
+
+def test_an_issue_without_the_new_fields_still_validates_and_has_no_release_yet():
+    issue = Issue(key="APP-1", title="t", url="https://track.invalid/1", state="open", updated_at=datetime.now(UTC))
+    assert (issue.created_at, issue.closed_at, issue.reporter, issue.released_in, issue.released_at) == (None,) * 5
+    assert issue.attachments == []
+
+
+def test_an_attachment_has_a_size_that_is_never_negative():
+    assert Attachment(name="a.png", media_type="image/png", size=0, ref="issues/1/a.png").size == 0
+    with pytest.raises(ValidationError):
+        Attachment(name="a.png", media_type="image/png", size=-1, ref="issues/1/a.png")
 
 
 def test_chat_meetings_and_calendar_read_in_windows_and_meetings_only_read():
@@ -113,6 +147,8 @@ def test_contract_shaped_reads_take_a_window_and_id_reads_serve_operations():
 
 def test_protocol_results_are_models_with_described_fields():
     for model in (
+        Issue,
+        Attachment,
         Message,
         PostedMessage,
         Meeting,
@@ -211,7 +247,7 @@ def test_parses_requirements(text, expected):
         ("spreadsheets:read", "unknown capability 'spreadsheets'"),
         ("tracker:", "modes must be"),
         ("tracker:delete", "modes must be"),
-        ("tracker:write", "tracker has no write mode"),
+        ("meetings:write", "meetings has no write mode"),
         ("Acme:tracker:read", "adapter 'Acme'"),
     ],
 )

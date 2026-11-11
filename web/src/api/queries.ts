@@ -1,6 +1,7 @@
 // One query per operation the screens read; TanStack Query caches them, so screens share what they fetched.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isLocalServer } from "@/lib/browser";
+import { type Phase, parsePhase } from "@/lib/operationRun";
 import { splash, unreachableError } from "@/splash/store";
 import { api, unwrap } from "./client";
 import type { components } from "./schema";
@@ -23,6 +24,12 @@ export const keys = {
 export const useDoctor = () => useQuery({ queryKey: keys.doctor, queryFn: () => unwrap(api.GET("/system/doctor")) });
 export const useConfig = () =>
   useQuery({ queryKey: keys.config, queryFn: () => unwrap(api.GET("/system/config/show")) });
+/** Preview controls follow the selected profile; each operation still enforces its own server gate. */
+export function usePreviewFeature(name: string): boolean {
+  const config = useConfig();
+  const features = config.data?.settings.find(({ section, key }) => section === "hz" && key === "features")?.value;
+  return Array.isArray(features) && features.includes(name);
+}
 /** Whether the Heinzelmännchen play along: `hz system config set playful false` (Settings → General) turns them off. */
 export function usePlayful(): boolean {
   const config = useConfig();
@@ -194,6 +201,14 @@ export const useOpenNotificationSettings = () =>
 export const useCapabilities = () =>
   useQuery({ queryKey: ["system", "capability", "list"], queryFn: () => unwrap(api.GET("/system/capability/list")) });
 
+/** Offline connector sign-in status from the connector's own checks. */
+export const useConnectorReport = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["system", "connector", "list"],
+    queryFn: ({ signal }) => unwrap(api.GET("/system/connector/list", { signal })),
+    enabled,
+  });
+
 /** `hz system plugin list` and `search`: what's installed, and what can be. */
 export const usePlugins = () =>
   useQuery({
@@ -218,7 +233,26 @@ export const usePluginSearch = (text: string) =>
     queryKey: ["system", "plugin", "search", text],
     queryFn: ({ signal }) =>
       unwrap(api.GET("/system/plugin/search", { params: { query: { text: text || undefined } }, signal })),
+    // The server keeps its answer for a minute too; within it a tab switch shows the kept list, then revalidates.
+    staleTime: 60_000,
+  });
+
+/** `hz system plugin search --refresh`: asks GitHub again, past the minute the server keeps its answer, and shows it. */
+export const useRefreshPluginSearch = (text: string) => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      unwrap(api.GET("/system/plugin/search", { params: { query: { text: text || undefined, refresh: true } } })),
+    onSuccess: (found) => client.setQueryData(["system", "plugin", "search", text], found),
+  });
+};
+/** Fetch inert media only after a person opens a plugin's gallery. */
+export const usePluginShowcase = (spec: string) =>
+  useQuery({
+    queryKey: ["system", "plugin", "showcase", spec],
+    queryFn: ({ signal }) => unwrap(api.GET("/system/plugin/showcase", { params: { query: { spec } }, signal })),
     staleTime: 5 * 60 * 1000,
+    retry: false,
   });
 
 /** `hz system plugin add` without `confirm`: what a spec would install (source, version, publisher), installing nothing. */
@@ -246,12 +280,15 @@ export type PluginChangeRequest = (
   | { remove: string }
   | { enable: string }
   | { disable: string }
-) & { signal?: AbortSignal; onProgress?: (text: string) => void };
+) & { signal?: AbortSignal; onProgress?: (text: string) => void; onPhase?: (phase: Phase) => void };
+
+export const pluginChangeKey = ["system", "plugin", "change"] as const;
 
 /** `hz system plugin add --confirm|remove|enable|disable`: changes what code runs, so the UI asks first (ADR 0047). */
 export const useChangePlugin = () => {
   const client = useQueryClient();
   return useMutation({
+    mutationKey: pluginChangeKey,
     mutationFn: (variables: PluginChangeRequest) => {
       if ("add" in variables) {
         // The requirement the preview answered, pinned to what was shown, so the dialog's version is the one installed.
@@ -262,6 +299,8 @@ export const useChangePlugin = () => {
           { spec: variables.add, confirm: true, operation_id: variables.operationId },
           (event) => {
             if (event.event === "task" && typeof event.data.text === "string") variables.onProgress?.(event.data.text);
+            const phase = event.event === "phase" ? parsePhase(event.data) : null;
+            if (phase) variables.onPhase?.(phase);
           },
           variables.signal,
         );

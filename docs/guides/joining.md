@@ -1,5 +1,5 @@
 ---
-description: Join your team's Heinzelmännchen setup: run the line your manager shared, answer what it asks and see your team's first draft.
+description: "Join your team's Heinzelmännchen setup: run the line your manager shared, answer what it asks and see your team's first draft."
 ---
 
 # Join your team
@@ -81,7 +81,7 @@ Your team's contracts are in the checkout's `workflows/`, as `team:<name>`:
 ```bash
 hz heinzel list                              # your contracts and your team's, with schedule and problems
 hz heinzel show team:weekly-report           # what it reads, what is bound, whether it is ready
-hz heinzel wake team:weekly-report --dry-run  # the packet the helper would get: the week's pull requests and items
+hz heinzel wake team:weekly-report --dry-run  # the packet the Heinzel would get: the week's pull requests and items
 hz heinzel wake team:weekly-report            # draft it, within the cost cap; a local file, yours to edit or discard
 hz heinzel drafts --name weekly-report --latest
 ```

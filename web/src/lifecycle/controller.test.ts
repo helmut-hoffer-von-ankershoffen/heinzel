@@ -120,6 +120,50 @@ describe("verified restart and apply", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("says the restart never happened when the retired server keeps answering past its shutdown grace", async () => {
+    const transport = server();
+    transport.read.mockResolvedValue(before);
+    const result = resumeRestartAndApply(
+      { retired: [before.instance], version: before.version, settings: [] },
+      { transport, interval: 100, staleAfter: 1_000 },
+    );
+    const failed = expect(result).rejects.toMatchObject({ kind: "stale", observation: { retired: [before.instance] } });
+    await vi.advanceTimersByTimeAsync(1_100);
+    await failed;
+    expect(transport.restart).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("resets the not-restarted window when the retired server drops out for a moment", async () => {
+    const transport = server();
+    transport.read.mockReset();
+    for (let read = 0; read < 9; read += 1) transport.read.mockResolvedValueOnce(before);
+    transport.read.mockRejectedValueOnce(new TypeError("Disconnected"));
+    for (let read = 0; read < 9; read += 1) transport.read.mockResolvedValueOnce(before);
+    transport.read.mockResolvedValue({ ...after, version: before.version });
+    const result = resumeRestartAndApply(
+      { retired: [before.instance], version: before.version, settings: [] },
+      { transport, interval: 100, staleAfter: 1_000 },
+    );
+    await vi.advanceTimersByTimeAsync(2_500);
+    await expect(result).resolves.toMatchObject({ instance: after.instance });
+  });
+
+  it("stops checking at once while a status read is still waiting for an answer", async () => {
+    const transport = server();
+    transport.read.mockImplementation(() => new Promise(() => {}));
+    const controller = new AbortController();
+    const result = resumeRestartAndApply(
+      { retired: [before.instance], version: before.version, settings: [] },
+      { transport, signal: controller.signal },
+    );
+    const stopped = expect(result).rejects.toMatchObject({ kind: "aborted" });
+    await vi.advanceTimersByTimeAsync(10);
+    controller.abort();
+    await stopped;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("waits through old-process 200 responses and a disconnect before accepting the replacement", async () => {
     const transport = server();
     transport.read.mockResolvedValueOnce(before).mockRejectedValueOnce(new TypeError("Disconnected"));
@@ -154,10 +198,78 @@ describe("verified restart and apply", () => {
     const transport = server();
     transport.restart.mockResolvedValue({ restarting: true, instance: "intermediate" });
     transport.read.mockResolvedValueOnce({ ...after, instance: "intermediate" });
-    const result = restartAndApply({ confirmed: true, version: after.version }, { transport, interval: 10 });
+    const onAcknowledged = vi.fn();
+    const result = restartAndApply(
+      { confirmed: true, version: after.version },
+      { transport, interval: 10, onAcknowledged },
+    );
     await vi.runAllTimersAsync();
     await expect(result).resolves.toEqual(after);
+    expect(onAcknowledged).toHaveBeenCalledExactlyOnceWith({
+      retired: [before.instance, "intermediate"],
+      version: after.version,
+      settings: [],
+    });
     expect(transport.verify).toHaveBeenCalledOnce();
+    expect(transport.restart).toHaveBeenCalledOnce();
+  });
+
+  it("persists a changed acknowledgement before restoring observation in a new document", async () => {
+    const transport = server();
+    const stop = new AbortController();
+    const intermediate = { ...after, instance: "intermediate" };
+    let saved = "";
+    transport.restart.mockResolvedValue({ restarting: true, instance: intermediate.instance });
+
+    await expect(
+      restartAndApply(
+        { confirmed: true, version: after.version },
+        {
+          transport,
+          signal: stop.signal,
+          onObservation: (observation) => {
+            saved = JSON.stringify(observation);
+          },
+          onAcknowledged: (observation) => {
+            saved = JSON.stringify(observation);
+            stop.abort();
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ kind: "aborted" });
+    expect(transport.verify).not.toHaveBeenCalled();
+
+    transport.read.mockResolvedValueOnce(intermediate);
+    const recovered = resumeRestartAndApply(JSON.parse(saved), { transport, interval: 10 });
+    await vi.runAllTimersAsync();
+    await expect(recovered).resolves.toEqual(after);
+    expect(transport.verify).toHaveBeenCalledExactlyOnceWith(
+      { instance: after.instance, version: after.version, settings: [] },
+      expect.any(AbortSignal),
+    );
+    expect(transport.restart).toHaveBeenCalledOnce();
+  });
+
+  it("does not verify when saving acknowledged identities fails", async () => {
+    const transport = server();
+    transport.restart.mockResolvedValue({ restarting: true, instance: "intermediate" });
+
+    await expect(
+      restartAndApply(
+        { confirmed: true },
+        {
+          transport,
+          onAcknowledged: () => {
+            throw new Error("storage unavailable");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      kind: "refused",
+      observation: { retired: [before.instance, "intermediate"] },
+    });
+    expect(transport.restart).toHaveBeenCalledOnce();
+    expect(transport.verify).not.toHaveBeenCalled();
   });
 
   it.each([

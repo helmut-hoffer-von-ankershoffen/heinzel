@@ -12,24 +12,30 @@ import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { OperationDialog } from "@/components/OperationDialog";
 import { t } from "@/i18n";
 import { OPEN_CHAT } from "@/lib/chatIntent";
+import { clampSidebar, readSidebarWidth, sidebarMax, writeSidebarWidth } from "@/lib/sidebarWidth";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import { useWidth } from "@/lib/useWidth";
 import { cn } from "@/lib/utils";
 import { useVisualViewport } from "@/lib/viewport";
+import { anchorWorkspace } from "@/lib/workspaceAnchor";
 import { useNoticeStream } from "@/notifications/useNoticeStream";
 import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { InstalledView, useViews, ViewSlot } from "@/plugins/Views";
 import { SoundEngine } from "@/sound/SoundEngine";
+import { BrowserPanel } from "./BrowserPanel";
+import { CalendarPanel } from "./CalendarPanel";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
 import { NotificationPanel } from "./NotificationCenter";
 import { SearchPalette } from "./SearchPalette";
 import { SettingsDialog } from "./SettingsDialog";
 import { Sidebar } from "./Sidebar";
+import { SidebarResizer } from "./SidebarResizer";
 import { StatusBar } from "./StatusBar";
 import { TerminalPanel } from "./TerminalPanel";
 import { ThemeTokens } from "./ThemeTokens";
 import { TopBar } from "./TopBar";
+import { applyTitlebar, useTitlebar } from "./titlebar";
 import { WorkspacePanels } from "./WorkspacePanels";
 
 /** A pane's open state, remembered in this browser; without storage it starts from `initial` each time. */
@@ -71,6 +77,9 @@ export function fitsBeside(areaPx: number, remPx: number): boolean {
   return areaPx >= (PANEL_REM + MAIN_REM) * remPx;
 }
 
+/** No element: `useWidth` then follows the window. */
+const WINDOW = { current: null };
+
 export function Shell() {
   useVisualViewport();
   return (
@@ -90,8 +99,18 @@ function Layout() {
   const showAudioVisualizer = (audioVisualizer?.value ?? audioVisualizer?.default) === true;
   // Narrow windows start with the navigation as a rail, so the screen keeps its room.
   const [navOpen, setNavOpen] = useRemembered("hz.nav.open", () => window.innerWidth >= 1024);
+  // The desktop app's integrated title bar (macOS): its insets become CSS variables; a browser gets 0.
+  const titlebar = useTitlebar();
+  useLayoutEffect(
+    () => applyTitlebar(document.documentElement, titlebar.bar, titlebar.fullscreen, navOpen),
+    [titlebar.bar, titlebar.fullscreen, navOpen],
+  );
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
+  const features = config.data?.settings.find((row) => row.section === "hz" && row.key === "features")?.value;
+  const browserEnabled = Array.isArray(features) && features.includes("sidebar_browser");
+  const [browserOpen, setBrowserOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [terminalFull, setTerminalFull] = useState(false);
   const [activePanel, setActivePanel] = useState(() => (window.innerWidth < 1024 ? "page" : "chat"));
   const views = useViews();
@@ -122,6 +141,7 @@ function Layout() {
   }, [home, setChatOpen]);
   const area = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  const pageContent = useRef<HTMLDivElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const pageScroll = useRef<(() => void) | null>(null);
   const [scrollTarget, setScrollTarget] = useState<{ id: string } | null>(null);
@@ -154,7 +174,12 @@ function Layout() {
     };
   }, []);
   const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-  const beside = fitsBeside(useWidth(area), rem);
+  const areaWidth = useWidth(area);
+  const beside = fitsBeside(areaWidth, rem);
+  const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
+  const windowWidth = useWidth(WINDOW);
+  const sidebarLimit = sidebarMax(windowWidth, areaWidth);
+  const sidebarShown = clampSidebar(sidebarWidth, windowWidth, areaWidth);
   const besideHeader = useRef<HTMLDivElement>(null);
   const belowHeader = useRef<HTMLDivElement>(null);
   const [headerHost] = useState(() => document.createElement("div"));
@@ -198,21 +223,25 @@ function Layout() {
   }, [requestedId]);
   const selectedPanel =
     requestedId ??
-    (activePanel === "page" && !beside
-      ? "page"
-      : activePanel === "chat" && chatOpen
-        ? "chat"
-        : activePanel === "terminal" && terminalOpen
-          ? "terminal"
-          : retainedViews.includes(activePanel) && panelViews.some((view) => view.id === activePanel)
-            ? activePanel
-            : chatOpen
-              ? "chat"
-              : terminalOpen
-                ? "terminal"
-                : !beside
-                  ? "page"
-                  : "chat");
+    (activePanel === "browser" && browserOpen && browserEnabled
+      ? "browser"
+      : activePanel === "page" && !beside
+        ? "page"
+        : activePanel === "chat" && chatOpen
+          ? "chat"
+          : activePanel === "calendar" && calendarOpen
+            ? "calendar"
+            : activePanel === "terminal" && terminalOpen
+              ? "terminal"
+              : retainedViews.includes(activePanel) && panelViews.some((view) => view.id === activePanel)
+                ? activePanel
+                : chatOpen
+                  ? "chat"
+                  : terminalOpen
+                    ? "terminal"
+                    : !beside
+                      ? "page"
+                      : "chat");
   // Panel and full-screen changes can reveal the same footer at a new capacity without a viewport resize.
   // biome-ignore lint/correctness/useExhaustiveDependencies: each layout change requires a fresh footer measurement
   useLayoutEffect(() => {
@@ -226,6 +255,18 @@ function Layout() {
   }, [route, beside]);
   const full = terminalOpen && terminalFull && selectedPanel === "terminal";
   const flowingWorkspace = !beside && !full;
+  const workspaceShown =
+    chatOpen ||
+    terminalOpen ||
+    (browserEnabled && browserOpen) ||
+    calendarOpen ||
+    viewOpen ||
+    retainedViews.some((id) => panelViews.some((view) => view.id === id));
+  useLayoutEffect(() => {
+    if (!flowingWorkspace || !workspaceShown || !scroller.current || !pageContent.current || !workspace.current) return;
+    // With Page selected, protect only the press that opens a workspace tab.
+    return anchorWorkspace(scroller.current, pageContent.current, workspace.current, selectedPanel === "page");
+  }, [flowingWorkspace, workspaceShown, selectedPanel]);
   // An explicit navigation to the view can repeat the same URL, and should still bring it into view.
   const previousLocation = useRef(location);
   const ownNavigation = useRef<{ path: string; search: string } | null>(null);
@@ -403,6 +444,7 @@ function Layout() {
       >
         <Sidebar
           collapsed={!navOpen}
+          titlebar={titlebar.bar !== null}
           onToggle={() => setNavOpen((open) => !open)}
           onSearch={() => setSearchOpen(true)}
           onNotifications={() =>
@@ -420,11 +462,13 @@ function Layout() {
         <div
           ref={scroller}
           className={cn(
-            "workspace-scroll relative flex min-h-0 min-w-0 flex-1",
+            // Vertical only: a child wider than the column must never let the whole workspace pan sideways on a phone.
+            "workspace-scroll relative flex min-h-0 min-w-0 flex-1 overflow-x-clip",
             beside ? "flex-row" : flowingWorkspace ? "flex-col overflow-y-auto" : "flex-col",
           )}
         >
           <div
+            ref={pageContent}
             inert={full}
             aria-hidden={full || undefined}
             className={cn("flex min-w-0 flex-col", flowingWorkspace ? "min-h-full shrink-0" : "min-h-0 flex-1")}
@@ -435,8 +479,11 @@ function Layout() {
               inert={!beside && selectedPanel !== "page" && !flowingWorkspace}
               aria-hidden={!beside && selectedPanel !== "page" && !flowingWorkspace ? true : undefined}
               tabIndex={-1}
+              // Focused by script (skip link, route change), never a control: no ring, which a click or hover left
+              // as a stray outline. Real controls inside keep their focus-visible ring.
+              data-focus-ring="parent"
               className={cn(
-                "flex-1 bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]",
+                "min-w-0 flex-1 overflow-x-clip outline-none bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]",
                 !flowingWorkspace && "min-h-0 overflow-y-auto",
               )}
             >
@@ -444,28 +491,39 @@ function Layout() {
             </main>
             <div ref={besideFooter} hidden={!beside} className="shrink-0" />
           </div>
-          {(chatOpen ||
-            terminalOpen ||
-            viewOpen ||
-            retainedViews.some((id) => panelViews.some((view) => view.id === id))) && (
+          {workspaceShown && (
             // One selected workspace panel; the same mounted contents move between desktop and phone layouts.
             <div
               ref={workspace}
-              style={pageHold !== null && selectedPanel === "page" ? { minHeight: pageHold } : undefined}
               data-placement={beside ? "beside" : "below"}
               data-active={selectedPanel}
+              style={{
+                ...(pageHold !== null && selectedPanel === "page" ? { minHeight: pageHold } : undefined),
+                ...(beside && !full ? { width: sidebarShown } : undefined),
+              }}
               className={cn(
                 "workspace-panel flex flex-col bg-background",
                 flowingWorkspace && panelViews.some((view) => view.id === selectedPanel) ? "min-h-full" : "min-h-0",
                 full
                   ? "absolute inset-0"
                   : beside
-                    ? "w-96 shrink-0 border-l border-border"
+                    ? "relative shrink-0 border-l border-border"
                     : selectedPanel === "page" || flowingWorkspace
                       ? "shrink-0 border-t border-border"
                       : "absolute inset-x-0 top-12 bottom-0 border-t border-border",
               )}
             >
+              {beside && !full && (
+                <SidebarResizer
+                  width={sidebarShown}
+                  max={sidebarLimit}
+                  onChange={(next, final) => {
+                    const clamped = clampSidebar(next, window.innerWidth, areaWidth);
+                    setSidebarWidth(clamped);
+                    if (final) writeSidebarWidth(clamped);
+                  }}
+                />
+              )}
               <WorkspacePanels
                 flowing={flowingWorkspace}
                 active={selectedPanel}
@@ -504,6 +562,33 @@ function Layout() {
                         },
                       ]
                     : []),
+                  ...(browserEnabled && browserOpen
+                    ? [
+                        {
+                          id: "browser",
+                          title: t("browser.title"),
+                          content: (
+                            <BrowserPanel active={selectedPanel === "browser"} onClose={() => setBrowserOpen(false)} />
+                          ),
+                        },
+                      ]
+                    : []),
+                  ...(calendarOpen
+                    ? [
+                        {
+                          id: "calendar",
+                          title: "Calendar",
+                          content: (
+                            <CalendarPanel
+                              onClose={() => {
+                                setCalendarOpen(false);
+                                setActivePanel(chatOpen ? "chat" : "page");
+                              }}
+                            />
+                          ),
+                        },
+                      ]
+                    : []),
                   ...panelViews
                     .filter((view) => view.id === requestedId || retainedViews.includes(view.id))
                     .map((view) => ({
@@ -534,6 +619,11 @@ function Layout() {
         {createPortal(
           <TopBar
             navigationMode={!beside}
+            calendarOpen={calendarOpen && selectedPanel === "calendar"}
+            onOpenCalendar={() => {
+              setCalendarOpen(true);
+              selectPanel("calendar");
+            }}
             chatOpen={chatOpen && selectedPanel === "chat"}
             onToggleChat={() => {
               if (beside && chatOpen && selectedPanel === "chat") setChatOpen(false);
@@ -542,6 +632,18 @@ function Layout() {
                 selectPanel("chat");
               }
             }}
+            browserOpen={browserOpen && selectedPanel === "browser"}
+            onToggleBrowser={
+              browserEnabled
+                ? () => {
+                    if (beside && browserOpen && selectedPanel === "browser") setBrowserOpen(false);
+                    else {
+                      setBrowserOpen(true);
+                      selectPanel("browser");
+                    }
+                  }
+                : undefined
+            }
             terminalOpen={terminalOpen && selectedPanel === "terminal"}
             onToggleTerminal={() => {
               if (beside && terminalOpen && selectedPanel === "terminal") {
@@ -556,10 +658,18 @@ function Layout() {
           headerHost,
         )}
         {/* Moving the mounted controls preserves their state when the side panel moves below. */}
-        {createPortal(<StatusBar />, footerHost)}
+        {createPortal(
+          <StatusBar
+            onOpenCalendar={() => {
+              setCalendarOpen(true);
+              selectPanel("calendar");
+            }}
+          />,
+          footerHost,
+        )}
       </div>
       {showAudioVisualizer && (
-        <section aria-label="Audio visualizer" className="min-h-0 w-7 shrink-0 self-stretch border-l border-border">
+        <section aria-label="Audio visualizer" className="min-h-0 w-11 shrink-0 self-stretch border-l border-border">
           <AudioVisualizer />
         </section>
       )}

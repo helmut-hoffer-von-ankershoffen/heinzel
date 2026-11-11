@@ -63,7 +63,9 @@ from heinzel.kernel._playbooks import (
     PlaybookSetup,
     templates_in,
 )
+from heinzel.kernel._prerequisites import Homebrew, ManualInstall, PrerequisiteContext, PrerequisiteLet
 from heinzel.kernel._prompter import Prompter
+from heinzel.kernel._sign_in import Grant, SignInLet, SignInProvider, grants_of
 from heinzel.kernel._skills import SkillLet, skills_in
 from heinzel.kernel._soundscapes import Soundscape, SoundscapeLet, sourced_soundscapes
 from heinzel.kernel._spec import hookimpl
@@ -99,7 +101,7 @@ class Module:
         ```
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - explicit, independent module declarations
         self,
         name: str,
         summary: str,
@@ -107,6 +109,7 @@ class Module:
         essential: bool = False,
         requires: Iterable[str] = (),
         renamed_from: str | None = None,
+        inspects: Iterable[str] = (),
     ) -> None:
         """Declare a module.
 
@@ -116,6 +119,8 @@ class Module:
             essential: Can't be disabled; for the few built-ins needed to repair a broken setup (`system`).
             requires: Capabilities the whole module reads (ADR 0028), e.g. `["tracker:read", "documents:read"]`;
                 `write` is declared on the publish operation that writes, never here.
+            inspects: Offline adapter inventory grants, e.g. `["ai-access:read"]`; never bound handles, live
+                actions or health requirements (ADR 0130).
             renamed_from: The module's old name, for the one minor release both work (ADR 0051): its settings table
                 and `HZ_<OLD>__*` variables fill in what the new ones don't set, and the daemon runs a job asked for
                 by its old id. Old command paths are each operation's `aliases`.
@@ -141,6 +146,16 @@ class Module:
                 f"writes, `@module.operation(read_only=False, requires=[...])`"
             )
             raise ValueError(msg)
+        self.inspects = parse_requirements(inspects)
+        for inspection in self.inspects:
+            capability = CAPABILITIES[inspection.capability]
+            if (
+                inspection.adapter
+                or ("read" not in inspection.modes or "write" in inspection.modes)
+                or not capability.inspection_methods
+            ):
+                msg = f"Module {name!r} inspection {inspection} must name an unpinned read inventory capability"
+                raise ValueError(msg)
         self.name = name
         self.summary = summary
         self.essential = essential
@@ -181,6 +196,7 @@ class Module:
         heads: Iterable[str] | None = None,
         requires: Iterable[str] = (),
         optional: bool = False,
+        health_on_demand: bool = False,
         audience: Audience = "expert",
         aliases: Iterable[str] = (),
     ) -> Callable[[F], F]: ...
@@ -198,6 +214,7 @@ class Module:
         heads: Iterable[str] | None = None,
         requires: Iterable[str] = (),
         optional: bool = False,
+        health_on_demand: bool = False,
         audience: Audience = "expert",
         aliases: Iterable[str] = (),
     ) -> F | Callable[[F], F]:
@@ -216,6 +233,8 @@ class Module:
             optional: True if it does without its own `requires` when nothing serves them, asking
                 `CapabilityView.serves` first: an unmet one is then no doctor finding, and its handle refuses only
                 when called. Read-only operations only.
+            health_on_demand: Health-only deferral of own unpinned requirements when explicitly unbound.
+                Runtime validation and injection remain mandatory; this does not make execution optional.
             audience: `everyday` to list it in help, completion and the web app's navigation for everyone; `expert`
                 (the default) lists it in expert mode only. It runs either way (ADR 0041).
             aliases: Old command paths that still run it for one minor release, e.g. `["workflow run"]`: the CLI
@@ -249,6 +268,7 @@ class Module:
                     heads=frozenset(heads) if heads is not None else None,
                     requires=requirements,
                     optional=optional,
+                    health_on_demand=health_on_demand,
                     audience=audience,
                     aliases=tuple(" ".join(a.split()) for a in old_paths),
                 )
@@ -445,11 +465,78 @@ class Module:
 
         return decorate if func is None else decorate(func)
 
-    def credential(self, name: str, *, purpose: str, service: str | None = None) -> CredentialLet:
+    def sign_in[F: Callable[..., SignInProvider]](self, *, grants: Iterable[Grant]) -> Callable[[F], F]:
+        """Advertise the connector's sign-in: a provider that runs its vendor's own flow for the person (ADR 0136).
+
+        The kernel builds the provider from the decorated class or function, injecting its parameters, only when
+        `hz system connector` needs it. `grants` are what the sign-in can ask for, each with its plain-words
+        explanation and vendor scopes; a first sign-in asks for the `default` ones, any other only when the person
+        allows it. Once per module.
+
+        Args:
+            grants: Every grant the sign-in can ask for.
+
+        Raises:
+            ValueError: If a grant is malformed, a name repeats, there are none, or the module already has a sign-in.
+        """
+        declared = grants_of(grants)
+
+        def decorate(target: F) -> F:
+            self.add(SignInLet(name=self.name, factory=target, grants=declared))
+            return target
+
+        return decorate
+
+    def prerequisite(  # noqa: PLR0913 - a declaration's complete portable metadata
+        self,
+        name: str,
+        *,
+        purpose: str,
+        linux: ManualInstall,
+        macos: Homebrew | ManualInstall | None = None,
+        title: str = "",
+        when: PrerequisiteContext = "setup",
+        version_args: tuple[str, ...] = ("--version",),
+        minimum_version: str | None = None,
+        requires_apple_developer_tools: bool = False,
+        condition: str = "",
+        needed: Callable[..., bool] | None = None,
+    ) -> PrerequisiteLet:
+        """Declare an external tool once for installation, setup, doctor and generated documentation.
+
+        `needed` is an optional injected read-only predicate; `condition` explains it without executing it when
+        exporting documentation. This declaration neither starts a program nor replaces the module's setup step.
+        `requires_apple_developer_tools` marks the tool's macOS /usr/bin launcher; other copies need no such guard.
+
+        Raises:
+            ValueError: If the declaration is invalid or this module already declares the executable.
+            TypeError: If the Apple developer-tools flag is not a boolean.
+        """
+        prerequisite = PrerequisiteLet(
+            name=name,
+            purpose=purpose,
+            linux=linux,
+            macos=macos,
+            title=title,
+            when=when,
+            version_args=version_args,
+            minimum_version=minimum_version,
+            requires_apple_developer_tools=requires_apple_developer_tools,
+            condition=condition,
+            needed=needed,
+        )
+        self.add(prerequisite)
+        return prerequisite
+
+    def credential(
+        self, name: str, *, purpose: str, service: str | None = None, required: bool = True
+    ) -> CredentialLet:
         """Declare a secret the module needs; pass the returned let to `Credentials.get` to read its value.
 
         Args:
             name: Lowercase, dash-separated, e.g. `api-token`.
+            required: Whether missing this secret alone degrades health; conditional authentication belongs in the
+                owning feature health check when False.
             purpose: What it is for and where to get one, e.g. "GitHub token with repo scope, from github.com/settings".
             service: Keep it under another service to share it between modules, a qualified module name such as
                 `github` or `system.credential`; defaults to this module's.
@@ -466,7 +553,7 @@ class Module:
         if not purpose.strip():
             msg = f"Credential {name!r} needs a purpose; people see it when it is missing"
             raise ValueError(msg)
-        let = CredentialLet(name=name, purpose=purpose, service=service)
+        let = CredentialLet(name=name, purpose=purpose, service=service, required=required)
         self.add(let)
         return let
 

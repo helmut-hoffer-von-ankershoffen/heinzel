@@ -8,12 +8,12 @@ import pytest
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 DESCRIPTION = (
-    "Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork "
+    "Heinzelmännchen is an open-source crew of Heinzels that drafts your team's busywork "
     "and asks before anything leaves your machine."
 )
 TAIL = DESCRIPTION.removeprefix("Heinzelmännchen is an ")  # fields that already name the project drop the subject
 TAGLINE = "Less busywork. More good work."
-DESCRIPTOR = "helpers accelerating product teams"
+DESCRIPTOR = "Heinzels accelerating product teams"
 
 
 def read(name: str) -> str:

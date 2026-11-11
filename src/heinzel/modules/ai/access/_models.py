@@ -3,13 +3,15 @@
 from datetime import datetime
 from typing import ClassVar, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from heinzel import ModuleSettings
 
 ADAPTER_PATTERN = r"^[a-z][a-z0-9-]*$"
 
-AccessState = Literal["signed in", "not signed in", "not tested", "tested", "test failed", "not installed", "error"]
+AccessState = Literal["signed in", "not signed in", "not tested", "tested", "test failed", "needs setup", "error"]
+Setup = Literal["model", "gateway", "sign-in", "client"]
+"""What setting an option up takes: a model and key, a gateway command, a sign-in, or an optional Python client."""
 Use = Literal["chat", "turns", "coding"]
 
 
@@ -145,11 +147,16 @@ class AccessSettings(ModuleSettings):
 class Bindings(ModuleSettings):
     """The two bindings AI access reads afresh on every call: `[capabilities] ai_access` and `agent_runner`.
 
-    Read again on each listing, like the theme, because `hz ui` keeps running while a terminal switches.
+    Read again on each listing, like the theme, because `hz ui serve` keeps running while a terminal switches.
     """
 
     ai_access: str | None = "claude-code"
     agent_runner: str | None = "claude-code"
+
+    @field_validator("ai_access", "agent_runner", mode="before")
+    @classmethod
+    def _unbound(cls, value: object) -> object:
+        return None if value == "none" else value
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"ai_access", "agent_runner"})
 
@@ -176,7 +183,17 @@ class AccessOption(BaseModel):
     in_use: bool = Field(description="Whether it is the AI access in use.")
     status: AccessState = Field(
         description="`signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` "
-        "from the last `hz ai access test`, or `not tested`; `not installed` when what it needs is missing."
+        "from the last `hz ai access test`, or `not tested`; `needs setup` when a setting, a sign-in or its "
+        "optional client is missing: these options come with hz, they are never plugins to install."
+    )
+    needs: str = Field(
+        default="",
+        description="The one thing missing, in a few words, e.g. `Add a model and API key`; empty when nothing is.",
+    )
+    setup: Setup | None = Field(
+        default=None,
+        description="What setting it up takes: `model` (a model and API key), `gateway` (its commands), `sign-in` "
+        "or `client` (an optional Python client hz installs); none when nothing is missing or hz can't tell.",
     )
     detail: str = Field(default="", description="What it found, e.g. the CLI's path.")
     fix: str = Field(default="", description="A command that makes it usable; often empty.")

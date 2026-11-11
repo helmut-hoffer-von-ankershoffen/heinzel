@@ -182,3 +182,33 @@ def test_renamed_keys_name_what_still_sets_the_old_section(monkeypatch):
     monkeypatch.setenv("HZ_EXAMPLE__TIMES", "4")
     cfg = config({"example": {"greeting": "Hi", "unknown": 1}})
     assert cfg.renamed_keys(ExampleSettings, "example") == ["example.greeting", "HZ_EXAMPLE__TIMES"]
+
+
+def test_fresh_settings_follow_the_files_without_rebuilding_the_kernel(tmp_path, monkeypatch):
+    from heinzel import Kernel
+
+    monkeypatch.delenv("HZ_UPDATE_CHECK")  # the test isolation turns it off; the file is what is tested
+
+    path = tmp_path / "hz.toml"
+    path.write_text("[hz]\nupdate_check = true\n")
+    files = (ConfigFile("user", path),)
+    kernel = Kernel(config=Config._read(files))
+    assert kernel.settings.update_check is True
+    path.write_text('[hz]\nupdate_check = false\nupdate_channel = "edge"\n')
+    fresh = kernel.fresh_settings()
+    assert (fresh.update_check, fresh.update_channel) == (False, "edge")
+    assert kernel.settings.update_check is True  # what the kernel booted with does not change
+
+
+def test_fresh_settings_keep_the_booted_ones_when_there_is_no_file_or_it_is_broken(tmp_path):
+    from heinzel import Kernel
+
+    booted = Settings(update_check=False)
+    assert Kernel(booted).fresh_settings() is booted  # built in code: no files
+    path = tmp_path / "hz.toml"
+    path.write_text("[hz]\nupdate_check = true\n")
+    kernel = Kernel(booted, config=Config._read((ConfigFile("user", path),)))
+    path.write_text("[hz\nbroken")
+    assert kernel.fresh_settings() is booted  # half-written edit
+    path.write_text('[hz]\nupdate_channel = "not-a-channel"\n')
+    assert kernel.fresh_settings() is booted  # invalid value

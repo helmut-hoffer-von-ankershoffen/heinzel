@@ -8,7 +8,7 @@ text frames are JSON control messages, `{"resize": [cols, rows]}`; the shell's o
 The server may send `{"agent_title": ...}` on that same authenticated socket for the foreground agent's session name.
 Both directions are bounded: a shell that prints faster than the browser reads is paused by the pseudo-terminal,
 and a browser that types faster than the shell reads stops being read. Closing the socket hangs up the shell's
-whole process group (ADR 0048). When `hz ui` stops, each terminal hangs up its shell the same way and closes its
+whole process group (ADR 0048). When `hz ui serve` stops, each terminal hangs up its shell the same way and closes its
 socket with "going away" and a reason the app shows (`Stopping`).
 
 POSIX only: on Windows the socket closes with a reason the app shows.
@@ -46,7 +46,7 @@ TRY_AGAIN_LATER = 1013
 GOING_AWAY = 1001
 STOPPED = "The web app stopped. Run hz ui to start it again."
 RESTARTED = "The web app is restarting. Open the terminal again in a moment."
-"""Close reasons the app shows as they are, so plain text: Ctrl-C stopped `hz ui`, or it restarts (ADR 0047)."""
+"""Close reasons the app shows as they are, so plain text: Ctrl-C stopped `hz ui serve`, or it restarts (ADR 0047)."""
 TOKEN_SECONDS = 5.0
 READ_BYTES = 65536
 OUTPUT_CHUNKS = 64

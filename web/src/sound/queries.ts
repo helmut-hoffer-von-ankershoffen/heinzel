@@ -162,8 +162,10 @@ type Agenda = { current: unknown | null; problem?: string | null };
 export function useMeeting(enabled: boolean): boolean | null {
   const agenda = useQuery({
     queryKey: ["org", "agenda"],
-    queryFn: async (): Promise<Agenda | null> => {
+    queryFn: async ({ signal }): Promise<Agenda | null> => {
       const request = new Request(new URL("/api/org/agenda", window.location.origin), {
+        signal,
+        cache: "no-store",
         headers: { Authorization: `Bearer ${token() ?? ""}` },
       });
       const response = await fetch(request);

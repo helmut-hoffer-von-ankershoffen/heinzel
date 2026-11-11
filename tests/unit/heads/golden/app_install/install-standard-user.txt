@@ -1,0 +1,7 @@
+Installing Heinzelmännchen 0.9.29 into <tmp>/home/Applications (your Applications folder; this account is not an administrator, so <tmp>/system/Applications would need a password)
+  Downloading 48.2 MB ... done (7 s)
+  ok Verified   checksum and build provenance match the GitHub release
+  ok Sealed     local code seal; no quarantine, so it opens with a double-click
+  ok Installed  <tmp>/home/Applications/Heinzelmaennchen.app
+  ok Recorded   hz owns this copy; hz app doctor checks it, hz app uninstall removes it
+Done. Open it from Launchpad, or run: open <tmp>/home/Applications/Heinzelmaennchen.app

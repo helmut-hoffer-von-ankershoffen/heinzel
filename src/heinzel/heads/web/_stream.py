@@ -9,7 +9,8 @@ Every stream sends an event `changed` when the list of notices changed, for the 
 seconds that it shows them, so the daemon holds back, and sends each due notice once as an event `notice`, which the
 app pops up and acknowledges (`POST /api/system/notify/ack`). A tab that can't pop up claims nothing, so the daemon
 still does. A stream ends after a few minutes and the app opens a new one, so a closed tab never holds a connection
-for long. When `hz ui` stops or restarts, every stream ends at once (`Stopping`), so the server doesn't wait for it.
+for long. When `hz ui serve` stops or restarts, every stream ends at once (`Stopping`), so the server doesn't wait
+for it.
 """
 
 import asyncio
@@ -69,10 +70,10 @@ async def _events(  # noqa: PLR0913 - all but the request and the service by key
     """The events of one stream, until it is old, its tab goes away or the server stops.
 
     Yields:
-        `changed` when the latest notice changed; with `popups`, each due notice once as `notice`; a ping now and then.
+        `changed` when the visible list changes; with `popups`, each due notice once as `notice`; a ping now and then.
     """
     sent: set[str] = set()
-    latest: str | None = None
+    visible: tuple[str, ...] | None = None
     started = last_ping = clock()
     yield "retry: 3000\n\n"
     with stopping.watch() as stopped:
@@ -80,14 +81,15 @@ async def _events(  # noqa: PLR0913 - all but the request and the service by key
             if popups:
                 await run_in_threadpool(notifications.watched)
             due = await run_in_threadpool(notifications.due) if popups else []
-            recent = await run_in_threadpool(notifications.recent, 1)
+            recent = await run_in_threadpool(notifications.recent, 200)
             for notice in due:
                 if notice.id not in sent:
                     sent.add(notice.id)
                     yield _event("notice", notice.model_dump_json())
             newest = recent[0].id if recent else None
-            if newest != latest:
-                latest = newest
+            current = tuple(notice.id for notice in recent)
+            if current != visible:
+                visible = current
                 yield _event("changed", json.dumps({"latest": newest}))
             if once or clock() - started > LIFETIME_SECONDS or await request.is_disconnected():
                 return

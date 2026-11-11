@@ -444,7 +444,7 @@ def transcript_cli(scene: Scene, env: dict[str, str]) -> str:
 
 @contextlib.contextmanager
 def web_app(env: dict[str, str]) -> Iterator[str]:
-    """`hz ui --no-browser --port 0` in the sandbox, stopped afterwards.
+    """`hz ui serve --no-browser --port 0` in the sandbox, stopped afterwards.
 
     Yields:
         The session URL, token included, once the app is up.
@@ -453,7 +453,7 @@ def web_app(env: dict[str, str]) -> Iterator[str]:
         RecordError: If the app doesn't start within a minute.
     """
     process = subprocess.Popen(  # noqa: S603 - a fixed command, resolved in the sandbox
-        [which("hz", env), "ui", "--no-browser", "--port", "0"],
+        [which("hz", env), "ui", "serve", "--no-browser", "--port", "0"],
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

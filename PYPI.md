@@ -1,9 +1,9 @@
 # Heinzelmännchen
 
-**Less busywork. More good work.** Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.
+**Less busywork. More good work.** Heinzelmännchen is an open-source crew of Heinzels that drafts your team's busywork and asks before anything leaves your machine.
 Connect your tools, put repeatable work into workflows, and keep people in control.
 
-![Heinzelmännchen helpers](https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/main/docs/assets/pypi-hero.png)
+![Heinzels](https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/main/docs/assets/pypi-hero.png)
 
 [Install & explore](https://heinzel.team/guides/install/) ·
 [Plugin catalog](https://heinzel.team/CATALOG/) ·
@@ -52,7 +52,7 @@ In a headless session without one, open a user session with its service manager 
 ![Team graph in the Heinzelmännchen workspace with fictional data](https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/main/docs/assets/website/product-workspace.jpg)
 
 This is the foundation: kernel, heads, workflows and extension points. The broader vision is accountable,
-composable helpers that draft a product team's recurring work for a person's approval. [See the vision and architecture](https://heinzel.team/VISION/).
+composable Heinzels that draft a product team's recurring work for a person's approval. [See the vision and architecture](https://heinzel.team/VISION/).
 
 ## Extend it
 

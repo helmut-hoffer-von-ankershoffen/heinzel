@@ -1,9 +1,8 @@
 name: Update pull requests
 
-# main requires pull requests to be up to date before they merge, and auto-merge does not update them. So whenever
-# main moves, bring every open, auto-merging pull request from this repository up to date; auto-merge then merges it
-# once CI OK is green. GitHub holds the pull_request runs this update triggers for approval (it treats the workflow's
-# bot as a first-time contributor), so the job approves them: same-repository branches only, never forks.
+# Core's merge queue keeps the tested PR head; main CI checks interactions after merging. Updating those branches
+# would discard their green checks and restart CI. Plugin repositories still require current branches: bring their
+# auto-merging PRs up to date and approve the resulting held CI runs, for same-repository branches only, never forks.
 
 on:
   push:
@@ -61,6 +60,7 @@ jobs:
           done
 
       - name: Update and test pull requests that are behind main
+        if: github.repository != 'helmut-hoffer-von-ankershoffen/heinzel'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

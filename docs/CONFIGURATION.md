@@ -84,8 +84,8 @@ Plugins add their own tables.
 | `team_repository` | `HZ_HEINZEL__TEAM_REPOSITORY` | `None` | Deprecated: joining or adopting a team with hz now sets your team's checkout. A checkout of your team's state repository, used when no team checkout is set; its contracts are in the workflows folder. Never read from a project's hz.toml. |
 | `schedule_team` | `HZ_HEINZEL__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name; add @sha256: and a hash to run only the version you approved. The others run only when started by hand, so a team's contracts don't run on everyone's daemon. Never read from a project's hz.toml. |
 | `max_usd` | `HZ_HEINZEL__MAX_USD` | `1.0` | The most one run of a contract may cost in US dollars, scheduled or by hand, whatever the contract asks for. A scheduled run's retries share it. Never read from a project's hz.toml. |
-| `session_max_usd` | `HZ_HEINZEL__SESSION_MAX_USD` | `2.0` | The most one saved chat with a helper may cost in US dollars on direct API replies. Never read from a project's hz.toml. |
-| `message_max_usd` | `HZ_HEINZEL__MESSAGE_MAX_USD` | `0.2` | The most one direct API reply in a saved chat with a helper may cost in US dollars. Never read from a project's hz.toml. |
+| `session_max_usd` | `HZ_HEINZEL__SESSION_MAX_USD` | `2.0` | The most one saved chat with a Heinzel may cost in US dollars on direct API replies. Never read from a project's hz.toml. |
+| `message_max_usd` | `HZ_HEINZEL__MESSAGE_MAX_USD` | `0.2` | The most one direct API reply in a saved chat with a Heinzel may cost in US dollars. Never read from a project's hz.toml. |
 | `subscription_budget_mode` | `HZ_HEINZEL__SUBSCRIPTION_BUDGET_MODE` | `'plan-unknown'` | Subscription plans use provider limits and report unknown dollar cost; USD caps govern APIs. With a dollar cap, every turn must stay under the dollar limit, so subscription turns are blocked for now. Choices: usd-cap, plan-unknown. Never read from a project's hz.toml. |
 | `retention_days` | `HZ_HEINZEL__RETENTION_DAYS` | `90` | How long drafts and the inputs they were made from are kept, counted from when they were made; 0 keeps them forever. Receipts are always kept, with a hash of the draft instead of its text. Never read from a project's hz.toml. |
 
@@ -145,11 +145,13 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `enabled` | `HZ_SYSTEM_NOTIFY__ENABLED` | `True` | Keep a list of notices at all; off turns every kind off. Never read from a project's hz.toml. |
 | `draft` | `HZ_SYSTEM_NOTIFY__DRAFT` | `True` | Notify when a draft is ready to read and approve. Never read from a project's hz.toml. |
-| `heinzel` | `HZ_SYSTEM_NOTIFY__HEINZEL` | `True` | Notify when a personal helper checks in. Never read from a project's hz.toml. |
+| `heinzel` | `HZ_SYSTEM_NOTIFY__HEINZEL` | `True` | Notify when a personal Heinzel checks in. Never read from a project's hz.toml. |
 | `failed` | `HZ_SYSTEM_NOTIFY__FAILED` | `True` | Notify when a contract run on your daemon failed. Never read from a project's hz.toml. |
 | `doctor` | `HZ_SYSTEM_NOTIFY__DOCTOR` | `True` | Notify when a health check finds something degraded or down. Never read from a project's hz.toml. |
 | `release` | `HZ_SYSTEM_NOTIFY__RELEASE` | `False` | Notify when a newer release of Heinzelmännchen is out. Never read from a project's hz.toml. |
 | `plugin` | `HZ_SYSTEM_NOTIFY__PLUGIN` | `True` | Notify when an installed plugin reports something that needs attention. Never read from a project's hz.toml. |
+| `calendar` | `HZ_SYSTEM_NOTIFY__CALENDAR` | `False` | Allow background calendar reads and reminders before meetings start and end; set up the worker in Calendar. Never read from a project's hz.toml. |
+| `sound` | `HZ_SYSTEM_NOTIFY__SOUND` | `False` | Play the system notification sound with Heinzel Notifier on macOS. Never read from a project's hz.toml. |
 | `quiet` | `HZ_SYSTEM_NOTIFY__QUIET` | `False` | Keep notices in the list but never pop one up, not even an urgent one. Never read from a project's hz.toml. |
 | `working_hours` | `HZ_SYSTEM_NOTIFY__WORKING_HOURS` | `True` | Hold notices that aren't urgent until your working hours start, Monday to Friday, in your time zone (both under Your profile). Never read from a project's hz.toml. |
 | `per_hour` | `HZ_SYSTEM_NOTIFY__PER_HOUR` | `6` | At most this many pop-ups an hour; the rest go to the list only. Never read from a project's hz.toml. |
@@ -161,6 +163,7 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `catalog_sources` | `HZ_SYSTEM_PLUGIN__CATALOG_SOURCES` | `['helmut-hoffer-von-ankershoffen/heinzel-plugins', 'helmut-hoffer-von-ankershoffen/heinzel']` | GitHub repositories scanned for plugin projects, in addition to topic discovery. |
+| `catalog_feed` | `HZ_SYSTEM_PLUGIN__CATALOG_FEED` | `'https://heinzel.team/catalog.json'` | The static catalog of first-party plugins, read before GitHub so that Discover and screenshot previews need no GitHub API request. HTTPS on heinzel.team or raw.githubusercontent.com only; no credentials or redirects. Empty turns it off. Never read from a project's hz.toml. |
 | `github_token` | `HZ_SYSTEM_PLUGIN__GITHUB_TOKEN` | `None` | A GitHub token for searching plugins and reading a repository before adding a plugin from it, when the GitHub CLI isn't installed; both work without one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, and used with GitHub only. Never read from a project's hz.toml. |
 
 ## `[system.runner]`
@@ -189,7 +192,7 @@ Plugins add their own tables.
 | `session_max_usd` | `HZ_SYSTEM_RUNNER_CHAT__SESSION_MAX_USD` | `2.0` | The most one chat may cost in US dollars, all its messages together. One message never costs more than the most per answer. Never read from a project's hz.toml. |
 | `keep_days` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_DAYS` | `30` | How long a chat is kept after its last message, then removed. |
 | `keep_sessions` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_SESSIONS` | `50` | How many chats are kept at most; the oldest beyond that are removed. |
-| `tools` | `HZ_SYSTEM_RUNNER_CHAT__TOOLS` | `'everyday'` | Which operations the chat's helper can use: the everyday ones, or all of them. Every tool is included with every message, so fewer make each message cheaper. Choices: everyday, all. Never read from a project's hz.toml. |
+| `tools` | `HZ_SYSTEM_RUNNER_CHAT__TOOLS` | `'everyday'` | Which operations the chat's Heinzel can use: the everyday ones, or all of them. Every tool is included with every message, so fewer make each message cheaper. Choices: everyday, all. Never read from a project's hz.toml. |
 
 ## `[system.skill]`
 
@@ -226,7 +229,7 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `contributions` | `HZ_SYSTEM_UI__CONTRIBUTIONS` | platform-specific | Which status items, actions and widgets show in which place of the app; anything you leave out keeps the place its module chose. Never read from a project's hz.toml. |
-| `audio_visualizer` | `HZ_SYSTEM_UI__AUDIO_VISUALIZER` | `False` | Show the optional audio sharing visualizer at the right edge of the app. Off by default; turning it on asks you to choose a browser audio source before anything is captured. Never read from a project's hz.toml. |
+| `audio_visualizer` | `HZ_SYSTEM_UI__AUDIO_VISUALIZER` | `True` | Show the audio visualizer at the right edge of the app. On by default; the sounds Heinzel plays itself need no permission, and nothing is captured from other audio until you share a tab or use the microphone. Styles are chosen in Appearance. Never read from a project's hz.toml. |
 
 ## `[team]`
 

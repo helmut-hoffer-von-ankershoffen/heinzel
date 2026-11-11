@@ -23,7 +23,7 @@ See [ADR 0079](adr/0079-core-pypi-trusted-publishing-is-isolated-from-builds.md)
 
 After upload, compare the registry filenames, versions and SHA-256 digests with the run's manifest. In a clean,
 isolated tool directory, install the exact registry version, run `hz --version` and `hz system doctor --json`, open
-`hz ui`, and exercise the release's changed interactions in a real browser. Keep the command output, artifact hashes,
+`hz ui serve`, and exercise the release's changed interactions in a real browser. Keep the command output, artifact hashes,
 workflow URL and browser evidence. A daemon or optional integration can legitimately need setup; the report must
 show that state honestly rather than calling every unavailable integration a successful check.
 

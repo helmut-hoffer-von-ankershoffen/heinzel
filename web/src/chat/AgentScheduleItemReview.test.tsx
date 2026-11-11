@@ -13,6 +13,7 @@ it("describes the exact observed-item policy and provider identity fields in sch
     cadence_seconds: 300,
     max_requests: 2,
     timeout_seconds: 30,
+    quiet_hours: { start: "22:00", end: "07:00", timezone: "Europe/Berlin" },
     notification_policy: {
       max_per_24h: 2,
       topic_cooldown_seconds: 60,
@@ -39,5 +40,6 @@ it("describes the exact observed-item policy and provider identity fields in sch
   );
   expect(await screen.findByText(/Only an item observed in the current turn/)).toHaveTextContent("item revision");
   expect(screen.getByText(/Provider-reported collection events/)).toHaveTextContent("revision field version");
+  expect(screen.getByText(/Skip scheduled turns from 22:00 to 07:00/)).toHaveTextContent("Europe/Berlin");
   expect(screen.queryByText(/same model-chosen topic/)).not.toBeInTheDocument();
 });

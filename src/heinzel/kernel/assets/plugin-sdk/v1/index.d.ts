@@ -25,5 +25,16 @@ export interface PluginSDK {
   SettingsShortcut: React.ComponentType<{
     section: string; label: string; onClick?: () => void; className?: string;
   }>;
+  /** The one action row under a divider: the first action shows its words, the rest are icons (design: "Actions"). */
+  PaneActions: React.ComponentType<{
+    children?: React.ReactNode; className?: string; align?: "start" | "end"; words?: "lead" | "all";
+  }>;
+  /** One action: `icon` is required, `children` are its words (shown on the lead, else its name and tooltip). */
+  PaneAction: React.ComponentType<Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children"> & {
+    icon: React.ComponentType<{ "aria-hidden"?: boolean | "true"; className?: string }>;
+    children: string; primary?: boolean; destructive?: boolean; ghost?: boolean; to?: string; href?: string;
+  }>;
+  /** A title row with at most three ghost `PaneAction`s acting on the container itself. */
+  PaneTitle: React.ComponentType<{ children: React.ReactNode; chrome?: React.ReactNode }>;
 }
 export type ViewFactory<T = unknown> = (sdk: PluginSDK) => React.ComponentType<ViewProps<T>>;

@@ -10,33 +10,29 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
-from heinzel import Config, CurrentUser, HeinzelError, Kernel, Notifications
+from heinzel import Config, CurrentUser, HeinzelError, Kernel, Notifications, SessionWriter
 from heinzel.kernel import PRIVATE_WRITE, CapabilitySettings, RunnerSnapshot, RunnerSnapshotProvider
 from heinzel.kernel import ProcessOutcome as Outcome
 from heinzel.kernel import run_bounded_process as run_bounded
-from heinzel.modules.heinzel._claude_subscription_model import (
-    COMMAND_FLAGS,
-    VERSION,
-    ClaudeSubscriptionModel,
-    SubscriptionAdmission,
-    executable_digest,
-    subscription_environment,
-)
+from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
+from heinzel.modules.heinzel._captured_write_tools import DocumentDraftTools
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
 from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
 from heinzel.modules.heinzel._connected_read_set_reviews import ConnectedReadSetReviews
 from heinzel.modules.heinzel._connected_read_sets import ConnectedReadSets
-from heinzel.modules.heinzel._engine import TurnLimits
-from heinzel.modules.heinzel._interactive_turn import InteractiveTurn, ToolActivity, interactive_turn_id
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationPolicy, ScheduledNotifications
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import BackendBinding, RequestId, SessionId, SessionMessage
 from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
+from heinzel.modules.heinzel._turn_activity import ToolActivity, TurnActivityProjection, interactive_turn_id
+
+if TYPE_CHECKING:
+    from heinzel.modules.heinzel._claude_subscription_model import SubscriptionAdmission
 
 _HEADS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
 # A turn that creates an agent reads and proposes its contract, identity, schedule and sources, then reports.
@@ -85,12 +81,14 @@ class UserToolActivity(BaseModel):
 class _ClaudeVerifier:
     """Continuity of the user's selected executable and documented no-native-tool invocation, not code attestation."""
 
-    def __init__(self, check: Callable[[], bool], path: Path, digest: str, policy: SubscriptionAdmission) -> None:
+    def __init__(self, check: Callable[[], bool], path: Path, digest: str, policy: "SubscriptionAdmission") -> None:
         self._check, self._path, self._digest, self._policy = check, path, digest, policy
 
     def verify(
-        self, executable: Path, digest: str, version: str, flags: tuple[str, ...], policy: SubscriptionAdmission
+        self, executable: Path, digest: str, version: str, flags: tuple[str, ...], policy: "SubscriptionAdmission"
     ) -> bool:
+        from heinzel.modules.heinzel._claude_subscription_model import COMMAND_FLAGS, VERSION  # noqa: PLC0415 - model runtime only during an admitted turn
+
         return (
             self._check()
             and executable == self._path
@@ -169,6 +167,8 @@ class UserChatService:
             raise HeinzelError(msg)
 
     def _login(self, executable: Path) -> None:
+        from heinzel.modules.heinzel._claude_subscription_model import subscription_environment  # noqa: PLC0415 - model runtime only when checking selected AI access
+
         env = subscription_environment()
         try:
             with tempfile.TemporaryDirectory(prefix="hz-auth-") as directory:
@@ -195,6 +195,8 @@ class UserChatService:
 
     @staticmethod
     def executable(found: str) -> tuple[Path, str]:
+        from heinzel.modules.heinzel._claude_subscription_model import executable_digest  # noqa: PLC0415 - model runtime only when checking selected AI access
+
         try:
             executable = Path(found).resolve(strict=True)
             return executable, executable_digest(executable)
@@ -255,6 +257,13 @@ class UserChatService:
             raise HeinzelError(msg)
         executable, digest = await asyncio.to_thread(self.executable, found)
         await asyncio.to_thread(self._login, executable)
+        from heinzel.modules.heinzel._claude_subscription_model import (  # noqa: PLC0415 - model construction after owner and access checks
+            ClaudeSubscriptionModel,
+            SubscriptionAdmission,
+        )
+        from heinzel.modules.heinzel._engine import TurnLimits  # noqa: PLC0415 - model execution only during a turn
+        from heinzel.modules.heinzel._interactive_turn import InteractiveTurn  # noqa: PLC0415 - model execution only during a turn
+
         policy = SubscriptionAdmission(self.current.principal().id, session, 1, max_requests, duration, _MAX_OUTPUT)
 
         def unchanged() -> bool:
@@ -319,10 +328,42 @@ class UserChatService:
             prepare=prepare,
             connected=connected,
             connected_set=connected_set,
+            draft_tools=lambda writer: self._document_drafts(session, turn, connected, writer),
             scheduled_notifications=scheduled_notice,
             backend_binding=BackendBinding(backend="claude-code", mode="cli-model", revision=1),
         )
         return UserChatAnswer(session_id=session, request_id=request, message=message)
+
+    def _document_drafts(
+        self, session: str, turn: str, connected: ConnectedReadGrants | None, writer: SessionWriter
+    ) -> DocumentDraftTools | None:
+        """Offer inert proposals only through the source-bound default-off write service."""
+        if connected is None or self._playbook_kernel is None:
+            return None
+
+        def approved_reference() -> str | None:
+            try:
+                grant = connected.approved(session)
+                connected.verify_approved(session, grant)
+            except HeinzelError:
+                return None
+            ref = grant.review.fixed_arguments.get("ref")
+            return ref if grant.capability == "documents" and grant.method == "read" and isinstance(ref, str) else None
+
+        try:
+            selected = self._playbook_kernel.resolve(SelectedWriteService)
+            selected.check_available()
+        except HeinzelError:
+            return None
+        return DocumentDraftTools(
+            self._crud,
+            self.current,
+            selected,
+            session=session,
+            turn=turn,
+            writer=writer,
+            approved_reference=approved_reference,
+        )
 
     def turn_state(self, session: str, request: str) -> UserTurnState:
         """Read the exact turn state without retrying or claiming an unresolved process has stopped.
@@ -419,4 +460,6 @@ class UserChatService:
 
     def activity(self, session: str, limit: int = 30) -> UserToolActivity:
         """Return only owner-bound host-observed tool activity."""
-        return UserToolActivity(session_id=session, items=InteractiveTurn(self._crud).activity(session, limit=limit))
+        return UserToolActivity(
+            session_id=session, items=TurnActivityProjection(self._crud).activity(session, limit=limit)
+        )

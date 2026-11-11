@@ -63,7 +63,13 @@ def test_notification_bounds_and_closed_schema():
             NotificationProposal.model_validate({**base, **extra})
 
 
-def test_one_exact_human_confirmation_records_once_and_never_replays(tmp_path, monkeypatch):
+def unavailable_identity(*_args, **_kwargs):
+    msg = "private profile lookup diagnostic"
+    raise HeinzelError(msg)
+
+
+@pytest.mark.parametrize("identity_available", [False, True])
+def test_one_exact_human_confirmation_records_once_and_never_replays(tmp_path, monkeypatch, identity_available):
     from heinzel import Notifications
     from heinzel.kernel._approval import ApprovalConfirmation
     from heinzel.modules.heinzel._notification_delivery import NotificationDelivery
@@ -71,11 +77,13 @@ def test_one_exact_human_confirmation_records_once_and_never_replays(tmp_path, m
     class FakeNotifications(Notifications):
         def __init__(self):
             self.calls = []
+            self.helpers = []
             self.keys = set()
 
         @override
-        def emit_once(self, kind, title, body, *, route, command, key):
+        def emit_once(self, kind, title, body, *, route, command, key, helper=None):
             self.calls.append((title, body, route, command, key))
+            self.helpers.append(helper)
             self.keys.add(key)
             return True
 
@@ -87,6 +95,9 @@ def test_one_exact_human_confirmation_records_once_and_never_replays(tmp_path, m
         repo = PersonalSessionRepository(current)
         crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
         session = crud.new_chat("create", name="Agent").session_id
+
+        if not identity_available:
+            monkeypatch.setattr(crud, "snapshot", unavailable_identity)
         owner = current.principal().id
         proposal = NotificationProposal(
             session_id=session, request_id="notice-1", topic="example", title="Hi", body="Private"
@@ -111,6 +122,12 @@ def test_one_exact_human_confirmation_records_once_and_never_replays(tmp_path, m
             with pytest.raises(HeinzelError):
                 delivery.confirm(session, proposal.request_id, review, proof, confirmation)
         assert len(notices.calls) == 1
+        if identity_available:
+            assert notices.helpers[0].name == "Agent"
+            assert notices.helpers[0].hat is None
+            assert notices.helpers[0].reason == "approved notice"
+        else:
+            assert notices.helpers == [None]
         assert delivery.recover(session, proposal.request_id) == "recorded"
         assert len(notices.calls) == 1
         real_read = repo.control_read
@@ -143,7 +160,7 @@ def test_uncertain_queue_recovery_inspects_receipt_without_redelivery(tmp_path):
             self.seen = None
 
         @override
-        def emit_once(self, _kind, _title, _body, *, route, command, key):
+        def emit_once(self, _kind, _title, _body, *, route, command, key, helper=None):
             self.calls += 1
             msg = "private provider diagnostic"
             raise RuntimeError(msg)

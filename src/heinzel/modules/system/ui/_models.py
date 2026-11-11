@@ -27,10 +27,11 @@ class UiSettings(ModuleSettings):
         json_schema_extra={"x-expert": True},
     )
     audio_visualizer: bool = Field(
-        default=False,
+        default=True,
         title="Audio visualizer",
-        description="Show the optional audio sharing visualizer at the right edge of the app. Off by default; "
-        "turning it on asks you to choose a browser audio source before anything is captured.",
+        description="Show the audio visualizer at the right edge of the app. On by default; the sounds Heinzel plays "
+        "itself need no permission, and nothing is captured from other audio until you share a tab or use "
+        "the microphone. Styles are chosen in Appearance.",
     )
 
 

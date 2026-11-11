@@ -1,5 +1,6 @@
 """Models of the notify module: its settings and what its operations return."""
 
+from datetime import datetime
 from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field
@@ -23,8 +24,8 @@ class NotifySettings(ModuleSettings):
     )
     heinzel: bool = Field(
         default=True,
-        title="Scheduled Heinzelmännchen check-ins",
-        description="Notify when a personal helper checks in.",
+        title="Heinzel notifications",
+        description="Notify when a personal Heinzel checks in.",
     )
     failed: bool = Field(
         default=True, title="Failed runs", description="Notify when a contract run on your daemon failed."
@@ -41,6 +42,17 @@ class NotifySettings(ModuleSettings):
         default=True,
         title="Plugin notices",
         description="Notify when an installed plugin reports something that needs attention.",
+    )
+    calendar: bool = Field(
+        default=False,
+        title="Calendar reminders",
+        description="Allow background calendar reads and reminders before meetings start and end; "
+        "set up the worker in Calendar.",
+    )
+    sound: bool = Field(
+        default=False,
+        title="Notification sound",
+        description="Play the system notification sound with Heinzel Notifier on macOS.",
     )
     quiet: bool = Field(
         default=False,
@@ -85,6 +97,8 @@ class NotifySettings(ModuleSettings):
             "doctor",
             "release",
             "plugin",
+            "calendar",
+            "sound",
             "quiet",
             "working_hours",
             "per_hour",
@@ -180,3 +194,30 @@ class Installed(BaseModel):
     shown: bool = Field(description="Whether the test notification was handed to the system.")
     problem: str | None = Field(default=None, description="Why it wasn't, or why there is no notifier.")
     next: list[str] = Field(default_factory=list, description="What to do now, in words.")
+
+
+class Archived(BaseModel):
+    """One original file as archived."""
+
+    name: str = Field(description="The file's name in the notification store.")
+    sha256: str = Field(description="SHA-256 of its bytes.")
+    size: int = Field(description="Its size in bytes.")
+    mode: str = Field(description="Its permission bits, octal.")
+    modified: datetime = Field(description="When it was last modified.")
+
+
+class Recovered(BaseModel):
+    """What `recover` found in the notification store and, with `--apply`, what it did."""
+
+    state: Literal["healthy", "recoverable", "recovered", "refused"] = Field(
+        description="`healthy`: nothing to do; `recoverable`: the legacy shape, run again with --apply; "
+        "`recovered`: archived and restarted; `refused`: not a shape recovery may touch, nothing changed."
+    )
+    detail: str = Field(description="What was found or done, without notice content.")
+    notices: int = Field(default=0, description="Legacy notices kept in the history, none of which pops up again.")
+    keys: int = Field(default=0, description="Replay keys taken from the kept notices' own keys; none are invented.")
+    resolved: int = Field(
+        default=0,
+        description="Notices whose condition holds, such as a stale release notice: resolved with --apply, else found.",
+    )
+    receipt: str | None = Field(default=None, description="The recovery's archive directory, with its receipt.")

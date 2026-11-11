@@ -179,3 +179,101 @@ def test_real_uv_puts_everything_back_when_the_new_version_does_not_start(tool, 
 def test_without_uv_or_a_python_the_test_fails_in_ci_and_skips_elsewhere(environ, outcome):
     with pytest.raises(outcome, match="no real uv"):
         unavailable("uv isn't installed, so there is no real uv to test with", environ)
+
+
+# A plugin pinned to a tagged git commit (ADR 0137) --------------------------------------------------------------------
+
+BACKEND = '''
+"""A build backend with no dependencies, so uv builds the plugin offline: a wheel of the package folder."""
+import base64, hashlib, pathlib, tomllib, zipfile
+
+
+def _project():
+    return tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]
+
+
+def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
+    project = _project()
+    name, version = project["name"], project["version"]
+    dist = f"{name.replace('-', '_')}-{version}"
+    files = {
+        f"{name.replace('-', '_')}/__init__.py": pathlib.Path(name.replace("-", "_"), "__init__.py").read_text(),
+        f"{dist}.dist-info/METADATA": f"Metadata-Version: 2.1\\nName: {name}\\nVersion: {version}\\n"
+        + "".join(f"Requires-Dist: {item}\\n" for item in project.get("dependencies", [])),
+        f"{dist}.dist-info/WHEEL": "Wheel-Version: 1.0\\nGenerator: test\\nRoot-Is-Purelib: true\\n"
+        "Tag: py3-none-any\\n",
+    }
+    record = []
+    for path, text in files.items():
+        digest = base64.urlsafe_b64encode(hashlib.sha256(text.encode()).digest()).rstrip(b"=").decode()
+        record.append(f"{path},sha256={digest},{len(text.encode())}")
+    files[f"{dist}.dist-info/RECORD"] = "\\n".join([*record, f"{dist}.dist-info/RECORD,,"]) + "\\n"
+    wheel = f"{dist}-py3-none-any.whl"
+    with zipfile.ZipFile(pathlib.Path(wheel_directory, wheel), "w") as archive:
+        for path, text in files.items():
+            archive.writestr(path, text)
+    return wheel
+'''
+
+
+def git(repository: Path, *arguments: str) -> str:
+    environment = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    done = subprocess.run(
+        [shutil.which("git") or "git", "-C", str(repository), *arguments],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=environment,
+        timeout=60,
+    )
+    return done.stdout.strip()
+
+
+def plugin_commit(repository: Path, version: str) -> str:
+    """Commit heinzel-maps at `version` in the local repository, tag it `heinzel-maps/v<version>`; the commit."""
+    (repository / "heinzel_maps").mkdir(parents=True, exist_ok=True)
+    (repository / "heinzel_maps" / "__init__.py").write_text(f'VERSION = "{version}"\n')
+    (repository / "backend.py").write_text(BACKEND)
+    (repository / "pyproject.toml").write_text(
+        f'[project]\nname = "heinzel-maps"\nversion = "{version}"\ndependencies = ["heinzel>=1"]\n\n'
+        '[build-system]\nrequires = []\nbuild-backend = "backend"\nbackend-path = ["."]\n'
+    )
+    git(repository, "add", "-A")
+    git(repository, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-q", "-m", version)
+    git(repository, "tag", f"heinzel-maps/v{version}")
+    return git(repository, "rev-parse", "HEAD")
+
+
+def test_real_uv_moves_a_tagged_git_plugin_to_exactly_the_announced_commit(tool, tmp_path):
+    if shutil.which("git") is None:
+        unavailable("git isn't installed, so there is no git plugin to test with")
+    repository = tmp_path / "heinzel-maps"
+    repository.mkdir()
+    git(repository, "init", "-q", "-b", "main")
+    first = plugin_commit(repository, "0.2.0")
+    tool.run(
+        tool.tool_install_command(
+            "heinzel", ["heinzel-clock", f"heinzel-maps @ git+{repository.as_uri()}@{first}"], reinstall=False
+        ),
+        "uv couldn't add the git plugin",
+        "Adding heinzel-maps",
+    )
+    tool.record_startup_state(expected=tool.startup_fingerprint())
+    second = plugin_commit(repository, "0.3.0")
+    before = environment_versions(tool.prefix)
+    now = datetime.now(UTC)
+    announced = Announcement(
+        None,
+        {"heinzel-maps": "0.3.0"},
+        plugin_commits={"heinzel-maps": second},
+        exclude_newer=now + timedelta(days=1),
+    )
+    service = UpdateService(tool, None)  # type: ignore[arg-type] - no release source is asked
+    result = service.apply_announced(announced, current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+    assert result.updated, result.message
+    versions = environment_versions(tool.prefix)
+    assert versions["heinzel-maps"] == "0.3.0"
+    assert {k: v for k, v in versions.items() if k != "heinzel-maps"} == {
+        k: v for k, v in before.items() if k != "heinzel-maps"
+    }  # hz, heinzel-clock and fakedep stay, though 2.0.0 of each is there
+    assert second in (tool.prefix / "uv-receipt.toml").read_text()  # still pinned, now to the new commit

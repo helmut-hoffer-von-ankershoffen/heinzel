@@ -42,9 +42,11 @@ from heinzel.kernel._lets import (
     settings_parameters,
 )
 from heinzel.kernel._local_web import LocalWebRuntime
+from heinzel.kernel._logging import log_event
 from heinzel.kernel._module import Module
 from heinzel.kernel._org import OrgContext
 from heinzel.kernel._playbooks import PlaybookLet
+from heinzel.kernel._prerequisites import PrerequisiteLet
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._services import ServiceContract
@@ -56,7 +58,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-ADAPTER_ONLY_LETS = (ProviderLet, RequirementLet, SettingsLet, CredentialLet, LayerLet)
+LIVE_BINDINGS = frozenset({"agent_runner", "ai_access"})
+"""Bindings a person picks in Settings > AI: a long-running head re-reads them before each call, with no restart.
+
+Only these: other bindings decide which plugin's services and grants a head serves, and those checks expect them fixed.
+"""
+
+ADAPTER_ONLY_LETS = (ProviderLet, RequirementLet, SettingsLet, CredentialLet, LayerLet, PrerequisiteLet)
 """Lets that leave a module adapter-only: none of them runs code that could use the module's requirements, so its
 needs count only while one of its adapters serves someone. Any other let, including kinds added later, makes them
 count always."""
@@ -192,6 +200,7 @@ class Kernel:
         )
         # Modules get a view that reports; handles come only through declarations and injection (ADR 0028).
         self._instances[CapabilityView] = self._capabilities.view
+        self._config_stamp = _stamp(self.config)
 
     @property
     def modules(self) -> tuple[ModuleRecord, ...]:
@@ -274,6 +283,14 @@ class Kernel:
             self._instances[kind] = instance
             self._factory_instances[kind] = instance
         return cast("T", self._instances[kind])
+
+    def implementations[T](self, base: type[T]) -> list[T]:
+        """Every registered service that subclasses `base`, built once, in a stable order (ADR 0120)."""
+        kinds = sorted(
+            (kind for kind in self._factories if issubclass(kind, base)),
+            key=lambda kind: (kind.__module__, kind.__qualname__),
+        )
+        return [self.resolve(kind) for kind in kinds]
 
     def resolve_builtin_service[T](self, kind: type[T], owner: str) -> T:
         """Resolve a service only from its named built-in module and its exact registered class.
@@ -506,6 +523,54 @@ class Kernel:
             return []
         return [Requester(module, "job", let.name, let.requires) for module, let in jobs]
 
+    def refresh_live_bindings(self) -> bool:
+        """Take up the agent runner and AI access the configuration files name now, if they changed (`LIVE_BINDINGS`).
+
+        `hz ui serve`, the daemon and the MCP server run for days: a runner picked in Settings > AI applies to the next
+        call without a restart. Cheap when nothing changed: the files are only looked at, not parsed. An unreadable
+        file keeps the bindings as they are and logs why. Returns whether a binding changed.
+        """
+        stamp = _stamp(self.config)
+        if stamp == self._config_stamp:
+            return False
+        self._config_stamp = stamp
+        try:
+            fresh = self.config.reread().settings(CapabilitySettings, CAPABILITIES_SECTION)
+        except (HeinzelError, ValidationError) as exc:
+            log_event(
+                logger,
+                "kernel.bindings.refresh",
+                level=logging.WARNING,
+                outcome="error",
+                error_type=type(exc).__name__,
+                reason="configuration unreadable; bindings kept",
+            )
+            return False
+        current = self.capability_settings
+        changed = sorted(
+            name
+            for name in LIVE_BINDINGS
+            if getattr(fresh, name) != getattr(current, name) or fresh.configured(name) != current.configured(name)
+        )
+        if not changed:
+            return False
+        values = {name: getattr(current, name) for name in type(current).model_fields}
+        values |= {name: getattr(fresh, name) for name in LIVE_BINDINGS}
+        fields_set = (current.model_fields_set - LIVE_BINDINGS) | (fresh.model_fields_set & LIVE_BINDINGS)
+        updated = CapabilitySettings.model_construct(_fields_set=fields_set, **values)
+        self.capability_settings = updated
+        self._capabilities.settings = updated
+        log_event(
+            logger,
+            "kernel.bindings.refresh",
+            outcome="ok",
+            step="live",
+            changed=",".join(changed),
+            agent_runner=updated.bound("agent-runner"),
+            ai_access=updated.bound("ai-access"),
+        )
+        return True
+
     def call[R](self, func: Callable[..., R], /, **kwargs: Any) -> R:  # noqa: ANN401 - forwards arbitrary arguments
         """Call `func`, injecting every parameter the kernel provides that the caller didn't pass."""
         return func(**self._inject(func, kwargs))
@@ -548,6 +613,7 @@ class Kernel:
         return func(**self._inject(func, arguments))
 
     def _inject(self, func: Callable[..., Any], kwargs: dict[str, Any]) -> dict[str, Any]:
+        self.refresh_live_bindings()
         for name, parameter in inspect.signature(func, eval_str=True).parameters.items():
             annotation = _injected_type(parameter.annotation)
             if name in kwargs:
@@ -560,6 +626,19 @@ class Kernel:
             elif self.provides(annotation) or _service_contract(annotation):
                 kwargs[name] = self.resolve(annotation)
         return kwargs
+
+    def fresh_settings(self) -> Settings:
+        """The kernel's own settings as the files say now, for a long-running head to see a change without a restart.
+
+        The settings this kernel booted with stay when no file exists (a kernel built in code) or a file is invalid,
+        so a half-written edit never breaks a running head.
+        """
+        if not any(file.exists for file in self.config.files):
+            return self.settings
+        try:
+            return self.config.reread().settings(Settings, KERNEL_SECTION)
+        except (HeinzelError, ValidationError):
+            return self.settings
 
     def settings_of(self) -> list[tuple[str, ModuleSettings]]:
         """Every settings object in effect, by section: the kernel's `hz` first, then each module's."""
@@ -645,7 +724,12 @@ class Kernel:
             provided = tuple((let.capability, let.adapter) for let in lets if isinstance(let, ProviderLet))
             serves = provided if all(isinstance(let, ADAPTER_ONLY_LETS) for let in lets) else ()
             module = Requester(
-                module=record.qualname, kind="module", name=record.module.name, requires=own, serves=serves
+                module=record.qualname,
+                kind="module",
+                name=record.module.name,
+                requires=own,
+                serves=serves,
+                inspects=record.module.inspects,
             )
             requesters.append(module)
             for let in lets:
@@ -659,6 +743,8 @@ class Kernel:
                             own,
                             publishes=not let.read_only,
                             optional=let.optional,
+                            health_on_demand=let.health_on_demand,
+                            inspects=record.module.inspects,
                         )
                         requesters.append(requester)
                         self._own(owners, let.func, requester, record)
@@ -721,6 +807,19 @@ def _adapters_capability(annotation: Any) -> Capability:  # noqa: ANN401 - an an
         )
         raise HeinzelError(msg)
     return capability
+
+
+def _stamp(config: Config) -> tuple[tuple[str, int, int] | None, ...]:
+    """What changes when a configuration file is written: each file's modification time and size, or None if absent."""
+    stamps: list[tuple[str, int, int] | None] = []
+    for file in config.files:
+        try:
+            stat = file.path.stat()
+        except OSError:
+            stamps.append(None)
+        else:
+            stamps.append((str(file.path), stat.st_mtime_ns, stat.st_size))
+    return tuple(stamps)
 
 
 def _builtins_first(pair: tuple[ModuleRecord, Let]) -> tuple[bool, tuple[str, ...]]:

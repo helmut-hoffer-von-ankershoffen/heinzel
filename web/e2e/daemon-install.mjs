@@ -29,7 +29,16 @@ const accessible = async (node) => {
   assert.deepEqual(violations, []);
 };
 async function openFooter(name) {
-  await page.getByRole("contentinfo").getByRole("button", { name }).click();
+  const trigger = page.getByRole("button", { name });
+  const direct = trigger.filter({ visible: true });
+  const more = page
+    .locator(
+      'footer:has([data-footer-part="system.daemon:daemon"][data-footer-hidden="overflow"]) [data-footer-content="@more"] button',
+    )
+    .filter({ visible: true });
+  await direct.or(more).first().waitFor();
+  if (!(await direct.isVisible())) await more.click();
+  await trigger.click();
   return page.getByRole("region", { name: /^Daemon/ });
 }
 try {
@@ -45,7 +54,7 @@ try {
   let pane = await openFooter(/^Daemon not installed/);
   await pane.getByText("Keeps your Heinzelmännchen working while the app is closed").waitFor();
   await pane.getByRole("button", { name: "Install" }).click();
-  const dialog = page.getByRole("alertdialog", { name: "Keep my Heinzelmännchen working while the app is closed." });
+  const dialog = page.getByRole("dialog", { name: "Keep my Heinzelmännchen working while the app is closed." });
   await dialog.waitFor();
   assert.match((await dialog.textContent()) ?? "", /registers a background service/);
   await accessible(dialog);
@@ -68,20 +77,20 @@ try {
   } else {
     // Held at the service manager: the steps so far are real, the button cannot be pressed again, nothing cancels.
     const steps = dialog.getByRole("list", { name: "Steps" });
-    await steps.getByText("Loading it into launchd: in progress").waitFor();
+    await steps.getByText("Loading the owned service definition: in progress").waitFor();
     await steps.getByText("Writing the service definition: done").waitFor();
     assert.equal(await dialog.getByRole("button", { name: "Installing the background service" }).isDisabled(), true);
     assert.equal(await dialog.getByRole("button", { name: /Cancel|Close/ }).count(), 0);
-    assert.equal(await dialog.getByRole("progressbar").getAttribute("max"), "5");
+    assert.equal(await dialog.getByRole("progressbar").getAttribute("max"), "4");
     await accessible(dialog);
     await noHorizontalScroll();
     await page.screenshot({ path: join(shots, `install-running-${engine}.png`) });
     writeFileSync(join(directory, "release"), "");
     await dialog.getByText("Installed. Its first check comes within 5 minutes.").waitFor();
-    await steps.getByText("Setting up desktop notifications: done").waitFor();
+    assert.equal(await steps.getByText("Setting up desktop notifications: done").count(), 0);
     await accessible(dialog);
     await page.screenshot({ path: join(shots, `install-done-${engine}.png`) });
-    await dialog.getByRole("button", { name: "Close" }).click();
+    await dialog.getByRole("button", { name: "Done" }).click();
 
     // The footer follows the real state: starting, with the first check named, and no restart advice.
     pane = await openFooter(/^Daemon starting/);
@@ -89,10 +98,10 @@ try {
     assert.equal(await pane.getByRole("button", { name: "Restart daemon" }).count(), 0);
     assert.doesNotMatch((await pane.textContent()) ?? "", /restart|Unit records|unknown/i);
     await pane.getByRole("button", { name: "Uninstall" }).click();
-    const removal = page.getByRole("alertdialog", { name: "Stop the background service?" });
+    const removal = page.getByRole("dialog", { name: "Stop the background service?" });
     await removal.getByRole("button", { name: "Uninstall" }).click();
     await removal.getByText("Removed. Nothing starts at login any more.").waitFor();
-    await removal.getByRole("button", { name: "Close" }).click();
+    await removal.getByRole("button", { name: "Done" }).click();
     await openFooter(/^Daemon not installed/);
     assert.deepEqual(terminalRequests, []);
     console.log(JSON.stringify({ session }));

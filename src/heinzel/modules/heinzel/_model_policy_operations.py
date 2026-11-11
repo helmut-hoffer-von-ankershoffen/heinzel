@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field, JsonValue, ValidationError
 from heinzel import ConfiguredApiAccess, HeinzelError, Kernel, Module
 from heinzel.kernel._approval import ApprovalConfirmation
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
-from heinzel.modules.heinzel._priced_model import MODEL, resolve_pricing
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import RequestId, SessionId
 
@@ -40,6 +39,8 @@ class ModelPolicyService:
         self._now = now
 
     def _supported(self, grant: ModelGrant, billing: str) -> None:
+        from heinzel.modules.heinzel._priced_model import MODEL, resolve_pricing  # noqa: PLC0415 - pricing runtime only during explicit model policy review
+
         if billing != "api-priced" or grant.access != "pydantic-ai" or grant.model != MODEL:
             msg = "This model billing policy is not supported for review"
             raise HeinzelError(msg)

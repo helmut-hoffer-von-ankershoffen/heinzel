@@ -3,6 +3,9 @@
 import argparse
 import importlib.util
 import json
+import shutil
+import subprocess
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -24,6 +27,7 @@ def load(name: str):
 
 harness = load("run_acceptance")
 summary = load("summary")
+UNKNOWN_FOREGROUND_VERSION = f"{max(int(version.split('.')[0]) for version in harness.FOREGROUND_UI) + 1}.0.0"
 
 
 def run(**overrides):
@@ -126,6 +130,139 @@ def test_the_exit_code_fails_the_job_unless_the_verdict_passes(label, code):
 )
 def test_only_x_y_z_is_a_final_version(version, final):
     assert harness.is_final_version(version) is final
+
+
+@pytest.mark.parametrize(
+    ("version", "command"),
+    [
+        *[(f"0.9.{patch}", ["ui"]) for patch in range(8, 16)],
+        ("0.9.16", ["ui", "serve"]),
+        ("0.9.17", ["ui", "serve"]),
+        ("0.9.18", ["ui", "serve"]),
+        ("0.9.19", ["ui", "serve"]),
+        ("0.9.20", ["ui", "serve"]),
+    ],
+)
+def test_installed_metadata_selects_the_canonical_foreground_command(version, command, tmp_path):
+    calls = []
+    session = object()
+
+    def installed_version(argv, label, deadline):
+        calls.append((argv, label, deadline))
+        return 0, version + "\n", ""
+
+    def foreground(argv, label):
+        calls.append((argv, label))
+        return session
+
+    case = SimpleNamespace(
+        prefix=tmp_path / "tools/heinzel",
+        bin=tmp_path / "bin",
+        expect_version=version,
+        run=installed_version,
+        foreground=foreground,
+    )
+    assert harness.ui_app(case, "plugin-ui") is session
+    assert calls == [
+        (
+            [
+                str(case.prefix / "bin/python"),
+                "-I",
+                "-c",
+                "from importlib.metadata import version; print(version('heinzel'))",
+            ],
+            "plugin-ui-installed-version",
+            harness.SHORT_DEADLINE,
+        ),
+        ([str(case.bin / "hz"), *command], "plugin-ui"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("installed", "expected"),
+    [
+        ("0.9.15", "0.9.16"),
+        ("0.9.16", "0.9.15"),
+        ("0.9.17", "0.9.16"),
+        ("0.9.16", "0.9.17"),
+        *[
+            (installed, expected)
+            for installed in ("0.9.17", "0.9.18", "0.9.19", "0.9.20")
+            for expected in ("0.9.17", "0.9.18", "0.9.19", "0.9.20")
+            if installed != expected
+        ],
+        (UNKNOWN_FOREGROUND_VERSION, UNKNOWN_FOREGROUND_VERSION),
+        *[
+            (f"0.9.{patch}{suffix}", f"0.9.{patch}{suffix}")
+            for patch in (17, 18, 19, 20)
+            for suffix in ("+local", ".dev1", "rc1")
+        ],
+        ("0.9.018", "0.9.018"),
+        ("v0.9.19", "v0.9.19"),
+        ("0.9.19 ", "0.9.19"),
+        ("0.9.7", "0.9.7"),
+        ("0.9.16.dev1", "0.9.16.dev1"),
+        ("0.9.16rc1", "0.9.16rc1"),
+        ("0.9.016", "0.9.016"),
+        ("v0.9.16", "v0.9.16"),
+        (" 0.9.16", "0.9.16"),
+        ("0.9.16 ", "0.9.16"),
+        ("0.9.16\n", "0.9.16"),
+        ("0.9.16\n0.9.15", "0.9.16"),
+        ("", "0.9.16"),
+        ("help", "0.9.16"),
+    ],
+)
+def test_unrecognized_or_wrong_installed_version_never_starts_foreground(installed, expected, tmp_path):
+    case = SimpleNamespace(
+        prefix=tmp_path / "tools/heinzel",
+        bin=tmp_path / "bin",
+        expect_version=expected,
+        run=lambda *_args: (0, installed + "\n", ""),
+        foreground=lambda *_args: pytest.fail("Unrecognized installed version started foreground"),
+    )
+    with pytest.raises(harness.StepFailed):
+        harness.ui_app(case, "plugin-ui")
+
+
+def test_missing_installed_metadata_never_starts_foreground(tmp_path):
+    def missing_metadata(*_args):
+        msg = "Installed metadata query failed"
+        raise harness.StepFailed(msg)
+
+    case = SimpleNamespace(
+        prefix=tmp_path / "tools/heinzel",
+        bin=tmp_path / "bin",
+        expect_version="0.9.16",
+        run=missing_metadata,
+        foreground=lambda *_args: pytest.fail("Missing installed metadata started foreground"),
+    )
+    with pytest.raises(harness.StepFailed, match="metadata query failed"):
+        harness.ui_app(case, "plugin-ui")
+
+
+def test_noninteractive_cases_supply_fictional_profile_without_inheriting_identity(tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_ORG__NAME", "Inherited Person")
+    monkeypatch.setenv("HZ_TEAM__NAME", "Inherited Team")
+    monkeypatch.setenv("HZ_ORG__EMAIL", "inherited@example.invalid")
+    monkeypatch.setenv("HZ_CONFIG_HOME", "/inherited/configuration")
+    monkeypatch.setenv("GITHUB_TOKEN", "inherited-token")
+    case = harness.Case("2", tmp_path, {"args": SimpleNamespace(expect_version="0.9.16"), "explicit_profile": None})
+    assert {key: case.env[key] for key in harness.PROFILE_FIXTURE} == {
+        "HZ_ORG__NAME": "Mira Example",
+        "HZ_ORG__HANDLE": "mira-example",
+        "HZ_ORG__ROLE": "engineer",
+        "HZ_ORG__TIMEZONE": "Europe/Berlin",
+        "HZ_TEAM__NAME": "Example Team",
+    }
+    assert case.notes["fictional_profile_fixture"] == harness.PROFILE_FIXTURE
+    assert "HZ_ORG__EMAIL" not in case.env
+    assert "GITHUB_TOKEN" not in case.env
+    assert "HZ_APP_PROFILE" not in case.env
+    assert case.env["HOME"] == str(case.root / "home")
+    assert case.env["HZ_CONFIG_HOME"] == str(case.root / "config_home")
+    assert case.env["XDG_CONFIG_HOME"] == str(case.root / "xdg-config")
+    assert case.env["HZ_SYSTEM_CREDENTIAL__BACKEND"] == "environment"
 
 
 def test_release_candidate_urls_accept_only_this_projects_final_or_edge_assets():
@@ -244,3 +381,331 @@ def test_a_public_preflight_never_accepts_an_edge_version(tmp_path, monkeypatch)
     with pytest.raises(harness.StepFailed, match="must be final"):
         harness.preflight(args, tmp_path)
     assert harness.EDGE_CANDIDATE is None
+
+
+FAKE_LIST = """
+function el(tag, text, children = [], label = null) {
+  const node = { tagName: tag, innerText: text, textContent: text, children, parentElement: null, label };
+  node.firstElementChild = children[0] ?? null;
+  for (const child of children) child.parentElement = node;
+  node.closest = (tag) => node.tagName === tag.toUpperCase() ? node : node.parentElement?.closest(tag);
+  node.querySelectorAll = (selector) => {
+    const found = [];
+    const walk = (n) => {
+      for (const child of n.children) {
+        if (selector === "span" ? child.tagName === "SPAN" : child.label?.startsWith("Remove ")) found.push(child);
+        walk(child);
+      }
+    };
+    walk(node);
+    return found;
+  };
+  return node;
+}
+const row = (name, version, pending = "") =>
+  el("LI", `${name} v${version} ${pending}`, [
+    el("DIV", `${name} v${version}`, [el("SPAN", `v${version}`), el("BUTTON", "", [], `Remove ${name}`)]),
+    el("DIV", pending, [el("SPAN", pending)])
+  ]);
+const clock = row("heinzel-clock", CLOCK_VERSION, PENDING_VERSION);
+const tailscale = row("heinzel-tailscale", "0.9.2");
+const rows = SINGLE_PLUGIN ? [clock] : [clock, tailscale];
+const list = el("UL", rows.map(r => r.innerText).join(" "), rows);
+el("DIV", list.innerText, [list]);
+globalThis.document = {
+  querySelector: (selector) => {
+    const name = selector.match(/Remove ([^']+)'/)[1];
+    return rows.find(r => r.children[0].children[1].label === `Remove ${name}`)?.children[0].children[1] ?? null;
+  },
+};
+"""
+
+
+def test_a_row_check_reads_only_the_installed_version_in_its_own_header():
+    """Execute every real page expression in fresh JS contexts under one five-second process budget."""
+    node = shutil.which("node")
+    assert node, "node runs the page expression; the CI runner images have it"
+    cases = [
+        ("installed", "0.9.3", "", False, ("heinzel-clock", "0.9.3"), True),
+        ("other-plugin", "0.9.3", "", False, ("heinzel-clock", "0.9.2"), False),
+        ("version-prefix", "0.9.20", "", False, ("heinzel-clock", "0.9.2"), False),
+        ("pending-only", "0.9.3", "v0.9.2", True, ("heinzel-clock", "0.9.2"), False),
+        ("installed-with-pending", "0.9.3", "v0.9.2", True, ("heinzel-clock", "0.9.3"), True),
+        ("missing-plugin", "0.9.3", "", False, ("heinzel-missing", "0.9.2"), False),
+    ]
+    expressions = []
+    for case, installed, pending, single, lookup, _shown in cases:
+        setup = (
+            f"const CLOCK_VERSION={json.dumps(installed)}, PENDING_VERSION={json.dumps(pending)}, "
+            f"SINGLE_PLUGIN={json.dumps(single)};"
+        )
+        expressions.append({"case": case, "source": setup + FAKE_LIST + harness.row_has(*lookup)})
+    script = (
+        'const vm = require("node:vm");'
+        f"const cases = {json.dumps(expressions)};"
+        "console.log(JSON.stringify(cases.map(({case: id, source}) => "
+        "({case: id, shown: vm.runInNewContext(source, {}, {timeout: 5000})}))));"
+    )
+    out = subprocess.run([node, "-e", script], capture_output=True, text=True, check=True, timeout=5)
+    for result, (case, *_inputs, shown) in zip(json.loads(out.stdout), cases, strict=True):
+        assert result["case"] == case
+        assert result["shown"] is shown, case
+
+
+def test_plugin_navigation_cannot_restart_an_expired_change_budget(monkeypatch):
+    monkeypatch.setattr(harness.time, "monotonic", lambda: 100)
+    assert harness.ui_remaining(105, 60) == 5
+    assert harness.ui_remaining(200, 30) == 30
+    with pytest.raises(harness.StepFailed, match="deadline passed"):
+        harness.ui_remaining(100, 60)
+
+
+@pytest.mark.parametrize("field", ["accept_wheel_sha256", "accept_profile_sha256"])
+def test_a_public_release_snapshot_rejects_replaced_bytes(field, tmp_path, monkeypatch):
+    """A later release must not satisfy acceptance of the coordinator's pinned bytes."""
+    version = "1.2.3"
+    wheel = b"published wheel"
+    wheel_hash = harness.sha256(wheel)
+    profile = {"format": 2, "core_version": version, "artifacts": [{"name": "heinzel", "sha256": wheel_hash}]}
+    profile_bytes = json.dumps(profile).encode()
+    metadata = {
+        "info": {"version": version},
+        "urls": [{"packagetype": "bdist_wheel", "digests": {"sha256": wheel_hash}}],
+    }
+    monkeypatch.setattr(harness, "latest_app_version", lambda: version)
+    responses = {
+        "https://pypi.org/pypi/heinzel/json": json.dumps(metadata).encode(),
+        f"{harness.COLLECTION}/releases/download/app-v{version}/standard.json": profile_bytes,
+    }
+    monkeypatch.setattr(harness, "fetch", lambda url, *a: responses[url])
+    args = argparse.Namespace(
+        expect_version=version,
+        expect_app_version=version,
+        accept_wheel_sha256=wheel_hash,
+        accept_profile_sha256=harness.sha256(profile_bytes),
+    )
+    setattr(args, field, "0" * 64)
+    with pytest.raises(harness.StepFailed, match="differs from the accepted hash"):
+        harness.preflight(args, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "defect",
+    [
+        None,
+        "baseline-version",
+        "baseline-hash",
+        "target-hash",
+        "same-version-hash",
+        "extra-wheel",
+        "old-target",
+        "missing-clock",
+    ],
+)
+def test_plugin_update_expectation_is_bound_independently_before_mutating(defect, monkeypatch, tmp_path):
+    artifact = {"name": "heinzel-clock", "version": "0.9.5", "sha256": "c" * 64}
+    payload = b"registry-selected wheel"
+    digest = harness.sha256(payload)
+    wheel_url = "https://files.pythonhosted.org/clock.whl"
+    baseline = {
+        "info": {"version": "0.9.5"},
+        "urls": [{"packagetype": "bdist_wheel", "digests": {"sha256": "c" * 64}}],
+    }
+    index = {
+        "info": {"version": "0.9.6"},
+        "urls": [{"packagetype": "bdist_wheel", "digests": {"sha256": digest}, "url": wheel_url}],
+    }
+    case = SimpleNamespace(ctx={"profile": {"artifacts": [artifact]}}, notes={}, root=tmp_path)
+    if defect == "baseline-version":
+        baseline["info"]["version"] = "0.9.6"
+    elif defect == "baseline-hash":
+        baseline["urls"][0]["digests"]["sha256"] = "d" * 64
+    elif defect == "target-hash":
+        index["urls"][0]["digests"]["sha256"] = "d" * 64
+    elif defect == "extra-wheel":
+        index["urls"] *= 2
+    elif defect in ("old-target", "same-version-hash"):
+        index["info"]["version"] = {"old-target": "0.9.2", "same-version-hash": "0.9.5"}[defect]
+    elif defect == "missing-clock":
+        case.ctx["profile"]["artifacts"] = []
+
+    def metadata(url, _limit=None):
+        if url == wheel_url:
+            return payload
+        return json.dumps(
+            {
+                "https://pypi.org/pypi/heinzel-clock/0.9.5/json": baseline,
+                "https://pypi.org/pypi/heinzel-clock/json": index,
+            }[url]
+        ).encode()
+
+    monkeypatch.setattr(harness, "fetch", metadata)
+    if defect:
+        with pytest.raises(harness.StepFailed):
+            harness.plugin_update_version(case)
+        assert case.notes == {}
+    else:
+        assert harness.plugin_update_version(case) == "0.9.6"
+        assert case.notes == {
+            "clock_update_baseline": {"version": "0.9.5", "sha256": "c" * 64},
+            "clock_update_target": {"version": "0.9.6", "sha256": digest},
+        }
+        assert (tmp_path / "clock-update-target.whl").read_bytes() == payload
+
+
+@pytest.mark.parametrize("defect", [None, "installed-bytes", "registry-advanced"])
+def test_clock_update_verifies_installed_runtime_files(defect, tmp_path):
+    prefix = tmp_path / "tool"
+    site = prefix / "lib/python3.14/site-packages"
+    metadata = site / "heinzel_clock-0.9.6.dist-info/METADATA"
+    metadata.parent.mkdir(parents=True)
+    version = "0.9.7" if defect == "registry-advanced" else "0.9.6"
+    metadata.write_text(f"Version: {version}\n")
+    module = site / "heinzel_clock/__init__.py"
+    module.parent.mkdir()
+    module.write_bytes(b"changed" if defect == "installed-bytes" else b"accepted")
+    with zipfile.ZipFile(tmp_path / "clock-update-target.whl", "w") as wheel:
+        wheel.writestr("heinzel_clock/__init__.py", b"accepted")
+
+    case = SimpleNamespace(root=tmp_path.resolve(), prefix=prefix)
+    if defect:
+        match = "differs from the accepted wheel" if defect == "installed-bytes" else "expected 0.9.6"
+        with pytest.raises(harness.StepFailed, match=match):
+            harness.verify_clock_update(case, "0.9.6")
+    else:
+        assert harness.verify_clock_update(case, "0.9.6") == 1
+
+
+class AccountBrowser:
+    """A new account trigger has no obsolete Profile suffix and accepts only keyboard focus."""
+
+    def __init__(self):
+        self.tabs, self.opened, self.clicks = 0, False, []
+
+    def locate(self, selector, name, exact):
+        assert selector == "button[aria-haspopup='menu'][title=\"Mira Example · engineer\"]"
+        assert name == "Mira"
+        assert exact is False
+        return "account"
+
+    def present(self, *_args):
+        return False
+
+    def evaluate(self, expression):
+        assert ".focus(" not in expression
+        if "document.activeElement" in expression:
+            return self.tabs == 2
+        assert "aria-expanded" in expression
+        assert "false" in expression
+        return not self.opened
+
+    def press(self, key, code, virtual):
+        if key == "Tab":
+            assert code == "Tab"
+            assert virtual == 9
+            self.tabs += 1
+        else:
+            assert (key, code, virtual) == ("Enter", "Enter", 13)
+            assert self.tabs == 2
+            self.opened = True
+
+    def wait(self, expression, _message, _timeout):
+        if "aria-expanded" in expression:
+            assert self.opened
+        else:
+            assert "Installed on this machine" in expression
+            assert self.clicks == [("[role=menuitem]", "Settings"), ("button", "Plugins")]
+
+    def click(self, selector, name, *_args, **_kwargs):
+        assert self.opened
+        self.clicks.append((selector, name))
+
+
+def test_account_navigation_requires_real_tab_enter_and_the_bound_menu_identity(monkeypatch):
+    monkeypatch.setattr(harness.time, "sleep", lambda _seconds: None)
+    browser = AccountBrowser()
+    harness.ui_open_plugins(browser, None)
+    assert browser.tabs == 2
+    assert browser.opened
+
+
+@pytest.mark.parametrize("action", ["add", "remove"])
+def test_plugin_preview_requires_action_bound_consent_and_cancel_before_writing(action):
+    title = "Install heinzel-example" if action == "add" else "Remove heinzel-example?"
+    permission = (
+        "Runs as code on this computer with your permissions."
+        if action == "add"
+        else "Its modules stop and its files are deleted."
+    )
+    text = f"{title}\n{permission}\nhz restarts and this page reloads itself.\nYour open work is preserved."
+    selector = harness.plugin_dialog(action, "confirm")
+
+    class Preview:
+        def wait(self, expression, _what, timeout):
+            assert json.dumps(selector) in expression
+            assert timeout == 30
+            return text
+
+        def present(self, buttons, name):
+            assert buttons == f"{selector} button"
+            return name in ("Cancel", "Install" if action == "add" else "Remove")
+
+    assert harness.plugin_preview(Preview(), action, "heinzel-example", 30) == text
+    text = text.replace("hz restarts and this page reloads itself.", "")
+    with pytest.raises(harness.StepFailed, match="preview lacks"):
+        harness.plugin_preview(Preview(), action, "heinzel-example", 30)
+
+
+@pytest.mark.parametrize("action", ["add", "remove"])
+@pytest.mark.parametrize("failure", [None, "The exact installed plugin could not be verified"])
+@pytest.mark.parametrize("settings_open", [True, False])
+def test_plugin_apply_requires_one_confirmation_new_document_and_success(action, failure, settings_open, monkeypatch):
+    monkeypatch.setattr(harness.time, "monotonic", lambda: 100)
+    navigation = []
+    monkeypatch.setattr(harness, "ui_open_plugins", lambda *_args, **kwargs: navigation.append(kwargs["deadline"]))
+
+    class Change:
+        locate = staticmethod(harness.Browser.locate)
+
+        def __init__(self):
+            self.clicks, self.waits, self.marker = [], [], False
+
+        def evaluate(self, expression):
+            if expression == "window.__hzAcceptancePluginRestart = true":
+                self.marker = True
+                return None
+            if expression == "new URLSearchParams(location.search).has('settings')":
+                return settings_open
+            if expression == "document.body.innerText.includes('Installed on this machine')":
+                return True
+            selector = json.dumps(harness.plugin_dialog(action, "failed"))
+            assert expression == f"document.querySelector({selector})?.innerText"
+            return failure
+
+        def click(self, selector, name, **kwargs):
+            assert self.marker
+            assert kwargs["timeout"] <= 60
+            self.clicks.append((selector, name))
+
+        def wait(self, expression, _what, timeout):
+            assert timeout <= 360
+            self.waits.append(expression)
+            return True
+
+    browser = Change()
+    if failure:
+        with pytest.raises(harness.StepFailed, match=failure):
+            harness.ui_apply(browser, "the fixture change", "installed-row", action=action)
+        assert navigation == ([] if settings_open else [460])
+        assert len(browser.clicks) == 1
+    else:
+        harness.ui_apply(browser, "the fixture change", "installed-row", action=action)
+        assert navigation == ([] if settings_open else [460])
+        assert browser.clicks == [
+            (f"{harness.plugin_dialog(action, 'confirm')} button", "Install" if action == "add" else "Remove"),
+            (f"{harness.plugin_dialog(action, 'done')} button", "Done"),
+        ]
+        assert browser.waits[-1] == "installed-row"
+    assert "window.__hzAcceptancePluginRestart === undefined" in browser.waits[0]
+    assert 'data-stage=\\"done\\"' in browser.waits[1]
+    assert 'data-stage=\\"failed\\"' in browser.waits[1]

@@ -46,6 +46,16 @@ export function fakeAudio(seconds: (url: string) => number = () => 10) {
       return gain;
     }
 
+    createAnalyser() {
+      return {
+        fftSize: 0,
+        smoothingTimeConstant: 0,
+        frequencyBinCount: 16,
+        getByteFrequencyData: vi.fn(),
+        disconnect: vi.fn(),
+      };
+    }
+
     createBufferSource() {
       const source = new FakeSource();
       this.sources.push(source);

@@ -51,6 +51,7 @@ the kinds it understands.
 | `HealthLet` | `@module.health` returning `Check`s | `hz system doctor` |
 | `CredentialLet` | `module.credential(name, purpose=...)` | `Credentials` (injected) and `hz system credential` with its doctor check ([ADR 0030](adr/0030-credentials-live-in-the-os-keychain.md)) |
 | `SetupLet` | `@module.setup(required=False)`, asking through an injected `Prompter` and writing through `ConfigEditor` and `Credentials` | the CLI head: `hz setup [MODULE]` ([ADR 0032](adr/0032-modules-declare-interactive-setup-steps.md)) |
+| `PrerequisiteLet` | `module.prerequisite(name, purpose=..., macos=Homebrew(...), linux=ManualInstall(...))`: an external program, when it is needed and how it gets installed | the installer, `hz setup` (before the module's own step), `hz system doctor`, `hz system prerequisite` and the generated plugin pages ([ADR 0112](adr/0112-modules-declare-external-tool-prerequisites.md)) |
 | `PlaybookLet` | `module.playbook(summary, assets=..., templates=..., defaults=...)`: asset types with discovery hints, template contracts, recommended settings | `heinzel`: `hz heinzel playbooks`, `discover`, `new --template`; the setup step it declares ([ADR 0037](adr/0037-plugins-bring-playbooks.md)) |
 | `LayerLet` | `module.layer(parent=..., site=..., roles=...)`: the plugin sits in a company's tree, under its parent layer and at a site layer | the kernel: `Kernel.layers()` checks the tree, `Kernel.layer_stack()` stacks your layers general to specific, afresh on every call; `system.layer`: `hz system layer list`, `show`, doctor ([ADR 0040](adr/0040-layers-and-playbooks-are-plugins.md)) |
 | `SkillLet` | `module.skill(path)`: a `SKILL.md` directory or a directory of them, checked at import (frontmatter, sizes, text only, no links, no secrets) | `system.skill`: `hz system skill list`, `show`, `export`; the read-only `Skills` service for Pydantic AI turns (`skill_tools`) and the MCP head's prompts and resources ([ADR 0061](adr/0061-plugins-ship-skills-every-ai-path-can-use.md)) |
@@ -91,7 +92,7 @@ machine's writer branch `hz/<handle>/<machine>` of the person's own state reposi
 **Head.** A view that boots the kernel and exposes operations ([ADR 0019](adr/0019-mcp-and-rest-heads.md)). All heads
 share one exposure rule (`heinzel.heads._exposure`): the same path, public parameters and `heads=` restrictions. The
 **MCP head** makes each operation a tool (`system_doctor`), the **REST head** an endpoint (`GET /system/doctor`,
-OpenAPI at `/docs`). An operation declared `private=True` is omitted from public REST and network MCP and
+OpenAPI at `/docs`). Over streamable HTTP the MCP head needs a per-agent bearer token with a `read` or `write` scope, checked against each operation's `read_only` and logged with its actor per call ([ADR 0142](adr/0142-mcp-over-http-takes-per-agent-bearer-tokens-with-read-and-write-scopes.md)). An operation declared `private=True` is omitted from public REST and network MCP and
 requires trusted identity before dependency injection or execution. `hz system serve api --private` exposes those
 operations behind a server-scoped expiring bearer, written once to an owner-only file. A server restart retires its old credentials; credentials expire after
 twelve hours, and their raw values never appear in generated tool results or status output. The client sends it in the
@@ -102,7 +103,7 @@ and keep message/attachment/proof input out of URL query strings. Existing opera
 Read and write scopes are enforced in the kernel; services still check each resource's owner. Installation
 identity and default API credentials use user-scope settings, so a project cannot redirect them. See
 [ADR 0068](adr/0068-human-approval-proofs-and-head-parity.md); human-proof issuance and consumption remain proposed.
-The **web head** (`hz ui`, `heinzel.heads.web`) serves a
+The **web head** (`hz ui serve`, `heinzel.heads.web`) serves a
 React app (`web/`, built into the package) at `/` and the API head's endpoints for head `web` under `/api`, on
 localhost only, behind a token made per process and sent as `Authorization: Bearer`; every response carries a strict
 CSP. Operations hidden from the unauthenticated REST head because they read your profile or your systems list `web`

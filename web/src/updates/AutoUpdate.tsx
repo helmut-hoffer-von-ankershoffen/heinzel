@@ -1,12 +1,12 @@
 // Automatic updates (ADR 0116): the server owns the plan; this only shows it. Every window polls the same
 // `GET /api/auto-update`, so two windows agree and a reload shows what is left of the countdown.
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { useAutoUpdateSetting } from "./AutoUpdateToggle";
-import { type AutoUpdateStatus, call, KEY } from "./autoUpdateApi";
+import { type AutoUpdateStatus, call, KEY, useAutoUpdateStatus } from "./autoUpdateApi";
 import { updateTransport } from "./controller";
 import { reloadHeld } from "./work";
 
@@ -27,15 +27,17 @@ export function secondsLeft(status: AutoUpdateStatus | undefined, receivedAt: nu
 
 export function AutoUpdate() {
   const client = useQueryClient();
-  // Turning the setting on or off, here or in another place, asks the server again at once.
   const { on } = useAutoUpdateSetting();
-  const query = useQuery({
-    queryKey: [...KEY, on],
-    queryFn: ({ signal }) => call("GET", "", signal),
-    // Every 2 s while anything is pending, so a countdown shows within 2 of its 30 seconds; a minute when off.
-    refetchInterval: (state) => (state.state.data?.phase === "off" ? 60_000 : 2_000),
-    retry: false,
-  });
+  // A setting cached as "off" can be enabled in another window or the CLI without this window knowing. Keep
+  // polling every 2 s, also in the background, so each window can show the server's 30-second warning in time.
+  const query = useAutoUpdateStatus(true);
+  // A setting change observed by this window asks the server again at once.
+  const previous = useRef(on);
+  useEffect(() => {
+    if (previous.current === on) return;
+    previous.current = on;
+    void client.invalidateQueries({ queryKey: KEY, exact: true });
+  }, [client, on]);
   const status = query.data;
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
@@ -75,7 +77,7 @@ export function AutoUpdate() {
   const act = async (path: "/postpone" | "/dismiss") => {
     setBusy(true);
     try {
-      client.setQueryData([...KEY, on], await call("POST", path));
+      client.setQueryData(KEY, await call("POST", path));
     } catch {
       await query.refetch();
     } finally {

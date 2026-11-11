@@ -82,6 +82,48 @@ def test_creation_is_immediate_durable_and_idempotent_with_private_profile_bodie
         restarted.new_chat("create-1", "Changed helper", look)
 
 
+def test_initial_prompt_is_first_private_and_exactly_once_across_restart(services):
+    service, repository, current = services
+    prompt = "Watch the supplied release source and draft a poem for my review."
+    first = service.new_chat("frontdoor-one", "Turing", initial_message=prompt)
+    assert [(message.role, message.text, message.origin) for message in first.messages] == [("user", prompt, "cli")]
+    restarted = SessionCrud(PersonalSessionRepository(current), service.costs)
+    assert restarted.new_chat("frontdoor-one", "Turing", initial_message=prompt) == first
+    metadata = json.dumps([event.model_dump(mode="json") for event in repository.control_read(first.session_id).events])
+    assert prompt not in metadata
+    with pytest.raises(HeinzelError, match="different Heinzel details"):
+        restarted.new_chat("frontdoor-one", "Turing", initial_message=prompt + " Changed scope.")
+    with pytest.raises(HeinzelError, match="different Heinzel details"):
+        restarted.new_chat("frontdoor-one", "Turing")
+
+
+def test_interrupted_initial_prompt_blocks_other_messages_until_exact_recovery(services, monkeypatch):
+    service, repository, current = services
+    original = service._accept_locked
+
+    def crash(*_args, **_kwargs):
+        msg = "interrupted after profile, before initial inbox acceptance"
+        raise OSError(msg)
+
+    monkeypatch.setattr(service, "_accept_locked", crash)
+    with pytest.raises(OSError, match="interrupted after profile"):
+        service.new_chat("frontdoor-crash", "Turing", initial_message="The exact original prompt.")
+    [session] = repository.reserved_session_ids()
+    monkeypatch.setattr(service, "_accept_locked", original)
+    with pytest.raises(HeinzelError, match="original prompt"):
+        service.accept(session, MessageRequest(request_id="later", text="Do something else first"))
+    with pytest.raises(HeinzelError, match="original prompt"):
+        service.accept(session, MessageRequest(request_id="frontdoor-crash", text="Changed original prompt"))
+    restarted = SessionCrud(PersonalSessionRepository(current), service.costs)
+    restored = restarted.new_chat("frontdoor-crash", "Turing", initial_message="The exact original prompt.")
+    assert [message.text for message in restored.messages] == ["The exact original prompt."]
+    restarted.accept(session, MessageRequest(request_id="later", text="Now a follow-up"))
+    assert [message.text for message in restarted.snapshot(session).messages] == [
+        "The exact original prompt.",
+        "Now a follow-up",
+    ]
+
+
 def test_profile_exact_replay_precedes_stale_revision_and_restore_default_roundtrips(services):
     service, _repository, _current = services
     first = service.new_chat("create-1")

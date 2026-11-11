@@ -72,7 +72,7 @@ def test_durable_composer_survives_update_reload_and_stays_session_scoped(tmp_pa
         "HZ_ORG__EMAIL": "mira@example.com",
     }
     ui = subprocess.Popen(
-        ["uv", "run", "hz", "ui", "--no-browser", "--port", "0"],
+        ["uv", "run", "hz", "ui", "serve", "--no-browser", "--port", "0"],
         cwd=REPO,
         env=env,
         stdout=subprocess.PIPE,

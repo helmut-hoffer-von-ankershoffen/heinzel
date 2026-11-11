@@ -147,3 +147,25 @@ def test_private_date_and_enum_arguments_use_the_same_declared_validation_as_htt
     projected = client.request(call.method, call.path, headers=headers, params=call.query, json=call.body)
     assert projected.status_code == direct.status_code
     assert projected.json() == direct.json()
+
+
+def _settings_module(name: str, *, layer: bool) -> Module:
+    module = Module(name, f"The {name} module.")
+    module.settings(HarborSettings)
+    if layer:
+        module.layer(parent=None)
+    return module
+
+
+def test_a_layer_modules_legacy_settings_page_goes_under_organisation(make_kernel):
+    kernel = make_kernel(builtins=True, **{"acme-site": _settings_module("acme-site", layer=True)})
+    entry = next(item for item in kernel.resolve(UiService).navigation() if item.id == "acme-site:@settings")
+    assert entry.settings is not None
+    assert entry.settings.group == "organisation"
+
+
+def test_a_non_layer_modules_legacy_settings_page_stays_under_preferences(make_kernel):
+    kernel = make_kernel(builtins=True, weather=_settings_module("weather", layer=False))
+    entry = next(item for item in kernel.resolve(UiService).navigation() if item.id == "weather:@settings")
+    assert entry.settings is not None
+    assert entry.settings.group == "preferences"

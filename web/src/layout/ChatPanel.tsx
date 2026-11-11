@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import { api, problem } from "@/api/client";
 import { useSharedChat } from "@/chat/ChatContext";
-import { Composer, Conversation, Costs } from "@/chat/Conversation";
+import { Composer, Conversation } from "@/chat/Conversation";
 import { DurableSession } from "@/chat/DurableSession";
 import { SessionSwitcher } from "@/chat/SessionSwitcher";
 import { isDurableSession } from "@/chat/useChat";
@@ -224,7 +224,8 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
         <Conversation chat={chat} empty={location.pathname === "/" ? t("today.empty") : undefined} />
         <div ref={end} />
       </div>
-      <div className="chat-panel-composer border-t border-border p-3">
+      <hr className="shrink-0 border-border" />
+      <div className="chat-panel-composer p-3">
         <Composer
           chat={chat}
           context={`route:${location.pathname}`}
@@ -232,7 +233,6 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           onCreatePersonal={createPersonal}
           initialPersonalMessage={handoff?.message}
         />
-        <Costs chat={chat} className="chat-panel-costs mt-1.5" />
       </div>
     </div>
   );

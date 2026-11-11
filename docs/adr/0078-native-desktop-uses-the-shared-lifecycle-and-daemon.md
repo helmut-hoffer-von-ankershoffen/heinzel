@@ -1,4 +1,5 @@
 ---
+amended-by: 0117, 0135
 status: proposed
 date: 2026-10-25
 implementation: partial

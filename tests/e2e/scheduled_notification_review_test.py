@@ -24,7 +24,7 @@ class FakeQueue(Notifications):
         self.queued = queued
 
     @override
-    def emit_once(self, _kind, title, body, *, route, command, key):
+    def emit_once(self, _kind, title, body, *, route, command, key, helper=None):
         self.calls.append((title, body, key))
         return self.queued
 

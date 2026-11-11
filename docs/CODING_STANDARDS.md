@@ -41,6 +41,42 @@ Each rule has a reason. If a rule gets in your way, change the rule in a pull re
 - **Docstrings and comments:** see [Comments and docstrings](#comments-and-docstrings).
 - **Formatting and lint:** `ruff format` and `ruff check` with `select = ["ALL"]`. Ignored rules are listed with a
   reason in `pyproject.toml`. Line length 120.
+- **Logging:** structured events, see [Structured logging](#structured-logging).
+
+## Structured logging
+
+Logs are events with fields, not sentences
+([ADR 0138](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0138-log-structured-events-with-stdlib-logging.md)).
+The helper is `heinzel.kernel._logging`, on top of stdlib `logging`.
+
+- The message is a stable event name, `area.operation.step` in lower case. Everything that varies is a field:
+  `operation`, `step`, `plugin`, `version`, `path`, `outcome` (`ok` | `error` | `skipped`), `duration_ms`,
+  `error_type`, `error`, `reason`. Never an f-string, `%`, `+` or `.format` in a logger call.
+- Every step of an install, update, plugin install, app open or recovery and first run is wrapped in `step`: one
+  start event, one outcome event with its duration. An error carries the same facts as the two-line message the
+  person sees.
+- One operation, one `correlation_id`: wrap it in `correlate()`; the outermost `step` starts one if none is set.
+- No secrets: keys naming a token, secret, password, API key, authorization, cookie, credential or email are
+  redacted whatever their value; still, don't log them.
+- Levels: `DEBUG` developer detail, `INFO` steps and their ok or skipped outcomes, `WARNING` recovered degradation,
+  `ERROR` a failed step. Log files use `JsonFormatter` (one JSON object per line), terminals `TextFormatter`.
+- Test the events for the success and the failure case: attach a handler and compare `record_fields(record)`.
+
+```python
+from heinzel.kernel._logging import correlate, get_logger, log_event, step
+
+log = get_logger("desktop")
+
+with correlate():
+    with step(log, "desktop.install.download", version=version, path=str(target)) as running:
+        size = download(url, target)
+        running.note(bytes=size)
+    if installed == version:
+        log_event(log, "desktop.install.copy", outcome="skipped", reason="already installed", version=version)
+```
+
+`tests/unit/logging_standards_test.py` fails on a formatted logger call under `src/heinzel` outside its allowlist of
+older files, and the allowlist may only shrink.
 
 ## Comments and docstrings
 
@@ -100,6 +136,23 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
   `make test` skip it, and `make test-perf` runs it in CI.
 - No sleeping, no ordering dependencies, no shared mutable fixtures. Tests run on macOS and Linux, Python 3.12–3.15.
 
+### Quarantine
+
+A flaky test gets its root cause fixed; it is never loosened, skipped, given a higher limit or rerun until green.
+In the core repository (plugins have no quarantine), while the fix is being built, an entry in `tests/quarantine.toml` takes the test out of the required jobs, so one
+known flake cannot block every merge and release:
+
+- An entry names one test (`tests/<level>/<file>_test.py::<name>`, or a parametrized case), a bead that tracks the
+  fix, `added`, `until` (at most 7 days after `added`) and a one-line `reason`. At most 8 entries.
+- Every ordinary pytest run leaves such a test out and names it in its summary; `HZ_QUARANTINE=only` runs only the
+  quarantined tests, `HZ_QUARANTINE=include` runs everything. A test named by node id on the command line always runs.
+- CI's `Quarantine (<os>)` jobs run them where the full suite runs (main, daily, dispatch, release candidates), retry
+  a failure up to 3 times and report each result in the job summary and the `quarantine-report-<os>` artifact. They
+  never block and are not part of `CI OK`.
+- Past `until` the test is back in the required jobs and the required `Quarantine registry` job (`make
+  quarantine-check`) fails until the test is fixed or the entry removed. A malformed registry fails every test run.
+- Removing the entry is part of the fix. Adding, extending or editing an entry needs an independent review.
+
 ## Commits, branches and releases
 
 - [Conventional Commits](https://www.conventionalcommits.org): `type(scope): summary` in the imperative; the whole
@@ -140,16 +193,34 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
 - README explains how to use Heinzelmännchen; AGENTS.md how to work on it; this file how to write code for it.
 - Docs are part of the change: a pull request that changes behaviour updates the docs in the same commit.
 
+## CLI progress and prompts
+
+Typer renders with Rich, so long commands use the shared helpers in `heinzel.heads.cli._progress` and never print nothing for more than a second.
+
+- Progress and prompts go to stderr; stdout carries only the result. A redirected stderr gets no ANSI codes and no spinner.
+- `StepReporter(err_console, header=..., rows=...)` folds the steps of a long operation into labelled rows: one download row with a bar, size and elapsed time, then check-marked rows with a 10-character past-tense label and one fact each. Redirected, with `NO_COLOR` or under `CI` it prints the same words without art, bar or colour (`Downloading 48.2 MB ... done (7 s)`, `ok` for the check mark). Pass it to code that must stay UI-free as a `Reporter` (`heinzel.heads._desktop_report`); background callers use `SILENT`. `hz app`'s words all live in `heinzel.heads._desktop_messages`.
+- `ConsoleProgress.task(...)` is the kernel's `Progress` for operations (a spinner or a bar for `rich.progress.track`-style loops). Use `track(items, description=...)` or `typer.progressbar(..., length=...)` for a loop over known work.
+- Prompts are the exception: every answer has a flag (`--yes`, `--no-launch`) that works without a terminal. `confirm(console, question, yes=flag, flag="--yes")` asks only on a terminal and otherwise raises an error naming the flag, never blocking on stdin.
+- Network steps have timeouts and retry with a visible note; errors say what happened and what to do next.
+- An error the person sees is two lines: what happened, in the words of the person (app, folder, download, open), and the one command or action that fixes it. Internal names (receipt, bundle, metadata, journal, seal, lock) and exception text go under `--details` only. Every folder is a full path with its plain name. Progress that can take over two seconds shows a bar or a step line; a command never leaves the cursor blank. `tests/unit/heads/desktop_error_copy_test.py` enforces it on every `DesktopInstallationError` message.
+
 ## Mobile UI
 
 Every screen and overlay must remain usable at phone portrait and landscape sizes, including a software keyboard,
 pinch zoom and device safe areas. New UI uses the shared `AnchoredPopover` for dropdowns, `viewport-overlay` for
 modal backdrops, and `lib/viewport.ts` / `lib/placement.ts` for measured overlays. Full-height layouts use the shell's
 scale-normalized visual height. Form fields on touch devices retain at least 16px text; do not disable user zoom.
+The shared search field keeps this minimum before autofocus for every input mode and preserves larger UI font tokens.
+Keep that intrinsic rule independent of pointer detection; custom font-size utilities beside text colours can be
+discarded by class merging.
 Keep one scroll owner per pane, make flex children shrink with `min-h-0` / `min-w-0`, and scroll oversized content
 inside its pane. Settings rows wrap to the available pane width; native selectors must cap their intrinsic width,
 including long provider labels. Exercise advanced settings as well as basic settings in the mobile sweep.
-An expanded menu must not hide its own trigger or dismiss control.
+An expanded menu must not hide its own trigger or dismiss control. A pointer press inside the workspace stops its active
+programmatic scroll, so that reveal animation cannot carry the pressed control away before release.
+
+Scrollbars are styled once in `web/src/index.css`: thin, transparent track, thumb shown only on hover or focus inside the
+scroll container. Do not add per-component scrollbar styles or hide scrolling with `overflow: hidden`.
 
 `mobile-standards.test.ts` rejects layout-viewport heights and independent absolute dropdowns. The mobile browser
 sweep discovers static router paths and settings sections automatically; add interactive flows there when introducing a
@@ -160,3 +231,12 @@ Run `HZ_SCREENSHOTS=/tmp/hz-mobile-proof uv run pytest tests/e2e/web_ui_test.py 
 phone flows is its own test case with its own server and a screenshot subdirectory); also run the mobile test with
 `PLAYWRIGHT_BROWSER=webkit` after installing WebKit with `uv run --script scripts/web_build.py exec playwright-core install webkit`.
 These are browser-engine emulations; physical iPhone Safari remains a separate verification when available.
+
+## Actions
+
+Actions follow [design/README.md](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/design/README.md#actions),
+the single source: chrome as at most three ghost icons in the title row; content actions in one bottom row under a
+divider, the first with icon and words, the rest named icons, destructive last and red; dialogs right-aligned with
+words. Use `PaneActions`, `PaneAction` and `PaneTitle` (also in the plugin SDK) or `FooterItem actions={…}`; never a
+text link as an action or a hand-drawn row. `assertActionStructure` and `web/src/lib/paneActionsStandards.test.ts`
+enforce this.

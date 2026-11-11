@@ -4,6 +4,7 @@ import builtins
 import importlib
 import os
 import py_compile
+import subprocess
 import sys
 from importlib.metadata import EntryPoint
 from importlib.util import spec_from_file_location
@@ -117,21 +118,53 @@ def test_shadowed_external_runtime_is_refused_before_plugin_initializer(tmp_path
     assert not marker.exists()
 
 
-def test_preloaded_shadowed_stdlib_is_refused_before_plugin_initializer(tmp_path, monkeypatch):
+@pytest.mark.parametrize("stdlib_name", ["mailbox", "mimetypes"])
+def test_preloaded_shadowed_stdlib_is_refused_before_plugin_initializer(tmp_path, monkeypatch, stdlib_name):
     root = tmp_path / "cached_shadow_fixture"
     root.mkdir()
     marker = tmp_path / "executed"
-    (root / "__init__.py").write_text(f"import mailbox\nopen({str(marker)!r}, 'w').close()\n")
-    fake = tmp_path / "mailbox.py"
+    (root / "__init__.py").write_text(f"import {stdlib_name}\nopen({str(marker)!r}, 'w').close()\n")
+    fake = tmp_path / f"{stdlib_name}.py"
     fake.write_text("pass\n")
-    module = ModuleType("mailbox")
-    module.__spec__ = spec_from_file_location("mailbox", fake)
+    module = ModuleType(stdlib_name)
+    module.__spec__ = spec_from_file_location(stdlib_name, fake)
     module.__file__ = str(fake)
-    monkeypatch.setitem(sys.modules, "mailbox", module)
+    monkeypatch.setitem(sys.modules, stdlib_name, module)
     entry = EntryPoint(name="shadow", value=root.name, group="heinzel.modules")
     with pytest.raises(HeinzelError, match="origin is unverified"):
         CaptureCatalog().capture(entry, root, Origin(distribution="fixture", version="1", builtin=False), frozenset())
     assert not marker.exists()
+
+
+def test_fixed_mime_bootstrap_supports_closed_source_in_a_fresh_interpreter(tmp_path):
+    root = tmp_path / "mime_source_fixture"
+    root.mkdir()
+    (root / "__init__.py").write_text(
+        "import mimetypes\nfrom heinzel import Module, captured_source_active\n"
+        "module = Module('mime-fixture', 'Offline MIME fixture')\n"
+        "captured = captured_source_active()\nmedia_type = mimetypes.guess_type('report.txt')[0]\n"
+    )
+    script = """
+import sys
+from importlib.metadata import EntryPoint
+from pathlib import Path
+from heinzel.kernel import Origin
+from heinzel.kernel._source_loading import CaptureCatalog
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root.parent))
+capture = CaptureCatalog().capture(
+    EntryPoint(name='mime-fixture', value=root.name, group='heinzel.modules'), root,
+    Origin(distribution='fixture', version='1', builtin=False), frozenset({'heinzel'}),
+)
+plugin = sys.modules[root.name]
+assert plugin.captured is True
+assert plugin.media_type == 'text/plain'
+capture.finder.runtime.verify()
+"""
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", script, str(root)], capture_output=True, text=True, check=False, timeout=20
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_sealed_runtime_refuses_changed_cached_modules_and_attributes(tmp_path, monkeypatch):

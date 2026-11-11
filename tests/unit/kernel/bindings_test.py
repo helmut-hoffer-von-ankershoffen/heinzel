@@ -8,6 +8,10 @@ import pytest
 from pydantic import Field, field_validator
 
 from heinzel import (
+    AccessStatus,
+    AccessTest,
+    Adapters,
+    AiAccess,
     Chat,
     Check,
     Config,
@@ -1035,3 +1039,130 @@ def test_mail_is_never_bound_automatically(make_kernel):
 def test_none_or_empty_turns_off_even_a_capability_with_a_default(make_kernel, value):
     view = make_kernel(config=bind(agent_runner=value)).resolve(CapabilityView)
     assert view.binding("agent-runner") == (None, "off")
+
+
+@pytest.mark.parametrize(("binding", "expected"), [("none", "up"), ("missing", "degraded")])
+def test_on_demand_health_defers_only_intentionally_unbound_and_runtime_stays_required(make_kernel, binding, expected):
+    from heinzel.modules.system.capability._service import CapabilityService
+
+    module = Module("ondemand", "Explicitly on-demand documents.")
+    called = []
+
+    @module.operation(requires=["documents:read"], health_on_demand=True)
+    def read(documents: Documents) -> str:
+        """Read documents only on request."""
+        called.append(True)
+        return documents.read("weekly").title
+
+    kernel = make_kernel(ondemand=module, config=bind(documents=binding))
+    service = CapabilityService(kernel.resolve(CapabilityView))
+    [use] = service.uses()
+    assert use.health_on_demand
+    assert not use.optional
+    assert use.problem is not None
+    assert any(check.status.value == expected for check in service.checks())
+    if binding == "none":
+        assert (
+            next(check for check in service.checks() if check.name.endswith("for ondemand read")).status.value == "up"
+        )
+    with pytest.raises(HeinzelError):
+        run(kernel, "ondemand", "read")
+    assert called == []
+
+
+def test_on_demand_does_not_hide_module_pinned_or_active_compiled_requirements(make_kernel):
+    from heinzel.modules.system.capability._service import CapabilityService
+
+    module = Module("ondemand", "On-demand cannot weaken active requirements.")
+    required = Module("required", "Module requirements remain active.", requires=["documents:read"])
+
+    @module.operation(requires=["notes:documents:read"], health_on_demand=True)
+    def pinned(documents: Documents) -> str:
+        """Read a specific adapter."""
+        return documents.read("weekly").title
+
+    kernel = make_kernel(ondemand=module, required=required, contracts=compiler_module(), config=bind(documents="none"))
+    service = CapabilityService(kernel.resolve(CapabilityView))
+    checks = service.checks()
+    assert any(check.name.endswith("for required") and check.status.value == "degraded" for check in checks)
+    assert any(check.name.endswith("for ondemand pinned") and check.status.value == "degraded" for check in checks)
+    assert any(check.name.endswith("for contracts digest") and check.status.value == "degraded" for check in checks)
+    assert all(not use.health_on_demand for use in service.uses())
+
+
+def test_inventory_grant_is_status_only_and_never_a_bound_or_live_action_grant(make_kernel):
+    module = Module("inventory", "Inspect installed access.", inspects=["ai-access:read"])
+    adapter = Module("provider", "A test access option.")
+    calls = []
+
+    class Access:
+        def status(self) -> AccessStatus:
+            calls.append("status")
+            return AccessStatus(title="Fixture", summary="Offline", installed=True)
+
+        def test(self) -> AccessTest:
+            calls.append("test")
+            return AccessTest(ok=True)
+
+        def arbitrary(self) -> str:
+            calls.append("arbitrary")
+            return "not protocol"
+
+    adapter.provides("ai-access", modes={"read"}, hosts=["fixture.invalid"])(Access)
+
+    @module.operation
+    def inspect(options: Adapters[AiAccess]) -> bool:
+        """Only offline status is authorized."""
+        assert options["provider"].status().installed
+        with pytest.raises(HeinzelError, match="only inspect"):
+            options["provider"].test()
+        with pytest.raises(AttributeError):
+            options["provider"].arbitrary()
+        return True
+
+    @module.operation
+    def bound(access: AiAccess) -> AccessStatus:
+        """Inventory authority cannot obtain bound access."""
+        return access.status()
+
+    @module.operation(requires=["ai-access:read"], health_on_demand=True)
+    def explicit(options: Adapters[AiAccess]) -> bool:
+        """An explicit operation retains its own live-test grant."""
+        return options["provider"].test().ok
+
+    undeclared = Module("undeclared", "No grants.")
+
+    @undeclared.operation
+    def read(options: Adapters[AiAccess]) -> int:
+        """No inventory without a declaration."""
+        return len(options)
+
+    kernel = make_kernel(inventory=module, provider=adapter, undeclared=undeclared, config=bind(ai_access="none"))
+    assert run(kernel, "inventory", "inspect")
+    assert calls == ["status"]
+    with pytest.raises(HeinzelError, match="without declaring"):
+        run(kernel, "inventory", "bound")
+    with pytest.raises(HeinzelError, match="without declaring"):
+        run(kernel, "undeclared", "read")
+    assert run(kernel, "inventory", "explicit")
+    assert calls == ["status", "test"]
+
+
+@pytest.mark.parametrize("declaration", ["ai-access:write", "provider:ai-access:read", "documents:read"])
+def test_inventory_declaration_rejects_writes_pins_and_capabilities_without_inspection_methods(declaration):
+    with pytest.raises(ValueError, match=r"(inspection|mode)"):
+        Module("inventory", "Invalid inventory grant.", inspects=[declaration])
+
+
+def test_capability_inspection_allowlist_rejects_unknown_and_write_methods():
+    from heinzel.kernel._capabilities import Capability
+
+    for method in ["unknown", "write"]:
+        with pytest.raises(ValueError, match="declared read methods"):
+            Capability(
+                name="fixture",
+                protocol=object,
+                summary="Fixture",
+                methods={"status": "read", "write": "write"},
+                inspection_methods=frozenset({method}),
+            )

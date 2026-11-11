@@ -5,6 +5,7 @@ implementation: built
 decision-makers: maintainer
 amends: 0018
 amends-0018: adds hz setup
+amended-by: 0112
 related: 0003, 0005, 0012, 0015, 0024, 0026, 0030
 implemented-by: 26
 ---

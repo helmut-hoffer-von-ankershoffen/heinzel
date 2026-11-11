@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 import os
-import shutil
 import stat
 import subprocess
 import sys
@@ -24,6 +23,7 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from heinzel import Config, HeinzelError, Progress, Settings
+from heinzel.heads._prerequisites import prepare as prepare_tools
 from heinzel.heads._tool_install import (
     resolve_target,
     run_tool,
@@ -32,6 +32,7 @@ from heinzel.heads._tool_install import (
     verify_offline_managed_python,
 )
 from heinzel.kernel import DaemonInstallationLifecycle, Installation, boot, subprocess_environment
+from heinzel.kernel._uv_locate import find_uv
 
 PROFILE_ROOT = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download"
 PROFILE_LATEST = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/latest"
@@ -41,6 +42,10 @@ MAX_WHEEL = 128 * 1024 * 1024
 TIMEOUT = 60
 PROFILE_FORMAT = 2
 """Standard apps with this lifecycle can maintain startup continuity across package changes."""
+
+
+class ReleaseUnavailableError(HeinzelError):
+    """The release server could not be reached to check for a newer standard app."""
 
 
 class Artifact(BaseModel):
@@ -172,8 +177,7 @@ def latest_profile() -> AppProfile:
 
     Raises:
         HeinzelError: If discovery, release authority or the immutable profile cannot be verified.
-        OSError: If a published profile cannot be fetched.
-        ValueError: If its schema or wheel identity is invalid.
+        ReleaseUnavailableError: If the release server could not be reached.
     """
     try:
         with build_opener(_AppRedirects()).open(Request(PROFILE_LATEST, method="HEAD"), timeout=TIMEOUT) as response:
@@ -184,7 +188,7 @@ def latest_profile() -> AppProfile:
         raise HeinzelError(msg) from None
     except OSError:
         msg = "App profile discovery could not reach the release server. Check your connection and retry."
-        raise HeinzelError(msg) from None
+        raise ReleaseUnavailableError(msg) from None
     except ValueError:
         msg = (
             "App profile verification failed: its schema or package identities are invalid; "
@@ -335,9 +339,9 @@ def uv_executable() -> str:
     """Find the uv executable used by both the installer and launcher.
 
     Raises:
-        ValueError: If uv is not installed on PATH.
+        ValueError: If uv is not on PATH or in uv's standard install directories.
     """
-    executable = shutil.which("uv")
+    executable = find_uv()
     if executable is None:
         msg = "Install uv before installing the standard app"
         raise ValueError(msg)
@@ -362,8 +366,43 @@ def existing_requirements(prefix: Path | None = None) -> list[str]:
     return requirements[1:] if requirements else []
 
 
-def _managed_install(
-    profile: AppProfile, selected: list[Artifact], paths: list[Path], settings: Settings, exclusions: set[str]
+def retained_plugin_conflicts(profile: AppProfile, installation: Installation, requirements: list[str]) -> list[str]:
+    """Identify selected plugins whose explicit requirement or newer installed version would be replaced."""
+    versions = {
+        artifact.name: Version(artifact.version) for artifact in profile.artifacts if artifact.name != "heinzel"
+    }
+    pinned = {
+        name
+        for requirement in map(Requirement, requirements)
+        if (name := canonicalize_name(requirement.name)) in versions
+        and (requirement.url or requirement.specifier or requirement.extras or requirement.marker)
+    }
+    if not versions:
+        return []
+    newer = {
+        name
+        for name, installed in installation.installed_versions(list(versions)).items()
+        if Version(installed) > versions[name]
+    }
+    return sorted(pinned | newer)
+
+
+def report_retained_plugins(version: str, names: list[str]) -> None:
+    """Explain why a floating upgrade leaves a retained plugin selection in place."""
+    sys.stderr.write(
+        f"Heinzel {version} is available. The update was deferred to keep newer or explicitly selected plugins "
+        f"({', '.join(names)}). Opening the verified installed app.\n"
+    )
+
+
+def _managed_install(  # noqa: PLR0913 - the downgrade guard is explicit for retained-app upgrades
+    profile: AppProfile,
+    selected: list[Artifact],
+    paths: list[Path],
+    settings: Settings,
+    exclusions: set[str],
+    *,
+    only_if_newer: bool = False,
 ) -> int:
     """Keep the selected installation and quiescence fence through its verified checkpoint.
 
@@ -385,12 +424,22 @@ def _managed_install(
         raise HeinzelError(msg)
     lifecycle = kernel.resolve(DaemonInstallationLifecycle)
     with lifecycle.quiescent(target.binary):
+        if only_if_newer:
+            if not installation.startup_state_matches():
+                msg = "The retained app changed before updating. Inspect the installation and retry."
+                raise HeinzelError(msg)
+            if Version(installation.installed_core_version()) >= Version(profile.core_version):
+                return 0
+        requirements = existing_requirements(target.prefix)
+        if only_if_newer and (conflicts := retained_plugin_conflicts(profile, installation, requirements)):
+            report_retained_plugins(profile.core_version, conflicts)
+            return 0
         by_name = {artifact.filename: artifact for artifact in selected}
         wheels = {by_name[path.name].name: path for path in paths}
         selected_names = {item.name for item in profile.artifacts}
         preserved = [
             requirement
-            for requirement in existing_requirements(target.prefix)
+            for requirement in requirements
             if canonicalize_name(Requirement(requirement).name) not in selected_names | exclusions
         ]
         expected = {item.name: (item.version, item.sha256) for item in selected}
@@ -477,16 +526,21 @@ def _selected_profile(source: str | None) -> AppProfile:
     return profile
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, newer_profile: AppProfile | None = None) -> int:
     """One standard installation command; a minimal core install remains an ordinary uv/pip install."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", default=os.environ.get("HZ_APP_PROFILE"), help="Use an explicit app profile")
     parser.add_argument("--python", help="Install into this existing Python environment instead of a uv tool")
     parser.add_argument("--dry-run", action="store_true", help="Show the selected immutable composition")
+    parser.add_argument(
+        "--no-tools",
+        action="store_true",
+        help="Only check Git and the GitHub CLI; never install them with Homebrew",
+    )
     parser.add_argument("--history", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
-        profile = _selected_profile(args.profile)
+        profile = newer_profile if newer_profile is not None else _selected_profile(args.profile)
         # History is data only. Disabled modules remain disabled in the untouched configuration file.
         settings = Config.load().settings(Settings, "hz")
         history = args.history or settings.data_dir / "plugins.jsonl"
@@ -496,6 +550,10 @@ def main(argv: list[str] | None = None) -> int:
             f"Heinzelmännchen {profile.core_version}: "
             + ", ".join(f"{item.name} {item.version}" for item in selected)
             + "\n"
+        )
+        # Installing into an explicitly chosen Python is tooling, not a person's machine: look, never install.
+        pending = prepare_tools(
+            settings, install=not (args.dry_run or args.no_tools or args.python), write=sys.stderr.write
         )
         if args.dry_run:
             return 0
@@ -514,6 +572,8 @@ def main(argv: list[str] | None = None) -> int:
             status = subprocess.run(  # noqa: S603 - verified wheel paths and an explicitly selected Python
                 command, check=False, timeout=600, stdout=sys.stderr, env=subprocess_environment()
             ).returncode
+        elif newer_profile is not None:
+            status = _managed_install(profile, selected, [core, *plugins], settings, exclusions, only_if_newer=True)
         else:
             status = _managed_install(profile, selected, [core, *plugins], settings, exclusions)
     except HeinzelError as error:
@@ -525,6 +585,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     else:
+        if pending and not status:
+            sys.stderr.write(
+                "Heinzelmännchen is installed. Still missing:\n"
+                + "".join(line + "\n" for line in pending)
+                + "`hz system prerequisite check` confirms them once they are installed.\n"
+            )
         return status
 
 

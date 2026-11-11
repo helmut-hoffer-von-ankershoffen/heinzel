@@ -6,7 +6,7 @@ dependencies and the receipt come back byte for byte, and the installation's con
 binds the folder itself and the content of everything in it, is the one recorded before the update. Each move is an
 atomic rename; an interrupted put-back is finished by `ToolSnapshot.recover` from what is left on disk.
 
-The trial start runs the newly installed `hz ui` on throwaway folders before anything restarts into it.
+The trial start runs the newly installed `hz ui serve` on throwaway folders before anything restarts into it.
 """
 
 import contextlib
@@ -23,7 +23,7 @@ import threading
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import cast
@@ -106,6 +106,12 @@ def plugin_commit(prefix: Path, name: str) -> str | None:
     return commit if isinstance(commit, str) else None
 
 
+def plugin_requires(prefix: Path, name: str) -> list[str]:
+    """What the installed plugin `name` requires (`Requires-Dist`), read from its metadata; nothing installed runs."""
+    distribution = _distribution(prefix, name)
+    return list(distribution.requires or []) if distribution is not None else []
+
+
 def allows_core(prefix: Path, name: str, version: str) -> bool:
     """Whether the installed plugin `name` declares it works with hz `version` (its `Requires-Dist: heinzel...`)."""
     distribution = _distribution(prefix, name)
@@ -126,9 +132,11 @@ class Announcement:
     core: str | None
     """The announced hz version; None to keep the running one."""
     plugins: Mapping[str, str]
-    """Announced index plugins, by canonical name, mapped to their version."""
+    """Announced plugins, by canonical name, mapped to their version: from PyPI, or tagged on GitHub (ADR 0137)."""
     commit: str | None = None
     """The commit hz's release tag named when it was announced."""
+    plugin_commits: Mapping[str, str] = field(default_factory=dict[str, str])
+    """For announced plugins pinned to a GitHub commit: the commit their release tag named when it was announced."""
     exclude_newer: datetime | None = None
     """Nothing uploaded after this resolves, unless pinned: the plugins' minimum age, for every package."""
     exclude_newer_core: datetime | None = None
@@ -253,11 +261,11 @@ def trial_environment(scratch: Path, environ: Mapping[str, str], config: Path) -
 def trial_start(version: str, timeout: float = TRIAL_SECONDS, command: Sequence[str] | None = None) -> bool:
     """Whether the installed hz starts a web app server that answers with `version`, before this one restarts into it.
 
-    It runs `hz ui` as the restart would, on a free port with its own token, against a throwaway copy of the
+    It runs `hz ui serve` as the restart would, on a free port with its own token, against a throwaway copy of the
     configuration and empty folders (`trial_environment`), asks `/api/lifecycle` once, then stops it and deletes what
     it wrote. Nothing of this server or its live folders is touched, so a failure changes nothing here.
     """
-    command = list(command or [sys.executable, "-m", "heinzel", "ui", "--port", "0", "--no-browser"])
+    command = list(command or [sys.executable, "-m", "heinzel", "ui", "serve", "--port", "0", "--no-browser"])
     with tempfile.TemporaryDirectory(prefix="hz-trial-") as scratch:
         try:
             env = trial_environment(Path(scratch), os.environ, user_config_dir())

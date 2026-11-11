@@ -17,6 +17,7 @@ SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "pr.sh"
 URL = "https://github.com/example/widget/pull/7"
 # Each stub logs its arguments to $LOG/<name>; gh answers `pr list` with $PR_URL when set, as if the PR existed.
 STUBS = {
+    "hz-gate": '[ "$1" = "--timeout" ] || exit 2; shift 2; exec "$@"',
     "uv": (
         'printf "%s\\n" "$*" >> "$LOG/uv"; '
         'case "$*" in *scripts/scoped_checks.py*) git rev-parse HEAD >> "$LOG/preflight-head";; esac'
@@ -688,6 +689,11 @@ def test_core_root_agent_scope_uses_owning_checks_including_deletions_and_untrac
 @pytest.mark.parametrize("core_host", [False, True])
 @pytest.mark.parametrize("filename", ["feature.py", "feature name.py", "föö.py"])
 def test_actual_agent_stop_hook_dispatches_scoped_checks_only_in_core_hosts(repo, core_host, filename):
+    # Never run a host-installed gate through the stub uv in this fixture's PATH.
+    # Exercise the real hook's gated dispatch with a deterministic pass-through.
+    gate = repo.tmp / "bin/hz-gate"
+    gate.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$LOG/gate"\nexec "$@"\n')
+    gate.chmod(0o755)
     if core_host:
         (repo.dir / "scripts").mkdir()
         repo.commit("scripts/scoped_checks.py", (SCRIPT.parent / "scoped_checks.py").read_text())
@@ -706,9 +712,11 @@ def test_actual_agent_stop_hook_dispatches_scoped_checks_only_in_core_hosts(repo
     )
     assert done.returncode == 0, done.stderr
     if core_host:
+        assert repo.log("gate") == [f"uv run --no-project --script {repo.dir}/scripts/scoped_checks.py fast"]
         assert repo.log("uv") == [f"run --no-project --script {repo.dir}/scripts/scoped_checks.py fast"]
         assert repo.log("make") == []
     else:
+        assert repo.log("gate") == ["make check-fast"]
         assert repo.log("make") == ["check-fast"]
 
 

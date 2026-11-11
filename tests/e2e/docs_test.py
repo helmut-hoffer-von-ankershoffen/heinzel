@@ -89,7 +89,7 @@ class CapturedOutput:
                     combined = self.buffers[name] + chunk
                     for label, pattern in (
                         ("packages-output", rb"Installed [0-9]+ packages in"),
-                        ("app-install-output", rb"Installing Heinzelm"),
+                        ("app-install-output", rb"Installing Heinzel"),
                         ("executables-output", rb"Installed [0-9]+ executables:"),
                         ("loopback-url-output", rb"http://127\.0\.0\.1:[0-9]+/"),
                     ):
@@ -381,6 +381,13 @@ def test_readme_instructions(tmp_path, fixture_managed_python):
         "UV_CACHE_DIR": str(tmp_path / "uv-cache"),
         "HZ_APP_PROFILE": str(profile),
         "HZ_SYSTEM_CREDENTIAL__BACKEND": "environment",
+        # This pipe-driven launch cannot answer onboarding. Supply an explicit fictional profile through
+        # supported settings, just as an unattended installation must supply its real required details.
+        "HZ_ORG__NAME": "Mira Example",
+        "HZ_ORG__HANDLE": "mira-example",
+        "HZ_ORG__ROLE": "engineer",
+        "HZ_ORG__TIMEZONE": "Europe/Berlin",
+        "HZ_TEAM__NAME": "Example Team",
         "UV_TOOL_DIR": str(tmp_path / "tools"),
         "UV_TOOL_BIN_DIR": str(tmp_path / "bin"),
         "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",

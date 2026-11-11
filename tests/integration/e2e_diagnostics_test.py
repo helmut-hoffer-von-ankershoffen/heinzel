@@ -18,7 +18,10 @@ def test_controller_emits_sanitized_failure_before_teardown(tmp_path):
     tests = tmp_path / "tests"
     e2e = tests / "e2e"
     e2e.mkdir(parents=True)
-    for source, target in ((root / "tests" / "conftest.py", tests / "conftest.py"),):
+    for source, target in (
+        (root / "tests" / "conftest.py", tests / "conftest.py"),
+        (root / "tests" / "_e2e_schedule.py", tests / "_e2e_schedule.py"),  # imported by the root conftest
+    ):
         shutil.copyfile(source, target)
     (tmp_path / "pytest.ini").write_text("[pytest]\nmarkers =\n    e2e: end to end\n")
     (e2e / "test_probe.py").write_text(

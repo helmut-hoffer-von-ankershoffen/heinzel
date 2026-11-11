@@ -6,7 +6,7 @@ from typing import override
 
 import pytest
 
-from heinzel import CurrentUser, HeinzelError, Notifications
+from heinzel import CurrentUser, HeinzelError, NoticeHelper, Notifications
 from heinzel.kernel._approval import ApprovalConfirmation
 from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules, _binding_intent
 from heinzel.modules.heinzel._contract_review import ContractReview
@@ -44,12 +44,14 @@ def occurrence_time(monkeypatch):
 class FakeNotifications(Notifications):
     def __init__(self, result=True):
         self.calls = []
+        self.helpers = []
         self.compacted = []
         self.result = result
 
     @override
-    def emit_once(self, _kind, title, body, *, route, command, key):
+    def emit_once(self, _kind, title, body, *, route, command, key, helper=None):
         self.calls.append((title, body, route, key))
+        self.helpers.append(helper)
         return self.result
 
     @override
@@ -150,6 +152,42 @@ def test_rate_topic_uncertainty_and_daemon_ownership(tmp_path):
         assert len(unknown.calls) == 1
         with current.local("daemon"), repo.main_writer(session) as writer:
             assert runner("three").send(args, writer)[0] == "recorded"
+
+
+@pytest.mark.parametrize("identity_available", [False, True])
+def test_scheduled_notice_carries_the_owned_personal_identity(tmp_path, monkeypatch, identity_available):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        repository = PersonalSessionRepository(current)
+        crud = SessionCrud(repository, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        session = crud.new_chat("new", name="Mira").session_id
+
+        def unavailable(*_args, **_kwargs):
+            msg = "private profile lookup diagnostic"
+            raise HeinzelError(msg)
+
+        if not identity_available:
+            monkeypatch.setattr(crud, "snapshot", unavailable)
+        notices = FakeNotifications()
+        scheduled = ScheduledNotifications(
+            crud,
+            current,
+            notices,
+            session=session,
+            turn="example-turn",
+            contract_sha256="a" * 64,
+            schedule_request="schedule",
+            schedule_sha256="b" * 64,
+            policy=ScheduledNotificationPolicy(max_per_24h=2, topic_cooldown_seconds=300),
+            verify=lambda: None,
+        )
+        with current.local("daemon"), repository.main_writer(session) as writer:
+            assert scheduled.send({"topic": "example", "title": "Ready", "body": "Read it"}, writer)[0] == "recorded"
+            with pytest.raises(HeinzelError, match="already attempted"):
+                scheduled.send({"topic": "example", "title": "Changed", "body": "Changed"}, writer)
+        expected = NoticeHelper(name="Mira", hat=None, reason="scheduled notice") if identity_available else None
+        assert notices.helpers == [expected]
+        assert len(notices.calls) == 1
 
 
 def test_exact_schedule_consent_dispatch_and_legacy_has_no_tool(tmp_path, occurrence_time):

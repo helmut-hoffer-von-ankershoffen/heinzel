@@ -81,7 +81,7 @@ export function NoToken() {
     <main className="mx-auto flex max-w-xl flex-col items-start gap-3 p-10">
       <h1 className="text-2xl font-semibold">{t("token.missingTitle")}</h1>
       <p className="text-sm text-muted-foreground">{t("token.missing")}</p>
-      <CopyCommand command="hz ui" />
+      <CopyCommand command="hz ui serve" />
     </main>
   );
 }

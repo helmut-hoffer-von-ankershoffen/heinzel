@@ -2,6 +2,7 @@ import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { shell } from "@/test/fixtures";
+import { expectPane } from "@/test/pane";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
 const answers = {
@@ -60,6 +61,53 @@ describe("Mounted footer measurements", () => {
     expect(buttons.indexOf(last)).toBeGreaterThan(
       buttons.indexOf(within(footer).getByRole("button", { name: /System health/ })),
     );
+  });
+  it("shows generic meter details without repeating their summary above the pane bullets", async () => {
+    mockApi({
+      ...answers,
+      "/api/system/ui/status": [
+        {
+          id: "external:resources",
+          module: "external",
+          plugin: "example-provider",
+          order: 10,
+          refresh: 60,
+          problem: null,
+          slots: { footer: true },
+          item: {
+            text: "Computer resources (CPU 12%, Memory 35%, Load scaled 8%)",
+            tone: "neutral",
+            meters: [
+              { label: "CPU", value: 12, tone: "ok" },
+              { label: "Memory", value: 35, tone: "ok" },
+              { label: "Load scaled", value: 8, tone: "ok" },
+            ],
+            detail: [
+              { text: "CPU: 12%", tone: "ok" },
+              { text: "Memory: 35%", tone: "ok" },
+              { text: "Load scaled: 8%", tone: "ok" },
+            ],
+          },
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const footer = await screen.findByRole("contentinfo");
+    const trigger = await within(footer).findByRole("button", {
+      name: "Computer resources (CPU 12%, Memory 35%, Load scaled 8%); CPU: 12%; Memory: 35%; Load scaled: 8%, off",
+    });
+    await user.click(trigger);
+    const pane = await screen.findByRole("region", {
+      name: "Computer resources (CPU 12%, Memory 35%, Load scaled 8%)",
+    });
+    expect(
+      within(pane).queryByText("Computer resources (CPU 12%, Memory 35%, Load scaled 8%)", { selector: "p" }),
+    ).not.toBeInTheDocument();
+    expect(within(pane).getByText("CPU: 12%")).toBeInTheDocument();
+    expect(within(pane).getByText("Memory: 35%")).toBeInTheDocument();
+    expect(within(pane).getByText("Load scaled: 8%")).toBeInTheDocument();
+    await expectPane(pane);
   });
   it("keeps the mounted durable Heinzel control visible alongside resources and health at 375px", async () => {
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
@@ -142,7 +190,7 @@ describe("Footer items are icons with a state and a pane", () => {
     window.innerWidth = 1280;
     const { container } = renderAt("/doctor");
     const bar = (await screen.findByRole("contentinfo")) as HTMLElement;
-    expect(within(bar).queryByText("helpers accelerating product teams")).not.toBeInTheDocument();
+    expect(within(bar).queryByText("Heinzels accelerating product teams")).not.toBeInTheDocument();
     expect(within(bar).queryByText("built with AI in Berlin")).not.toBeInTheDocument();
     for (const [tone, word, colour] of [
       ["ok", "OK", "text-ok"],
@@ -240,18 +288,149 @@ describe("Footer items are icons with a state and a pane", () => {
     expect(screen.queryByRole("region", { name: "Thing ok" })).not.toBeInTheDocument();
   });
 
-  it("shows the calendar as a red icon that says so and links to connect one", async () => {
-    mockApi(states);
-    window.innerWidth = 1280;
+  it("opens the calendar panel and explains an unavailable connection", async () => {
+    mockApi({
+      ...states,
+      "/api/org/calendar": {
+        since: "2026-11-02T00:00:00Z",
+        until: "2026-11-09T00:00:00Z",
+        events: [],
+        problem: "No calendar connected.",
+        fix: "hz setup",
+      },
+      "/api/org/calendar-reminders-status": { enabled: true, service: "not installed" },
+    });
     const user = userEvent.setup();
     renderAt("/doctor");
-    const bar = (await screen.findByRole("contentinfo")) as HTMLElement;
-    const calendar = await within(bar).findByRole("button", { name: "No calendar connected, error" });
-    expect(calendar).toHaveClass("text-bad");
+    const bar = await screen.findByRole("contentinfo");
+    const calendar = await within(bar).findByRole("button", { name: /^Calendar: .*, error$/ });
+    expect(calendar.closest("[data-state]")).toHaveAttribute("data-state", "bad");
+    expect(calendar.querySelector("[data-glyph=unknown]")).not.toBeNull();
     await user.click(calendar);
-    const pane = await screen.findByRole("region", { name: "No calendar connected" });
-    await user.click(within(pane).getByRole("link", { name: "Connect a calendar…" }));
+    const summary = await screen.findByRole("region", { name: "Calendar summary" });
+    await expectPane(summary);
+    await user.click(
+      within(within(summary).getByRole("group", { name: "Actions" })).getByRole("button", { name: "Open calendar" }),
+    );
+    const panel = await screen.findByRole("region", { name: "Calendar" });
+    expect(screen.queryByRole("region", { name: "Calendar summary" })).not.toBeInTheDocument();
+    expect(await within(panel).findByText("No calendar connected.")).toBeInTheDocument();
+    expect(await within(panel).findByText(/Calendar reminders need a background worker/)).toBeInTheDocument();
+    await user.click(within(panel).getByRole("link", { name: "Connect a calendar…" }));
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("shows current and next meeting together and opens the week", async () => {
+    const now = Date.now();
+    const current = {
+      title: "Standup",
+      start: new Date(now - 60_000).toISOString(),
+      end: new Date(now + 300_000).toISOString(),
+    };
+    const next = {
+      title: "Review",
+      start: new Date(now + 600_000).toISOString(),
+      end: new Date(now + 900_000).toISOString(),
+    };
+    mockApi({
+      ...states,
+      "/api/org/agenda": { current, next, problem: null },
+      "/api/org/calendar": {
+        since: new Date(now).toISOString(),
+        until: new Date(now + 604800000).toISOString(),
+        events: [{ ...next, id: "2", all_day: false }],
+        problem: null,
+        fix: null,
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const footer = await screen.findByRole("contentinfo");
+    const calendar = await within(footer).findByRole("button", { name: /^Calendar: In Standup, \d+ min left.*, off$/ });
+    expect(calendar).not.toHaveTextContent(/Standup|Review/);
+    expect(calendar.querySelector('[data-glyph="meeting"] [data-label]')).toHaveTextContent(/^[1-9]$/);
+    await user.hover(calendar);
+    const summary = await screen.findByRole("region", { name: "Calendar summary" });
+    expect(within(summary).getByText("In Standup")).toBeInTheDocument();
+    expect(within(summary).getAllByText(/\d+ min left/)[0]).toBeInTheDocument();
+    expect(within(summary).getByText(/Next: Review/)).toBeInTheDocument();
+    // Read-only: the write actions are not drawn at all, only the way to allow them.
+    for (const name of [/^Decline/, /^Extend/, /^Tell the next meeting/])
+      expect(within(summary).queryByRole("button", { name })).not.toBeInTheDocument();
+    expect(within(summary).getByRole("link", { name: "Allow your Heinzels to change your calendar" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("settings=connectors"),
+    );
+    await user.click(within(summary).getByRole("button", { name: "Open calendar" }));
+    const panel = await screen.findByRole("region", { name: "Calendar" });
+    expect(await within(panel).findByText("Review")).toBeInTheDocument();
+    // The pane that opened the panel closes, so its bottom row never covers the panel's own.
+    expect(screen.queryByRole("region", { name: "Calendar summary" })).not.toBeInTheDocument();
+  });
+
+  it("shows Decline, Extend and running late instead of Allow once the calendar is writable", async () => {
+    const now = Date.now();
+    const current = {
+      title: "Standup",
+      start: new Date(now - 60_000).toISOString(),
+      end: new Date(now + 300_000).toISOString(),
+    };
+    mockApi({
+      ...states,
+      "/api/org/agenda": { current, next: null, problem: null, writable: true },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const footer = await screen.findByRole("contentinfo");
+    await user.hover(await within(footer).findByRole("button", { name: /^Calendar: In Standup/ }));
+    const summary = await screen.findByRole("region", { name: "Calendar summary" });
+    for (const name of [/^Decline/, /^Extend/, /^Tell the next meeting/])
+      expect(within(summary).getByRole("button", { name })).toBeEnabled();
+    expect(within(summary).queryByRole("link", { name: /Allow your Heinzels/ })).not.toBeInTheDocument();
+  });
+
+  it("only renders safe conference links in the calendar", async () => {
+    const now = Date.now();
+    const base = {
+      start: new Date(now - 60_000).toISOString(),
+      end: new Date(now + 300_000).toISOString(),
+      all_day: false,
+    };
+    mockApi({
+      ...states,
+      "/api/org/calendar": {
+        since: new Date(now).toISOString(),
+        until: new Date(now + 604800000).toISOString(),
+        problem: null,
+        fix: null,
+        events: [
+          { ...base, id: "1", title: "Safe", conference_url: "https://meet.example/test" },
+          { ...base, id: "2", title: "HTTP", conference_url: "http://meet.example/test" },
+          { ...base, id: "3", title: "Missing" },
+          { ...base, id: "4", title: "Script", conference_url: "javascript:alert(1)" },
+          { ...base, id: "5", title: "Credentials", conference_url: "https://user:pass@meet.example/test" },
+          { ...base, id: "6", title: "Backslash", conference_url: "https://meet.example\\evil.test" },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await user.click(
+      await within(await screen.findByRole("contentinfo")).findByRole("button", {
+        name: /^Calendar: .*, error$/,
+      }),
+    );
+    const summary = await screen.findByRole("region", { name: "Calendar summary" });
+    await user.click(within(summary).getByRole("button", { name: "Open calendar" }));
+    const panel = await screen.findByRole("region", { name: "Calendar" });
+    const links = await within(panel).findAllByRole("link", { name: "Join meeting" });
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute("href", "https://meet.example/test");
+    expect(links[1]).toHaveAttribute("href", "http://meet.example/test");
+    for (const link of links) {
+      expect(link).toHaveAttribute("target", "_blank");
+      expect((link.getAttribute("rel") ?? "").split(" ").sort()).toEqual(["noopener", "noreferrer"]);
+    }
   });
 
   it("shows the installed changelog and a compact GitHub release link", async () => {
@@ -264,7 +443,7 @@ describe("Footer items are icons with a state and a pane", () => {
     const pane = await screen.findByRole("region", { name: "v0.4.0" });
     const about = within(pane).getByRole("region", { name: "About Heinzelmännchen" });
     expect(within(about).getByRole("img", { name: "Heinzelmännchen" })).toBeInTheDocument();
-    const tagline = within(about).getByText("helpers accelerating product teams,");
+    const tagline = within(about).getByText("Heinzels accelerating product teams,");
     expect(tagline.parentElement).toHaveClass("text-[10px]");
     expect(within(about).getByText("like the little elves from Cologne")).toBeInTheDocument();
     expect(within(about).queryByText("built with AI in Berlin")).not.toBeInTheDocument();

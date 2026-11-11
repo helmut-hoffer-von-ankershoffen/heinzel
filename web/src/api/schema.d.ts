@@ -374,6 +374,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/captured-write-activity-page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect recorded write activity without contacting a provider or authorizing effects.
+         * @description Inspect recorded write activity without contacting a provider or authorizing effects.
+         *
+         *     Raises:
+         *         HeinzelError: If captured writes are disabled or the activity cannot be verified.
+         */
+        get: operations["heinzel_captured_write_activity_page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/captured-write-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the owner's recorded disposition without repeating a provider operation.
+         * @description Read the owner's recorded disposition without repeating a provider operation.
+         */
+        get: operations["heinzel_captured_write_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/channel-item-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the recorded posting outcome without retrying it.
+         * @description Read the recorded posting outcome without retrying it.
+         */
+        get: operations["heinzel_channel_item_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/chat": {
         parameters: {
             query?: never;
@@ -574,6 +637,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/deliver-channel-item": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post one exact human-confirmed message; posting consent does not approve the draft.
+         * @description Post one exact human-confirmed message; posting consent does not approve the draft.
+         */
+        post: operations["heinzel_deliver_channel_item"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/discard-captured-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a draft aside without writing it.
+         * @description Set a draft aside without writing it.
+         */
+        post: operations["heinzel_discard_captured_write"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/discover": {
         parameters: {
             query?: never;
@@ -594,6 +697,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/execute-captured-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute one exact confirmed conditional write or leave its outcome uncertain.
+         * @description Execute one exact confirmed conditional write or leave its outcome uncertain.
+         */
+        post: operations["heinzel_execute_captured_write"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/graph": {
         parameters: {
             query?: never;
@@ -608,6 +731,26 @@ export interface paths {
         get: operations["heinzel_graph"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/indexed-conversation-search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search a disposable private text index; its coverage is not a completeness guarantee.
+         * @description Search a disposable private text index; its coverage is not a completeness guarantee.
+         */
+        post: operations["heinzel_indexed_conversation_search"];
         delete?: never;
         options?: never;
         head?: never;
@@ -874,6 +1017,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/pending-captured-writes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Drafts waiting for your decision, with their exact terms; reading them writes nothing.
+         * @description Drafts waiting for your decision, with their exact terms; reading them writes nothing.
+         */
+        get: operations["heinzel_pending_captured_writes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/personal-artifacts": {
         parameters: {
             query?: never;
@@ -934,6 +1097,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/prepare-release-draft-share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Capture the current edited draft and return the identity for a separate chat confirmation.
+         * @description Capture the current edited draft and return the identity for a separate chat confirmation.
+         */
+        post: operations["heinzel_prepare_release_draft_share"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/prepare-suggested-source": {
         parameters: {
             query?: never;
@@ -988,6 +1171,46 @@ export interface paths {
          * @description Propose scheduled turns; separate human confirmation is required to approve them.
          */
         post: operations["heinzel_propose_agent_schedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/propose-captured-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Persist a local draft without writing to a provider or granting authority.
+         * @description Persist a local draft without writing to a provider or granting authority.
+         */
+        post: operations["heinzel_propose_captured_write"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/propose-channel-item": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage exact posting terms for separate human consent; no message is sent.
+         * @description Stage exact posting terms for separate human consent; no message is sent.
+         */
+        post: operations["heinzel_propose_channel_item"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1154,6 +1377,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/publish-draft-workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish only the exact standing draft grant approved through the trusted human boundary.
+         * @description Publish only the exact standing draft grant approved through the trusted human boundary.
+         */
+        post: operations["heinzel_publish_draft_workflow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/queue-agent-notification": {
         parameters: {
             query?: never;
@@ -1174,6 +1417,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/release-draft-activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read bounded release draft activity in the owner's personal chat.
+         * @description Read bounded release draft activity in the owner's personal chat.
+         */
+        get: operations["heinzel_release_draft_activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/release-workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the published workflow and durable release dispositions from this same chat.
+         * @description Read the published workflow and durable release dispositions from this same chat.
+         */
+        get: operations["heinzel_release_workflow"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/resolve-scheduled-notification": {
         parameters: {
             query?: never;
@@ -1188,6 +1471,26 @@ export interface paths {
          * @description Inspect the receipt or set aside uncertainty; never resend or undo a notice.
          */
         post: operations["heinzel_resolve_scheduled_notification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/review-release-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Capture the human-edited marked section and revision for exact share review; send nothing.
+         * @description Capture the human-edited marked section and revision for exact share review; send nothing.
+         */
+        post: operations["heinzel_review_release_draft"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1228,6 +1531,26 @@ export interface paths {
          * @description Revoke the complete exact set before any later reads.
          */
         post: operations["heinzel_revoke_connected_read_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/revoke-release-workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke future recurring draft and notice effects under the shared document fence.
+         * @description Revoke future recurring draft and notice effects under the shared document fence.
+         */
+        post: operations["heinzel_revoke_release_workflow"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1297,6 +1620,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/search-agent-conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search the current owner's conversations with explicit bounded progress.
+         * @description Search the current owner's conversations with explicit bounded progress.
+         */
+        post: operations["heinzel_search_agent_conversations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/search-conversation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search privately by POST so terms do not appear in request URLs; this changes no state.
+         * @description Search privately by POST so terms do not appear in request URLs; this changes no state.
+         */
+        post: operations["heinzel_search_conversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/session": {
         parameters: {
             query?: never;
@@ -1331,6 +1694,26 @@ export interface paths {
         get: operations["heinzel_sessions"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/share-draft-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deliver one document link for the exact edited revision approved by its owner.
+         * @description Deliver one document link for the exact edited revision approved by its owner.
+         */
+        post: operations["heinzel_share_draft_link"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1437,6 +1820,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/start-helper": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.
+         * @description Create a Heinzel, retain its first prompt and answer it once through the selected chat backend.
+         *
+         *     Raises:
+         *         HeinzelError: If the feature is off, request changed or selected model access is unavailable.
+         */
+        post: operations["heinzel_start_helper"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/tool-activity": {
         parameters: {
             query?: never;
@@ -1511,6 +1917,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/org/calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a week from your connected calendar.
+         * @description Show a week from your connected calendar.
+         */
+        get: operations["org_calendar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/org/calendar-reminders-install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install a supervised worker; separately enable calendar reminders to consent to background reads.
+         * @description Install a supervised worker; separately enable calendar reminders to consent to background reads.
+         *
+         *     Raises:
+         *         HeinzelError: If persistent setup has not been explicitly confirmed.
+         */
+        post: operations["org_calendar_reminders_install"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/org/calendar-reminders-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show calendar reminder consent and the supervised worker's state.
+         * @description Show calendar reminder consent and the supervised worker's state.
+         */
+        get: operations["org_calendar_reminders_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/org/calendar-reminders-uninstall": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop and remove the supervised calendar reminder worker.
+         * @description Stop and remove the supervised calendar reminder worker.
+         *
+         *     Raises:
+         *         HeinzelError: If removal has not been explicitly confirmed.
+         */
+        post: operations["org_calendar_reminders_uninstall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org/show": {
         parameters: {
             query?: never;
@@ -1542,7 +2034,7 @@ export interface paths {
         put?: never;
         /**
          * Restart hz ui to load changes a running server can't, such as an added plugin.
-         * @description The process runs `hz` again with the same port and token. Poll /lifecycle until its instance differs from the retiring instance in this reply, then verify the loaded version and target settings. A server that isn't `hz ui` (`make web-dev`) answers 400.
+         * @description The process runs `hz` again with the same port and token. Poll /lifecycle until its instance differs from the retiring instance in this reply, then verify the loaded version and target settings. A server that isn't `hz ui serve` (`make web-dev`) answers 400.
          */
         post: operations["web_restart"];
         delete?: never;
@@ -1867,6 +2359,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/connector/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show who a connector is signed in as, which of its grants hold, and its latest sign-in here.
+         * @description Show who a connector is signed in as, which of its grants hold, and its latest sign-in here.
+         */
+        get: operations["system_connector_access"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop a sign-in that is waiting for consent; nothing changes in your account.
+         * @description Stop a sign-in that is waiting for consent; nothing changes in your account.
+         */
+        post: operations["system_connector_cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow.
+         * @description Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow.
+         */
+        post: operations["system_connector_connect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign a connector's tool out through its own command; reading and writing through it stop.
+         * @description Sign a connector's tool out through its own command; reading and writing through it stop.
+         */
+        post: operations["system_connector_disconnect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/flow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show where a sign-in started here is: waiting for your consent, or how it ended.
+         * @description Show where a sign-in started here is: waiting for your consent, or how it ended.
+         */
+        get: operations["system_connector_flow"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/connector/list": {
         parameters: {
             query?: never;
@@ -1881,6 +2473,26 @@ export interface paths {
         get: operations["system_connector_list"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to.
+         * @description Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to.
+         */
+        post: operations["system_connector_open"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1937,8 +2549,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Install and load the launchd agent or systemd timer that ticks every few minutes.
-         * @description Install and load the launchd agent or systemd timer that ticks every few minutes.
+         * Install and load scheduled Heinzels; native notifier installation is a separate choice.
+         * @description Install and load scheduled Heinzels; native notifier installation is a separate choice.
          */
         post: operations["system_daemon_install"];
         delete?: never;
@@ -2357,7 +2969,7 @@ export interface paths {
          *
          *     Without `confirm` it only reads PyPI or GitHub and answers what `requirement` would be installed, pinned to the
          *     release or commit it read; the answer includes a receipt that can confirm exactly that candidate once. Existing
-         *     callers may still confirm by spec. Running servers (`hz ui`, MCP) see the plugin after a restart
+         *     callers may still confirm by spec. Running servers (`hz ui serve`, MCP) see the plugin after a restart
          *     (`restart_required`).
          */
         post: operations["system_plugin_add"];
@@ -2539,6 +3151,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/plugin/repair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
+         * @description Install every plugin an installed plugin requires that is missing or too old, from the same catalog.
+         *
+         *     A plugin declares the plugins it can't work without in `[tool.heinzel.plugin] requires-plugins`; `add` installs them
+         *     first, and this repairs an installation that lacks them (one installed before they were declared). It never signs
+         *     in: `hz system doctor` still names each plugin's sign-in step. Running servers load them after a restart.
+         */
+        post: operations["system_plugin_repair"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/plugin/search": {
         parameters: {
             query?: never;
@@ -2557,6 +3193,71 @@ export interface paths {
          *     plugins are not reviewed by the Heinzelmännchen maintainers, and every plugin runs with your rights.
          */
         get: operations["system_plugin_search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/plugin/showcase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview an owning public plugin's UI and CLI screenshots without installing it.
+         * @description Preview an owning public plugin's UI and CLI screenshots without installing it.
+         *
+         *     Raises:
+         *         HeinzelError: If the specification or public media is unsafe.
+         *         OSError: If public source metadata cannot be read.
+         *         ValueError: If public metadata is malformed.
+         */
+        get: operations["system_plugin_showcase"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/prerequisite/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check locally whether the declared tools are usable, without installing anything or signing in.
+         * @description Check locally whether the declared tools are usable, without installing anything or signing in.
+         */
+        get: operations["system_prerequisite_check"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/prerequisite/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the external tools modules declare and how each is installed, without checking this machine.
+         * @description List the external tools modules declare and how each is installed, without checking this machine.
+         */
+        get: operations["system_prerequisite_list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2808,6 +3509,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/runner/chat/propose-captured-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage exact owner-private captured write terms for separate human confirmation.
+         * @description Stage exact owner-private captured write terms for separate human confirmation.
+         */
+        post: operations["system_runner_chat_propose_captured_write"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/propose-channel-item": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage exact owner-private channel posting terms for separate human confirmation.
+         * @description Stage exact owner-private channel posting terms for separate human confirmation.
+         */
+        post: operations["system_runner_chat_propose_channel_item"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/runner/chat/propose-connected-read-review": {
         parameters: {
             query?: never;
@@ -2862,6 +3603,26 @@ export interface paths {
          * @description Stage the exact current model policy for human review; no grant or model call is made.
          */
         post: operations["system_runner_chat_propose_model_policy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/propose-release-draft-share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage the edited draft link for separate human confirmation.
+         * @description Stage the edited draft link for separate human confirmation.
+         */
+        post: operations["system_runner_chat_propose_release_draft_share"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3381,6 +4142,17 @@ export interface paths {
          *     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
          *     version, the error names it and the previous version stays installed.
          *
+         *     Why it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)
+         *     run in the web server. About every 30 minutes it looks for the newest published stable release (not a draft or
+         *     prerelease) and installs it once it is `auto_update_min_age_hours` old (plugins:
+         *     `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait. The desktop
+         *     app is not part of the tool: it updates itself at the web server's next automatic update check, or now with
+         *     `hz app install`. The output says which applies.
+         *
+         *     Each step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds
+         *     only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so
+         *     the output still parses.
+         *
          *     Raises:
          *         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
          */
@@ -3415,6 +4187,32 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Access
+         * @description A connector's sign-in as its own provider sees it: account, grants, and what can be done (ADR 0136).
+         */
+        Access: {
+            /** @description Its sign-in running now or ended last; none. */
+            flow?: components["schemas"]["SignInFlow"] | null;
+            /**
+             * Message
+             * @description What the request did, such as signing out; empty if nothing.
+             * @default
+             */
+            message: string;
+            /**
+             * Name
+             * @description Qualified name of the module, as `hz system connector list` names it.
+             */
+            name: string;
+            /** @description Who is signed in, which grants hold, and whether the tool can run. */
+            status: components["schemas"]["SignInStatus"];
+            /**
+             * Title
+             * @description Its name for people, e.g. `Google`.
+             */
+            title: string;
+        };
         /**
          * AccessList
          * @description Every installed AI access option, the one in use, and what each use of AI runs.
@@ -3491,6 +4289,12 @@ export interface components {
              */
             name: string;
             /**
+             * Needs
+             * @description The one thing missing, in a few words, e.g. `Add a model and API key`; empty when nothing is.
+             * @default
+             */
+            needs: string;
+            /**
              * Plugin
              * @description The plugin it comes with, e.g. `heinzel-acme`; none when built in.
              */
@@ -3501,11 +4305,16 @@ export interface components {
              */
             runner?: string | null;
             /**
+             * Setup
+             * @description What setting it up takes: `model` (a model and API key), `gateway` (its commands), `sign-in` or `client` (an optional Python client hz installs); none when nothing is missing or hz can't tell.
+             */
+            setup?: ("model" | "gateway" | "sign-in" | "client") | null;
+            /**
              * Status
-             * @description `signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `not installed` when what it needs is missing.
+             * @description `signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `needs setup` when a setting, a sign-in or its optional client is missing: these options come with hz, they are never plugins to install.
              * @enum {string}
              */
-            status: "signed in" | "not signed in" | "not tested" | "tested" | "test failed" | "not installed" | "error";
+            status: "signed in" | "not signed in" | "not tested" | "tested" | "test failed" | "needs setup" | "error";
             /**
              * Summary
              * @description One sentence on how it reaches AI.
@@ -3900,6 +4709,11 @@ export interface components {
              * @description Why there is no agenda: no calendar is connected, its binding can't be used, or reading it failed (e.g. an expired sign-in); none when it was read.
              */
             problem?: string | null;
+            /**
+             * Timezone
+             * @description Your IANA time zone when known.
+             */
+            timezone?: string | null;
         };
         /**
          * AgentResult
@@ -4066,6 +4880,32 @@ export interface components {
             state: "retained" | "expired";
         };
         /**
+         * AutomaticUpdates
+         * @description The automatic-updates setting, as an update run by hand reports it.
+         */
+        AutomaticUpdates: {
+            /**
+             * Check Every Minutes
+             * @description How often the web server checks for the newest stable release.
+             */
+            check_every_minutes: number;
+            /**
+             * Core Min Age Hours
+             * @description How old a stable release of hz must be before it is installed.
+             */
+            core_min_age_hours: number;
+            /**
+             * Enabled
+             * @description The setting `auto_update`: whether hz updates itself and its plugins.
+             */
+            enabled: boolean;
+            /**
+             * Plugin Min Age Hours
+             * @description How old a plugin's release must be before it is installed.
+             */
+            plugin_min_age_hours: number;
+        };
+        /**
          * AvailablePlugin
          * @description A plugin one can install with `hz system plugin add`.
          */
@@ -4177,6 +5017,60 @@ export interface components {
              * @default 1
              */
             revision: number;
+        };
+        /**
+         * CalendarReminderStatus
+         * @description Whether calendar reads are enabled and what the supervisor reports.
+         */
+        CalendarReminderStatus: {
+            /**
+             * Enabled
+             * @description Whether this profile permits background calendar reads and reminders.
+             */
+            enabled: boolean;
+            /**
+             * Service
+             * @description The local supervisor state for the selected calendar reminder profile.
+             */
+            service: string;
+        };
+        /**
+         * CalendarWeek
+         * @description A bounded week of calendar events or an explanation why it could not be read.
+         */
+        CalendarWeek: {
+            /**
+             * Events
+             * @description Non-cancelled events overlapping the week.
+             */
+            events?: components["schemas"]["Event"][];
+            /**
+             * Fix
+             * @description A command to connect a calendar, if available.
+             */
+            fix?: string | null;
+            /**
+             * Problem
+             * @description Why the calendar could not be read, if unavailable.
+             */
+            problem?: string | null;
+            /**
+             * Since
+             * Format: date-time
+             * @description The beginning of the week in your time zone.
+             */
+            since: string;
+            /**
+             * Timezone
+             * @description IANA profile time zone when known.
+             */
+            timezone?: string | null;
+            /**
+             * Until
+             * Format: date-time
+             * @description The exclusive end of the week in your time zone.
+             */
+            until: string;
         };
         /**
          * Candidate
@@ -4314,6 +5208,30 @@ export interface components {
             uses: components["schemas"]["CapabilityUse"][];
         };
         /**
+         * CapabilityState
+         * @description A capability's reported state, read through a read-only operation of the module that owns it (ADR 0094).
+         *
+         *     The core never imports a plugin: it finds the operation among the kernel's lets by name and compares one top-level
+         *     field of its result. An operation that is missing, unavailable, not read-only or failing never resolves a notice.
+         */
+        CapabilityState: {
+            /**
+             * Equals
+             * @description The value that field must have for the condition to hold.
+             */
+            equals: string | boolean | number;
+            /**
+             * Field
+             * @description A top-level field of its result, e.g. `loaded`.
+             */
+            field: string;
+            /**
+             * Operation
+             * @description `<module>:<operation>`, read-only, e.g. `system.daemon:status`.
+             */
+            operation: string;
+        };
+        /**
          * CapabilityUse
          * @description One row of the matrix: who needs which capability in which modes, through which adapter and hosts.
          */
@@ -4328,6 +5246,12 @@ export interface components {
              * @description The capability, e.g. `tracker`.
              */
             capability: string;
+            /**
+             * Health On Demand
+             * @description Health-only explicit deferral; the execution requirement remains mandatory.
+             * @default false
+             */
+            health_on_demand: boolean;
             /**
              * Hosts
              * @description Hosts that adapter sends data to; `unknown (configured)` when its configuration decides.
@@ -4365,6 +5289,164 @@ export interface components {
              * @description As declared, e.g. `documents:read` or `github:tracker:read`.
              */
             requirement: string;
+        };
+        /**
+         * CapturedWriteActivityItem
+         * @description One saved write draft or verified provider acknowledgement, without replacement text.
+         */
+        CapturedWriteActivityItem: {
+            /**
+             * Account
+             * @description Account recorded in the reviewed draft.
+             */
+            account: string;
+            /**
+             * At
+             * Format: date-time
+             * @description Time of the latest recorded activity.
+             */
+            at: string;
+            /**
+             * Provider
+             * @description Host-selected provider recorded with the draft.
+             */
+            provider: string;
+            /**
+             * Reference
+             * @description Exact artifact reference recorded in the reviewed draft.
+             */
+            reference: string;
+            /**
+             * Request Id
+             * @description Owner-scoped draft identity.
+             */
+            request_id: string;
+            /**
+             * Revision
+             * @description Provider-reported acknowledgement revision, if any.
+             */
+            revision: string | null;
+            /**
+             * Seq
+             * @description Latest recorded activity position.
+             */
+            seq: number;
+            /**
+             * Source
+             * @description Source identity recorded in the reviewed draft.
+             */
+            source: string;
+            /**
+             * Status
+             * @description Verified local attempt disposition.
+             * @enum {string}
+             */
+            status: "draft" | "discarded" | "uncertain" | "acknowledged";
+        };
+        /**
+         * CapturedWriteActivityPage
+         * @description A bounded owner-private page of verified captured-write activity.
+         */
+        CapturedWriteActivityPage: {
+            /**
+             * Items
+             * @description Latest verified activity, newest first.
+             */
+            items: components["schemas"]["CapturedWriteActivityItem"][];
+            /**
+             * Next Before
+             * @description Exclusive activity sequence for the next page, if available.
+             */
+            next_before: number | null;
+            /**
+             * Session Id
+             * @description The owner-scoped conversation.
+             */
+            session_id: string;
+        };
+        /**
+         * CapturedWriteProposal
+         * @description Untrusted inert target terms; owner and provider binding are selected by the host.
+         */
+        CapturedWriteProposal: {
+            /** Account */
+            account: string;
+            /** Base Revision */
+            base_revision: string;
+            /**
+             * Content
+             * Format: password
+             */
+            content: string;
+            /** Operation */
+            operation: string;
+            /** Reference */
+            reference: string;
+            /** Request Id */
+            request_id: string;
+            /** Section */
+            section: string;
+            /** Session Id */
+            session_id: string;
+            /** Source */
+            source: string;
+            /** Write Scope */
+            write_scope: string;
+        };
+        /**
+         * CapturedWriteReceipt
+         * @description Host-recorded provider acknowledgement of one exact attempt; not a later read observation.
+         */
+        CapturedWriteReceipt: {
+            /**
+             * Account
+             * @description Account recorded in the reviewed draft.
+             */
+            account: string;
+            /**
+             * Base Revision
+             * @description Revision reviewed before the attempt.
+             */
+            base_revision: string;
+            /**
+             * Provider
+             * @description Host-selected provider recorded with the draft.
+             */
+            provider: string;
+            /**
+             * Reference
+             * @description Exact artifact reference recorded in the reviewed draft.
+             */
+            reference: string;
+            /**
+             * Request Id
+             * @description Owner-scoped identity of the confirmed write draft.
+             */
+            request_id: string;
+            /**
+             * Revision
+             * @description Revision returned by the provider acknowledgement, if any.
+             */
+            revision?: string | null;
+            /**
+             * Source
+             * @description Source identity recorded in the reviewed draft.
+             */
+            source: string;
+        };
+        /**
+         * CapturedWriteStatus
+         * @description Owner-private state without draft content or an invented success.
+         */
+        CapturedWriteStatus: {
+            /** @description Recorded provider acknowledgement, not a later artifact verification, if present. */
+            receipt?: components["schemas"]["CapturedWriteReceipt"] | null;
+            /**
+             * Status
+             * @description Local state; a draft does not grant a write.
+             * @enum {string}
+             */
+            status: "draft" | "discarded" | "uncertain" | "acknowledged";
         };
         /**
          * CardWidget
@@ -4449,6 +5531,139 @@ export interface components {
             state: "shown" | "ready" | "closed" | "blocked" | "missing" | "off" | "unknown";
         };
         /**
+         * ChannelApprovalRequest
+         * @description One decision for the owner, bound to exact arguments by digest and limited in time.
+         */
+        ChannelApprovalRequest: {
+            /**
+             * Action
+             * @description What would happen, in a few plain words.
+             */
+            action: string;
+            /**
+             * Arguments Sha256
+             * @description Digest of the exact arguments.
+             */
+            arguments_sha256: string;
+            /**
+             * Expires At
+             * Format: date-time
+             * @description After this, a reply is ignored and the request must be re-issued.
+             */
+            expires_at: string;
+            /**
+             * Helper
+             * @description The helper asking.
+             */
+            helper: string;
+            /**
+             * Link
+             * @description Where to read the full draft, when it lives elsewhere.
+             */
+            link?: string | null;
+            /**
+             * Preview
+             * @description The exact draft or terms to be approved, as plain text.
+             */
+            preview: string;
+            /**
+             * Request Id
+             * @description Stable identity of this pending approval.
+             */
+            request_id: string;
+        };
+        /**
+         * ChannelDeliveryTerms
+         * @description An inert exact per-item transport proposal, including the full preview and linked owner.
+         */
+        ChannelDeliveryTerms: {
+            /**
+             * Actor
+             * @description The exact linked owner actor, when approval replies are supported.
+             */
+            actor?: string | null;
+            /** @description The exact bounded human approval request, when applicable. */
+            approval?: components["schemas"]["ChannelApprovalRequest"] | null;
+            /**
+             * Binding Id
+             * @description Digest identifying the captured transport source.
+             */
+            binding_id: string;
+            /**
+             * Channel
+             * @description The selected registered channel name.
+             */
+            channel: string;
+            /**
+             * Kind
+             * @description Whether this proposal posts a notice or requests approval.
+             * @enum {string}
+             */
+            kind: "notice" | "approval";
+            /** @description The complete proposed notice, when applicable. */
+            notice?: components["schemas"]["ChannelNotice"] | null;
+            /**
+             * Owner
+             * @description The authenticated installation owner's private identity.
+             */
+            owner: string;
+            /**
+             * Request Id
+             * @description Stable identity for this exact request; reuse only for an unchanged retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
+             */
+            session_id: string;
+            /** @description The exact observed provider account, resource, revision and scope. */
+            target: components["schemas"]["ChannelTarget"];
+            /**
+             * Write Request
+             * @description The linked captured-write request, when applicable.
+             */
+            write_request?: string | null;
+            /**
+             * Write Review
+             * @description The complete exact captured-write review, when applicable.
+             */
+            write_review?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+        };
+        /**
+         * ChannelNotice
+         * @description One notice for the owner; `key` is stable across retries, so a channel can send it at most once.
+         */
+        ChannelNotice: {
+            /**
+             * Body
+             * @description Plain text; helper-written, may repeat untrusted source text.
+             */
+            body: string;
+            /**
+             * Helper
+             * @description The helper's name, shown as the sender.
+             */
+            helper: string;
+            /**
+             * Key
+             * @description Stable idempotency key for this notice.
+             */
+            key: string;
+            /**
+             * Route
+             * @description Path in the web app that opens this helper's chat, such as /heinzel?chat=hz-…
+             */
+            route: string;
+            /**
+             * Title
+             * @description Short headline.
+             */
+            title: string;
+        };
+        /**
          * ChannelReport
          * @description The update channel, and what a switch changes.
          */
@@ -4468,6 +5683,119 @@ export interface components {
              * @description What the switch changes; said before anything happens.
              */
             statement: string;
+        };
+        /**
+         * ChannelTarget
+         * @description Exact signed-in posting destination and scope; observed by the host, never selected by model text.
+         */
+        ChannelTarget: {
+            /**
+             * Account
+             * @description The exact signed-in provider account identity.
+             */
+            account: string;
+            /**
+             * Destination
+             * @description The exact immutable posting destination.
+             */
+            destination: string;
+            /**
+             * Scope
+             * @description The exact selected posting authority scope.
+             */
+            scope: string;
+        };
+        /**
+         * ChartPoint
+         * @description One point of a chart: where on the axis, and its value.
+         */
+        ChartPoint: {
+            /**
+             * At
+             * @description Where on the axis: an ISO 8601 timestamp such as `2026-11-07T14:00` or a plain label.
+             */
+            at: string;
+            /**
+             * Value
+             * @description The value at that point, in the chart's unit.
+             */
+            value: number;
+        };
+        /**
+         * ChartRange
+         * @description A band across the chart, e.g. the day's lowest and highest value.
+         */
+        ChartRange: {
+            /**
+             * High
+             * @description Top of the band, at least `low`.
+             */
+            high: number;
+            /**
+             * Low
+             * @description Bottom of the band, in the chart's unit.
+             */
+            low: number;
+        };
+        /**
+         * ChartWidget
+         * @description A line over time, with optional bars, a range band and a now marker; `summary` is its text alternative.
+         */
+        ChartWidget: {
+            /**
+             * Bars
+             * @description A second series drawn as bars from 0 to 1, one per point, e.g. chance of rain.
+             */
+            bars?: number[] | null;
+            /**
+             * Bars Label
+             * @description What the bars are, e.g. `Rain chance`.
+             */
+            bars_label?: string | null;
+            /**
+             * @description Chart. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "chart";
+            /**
+             * Now
+             * @description The `at` of the point to mark as now.
+             */
+            now?: string | null;
+            /** @description A band across the chart, e.g. the day's low and high. */
+            range?: components["schemas"]["ChartRange"] | null;
+            /**
+             * Series
+             * @description The line, left to right.
+             */
+            series: components["schemas"]["ChartPoint"][];
+            /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
+            /**
+             * Summary
+             * @description The chart in words for people who can't see it, e.g. `Warms to 18° by 15:00`.
+             */
+            summary: string;
+            /**
+             * Title
+             * @description What the chart shows, e.g. `Temperature today`; also its accessible name.
+             */
+            title: string;
+            /**
+             * Tone
+             * @description How the line reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Unit
+             * @description The unit of `series` values, e.g. `°C`.
+             */
+            unit?: string | null;
         };
         /**
          * ChatAction
@@ -4544,7 +5872,7 @@ export interface components {
         ChatContext: {
             /**
              * Detail
-             * @description What the opener knows about it, in words (a notification's title and body); email addresses are never shared with the helper.
+             * @description What the opener knows about it, in words (a notification's title and body); email addresses are never shared with the Heinzel.
              * @default
              */
             detail: string;
@@ -5415,6 +6743,12 @@ export interface components {
              */
             name: string;
             /**
+             * Sign In
+             * @description Whether hz runs its sign-in itself (`hz system connector connect`), no terminal.
+             * @default false
+             */
+            sign_in: boolean;
+            /**
              * State
              * @description Connected, not signed in, not bound, needs attention, or unknown until tested.
              * @enum {string}
@@ -5739,6 +7073,62 @@ export interface components {
             service: string;
         };
         /**
+         * CrossHistoryPage
+         * @description At most one agent's results or explicit bounded progress.
+         */
+        CrossHistoryPage: {
+            /**
+             * Completeness
+             * @description Search completeness cannot be established.
+             * @default unknown
+             * @constant
+             */
+            completeness: "unknown";
+            /**
+             * Items
+             * @description Matches from at most one conversation in this step.
+             */
+            items: components["schemas"]["SessionMessage"][];
+            /**
+             * Jump Cursors
+             * @description Owner and journal-bound message navigation hints.
+             */
+            jump_cursors?: string[];
+            /**
+             * Next Cursor
+             * @description Continuation for the same owner, query and catalog prefix, if available.
+             */
+            next_cursor: string | null;
+            /**
+             * Session Id
+             * @description Owner-scoped conversation for this step, if any.
+             */
+            session_id: string | null;
+            /**
+             * Status
+             * @description Bounded search progress for this step.
+             * @enum {string}
+             */
+            status: "indexing" | "results" | "next-agent" | "done" | "blocked";
+        };
+        /**
+         * CrossHistoryRequest
+         * @description One owner's query; continuation is a navigation hint, not authority.
+         */
+        CrossHistoryRequest: {
+            /** Cursor */
+            cursor?: string | null;
+            /**
+             * Query
+             * @default
+             */
+            query: string;
+            /** Since */
+            since?: string | null;
+            /** Until */
+            until?: string | null;
+        };
+        /**
          * DaemonStatus
          * @description Whether the daemon is installed, loaded and healthy.
          */
@@ -5788,6 +7178,12 @@ export interface components {
              * @description Whether launchd or systemd has the unit loaded.
              */
             loaded: boolean;
+            /**
+             * Owned
+             * @description Whether exact selected-profile files, tool and loaded manager identity were verified.
+             * @default false
+             */
+            owned: boolean;
             /**
              * Paused
              * @description Whether ticks are paused with `hz system daemon pause`.
@@ -6002,6 +7398,283 @@ export interface components {
              * @description What couldn't be documented, e.g. a plugin that failed to load.
              */
             warnings: string[];
+        };
+        /**
+         * DraftAppendTarget
+         * @description An observed document and stable section; observing it creates neither resource nor permission.
+         */
+        DraftAppendTarget: {
+            /**
+             * Account
+             * @description The exact signed-in provider account identity.
+             */
+            account: string;
+            /**
+             * Conditional Append
+             * @description Whether the provider enforces the exact append revision precondition.
+             * @constant
+             */
+            conditional_append: true;
+            /**
+             * Reference
+             * @description The exact owner-selected resource reference.
+             */
+            reference: string;
+            /**
+             * Resource Id
+             * @description The stable provider document identity.
+             */
+            resource_id: string;
+            /**
+             * Revision
+             * @description The exact observed provider revision.
+             */
+            revision: string;
+            /**
+             * Section
+             * @description The fixed logical section for marked draft appends.
+             */
+            section: string;
+            /**
+             * Source
+             * @description The stable observed provider source identity.
+             */
+            source: string;
+            /**
+             * Write Scope
+             * @description The exact observed bounded append scope.
+             */
+            write_scope: string;
+        };
+        /**
+         * DraftPublicationRequest
+         * @description Owner-supplied references and bounds; neither this object nor its prompt grants authority.
+         */
+        DraftPublicationRequest: {
+            /**
+             * Cadence Seconds
+             * @description The published five-minute polling interval in seconds.
+             * @default 300
+             * @constant
+             */
+            cadence_seconds: 300;
+            /**
+             * Document Reference
+             * @description The exact owner-supplied existing rolling-document HTTPS reference.
+             */
+            document_reference: string;
+            /**
+             * Expires At
+             * @description Optional owner-selected expiry; null adds no finite expiry.
+             */
+            expires_at?: string | null;
+            /**
+             * Feed Reference
+             * @description The exact owner-supplied HTTPS changelog reference.
+             */
+            feed_reference: string;
+            /**
+             * Max Draft Bytes
+             * @description Maximum UTF-8 bytes in the complete marked draft.
+             * @default 8000
+             */
+            max_draft_bytes: number;
+            /**
+             * Max Drafts Per Day
+             * @description Optional owner-selected daily draft cap; null adds no extra daily cap.
+             */
+            max_drafts_per_day?: number | null;
+            /**
+             * Max Requests
+             * @description Maximum model requests for each release poem.
+             * @default 4
+             */
+            max_requests: number;
+            /**
+             * Name
+             * @description The Heinzel's display name.
+             */
+            name: string;
+            /**
+             * Notice Channel
+             * @description The selected private owner review-notice channel.
+             */
+            notice_channel: string;
+            /**
+             * Prompt
+             * @description The exact owner prompt retained as the Heinzel's first chat message.
+             */
+            prompt: string;
+            /**
+             * Publication Channel
+             * @description The selected channel for separately human-approved document links.
+             */
+            publication_channel: string;
+            /**
+             * Request Id
+             * @description Stable identity for this exact request; reuse only for an unchanged retry.
+             */
+            request_id: string;
+            /**
+             * Section
+             * @description The fixed logical section for marked draft appends.
+             */
+            section: string;
+            /**
+             * Timeout Seconds
+             * @description Maximum time in seconds for each model turn.
+             * @default 60
+             */
+            timeout_seconds: number;
+        };
+        /**
+         * DraftPublicationTerms
+         * @description Exactly what trusted owner publication can authorize; it contains no model-selected destination.
+         */
+        DraftPublicationTerms: {
+            /**
+             * Append Binding
+             * @description Digest of the captured conditional append implementation and source.
+             */
+            append_binding: string;
+            /**
+             * Channel Binding
+             * @description Digest of the captured publication channel source.
+             */
+            channel_binding: string;
+            /** @description The exact publication account, destination and scope. */
+            channel_target: components["schemas"]["ChannelTarget"];
+            /** @description The exact existing document account, reference and stable section. */
+            document: components["schemas"]["DraftAppendTarget"];
+            /**
+             * Eligibility
+             * @description Only new provider identities after the explicit initial baseline are eligible.
+             * @default new-provider-identities-after-explicit-baseline
+             * @constant
+             */
+            eligibility: "new-provider-identities-after-explicit-baseline";
+            /** @description The explicit initial release frontier and observed feed identity. */
+            feed_baseline: components["schemas"]["ReleaseFeedBaseline"];
+            /**
+             * Feed Binding
+             * @description Digest of the captured release-feed implementation and source.
+             */
+            feed_binding: string;
+            /**
+             * Generation
+             * @description The monotonic publication generation.
+             */
+            generation: number;
+            /**
+             * Model Binding
+             * @description Digest of the selected model configuration and executable.
+             */
+            model_binding: string;
+            /**
+             * Notice Binding
+             * @description Digest of the captured private notice implementation.
+             */
+            notice_binding: string;
+            /** @description The exact private owner notification destination. */
+            notice_target: components["schemas"]["OwnerNoticeTarget"];
+            /**
+             * Operation
+             * @description The sole authorized bounded draft effect.
+             * @default append-marked-draft
+             * @constant
+             */
+            operation: "append-marked-draft";
+            /**
+             * Owner
+             * @description The authenticated installation owner's private identity.
+             */
+            owner: string;
+            /** @description The complete owner-supplied references and published bounds. */
+            request: components["schemas"]["DraftPublicationRequest"];
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
+             */
+            session_id: string;
+        };
+        /**
+         * DraftSectionSnapshot
+         * @description The bounded edited draft at an observed revision; editing is never share consent.
+         */
+        DraftSectionSnapshot: {
+            /**
+             * Draft Key
+             * @description The stable host-derived draft identity.
+             */
+            draft_key: string;
+            /** @description The exact observed provider account, resource, revision and scope. */
+            target: components["schemas"]["DraftAppendTarget"];
+            /**
+             * Text
+             * Format: password
+             * @description Complete bounded literal UTF-8 content; data, never instructions.
+             */
+            text: string;
+        };
+        /**
+         * DraftShareReview
+         * @description The edited historical snapshot and exact mutable-document link the human is asked to share.
+         */
+        DraftShareReview: {
+            /**
+             * Channel
+             * @description The selected registered channel name.
+             */
+            channel: string;
+            /**
+             * Channel Binding
+             * @description Digest of the captured publication channel source.
+             */
+            channel_binding: string;
+            /** @description The exact publication account, destination and scope. */
+            channel_target: components["schemas"]["ChannelTarget"];
+            /**
+             * Content Sha256
+             * @description Digest of the complete edited draft text.
+             */
+            content_sha256: string;
+            /**
+             * Draft Key
+             * @description The stable host-derived draft identity.
+             */
+            draft_key: string;
+            /**
+             * Generation
+             * @description The monotonic publication generation.
+             */
+            generation: number;
+            /**
+             * Grant Sha256
+             * @description Digest of the exact published standing grant.
+             */
+            grant_sha256: string;
+            /**
+             * Link Text
+             * @description The complete exact document-link message to review.
+             */
+            link_text: string;
+            /**
+             * Owner
+             * @description The authenticated installation owner's private identity.
+             */
+            owner: string;
+            /**
+             * Publication Request
+             * @description Identity of the standing publication covering this draft.
+             */
+            publication_request: string;
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
+             */
+            session_id: string;
+            /** @description The complete human-edited section and exact observed revision. */
+            snapshot: components["schemas"]["DraftSectionSnapshot"];
         };
         /**
          * Edge
@@ -6345,6 +8018,70 @@ export interface components {
             source: "code-user" | "code-project" | "code-plugin";
         };
         /**
+         * Grant
+         * @description Something a connector's sign-in can be allowed to do, in plain words, with the vendor scopes it takes.
+         *
+         *     A connector asks for its `default` grants on a first sign-in and for any other only when the person allows it,
+         *     usually when a feature that needs it is first used: the minimum, and nothing silently (ADR 0136).
+         */
+        Grant: {
+            /**
+             * Capability
+             * @description The capability it serves, e.g. `calendar`; none.
+             */
+            capability?: string | null;
+            /**
+             * Default
+             * @description Whether a first sign-in asks for it.
+             * @default false
+             */
+            default: boolean;
+            /**
+             * Explanation
+             * @description What it permits, in a sentence a person decides on.
+             */
+            explanation: string;
+            /**
+             * Id
+             * @description Its name, lowercase words joined by dashes, e.g. `calendar-write`.
+             */
+            id: string;
+            /**
+             * Modes
+             * @description The capability's modes it allows: read, write.
+             */
+            modes?: ("read" | "write")[];
+            /**
+             * Scopes
+             * @description The vendor's names for it, shown, never secret.
+             */
+            scopes?: string[];
+            /**
+             * Title
+             * @description A short label for people, e.g. `Change your calendar`.
+             */
+            title: string;
+        };
+        /**
+         * GrantStatus
+         * @description One declared grant and whether the vendor confirms it.
+         */
+        GrantStatus: {
+            /** @description The grant, as the connector declares it. */
+            grant: components["schemas"]["Grant"];
+            /**
+             * Needed
+             * @description Whether what the person uses now needs it, e.g. a bound capability's reads.
+             */
+            needed: boolean;
+            /**
+             * State
+             * @description Granted, missing, or unknown when nothing says.
+             * @enum {string}
+             */
+            state: "granted" | "missing" | "unknown";
+        };
+        /**
          * Graph
          * @description A JGF v2 graph of profile `hz-team`.
          */
@@ -6522,6 +8259,35 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HeadRefresh
+         * @description What one installed head runs after an update; only `verified` is evidence of the target version.
+         */
+        HeadRefresh: {
+            /**
+             * Detail
+             * @description What happened, and the command that checks or finishes it.
+             * @default
+             */
+            detail: string;
+            /**
+             * Head
+             * @description The installed head: daemon, web, notifier or desktop.
+             * @enum {string}
+             */
+            head: "daemon" | "web" | "notifier" | "desktop";
+            /**
+             * Status
+             * @description verified: its live process reported the target version; pending: requested, not yet observed; failed: it reported another version or could not restart; not-installed: nothing to refresh; self: the process that ran the update hosts this head and restarts itself afterwards.
+             * @enum {string}
+             */
+            status: "verified" | "pending" | "failed" | "not-installed" | "self";
+            /**
+             * Version
+             * @description The version its live process reported, when observed.
+             */
+            version?: string | null;
         };
         /**
          * HealthReport
@@ -6742,6 +8508,106 @@ export interface components {
              * @description How far back it reads, for methods with a time window.
              */
             window: string | null;
+        };
+        /**
+         * HistorySearchPage
+         * @description One scan window and its continuation; an empty page can still have more.
+         */
+        HistorySearchPage: {
+            /**
+             * Items
+             * @description Matches in this bounded scan window.
+             */
+            items: components["schemas"]["SessionMessage"][];
+            /**
+             * Jump Cursors
+             * @description Owner and journal-bound message navigation hints.
+             */
+            jump_cursors?: string[];
+            /**
+             * Next Cursor
+             * @description Continuation for the same query and journal prefix, if available.
+             */
+            next_cursor: string | null;
+            /**
+             * Scanned
+             * @description Number of message bodies examined in this scan window.
+             */
+            scanned: number;
+            /**
+             * Session Id
+             * @description The owner-scoped conversation searched.
+             */
+            session_id: string;
+        };
+        /**
+         * HistorySearchRequest
+         * @description Exact text and time bounds for one owner-private conversation.
+         */
+        HistorySearchRequest: {
+            /** Cursor */
+            cursor?: string | null;
+            /**
+             * Query
+             * @default
+             */
+            query: string;
+            /** Session Id */
+            session_id: string;
+            /** Since */
+            since?: string | null;
+            /** Until */
+            until?: string | null;
+        };
+        /**
+         * Homebrew
+         * @description One named formula or cask; its dependencies are resolved by Homebrew, without a shell script.
+         */
+        Homebrew: {
+            /**
+             * Cask
+             * @default false
+             */
+            cask: boolean;
+            /** Package */
+            package: string;
+        };
+        /**
+         * IndexedHistoryPage
+         * @description Private matching messages; coverage is a checked cache, not a completeness proof.
+         */
+        IndexedHistoryPage: {
+            /**
+             * Completeness
+             * @description Whether the retained search can establish completeness.
+             * @default unknown
+             */
+            completeness: string;
+            /**
+             * Items
+             * @description Matches in this bounded results page.
+             */
+            items: components["schemas"]["SessionMessage"][];
+            /**
+             * Jump Cursors
+             * @description Owner and journal-bound message navigation hints.
+             */
+            jump_cursors?: string[];
+            /**
+             * Mode
+             * @description Search method used for this page.
+             */
+            mode: string;
+            /**
+             * Next Cursor
+             * @description Continuation for the same query and journal prefix, if available.
+             */
+            next_cursor: string | null;
+            /**
+             * Session Id
+             * @description The owner-scoped conversation searched.
+             */
+            session_id: string;
         };
         /**
          * InputSnapshotPage
@@ -7380,6 +9246,19 @@ export interface components {
             site: string;
         };
         /**
+         * ManualInstall
+         * @description Owner-provided instructions and an optional HTTPS link; these are displayed, never executed.
+         */
+        ManualInstall: {
+            /** Instructions */
+            instructions: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+        };
+        /**
          * Measurements
          * @description A contract's success test so far: its drafts, how long drafting took and how much was changed.
          */
@@ -7626,6 +9505,11 @@ export interface components {
              * @description Its operations, in declaration order.
              */
             operations: components["schemas"]["OperationDoc"][];
+            /**
+             * Prerequisites
+             * @description The external programs it needs.
+             */
+            prerequisites?: components["schemas"]["PrerequisiteDoc"][];
             /**
              * Qualname
              * @description The qualified name, e.g. `system.plugin`.
@@ -7880,10 +9764,17 @@ export interface components {
              */
             due: string;
             /**
+             * Expires
+             * @description Exclusive deadline for showing this notice.
+             */
+            expires?: string | null;
+            /**
              * Held
              * @description Why it isn't shown as a desktop notification; none if it is.
              */
             held?: string | null;
+            /** @description The personal Heinzel behind this notice, if any. */
+            helper?: components["schemas"]["NoticeHelper"] | null;
             /**
              * Id
              * @description Identifier of the notice, unique on this machine; later notices sort after it.
@@ -7901,6 +9792,18 @@ export interface components {
              * @description Whether it is shown as a desktop notification at all; false: in the list only.
              */
             popup: boolean;
+            /** @description When it resolves by itself and disappears; none: it stays until it ages out. */
+            resolve_when?: components["schemas"]["ResolveWhen"] | null;
+            /**
+             * Resolved
+             * @description Why it disappeared, in words; none while it is shown.
+             */
+            resolved?: string | null;
+            /**
+             * Resolved At
+             * @description When its condition held and it disappeared; none while it is shown.
+             */
+            resolved_at?: string | null;
             /**
              * Route
              * @description Where the web app shows it, a path such as `/doctor`.
@@ -7919,11 +9822,32 @@ export interface components {
             urgent: boolean;
         };
         /**
+         * NoticeHelper
+         * @description The personal Heinzel behind a notice, using the bundled face and a closed hat palette.
+         */
+        NoticeHelper: {
+            /**
+             * Hat
+             * @description Hat colour for the bundled face; none uses red.
+             */
+            hat?: ("red" | "rust" | "ochre" | "green" | "teal" | "blue" | "purple" | "slate") | null;
+            /**
+             * Name
+             * @description The personal Heinzel's display name.
+             */
+            name: string;
+            /**
+             * Reason
+             * @description Why the Heinzel speaks now, such as scheduled check-in.
+             */
+            reason: string;
+        };
+        /**
          * NoticeKind
          * @description What a notice is about; each kind can be switched off in `[system.notify]`.
          * @enum {string}
          */
-        NoticeKind: "draft" | "failed" | "doctor" | "release" | "plugin" | "test" | "heinzel";
+        NoticeKind: "draft" | "failed" | "doctor" | "release" | "plugin" | "test" | "heinzel" | "calendar";
         /**
          * NoticeList
          * @description The latest notices, and how they reach you on this machine.
@@ -8235,6 +10159,38 @@ export interface components {
             web_endpoint: string | null;
         };
         /**
+         * OwnerNoticeTarget
+         * @description A provider-attested private destination for its linked owner, still requiring initial host consent.
+         */
+        OwnerNoticeTarget: {
+            /**
+             * Account
+             * @description The exact signed-in provider account identity.
+             */
+            account: string;
+            /**
+             * Destination
+             * @description The exact immutable posting destination.
+             */
+            destination: string;
+            /**
+             * Owner Actor
+             * @description The transport-attested identity of the linked owner.
+             */
+            owner_actor: string;
+            /**
+             * Private Owner
+             * @description Whether this destination is private to the linked owner.
+             * @constant
+             */
+            private_owner: true;
+            /**
+             * Scope
+             * @description The exact selected posting authority scope.
+             */
+            scope: string;
+        };
+        /**
          * ParameterDoc
          * @description One public parameter of an operation.
          */
@@ -8429,6 +10385,12 @@ export interface components {
          */
         PluginCandidate: {
             /**
+             * Also
+             * @description Said before it starts: which plugins it installs with this one, and which it offers.
+             * @default
+             */
+            also: string;
+            /**
              * Distribution
              * @description Distribution name, when it could be read before installing.
              */
@@ -8443,6 +10405,11 @@ export interface components {
              * @description The version installed now, when this replaces it.
              */
             installed_version: string | null;
+            /**
+             * Needs
+             * @description Plugins it requires (dependencies first, each once) and recommends, and what the add does.
+             */
+            needs?: components["schemas"]["PluginNeed"][];
             /**
              * Private
              * @description Whether the repository is private (read with your gh login); none when unknown.
@@ -8519,6 +10486,11 @@ export interface components {
              */
             done: boolean;
             /**
+             * Needs
+             * @description For a confirmed add or a repair: each plugin it required or recommended, with its result.
+             */
+            needs?: components["schemas"]["PluginNeed"][];
+            /**
              * Next
              * @description Commands to run next, e.g. the one that confirms.
              */
@@ -8541,7 +10513,7 @@ export interface components {
             previewed: boolean;
             /**
              * Restart Required
-             * @description Whether a running `hz ui` or MCP server must restart to load the change; the web app restarts its server with `POST /api/restart`. Every new `hz` command sees it at once.
+             * @description Whether a running `hz ui serve` or MCP server must restart to load the change; the web app restarts its server with `POST /api/restart`. Every new `hz` command sees it at once.
              */
             restart_required: boolean;
         };
@@ -8698,6 +10670,11 @@ export interface components {
          */
         PluginLayer: {
             /**
+             * Label
+             * @description Where it sits in its tree, derived from its position; none while the layer is left out of the tree (a missing parent, a cycle).
+             */
+            label?: ("company" | "org" | "site" | "team") | null;
+            /**
              * Module
              * @description The layer's module name, e.g. `acme-payments`.
              */
@@ -8712,6 +10689,67 @@ export interface components {
              * @description The site layer it names, if any.
              */
             site: string | null;
+        };
+        /**
+         * PluginNeed
+         * @description A plugin another plugin requires or recommends (`[tool.heinzel.plugin]`), and what the add does about it.
+         */
+        PluginNeed: {
+            /** @description For a plugin the add installs or updates: exactly what, read from the same catalog. */
+            candidate?: components["schemas"]["PluginCandidate"] | null;
+            /**
+             * Detail
+             * @description What went wrong, or what the person still does (e.g. sign in).
+             * @default
+             */
+            detail: string;
+            /**
+             * Distribution
+             * @description The plugin needed, e.g. `heinzel-github`.
+             */
+            distribution: string;
+            /**
+             * Install
+             * @description What `hz system plugin add` takes for it, e.g. `github`.
+             */
+            install: string;
+            /**
+             * Installed Version
+             * @description The version installed before the add, if any.
+             */
+            installed_version?: string | null;
+            /**
+             * Needed By
+             * @description The plugin that requires or recommends it.
+             */
+            needed_by: string;
+            /**
+             * Required
+             * @description Whether it is required (installed first) or only recommended (offered).
+             */
+            required: boolean;
+            /**
+             * Requirement
+             * @description What is needed, as declared: the plugin and an optional version range.
+             */
+            requirement: string;
+            /**
+             * State
+             * @description What the add does or did about it.
+             * @enum {string}
+             */
+            state: "install" | "update" | "present" | "offered" | "installed" | "updated" | "failed" | "not-reached";
+            /**
+             * Version
+             * @description The version the add installs or installed, when known.
+             */
+            version?: string | null;
+            /**
+             * With It
+             * @description A plugin of the same repository it depends on, installed in the same run and pinned to the same commit; `requirement` is that pinned source.
+             * @default false
+             */
+            with_it: boolean;
         };
         /**
          * PluginOperation
@@ -8884,6 +10922,49 @@ export interface components {
             version?: string | null;
         };
         /**
+         * PluginRepair
+         * @description What a repair of the installed plugins' requirements found and did, one entry per missing plugin.
+         */
+        PluginRepair: {
+            /**
+             * Message
+             * @description One line: what was repaired, or that nothing needed it.
+             */
+            message: string;
+            /**
+             * Needs
+             * @description Each required plugin that was missing or too old, with its result.
+             */
+            needs: components["schemas"]["PluginNeed"][];
+            /**
+             * Restart Required
+             * @description Whether a running server must restart to load what was installed.
+             */
+            restart_required: boolean;
+        };
+        /**
+         * PluginScreenshot
+         * @description An owning public project's immutable raster screenshot.
+         */
+        PluginScreenshot: {
+            /**
+             * Caption
+             * @description The owner's description of the actual capture.
+             */
+            caption: string;
+            /**
+             * Surface
+             * @description Whether the image shows the interface or command line.
+             * @enum {string}
+             */
+            surface: "ui" | "cli";
+            /**
+             * Url
+             * @description A checked immutable public GitHub raster asset URL.
+             */
+            url: string;
+        };
+        /**
          * PluginSearch
          * @description Plugins one can install, and what kept the search from being complete.
          */
@@ -8898,6 +10979,54 @@ export interface components {
              * @description Sources that could not be searched, e.g. GitHub while offline.
              */
             warnings: string[];
+        };
+        /**
+         * PluginShowcase
+         * @description Media preview of one public source, read without installing its implementation.
+         */
+        PluginShowcase: {
+            /**
+             * Notice
+             * @description Why previews are unavailable or how to interpret declared media.
+             * @default
+             */
+            notice: string;
+            /**
+             * Revision
+             * @description The immutable public source revision, when available.
+             */
+            revision?: string | null;
+            /**
+             * Screenshots
+             * @description UI and CLI previews before installation.
+             */
+            screenshots?: components["schemas"]["PluginScreenshot"][];
+            /**
+             * Soundscapes
+             * @description Explicit links; nothing plays automatically.
+             */
+            soundscapes?: components["schemas"]["PluginSoundscape"][];
+            /**
+             * Title
+             * @description The owning project's display title.
+             */
+            title: string;
+        };
+        /**
+         * PluginSoundscape
+         * @description A public plugin's declared YouTube soundscape.
+         */
+        PluginSoundscape: {
+            /**
+             * Title
+             * @description The soundscape's declared title.
+             */
+            title: string;
+            /**
+             * Url
+             * @description A YouTube watch link constructed from a checked video identity.
+             */
+            url: string;
         };
         /**
          * PluginUpdate
@@ -8915,6 +11044,12 @@ export interface components {
              */
             before: string | null;
             /**
+             * Checked
+             * @description Whether the update asked for its newest version; false when the plugin update stopped before it.
+             * @default true
+             */
+            checked: boolean;
+            /**
              * Disabled
              * @description Whether the plugin does not work with the new hz at all and was taken out of the installation: it is not loaded until a release that allows the new hz is added (`next`).
              * @default false
@@ -8931,6 +11066,11 @@ export interface components {
              */
             next?: string[];
             /**
+             * Pinned
+             * @description The tag, commit, file or exact version its install spec pins it to, so an update cannot move it; none if it follows a branch or the package index.
+             */
+            pinned?: string | null;
+            /**
              * Reason
              * @description Why it failed, and what became of it.
              */
@@ -8941,6 +11081,176 @@ export interface components {
              * @enum {string}
              */
             status: "upgraded" | "unchanged" | "failed";
+        };
+        /**
+         * PrerequisiteCheck
+         * @description An observed tool state, separate from Python package installation and account authentication.
+         */
+        PrerequisiteCheck: {
+            /**
+             * Automatic
+             * @description Whether `install` would run a package manager for this tool on this machine.
+             * @default false
+             */
+            automatic: boolean;
+            /**
+             * Detail
+             * @description What was checked or what remains to do.
+             * @default
+             */
+            detail: string;
+            /**
+             * Path
+             * @description Resolved usable executable, when present.
+             */
+            path?: string | null;
+            /** @description The selected module-owned declaration. */
+            requirement: components["schemas"]["PrerequisiteDefinition"];
+            /**
+             * Status
+             * @description Observed readiness or the outcome of an explicit action.
+             * @enum {string}
+             */
+            status: "available" | "missing" | "incompatible" | "manual" | "installed" | "failed" | "skipped";
+            /**
+             * Version
+             * @description Locally observed version, when recognized.
+             */
+            version?: string | null;
+        };
+        /**
+         * PrerequisiteDefinition
+         * @description Portable metadata for people, setup and catalogs; it contains no executable condition callback.
+         */
+        PrerequisiteDefinition: {
+            /**
+             * Condition
+             * @description Human-readable condition, without executing provider code.
+             * @default
+             */
+            condition: string;
+            /** @description Instructions Linux users carry out themselves. */
+            linux: components["schemas"]["ManualInstall"];
+            /**
+             * Macos
+             * @description macOS package recipe or manual guidance.
+             */
+            macos: components["schemas"]["Homebrew"] | components["schemas"]["ManualInstall"] | null;
+            /**
+             * Minimum Version
+             * @description Oldest compatible version, when declared.
+             */
+            minimum_version?: string | null;
+            /**
+             * Module
+             * @description The qualified module that owns this requirement.
+             */
+            module: string;
+            /**
+             * Name
+             * @description Executable name.
+             */
+            name: string;
+            /**
+             * Plugin
+             * @description Owning plugin distribution; none for Core.
+             */
+            plugin?: string | null;
+            /**
+             * Purpose
+             * @description Why the owner needs this tool.
+             */
+            purpose: string;
+            /**
+             * Requires Apple Developer Tools
+             * @description Whether the tool's /usr/bin launcher on macOS needs Apple's developer tools.
+             * @default false
+             */
+            requires_apple_developer_tools: boolean;
+            /**
+             * Title
+             * @description Human-readable tool name.
+             */
+            title: string;
+            /**
+             * When
+             * @description Installation, setup or explicitly selected feature context.
+             * @enum {string}
+             */
+            when: "install" | "setup" | "feature";
+        };
+        /**
+         * PrerequisiteDoc
+         * @description An external program a module needs: what it is for, when, and how it gets onto the machine (ADR 0112).
+         */
+        PrerequisiteDoc: {
+            /**
+             * Check
+             * @description How to see whether it is usable, e.g. `hz system prerequisite check --owner clock`.
+             */
+            check: string;
+            /**
+             * Condition
+             * @description When a selection makes it necessary; empty when it always is.
+             */
+            condition: string;
+            /**
+             * Executable
+             * @description The command name, e.g. `gh`.
+             */
+            executable: string;
+            /**
+             * Linux
+             * @description What to do by hand on Linux; hz installs nothing there.
+             */
+            linux: string;
+            /**
+             * Macos
+             * @description What hz does on macOS: the Homebrew command, or the owner's instructions.
+             */
+            macos: string;
+            /**
+             * Minimum Version
+             * @description The oldest compatible version, when the module names one.
+             */
+            minimum_version: string | null;
+            /**
+             * Purpose
+             * @description What the module uses it for.
+             */
+            purpose: string;
+            /**
+             * Requires Apple Developer Tools
+             * @description Whether its /usr/bin launcher on macOS needs Apple's developer tools.
+             * @default false
+             */
+            requires_apple_developer_tools: boolean;
+            /**
+             * Title
+             * @description The tool's name for people, e.g. `GitHub CLI`.
+             */
+            title: string;
+            /**
+             * When
+             * @description `install`, `setup` or `feature`: how early the module asks for it.
+             */
+            when: string;
+        };
+        /**
+         * PrerequisiteReport
+         * @description One context's actual readiness; instructions and installer exit codes do not establish success.
+         */
+        PrerequisiteReport: {
+            /**
+             * Checks
+             * @description Per-owner results, including pending manual work.
+             */
+            checks: components["schemas"]["PrerequisiteCheck"][];
+            /**
+             * Ready
+             * @description Whether every selected requirement has a verified compatible executable.
+             */
+            ready: boolean;
         };
         /**
          * Profile
@@ -9042,7 +11352,7 @@ export interface components {
             request_id: string;
             /**
              * Session Id
-             * @description The owner's agent receiving this suggested identity.
+             * @description The owner's Heinzel receiving this suggested identity.
              */
             session_id: string;
             /**
@@ -9486,6 +11796,45 @@ export interface components {
             warnings: string[];
         };
         /**
+         * ReleaseFeedBaseline
+         * @description An explicit provider frontier: subsequent polls include releases after this baseline.
+         */
+        ReleaseFeedBaseline: {
+            /**
+             * Cursor
+             * @description The exact provider continuation frontier.
+             */
+            cursor: string;
+            /** @description The source-bound release-feed identity. */
+            identity: components["schemas"]["ReleaseFeedIdentity"];
+        };
+        /**
+         * ReleaseFeedIdentity
+         * @description The exact observed signed-in source, not a permission to poll it.
+         */
+        ReleaseFeedIdentity: {
+            /**
+             * Account
+             * @description The exact signed-in provider account identity.
+             */
+            account: string;
+            /**
+             * Read Scope
+             * @description The exact observed read scope.
+             */
+            read_scope: string;
+            /**
+             * Reference
+             * @description The exact owner-selected resource reference.
+             */
+            reference: string;
+            /**
+             * Source
+             * @description The stable observed provider source identity.
+             */
+            source: string;
+        };
+        /**
          * ReleaseNotes
          * @description A release newer than the installed version and what it brings, from its release page.
          */
@@ -9574,6 +11923,31 @@ export interface components {
              * @description As required, e.g. `tracker:read`.
              */
             requirement: string;
+        };
+        /**
+         * ResolveWhen
+         * @description When a notice stops deserving attention; every condition given must hold.
+         *
+         *     The service evaluates it, never a head, so a stale browser or process can't keep a notice alive.
+         */
+        ResolveWhen: {
+            /** @description Holds once a capability reports a state. */
+            capability?: components["schemas"]["CapabilityState"] | null;
+            /**
+             * Checks Up
+             * @description Holds once every named health check (`<module>: <check>`) is up again in `hz system doctor`.
+             */
+            checks_up?: string[] | null;
+            /**
+             * Installed Version At Least
+             * @description Holds once the hz installed on this machine (on disk, not the running process) is at least this.
+             */
+            installed_version_at_least?: string | null;
+            /**
+             * Plugins Installed
+             * @description Holds once every plugin distribution named is installed on this machine (on disk).
+             */
+            plugins_installed?: string[] | null;
         };
         /**
          * Restart
@@ -9766,6 +12140,12 @@ export interface components {
             /** @description Filled in by `system.ui`; whatever a plugin sets here is replaced. */
             call?: components["schemas"]["OperationCall"] | null;
             /**
+             * Inputs
+             * @description Parameters the person fills in, in a view's form, e.g. `text`; only for a private mutation, and still confirmed before it runs.
+             * @default []
+             */
+            inputs: string[];
+            /**
              * @description Run an operation of the module. (enum property replaced by openapi-typescript)
              * @enum {string}
              */
@@ -9929,6 +12309,8 @@ export interface components {
              * @description Authenticated owner identity.
              */
             owner: string;
+            /** @description Separately reviewed hours during which scheduled turns do not start. */
+            quiet_hours?: components["schemas"]["ScheduleQuietHours"] | null;
             /**
              * Request Id
              * @description Stable schedule proposal request.
@@ -9951,6 +12333,27 @@ export interface components {
              * @description Maximum turn duration in seconds.
              */
             timeout_seconds: number;
+        };
+        /**
+         * ScheduleQuietHours
+         * @description Owner-approved local wall-clock interval for suppressing scheduled turns.
+         */
+        ScheduleQuietHours: {
+            /**
+             * End
+             * @description Exclusive local end, HH:MM.
+             */
+            end: string;
+            /**
+             * Start
+             * @description Inclusive local start, HH:MM.
+             */
+            start: string;
+            /**
+             * Timezone
+             * @description IANA time zone for the quiet interval.
+             */
+            timezone: string;
         };
         /**
          * ScheduleReviewPage
@@ -10575,6 +12978,128 @@ export interface components {
              * @description What it asks.
              */
             summary: string;
+        };
+        /**
+         * SignInFlow
+         * @description A sign-in hz runs for the person through the vendor's tool; the consent click on the vendor's page is theirs.
+         */
+        SignInFlow: {
+            /**
+             * Account
+             * @description Who is signed in, once it succeeded and the tool says.
+             * @default
+             */
+            account: string;
+            /**
+             * Connector
+             * @description Qualified name of the connector signing in.
+             */
+            connector: string;
+            /**
+             * Ended At
+             * @description When it ended; none while it runs.
+             */
+            ended_at?: string | null;
+            /**
+             * Grants
+             * @description Every grant asked for: what the sign-in holds once it succeeds.
+             */
+            grants: string[];
+            /**
+             * Id
+             * @description What `hz system connector flow`, `cancel` and `open` take.
+             */
+            id: string;
+            /**
+             * Message
+             * @description What happened, in plain words; what to do if it failed.
+             * @default
+             */
+            message: string;
+            /** @description The vendor's consent page, once its tool gave it; where it must be opened. */
+            progress?: components["schemas"]["SignInProgress"] | null;
+            /**
+             * Started At
+             * Format: date-time
+             * @description When it started.
+             */
+            started_at: string;
+            /**
+             * State
+             * @description starting, waiting (for consent), succeeded, failed, cancelled, timed-out.
+             * @enum {string}
+             */
+            state: "starting" | "waiting" | "succeeded" | "failed" | "cancelled" | "timed-out";
+        };
+        /**
+         * SignInProgress
+         * @description What a running sign-in can tell the person: the vendor's consent page, and a device code if it has one.
+         */
+        SignInProgress: {
+            /**
+             * Code
+             * @description A code to type on that page, for a device sign-in; empty if none.
+             * @default
+             */
+            code: string;
+            /**
+             * Finish On
+             * @description `host` when the page must be opened on the machine hz runs on.
+             * @enum {string}
+             */
+            finish_on: "host" | "anywhere";
+            /**
+             * Url
+             * @description The vendor's consent page, an https address.
+             */
+            url: string;
+        };
+        /**
+         * SignInStatus
+         * @description Who a connector's tool is signed in as and what it was granted, from the evidence its provider has.
+         */
+        SignInStatus: {
+            /**
+             * Account
+             * @description Who, as the tool names them; never a secret. Empty if unsaid.
+             * @default
+             */
+            account: string;
+            /**
+             * Grants
+             * @description Every declared grant and its state.
+             */
+            grants?: components["schemas"]["GrantStatus"][];
+            /**
+             * Install
+             * @description How to install the tool through its supported path, if missing.
+             * @default
+             */
+            install: string;
+            /**
+             * Live
+             * @description Whether the vendor was asked; else it is local evidence only.
+             * @default false
+             */
+            live: boolean;
+            /**
+             * Problem
+             * @description What needs a new sign-in, such as an expired or revoked one; empty if nothing.
+             * @default
+             */
+            problem: string;
+            /**
+             * Signed In
+             * @description Whether there is a sign-in; none when only the vendor could say.
+             */
+            signed_in: boolean | null;
+            /**
+             * Tool
+             * @description Whether the vendor's tool can run a sign-in.
+             * @default ready
+             * @enum {string}
+             */
+            tool: "ready" | "missing" | "unsupported";
         };
         /**
          * Skill
@@ -11402,6 +13927,12 @@ export interface components {
              * @description What a click does.
              */
             effect?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
+            /**
+             * Footer Priority
+             * @description Retention priority in a crowded footer, from 0 to 1000; higher values move to overflow later.
+             * @default 40
+             */
+            footer_priority: number;
             /**
              * Icon
              * @description An icon before the text.
@@ -12544,13 +15075,23 @@ export interface components {
             /** @description The declaring module's operation that enables the feature. */
             enable: components["schemas"]["RunOperation"];
             /**
+             * Explanation
+             * @description The longer explanation, shown only on demand under Details.
+             */
+            explanation?: string | null;
+            /**
              * Label
              * @description The action the person enables or disables.
              */
             label: string;
             /**
+             * Problem
+             * @description One short cause the person can fix, e.g. `Sign in to Tailscale, then try again.`; its presence offers Try again.
+             */
+            problem?: string | null;
+            /**
              * Requested
-             * @description The requested state when it differs from verified readiness; never a success claim.
+             * @description The person's choice, which the switch shows; `checked` alone says whether it is live.
              */
             requested?: boolean | null;
             /**
@@ -12558,6 +15099,11 @@ export interface components {
              * @description Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and an active session or device credential.
              */
             sign_in_url?: string | null;
+            /**
+             * Status
+             * @description The provider's one short status line, e.g. `Turning on…`; the host shows its own when absent.
+             */
+            status?: string | null;
             /**
              * Url
              * @description Optional nonsecret link shown alongside the toggle.
@@ -12718,11 +15264,18 @@ export interface components {
              * @description Heinzelmännchen version installed now; the same as `before` if nothing changed.
              */
             after: string;
+            /** @description Whether automatic updates are on and what they install, so a run by hand says why it was needed. */
+            automatic?: components["schemas"]["AutomaticUpdates"] | null;
             /**
              * Before
              * @description Heinzelmännchen version installed before.
              */
             before: string;
+            /**
+             * Heads
+             * @description What each installed long-running head runs after the update, as its live process reported it.
+             */
+            heads?: components["schemas"]["HeadRefresh"][];
             /**
              * Latest
              * @description Highest published release in SemVer order, when it was asked for: for an installation pinned to a release tag, a branch, a commit or a local source; none otherwise or if it couldn't be asked.
@@ -13236,7 +15789,7 @@ export interface components {
              * Widget
              * @description What to show; none when there is nothing to show.
              */
-            widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"]) | null;
+            widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"] | components["schemas"]["ChartWidget"]) | null;
         };
         /** heinzel_abandon_chat_turn_Input */
         heinzel_abandon_chat_turn_Input: {
@@ -13458,6 +16011,43 @@ export interface components {
              */
             when_busy: "follow_up" | "steer";
         };
+        /** heinzel_deliver_channel_item_Input */
+        heinzel_deliver_channel_item_Input: {
+            /** Approval Proof */
+            approval_proof: string;
+            /** Request Id */
+            request_id: string;
+            /** Review */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Session Id */
+            session_id: string;
+        };
+        /** heinzel_discard_captured_write_Input */
+        heinzel_discard_captured_write_Input: {
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+        };
+        /** heinzel_execute_captured_write_Input */
+        heinzel_execute_captured_write_Input: {
+            /** Approval Proof */
+            approval_proof: string;
+            /** Request Id */
+            request_id: string;
+            /** Review */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Session Id */
+            session_id: string;
+        };
+        /** heinzel_indexed_conversation_search_Input */
+        heinzel_indexed_conversation_search_Input: {
+            request: components["schemas"]["HistorySearchRequest"];
+        };
         /** heinzel_new_chat_Input */
         heinzel_new_chat_Input: {
             /** @description The complete personal appearance overrides; null leaves the current look unchanged. */
@@ -13504,6 +16094,19 @@ export interface components {
             /**
              * Session Id
              * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
+        /** heinzel_prepare_release_draft_share_Input */
+        heinzel_prepare_release_draft_share_Input: {
+            /**
+             * Draft Key
+             * @description The stable host-derived release draft key.
+             */
+            draft_key: string;
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
              */
             session_id: string;
         };
@@ -13572,6 +16175,7 @@ export interface components {
             /** Max Requests */
             max_requests: number;
             notification_policy?: components["schemas"]["ScheduledNotificationPolicy"] | null;
+            quiet_hours?: components["schemas"]["ScheduleQuietHours"] | null;
             /**
              * Request Id
              * @description A stable client request id; reuse it only for an exact retry.
@@ -13584,6 +16188,22 @@ export interface components {
             session_id: string;
             /** Timeout Seconds */
             timeout_seconds: number;
+        };
+        /** heinzel_propose_captured_write_Input */
+        heinzel_propose_captured_write_Input: {
+            proposal: components["schemas"]["CapturedWriteProposal"];
+        };
+        /** heinzel_propose_channel_item_Input */
+        heinzel_propose_channel_item_Input: {
+            /** Channel */
+            channel: string;
+            notice?: components["schemas"]["ChannelNotice"] | null;
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+            /** Write Request */
+            write_request?: string | null;
         };
         /** heinzel_propose_check_in_Input */
         heinzel_propose_check_in_Input: {
@@ -13787,6 +16407,31 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_publish_draft_workflow_Input */
+        heinzel_publish_draft_workflow_Input: {
+            /**
+             * Approval Proof
+             * @description Private proof supplied only by the trusted in-process confirmation boundary.
+             */
+            approval_proof: string;
+            /**
+             * Request Id
+             * @description Stable identity for this exact unchanged request.
+             */
+            request_id: string;
+            /**
+             * Review
+             * @description The complete exact terms displayed at human review.
+             */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
+             */
+            session_id: string;
+        };
         /** heinzel_queue_agent_notification_Input */
         heinzel_queue_agent_notification_Input: {
             /** Approval Proof */
@@ -13824,6 +16469,19 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_review_release_draft_Input */
+        heinzel_review_release_draft_Input: {
+            /**
+             * Draft Key
+             * @description The stable host-derived release draft key.
+             */
+            draft_key: string;
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
+             */
+            session_id: string;
+        };
         /** heinzel_revoke_connected_read_Input */
         heinzel_revoke_connected_read_Input: {
             /**
@@ -13847,6 +16505,19 @@ export interface components {
             /**
              * Session Id
              * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
+        /** heinzel_revoke_release_workflow_Input */
+        heinzel_revoke_release_workflow_Input: {
+            /**
+             * Request Id
+             * @description Stable identity for this exact unchanged request.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
              */
             session_id: string;
         };
@@ -13890,6 +16561,113 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_search_agent_conversations_Input */
+        heinzel_search_agent_conversations_Input: {
+            request: components["schemas"]["CrossHistoryRequest"];
+        };
+        /** heinzel_search_conversation_Input */
+        heinzel_search_conversation_Input: {
+            request: components["schemas"]["HistorySearchRequest"];
+        };
+        /** heinzel_share_draft_link_Input */
+        heinzel_share_draft_link_Input: {
+            /**
+             * Approval Proof
+             * @description Private proof supplied only by the trusted in-process confirmation boundary.
+             */
+            approval_proof: string;
+            /**
+             * Request Id
+             * @description Stable identity for this exact unchanged request.
+             */
+            request_id: string;
+            /**
+             * Review
+             * @description The complete exact terms displayed at human review.
+             */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Session Id
+             * @description The owning durable personal chat identity.
+             */
+            session_id: string;
+        };
+        /** heinzel_start_helper_Input */
+        heinzel_start_helper_Input: {
+            /**
+             * Name
+             * @description Your Heinzel's display name.
+             */
+            name: string;
+            /**
+             * Prompt
+             * @description The exact first chat message; grants no connected access or schedule.
+             */
+            prompt: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+        };
+        /** system_connector_cancel_Input */
+        system_connector_cancel_Input: {
+            /**
+             * Flow
+             * @description The sign-in, by the id `connect` returned.
+             */
+            flow: string;
+        };
+        /** system_connector_connect_Input */
+        system_connector_connect_Input: {
+            /**
+             * Allow
+             * @description A grant to add, such as `calendar-write`, as `access` lists them; repeat for each.
+             */
+            allow?: string[] | null;
+            /**
+             * Name
+             * @description The connector, as `hz system connector list` names it, e.g. `github`.
+             */
+            name: string;
+            /**
+             * Wait
+             * @description Wait here until it ends, opening the consent page in this machine's browser; only where a person is told (the terminal). Elsewhere it returns at once: poll `flow`, open the page with `open`.
+             * @default true
+             */
+            wait: boolean;
+        };
+        /** system_connector_disconnect_Input */
+        system_connector_disconnect_Input: {
+            /**
+             * Name
+             * @description The connector, as `hz system connector list` names it, e.g. `github`.
+             */
+            name: string;
+        };
+        /** system_connector_open_Input */
+        system_connector_open_Input: {
+            /**
+             * Flow
+             * @description The sign-in, by the id `connect` returned.
+             */
+            flow: string;
+        };
+        /** system_runner_chat_propose_release_draft_share_Input */
+        system_runner_chat_propose_release_draft_share_Input: {
+            /**
+             * Durable Session
+             * @description Owner-scoped personal conversation.
+             */
+            durable_session: string;
+            /**
+             * Request Id
+             * @description The exact prepared release draft review identity.
+             */
+            request_id: string;
+        };
         /** system_state_push_Input */
         system_state_push_Input: Record<string, never>;
         /** system_state_reset_Input */
@@ -13901,6 +16679,7 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaAccess = components['schemas']['Access'];
 export type SchemaAccessList = components['schemas']['AccessList'];
 export type SchemaAccessOption = components['schemas']['AccessOption'];
 export type SchemaAccessTestReport = components['schemas']['AccessTestReport'];
@@ -13916,19 +16695,35 @@ export type SchemaAgentResult = components['schemas']['AgentResult'];
 export type SchemaAssetTypeDoc = components['schemas']['AssetTypeDoc'];
 export type SchemaAssetView = components['schemas']['AssetView'];
 export type SchemaAttachmentRef = components['schemas']['AttachmentRef'];
+export type SchemaAutomaticUpdates = components['schemas']['AutomaticUpdates'];
 export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
 export type SchemaAvatar = components['schemas']['Avatar'];
 export type SchemaAvatarSlot = components['schemas']['AvatarSlot'];
 export type SchemaBackendBinding = components['schemas']['BackendBinding'];
+export type SchemaCalendarReminderStatus = components['schemas']['CalendarReminderStatus'];
+export type SchemaCalendarWeek = components['schemas']['CalendarWeek'];
 export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
+export type SchemaCapabilityState = components['schemas']['CapabilityState'];
 export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
+export type SchemaCapturedWriteActivityItem = components['schemas']['CapturedWriteActivityItem'];
+export type SchemaCapturedWriteActivityPage = components['schemas']['CapturedWriteActivityPage'];
+export type SchemaCapturedWriteProposal = components['schemas']['CapturedWriteProposal'];
+export type SchemaCapturedWriteReceipt = components['schemas']['CapturedWriteReceipt'];
+export type SchemaCapturedWriteStatus = components['schemas']['CapturedWriteStatus'];
 export type SchemaCardWidget = components['schemas']['CardWidget'];
 export type SchemaCatchUp = components['schemas']['CatchUp'];
 export type SchemaChannel = components['schemas']['Channel'];
+export type SchemaChannelApprovalRequest = components['schemas']['ChannelApprovalRequest'];
+export type SchemaChannelDeliveryTerms = components['schemas']['ChannelDeliveryTerms'];
+export type SchemaChannelNotice = components['schemas']['ChannelNotice'];
 export type SchemaChannelReport = components['schemas']['ChannelReport'];
+export type SchemaChannelTarget = components['schemas']['ChannelTarget'];
+export type SchemaChartPoint = components['schemas']['ChartPoint'];
+export type SchemaChartRange = components['schemas']['ChartRange'];
+export type SchemaChartWidget = components['schemas']['ChartWidget'];
 export type SchemaChatAction = components['schemas']['ChatAction'];
 export type SchemaChatContext = components['schemas']['ChatContext'];
 export type SchemaChatCosts = components['schemas']['ChatCosts'];
@@ -13960,6 +16755,8 @@ export type SchemaContractVersion = components['schemas']['ContractVersion'];
 export type SchemaContributionInfo = components['schemas']['ContributionInfo'];
 export type SchemaCredentialDoc = components['schemas']['CredentialDoc'];
 export type SchemaCredentialInfo = components['schemas']['CredentialInfo'];
+export type SchemaCrossHistoryPage = components['schemas']['CrossHistoryPage'];
+export type SchemaCrossHistoryRequest = components['schemas']['CrossHistoryRequest'];
 export type SchemaDaemonStatus = components['schemas']['DaemonStatus'];
 export type SchemaDefaultView = components['schemas']['DefaultView'];
 export type SchemaDelivered = components['schemas']['Delivered'];
@@ -13970,6 +16767,11 @@ export type SchemaDirectory = components['schemas']['Directory'];
 export type SchemaDiscovery = components['schemas']['Discovery'];
 export type SchemaDisposition = components['schemas']['Disposition'];
 export type SchemaDocumentation = components['schemas']['Documentation'];
+export type SchemaDraftAppendTarget = components['schemas']['DraftAppendTarget'];
+export type SchemaDraftPublicationRequest = components['schemas']['DraftPublicationRequest'];
+export type SchemaDraftPublicationTerms = components['schemas']['DraftPublicationTerms'];
+export type SchemaDraftSectionSnapshot = components['schemas']['DraftSectionSnapshot'];
+export type SchemaDraftShareReview = components['schemas']['DraftShareReview'];
 export type SchemaEdge = components['schemas']['Edge'];
 export type SchemaEdgeMetadata = components['schemas']['EdgeMetadata'];
 export type SchemaEffortChoice = components['schemas']['EffortChoice'];
@@ -13978,18 +16780,25 @@ export type SchemaExpertMode = components['schemas']['ExpertMode'];
 export type SchemaFilters = components['schemas']['Filters'];
 export type SchemaFoundServer = components['schemas']['FoundServer'];
 export type SchemaFoundSkill = components['schemas']['FoundSkill'];
+export type SchemaGrant = components['schemas']['Grant'];
+export type SchemaGrantStatus = components['schemas']['GrantStatus'];
 export type SchemaGraph = components['schemas']['Graph'];
 export type SchemaGraphEdge = components['schemas']['GraphEdge'];
 export type SchemaGraphMetadata = components['schemas']['GraphMetadata'];
 export type SchemaGraphNode = components['schemas']['GraphNode'];
 export type SchemaGraphicWidget = components['schemas']['GraphicWidget'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
+export type SchemaHeadRefresh = components['schemas']['HeadRefresh'];
 export type SchemaHealthReport = components['schemas']['HealthReport'];
 export type SchemaHeinzelAppearance = components['schemas']['HeinzelAppearance'];
 export type SchemaHeinzelList = components['schemas']['HeinzelList'];
 export type SchemaHeinzelSummary = components['schemas']['HeinzelSummary'];
 export type SchemaHintProblem = components['schemas']['HintProblem'];
 export type SchemaHintView = components['schemas']['HintView'];
+export type SchemaHistorySearchPage = components['schemas']['HistorySearchPage'];
+export type SchemaHistorySearchRequest = components['schemas']['HistorySearchRequest'];
+export type SchemaHomebrew = components['schemas']['Homebrew'];
+export type SchemaIndexedHistoryPage = components['schemas']['IndexedHistoryPage'];
 export type SchemaInputSnapshotPage = components['schemas']['InputSnapshotPage'];
 export type SchemaInputSnapshotView = components['schemas']['InputSnapshotView'];
 export type SchemaInstalled = components['schemas']['Installed'];
@@ -14013,6 +16822,7 @@ export type SchemaLiveTime = components['schemas']['LiveTime'];
 export type SchemaLiveUntil = components['schemas']['LiveUntil'];
 export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaLogin = components['schemas']['Login'];
+export type SchemaManualInstall = components['schemas']['ManualInstall'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
 export type SchemaMessageAccepted = components['schemas']['MessageAccepted'];
@@ -14028,6 +16838,7 @@ export type SchemaNavigate = components['schemas']['Navigate'];
 export type SchemaNode = components['schemas']['Node'];
 export type SchemaNodeMetadata = components['schemas']['NodeMetadata'];
 export type SchemaNotice = components['schemas']['Notice'];
+export type SchemaNoticeHelper = components['schemas']['NoticeHelper'];
 export type SchemaNoticeKind = components['schemas']['NoticeKind'];
 export type SchemaNoticeList = components['schemas']['NoticeList'];
 export type SchemaNotificationProposal = components['schemas']['NotificationProposal'];
@@ -14038,6 +16849,7 @@ export type SchemaOpened = components['schemas']['Opened'];
 export type SchemaOperationAudience = components['schemas']['OperationAudience'];
 export type SchemaOperationCall = components['schemas']['OperationCall'];
 export type SchemaOperationDoc = components['schemas']['OperationDoc'];
+export type SchemaOwnerNoticeTarget = components['schemas']['OwnerNoticeTarget'];
 export type SchemaParameterDoc = components['schemas']['ParameterDoc'];
 export type SchemaParticipant = components['schemas']['Participant'];
 export type SchemaPersonalArtifact = components['schemas']['PersonalArtifact'];
@@ -14050,12 +16862,21 @@ export type SchemaPluginChange = components['schemas']['PluginChange'];
 export type SchemaPluginEvent = components['schemas']['PluginEvent'];
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
+export type SchemaPluginNeed = components['schemas']['PluginNeed'];
 export type SchemaPluginOperation = components['schemas']['PluginOperation'];
 export type SchemaPluginPage = components['schemas']['PluginPage'];
 export type SchemaPluginPending = components['schemas']['PluginPending'];
 export type SchemaPluginPendingChange = components['schemas']['PluginPendingChange'];
+export type SchemaPluginRepair = components['schemas']['PluginRepair'];
+export type SchemaPluginScreenshot = components['schemas']['PluginScreenshot'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
+export type SchemaPluginShowcase = components['schemas']['PluginShowcase'];
+export type SchemaPluginSoundscape = components['schemas']['PluginSoundscape'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
+export type SchemaPrerequisiteCheck = components['schemas']['PrerequisiteCheck'];
+export type SchemaPrerequisiteDefinition = components['schemas']['PrerequisiteDefinition'];
+export type SchemaPrerequisiteDoc = components['schemas']['PrerequisiteDoc'];
+export type SchemaPrerequisiteReport = components['schemas']['PrerequisiteReport'];
 export type SchemaProfile = components['schemas']['Profile'];
 export type SchemaProfileProposal = components['schemas']['ProfileProposal'];
 export type SchemaProgressWidget = components['schemas']['ProgressWidget'];
@@ -14072,9 +16893,12 @@ export type SchemaRecommendationView = components['schemas']['RecommendationView
 export type SchemaRecording = components['schemas']['Recording'];
 export type SchemaReferenceBlock = components['schemas']['ReferenceBlock'];
 export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
+export type SchemaReleaseFeedBaseline = components['schemas']['ReleaseFeedBaseline'];
+export type SchemaReleaseFeedIdentity = components['schemas']['ReleaseFeedIdentity'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRendererBlock = components['schemas']['RendererBlock'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
+export type SchemaResolveWhen = components['schemas']['ResolveWhen'];
 export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRestarted = components['schemas']['Restarted'];
 export type SchemaRollingConnectedGrantProposal = components['schemas']['RollingConnectedGrantProposal'];
@@ -14085,6 +16909,7 @@ export type SchemaRunOperation = components['schemas']['RunOperation'];
 export type SchemaScene = components['schemas']['Scene'];
 export type SchemaSceneStep = components['schemas']['SceneStep'];
 export type SchemaScheduleBinding = components['schemas']['ScheduleBinding'];
+export type SchemaScheduleQuietHours = components['schemas']['ScheduleQuietHours'];
 export type SchemaScheduleReviewPage = components['schemas']['ScheduleReviewPage'];
 export type SchemaScheduleReviewView = components['schemas']['ScheduleReviewView'];
 export type SchemaScheduleSuggestion = components['schemas']['ScheduleSuggestion'];
@@ -14101,6 +16926,9 @@ export type SchemaSettingDoc = components['schemas']['SettingDoc'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaSettingRevealed = components['schemas']['SettingRevealed'];
 export type SchemaSetupDoc = components['schemas']['SetupDoc'];
+export type SchemaSignInFlow = components['schemas']['SignInFlow'];
+export type SchemaSignInProgress = components['schemas']['SignInProgress'];
+export type SchemaSignInStatus = components['schemas']['SignInStatus'];
 export type SchemaSkill = components['schemas']['Skill'];
 export type SchemaSkillDetail = components['schemas']['SkillDetail'];
 export type SchemaSkillDraft = components['schemas']['SkillDraft'];
@@ -14183,12 +17011,19 @@ export type SchemaHeinzelApproveConnectedReadSetInput = components['schemas']['h
 export type SchemaHeinzelApproveModelGrantInput = components['schemas']['heinzel_approve_model_grant_Input'];
 export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel_associate_artifact_Input'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
+export type SchemaHeinzelDeliverChannelItemInput = components['schemas']['heinzel_deliver_channel_item_Input'];
+export type SchemaHeinzelDiscardCapturedWriteInput = components['schemas']['heinzel_discard_captured_write_Input'];
+export type SchemaHeinzelExecuteCapturedWriteInput = components['schemas']['heinzel_execute_captured_write_Input'];
+export type SchemaHeinzelIndexedConversationSearchInput = components['schemas']['heinzel_indexed_conversation_search_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelPauseAgentScheduleInput = components['schemas']['heinzel_pause_agent_schedule_Input'];
 export type SchemaHeinzelPrepareConnectedReadSetReviewInput = components['schemas']['heinzel_prepare_connected_read_set_review_Input'];
+export type SchemaHeinzelPrepareReleaseDraftShareInput = components['schemas']['heinzel_prepare_release_draft_share_Input'];
 export type SchemaHeinzelPrepareSuggestedSourceInput = components['schemas']['heinzel_prepare_suggested_source_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
 export type SchemaHeinzelProposeAgentScheduleInput = components['schemas']['heinzel_propose_agent_schedule_Input'];
+export type SchemaHeinzelProposeCapturedWriteInput = components['schemas']['heinzel_propose_captured_write_Input'];
+export type SchemaHeinzelProposeChannelItemInput = components['schemas']['heinzel_propose_channel_item_Input'];
 export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
 export type SchemaHeinzelProposeConnectedReadInput = components['schemas']['heinzel_propose_connected_read_Input'];
 export type SchemaHeinzelProposeConnectedReadSetInput = components['schemas']['heinzel_propose_connected_read_set_Input'];
@@ -14197,11 +17032,23 @@ export type SchemaHeinzelProposeRollingConnectedReadInput = components['schemas'
 export type SchemaHeinzelProposeScheduledAgentInput = components['schemas']['heinzel_propose_scheduled_agent_Input'];
 export type SchemaHeinzelProposeSkillDraftInput = components['schemas']['heinzel_propose_skill_draft_Input'];
 export type SchemaHeinzelProposeSkillSharingInput = components['schemas']['heinzel_propose_skill_sharing_Input'];
+export type SchemaHeinzelPublishDraftWorkflowInput = components['schemas']['heinzel_publish_draft_workflow_Input'];
 export type SchemaHeinzelQueueAgentNotificationInput = components['schemas']['heinzel_queue_agent_notification_Input'];
 export type SchemaHeinzelResolveScheduledNotificationInput = components['schemas']['heinzel_resolve_scheduled_notification_Input'];
+export type SchemaHeinzelReviewReleaseDraftInput = components['schemas']['heinzel_review_release_draft_Input'];
 export type SchemaHeinzelRevokeConnectedReadInput = components['schemas']['heinzel_revoke_connected_read_Input'];
 export type SchemaHeinzelRevokeConnectedReadSetInput = components['schemas']['heinzel_revoke_connected_read_set_Input'];
+export type SchemaHeinzelRevokeReleaseWorkflowInput = components['schemas']['heinzel_revoke_release_workflow_Input'];
 export type SchemaHeinzelScheduleControlInput = components['schemas']['heinzel_schedule_control_Input'];
+export type SchemaHeinzelSearchAgentConversationsInput = components['schemas']['heinzel_search_agent_conversations_Input'];
+export type SchemaHeinzelSearchConversationInput = components['schemas']['heinzel_search_conversation_Input'];
+export type SchemaHeinzelShareDraftLinkInput = components['schemas']['heinzel_share_draft_link_Input'];
+export type SchemaHeinzelStartHelperInput = components['schemas']['heinzel_start_helper_Input'];
+export type SchemaSystemConnectorCancelInput = components['schemas']['system_connector_cancel_Input'];
+export type SchemaSystemConnectorConnectInput = components['schemas']['system_connector_connect_Input'];
+export type SchemaSystemConnectorDisconnectInput = components['schemas']['system_connector_disconnect_Input'];
+export type SchemaSystemConnectorOpenInput = components['schemas']['system_connector_open_Input'];
+export type SchemaSystemRunnerChatProposeReleaseDraftShareInput = components['schemas']['system_runner_chat_propose_release_draft_share_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
 export type $defs = Record<string, never>;
@@ -14776,6 +17623,103 @@ export interface operations {
             };
         };
     };
+    heinzel_captured_write_activity_page: {
+        parameters: {
+            query: {
+                session_id: string;
+                /** @description Exclusive activity sequence before this page. */
+                before?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapturedWriteActivityPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_captured_write_status: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapturedWriteStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_channel_item_status: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_chat: {
         parameters: {
             query?: never;
@@ -15103,6 +18047,72 @@ export interface operations {
             };
         };
     };
+    heinzel_deliver_channel_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_deliver_channel_item_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_discard_captured_write: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_discard_captured_write_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_discover: {
         parameters: {
             query?: {
@@ -15135,6 +18145,39 @@ export interface operations {
             };
         };
     };
+    heinzel_execute_captured_write: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_execute_captured_write_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_graph: {
         parameters: {
             query?: {
@@ -15154,6 +18197,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContractGraph"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_indexed_conversation_search: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_indexed_conversation_search_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexedHistoryPage"];
                 };
             };
             /** @description Validation Error */
@@ -15588,6 +18664,39 @@ export interface operations {
             };
         };
     };
+    heinzel_pending_captured_writes: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_personal_artifacts: {
         parameters: {
             query: {
@@ -15659,6 +18768,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadSetReview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_prepare_release_draft_share: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_prepare_release_draft_share_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
                 };
             };
             /** @description Validation Error */
@@ -15758,6 +18900,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduleBinding"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_propose_captured_write: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_captured_write_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_propose_channel_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_channel_item_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelDeliveryTerms"];
                 };
             };
             /** @description Validation Error */
@@ -16035,6 +19243,39 @@ export interface operations {
             };
         };
     };
+    heinzel_publish_draft_workflow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_publish_draft_workflow_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftPublicationTerms"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_queue_agent_notification: {
         parameters: {
             query?: never;
@@ -16068,6 +19309,72 @@ export interface operations {
             };
         };
     };
+    heinzel_release_draft_activity: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_release_workflow: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_resolve_scheduled_notification: {
         parameters: {
             query?: never;
@@ -16088,6 +19395,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledNotificationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_review_release_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_review_release_draft_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftShareReview"];
                 };
             };
             /** @description Validation Error */
@@ -16144,6 +19484,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["heinzel_revoke_connected_read_set_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_revoke_release_workflow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_revoke_release_workflow_Input"];
             };
         };
         responses: {
@@ -16267,6 +19640,72 @@ export interface operations {
             };
         };
     };
+    heinzel_search_agent_conversations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_search_agent_conversations_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CrossHistoryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_search_conversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_search_conversation_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistorySearchPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_session: {
         parameters: {
             query: {
@@ -16318,6 +19757,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionList"];
+                };
+            };
+        };
+    };
+    heinzel_share_draft_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_share_draft_link_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -16488,6 +19960,39 @@ export interface operations {
             };
         };
     };
+    heinzel_start_helper: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_start_helper_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserChatAnswer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_tool_activity: {
         parameters: {
             query: {
@@ -16603,6 +20108,122 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Agenda"];
+                };
+            };
+        };
+    };
+    org_calendar: {
+        parameters: {
+            query?: {
+                /** @description Weeks before or after this week. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarWeek"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    org_calendar_reminders_install: {
+        parameters: {
+            query?: {
+                /** @description Confirm installing a persistent login worker for this profile. */
+                confirm?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    org_calendar_reminders_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarReminderStatus"];
+                };
+            };
+        };
+    };
+    org_calendar_reminders_uninstall: {
+        parameters: {
+            query?: {
+                /** @description Confirm removing this profile's reminder login worker. */
+                confirm?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -17053,6 +20674,171 @@ export interface operations {
             };
         };
     };
+    system_connector_access: {
+        parameters: {
+            query: {
+                /** @description The connector, as `hz system connector list` names it, e.g. `github`. */
+                name: string;
+                /** @description Ask the vendor too: confirms the account and which grants hold. */
+                live?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Access"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_connector_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_connector_cancel_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInFlow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_connector_connect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_connector_connect_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInFlow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_connector_disconnect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_connector_disconnect_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Access"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_connector_flow: {
+        parameters: {
+            query: {
+                /** @description The sign-in, by the id `connect` returned. */
+                flow: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInFlow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_connector_list: {
         parameters: {
             query?: never;
@@ -17069,6 +20855,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConnectorReport"];
+                };
+            };
+        };
+    };
+    system_connector_open: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_connector_open_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInFlow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -17132,6 +20951,8 @@ export interface operations {
                 interval?: string;
                 /** @description Only show the unit that would be written. */
                 dry_run?: boolean;
+                /** @description Also install the native notifier; otherwise choose it separately. */
+                notifier?: boolean;
             };
             header?: never;
             path?: never;
@@ -17531,6 +21352,8 @@ export interface operations {
                 limit?: number;
                 /** @description Only notices older than this id, for the next page. */
                 before?: string | null;
+                /** @description Include notices that resolved by themselves and disappeared, for their history. */
+                resolved?: boolean;
             };
             header?: never;
             path?: never;
@@ -17891,11 +21714,45 @@ export interface operations {
             };
         };
     };
+    system_plugin_repair: {
+        parameters: {
+            query?: {
+                /** @description As the automatic updater asks: try each missing plugin once per version of the plugin that requires it, so a failure isn't retried every half hour. */
+                automatic?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginRepair"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_plugin_search: {
         parameters: {
             query?: {
                 /** @description Words that name or describe the plugin, e.g. `calendar`; sent to GitHub's search. All plugins if omitted. */
                 text?: string;
+                /** @description Ask GitHub again instead of using the answer kept for the last minute. */
+                refresh?: boolean;
             };
             header?: never;
             path?: never;
@@ -17910,6 +21767,113 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginSearch"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_showcase: {
+        parameters: {
+            query: {
+                /** @description The selected catalog plugin's install specification. */
+                spec: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginShowcase"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_prerequisite_check: {
+        parameters: {
+            query?: {
+                /** @description Qualified module that declares the tool; every enabled module if left out. */
+                owner?: string | null;
+                /** @description `install`: the standard app; `setup`: also what setup needs; `feature`: also named features. */
+                context?: "install" | "setup" | "feature";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrerequisiteReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The result, when its exit code is non-zero. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrerequisiteReport"];
+                };
+            };
+        };
+    };
+    system_prerequisite_list: {
+        parameters: {
+            query?: {
+                /** @description Qualified module that declares the tool; every enabled module if left out. */
+                owner?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrerequisiteDefinition"][];
                 };
             };
             /** @description Validation Error */
@@ -18271,6 +22235,74 @@ export interface operations {
             };
         };
     };
+    system_runner_chat_propose_captured_write: {
+        parameters: {
+            query: {
+                /** @description Owner-scoped personal conversation. */
+                durable_session: string;
+                /** @description Identity of the captured write draft. */
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_propose_channel_item: {
+        parameters: {
+            query: {
+                /** @description Owner-scoped personal conversation. */
+                durable_session: string;
+                /** @description Identity of the channel posting draft. */
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_runner_chat_propose_connected_read_review: {
         parameters: {
             query: {
@@ -18352,6 +22384,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_propose_release_draft_share: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["system_runner_chat_propose_release_draft_share_Input"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -19046,7 +23111,7 @@ export interface operations {
             query?: {
                 /** @description Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel. */
                 source?: string | null;
-                /** @description Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit. */
+                /** @description Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest published stable release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit. */
                 channel?: ("stable" | "edge" | "main" | "release") | null;
             };
             header?: never;

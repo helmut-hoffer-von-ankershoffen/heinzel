@@ -1,10 +1,13 @@
-"""Device tokens: an installed web app (a Dock icon) reopens without a new link from `hz ui` (ADR 0046).
+"""Device tokens: an installed web app (a Dock icon) reopens without a new link from `hz ui serve` (ADR 0046).
 
-`hz ui` still makes a session token per process and opens the browser with it in the URL fragment. With that session
+`hz ui serve` still makes a session token per process and opens the browser with it in the URL fragment. With that
+session
 token, and only with it, the app asks for a device token once (`POST /api/_web/device`) and keeps it in its own
-storage; afterwards any `hz ui` on the same fixed port accepts it as `Authorization: Bearer`. Only a SHA-256 of each
+storage; afterwards any `hz ui serve` on the same fixed port accepts it as `Authorization: Bearer`. Only a SHA-256 of
+each
 token is kept, in the state directory (0700, the file 0600), with a name, when it was made and when it was last used.
-`hz ui --devices` lists them, `hz ui --revoke ID` (or `all`) removes them, and the app can forget its own.
+`hz ui serve --devices` lists them, `hz ui serve --revoke ID` (or `all`) removes them, and the app can forget its
+own.
 
 A device token is 32 random bytes, so a plain SHA-256 is enough to make the stored file useless to whoever reads it;
 lookups compare digests with `hmac.compare_digest`.
@@ -41,7 +44,7 @@ PRIVATE_FILE = 0o600
 class Device(BaseModel):
     """A browser or installed app that may reopen the web app with its own token."""
 
-    id: str = Field(description="Short identifier, for `hz ui --revoke`.")
+    id: str = Field(description="Short identifier, for `hz ui serve --revoke`.")
     name: str = Field(description="What the app called itself, e.g. `Chrome on macOS (installed)`.")
     created: AwareDatetime = Field(description="When it was paired.")
     last_used: AwareDatetime = Field(description="When it was last used, to the hour.")
@@ -87,7 +90,8 @@ class Devices:
             devices = self.paired()
             if len(devices) >= MAX_DEVICES:
                 msg = (
-                    f"{MAX_DEVICES} devices are paired already; remove one with `hz ui --revoke ID` (`hz ui --devices`)"
+                    f"{MAX_DEVICES} devices are paired already; remove one with `hz ui serve --revoke ID` "
+                    "(`hz ui serve --devices`)"
                 )
                 raise HeinzelError(msg)
             self._write([*devices, device])
@@ -102,7 +106,7 @@ class Devices:
         if found is None:
             return None
         if self._clock() - found.last_used > UNUSED_FOR:
-            self.revoke(found.id)  # unused for a month: pair again with a link from `hz ui`
+            self.revoke(found.id)  # unused for a month: pair again with a link from `hz ui serve`
             return None
         if self._clock() - found.last_used > TOUCH_EVERY:
             self._touch(found.id)

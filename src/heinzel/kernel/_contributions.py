@@ -93,6 +93,7 @@ SLOTS: dict[str, tuple[Slot, ...]] = {"status": ("footer", "sidebar"), "action":
 """The slots each kind of contribution may appear in."""
 MAX_TEXT = 80
 MAX_BODY = 280
+MAX_CHART_POINTS = 48
 MAX_VALUE = 16
 MAX_BADGE = 4
 MAX_DETAIL = 8
@@ -289,6 +290,12 @@ class RunOperation(_Data):
         max_length=32,
         description="Fixed JSON arguments by parameter name; structured values require a private mutation.",
     )
+    inputs: tuple[Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_]*$")], ...] = Field(
+        default=(),
+        max_length=8,
+        description="Parameters the person fills in, in a view's form, e.g. `text`; only for a private mutation, "
+        "and still confirmed before it runs.",
+    )
     call: OperationCall | None = Field(
         default=None, description="Filled in by `system.ui`; whatever a plugin sets here is replaced."
     )
@@ -388,13 +395,42 @@ class DetailLine(_Data):
     icon: Icon | None = Field(default=None, description="Optional semantic state icon.")
 
 
+MAX_PANE_LINE = 60
+"""A pane's status line: one short sentence that says the state first, then the one thing to do."""
+_INTERNAL_WORDS = re.compile(
+    r"\b(?:requested|applied|verified|owning|apply|intent|mapping|origin|handler|readiness)\b", re.IGNORECASE
+)
+
+
+def _plain_words(value: str) -> str:
+    """Refuse the backend's state words in a line the person reads; say what they see instead.
+
+    Raises:
+        ValueError: If the line uses an internal state word such as `requested` or `origin`.
+    """
+    if found := _INTERNAL_WORDS.search(value):
+        msg = f"say what the person sees, not the internal word {found.group(0)!r}"
+        raise ValueError(msg)
+    return value
+
+
+PaneLine = Annotated[
+    str,
+    BeforeValidator(_one_line),
+    Field(min_length=1, max_length=MAX_PANE_LINE),
+    AfterValidator(_plain_words),
+]
+"""One pane status line of at most 60 characters in the person's words (design/README.md, pane microcopy)."""
+
+
 class ToggleControl(_Data):
     """A provider-owned toggle whose deliberate change authorizes exactly one server-resolved operation."""
 
     label: Text = Field(description="The action the person enables or disables.")
     checked: StrictBool = Field(description="Actual verified state, never an optimistic requested value.")
     requested: StrictBool | None = Field(
-        default=None, description="The requested state when it differs from verified readiness; never a success claim."
+        default=None,
+        description="The person's choice, which the switch shows; `checked` alone says whether it is live.",
     )
     enable: RunOperation = Field(description="The declaring module's operation that enables the feature.")
     disable: RunOperation = Field(description="The declaring module's operation that disables the feature.")
@@ -406,6 +442,18 @@ class ToggleControl(_Data):
         max_length=16,
         description="Loaded settings that must match after the existing restart/apply flow, keyed as section.key. "
         "These are verification expectations, never permission to edit arbitrary settings.",
+    )
+    status: PaneLine | None = Field(
+        default=None,
+        description="The provider's one short status line, e.g. `Turning on…`; the host shows its own when absent.",
+    )
+    problem: PaneLine | None = Field(
+        default=None,
+        description="One short cause the person can fix, e.g. `Sign in to Tailscale, then try again.`; "
+        "its presence offers Try again.",
+    )
+    explanation: Body | None = Field(
+        default=None, description="The longer explanation, shown only on demand under Details."
     )
     sign_in_url: Link | None = Field(
         default=None,
@@ -434,6 +482,10 @@ class StatusItem(_Data):
     )
     presentation: Literal["icon", "text", "value", "ticker"] = Field(
         default="icon", description="Generic rendering style."
+    )
+    footer_priority: Annotated[StrictInt, Field(ge=0, le=1000)] = Field(
+        default=40,
+        description="Retention priority in a crowded footer, from 0 to 1000; higher values move to overflow later.",
     )
     segments: list[DetailLine] = Field(
         default_factory=list[DetailLine], max_length=64, description="Ordered live ticker segments."
@@ -535,6 +587,61 @@ class ProgressWidget(_Data):
         return self
 
 
+class ChartPoint(_Data):
+    """One point of a chart: where on the axis, and its value."""
+
+    at: Text = Field(
+        description="Where on the axis: an ISO 8601 timestamp such as `2026-11-07T14:00` or a plain label."
+    )
+    value: float = Field(allow_inf_nan=False, description="The value at that point, in the chart's unit.")
+
+
+class ChartRange(_Data):
+    """A band across the chart, e.g. the day's lowest and highest value."""
+
+    low: float = Field(allow_inf_nan=False, description="Bottom of the band, in the chart's unit.")
+    high: float = Field(allow_inf_nan=False, description="Top of the band, at least `low`.")
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Self:
+        if self.high < self.low:
+            msg = f"high ({self.high}) can't be below low ({self.low})"
+            raise ValueError(msg)
+        return self
+
+
+class ChartWidget(_Data):
+    """A line over time, with optional bars, a range band and a now marker; `summary` is its text alternative."""
+
+    kind: Literal["chart"] = Field(default="chart", description="Chart.")
+    title: Text = Field(description="What the chart shows, e.g. `Temperature today`; also its accessible name.")
+    summary: Body = Field(description="The chart in words for people who can't see it, e.g. `Warms to 18° by 15:00`.")
+    unit: Text | None = Field(default=None, description="The unit of `series` values, e.g. `°C`.")
+    series: list[ChartPoint] = Field(min_length=2, max_length=MAX_CHART_POINTS, description="The line, left to right.")
+    bars: list[Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]] | None = Field(
+        default=None, description="A second series drawn as bars from 0 to 1, one per point, e.g. chance of rain."
+    )
+    bars_label: Text | None = Field(default=None, description="What the bars are, e.g. `Rain chance`.")
+    range: ChartRange | None = Field(default=None, description="A band across the chart, e.g. the day's low and high.")
+    now: Text | None = Field(default=None, description="The `at` of the point to mark as now.")
+    tone: Tone = Field(default="neutral", description="How the line reads: neutral, ok, warn or bad.")
+    size: Size | None = Field(default=None, description="Room in the Today grid; each kind has a default.")
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        ats = [point.at for point in self.series]
+        if len(set(ats)) != len(ats):
+            msg = "series needs a distinct `at` for every point"
+            raise ValueError(msg)
+        if self.bars is not None and len(self.bars) != len(self.series):
+            msg = f"bars needs one value per point: {len(self.bars)} for {len(self.series)} points"
+            raise ValueError(msg)
+        if self.now is not None and self.now not in {point.at for point in self.series}:
+            msg = f"now ({self.now!r}) must be the `at` of one of the points"
+            raise ValueError(msg)
+        return self
+
+
 class Avatar(_Data):
     """A Heinzelmännchen drawn in a widget, dressed by data only."""
 
@@ -558,8 +665,10 @@ class GraphicWidget(_Data):
     size: Size | None = Field(default=None, description="Room in the Today grid; each kind has a default.")
 
 
-Widget = Annotated[CardWidget | ListWidget | MetricWidget | ProgressWidget | GraphicWidget, Field(discriminator="kind")]
-"""What a widget shows: a card, a list, a metric, progress or a graphic."""
+Widget = Annotated[
+    CardWidget | ListWidget | MetricWidget | ProgressWidget | GraphicWidget | ChartWidget, Field(discriminator="kind")
+]
+"""What a widget shows: a card, a list, a metric, progress, a graphic or a chart."""
 View = Callable[[Any], Any]
 """A pure function of the source operation's result."""
 

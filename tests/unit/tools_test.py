@@ -5,9 +5,13 @@ import http.client
 import importlib.util
 import io
 import re
+import ssl
+import subprocess
 import tarfile
+import urllib.error
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -155,6 +159,169 @@ def test_platforms_are_named_as_in_the_manifest(system, machine, expected):
 
 
 # Downloads and archives
+
+
+@pytest.fixture
+def transport(monkeypatch):
+    """A deterministic transport clock; retries never sleep in the test suite."""
+    now = [0.0]
+    monkeypatch.setattr(tools.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(tools.time, "sleep", lambda delay: now.__setitem__(0, now[0] + delay))
+    monkeypatch.setattr(tools.secrets, "randbelow", lambda _: 500)  # jitter factor 1.0
+    monkeypatch.setattr(tools, "ssl_context", lambda: None)
+    return now
+
+
+@pytest.mark.parametrize(
+    "interruption",
+    [
+        *[
+            urllib.error.HTTPError("https://example.com/x", status, "gateway unavailable", {}, None)
+            for status in (502, 503, 504)
+        ],
+        ssl.SSLEOFError(8, "unexpected EOF"),
+        urllib.error.URLError(ssl.SSLEOFError(8, "unexpected EOF")),
+        ConnectionResetError("connection reset"),
+        http.client.IncompleteRead(b"partial", 100),
+    ],
+)
+@pytest.mark.parametrize("during_read", [False, True])
+def test_interrupted_download_restarts_and_caches_only_the_complete_verified_body(
+    tmp_path, monkeypatch, transport, interruption, during_read
+):
+    download = tools.Download("https://example.com/x", sha(BINARY))
+    requests = []
+
+    class InterruptedResponse(io.BytesIO):
+        def read(self):
+            raise interruption
+
+    def open_(request, **kwargs):
+        requests.append((request.full_url, kwargs["timeout"]))
+        if len(requests) == 1:
+            transport[0] += 10
+            if during_read:
+                return InterruptedResponse(b"partial")
+            raise interruption
+        return io.BytesIO(BINARY)
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    assert tools.fetch(download, tmp_path, tools.http_get) == BINARY
+    assert (tmp_path / download.sha256).read_bytes() == BINARY
+    assert requests == [(download.url, 120), (download.url, 109.5)]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        urllib.error.URLError(ssl.SSLEOFError(8, "unexpected EOF")),
+        *[
+            urllib.error.HTTPError("https://example.com/x", status, "gateway unavailable", {}, None)
+            for status in (502, 503, 504)
+        ],
+    ],
+)
+def test_persistent_transport_or_gateway_failure_exhausts_three_attempts_without_caching(
+    tmp_path, monkeypatch, transport, error
+):
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(kwargs["timeout"])
+        raise error
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError, match="download failed"):
+        tools.fetch(tools.Download("https://example.com/x", ZERO), tmp_path, tools.http_get)
+    assert requests == [120, 119.5, 118.5]
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ssl.SSLEOFError(8, "unexpected EOF"),
+        urllib.error.HTTPError("https://example.com/x", 504, "gateway unavailable", {}, None),
+    ],
+)
+@pytest.mark.parametrize("elapsed", [120, 119.5])
+def test_interruption_at_the_timeout_budget_fails_without_another_request(monkeypatch, transport, elapsed, error):
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(kwargs["timeout"])
+        transport[0] += elapsed
+        raise error
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError, match="download failed"):
+        tools.download_bytes("https://example.com/x", tools.http_get)
+    assert requests == [120]
+
+
+def test_backoff_delayed_past_the_timeout_budget_does_not_start_another_request(monkeypatch, transport):
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(args)
+        raise ssl.SSLEOFError(8, "unexpected EOF")
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    monkeypatch.setattr(tools.time, "sleep", lambda _: transport.__setitem__(0, 121.0))
+    with pytest.raises(tools.ToolError, match="unexpected EOF"):
+        tools.download_bytes("https://example.com/x", tools.http_get)
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate rejected")),
+        ssl.SSLError(1, "bad protocol"),
+        urllib.error.HTTPError("https://example.com/x", 404, "not found", {}, None),
+        *[
+            urllib.error.HTTPError("https://example.com/x", status, "permanent", {}, None)
+            for status in (400, 401, 403, 429, 500, 501, 505)
+        ],
+    ],
+)
+def test_certificate_protocol_and_http_errors_fail_without_retries(monkeypatch, transport, error):
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(args)
+        raise error
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError, match="download failed"):
+        tools.download_bytes("https://example.com/x", tools.http_get)
+    assert len(requests) == 1
+    assert transport == [0.0]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ssl.SSLEOFError(8, "unexpected EOF"),
+        urllib.error.HTTPError("https://example.com/x", 503, "gateway unavailable", {}, None),
+    ],
+)
+def test_recovered_download_with_wrong_checksum_is_refused_without_further_retries(
+    tmp_path, monkeypatch, transport, error
+):
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(args)
+        if len(requests) == 1:
+            raise error
+        return io.BytesIO(b"tampered")
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError, match="checksum mismatch"):
+        tools.fetch(tools.Download("https://example.com/x", sha(BINARY)), tmp_path, tools.http_get)
+    assert len(requests) == 2
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_fetch_refuses_a_download_whose_checksum_differs_and_caches_nothing(tmp_path):
@@ -387,7 +554,7 @@ def test_make_install_installs_the_build_tools_and_puts_them_first_on_path():
     install = re.search(r"^install:.*\n((?:\t.*\n)+)", makefile, re.MULTILINE)
     assert install
     assert "test -f uv.lock || uv lock --quiet" in install[1]
-    assert "uv sync --frozen --all-groups" in install[1]
+    assert "uv run --quiet --script scripts/build.py sync" in install[1]
     assert "$(TOOLS) install" in install[1]
     assert re.search(r"^setup: install\b", makefile, re.MULTILINE)
 
@@ -498,3 +665,190 @@ def test_doctor_passes_the_web_app_once_installed(isolated):
 
 def test_doctor_says_nothing_about_web_tools_in_a_plugin(isolated):
     assert web_checks(isolated, app=False, modules=False) == []
+
+
+def test_persistent_gateway_failure_reports_attempts_and_sanitized_last_endpoint(monkeypatch, transport):
+    url = "https://username:password@release-assets.githubusercontent.com/archive.tar.gz?sig=private#token"
+    error = urllib.error.HTTPError(url, 504, "private upstream details", {"Set-Cookie": "private"}, None)
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(kwargs["timeout"])
+        raise error
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError) as raised:
+        tools.download_bytes("https://example.com/pinned", tools.http_get)
+    assert str(raised.value) == (
+        "download failed (HTTP Error 504; "
+        "last HTTP endpoint=release-assets.githubusercontent.com/archive.tar.gz; attempts=3)"
+    )
+    assert raised.value.__cause__ is error
+    assert requests == [120, 119.5, 118.5]
+    for private in ("username", "password", "private", "sig=", "#token", "Set-Cookie"):
+        assert private not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/line\x00break?secret",
+        "https://example.com/line\x85\u202ebreak?secret",
+        "https://example.com/" + "x" * 500,
+    ],
+)
+def test_http_failure_endpoint_has_no_control_characters_and_a_bounded_path(url, request):
+    error = urllib.error.HTTPError(url, 503, "private", {}, None)
+    request.addfinalizer(error.close)
+    with pytest.raises(tools.ToolError) as raised:
+        tools.download_bytes(url, lambda _: (_ for _ in ()).throw(error))
+    message = str(raised.value)
+    assert all(char.isprintable() for char in message)
+    assert len(message) < 360
+    assert "private" not in message
+    assert "secret" not in message
+    assert "attempts=" not in message  # A supplied fetch callback has no observed attempt count.
+    assert raised.value.__cause__ is error
+
+
+def test_malformed_http_error_url_keeps_status_and_original_cause(request):
+    error = urllib.error.HTTPError("https://[invalid", 504, "private", {}, None)
+    request.addfinalizer(error.close)
+    with pytest.raises(tools.ToolError, match=r"download failed \(HTTP Error 504\)") as raised:
+        tools.download_bytes("https://example.com/x", lambda _: (_ for _ in ()).throw(error))
+    assert raised.value.__cause__ is error
+
+
+def test_certificate_failure_retains_immediate_failure_with_one_observed_attempt(monkeypatch, transport):
+    error = urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate rejected"))
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(kwargs["timeout"])
+        raise error
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError, match=r"certificate rejected.*attempts=1") as raised:
+        tools.download_bytes("https://example.com/x", tools.http_get)
+    assert requests == [120]
+    assert transport == [0.0]
+    assert raised.value.__cause__ is error
+
+
+RELEASE = "https://github.com/example-owner/example-tool/releases/download/v1.2.3/tool.tar.gz"
+
+
+def _gateway_timeout(url):
+    """What http_get raises after its last retry of a flapping edge (a plain OSError, nothing to close)."""
+    msg = f"gateway timeout for {url}"
+    raise TimeoutError(msg)
+
+
+def test_persistent_gateway_failure_falls_back_to_the_authenticated_route_and_caches(tmp_path):
+    routes = []
+    download = tools.Download(RELEASE, sha(BINARY))
+    data = tools.fetch(download, tmp_path, _gateway_timeout, fallback=lambda url: routes.append(url) or BINARY)
+    assert data == BINARY
+    assert routes == [RELEASE]
+    assert (tmp_path / sha(BINARY)).read_bytes() == BINARY
+    refuse = lambda _: pytest.fail("a verified cache entry needs no network")  # noqa: E731
+    assert tools.fetch(download, tmp_path, refuse, fallback=refuse) == BINARY
+
+
+def test_fallback_bytes_are_refused_unless_they_match_the_pin(tmp_path):
+    download = tools.Download(RELEASE, sha(BINARY))
+    with pytest.raises(tools.ToolError, match="checksum mismatch"):
+        tools.fetch(download, tmp_path, _gateway_timeout, fallback=lambda _: b"tampered")
+    assert not (tmp_path / sha(BINARY)).exists()
+
+
+def test_failed_fallback_reports_both_routes(tmp_path):
+    def unavailable(_):
+        msg = "gh release download failed (exit 1)"
+        raise tools.ToolError(msg)
+
+    download = tools.Download(RELEASE, ZERO)
+    with pytest.raises(
+        tools.ToolError, match=r"download failed \(gateway timeout.*fallback: gh release download failed"
+    ):
+        tools.fetch(download, tmp_path, _gateway_timeout, fallback=unavailable)
+
+
+def test_gh_route_downloads_the_pinned_release_asset(monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    commands = []
+    monkeypatch.setattr(tools, "on_path", lambda name, *_: Path("/fictional/gh"))
+
+    def gh(command, **kwargs):
+        commands.append(command)
+        (Path(command[command.index("-D") + 1]) / "tool.tar.gz").write_bytes(BINARY)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(tools.subprocess, "run", gh)
+    assert tools.gh_release_get(RELEASE) == BINARY
+    assert commands[0][:7] == [
+        "/fictional/gh",
+        "release",
+        "download",
+        "v1.2.3",
+        "-R",
+        "example-owner/example-tool",
+        "-p",
+    ]
+    assert commands[0][7] == "tool.tar.gz"
+
+
+def test_gh_route_refuses_other_hosts_without_running_anything(monkeypatch):
+    monkeypatch.setattr(tools.subprocess, "run", lambda *_, **__: pytest.fail("gh ran for a non-release URL"))
+    with pytest.raises(tools.ToolError, match="no authenticated route"):
+        tools.gh_release_get("https://example.com/releases/download/v1/tool.tar.gz")
+
+
+@pytest.mark.parametrize("failure", [subprocess.TimeoutExpired("gh", 120), PermissionError("not executable")])
+def test_hanging_or_unexecutable_gh_is_a_route_failure(monkeypatch, failure):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setattr(tools, "on_path", lambda name, *_: Path("/fictional/gh"))
+
+    def gh(*args, **kwargs):
+        raise failure
+
+    monkeypatch.setattr(tools.subprocess, "run", gh)
+    with pytest.raises(tools.ToolError, match="gh release download"):
+        tools.gh_release_get(RELEASE)
+
+
+def test_option_shaped_release_tag_never_reaches_gh(monkeypatch):
+    monkeypatch.setattr(tools.subprocess, "run", lambda *_, **__: pytest.fail("an option-shaped tag reached gh"))
+    with pytest.raises(tools.ToolError, match="no authenticated route"):
+        tools.gh_release_get("https://github.com/o/r/releases/download/--repo=x/tool.tar.gz")
+
+
+def test_hosted_step_without_token_skips_gh_and_retries_the_direct_url_longer(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr(tools, "on_path", lambda name, *_: Path("/fictional/gh"))
+    monkeypatch.setattr(tools.subprocess, "run", lambda *_, **__: pytest.fail("gh cannot authenticate here"))
+    pauses, rounds = [], []
+    monkeypatch.setattr(tools.time, "sleep", pauses.append)
+
+    def flapping(url):
+        rounds.append(url)
+        if len(rounds) == 1:
+            _gateway_timeout(url)
+        return BINARY
+
+    assert tools.fetch(tools.Download(RELEASE, sha(BINARY)), tmp_path, flapping) == BINARY
+    assert len(rounds) == 2
+    assert tools.HOSTED_PAUSE * 0.5 <= pauses[0] <= tools.HOSTED_PAUSE * 1.5
+
+
+def test_hosted_step_without_token_says_why_when_both_direct_rounds_fail(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr(tools, "on_path", lambda name, *_: Path("/fictional/gh"))
+    monkeypatch.setattr(tools.time, "sleep", lambda _: None)
+    download = tools.Download(RELEASE, ZERO)
+    with pytest.raises(tools.ToolError, match="no GH_TOKEN; second direct round: download failed"):
+        tools.fetch(download, tmp_path, _gateway_timeout)

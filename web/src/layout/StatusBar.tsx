@@ -2,9 +2,7 @@
 // one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
-import { Calendar, CalendarClock, Video } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
 import { useChangelog, useInfo } from "@/api/queries";
 import { token } from "@/api/token";
 import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
@@ -15,25 +13,30 @@ import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
 import { zoneTime } from "@/lib/zoneTime";
 import { AutoUpdate } from "@/updates/AutoUpdate";
+import { CalendarGlyph } from "./CalendarGlyph";
+import { CalendarSummary, calendarActions } from "./CalendarSummary";
+import { type AgendaData, glyphModel } from "./calendarModel";
 import { DurableHeinzelStatus } from "./DurableHeinzelStatus";
 import { HealthStatus } from "./HealthStatus";
 import { PluginsPending } from "./PluginsPending";
-import { CONNECTORS } from "./settingsSections";
 import { UpdateStatus } from "./UpdateStatus";
 
-type Meeting = { title: string; start: string; end: string; conference_url?: string | null };
-type Agenda = { current: Meeting | null; next: Meeting | null; problem: string | null; fix: string | null };
+type Meeting = AgendaData["current"] & object;
+type Agenda = AgendaData;
 
 /** `GET /api/org/agenda`; answers 404 until the server has it, which shows as no meeting. */
 function useAgenda() {
   return useQuery({
     queryKey: ["org", "agenda"],
-    queryFn: async (): Promise<Agenda | null> => {
+    queryFn: async ({ signal }): Promise<Agenda> => {
       const request = new Request(new URL("/api/org/agenda", window.location.origin), {
+        signal,
+        cache: "no-store",
         headers: { Authorization: `Bearer ${token() ?? ""}` },
       });
       const response = await fetch(request);
-      return response.ok ? ((await response.json()) as Agenda) : null;
+      if (!response.ok) throw new Error("Calendar unavailable");
+      return (await response.json()) as Agenda;
     },
     refetchInterval: 60_000,
     retry: false,
@@ -49,16 +52,7 @@ function useNow(): Date {
   return now;
 }
 
-const time = (date: Date) => zoneTime(date);
-
-/** "in 12 min", "in 2 h 5 min", or the time when it's tomorrow or later. */
-function until(start: Date, now: Date): string {
-  const minutes = Math.round((start.getTime() - now.getTime()) / 60_000);
-  if (minutes < 1) return t("status.now");
-  if (start.toDateString() !== now.toDateString()) return time(start);
-  if (minutes < 60) return t("status.inMinutes", { minutes });
-  return t("status.inHours", { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
-}
+const time = (date: Date, zone?: string | null) => zoneTime(date, zone ?? undefined);
 
 const RELEASES = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag";
 
@@ -113,79 +107,96 @@ function ReleaseNotes({ version }: { version: string }) {
   );
 }
 
-/** The meeting now or next as an icon: green with its line and Join in the pane, or red when no calendar is connected. */
-function MeetingItem({ now }: { now: Date }) {
+/** The current and upcoming meetings share one compact entry: the Ledger glyph and a read-only pane. */
+function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
   const agenda = useAgenda();
   const meeting = useShown("org:meeting", "footer");
-  const current = agenda.data?.current;
-  const next = agenda.data?.next;
+  const ms = now.getTime();
+  const boundary = [agenda.data?.current?.end, agenda.data?.next?.start]
+    .filter((value): value is string => Boolean(value))
+    .map(Date.parse)
+    .filter((value) => value > agenda.dataUpdatedAt && value <= ms);
+  useEffect(() => {
+    if (boundary.length) void agenda.refetch();
+  }, [agenda.refetch, boundary.length]);
   if (!meeting) return null;
-  if (current)
-    return (
-      <FooterItem
-        label={t("status.current", { title: current.title, end: time(new Date(current.end)) })}
-        state="ok"
-        icon={Video}
-      >
-        {current.conference_url && (
-          <a
-            href={current.conference_url}
-            target="_blank"
-            rel="noreferrer"
-            className="block rounded-lg px-2.5 py-1.5 text-primary underline"
-          >
-            {t("status.join")}
-          </a>
-        )}
-      </FooterItem>
-    );
-  if (next)
-    return (
-      <FooterItem
-        label={t("status.next", { title: next.title, when: until(new Date(next.start), now) })}
-        state="ok"
-        icon={CalendarClock}
-      />
-    );
-  if (agenda.data?.problem)
-    return (
-      <FooterItem label={t("status.noCalendar")} state="bad" icon={Calendar}>
-        <p className="px-2.5 py-1.5 text-muted-foreground">{agenda.data.fix ?? agenda.data.problem}</p>
-        <Link
-          to={`?settings=${CONNECTORS}`}
-          className="block rounded-lg border-t border-border px-2.5 pt-2 pb-1 text-xs underline hover:text-foreground"
-        >
-          {t("status.connectCalendar")}
-        </Link>
-      </FooterItem>
-    );
-  return null;
+  const model = glyphModel({ agenda: agenda.data, failed: agenda.isError, pending: agenda.isPending, now: ms });
+  const zone = agenda.data?.timezone;
+  const events = [agenda.data?.current, agenda.data?.next].filter((e): e is Meeting => Boolean(e));
+  const active =
+    events
+      .filter((e) => Date.parse(e.start) <= ms && ms < Date.parse(e.end))
+      .sort((a, b) => Date.parse(b.start) - Date.parse(a.start))[0] ?? null;
+  const next = agenda.data?.next;
+  const upcoming = next && Date.parse(next.start) > ms ? next : null;
+  const unavailable = model.kind === "unknown";
+  return (
+    // Opening the calendar closes this pane, so it never stays over the panel it opened.
+    <FooterItem
+      label="Calendar"
+      triggerLabel={`Calendar: ${model.description}`}
+      state={unavailable ? "bad" : "off"}
+      content={<CalendarGlyph model={model} />}
+      className="px-0"
+      paneName="Calendar summary"
+      hideHeading
+      actions={calendarActions({
+        active,
+        upcoming,
+        onOpen,
+        writable: agenda.data?.writable === true,
+        full: !agenda.isPending && !agenda.isError && !agenda.data?.problem,
+      })}
+      popoverClassName="w-[min(24rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
+    >
+      {agenda.isPending ? (
+        <p className="p-3">Loading calendar…</p>
+      ) : agenda.isError ? (
+        <p className="p-3">Calendar unavailable. Try again later.</p>
+      ) : agenda.data?.problem ? (
+        <div className="space-y-2 p-3">
+          <p className="text-[17px] font-semibold">Calendar</p>
+          <p>{agenda.data.problem}</p>
+        </div>
+      ) : (
+        <CalendarSummary
+          model={model}
+          active={active}
+          upcoming={upcoming}
+          now={ms}
+          zone={zone}
+          clock={(iso) => time(new Date(iso), zone)}
+        />
+      )}
+    </FooterItem>
+  );
 }
 
-export function StatusBar() {
+export function StatusBar({ onOpenCalendar = () => {} }: { onOpenCalendar?: () => void }) {
   const info = useInfo();
   const now = useNow();
   return (
     <>
       <AutoUpdate />
-      <FooterLayout className="h-[60px] shrink-0 gap-2 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
-        <FooterPart id="@version" pinned className="mr-auto">
+      <FooterLayout className="h-12 shrink-0 gap-2 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
+        <FooterPart id="@version" priority={950} className="mr-auto">
           {info.data && (
             <FooterItem
               label={`v${info.data.version}`}
               state="off"
               text={`v${info.data.version}`}
               align="left"
+              freeform="The about card links to its release on GitHub and the release notes are prose with their own links."
               popoverClassName="w-[min(28rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
             >
               <ReleaseNotes version={info.data.version} />
             </FooterItem>
           )}
         </FooterPart>
-        <FooterPart id="@plugins-pending" pinned priority={110} label={t("pluginsPending.title")}>
+        <FooterPart id="@plugins-pending" priority={110} label={t("pluginsPending.title")}>
           <PluginsPending />
         </FooterPart>
-        <FooterPart id="@updates" pinned priority={100} label={t("updates.title")}>
+        <FooterPart id="@updates" priority={100} label={t("updates.title")}>
           <UpdateStatus />
         </FooterPart>
         <FooterPart id="@heinzels" priority={70} label={t("nav.heinzelmaennchen")}>
@@ -194,8 +205,9 @@ export function StatusBar() {
         <FooterPart id="@health" priority={90} label={t("health.title")}>
           <HealthStatus />
         </FooterPart>
-        <FooterPart id="@meeting" priority={30}>
-          <MeetingItem now={now} />
+        {/* Even the generic error promotion keeps this contribution below the version priority. */}
+        <FooterPart id="@meeting" priority={725}>
+          <MeetingItem now={now} onOpen={onOpenCalendar} />
         </FooterPart>
         <FooterMore />
         <StatusItems slot="footer" except={NATIVE_FOOTER} measured />

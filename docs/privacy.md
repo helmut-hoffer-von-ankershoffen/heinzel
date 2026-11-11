@@ -124,7 +124,7 @@ to. Having reviewed the source code (the Python package, the web interface and t
   access token is sent. The check does not run in CI environments. Turn it off with the
   `update_check` setting or `HZ_UPDATE_CHECK=false`.
 - **Automatic updates (on; turn them off in the footer's Updates pane or in Settings).** Only while the web app's
-  server (`hz ui`) runs, and only for an installed hz (never from a source checkout, under tests or in CI). Every 30
+  server (`hz ui serve`) runs, and only for an installed hz (never from a source checkout, under tests or in CI). Every 30
   minutes (plus up to 5 at random; the first 1 to 5 minutes after it starts) it asks:
   - `github.com`: one `HEAD` of the repository's `releases/latest` page, for the latest release's version; only if
     that fails, one GET to `api.github.com` for the same.

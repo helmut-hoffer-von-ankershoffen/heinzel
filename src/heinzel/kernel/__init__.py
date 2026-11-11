@@ -23,6 +23,26 @@ from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._capability_schema import capability_read_schema
 from heinzel.kernel._captured_source import captured_source_active
+from heinzel.kernel._captured_write import (
+    CapturedWriteAcknowledgement,
+    CapturedWriteDraft,
+    CapturedWriteLease,
+    CapturedWriteReview,
+    CapturedWriteService,
+    CapturedWriteTarget,
+)
+from heinzel.kernel._channels import (
+    ApprovalChannel,
+    ChannelApprovalReply,
+    ChannelApprovalRequest,
+    ChannelNotice,
+    ChannelReceipt,
+    ChannelReplyConsumer,
+    ChannelReplySource,
+    ChannelTarget,
+    NotificationChannel,
+    VerifiedChannelReply,
+)
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import (
     CheckInChatContext,
@@ -56,6 +76,9 @@ from heinzel.kernel._contributions import (
     Avatar,
     Badge,
     CardWidget,
+    ChartPoint,
+    ChartRange,
+    ChartWidget,
     ContributionLet,
     DetailLine,
     Effect,
@@ -105,12 +128,37 @@ from heinzel.kernel._daemon_attestation import (
     DaemonMutationScope,
     DaemonStatusAttestation,
 )
+from heinzel.kernel._daemon_recovery import (
+    DaemonLegacyRecovery,
+    DaemonPackageHandoverRecovery,
+    DaemonRecoveryPlan,
+    DaemonRecoveryResult,
+    DaemonRecoverySelection,
+)
 from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_reporting_lines
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
+from heinzel.kernel._draft_append import (
+    DraftAppendAttempt,
+    DraftAppendLease,
+    DraftAppendReceipt,
+    DraftAppendReview,
+    DraftAppendService,
+    DraftAppendTarget,
+    DraftSectionSnapshot,
+    OwnerNoticeChannel,
+    OwnerNoticeTarget,
+    ReleaseFeedBaseline,
+    ReleaseFeedIdentity,
+    ReleaseFeedLease,
+    ReleaseFeedService,
+    ReleasePage,
+    ReleaseRecord,
+    ReviewedLinkChannel,
+)
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
 from heinzel.kernel._exposure import MCP_HTTP, MCP_STDIO, Exposed, exposed, input_schema, restricts
-from heinzel.kernel._features import feature_enabled
+from heinzel.kernel._features import feature_catalog, feature_enabled
 from heinzel.kernel._git import (
     GIT_HARDENING,
     CommandFailed,
@@ -118,6 +166,17 @@ from heinzel.kernel._git import (
     RunGitCommand,
     check_repository_url,
     git_command,
+)
+from heinzel.kernel._head_refresh import HeadRefresh, WebHeadRefresh
+from heinzel.kernel._host_maintenance import (
+    HostIntegration,
+    HostIntegrationScope,
+    HostMaintenanceIntegration,
+    HostServiceManager,
+    MaintenanceLocks,
+    host_maintenance_directory,
+    host_maintenance_gate,
+    host_maintenance_lock,
 )
 from heinzel.kernel._identity import PRIVATE_WRITE, Authentication, CallIdentity, CurrentUser, Principal
 from heinzel.kernel._installation import (
@@ -128,6 +187,7 @@ from heinzel.kernel._installation import (
     ToolConstraintPolicy,
     requirement_from_receipt,
 )
+from heinzel.kernel._installation_mutations import installation_mutation_paths, installation_mutation_pending
 from heinzel.kernel._jobs import CompiledJobs, JobInactive, tick_interval, using_tick_interval
 from heinzel.kernel._json import jsonable
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
@@ -162,10 +222,20 @@ from heinzel.kernel._lets import (
     Status,
     schedule_problem,
 )
-from heinzel.kernel._local_web import LocalWebRuntime
+from heinzel.kernel._local_overview import CachedOverviewLet, DaemonOverview, LocalObservation, WebOverview
+from heinzel.kernel._local_web import LocalWebRuntime, PersistentWeb
 from heinzel.kernel._metadata_verifier import CoreMetadataVerifier
 from heinzel.kernel._module import Module
-from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifications
+from heinzel.kernel._notifications import (
+    CapabilityState,
+    Delivery,
+    Notice,
+    NoticeHelper,
+    NoticeKind,
+    Notifications,
+    ResolveWhen,
+)
+from heinzel.kernel._offline_uninstall import OfflineUninstall, UninstallResult
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
 from heinzel.kernel._paths import collapses, operation_path, owns_path, public_parameters
 from heinzel.kernel._playbooks import (
@@ -176,11 +246,33 @@ from heinzel.kernel._playbooks import (
     PlaybookLet,
     PlaybookSetup,
 )
+from heinzel.kernel._prerequisites import (
+    PREREQUISITE_CONTEXTS,
+    PREREQUISITE_READY,
+    Homebrew,
+    ManualInstall,
+    PrerequisiteCheck,
+    PrerequisiteContext,
+    PrerequisiteDefinition,
+    PrerequisiteLet,
+    PrerequisiteReport,
+    PrerequisiteService,
+    PrerequisiteStatus,
+)
 from heinzel.kernel._presence import Presence
+from heinzel.kernel._private_control import (
+    PrivateControl,
+    private_directory,
+    private_lock,
+    private_read,
+    private_socket_directory,
+    private_write,
+)
 from heinzel.kernel._progress import Emit, Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
 from heinzel.kernel._protocols import (
     RESPONSES,
+    Attachment,
     Calendar,
     Chat,
     CodeHost,
@@ -222,6 +314,7 @@ from heinzel.kernel._protocols import (
 )
 from heinzel.kernel._release import (
     EdgeRelease,
+    PluginNews,
     PluginRelease,
     PluginReleases,
     ReleaseCache,
@@ -233,6 +326,19 @@ from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
 from heinzel.kernel._session_store import SessionStore, SessionWriter
 from heinzel.kernel._settings import Settings
+from heinzel.kernel._sign_in import (
+    FLOW_ENDED,
+    FinishOn,
+    FlowState,
+    Grant,
+    GrantState,
+    GrantStatus,
+    SignInLet,
+    SignInOutcome,
+    SignInProgress,
+    SignInProvider,
+    SignInStatus,
+)
 from heinzel.kernel._signals import SIGNALS, Signal
 from heinzel.kernel._skills import (
     MAX_LOAD as MAX_SKILL_LOAD,
@@ -299,6 +405,18 @@ from heinzel.kernel._themes import (
     ThemeVariant,
     font_stack_problem,
 )
+from heinzel.kernel._tool_uninstall import (
+    OwnedFile as OwnedIntegrationFile,
+)
+from heinzel.kernel._tool_uninstall import (
+    owned_file as capture_owned_integration_file,
+)
+from heinzel.kernel._tool_uninstall import (
+    physical_directory as verify_integration_directory,
+)
+from heinzel.kernel._tool_uninstall import (
+    remove_owned_file as remove_owned_integration_file,
+)
 from heinzel.kernel._views import ViewLet, ViewSlot, read_view_asset
 
 __all__ = [
@@ -311,6 +429,7 @@ __all__ = [
     "EDGE_WHEEL_PREFIX",
     "ENTRY_POINT_GROUP",
     "FILENAME",
+    "FLOW_ENDED",
     "FONT_ROUTE",
     "GIT_HARDENING",
     "HEINZEL_ID",
@@ -326,6 +445,8 @@ __all__ = [
     "MCP_STDIO",
     "MODES",
     "NO_ADAPTER",
+    "PREREQUISITE_CONTEXTS",
+    "PREREQUISITE_READY",
     "PRIVATE_WRITE",
     "PROCESS_MAX_OUTPUT",
     "PROJECT_FILENAME",
@@ -346,19 +467,39 @@ __all__ = [
     "AgentResult",
     "AgentRunner",
     "AiAccess",
+    "ApprovalChannel",
     "AssetType",
+    "Attachment",
     "Authentication",
     "Avatar",
     "Badge",
     "Billing",
     "Budget",
+    "CachedOverviewLet",
     "Calendar",
     "CallIdentity",
     "Capability",
     "CapabilitySettings",
+    "CapabilityState",
     "CapabilityView",
+    "CapturedWriteAcknowledgement",
+    "CapturedWriteDraft",
+    "CapturedWriteLease",
+    "CapturedWriteReview",
+    "CapturedWriteService",
+    "CapturedWriteTarget",
     "CardWidget",
     "CatchUp",
+    "ChannelApprovalReply",
+    "ChannelApprovalRequest",
+    "ChannelNotice",
+    "ChannelReceipt",
+    "ChannelReplyConsumer",
+    "ChannelReplySource",
+    "ChannelTarget",
+    "ChartPoint",
+    "ChartRange",
+    "ChartWidget",
     "Chat",
     "ChatDraftTemplate",
     "Check",
@@ -395,7 +536,13 @@ __all__ = [
     "DaemonHandoverPlan",
     "DaemonHandoverRequest",
     "DaemonInstallationLifecycle",
+    "DaemonLegacyRecovery",
     "DaemonMutationScope",
+    "DaemonOverview",
+    "DaemonPackageHandoverRecovery",
+    "DaemonRecoveryPlan",
+    "DaemonRecoveryResult",
+    "DaemonRecoverySelection",
     "DaemonStatusAttestation",
     "Daypart",
     "DeclaredCredential",
@@ -405,6 +552,13 @@ __all__ = [
     "DiscoveryHint",
     "Document",
     "Documents",
+    "DraftAppendAttempt",
+    "DraftAppendLease",
+    "DraftAppendReceipt",
+    "DraftAppendReview",
+    "DraftAppendService",
+    "DraftAppendTarget",
+    "DraftSectionSnapshot",
     "DraftedMail",
     "EdgeRelease",
     "Effect",
@@ -416,11 +570,22 @@ __all__ = [
     "EventChange",
     "EventDraft",
     "Exposed",
+    "FinishOn",
+    "FlowState",
     "FreeBusy",
     "GitRunner",
+    "Grant",
+    "GrantState",
+    "GrantStatus",
     "GraphicWidget",
+    "HeadRefresh",
     "HealthLet",
     "HeinzelError",
+    "Homebrew",
+    "HostIntegration",
+    "HostIntegrationScope",
+    "HostMaintenanceIntegration",
+    "HostServiceManager",
     "How",
     "Icon",
     "InfoLet",
@@ -446,6 +611,7 @@ __all__ = [
     "LiveTime",
     "LiveUntil",
     "LoadedSkill",
+    "LocalObservation",
     "LocalWebRuntime",
     "Login",
     "Mail",
@@ -455,6 +621,8 @@ __all__ = [
     "MailMessage",
     "MailQuery",
     "MailThread",
+    "MaintenanceLocks",
+    "ManualInstall",
     "McpChatSessions",
     "McpServer",
     "Meeting",
@@ -469,22 +637,38 @@ __all__ = [
     "NavSettings",
     "Navigate",
     "Notice",
+    "NoticeHelper",
     "NoticeKind",
+    "NotificationChannel",
     "Notifications",
+    "OfflineUninstall",
     "OpenUrl",
     "OperationCall",
     "OperationLet",
     "OrgContext",
     "Origin",
+    "OwnedIntegrationFile",
+    "OwnerNoticeChannel",
+    "OwnerNoticeTarget",
     "Participant",
+    "PersistentWeb",
     "Person",
     "PlaybookLet",
     "PlaybookSetup",
+    "PluginNews",
     "PluginRelease",
     "PluginReleases",
     "PostedMessage",
+    "PrerequisiteCheck",
+    "PrerequisiteContext",
+    "PrerequisiteDefinition",
+    "PrerequisiteLet",
+    "PrerequisiteReport",
+    "PrerequisiteService",
+    "PrerequisiteStatus",
     "Presence",
     "Principal",
+    "PrivateControl",
     "ProcessExecute",
     "ProcessOutcome",
     "Progress",
@@ -498,11 +682,19 @@ __all__ = [
     "Relation",
     "ReleaseCache",
     "ReleaseFacts",
+    "ReleaseFeedBaseline",
+    "ReleaseFeedIdentity",
+    "ReleaseFeedLease",
+    "ReleaseFeedService",
+    "ReleasePage",
+    "ReleaseRecord",
     "ReleaseSource",
     "ReportingDraft",
     "Requester",
     "Requirement",
     "RequirementLet",
+    "ResolveWhen",
+    "ReviewedLinkChannel",
     "RunCommand",
     "RunGitCommand",
     "RunOperation",
@@ -525,6 +717,11 @@ __all__ = [
     "SettingsLet",
     "SetupLet",
     "SetupPhase",
+    "SignInLet",
+    "SignInOutcome",
+    "SignInProgress",
+    "SignInProvider",
+    "SignInStatus",
     "Signal",
     "SignalLet",
     "Skill",
@@ -575,19 +772,24 @@ __all__ = [
     "Tracker",
     "Transcript",
     "TranscriptSegment",
+    "UninstallResult",
     "UsageCause",
     "UsageEntry",
     "UsageLog",
     "Verb",
+    "VerifiedChannelReply",
     "ViewLet",
     "ViewSlot",
     "Weather",
+    "WebHeadRefresh",
+    "WebOverview",
     "Widget",
     "WidgetAction",
     "WidgetLet",
     "Window",
     "boot",
     "capability_read_schema",
+    "capture_owned_integration_file",
     "captured_source_active",
     "check_repository_url",
     "check_target",
@@ -599,12 +801,18 @@ __all__ = [
     "env_prefix",
     "environment_variable",
     "exposed",
+    "feature_catalog",
     "feature_enabled",
     "font_stack_problem",
     "format_duration",
     "free_busy_people",
     "git_command",
+    "host_maintenance_directory",
+    "host_maintenance_gate",
+    "host_maintenance_lock",
     "input_schema",
+    "installation_mutation_paths",
+    "installation_mutation_pending",
     "jsonable",
     "link_problem",
     "operation_path",
@@ -612,12 +820,18 @@ __all__ = [
     "parse_duration",
     "parse_window",
     "plain_addresses",
+    "private_directory",
+    "private_lock",
+    "private_read",
+    "private_socket_directory",
+    "private_write",
     "public_parameters",
     "read_skill",
     "read_skill_file",
     "read_view_asset",
     "record_usage",
     "redact_emails",
+    "remove_owned_integration_file",
     "requirement_from_receipt",
     "restricts",
     "run_bounded_process",
@@ -634,5 +848,6 @@ __all__ = [
     "toml_value",
     "user_config_dir",
     "using_tick_interval",
+    "verify_integration_directory",
     "walk",
 ]

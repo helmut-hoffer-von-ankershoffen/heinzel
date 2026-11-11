@@ -318,7 +318,9 @@ class Sink:
         if (self.clone / MANIFEST).is_symlink():
             msg = "the clone manifest is a symbolic link (HZS001)"
             raise Refused(msg)
-        if any(path.name not in {*STREAMS, MANIFEST, ".git"} for path in self.clone.iterdir()):
+        with os.scandir(self.clone) as entries:  # closed at once, not left for the garbage collector
+            unexpected = any(entry.name not in {*STREAMS, MANIFEST, ".git"} for entry in entries)
+        if unexpected:
             msg = "the clone contains an unexpected path (HZS001)"
             raise Refused(msg)
         for stream in STREAMS:

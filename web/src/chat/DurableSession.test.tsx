@@ -1,11 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Providers, queryClient } from "@/App";
+import { Providers, queryClient, routes } from "@/App";
 import { daemonStatusKey } from "@/api/daemon";
 import { DurableSession } from "@/chat/DurableSession";
 import { frame } from "@/test/chat";
-import { shell } from "@/test/fixtures";
+import { config, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { preserveUpdateWork } from "@/updates/work";
 
@@ -15,6 +15,21 @@ const snapshot = {
   name: "Personal helper",
   messages: [{ id: "m1", seq: 1, role: "user", text: "Hello", status: "pending" }],
 };
+function historySearchConfig(...otherFeatures: string[]) {
+  return {
+    ...config,
+    settings: [
+      ...config.settings,
+      {
+        section: "hz",
+        key: "features",
+        value: [...otherFeatures],
+        description: "Preview features",
+        env: "HZ_FEATURES",
+      },
+    ],
+  };
+}
 
 const proposedSchedule = {
   summary: "Five-minute check-in",
@@ -634,11 +649,11 @@ describe("personal conversation links", () => {
     expect(panel.getByText("Subscription usage · cost unknown")).toBeInTheDocument();
     expect(panel.getByText(/Contract v1: proposed/)).toBeInTheDocument();
     expect(panel.getByText("Keep notes current.")).toBeInTheDocument();
-    const proposed = within(await panel.findByRole("region", { name: "Proposed agent terms" }));
+    const proposed = within(await panel.findByRole("region", { name: "Proposed Heinzel terms" }));
     expect(proposed.getByText("Revision 1 · proposed terms")).toBeInTheDocument();
     expect(proposed.getByText(/Subscription plan · cost unknown/)).toBeInTheDocument();
     expect(proposed.getByText("Use the user's context.")).toBeInTheDocument();
-    expect(proposed.getByText(/does not activate the agent/)).toBeInTheDocument();
+    expect(proposed.getByText(/does not activate the Heinzel/)).toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.includes("open-check-in"))).toBe(false);
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
   });
@@ -682,7 +697,7 @@ describe("personal conversation links", () => {
     const reviewButton = await screen.findByRole("button", { name: "Review these terms" });
     await waitFor(() => expect(reviewButton).toBeEnabled());
     fireEvent.click(reviewButton);
-    expect(await screen.findByRole("heading", { name: "Review agent terms" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Review Heinzel terms" })).toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/confirm"))).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     if (changed) {
@@ -1009,7 +1024,7 @@ describe("personal conversation links", () => {
       "/api/heinzel/agent-schedules": { session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW", items: [], next_cursor: null },
     });
     renderAt(`/heinzel?chat=${sessionId}`);
-    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    fireEvent.click(await screen.findByText("Recurring Heinzel turns"));
     expect(await screen.findByText("Saved schedules are unavailable.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Pause future turns" })).not.toBeInTheDocument();
   });
@@ -1052,7 +1067,7 @@ describe("personal conversation links", () => {
     };
     const { calls } = mockApi(answers);
     const first = renderAt(`/heinzel?chat=${sessionId}`);
-    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    fireEvent.click(await screen.findByText("Recurring Heinzel turns"));
     const button = screen.getByRole("button", { name: "Propose recurring turns" });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
@@ -1060,7 +1075,7 @@ describe("personal conversation links", () => {
     first.unmount();
     mockApi(answers);
     renderAt(`/heinzel?chat=${sessionId}`);
-    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    fireEvent.click(await screen.findByText("Recurring Heinzel turns"));
     fireEvent.click(screen.getByRole("button", { name: "Retry same proposal" }));
     await waitFor(() => expect(attempts).toHaveLength(2));
     expect(attempts[1]).toEqual(attempts[0]);
@@ -1412,6 +1427,201 @@ describe("personal conversation links", () => {
     if (!firstProposal || !secondProposal) throw new Error("Both schedule review attempts must be recorded");
     expect(new URL(firstProposal.url).searchParams.get("request_id")).toBe("review-request");
     expect(new URL(secondProposal.url).searchParams.get("request_id")).toBe("review-request");
+  });
+
+  it("stages the exact edited draft, restores review on reload, and binds Confirm to the reviewing authority", async () => {
+    const draftKey = "a".repeat(64);
+    const requestId = "b".repeat(64);
+    const otherSession = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW";
+    const shareAction = {
+      ...reviewChat.actions[0],
+      id: "draft-share",
+      module: "heinzel",
+      operation: "share-draft-link",
+      command: "Review the edited release draft",
+      arguments: {
+        session_id: sessionId,
+        request_id: requestId,
+        review: {
+          session_id: sessionId,
+          draft_key: draftKey,
+          snapshot: {
+            draft_key: draftKey,
+            target: { reference: "https://example.invalid/document", revision: "revision-42", section: "Turing" },
+            text: "The edited release note.",
+          },
+          channel: "publication",
+          channel_target: { account: "owner-account", destination: "release-channel", scope: "post-link" },
+          link_text: "https://example.invalid/document",
+        },
+      },
+      status: "pending",
+    };
+    const chat = { ...reviewChat, actions: [shareAction] };
+    const newRevision = "revision-new-authority";
+    const newAction = {
+      ...shareAction,
+      id: "draft-share-new-authority",
+      arguments: {
+        ...shareAction.arguments,
+        request_id: "c".repeat(64),
+        review: {
+          ...shareAction.arguments.review,
+          snapshot: {
+            ...shareAction.arguments.review.snapshot,
+            target: { ...shareAction.arguments.review.snapshot.target, revision: newRevision },
+            text: "The new authority’s release note.",
+          },
+        },
+      },
+    };
+    const newChat = { ...chat, actions: [newAction] };
+    let finishConfirmation: (() => void) | undefined;
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": (request: Request) => ({
+        ...snapshot,
+        session_id: new URL(request.url).searchParams.get("session_id"),
+      }),
+      "/api/heinzel/release-draft-activity": (request: Request) => {
+        expect(new URL(request.url).searchParams.get("session_id")).toBe(sessionId);
+        return [{ kind: "draft.append-acknowledged", draft_key: draftKey, at: "2026-11-07T01:00:00Z" }];
+      },
+      "/api/heinzel/prepare-release-draft-share": async (request: Request) => {
+        expect(await request.json()).toEqual({ session_id: sessionId, draft_key: draftKey });
+        return requestId;
+      },
+      "/api/system/runner/chat/propose-release-draft-share": async (request: Request) => {
+        expect(await request.json()).toEqual({ durable_session: sessionId, request_id: requestId });
+        return chat;
+      },
+      "/api/system/runner/chat/show": (request: Request) => {
+        const bearer = request.headers.get("Authorization");
+        if (bearer === "Bearer test-token") return chat;
+        if (bearer === "Bearer replacement-token") return newChat;
+        return { status: 403, body: { error: "Conversation is unavailable" } };
+      },
+      "/api/system/runner/chat/confirm": (request: Request) => {
+        const query = new URL(request.url).searchParams;
+        expect(request.headers.get("Authorization")).toBe("Bearer replacement-token");
+        expect(query.get("session")).toBe(chat.id);
+        expect(query.get("action")).toBe(newAction.id);
+        return new Promise((resolve) => {
+          finishConfirmation = () =>
+            resolve({ ...newChat, messages: [{ role: "action", text: "Old authority’s late private response" }] });
+        });
+      },
+    });
+    const pendingPath = `/heinzel?chat=${sessionId}&agent-chat=${chat.id}`;
+    const called = (suffix: string) => calls.filter((request) => new URL(request.url).pathname.endsWith(suffix));
+    function renderDraftPath(path: string) {
+      sessionStorage.setItem("hz.token", "test-token");
+      const router = createMemoryRouter(routes, { initialEntries: [path] });
+      const view = render(
+        <Providers client={queryClient()}>
+          <RouterProvider router={router} />
+        </Providers>,
+      );
+      return { router, unmount: view.unmount };
+    }
+    const first = renderDraftPath(`/heinzel?chat=${sessionId}`);
+    fireEvent.click(await screen.findByText("Release draft activity"));
+    fireEvent.click(await screen.findByRole("button", { name: "Review draft share" }));
+    const heading = await screen.findByRole("heading", { name: "Review release draft share" });
+    const review = heading.closest("section");
+    if (!review) throw new Error("Missing release draft review");
+    expect(within(review).getByText("revision-42")).toBeVisible();
+    expect(within(review).getByText("release-channel")).toBeVisible();
+    expect(within(review).getByText("The edited release note.")).toBeVisible();
+    expect(first.router.state.location.search).toContain(`agent-chat=${chat.id}`);
+    expect(called("/chat/confirm")).toHaveLength(0);
+    first.unmount();
+
+    const reload = renderDraftPath(pendingPath);
+    expect(await screen.findByText("revision-42")).toBeVisible();
+    expect(called("/propose-release-draft-share")).toHaveLength(1);
+    expect(called("/chat/confirm")).toHaveLength(0);
+    await act(async () => reload.router.navigate(`/heinzel?chat=${otherSession}&agent-chat=${chat.id}`));
+    await waitFor(() => expect(screen.queryByText("revision-42")).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+    await act(async () => reload.router.navigate(pendingPath));
+    const restored = await screen.findByRole("heading", { name: "Review release draft share" });
+    const card = restored.closest("section");
+    if (!card) throw new Error("Missing restored draft review");
+    const staleConfirm = within(card).getByRole("button", { name: "Confirm" });
+    sessionStorage.setItem("hz.token", "replacement-token");
+    fireEvent.click(staleConfirm);
+    expect(called("/chat/confirm")).toHaveLength(0);
+    act(() => window.dispatchEvent(new Event("storage")));
+    expect(screen.queryByText("The edited release note.")).not.toBeInTheDocument();
+    expect(await screen.findByText(newRevision)).toBeVisible();
+    expect(
+      called("/chat/show").some((request) => request.headers.get("Authorization") === "Bearer replacement-token"),
+    ).toBe(true);
+    expect(called("/chat/confirm")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(called("/chat/confirm")).toHaveLength(1));
+
+    act(() => {
+      sessionStorage.setItem("hz.token", "other-token");
+      window.dispatchEvent(new Event("storage"));
+    });
+    expect(screen.queryByText("The new authority’s release note.")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        called("/chat/show").some((request) => request.headers.get("Authorization") === "Bearer other-token"),
+      ).toBe(true),
+    );
+    await act(async () => finishConfirmation?.());
+    expect(screen.queryByText("Old authority’s late private response")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+    expect(called("/chat/confirm")).toHaveLength(1);
+    expect(called("/share-draft-link")).toHaveLength(0);
+  });
+
+  it("keeps a submitted document decision read-only after remount even if the server still lists it as pending", async () => {
+    const chat = {
+      ...reviewChat,
+      actions: [
+        {
+          ...reviewChat.actions[0],
+          id: "write-decision",
+          operation: "execute-captured-write",
+          arguments: { session_id: sessionId, request_id: "write-draft", review: { content: "Exact draft" } },
+          command: "Review the exact write",
+          status: "pending",
+        },
+      ],
+    };
+    const key = `hz.write-decision:${sessionId}:${chat.id}:write-decision`;
+    const path = `/heinzel?chat=${sessionId}&agent-chat=${chat.id}`;
+    const { calls } = mockApi({
+      ...shell,
+      "/api/system/config/show": historySearchConfig("captured_writes"),
+      "/api/heinzel/session": snapshot,
+      "/api/system/runner/chat/show": chat,
+      "/api/system/runner/chat/confirm": () => {
+        throw new TypeError("Reply lost");
+      },
+    });
+    try {
+      const first = renderAt(path);
+      const heading = await screen.findByRole("heading", { name: "Review document write" });
+      const card = heading.closest("section");
+      if (!card) throw new Error("No write review");
+      fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
+      expect(await screen.findByText(/Write decision submitted/)).toBeVisible();
+      expect(sessionStorage.getItem(key)).toBe("submitted");
+      first.unmount();
+
+      renderAt(path);
+      const check = await screen.findByRole("button", { name: "Check outcome" });
+      fireEvent.click(check);
+      expect(screen.queryByRole("heading", { name: "Review document write" })).not.toBeInTheDocument();
+      expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/confirm"))).toHaveLength(1);
+    } finally {
+      sessionStorage.removeItem(key);
+    }
   });
 
   it("starts a fresh exact-intent review after a person declines the previous proposal", async () => {
@@ -1823,4 +2033,212 @@ it("does not display another session's action or request its associations", asyn
   expect(screen.queryByRole("heading", { name: "Personal helper" })).not.toBeInTheDocument();
   expect(screen.queryByText(/private-action/)).not.toBeInTheDocument();
   expect(calls.some((call) => new URL(call.url).pathname.endsWith("/personal-artifacts"))).toBe(false);
+});
+
+it.each([false, true])("holds source review while the reply is unsettled (%s)", async (grouped) => {
+  let finishAnswer: (() => void) | undefined;
+  let answerStarted = false;
+  let displayed = { ...snapshot, messages: [...snapshot.messages] };
+  const { calls } = mockApi({
+    ...shell,
+    "/api/system/config/show": {
+      ...config,
+      settings: [
+        ...config.settings,
+        {
+          section: "hz",
+          key: "features",
+          value: grouped ? ["connected_frontdoor"] : [],
+          description: "",
+          env: "HZ_FEATURES",
+        },
+      ],
+    },
+    "/api/heinzel/session": () => displayed,
+    "/api/heinzel/connected-read-options": () => [
+      { capability: "calendar", method: "events", provider: "fixture", source: "fixture", input_schema: {} },
+    ],
+    "/api/heinzel/connected-read-state": () => ({
+      session_id: sessionId,
+      status: "none",
+      proposal: null,
+      descriptor: null,
+    }),
+    "/api/heinzel/chat": async (request: Request) => {
+      const body = await request.json();
+      return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 2 };
+    },
+    "/api/heinzel/answer-chat": async (request: Request) => {
+      const body = await request.json();
+      answerStarted = true;
+      await new Promise<void>((resolve) => {
+        finishAnswer = resolve;
+      });
+      return {
+        session_id: sessionId,
+        request_id: body.request_id,
+        message: { id: "answer", seq: 2, role: "assistant" },
+      };
+    },
+  });
+  sessionStorage.setItem("hz.token", "test-token");
+  const client = queryClient();
+  const router = createMemoryRouter(
+    [{ path: "/", element: <DurableSession sessionId={sessionId} onClose={() => {}} /> }],
+    { initialEntries: ["/"] },
+  );
+  render(
+    <Providers client={client}>
+      <RouterProvider router={router} />
+    </Providers>,
+  );
+  fireEvent.change(await screen.findByLabelText("Read operation"), { target: { value: "calendar.events" } });
+  if (grouped) expect(await screen.findByRole("region", { name: "Review your helper" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Prepare review" })).toBeEnabled();
+  fireEvent.change(screen.getByLabelText("Message your Heinzel"), { target: { value: "Suggest an interval" } });
+  fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+  await waitFor(() => expect(answerStarted).toBe(true));
+  displayed = {
+    ...snapshot,
+    messages: [
+      ...snapshot.messages,
+      { id: "answer", seq: 2, role: "assistant", text: "Read complete.", status: "pending" },
+    ],
+  };
+  // Polling can expose the saved reply before the owning answer response and writer have settled.
+  await act(async () => {
+    client.setQueryData(["heinzel", "session", sessionId], displayed);
+  });
+  expect(await screen.findByText("Read complete.")).toBeInTheDocument();
+  const prepare = screen.getByRole("button", { name: "Prepare review" });
+  try {
+    expect(prepare).toBeDisabled();
+    fireEvent.click(prepare);
+    expect(calls.filter((request) => new URL(request.url).pathname.includes("propose-connected-read"))).toHaveLength(0);
+  } finally {
+    await act(async () => {
+      finishAnswer?.();
+    });
+  }
+  await waitFor(() => expect(prepare).toBeEnabled());
+});
+
+it("opens and highlights a search match beyond the loaded conversation page", async () => {
+  const { calls } = mockApi({
+    ...shell,
+    "/api/system/config/show": historySearchConfig(),
+    "/api/heinzel/session": (request: Request) =>
+      new URL(request.url).searchParams.get("cursor") === "anchored-jump"
+        ? { ...snapshot, messages: [{ id: "old", seq: 154, role: "user", text: "Old matching message" }] }
+        : { ...snapshot, has_more: true, next_cursor: "next" },
+    "/api/heinzel/indexed-conversation-search": () => ({
+      session_id: sessionId,
+      items: [{ id: "old", seq: 154, text: "Old matching message", at: "2026-05-04T12:00:00Z" }],
+      jump_cursors: ["anchored-jump"],
+      next_cursor: null,
+      mode: "trigram",
+      completeness: "unknown",
+    }),
+  });
+  renderAt(`/heinzel?chat=${sessionId}`);
+  const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+  await panel.findByText("Hello");
+  fireEvent.click(await panel.findByRole("button", { name: "Search conversations" }));
+  const search = within(panel.getByRole("region", { name: "Search conversation" }));
+  fireEvent.change(search.getByLabelText("Text"), { target: { value: "matching" } });
+  fireEvent.click(search.getByRole("button", { name: "Search" }));
+  await search.findByText("Old matching message");
+  fireEvent.click(search.getByRole("button", { name: "Open message" }));
+  await waitFor(() => expect(panel.getByText("Search result")).toBeInTheDocument());
+  expect(panel.getByText("Search result").parentElement).toHaveTextContent("Old matching message");
+  expect(calls.some((request) => new URL(request.url).searchParams.get("cursor") === "anchored-jump")).toBe(true);
+});
+
+it("opens an owner-search match in its exact helper without confirming any action", async () => {
+  const target = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW";
+  const { calls } = mockApi({
+    ...shell,
+    "/api/system/config/show": historySearchConfig("connected_frontdoor"),
+    "/api/heinzel/session": (request: Request) => {
+      const terms = new URL(request.url).searchParams;
+      return terms.get("session_id") === target
+        ? {
+            ...snapshot,
+            session_id: target,
+            name: "Other helper",
+            messages: [{ id: "other", seq: 9, role: "user", text: "Other private match" }],
+          }
+        : snapshot;
+    },
+    "/api/heinzel/search-agent-conversations": () => ({
+      status: "results",
+      session_id: target,
+      items: [{ seq: 9, text: "Other private match", at: "2026-05-04T12:00:00Z" }],
+      jump_cursors: ["owner-match"],
+      next_cursor: null,
+      completeness: "unknown",
+    }),
+  });
+  sessionStorage.setItem("hz.token", "test-token");
+  const router = createMemoryRouter(routes, {
+    initialEntries: [
+      `/heinzel?chat=${sessionId}&contract-chat=old&schedule-chat=old&schedule-request=old&notification-chat=old&connected-chat=old`,
+    ],
+  });
+  render(
+    <Providers client={queryClient()}>
+      <RouterProvider router={router} />
+    </Providers>,
+  );
+  const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+  await panel.findByText("Hello");
+  fireEvent.click(await panel.findByRole("button", { name: "Search conversations" }));
+  const search = within(panel.getByRole("region", { name: "Search all conversations" }));
+  fireEvent.change(search.getByLabelText("Text"), { target: { value: "match" } });
+  fireEvent.click(search.getByRole("button", { name: "Search" }));
+  await search.findByText("Other private match");
+  fireEvent.click(search.getByRole("button", { name: "Open message" }));
+  await waitFor(() => expect(panel.getByText("Search result").parentElement).toHaveTextContent("Other private match"));
+  const review = within(panel.getByRole("region", { name: "Review your helper" }));
+  expect(review.getByText("1. Agent terms")).toBeInTheDocument();
+  expect(review.getByText("2. Source access and time window")).toBeInTheDocument();
+  expect(review.getByText("3. Recurring turns and local notices")).toBeInTheDocument();
+  expect([...new URLSearchParams(router.state.location.search)]).toEqual([["chat", target]]);
+  expect(router.state.location.state).toBeNull();
+  expect(
+    calls.some((request) => {
+      const url = new URL(request.url);
+      return (
+        url.pathname === "/api/heinzel/session" &&
+        url.searchParams.get("session_id") === target &&
+        url.searchParams.get("cursor") === "owner-match"
+      );
+    }),
+  ).toBe(true);
+  expect(calls.filter((request) => request.method === "POST").map((request) => new URL(request.url).pathname)).toEqual([
+    "/api/heinzel/search-agent-conversations",
+  ]);
+});
+
+it("keeps search closed until the header button is used and ignores cursor text in the browser URL", async () => {
+  const { calls } = mockApi({ ...shell, "/api/heinzel/session": () => snapshot });
+  renderAt(`/heinzel?chat=${sessionId}&history=unexpected-cursor`);
+  const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+  await panel.findByText("Hello");
+  expect(panel.queryByText("Search conversation")).not.toBeInTheDocument();
+  expect(panel.queryByText("Search all Heinzel conversations")).not.toBeInTheDocument();
+  const toggle = panel.getByRole("button", { name: "Search conversations" });
+  expect(toggle).toHaveAttribute("title", "Search conversations");
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(toggle);
+  expect(await panel.findByText("Search conversation")).toBeInTheDocument();
+  expect(panel.getByText("Search all Heinzel conversations")).toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(panel.queryByText("Search conversation")).not.toBeInTheDocument();
+  expect(
+    calls.some((request) => {
+      const url = new URL(request.url);
+      return url.pathname.includes("conversation-search") || url.searchParams.get("cursor") === "unexpected-cursor";
+    }),
+  ).toBe(false);
 });

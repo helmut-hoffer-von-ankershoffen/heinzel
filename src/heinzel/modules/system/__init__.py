@@ -4,21 +4,26 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 from pydantic import Field
+from rich.console import RenderableType
 
-from heinzel import Kernel, Module
+from heinzel import Homebrew, Kernel, ManualInstall, Module, Progress
 from heinzel.kernel import (
     KERNEL_SECTION,
     CoreMetadataVerifier,
     DaemonInstallationLifecycle,
     Installation,
+    OfflineUninstall,
     PluginReleases,
     ReleaseSource,
     Settings,
+    UninstallResult,
+    WebHeadRefresh,
 )
 from heinzel.modules.system._announced import Announcement, ToolSnapshot, trial_start
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._models import (
     AnnouncedUpdate,
+    AutomaticUpdates,
     ChannelReport,
     ModuleInfo,
     PluginUpdate,
@@ -28,24 +33,90 @@ from heinzel.modules.system._models import (
     UpdateResult,
 )
 from heinzel.modules.system._plugin_releases import plugin_releases
-from heinzel.modules.system._render import render_channel, render_info, render_modules, render_release, render_update
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
+from heinzel.modules.system._uninstall import SystemOfflineUninstall
 from heinzel.modules.system._update import UpdateService
 from heinzel.modules.system.config._service import ConfigService
 
+
+def render_channel(report: ChannelReport) -> RenderableType:
+    """The channel and what a switch changes, with how to confirm one that hasn't happened."""
+    from heinzel.modules.system._render import render_channel  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_channel(report)
+
+
+def render_info(info: SystemInfo) -> RenderableType:
+    """An overview panel, the modules, plugin errors and the module sections."""
+    from heinzel.modules.system._render import render_info  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_info(info)
+
+
+def render_modules(modules: list[ModuleInfo]) -> RenderableType:
+    """A table of modules and their lets."""
+    from heinzel.modules.system._render import render_modules  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_modules(modules)
+
+
+def render_release(check: ReleaseCheck) -> RenderableType:
+    """One line: the update and where to read about it, that this is the latest, or why nobody could tell."""
+    from heinzel.modules.system._render import render_release  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_release(check)
+
+
+def render_update(result: UpdateResult) -> RenderableType:
+    """What the update did, or what the installation is pinned to and the command that moves it."""
+    from heinzel.modules.system._render import render_update  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_update(result)
+
+
 module = Module("system", "Inspect, configure, diagnose and update Heinzelmännchen itself.", essential=True)
 module.service(SystemService)
+module.service(OfflineUninstall, SystemOfflineUninstall)
 module.service(CoreMetadataVerifier, CoreMetadataIdentity)
 
 
 def _update_service(installation: Installation, releases: ReleaseSource, kernel: Kernel) -> UpdateService:
     lifecycle = kernel.resolve(DaemonInstallationLifecycle) if kernel.provides(DaemonInstallationLifecycle) else None
-    return UpdateService(installation, releases, lifecycle=lifecycle, require_lifecycle=True)
+    web = kernel.resolve(WebHeadRefresh) if kernel.provides(WebHeadRefresh) else None
+    return UpdateService(
+        installation, releases, lifecycle=lifecycle, require_lifecycle=True, web=web, progress=kernel.resolve(Progress)
+    )
 
 
 module.service(UpdateService, _update_service)
 module.service(ReleaseSource, github_releases)  # what the CLI's hourly update check asks
 module.service(PluginReleases, plugin_releases)  # what automatic updates ask about plugins (ADR 0116)
+
+# The baseline of the standard app (ADR 0112); installing them never signs anyone in.
+module.prerequisite(
+    "git",
+    title="Git",
+    purpose="Clones team repositories and plugin sources and keeps shared state in version control.",
+    when="install",
+    macos=Homebrew("git"),
+    requires_apple_developer_tools=True,
+    linux=ManualInstall(
+        "Install Git with your distribution's package manager, e.g. `sudo apt install git` or `sudo dnf install git`.",
+        "https://git-scm.com/downloads/linux",
+    ),
+)
+module.prerequisite(
+    "gh",
+    title="GitHub CLI",
+    purpose="Reads team rosters and plugin sources on GitHub and opens pull requests as you; "
+    "sign in separately with `gh auth login`.",
+    when="install",
+    macos=Homebrew("gh"),
+    linux=ManualInstall(
+        "Install the GitHub CLI for your distribution (https://github.com/cli/cli/blob/trunk/docs/install_linux.md).",
+        "https://cli.github.com",
+    ),
+)
 
 
 @module.operation(render=render_info)
@@ -85,8 +156,8 @@ def update(
         Literal["stable", "edge", "main", "release"] | None,
         Field(
             description="Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the "
-            "newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; "
-            "or `main`: its newest commit."
+            "newest published stable release, also from `main` or edge once it is as new; `edge`: the newest edge "
+            "release; or `main`: its newest commit."
         ),
     ] = None,
 ) -> UpdateResult:
@@ -105,14 +176,45 @@ def update(
     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
     version, the error names it and the previous version stays installed.
 
+    Why it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)
+    run in the web server. About every 30 minutes it looks for the newest published stable release (not a draft or
+    prerelease) and installs it once it is `auto_update_min_age_hours` old (plugins:
+    `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait. The desktop
+    app is not part of the tool: it updates itself at the web server's next automatic update check, or now with
+    `hz app install`. The output says which applies.
+
+    Each step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds
+    only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so
+    the output still parses.
+
     Raises:
         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
     """
-    return service.update(source, channel=channel or kernel.settings.update_channel)
+    settings = kernel.settings
+    automatic = AutomaticUpdates(
+        enabled=settings.auto_update,
+        check_every_minutes=AUTOMATIC_CHECK_MINUTES,
+        core_min_age_hours=settings.auto_update_min_age_hours,
+        plugin_min_age_hours=settings.auto_update_plugin_min_age_hours,
+    )
+    result = service.update(source, channel=channel or settings.update_channel)
+    return result.model_copy(update={"automatic": automatic})
+
+
+AUTOMATIC_CHECK_MINUTES = 30
+"""How often the web server checks for updates (`heinzel.heads.web._auto_update.CHECK_EVERY`; a test checks)."""
+
+
+@module.operation(read_only=False, heads={"cli"}, audience="everyday")
+def uninstall() -> UninstallResult:
+    """Uninstall the verified Heinzel tool offline, keeping your data and configuration."""
+    from heinzel.modules.system._uninstall import uninstall_installation  # noqa: PLC0415 - only explicit offline removal
+
+    return uninstall_installation()
 
 
 @module.operation(private=True, read_only=False, heads={"auto-update"}, audience="everyday")
-def apply_announced(
+def apply_announced(  # noqa: PLR0913, PLR0917 - the services and each part of the announcement
     service: UpdateService,
     kernel: Kernel,
     core: Annotated[str | None, Field(description="The announced hz version; none to keep the running one.")] = None,
@@ -120,6 +222,10 @@ def apply_announced(
         list[str], Field(description="Each announced plugin as `name==version`; every other plugin stays.")
     ] = [],  # noqa: B006 - never changed
     commit: Annotated[str | None, Field(description="The commit hz's tag named when it was announced.")] = None,
+    plugin_commits: Annotated[
+        list[str],
+        Field(description="Each announced plugin pinned to a GitHub commit as `name@commit`, its tag's commit then."),
+    ] = [],  # noqa: B006 - never changed
 ) -> AnnouncedUpdate:
     """Install exactly the announced versions for automatic updates, or put everything back.
 
@@ -136,6 +242,7 @@ def apply_announced(
         core=core,
         plugins=dict(item.split("==", 1) for item in plugins),
         commit=commit,
+        plugin_commits=dict(item.split("@", 1) for item in plugin_commits),
         exclude_newer=now - timedelta(hours=settings.auto_update_plugin_min_age_hours),
         exclude_newer_core=now - timedelta(hours=settings.auto_update_min_age_hours),
     )

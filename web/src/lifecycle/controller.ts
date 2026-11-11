@@ -35,7 +35,9 @@ export type ApplyFailure =
   | "timeout"
   | "version"
   | "configuration"
-  | "aborted";
+  | "aborted"
+  /** The retiring server kept answering past its shutdown grace: no restart happened, so applying again is safe. */
+  | "stale";
 
 export class RestartApplyError extends Error {
   constructor(
@@ -57,8 +59,11 @@ export type ApplyOptions = {
   /** Long-running confirmed work performed before restart, such as rebuilding the plugin environment. */
   preserveTimeout?: number;
   interval?: number;
+  /** How long the retired server may keep answering before the restart counts as not having happened. */
+  staleAfter?: number;
   onPhase?: (phase: ApplyPhase) => void;
   onObservation?: (observation: RestartObservation) => void;
+  onAcknowledged?: (observation: RestartObservation) => void;
 };
 
 function abortReason(signal: AbortSignal): Error {
@@ -184,12 +189,20 @@ async function observeUntil(
   let message = t("lifecycle.timeout");
   const request = <T>(run: (signal: AbortSignal) => Promise<T>) =>
     bounded(run, signal, options.requestTimeout ?? 4_000);
+  // A server that accepted a restart stops answering within its few-second shutdown grace. One that keeps answering
+  // never restarted (the request was lost, refused or cancelled before it was sent), and waiting longer can't help.
+  let retiredSince: number | undefined;
   try {
     for (;;) {
       options.onPhase?.("reconnecting");
       try {
         const running = checkedLifecycle(await request((signal) => transport.read(signal)));
-        if (!observation.retired.includes(running.instance)) {
+        if (observation.retired.includes(running.instance)) {
+          retiredSince ??= Date.now();
+          if (Date.now() - retiredSince >= (options.staleAfter ?? 15_000))
+            throw new RestartApplyError("stale", t("lifecycle.notRestarted"), observation);
+        } else {
+          retiredSince = undefined;
           options.onPhase?.("verifying");
           if (running.version !== observation.version) {
             reason = "version";
@@ -217,6 +230,7 @@ async function observeUntil(
         }
       } catch (error) {
         if (!transient(error)) throw error;
+        retiredSince = undefined;
       }
       await bounded(
         (signal) =>
@@ -229,6 +243,7 @@ async function observeUntil(
       );
     }
   } catch (error) {
+    if (error instanceof RestartApplyError) throw error;
     if (signal.aborted) {
       if (options.signal?.aborted) throw new RestartApplyError("aborted", t("lifecycle.stopped"), observation);
       throw new RestartApplyError(reason, message, observation);
@@ -294,11 +309,13 @@ export function restartAndApply(
     if (!restartRequired) return before;
     options.onObservation?.(observation);
     options.onPhase?.("restarting");
+    let acknowledged = false;
     try {
       const answer = await bounded((signal) => transport.restart(signal), signal, options.requestTimeout ?? 4_000);
       if (answer.restarting !== true || typeof answer.instance !== "string" || !answer.instance.trim())
         throw new Error(t("lifecycle.noAcknowledgement"));
       if (!observation.retired.includes(answer.instance)) observation.retired.push(answer.instance);
+      acknowledged = true;
     } catch (error) {
       if (!transient(error) && !signal.aborted)
         throw new RestartApplyError(
@@ -307,6 +324,17 @@ export function restartAndApply(
           observation,
         );
       // A lost acknowledgement has an unknown outcome. Observe; never replay a potentially accepted mutation.
+    }
+    if (acknowledged) {
+      try {
+        options.onAcknowledged?.(observation);
+      } catch (error) {
+        throw new RestartApplyError(
+          "refused",
+          error instanceof Error ? error.message : t("lifecycle.restartOutcomeUnknown"),
+          observation,
+        );
+      }
     }
     return observe(observation, options, signal);
   });

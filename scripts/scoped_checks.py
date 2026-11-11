@@ -11,13 +11,25 @@ only `web/` runs the web checks; changes that touch neither `web/` nor `desktop/
 `make check-fast` without the web app's tests and the managed backend's check, with the type checks added and the unit
 tests narrowed to the ones related to the change (`scripts/related_tests.py`; configuration, the lockfile and
 `conftest.py` cannot be mapped and run all of them); anything else runs `make check-fast` in full. `make check-fast` by
-hand stays the full run. CI always runs the full gate, so nothing goes unchecked, only later.
+hand stays the full run. CI runs reviewed focused workloads and reserves the full suite for release candidates.
+
+For a scoped web push, set WEB_TEST_FILES to a space-separated list of existing repo-relative Vitest files,
+for example `WEB_TEST_FILES=web/src/sound/StreamPlayer.test.tsx git push`. Leave it unset to run all web tests.
+
+For an independently reviewed Python push scope, HZ_LOCAL_TEST_SCOPE names a bounded private JSON packet and
+HZ_LOCAL_TEST_SCOPE_SHA256 pins its reviewed bytes. The packet has schema=1, exact base/head/tree, owning selectors,
+and hosted_only selectors. The latter must be precisely the prohibited desktop file selections, retained for hosted
+proof. The caller obtains independent scope review before supplying the digest; the digest binds bytes, not reviewer
+identity. --show-python-push-plan validates that same packet and prints the unchanged guards and resulting Make argv.
+No packet means the existing import-graph selection. This input never authorizes a hosted or coverage acceptance.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -112,6 +124,37 @@ WEB_STEPS = [  # WEB_LINT, WEB_TYPES and WEB_TESTS of the Makefile
     f"&web-types={WEB} exec node node_modules/@typescript/native/bin/tsc --noEmit -p .",
     f"&web-tests={WEB} exec vitest run",
 ]
+WEB_TEST_SUFFIXES = {"src": (".test.ts", ".test.tsx"), "e2e": (".test.mjs",)}
+
+
+def web_test_step(files: str | None) -> str:
+    """Build the Vitest step from explicit checkout files, with no shell or Vitest options from the caller.
+
+    Raises:
+        ValueError: If the opt-in is empty or any entry is outside the web test inventory.
+    """
+    if files is None:
+        return WEB_STEPS[-1]
+    targets = []
+    for file in files.split():
+        root, _, relative = file.partition("/")
+        area, _, test = relative.partition("/")
+        if (
+            root != "web"
+            or not test.endswith(WEB_TEST_SUFFIXES.get(area, ()))
+            or any(not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*", part) for part in test.split("/"))
+        ):
+            msg = "WEB_TEST_FILES must list repo-relative web/src/*.test.ts(x) or web/e2e/*.test.mjs files"
+            raise ValueError(msg)
+        path = ROOT / file
+        if not path.is_file() or path.resolve() != path:
+            msg = f"WEB_TEST_FILES must name an existing web test file: {file}"
+            raise ValueError(msg)
+        targets.append(f"./{relative}")
+    if not targets:
+        msg = "WEB_TEST_FILES is empty. Unset it for the default web test run."
+        raise ValueError(msg)
+    return f"{WEB_STEPS[-1]} --maxWorkers=2 {' '.join(targets)}"
 
 
 def is_document(path: str) -> bool:
@@ -156,7 +199,7 @@ def docs_steps(tooling: list[str]) -> list[str]:
     ]
 
 
-def scoped_steps(changed: list[str]) -> list[str] | None:
+def scoped_steps(changed: list[str], *, web_test_files: str | None = None) -> list[str] | None:
     """Steps for a branch of documents, their tooling and web files only, or None when the full gate must run."""
     web = [path for path in changed if path.startswith("web/") and not is_document(path)]
     tooling = [path for path in changed if is_docs_tooling(path)]
@@ -167,7 +210,7 @@ def scoped_steps(changed: list[str]) -> list[str] | None:
     if documents or tooling:
         steps += docs_steps(tooling)
     if web:
-        steps += [f"web-prepare={WEB} prepare", *WEB_STEPS]
+        steps += [f"web-prepare={WEB} prepare", *WEB_STEPS[:-1], web_test_step(web_test_files)]
     return steps
 
 
@@ -183,7 +226,7 @@ def touches_web(changed: list[str]) -> bool:
 TYPES = '"&mypy=uv run mypy" "&pyright=uv run pyright"'
 
 
-def python_overrides(changed: list[str]) -> list[str]:
+def python_overrides(changed: list[str], selected: list[str] | None = None) -> list[str]:
     """Make variables for the pre-push run of `check-fast`: no web steps, the type checks, the related unit tests.
 
     A change that cannot be mapped to tests (configuration, the lockfile, `conftest.py`) keeps the full unit run. When
@@ -193,7 +236,7 @@ def python_overrides(changed: list[str]) -> list[str]:
     sys.path.insert(0, str(ROOT / "scripts"))
     from related_tests import related_tests  # noqa: PLC0415 - only the hook needs the import graph
 
-    related = related_tests(changed)
+    related = selected if selected is not None else related_tests(changed)
     if related is None:
         return overrides
     if not related:
@@ -201,59 +244,332 @@ def python_overrides(changed: list[str]) -> list[str]:
     return [*overrides, f"UNIT_TARGETS={' '.join(related)}"]
 
 
+LOCAL_SCOPE_MAX = 32 * 1024
+LOCAL_SCOPE_SELECTORS = 64
+LOCAL_SELECTOR = re.compile(r"tests/unit/[A-Za-z0-9_/-]+_test\.py(?:::[A-Za-z0-9_]+(?:\[[A-Za-z0-9_.,=+-]+\])?)*")
+HOSTED_ONLY_TESTS = frozenset({"tests/unit/heads/desktop_installation_test.py"})
+
+
+def _scope_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            msg = "duplicate local scope field"
+            raise ValueError(msg)
+        result[key] = value
+    return result
+
+
+def local_python_scope(changed: list[str], base: str) -> tuple[list[str], list[str]] | None:
+    """Bind a reviewed local selector packet; hosted-only tests remain explicit obligations.
+
+    HZ_LOCAL_TEST_SCOPE names a private JSON packet; HZ_LOCAL_TEST_SCOPE_SHA256 pins the independently reviewed bytes.
+    This is local push configuration only, never hosted admission, coverage or acceptance evidence.
+
+    Raises:
+        ValueError: The packet is stale, ambiguous, unbounded or outside the owning Python unit-test selection.
+    """
+    name = os.environ.get("HZ_LOCAL_TEST_SCOPE")
+    digest = os.environ.get("HZ_LOCAL_TEST_SCOPE_SHA256")
+    if name is None and digest is None:
+        return None
+    if not name or not digest or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        msg = "local scope requires both a packet path and its reviewed SHA256"
+        raise ValueError(msg)
+    if not changed or touches_web(changed) or all(path.startswith("plugins/") for path in changed):
+        msg = "local scope is only supported for the owning Python push lane"
+        raise ValueError(msg)
+    packet = _local_scope_packet(name, digest, base)
+    return _local_scope_selection(packet, changed)
+
+
+def _local_scope_packet(name: str, digest: str, base: str) -> dict:
+    """Read bounded reviewed bytes and require the exact unchanged checkout.
+
+    Raises:
+        ValueError: The packet is ambiguous, stale or does not match the reviewed digest.
+    """
+    with Path(name).open("rb") as stream:
+        data = stream.read(LOCAL_SCOPE_MAX + 1)
+    if not 0 < len(data) <= LOCAL_SCOPE_MAX or hashlib.sha256(data).hexdigest() != digest:
+        msg = "local scope size or reviewed digest mismatch"
+        raise ValueError(msg)
+    packet = json.loads(data, object_pairs_hook=_scope_object)
+    if not isinstance(packet, dict) or set(packet) != {"schema", "base", "head", "tree", "owning", "hosted_only"}:
+        msg = "invalid local scope fields"
+        raise ValueError(msg)
+    if (
+        type(packet["schema"]) is not int
+        or packet["schema"] != 1
+        or packet["base"] != base
+        or packet["head"] != resolve_base("HEAD")
+        or packet["tree"] != resolve_tree()
+    ):
+        msg = "local scope differs from exact base/head/tree"
+        raise ValueError(msg)
+    dirty = subprocess.check_output(["git", "diff", "HEAD", "--name-only"], cwd=ROOT, text=True, timeout=30)  # noqa: S607
+    if dirty.strip():
+        msg = "local scope requires unchanged tracked source"
+        raise ValueError(msg)
+    return packet
+
+
+def _local_scope_selection(packet: dict, changed: list[str]) -> tuple[list[str], list[str]]:
+    """Keep permitted owning checks local and list every hosted-only obligation.
+
+    Raises:
+        ValueError: A selector or hosted obligation is absent, unsafe or outside the owning scope.
+    """
+    owning, hosted = packet["owning"], packet["hosted_only"]
+    if not isinstance(owning, list) or not 0 < len(owning) <= LOCAL_SCOPE_SELECTORS or not isinstance(hosted, list):
+        msg = "local scope requires bounded owning selectors and hosted obligations"
+        raise ValueError(msg)
+    if any(not isinstance(item, str) or not LOCAL_SELECTOR.fullmatch(item) for item in owning + hosted):
+        msg = "local scope contains an invalid selector"
+        raise ValueError(msg)
+    if len(set(owning)) != len(owning) or len(set(hosted)) != len(hosted):
+        msg = "local scope repeats a selector"
+        raise ValueError(msg)
+    expected_hosted = [item for item in owning if item.split("::", 1)[0] in HOSTED_ONLY_TESTS]
+    if hosted != expected_hosted:
+        msg = "local scope must retain exactly every prohibited file as a hosted-only obligation"
+        raise ValueError(msg)
+    selected = [item for item in owning if item not in hosted]
+    if not selected:
+        msg = "local scope has no permitted local owning checks"
+        raise ValueError(msg)
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from related_tests import related_tests  # noqa: PLC0415 - the push lane owns this import graph
+
+    related = related_tests(changed)
+    paths = {item.split("::", 1)[0] for item in owning}
+    changed_tests = {path for path in changed if path.startswith("tests/unit/") and path.endswith("_test.py")}
+    if related is None or not paths <= set(related) or not changed_tests <= paths:
+        msg = "local scope omits a changed test or includes a test outside the owning import graph"
+        raise ValueError(msg)
+    for path in paths:
+        candidate = ROOT / path
+        if not candidate.is_file() or candidate.is_symlink() or not candidate.resolve().is_relative_to(ROOT.resolve()):
+            msg = "local scope test path is absent or escapes the checkout"
+            raise ValueError(msg)
+    return selected, hosted
+
+
+def resolve_tree() -> str:
+    """Read the exact committed tree for local scope binding."""
+    return subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True, timeout=30).strip()  # noqa: S607
+
+
+def early_guard_commands(changed: list[str]) -> list[list[str]]:
+    """Existing owning assertions, before preparation; none replace a full-gate step.
+
+    The partition guard collects E2E inventory but selects only integration bodies. Guides parse the CLI tree
+    without invoking documented commands. These checks never start product services or access accounts.
+    """
+    if changed and all(path.startswith("plugins/") for path in changed):
+        return []
+    fixture = any(
+        path.startswith(("tests/", "template/")) or path.endswith((".py", ".sh", ".jinja")) for path in changed
+    )
+    guides = any(
+        (path.startswith("docs/guides/") and path.endswith(".md"))
+        or path == "tests/integration/guides_test.py"
+        or (
+            path.startswith(("src/heinzel/heads/cli/", "src/heinzel/modules/", "src/heinzel/kernel/"))
+            and path.endswith(".py")
+        )
+        for path in changed
+    )
+    ci = any(
+        path
+        in {
+            "Makefile",
+            "pyproject.toml",
+            "uv.lock",
+            "tests/_e2e_lanes.py",
+            "tests/_e2e_schedule.py",
+            "tests/conftest.py",
+            "scripts/scoped_checks.py",
+        }
+        or path.startswith((".github/workflows/", ".github/actions/", "tests/e2e/"))
+        or path
+        in {
+            "tests/unit/browser_runtime_setup_test.py",
+            "tests/unit/ci_test.py",
+            "tests/unit/ci_supervised_test.py",
+            "tests/unit/web_build_test.py",
+            "tests/integration/e2e_lane_partition_test.py",
+        }
+        for path in changed
+    )
+    targets = []
+    if fixture:
+        targets.append("tests/unit/standards_test.py::test_tests_and_template_use_only_variables_something_reads")
+    if guides:
+        targets.append("tests/integration/guides_test.py")
+    if ci:
+        targets += ["tests/unit/browser_runtime_setup_test.py", "tests/unit/ci_supervised_test.py"]
+        targets += ["tests/unit/ci_test.py", "tests/unit/web_build_test.py"]
+    commands = [["uv", "run", "pytest", *targets, "-n", "2", "-x", "-q", "--session-timeout=120"]] if targets else []
+    if ci:
+        commands.append(
+            [
+                "uv",
+                "run",
+                "pytest",
+                "tests/integration/e2e_lane_partition_test.py",
+                "tests/e2e",
+                "-m",
+                "integration",
+                "-n",
+                "2",
+                "-x",
+                "-q",
+                "--session-timeout=120",
+            ]
+        )
+    return commands
+
+
+MODES = ("fast", "preflight", "push", "early-fast", "early-preflight")
+GATE_MAX_WAIT = 3600  # waiting for a host slot does not count against the check's runtime limit
+
+
+def run_check(
+    command: list[str], *, timeout: int, light: bool = False, check: bool = True, capture_output: bool = False
+) -> subprocess.CompletedProcess[str]:
+    """Run the selected check through the optional host queue, with its own runtime limit."""
+    gate = shutil.which("hz-gate")
+    if gate is None or not Path(gate).is_absolute():
+        return subprocess.run(  # noqa: S603 - fixed check commands and validated operands
+            command, check=check, timeout=timeout, capture_output=capture_output, text=True
+        )
+    env = os.environ.copy()
+    try:
+        requested_wait = int(os.environ.get("HZ_GATE_MAX_WAIT", ""))
+    except ValueError:
+        requested_wait = GATE_MAX_WAIT
+    queue_wait = min(requested_wait, GATE_MAX_WAIT) if requested_wait > 0 else GATE_MAX_WAIT
+    env["HZ_GATE_MAX_WAIT"] = str(queue_wait)
+    if light:
+        env["HZ_GATE_LIGHT"] = "1"
+    else:
+        env.pop("HZ_GATE_LIGHT", None)
+    # The host enforces separate queue and runtime limits. The outer watchdog allows both
+    # the optional pre-push lock wait and the slot wait, plus time for launcher startup.
+    return subprocess.run(  # noqa: S603 - absolute gate, fixed check commands and validated operands
+        [gate, "--timeout", str(timeout), *command],
+        env=env,
+        check=check,
+        capture_output=capture_output,
+        text=True,
+        timeout=2 * queue_wait + timeout + 10,
+    )
+
+
+def run_early_guards(changed: list[str], *, light: bool = False) -> None:
+    """Fail before the caller can launch an expensive full-check command."""
+    for command in early_guard_commands(changed):
+        run_check(command, timeout=180, light=light)
+
+
+def run_scoped_push(changed: list[str], parser: argparse.ArgumentParser) -> None:
+    """Run the pre-push guards and the docs or web steps when they cover the branch."""
+    light = bool(changed) and all(is_document(path) for path in changed)
+    run_early_guards(changed, light=light)
+    try:
+        steps = scoped_steps(changed, web_test_files=os.environ.get("WEB_TEST_FILES"))
+    except ValueError as error:
+        parser.error(str(error))
+    if steps:
+        command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
+        sys.exit(run_check(command, check=False, timeout=600, light=light).returncode)
+
+
+def configured_python_selection(
+    parser: argparse.ArgumentParser, changed: list[str], base: str, *, show: bool
+) -> list[str] | None:
+    """Use the same validated command for the read-only preview and normal push."""
+    try:
+        local_scope = local_python_scope(changed, base)
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        parser.error(str(error))
+    if show:
+        if local_scope is None:
+            parser.error("--show-python-push-plan requires an explicit reviewed local scope")
+        print(
+            json.dumps(
+                {
+                    "early_guards": early_guard_commands(changed),
+                    "check": ["make", "check-fast", *python_overrides(changed, local_scope[0])],
+                    "hosted_only": local_scope[1],
+                },
+                sort_keys=True,
+            )
+        )
+        sys.exit(0)
+    return local_scope[0] if local_scope else None
+
+
 def main() -> None:
     """Preserve core checks and common policies while selecting independent owning plugin work."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["fast", "preflight", "push"])
+    parser.add_argument("mode", choices=MODES)
     parser.add_argument("--base", default="origin/main")
+    parser.add_argument(
+        "--show-python-push-plan",
+        action="store_true",
+        help="validate explicit local scope and print the normal commands without running them",
+    )
     args = parser.parse_args()
+    if args.show_python_push_plan and args.mode != "push":
+        parser.error("--show-python-push-plan requires push")
+    early = args.mode.startswith("early-")
+    if early:
+        args.mode = args.mode.removeprefix("early-")
     try:
-        base = resolve_base(args.base) if args.mode in ("preflight", "push") else "HEAD"
+        base = resolve_base(args.base) if early or args.mode in ("preflight", "push") else "HEAD"
     except (ValueError, subprocess.CalledProcessError):
         parser.error("Use a valid commit revision for --base")
-    changed = changed_paths(args.mode, base)
+    changed = changed_paths("preflight" if early else args.mode, base)
+    if early:
+        changed = sorted({*changed, *changed_paths("fast", base)})
+        run_early_guards(changed)
+        return
     base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if args.mode == "push":
         changed = sorted({*changed, *changed_paths("fast", base)})
-        steps = scoped_steps(changed)
-        if steps:
-            command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
-            done = subprocess.run(command, check=False, timeout=600)  # noqa: S603
-            sys.exit(done.returncode)
+        selected = configured_python_selection(parser, changed, base, show=args.show_python_push_plan)
+        run_scoped_push(changed, parser)
         if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
             # Python, scripts, tests and documents: everything of the fast gate but the web app's tests and the managed
             # backend's check, which read nothing of it (the generated client is still checked by web-lint).
-            command = ["make", "check-fast", *python_overrides(changed)]
-            sys.exit(subprocess.run(command, check=False, timeout=1800).returncode)  # noqa: S603
+            command = ["make", "check-fast", *python_overrides(changed, selected)]
+            sys.exit(run_check(command, check=False, timeout=1800).returncode)
         args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):
-        subprocess.run(  # noqa: S603 - explicit owning commands, no shell
-            # Make from PATH
-            ["make", "preflight" if args.mode == "preflight" else "check-fast", *base_arguments],  # noqa: S607
-            check=True,
+        run_check(
+            ["make", "preflight" if args.mode == "preflight" else "check-fast", *base_arguments],
             timeout=1800 if args.mode == "preflight" else 300,
         )
         return
     toolkit = [sys.executable, str(Path(__file__).with_name("plugin_tooling.py")), "--toolkit", TOOLKIT, "hz-plugin"]
     if args.mode == "fast":
-        subprocess.run([*toolkit, "check-changed", "--changed", *changed], check=True, timeout=300)  # noqa: S603 - pinned toolkit, literal paths
+        run_check([*toolkit, "check-changed", "--changed", *changed], timeout=300)
         return
     # These policies apply to plugin source too; no core build, native job or test suite runs.
     # Shared policy targets
-    subprocess.run(["make", "commits", "secrets", *base_arguments], check=True, timeout=120)  # noqa: S603, S607
-    subprocess.run(
-        [sys.executable, "scripts/check_confidentiality.py"],
-        check=True,
-        timeout=120,
-    )
-    plan = json.loads(
-        subprocess.check_output([*toolkit, "plan", "--changed", *changed], text=True, timeout=60)  # noqa: S603 - pinned metadata-only planner
-    )
-    for project in plan["include"]:
-        subprocess.run([*toolkit, "preflight", project["name"]], check=True, timeout=1800)  # noqa: S603 - canonical names from the pinned planner
+    run_check(["make", "commits", "secrets", *base_arguments], timeout=120)
+    run_check([sys.executable, "scripts/check_confidentiality.py"], timeout=120)
+    plan = run_check([*toolkit, "plan", "--changed", *changed], timeout=60, capture_output=True)
+    for project in json.loads(plan.stdout)["include"]:
+        run_check([*toolkit, "preflight", project["name"]], timeout=1800)
 
 
 if __name__ == "__main__":
     # Git runs hooks at the repository root; explicit cwd also supports direct invocation elsewhere.
     os.chdir(Path(__file__).resolve().parents[1])
-    main()
+    try:
+        main()
+    except subprocess.CalledProcessError as error:
+        sys.exit(error.returncode)

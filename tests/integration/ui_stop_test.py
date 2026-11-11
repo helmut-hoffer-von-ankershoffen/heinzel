@@ -38,7 +38,7 @@ from pathlib import Path
 from heinzel.heads import web
 from heinzel.heads.cli import main
 web.serve = functools.partial(web.serve, static=Path(sys.argv[1]))
-sys.argv = ["hz", "ui", "--no-browser", "--port", "0"]
+sys.argv = ["hz", "ui", "serve", "--no-browser", "--port", "0"]
 main()
 """
 """`hz ui` itself, with the built app swapped for a made-up one, so the test needs no `make web-build`."""
@@ -118,7 +118,7 @@ def test_ctrl_c_before_the_server_is_up_still_stops_with_the_friendly_line(make_
         raise KeyboardInterrupt
 
     monkeypatch.setattr(web, "serve", interrupted)
-    result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ui", "--no-browser"])
+    result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ui", "serve", "--no-browser"])
     assert result.exit_code == 0
     assert result.stderr.strip() == UI_STOPPED
 

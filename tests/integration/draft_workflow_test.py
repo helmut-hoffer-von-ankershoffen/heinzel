@@ -1,0 +1,512 @@
+"""Captured SDK doubles exercise the real standing-draft host; no live account or external message is used."""
+
+import sys
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+import pytest
+
+from heinzel import Config, CurrentUser, HeinzelError
+from heinzel.kernel import boot
+from heinzel.kernel._approval import ApprovalConfirmation
+from heinzel.modules.heinzel._draft_workflow_journal import grant_payload
+from heinzel.modules.heinzel._draft_workflow_models import DraftPublicationRequest
+from heinzel.modules.heinzel._draft_workflow_publication import DraftWorkflowPublication
+from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._user_chat import UserChatService
+from tests._source_distribution_fixture import installed_entry
+from tests.unit.modules.user_chat_test import FixtureConfig, fake_claude
+
+pytestmark = pytest.mark.integration
+
+SOURCE = r"""
+import hashlib
+from heinzel import (
+    Module, ReleaseFeedService, ReleaseFeedLease, ReleaseFeedIdentity, ReleaseFeedBaseline, ReleasePage,
+    DraftAppendService, DraftAppendLease, DraftAppendTarget, DraftAppendReview, DraftAppendReceipt,
+    DraftSectionSnapshot, OwnerNoticeChannel, OwnerNoticeTarget, ReviewedLinkChannel, ChannelTarget, ChannelReceipt,
+)
+_STATE = {"releases": [], "revision": 1, "document": "", "drafts": {}, "appends": 0,
+          "notices": [], "shares": [], "account": "document-account", "source": "document-source",
+          "feed_account": "feed-account", "destination": "chosen-channel", "notice_actor": "owner-one"}
+
+class Feed(ReleaseFeedService):
+    supported_operations = frozenset({"release-feed"})
+    def open_lease(self, reference):
+        class Lease(ReleaseFeedLease):
+            def baseline(self):
+                return ReleaseFeedBaseline(identity=ReleaseFeedIdentity(
+                    account=_STATE["feed_account"], source="feed-source", reference=reference, read_scope="release-read"
+                ), cursor=str(len(_STATE["releases"])))
+            def poll(self, cursor):
+                return ReleasePage(identity=self.baseline().identity, cursor=str(len(_STATE["releases"])),
+                                   releases=tuple(_STATE["releases"][int(cursor):]))
+            def close(self):
+                if _STATE.get("feed_close_failure"): raise OSError("secret-sentinel-feed-close")
+        return Lease()
+
+class Append(DraftAppendService):
+    supported_operations = frozenset({"append-marked-draft"})
+    def target(self, reference, section):
+        return DraftAppendTarget(account=_STATE["account"], source=_STATE["source"], reference=reference,
+            resource_id="document-one", section=_STATE.get("section", section), revision=str(_STATE["revision"]),
+            write_scope="conditional-draft-append", conditional_append=True)
+    def open_lease(self, attempt):
+        provider = self
+        class Lease(DraftAppendLease):
+            def review(self):
+                return DraftAppendReview(draft_key=attempt.draft_key,
+                    target=provider.target(attempt.target.reference, attempt.target.section),
+                    text_sha256=hashlib.sha256(attempt.text.get_secret_value().encode()).hexdigest(), append_only=True)
+            def append(self):
+                assert self.review().target == attempt.target
+                _STATE["appends"] += 1
+                _STATE["document"] += attempt.text.get_secret_value()
+                _STATE["drafts"][attempt.draft_key] = attempt.text.get_secret_value()
+                _STATE["revision"] += 1
+                if _STATE.get("append_lost_ack"): raise OSError("secret-sentinel-append")
+                return DraftAppendReceipt(draft_key=attempt.draft_key, reference=attempt.target.reference,
+                                          revision=str(_STATE["revision"]))
+            def close(self):
+                if _STATE.get("append_close_failure"): raise OSError("secret-sentinel-append-close")
+        return Lease()
+    def capture(self, target, draft_key):
+        return DraftSectionSnapshot(draft_key=draft_key, target=self.target(target.reference, target.section),
+                                    text=_STATE["drafts"][draft_key])
+
+class PrivateNotice(OwnerNoticeChannel):
+    name = "fixture-private"
+    supported_operations = frozenset({"private-owner-notice"})
+    def available(self): return True
+    def owner_target(self):
+        return OwnerNoticeTarget(account="notice-account", destination="owner-inbox", scope="private-notice",
+                                 owner_actor=_STATE["notice_actor"], private_owner=True)
+    def deliver_owner_reviewed(self, notice, target):
+        assert target == self.owner_target()
+        _STATE["notices"].append(notice)
+        if _STATE.get("notice_lost_ack"): raise OSError("secret-sentinel-notice")
+        return ChannelReceipt(channel=self.name, status="delivered", reference="notice-" + str(len(_STATE["notices"])))
+
+class LinkShare(ReviewedLinkChannel):
+    name = "fixture-publication"
+    supported_operations = frozenset({"reviewed-document-link"})
+    def available(self): return True
+    def delivery_target(self):
+        return ChannelTarget(account="share-account", destination=_STATE["destination"], scope="post-document-link")
+    def deliver_link_reviewed(self, notice, target):
+        assert target == self.delivery_target()
+        _STATE["shares"].append(notice)
+        if _STATE.get("share_lost_ack"): raise OSError("secret-sentinel-share")
+        return ChannelReceipt(channel=self.name, status="delivered", reference="share-" + str(len(_STATE["shares"])))
+
+class Documents:
+    def read(self, ref): return None
+class CodeHost:
+    def merged_pull_requests(self, repository, window): return []
+module = Module("workflowfixture", "Isolated standing draft SDK fixture")
+module.service(Feed)
+module.service(Append)
+module.service(PrivateNotice)
+module.service(LinkShare)
+module.provides("documents", name="fixture", modes={"read"})(Documents)
+module.provides("code-host", name="fixture", modes={"read"})(CodeHost)
+"""
+
+
+@pytest.fixture
+def workflow(tmp_path, monkeypatch, settings):
+    from heinzel.kernel import _discovery
+
+    package = "fixture_workflow_" + uuid4().hex
+    root = tmp_path / package
+    root.mkdir()
+    (root / "__init__.py").write_text(SOURCE)
+    monkeypatch.setattr(
+        _discovery, "entry_points", lambda **_kwargs: [installed_entry(root, "workflowfixture", package, declared=True)]
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    features = frozenset({"connected_frontdoor", "connected_channels"})
+    config = Config(
+        files=(),
+        data={"capabilities": {"documents": "fixture", "code-host": "fixture"}, "hz": {"features": sorted(features)}},
+    )
+    monkeypatch.setattr(Config, "load", classmethod(lambda _cls, _cwd=None: config))
+    kernel = boot(settings.model_copy(update={"features": features}))
+    current = CurrentUser(tmp_path / "identity")
+    kernel.bind(CurrentUser, current)
+    chat = kernel.resolve(UserChatService)
+    executable = fake_claude(tmp_path)
+    monkeypatch.setattr(chat, "_load", lambda: FixtureConfig(executable))
+    crud = kernel.resolve(SessionCrud)
+    # The journey exercises replay/cleanup, not the wall-clock race at a cron
+    # boundary. Keep the host and its durable journal on one explicit instant.
+    now = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    monkeypatch.setattr(crud, "clock", lambda: now)
+    monkeypatch.setattr(crud.repository, "clock", lambda: now)
+    provider = sys.modules[package]
+    with current.local("cli"):
+        session = crud.new_chat(
+            "turing", "Turing", initial_message="Draft each new release's poem for my review."
+        ).session_id
+        host = DraftWorkflowPublication(crud, current, kernel, chat)
+        request = DraftPublicationRequest(
+            request_id="publication-one",
+            name="Turing",
+            prompt="Draft each new release's poem for my review.",
+            feed_reference="https://fixture.invalid/changelog",
+            document_reference="https://fixture.invalid/document",
+            section="poems",
+            publication_channel="fixture-publication",
+            notice_channel="fixture-private",
+        )
+        yield host, session, request, provider._STATE
+    finder = provider.__spec__.loader
+    if finder in sys.meta_path:
+        sys.meta_path.remove(finder)
+    sys.modules.pop(package, None)
+
+
+def test_standing_draft_proposal_is_inert_and_binds_only_observed_exact_targets(workflow):
+    host, session, request, state = workflow
+    terms = host.propose(session, request)
+    assert terms.generation == 1
+    assert terms.feed_baseline.cursor == "0"
+    assert terms.document.reference == request.document_reference
+    assert terms.notice_target.owner_actor == "owner-one"
+    assert host.propose(session, request) == terms
+    assert state["appends"] == 0
+    assert state["notices"] == state["shares"] == []
+
+
+def publish(workflow):
+    host, session, request, _state = workflow
+    import asyncio
+
+    asyncio.run(host.chat.answer(session, "turing"))
+    terms = host.propose(session, request)
+    proof = host.issue(session, request.request_id, "cli-publish:fixture-human")
+    marker = ApprovalConfirmation()
+    review = grant_payload(terms)
+    args = {"session_id": session, "request_id": request.request_id, "review": review, "approval_proof": proof}
+    with marker.using("heinzel", "publish-draft-workflow", args):
+        host.publish(session, request.request_id, review, proof, marker)
+    return terms
+
+
+def test_exact_initial_human_publication_is_separate_from_prompt_and_never_reactivated_by_replay(workflow):
+    host, session, request, state = workflow
+    terms = host.propose(session, request)
+    with pytest.raises(HeinzelError, match="No draft workflow"):
+        host.published(session)
+    with pytest.raises(HeinzelError, match="invalid"):
+        host.publish(session, request.request_id, grant_payload(terms), "forged", ApprovalConfirmation())
+    assert publish(workflow) == host.published(session)
+    host.revoke(session, request.request_id)
+    with pytest.raises(HeinzelError, match="revoked"):
+        host.published(session)
+    assert state["appends"] == 0
+    assert state["notices"] == state["shares"] == []
+
+
+def test_publication_denies_source_account_and_destination_drift_without_effects(workflow):
+    host, session, request, state = workflow
+    terms = host.propose(session, request)
+    for field, changed in [
+        ("account", "other-account"),
+        ("source", "other-source"),
+        ("feed_account", "other-feed"),
+        ("destination", "other-channel"),
+        ("notice_actor", "other-owner"),
+    ]:
+        previous = state[field]
+        state[field] = changed
+        with pytest.raises(HeinzelError, match="changed"):
+            host.verify_ports(terms)
+        state[field] = previous
+    assert state["appends"] == 0
+    assert state["notices"] == state["shares"] == []
+
+
+def add_release(state, identity="release-2", text="A new real provider release"):
+    from heinzel import ReleaseRecord
+
+    state["releases"].append(
+        ReleaseRecord(identity=identity, revision="tag-commit-2", published_at=datetime.now(UTC), text=text)
+    )
+
+
+def run_tick(host, session, request):
+    import asyncio
+
+    from heinzel.modules.heinzel._draft_workflow_runtime import tick
+
+    with host.current_user.local("daemon"):
+        asyncio.run(tick(host, session, request.request_id, host.crud.clock()))
+
+
+@pytest.mark.parametrize("slot", ["previous", "future", "naive"])
+def test_invalid_polling_slot_cannot_reach_the_feed_or_append(workflow, slot):
+    import asyncio
+
+    from heinzel.modules.heinzel._draft_workflow_journal import matching
+    from heinzel.modules.heinzel._draft_workflow_runtime import tick
+
+    host, session, request, state = workflow
+    publish(workflow)
+    add_release(state)
+    now = host.crud.clock()  # Exactly the start of the fixture's five-minute slot.
+    when = {
+        "previous": now - timedelta(microseconds=1),
+        "future": now + timedelta(seconds=2),
+        "naive": now.replace(tzinfo=None),
+    }[slot]
+    with host.current_user.local("daemon"), pytest.raises(HeinzelError, match="current approved draft polling slot"):
+        asyncio.run(tick(host, session, request.request_id, when))
+    assert not matching(host.journal.events(session), "draft.poll-started")
+    assert state["appends"] == 0
+    assert state["notices"] == state["shares"] == []
+
+
+def test_registered_cli_one_prompt_daemon_edit_and_trusted_share_with_restart(workflow, monkeypatch):
+    from typer.testing import CliRunner
+
+    from heinzel.heads.cli import _command, build
+    from heinzel.kernel import CompiledJobs
+    from heinzel.modules.heinzel._draft_workflow_journal import matching
+
+    host, _unused_session, _unused_request, state = workflow
+    monkeypatch.setattr(_command, "has_terminal", lambda: True)
+    prompt = (
+        "Create a Heinzel named Turing. Every five minutes watch https://fixture.invalid/CHANGELOG.md "
+        "and append a release poem draft to https://fixture.invalid/document; notify me for review, "
+        "then share its link only after I edit and approve it."
+    )
+    runner = CliRunner()
+    result = runner.invoke(build(host.kernel), ["heinzel", "start-release-workflow", "cli-one", prompt], input="yes\n")
+    assert result.exit_code == 0, result.output + repr(result.exception)
+    current = host.current_user
+    sessions = host.crud.listing()
+    session = next(
+        item.session_id for item in sessions.sessions if item.name == "Turing" and item.session_id != _unused_session
+    )
+    terms = host.published(session)
+    assert terms.request.prompt == prompt
+    snapshot = host.crud.snapshot(session)
+    assert snapshot.messages[0].text == prompt
+    assert not state["appends"]
+    assert not state["shares"]
+    add_release(state)
+    with current.local("daemon"):
+        jobs = host.kernel.resolve(CompiledJobs).jobs
+        job = next(item for item in jobs if item.name == "draft-" + session.lower())
+        assert job.schedule == "*/5 * * * *"
+        assert job.retries == 0
+        job.run_for_slot(host.crud.clock())
+    assert state["appends"] == 1
+    from heinzel import Notifications
+
+    assert state["notices"] == []
+    assert any(
+        item.title == "A release draft is ready for review" for item in host.kernel.resolve(Notifications).recent()
+    )
+    assert state["shares"] == []
+    key = next(iter(state["drafts"]))
+    state["drafts"][key] += "."
+    state["revision"] += 1
+    edited = state["drafts"][key]
+    result = runner.invoke(build(host.kernel), ["heinzel", "approve-release-draft", session, key], input="yes\n")
+    assert result.exit_code == 0, result.output + repr(result.exception)
+    assert state["shares"][0].body == terms.document.reference
+    assert state["drafts"][key] == edited
+    acknowledgement = matching(host.journal.events(session), "draft.share-acknowledged", key)[0]
+    recorded = host.crud.read_body(session, acknowledgement)
+    assert recorded["review"]["snapshot"]["text"] == edited
+    assert recorded["review"]["snapshot"]["target"]["revision"] == str(state["revision"])
+    restarted = DraftWorkflowPublication(host.crud, current, host.kernel, host.chat)
+    run_tick(restarted, session, terms.request)
+    assert state["appends"] == len(state["shares"]) == 1
+    replay = runner.invoke(build(host.kernel), ["heinzel", "approve-release-draft", session, key], input="yes\n")
+    assert replay.exit_code == 1
+    assert len(state["shares"]) == 1
+
+
+@pytest.mark.parametrize("failure", ["append_lost_ack", "append_close_failure"])
+@pytest.mark.parametrize("restart_seconds", [0, 300])
+def test_lost_append_acknowledgement_or_cleanup_fences_restarts_without_duplicate(
+    workflow, failure, restart_seconds, monkeypatch
+):
+    host, session, request, state = workflow
+    publish(workflow)
+    add_release(state)
+    state[failure] = True
+    with pytest.raises(HeinzelError, match="uncertain"):
+        run_tick(host, session, request)
+    assert state["appends"] == 1
+    assert state["notices"] == state["shares"] == []
+    state[failure] = False
+    restarted_at = host.crud.clock() + timedelta(seconds=restart_seconds)
+    monkeypatch.setattr(host.crud, "clock", lambda: restarted_at)
+    monkeypatch.setattr(host.crud.repository, "clock", lambda: restarted_at)
+    restarted = DraftWorkflowPublication(host.crud, host.current_user, host.kernel, host.chat)
+    with pytest.raises(HeinzelError, match="uncertain"):
+        run_tick(restarted, session, request)
+    assert state["appends"] == 1
+
+
+def share_confirmation(host, session, key, *, drift=False):
+    from heinzel.kernel._approval import ApprovalIssuer, arguments_hash
+    from heinzel.modules.heinzel._draft_workflow_share import DraftWorkflowShare, share_payload
+
+    service = DraftWorkflowShare(host)
+    review = share_payload(service.propose(session, key))
+    request = arguments_hash(review)
+    issuer = host.kernel.resolve(ApprovalIssuer)
+    arguments = {"session_id": session, "request_id": request, "review": review}
+    proof = issuer.issue("heinzel", "share-draft-link", arguments, "chat-confirm:fixture:human")
+    arguments["approval_proof"] = proof
+    marker = host.kernel.resolve(ApprovalConfirmation)
+    if drift:
+        return service, request, review, proof, marker, arguments
+    with marker.using("heinzel", "share-draft-link", arguments):
+        return service.execute(session, request, review, proof, marker)
+
+
+def test_lost_share_acknowledgement_never_reposts_after_restart_or_fresh_human_proof(workflow):
+    host, session, request, state = workflow
+    publish(workflow)
+    add_release(state)
+    run_tick(host, session, request)
+    key = next(iter(state["drafts"]))
+    state["drafts"][key] += "."
+    state["revision"] += 1
+    state["share_lost_ack"] = True
+    with pytest.raises(HeinzelError, match="uncertain"):
+        share_confirmation(host, session, key)
+    assert len(state["shares"]) == 1
+    state["share_lost_ack"] = False
+    restarted = DraftWorkflowPublication(host.crud, host.current_user, host.kernel, host.chat)
+    run_tick(restarted, session, request)
+    with pytest.raises(HeinzelError, match="already attempted"):
+        share_confirmation(restarted, session, key)
+    assert state["appends"] == len(state["shares"]) == 1
+
+
+@pytest.mark.parametrize("drift", ["revision", "destination", "account", "notice_actor", "revoked"])
+def test_share_refuses_exact_edited_revision_destination_account_or_grant_drift(workflow, drift):
+    host, session, request, state = workflow
+    publish(workflow)
+    add_release(state)
+    run_tick(host, session, request)
+    key = next(iter(state["drafts"]))
+    service, review_id, review, proof, marker, arguments = share_confirmation(host, session, key, drift=True)
+    if drift == "revision":
+        state["drafts"][key] += "."
+        state["revision"] += 1
+    elif drift == "revoked":
+        host.revoke(session, request.request_id)
+    else:
+        state[drift] = "different"
+    with marker.using("heinzel", "share-draft-link", arguments), pytest.raises(HeinzelError):
+        service.execute(session, review_id, review, proof, marker)
+    assert state["shares"] == []
+
+
+def _refuse_foreign_draft_review(host, tmp_path, service, action_ref, calls):
+    from dataclasses import replace
+
+    identity = host.current_user.context()
+    foreign = replace(identity, principal=CurrentUser(tmp_path / "other-owner").owner())
+    with host.current_user.using(foreign):
+        for operation, args in calls:
+            with pytest.raises(HeinzelError):
+                host.kernel.invoke(operation, **args)
+        with pytest.raises(HeinzelError):
+            service.confirm(*action_ref)
+
+
+@pytest.mark.parametrize("decision", ["confirm", "decline", "stale", "unknown"])
+def test_release_draft_activity_and_chat_confirmation(workflow, decision, tmp_path):
+    from heinzel import OperationLet
+    from heinzel.modules.system.runner.chat._service import ChatService
+
+    host, session, request, state = workflow
+    publish(workflow)
+    add_release(state)
+    run_tick(host, session, request)
+    key = next(iter(state["drafts"]))
+    kernel = host.kernel
+    operations = {let.name: let for _record, let in kernel.lets(OperationLet)}
+    activity = operations["release-draft-activity"]
+    prepare = operations["prepare-release-draft-share"]
+    stage = operations["propose-release-draft-share"]
+    service = kernel.resolve(ChatService)
+
+    events = kernel.invoke(activity, session_id=session)
+    assert {"draft.release-observed", "draft.append-acknowledged", "draft.review-notice-acknowledged"} <= {
+        event["kind"] for event in events
+    }
+    assert all(set(event) == {"kind", "draft_key", "at"} and event["draft_key"] == key for event in events)
+    review_id = kernel.invoke(prepare, session_id=session, draft_key=key)
+    other = host.crud.new_chat("other", "Other").session_id
+    assert kernel.invoke(activity, session_id=other) == []
+    with pytest.raises(HeinzelError):
+        kernel.invoke(stage, durable_session=other, request_id=review_id)
+    chat = kernel.invoke(stage, durable_session=session, request_id=review_id)
+    action = chat.actions[0]
+    assert chat.personal_session_id == session
+    assert action.operation == "share-draft-link"
+    assert action.arguments["review"]["snapshot"]["text"] == state["drafts"][key]
+    assert "approval_proof" not in action.arguments
+    assert kernel.invoke(stage, durable_session=session, request_id=review_id).actions == chat.actions
+    assert not state["shares"]
+
+    _refuse_foreign_draft_review(
+        host,
+        tmp_path,
+        service,
+        (chat.id, action.id),
+        (
+            (activity, {"session_id": session}),
+            (prepare, {"session_id": session, "draft_key": key}),
+            (stage, {"durable_session": session, "request_id": review_id}),
+        ),
+    )
+
+    if decision == "decline":
+        assert service.decline(chat.id, action.id).actions[0].status == "declined"
+        assert not state["shares"]
+    elif decision == "stale":
+        state["drafts"][key] += " Edited after review."
+        state["revision"] += 1
+        with pytest.raises(HeinzelError, match="edited draft"):
+            service.confirm(chat.id, action.id)
+        assert not state["shares"]
+    else:
+        state["share_lost_ack"] = decision == "unknown"
+        result = service.confirm(chat.id, action.id)
+        assert result.actions[0].status == ("uncertain" if decision == "unknown" else "done")
+        assert len(state["shares"]) == 1
+        with pytest.raises(HeinzelError):
+            service.confirm(chat.id, action.id)
+        assert len(state["shares"]) == 1
+
+
+def test_owner_declines_initial_publication_and_no_daemon_job_or_external_effect_is_created(workflow, monkeypatch):
+    from typer.testing import CliRunner
+
+    from heinzel.heads.cli import _command, build
+    from heinzel.kernel import CompiledJobs
+
+    host, _, _, state = workflow
+    monkeypatch.setattr(_command, "has_terminal", lambda: True)
+    prompt = (
+        "Create a Heinzel named Turing for https://fixture.invalid/CHANGELOG.md and https://fixture.invalid/document"
+    )
+    result = CliRunner().invoke(
+        build(host.kernel), ["heinzel", "start-release-workflow", "declined", prompt], input="no\n"
+    )
+    assert result.exit_code == 1
+    with host.current_user.local("daemon"):
+        assert not any(job.name.startswith("draft-") for job in host.kernel.resolve(CompiledJobs).jobs)
+    assert not state["appends"]
+    assert state["shares"] == []

@@ -171,3 +171,10 @@ data.
   the process in the desktop session (Aqua) and says so when it does not, and puts the unit file back when loading
   fails. The status item says "starting" with the time of the first check until the first tick, and asks for a restart
   only on a real version mismatch.
+
+- Amendment, 2026-11-07: a `RunOperation` may name `inputs`, parameters the person types in a plugin view's form (a
+  report's text, for instance) instead of fixed arguments. Only a private mutation takes them, in its JSON body;
+  `system.ui` refuses inputs on any other operation, inputs that are also fixed, and inputs the operation does not
+  take. The view calls `submit(action, values)`; the app sends only the declared inputs, still asks first, and its
+  dialog shows the command built from the values that will run, never the view's label. The promise settles with the
+  operation's result, or fails when the person cancels or the operation fails.

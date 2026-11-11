@@ -24,6 +24,7 @@ export type JsonSchema = {
   description?: string;
   writeOnly?: boolean;
   "x-labels"?: Record<string, string>;
+  "x-feature-catalog"?: Record<string, string>;
   "x-unit"?: string;
   "x-options"?: { source: string; capability?: string; none?: string };
   "x-hidden"?: boolean;

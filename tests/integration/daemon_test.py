@@ -5,7 +5,6 @@ reaches the real launchd or systemd.
 """
 
 import json
-import subprocess
 import threading
 from datetime import UTC, datetime, timedelta
 
@@ -85,7 +84,7 @@ def test_a_job_that_overruns_its_timeout_fails(make_kernel):
     kernel = make_kernel(builtins=True, slow=stuck_module())
     result = runner.invoke(build(kernel), ["system", "daemon", "tick", "--job", "slow:stuck", "--json"])
     assert result.exit_code == 1  # a failed job makes the tick fail, so launchd, systemd and CI see it
-    [run] = json.loads(result.output)["runs"]
+    [run] = json.loads(result.stdout)["runs"]
     assert (run["disposition"], run["wake"]) == ("failed", "manual")
     assert run["error"].startswith("timed out after 0.01s and was abandoned")
     STUCK.set()
@@ -139,29 +138,32 @@ def test_install_dry_run_and_uninstall_with_a_fake_service_manager(kernel, setti
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "hz").touch()
-    commands: list[list[str]] = []
+    from tests.fixtures.daemon_manager import RecordedManager, record_tool
 
-    def fake(command):
-        commands.append(list(command))
-        return subprocess.CompletedProcess(command, 0, f"{bin_dir}\n", "")
-
+    manager = RecordedManager(bin_dir)
+    installation = record_tool(tmp_path / "tools/heinzel", bin_dir)
     service = DaemonService(
         kernel,
         settings,
         DaemonSettings(unit_dir=tmp_path / "units"),
-        runner=fake,
+        runner=manager,
         platform="linux",
         which=lambda name: f"/usr/bin/{name}",
+        quiescence_installation=installation,
+        quiescence_probe=manager.probe,
+        linux_manager_identity=lambda: (1, 2, 3),
     )
+    manager.attach(service)
     kernel.bind(DaemonService, service)
     dry = hz(kernel, "system", "daemon", "install", "--interval", "10m", "--dry-run").output
     assert "OnCalendar=*:0/10" in dry
     assert "Would run" in dry
-    installed = json.loads(hz(kernel, "system", "daemon", "install", "--json").output)
+    installed = json.loads(hz(kernel, "system", "daemon", "install", "--json").stdout)
     assert installed["interval_minutes"] == 5
-    assert ["/usr/bin/systemctl", "--user", "enable", "--now", "hz-daemon.timer"] in commands
+    assert ["/usr/bin/systemctl", "--user", "enable", "hz-daemon.timer"] in manager.commands
+    assert ["/usr/bin/systemctl", "--user", "restart", "hz-daemon.timer"] in manager.commands
     assert "Installed" in hz(kernel, "system", "daemon", "install").output
-    removed = json.loads(hz(kernel, "system", "daemon", "uninstall", "--json").output)
+    removed = json.loads(hz(kernel, "system", "daemon", "uninstall", "--json").stdout)
     assert len(removed["removed"]) == 2
 
 

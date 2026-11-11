@@ -1,8 +1,11 @@
+import { Copy, ExternalLink, EyeOff, LogIn, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
+import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { PlayerCard } from "./PlayerCard";
+import { PlayerHelp } from "./PlayerHelp";
 import { page } from "./queries";
 import { stop } from "./store";
 import {
@@ -29,6 +32,9 @@ export function StreamPlayer(props: Props) {
   const [account, setAccount] = useState(readYouTubeAccount);
   const [attempt, setAttempt] = useState(0);
   const alternative = accountStream(props.stream);
+  const desktop =
+    typeof (window as Window & { heinzelDesktop?: { lifecycle?: unknown } }).heinzelDesktop?.lifecycle === "function";
+  const activeAccount = !desktop && account && alternative !== null;
   const chooseAccount = (next: boolean) => {
     rememberYouTubeAccount(next);
     setAccount(next);
@@ -37,9 +43,11 @@ export function StreamPlayer(props: Props) {
     <Player
       key={`${account}:${attempt}`}
       {...props}
-      stream={account && alternative ? alternative : props.stream}
-      account={account && alternative !== null}
-      chooseAccount={alternative ? chooseAccount : undefined}
+      stream={activeAccount && alternative ? alternative : props.stream}
+      account={activeAccount}
+      desktop={desktop}
+      copyUrl={desktop && alternative ? `https://www.youtube.com/watch?v=${props.stream.video}` : undefined}
+      chooseAccount={!desktop && alternative ? chooseAccount : undefined}
       retry={() => setAttempt((was) => was + 1)}
     />
   );
@@ -52,16 +60,34 @@ function Player({
   account,
   chooseAccount,
   retry,
-}: Props & { account: boolean; chooseAccount?: (next: boolean) => void; retry: () => void }) {
+  desktop,
+  copyUrl,
+}: Props & {
+  account: boolean;
+  desktop: boolean;
+  copyUrl?: string;
+  chooseAccount?: (next: boolean) => void;
+  retry: () => void;
+}) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [ready, setReady] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [help, setHelp] = useState(false);
   const [hasPlayed, setHasPlayed] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const volume = useRef(0);
   const src = embedSrc(stream);
   const origin = stream.frame_origin;
   const deviceVolume = isIOS();
+  const copyLink = async () => {
+    try {
+      if (!copyUrl || !navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(copyUrl);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  };
 
   useEffect(() => {
     const onMessage = (message: MessageEvent) => {
@@ -135,45 +161,67 @@ function Player({
 
   if (!src) return null;
   return (
-    <PlayerCard title={soundscape.title} watchUrl={stream.watch_url} host="YouTube">
-      {blocked ? (
-        <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
-          <p>{t("sound.reloadNeeded")}</p>
-          <button type="button" onClick={page.reload} className={button}>
-            {t("sound.reload")}
-          </button>
-        </div>
-      ) : (
-        <iframe
-          ref={frame}
-          title={t("sound.player", { title: soundscape.title })}
-          src={src}
-          onLoad={() => listen(frame.current, origin)}
-          className="aspect-video min-h-[200px] w-full border-0"
-          referrerPolicy={FRAME_ATTRIBUTES.referrerPolicy}
-          sandbox={account ? ACCOUNT_SANDBOX : FRAME_ATTRIBUTES.sandbox}
-          allow={FRAME_ATTRIBUTES.allow}
-        />
-      )}
-      <details open={help} onToggle={(event) => setHelp(event.currentTarget.open)} className="p-2 text-ui-sm">
-        <summary className="min-h-8 cursor-pointer content-center rounded-lg px-1 hover:bg-accent">
-          {t("sound.playbackHelp")}
-        </summary>
-        <div className="flex flex-col gap-2 pt-2">
-          <p>{t(account ? "sound.accountHelp" : "sound.privateHelp")}</p>
-          {chooseAccount && (
-            <button type="button" onClick={() => chooseAccount(!account)} className={button}>
-              {t(account ? "sound.privatePlayer" : "sound.accountPlayer")}
+    <PlayerCard title={soundscape.title} watchUrl={desktop ? undefined : stream.watch_url} host="YouTube">
+      <div className="group/video relative">
+        {blocked ? (
+          <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
+            <p>{t("sound.reloadNeeded")}</p>
+            <button type="button" onClick={page.reload} className={button}>
+              {t("sound.reload")}
             </button>
+          </div>
+        ) : (
+          <iframe
+            ref={frame}
+            title={t("sound.player", { title: soundscape.title })}
+            src={src}
+            onLoad={() => listen(frame.current, origin)}
+            className="aspect-video min-h-[200px] w-full border-0"
+            referrerPolicy={FRAME_ATTRIBUTES.referrerPolicy}
+            sandbox={account ? ACCOUNT_SANDBOX : FRAME_ATTRIBUTES.sandbox}
+            allow={FRAME_ATTRIBUTES.allow}
+          />
+        )}
+        <PlayerHelp
+          attention={help}
+          actions={
+            <>
+              {chooseAccount && (
+                <PaneAction icon={account ? EyeOff : LogIn} onClick={() => chooseAccount(!account)}>
+                  {t(account ? "sound.privatePlayer" : "sound.accountPlayer")}
+                </PaneAction>
+              )}
+              {copyUrl && (
+                <PaneAction icon={Copy} onClick={() => void copyLink()}>
+                  {t("sound.copyYouTubeLink")}
+                </PaneAction>
+              )}
+              <PaneAction icon={RotateCw} onClick={retry}>
+                {t("sound.retryPlayer")}
+              </PaneAction>
+              {!desktop && (
+                <PaneAction icon={ExternalLink} href={stream.watch_url} onClick={stop}>
+                  {t("sound.playOnYouTube")}
+                </PaneAction>
+              )}
+            </>
+          }
+        >
+          <p>{t(desktop ? "sound.desktopHelp" : account ? "sound.accountHelp" : "sound.privateHelp")}</p>
+          {copyState !== "idle" && (
+            <p role="status">{t(copyState === "copied" ? "sound.linkCopied" : "sound.copyFailed")}</p>
           )}
-          <button type="button" onClick={retry} className={button}>
-            {t("sound.retryPlayer")}
-          </button>
-          <a href={stream.watch_url} target="_blank" rel="noopener noreferrer" onClick={stop} className={button}>
-            {t("sound.playOnYouTube")}
-          </a>
-        </div>
-      </details>
+          {copyState === "failed" && copyUrl && (
+            <input
+              aria-label={t("sound.videoLink")}
+              className="w-full rounded border border-border bg-transparent px-1"
+              readOnly
+              value={copyUrl}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          )}
+        </PlayerHelp>
+      </div>
     </PlayerCard>
   );
 }

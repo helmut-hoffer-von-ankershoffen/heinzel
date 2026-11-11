@@ -1,5 +1,5 @@
 // Test-only bootstrap: isolate Electron before its single-instance lock and observe only owned child metadata.
-import { app, dialog } from "electron";
+import { app, dialog, shell } from "electron";
 import childProcess from "node:child_process";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -16,6 +16,13 @@ writeFileSync(join(root, "electron-paths"), JSON.stringify({
   sessionData: app.getPath("sessionData"),
 }), { mode: 0o600 });
 dialog.showErrorBox = (title) => writeFileSync(join(root, "error-title"), title, { mode: 0o600 });
+if (process.env.HZ_NATIVE_TEST_PUBLIC_MEDIA === "1") {
+  // Record handoffs without launching the owner's browser or contacting a public provider.
+  shell.openExternal = async (url) => {
+    appendFileSync(join(root, "public-media"), `${JSON.stringify(url)}\n`, { mode: 0o600 });
+    if (url.endsWith("abcdefghijl")) throw new Error("Synthetic opener failure.");
+  };
+}
 
 // What the app did and when, with no URL or token, so a launch that never exits says where it stopped.
 const phase = (text) => appendFileSync(join(root, "phases"), `${Math.round(performance.now())} ${text}\n`, { mode: 0o600 });
@@ -23,14 +30,19 @@ for (const name of ["ready", "before-quit", "will-quit", "quit", "window-all-clo
 app.on("child-process-gone", (_event, details) => phase(`app child-process-gone ${details.type} ${details.reason}`));
 app.on("web-contents-created", (_event, contents) => {
   phase("page created");
-  for (const name of ["did-start-loading", "will-redirect", "did-fail-load", "did-stop-loading", "did-finish-load", "destroyed"])
+  for (const name of ["did-start-loading", "did-start-navigation", "will-redirect", "did-stop-loading", "did-finish-load", "destroyed"])
     contents.on(name, () => phase(`page ${name}`));
+  // Numeric load results distinguish an unissued request from Chromium cancellation; URLs may contain bearer fragments.
+  for (const name of ["did-fail-load", "did-fail-provisional-load"])
+    contents.on(name, (_event, code, _description, _url, mainFrame) => phase(`page ${name} ${code} ${mainFrame}`));
+  contents.on("render-process-gone", (_event, details) => phase(`page render-process-gone ${details.reason} ${details.exitCode}`));
+  contents.on("unresponsive", () => phase("page unresponsive"));
 });
 
 const spawn = childProcess.spawn;
 childProcess.spawn = function observeOwned(command, args, options) {
   const child = spawn(command, args, options);
-  if (command === "hz" && JSON.stringify(args) === JSON.stringify(["ui", "--port", "0", "--no-browser"])) {
+  if (command === "hz" && JSON.stringify(args) === JSON.stringify(["ui", "serve", "--port", "0", "--no-browser"])) {
     globalThis.ownedTestChild = child;
     writeFileSync(join(root, "owned-pid"), String(child.pid), { mode: 0o600 });
     phase("service started");

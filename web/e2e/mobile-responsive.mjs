@@ -1,7 +1,7 @@
 // Focused mobile/touch viewport proof for the app served by `hz ui` (tests/e2e/web_ui_test.py).
-// This is Chromium emulation, not physical iPhone Safari.
+// These are Chromium/WebKit emulations, not physical iPhone Safari.
 // Usage: node e2e/mobile-responsive.mjs URL SCREENSHOT_DIR [SECTION]. SECTION is one viewport name or "phone" (the
-// scroll, sound and notification flows); without it every section runs in one browser.
+// scroll, sound and notification flows), "updates-actions", or "share-chromium" / "share-webkit".
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ import ts from "typescript";
 import { contributePanel } from "./contributed-panel.mjs";
 import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
+import { contributeGallery, exercisePluginGallery } from "./plugin-gallery.mjs";
 
 // Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
 function stage(name) {
@@ -19,7 +20,9 @@ function stage(name) {
 stage("launch");
 const [url, shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
-const useWebKit = process.env.PLAYWRIGHT_BROWSER === "webkit";
+const section = process.argv[4] ?? "all";
+const useWebKit =
+  section === "share-webkit" || (section !== "share-chromium" && process.env.PLAYWRIGHT_BROWSER === "webkit");
 const browser = useWebKit
   ? await webkit.launch()
   : await chromium.launch().catch(() => chromium.launch({ channel: "chrome" }));
@@ -32,9 +35,11 @@ const cases = [
   { name: "wide-landscape", width: 932, height: 430 },
   { name: "short-landscape", width: 844, height: 320 },
 ];
-const section = process.argv[4] ?? "all";
 assert.ok(
-  section === "all" || section === "phone" || cases.some((spec) => spec.name === section),
+  section === "all" ||
+    section === "phone" ||
+    ["updates-actions", "share-chromium", "share-webkit"].includes(section) ||
+    cases.some((spec) => spec.name === section),
   `Unknown mobile section "${section}"`,
 );
 // A viewport section keeps just its own case; "phone" keeps none, and runs the phone flows instead.
@@ -237,15 +242,277 @@ async function footerPane(page, id, label, ready) {
       () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))),
     );
   }
+  const pane = await openFooterPane(page, id, label, "tap");
+  await assertOneActionRow(pane, `${id} pane`);
+  return pane.locator("..");
+}
+
+async function openFooterPane(page, id, label, activate) {
   const trigger = page.locator(`[data-footer-content="${id}"] button`).first();
-  if (!(await trigger.isVisible())) {
-    await page.locator('[data-footer-content="@more"] button').click();
+  // A missing status item is still loading, not necessarily in More. Its hidden measurement host and More's
+  // retained button are not actionable. Wait for either the item or its actual overflow path to be visible.
+  const direct = trigger.filter({ visible: true });
+  const more = page
+    .locator(
+      `footer:has([data-footer-part="${id}"][data-footer-hidden="overflow"]) [data-footer-content="@more"] button[aria-expanded="false"]`,
+    )
+    .filter({ visible: true });
+  // A snapshot of direct visibility can become obsolete when a provider changes footer capacity before activation.
+  await direct.or(more).first()[activate]();
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") await direct[activate]();
+  const pane = page.getByRole("region", { name: label, exact: true });
+  await pane.waitFor();
+  return pane;
+}
+
+/**
+ * A pane's actions (design/README.md, "Actions"): one row that never wraps, the first with its words (or the row's
+ * declared `data-words="none"` fallback), the rest named icons, and every target at least 44px on this touch screen.
+ */
+async function assertOneActionRow(pane, name) {
+  const facts = await pane.evaluate((element) => {
+    const row = element.querySelector("[data-pane-actions]");
+    const actions = row ? [...row.querySelectorAll("[data-pane-action]")] : [];
+    return {
+      pointer: {
+        coarse: matchMedia("(pointer: coarse)").matches,
+        anyCoarse: matchMedia("(any-pointer: coarse)").matches,
+        touchPoints: navigator.maxTouchPoints,
+      },
+      words: row?.getAttribute("data-words") ?? null,
+      actions: actions.map((action) => {
+        const box = action.getBoundingClientRect();
+        return {
+          top: Math.round(box.top),
+          width: box.width,
+          height: box.height,
+          kind: action.getAttribute("data-pane-action"),
+          text: action.textContent.trim(),
+          label: action.getAttribute("aria-label"),
+        };
+      }),
+    };
+  });
+  if (!facts.actions.length) return;
+  assert.equal(new Set(facts.actions.map((action) => action.top)).size, 1, `${name}: its actions wrap`);
+  const [lead, ...rest] = facts.actions;
+  if (facts.words === "lead") assert.ok(lead.kind === "text" && lead.text, `${name}: the lead shows its words`);
+  else if (facts.words === "none") assert.ok(lead.kind === "icon" && lead.label, `${name}: the lead's fallback icon`);
+  if (facts.words !== "all")
+    for (const action of rest)
+      assert.ok(action.kind === "icon" && action.label, `${name}: ${action.text} is a named icon`);
+  for (const action of facts.actions)
+    assert.ok(
+      action.height >= 44 && action.width >= 44,
+      `${name}: ${action.label ?? action.text} is ${action.width}×${action.height}px, under 44px (${JSON.stringify(facts.pointer)})`,
+    );
+}
+
+async function updateActionTargets() {
+  const profiles = [
+    { name: "desktop-fine", width: 1280, height: 800, touch: false, compact: false },
+    { name: "portrait-fine", width: 390, height: 667, touch: false, compact: true },
+    { name: "landscape-fine", width: 932, height: 430, touch: false, compact: true },
+    { name: "desktop-coarse", width: 1280, height: 800, touch: true, compact: true },
+  ];
+  const measurements = [];
+  for (const { name, width, height, touch, compact } of profiles) {
+    const page = await browser.newPage({ viewport: { width, height }, hasTouch: touch, serviceWorkers: "block" });
+    try {
+      await page.route("**/api/update-status", (route) =>
+        route.fulfill({ json: { current: "0.7.30", available: false, supported: true, check_failed: true } }),
+      );
+      await page.route("**/api/auto-update", (route) => route.fulfill({ json: { enabled: false, phase: "off" } }));
+      await page.goto(url);
+      await page.locator("#splash").waitFor({ state: "hidden" });
+      const pane = await openFooterPane(page, "@updates", "Updates", touch ? "tap" : "click");
+      const row = pane.locator("[data-pane-actions]");
+      const manual = row.getByRole("button", { name: "Manually update…", exact: true });
+      const retry = row.getByRole("button", { name: "Check again", exact: true });
+      await manual.waitFor();
+      await retry.waitFor();
+      if (compact) await row.evaluate((element) => element.style.setProperty("--spacing", "3px"));
+      const facts = await row.evaluate((element) => ({
+        width: innerWidth,
+        height: innerHeight,
+        fine: matchMedia("(pointer: fine)").matches,
+        coarse: matchMedia("(pointer: coarse)").matches,
+        anyCoarse: matchMedia("(any-pointer: coarse)").matches,
+        touchPoints: navigator.maxTouchPoints,
+        spacing: getComputedStyle(element).getPropertyValue("--spacing").trim(),
+        targets: [...element.querySelectorAll("button[data-pane-action]")].map((button) => {
+          const { left, right, top, bottom, width, height } = button.getBoundingClientRect();
+          const middleX = (left + right) / 2;
+          const middleY = (top + bottom) / 2;
+          const edges = [
+            [left + 2, middleY],
+            [right - 2, middleY],
+            [middleX, top + 2],
+            [middleX, bottom - 2],
+          ];
+          return {
+            kind: button.getAttribute("data-pane-action"),
+            width,
+            height,
+            edgesHit: edges.every(([x, y]) => button.contains(document.elementFromPoint(x, y))),
+          };
+        }),
+      }));
+      measurements.push({ name, ...facts });
+      writeFileSync(join(shots, "updates-action-targets.json"), `${JSON.stringify(measurements, null, 2)}\n`);
+      const detail = JSON.stringify(measurements.at(-1));
+      assert.equal(facts.width, width, detail);
+      assert.equal(facts.height, height, detail);
+      assert.equal(facts.fine, !touch, detail);
+      assert.equal(facts.anyCoarse, touch, detail);
+      assert.deepEqual(
+        facts.targets.map((target) => target.kind),
+        ["text", "icon"],
+        detail,
+      );
+      if (compact) {
+        assert.equal(facts.spacing, "3px", detail);
+        assert.ok(
+          facts.targets.every((target) => target.height >= 44 && target.width >= 44),
+          detail,
+        );
+      } else {
+        assert.ok(
+          facts.targets.every((target) => target.height === 32),
+          detail,
+        );
+        assert.equal(facts.targets[1].width, 32, detail);
+      }
+      assert.ok(
+        facts.targets.every((target) => target.edgesHit),
+        detail,
+      );
+      await page.screenshot({ path: join(shots, `updates-actions-${name}.png`) });
+    } finally {
+      await page.close();
+    }
   }
-  await trigger.tap();
-  return page.getByRole("region", { name: label, exact: true }).locator("..");
+  return measurements;
 }
 
 try {
+  if (section === "all" || section === "updates-actions") {
+    stage("updates-actions");
+    result.updateActions = await updateActionTargets();
+  }
+  if (section === "share-chromium" || section === "share-webkit") {
+    stage("phone-share");
+    // A synthetic status exercises the real footer component without a plugin or a private URL.
+    for (const supported of [true, false]) {
+      const page = await browser.newPage({
+        viewport: { width: 360, height: 780 },
+        isMobile: true,
+        hasTouch: true,
+        serviceWorkers: "block",
+      });
+      await page.addInitScript((supported) => {
+        localStorage.setItem("hz.onboarding", JSON.stringify({ step: "you", visited: [], closed: true }));
+        window.shareProbe = { calls: 0, copied: null };
+        Object.defineProperty(navigator, "share", {
+          configurable: true,
+          value: supported
+            ? async (data) => {
+                window.shareProbe.calls++;
+                window.shareProbe.url = data.url;
+                if (window.shareProbe.calls === 1) throw new DOMException("Cancelled", "AbortError");
+                throw new Error("private detail");
+              }
+            : undefined,
+        });
+        Object.defineProperty(navigator, "clipboard", {
+          configurable: true,
+          value: {
+            writeText: async (text) => {
+              window.shareProbe.copied = text;
+            },
+          },
+        });
+      }, supported);
+      const fixtureUrl = "https://workstation.tail-example.ts.net";
+      const entry = {
+        id: "probe:share",
+        module: "probe",
+        plugin: null,
+        order: 1,
+        refresh: 60,
+        slots: { footer: true },
+        problem: null,
+        item: {
+          text: "Share probe",
+          tone: "ok",
+          icon: "link",
+          detail: [],
+          toggle: {
+            label: "Share this service",
+            checked: true,
+            url: fixtureUrl,
+            sign_in_url: null,
+            enable: { call: { method: "POST", path: "/probe/enable", read_only: false, query: {}, body: {} } },
+            disable: { call: { method: "POST", path: "/probe/disable", read_only: false, query: {}, body: {} } },
+          },
+        },
+      };
+      const statusRequested = Promise.withResolvers();
+      const publishStatus = Promise.withResolvers();
+      await page.route("**/api/system/ui/status**", async (route) => {
+        statusRequested.resolve();
+        await publishStatus.promise;
+        const selected = new URL(route.request().url()).searchParams.get("item");
+        if (selected === entry.id) return route.fulfill({ json: [entry] });
+        const response = await fetchOnce(route);
+        const entries = await response.json();
+        return route.fulfill({ response, json: [...entries, ...(!selected ? [entry] : [])] });
+      });
+      await page.goto(url);
+      await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
+      await statusRequested.promise;
+      // Other real contributions can already require More. A held, unpublished item must have neither its
+      // trigger nor an overflow entry; shell readiness alone cannot make that item actionable.
+      const held = await page.evaluate(() => ({
+        target: !!document.querySelector('[data-footer-content="probe:share"] button'),
+        overflow: !!document.querySelector('[data-footer-part="probe:share"][data-footer-hidden="overflow"]'),
+      }));
+      assert.deepEqual(held, { target: false, overflow: false });
+      const opening = footerPane(page, entry.id, "Share probe");
+      publishStatus.resolve();
+      const pane = await opening;
+      const copy = pane.getByRole("button", { name: "Copy link", exact: true });
+      await assertContained(page, pane, "phone: share pane");
+      await page.screenshot({ path: join(shots, `mobile-${section}-${supported ? "supported" : "unsupported"}.png`) });
+      if (supported) {
+        const share = pane.getByRole("button", { name: "Share", exact: true });
+        await assertContained(page, share, "phone: Share");
+        await assertTouchTarget(share, "Share", "phone");
+        assert.equal(await copy.count(), 0, "Native sharing replaces the separate Copy button");
+        await share.tap();
+        assert.equal(await page.evaluate(() => window.shareProbe.calls), 1);
+        assert.equal(await pane.getByRole("alert").count(), 0, "Cancellation is silent");
+        await copy.waitFor(); // AbortError can also mean that no share targets were available.
+        await share.tap();
+        await pane.getByRole("alert").getByText("Could not share the link; copy it instead.").waitFor();
+        assert.equal(await page.evaluate(() => window.shareProbe.url), `${fixtureUrl}/`);
+      } else {
+        assert.equal(await pane.getByRole("button", { name: "Share", exact: true }).count(), 0);
+      }
+      await assertContained(page, copy, "phone: Copy link");
+      await assertTouchTarget(copy, "Copy link", "phone");
+      if (supported) await page.screenshot({ path: join(shots, `mobile-${section}-failed.png`) });
+      await copy.tap();
+      await page.waitForFunction((expected) => window.shareProbe.copied === expected, `${fixtureUrl}/`);
+      assert.equal(
+        await pane.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+        true,
+        "Share controls and URL must wrap within the pane",
+      );
+      await page.close();
+    }
+    result.share = { cancellation: true, failure: true, copy: true, unsupported: true, wraps: true };
+  }
   for (const spec of cases) {
     stage(`viewport-${spec.name}-start`);
     const context = await browser.newContext({
@@ -261,6 +528,7 @@ try {
     });
     const page = await context.newPage();
     await contributePanel(page);
+    const galleryRequests = await contributeGallery(page);
     // Platform-specific CLI paths and provider names must wrap rather than widen their settings pane.
     await page.route("**/api/ai/access/list", async (route) => {
       const response = await fetchOnce(route);
@@ -272,7 +540,9 @@ try {
         module: "ai.access",
         plugin: null,
         in_use: false,
-        status: "not installed",
+        status: "needs setup",
+        needs: "Add the AnExtremelyLongProviderNameThatMustWrapOnAPhone client",
+        setup: "client",
         detail: "",
         fix: "uv tool install an-extremely-long-provider-distribution-name-for-mobile-layout",
         models: [],
@@ -303,10 +573,14 @@ try {
     });
     let updateAvailable = false;
     let updateRequests = 0;
-    await page.route("**/api/system/update", (route) => {
-      updateRequests += 1;
-      return route.abort();
-    });
+    // Plain or streamed: no viewport check may start an update.
+    await page.route(
+      (address) => ["/api/system/update", "/api/stream/system/update"].includes(address.pathname),
+      (route) => {
+        updateRequests += 1;
+        return route.abort();
+      },
+    );
     await page.route("**/api/update-status", (route) =>
       route.fulfill({
         json: {
@@ -315,9 +589,36 @@ try {
           installed_at: "2026-01-02T12:00:00Z",
           available: updateAvailable,
           supported: true,
+          checked_at: new Date().toISOString(),
+          last_ok_at: new Date().toISOString(),
+          check_failed: false,
           reason: null,
         },
       }),
+    );
+    // The automatic-update plan is pinned too: this test server runs from a source checkout, which holds updates.
+    await page.route("**/api/auto-update", (route) =>
+      route.request().method() === "GET"
+        ? route.fulfill({
+            json: {
+              enabled: true,
+              reason: null,
+              phase: "idle",
+              version: "0.7.30",
+              core: null,
+              plugins: {},
+              seconds_left: null,
+              apply_at: null,
+              next_window_at: null,
+              postponements: 0,
+              message: null,
+              holds: [],
+              checked_at: new Date().toISOString(),
+              core_checked: true,
+              plugins_checked: true,
+            },
+          })
+        : route.continue(),
     );
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
@@ -428,9 +729,21 @@ try {
       `${spec.name}: settings close`,
     );
     const searchField = page.getByRole("searchbox", { name: "Filter settings" });
+    const settingsFont = await searchField.evaluate((element) => ({
+      fontSize: getComputedStyle(element).fontSize,
+      parentFontSize: getComputedStyle(element.parentElement).fontSize,
+      coarse: matchMedia("(pointer: coarse)").matches,
+      anyCoarse: matchMedia("(any-pointer: coarse)").matches,
+      hover: matchMedia("(hover: hover)").matches,
+      width: innerWidth,
+      touchPoints: navigator.maxTouchPoints,
+    }));
+    writeFileSync(join(shots, "settings-font.json"), `${JSON.stringify(settingsFont, null, 2)}\n`);
+    console.error(`MOBILE_SETTINGS_FONT:${JSON.stringify({ viewport: spec.name, ...settingsFont })}`);
+    await page.screenshot({ path: join(shots, `mobile-${spec.name}-settings-font.png`) });
     assert.ok(
-      (await searchField.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))) >= 16,
-      `${spec.name}: focused phone form text must not trigger Safari zoom`,
+      Number.parseFloat(settingsFont.fontSize) >= 16,
+      `${spec.name}: focused phone form text must not trigger Safari zoom: ${JSON.stringify(settingsFont)}`,
     );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-settings.png`) });
     const settingsPages = await settingsDialog
@@ -448,6 +761,18 @@ try {
           .getByRole("button", { name: settingsPage.title, exact: true })
           .click();
       await assertContained(page, settingsDialog, `${spec.name}: settings ${settingsPage.id}`);
+      if (settingsPage.id === "plugins") await exercisePluginGallery(page, galleryRequests, shots, spec.name);
+      if (settingsPage.id === "web-server") {
+        const restart = settingsDialog.getByRole("button", { name: "Restart web server", exact: true });
+        await assertTouchTarget(restart, "Restart web server", spec.name);
+        await restart.click();
+        const confirmation = settingsDialog.getByRole("alertdialog", { name: "Restart web server", exact: true });
+        await assertContained(page, confirmation, `${spec.name}: web server restart confirmation`);
+        assert.match(await confirmation.textContent(), /This page reconnects for you/);
+        await page.screenshot({ path: join(shots, `mobile-${spec.name}-web-server-confirmation.png`) });
+        await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
+        await confirmation.waitFor({ state: "hidden" });
+      }
       if (settingsPage.id === "credentials") {
         await settingsDialog
           .locator("option")
@@ -473,7 +798,9 @@ try {
       });
     }
 
-    await page.getByRole("button", { name: "Close settings" }).click();
+    // A phone closes the dialog with a touch. A mouse click would leave Playwright's pointer hovering the top-right
+    // corner, where the Audio rail's trigger sits once the dialog is gone, and open its hover preview over the footer.
+    await page.getByRole("button", { name: "Close settings" }).tap();
 
     // Every footer pane must fit, including the wide release notes and controls moved into More.
     for (const [id, label] of [["@version", /^v/]]) {
@@ -482,10 +809,10 @@ try {
       await page.screenshot({ path: join(shots, `mobile-${spec.name}-${id.slice(1)}.png`) });
       await dismissFooterPane(page);
     }
-    const updatePane = await footerPane(page, "@updates", "Up to date");
+    const updatePane = await footerPane(page, "@updates", "Updates");
     await assertContained(page, updatePane, `${spec.name}: update pane`);
-    assert.equal(await updatePane.getByText("Up to date", { exact: true }).count(), 1);
-    await updatePane.getByText("Installed: hz 0.7.30").waitFor();
+    await updatePane.getByText(/^Heinzel 0\.7\.30 is up to date · checked /).waitFor();
+    await updatePane.getByRole("button", { name: "Manually update…", exact: true }).waitFor();
     await updatePane.getByText(/^Last installed:/).waitFor();
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
     await dismissFooterPane(page);
@@ -495,14 +822,10 @@ try {
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
-    const availablePane = await footerPane(page, "@updates", "Update available", updateAnswered);
+    const availablePane = await footerPane(page, "@updates", "Updates available", updateAnswered);
     await assertContained(page, availablePane, `${spec.name}: available update pane`);
     await availablePane.getByText(/^Last installed:/).waitFor();
-    await assertTouchTarget(
-      availablePane.getByRole("button", { name: "Update hz and plugins" }),
-      "update action",
-      spec.name,
-    );
+    await assertTouchTarget(availablePane.getByRole("button", { name: "Update now" }), "update action", spec.name);
     assert.equal(updateRequests, 0, `${spec.name}: inspecting the update must not start installation`);
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-update-available.png`) });
     await dismissFooterPane(page);
@@ -515,7 +838,17 @@ try {
     await assertContained(page, notifications, `${spec.name}: notifications`);
     await page.getByRole("button", { name: "Close notifications" }).click();
     await page.getByRole("button", { name: "Search", exact: true }).click();
-    await assertContained(page, page.getByRole("dialog"), `${spec.name}: search`);
+    const search = page.getByRole("dialog", { name: /^Search navigation/ });
+    await assertContained(page, search, `${spec.name}: search`);
+    const searchInput = search.getByRole("combobox");
+    await searchInput.fill("unmatched-search-probe");
+    await search.getByText("Nothing matches.").waitFor();
+    const clearSearch = search.getByRole("button", { name: "Clear search" });
+    await assertTouchTarget(clearSearch, "clear search button", spec.name);
+    await clearSearch.tap();
+    assert.equal(await searchInput.inputValue(), "", `${spec.name}: search cleared`);
+    assert.ok(await searchInput.evaluate((element) => element === document.activeElement));
+    await clearSearch.waitFor({ state: "hidden" });
     await page.keyboard.press("Escape");
 
     // The home chat opens automatically. Check the composer is inside the screen and can be focused by touch.
@@ -545,7 +878,7 @@ try {
     await page.getByRole("textbox", { name: "Your message" }).fill("A draft to keep.");
     await assertContained(
       page,
-      page.getByRole("button", { name: "Create a helper and take this message" }),
+      page.getByRole("button", { name: "Create a Heinzel and take this message" }),
       `${spec.name}: workshop agent handoff`,
     );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-agent-handoff.png`) });
@@ -719,6 +1052,7 @@ try {
     result.cases.push({
       ...spec,
       viewport: facts,
+      settingsFont,
       accountMenu: menuBox,
       targets: { navigation: navTarget, settings: settingsTarget },
       composer: composerBox,
@@ -766,7 +1100,7 @@ try {
       });
     });
     await page.getByRole("textbox", { name: "Your message" }).fill("Keep my notes current.");
-    await page.getByRole("button", { name: "Create a helper and take this message" }).click();
+    await page.getByRole("button", { name: "Create a Heinzel and take this message" }).click();
     await page.getByLabel("Message your Heinzel").waitFor();
     await page.getByText(/Customize.*suggested look/).click();
     const useSuggestion = page.getByRole("button", { name: "Use suggested identity" });
@@ -863,25 +1197,68 @@ try {
     assert.equal((await lastScroll()).behavior, "smooth", "repeated panel selection scrolls again");
     const startTop = await workspaceScroll.evaluate((element) => element.scrollTop);
     await scrollPage.getByRole("tab", { name: "Specimen", exact: true }).focus();
-    await scrollPage.keyboard.press("Home");
-    const pageTab = scrollPage.getByRole("tab", { name: "Page", exact: true });
-    await pageTab.waitFor({ state: "visible" });
-    await scrollPage.waitForFunction(
-      () => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Page",
-      null,
-      { timeout: 1000 },
-    );
-    assert.ok(await pageTab.evaluate((element) => element === document.activeElement), "Page tab keeps keyboard focus");
-    await scrollPage.waitForFunction(
-      (start) => {
-        const top = document.querySelector(".workspace-scroll").scrollTop;
-        return top > 2 && top < start - 2;
-      },
-      startTop,
-      { timeout: 5000 },
-    );
-    await atPage();
-    assert.equal((await lastScroll()).behavior, "smooth", "Page scrolls smoothly to the top");
+    // Observe before Home: driver round trips may outlast the native animation.
+    // Only actual owning-scroller events after one trusted Home can satisfy the
+    // original intermediate-position predicate, within its original 5000ms budget.
+    await workspaceScroll.evaluate((box, start) => {
+      let settle;
+      let timer;
+      let deadline = 0;
+      let done = false;
+      const samples = [];
+      const result = new Promise((resolve) => {
+        settle = resolve;
+      });
+      const finish = (intermediate = false) => {
+        if (done) return;
+        done = true;
+        window.removeEventListener("keydown", onHome, true);
+        box.removeEventListener("scroll", onScroll);
+        clearTimeout(timer);
+        settle({ intermediate, samples });
+      };
+      const onScroll = (event) => {
+        if (!event.isTrusted || !deadline || performance.now() > deadline) return;
+        const top = box.scrollTop;
+        if (samples.length < 32) samples.push(top);
+        if (top > 2 && top < start - 2) finish(true);
+      };
+      const onHome = (event) => {
+        if (!event.isTrusted || event.key !== "Home" || deadline) return;
+        window.homeMotion.armed = true;
+        deadline = performance.now() + 5000;
+        window.removeEventListener("keydown", onHome, true);
+        timer = setTimeout(() => finish(), 5000);
+      };
+      window.homeMotion = { result, armed: false, stop: finish };
+      window.addEventListener("keydown", onHome, { capture: true, passive: true });
+      box.addEventListener("scroll", onScroll, { passive: true });
+    }, startTop);
+    try {
+      await scrollPage.keyboard.press("Home");
+      assert.equal(
+        await scrollPage.evaluate(() => window.homeMotion.armed),
+        true,
+        "the motion budget starts at trusted Home",
+      );
+      const pageTab = scrollPage.getByRole("tab", { name: "Page", exact: true });
+      await pageTab.waitFor({ state: "visible" });
+      await scrollPage.waitForFunction(
+        () => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Page",
+        null,
+        { timeout: 1000 },
+      );
+      assert.ok(
+        await pageTab.evaluate((element) => element === document.activeElement),
+        "Page tab keeps keyboard focus",
+      );
+      const motion = await scrollPage.evaluate(() => window.homeMotion.result);
+      assert.equal(motion.intermediate, true, "Home must produce a native intermediate scroll position within 5000ms");
+      await atPage();
+      assert.equal((await lastScroll()).behavior, "smooth", "Page scrolls smoothly to the top");
+    } finally {
+      await scrollPage.evaluate(() => window.homeMotion.stop());
+    }
     await scrollPage.getByRole("button", { name: "Chat with your Heinzelmännchen" }).tap();
     await atPanel("chat");
     assert.equal((await lastScroll()).behavior, "smooth", "chat header scrolls smoothly");
@@ -954,9 +1331,85 @@ try {
     await scrollPage.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
     await scrollPage.getByRole("button", { name: "Open a terminal" }).tap();
     await atPanel("terminal");
+    const terminal = scrollPage.getByRole("region", { name: "Terminal", exact: true });
+    const terminalKeys = terminal.getByRole("group", { name: "Terminal keys", exact: true });
+    await assertContained(scrollPage, terminalKeys, "phone: terminal key row");
+    for (const name of [
+      "Escape",
+      "Tab",
+      "Control+C",
+      "Control+Z",
+      "Control+D",
+      "Arrow left",
+      "Arrow down",
+      "Arrow up",
+      "Arrow right",
+    ]) {
+      const key = terminalKeys.getByRole("button", { name, exact: true });
+      await assertTouchTarget(key, `terminal ${name} key`, "phone");
+    }
+    const rightArrow = terminalKeys.getByRole("button", { name: "Arrow right", exact: true });
+    await rightArrow.scrollIntoViewIfNeeded();
+    await assertContained(scrollPage, rightArrow, "phone: horizontally scrolled terminal key");
+    await scrollPage.screenshot({ path: join(shots, "mobile-terminal-keys.png") });
+    const shellInput = terminal.locator(".xterm-helper-textarea");
+    await scrollPage.waitForFunction(() => document.querySelector(".xterm-rows")?.textContent?.trim(), null, {
+      timeout: 10_000,
+    });
+    await shellInput.pressSequentially("printf 'READY_%s\\n' ok; sleep 30");
+    await shellInput.press("Enter");
+    await scrollPage.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("READY_ok"),
+      null,
+      {
+        timeout: 10_000,
+      },
+    );
+    await terminalKeys.getByRole("button", { name: "Control+C", exact: true }).tap();
+    await scrollPage.waitForFunction(() => document.querySelector(".xterm-rows")?.textContent?.includes("^C"), null, {
+      timeout: 10_000,
+    });
+    await shellInput.pressSequentially("printf 'KEYS_TEST_%s\\n' ok");
+    await shellInput.press("Enter");
+    await scrollPage.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("KEYS_TEST_ok"),
+      null,
+      {
+        timeout: 10_000,
+      },
+    );
     await scrollPage.setViewportSize({ width: 844, height: 320 });
     await scrollPage.getByRole("button", { name: "Show terminal" }).tap();
     await atPanel("terminal");
+    // Bead f87: on hosted macOS this row stayed invisible for the whole wait, once in 13 main runs. The same wait now
+    // says why: what hides the row (display, an inactive or hidden tab, a zero box) and which media rules apply.
+    await terminalKeys.waitFor({ state: "visible" }).catch(async (error) => {
+      const state = await scrollPage.evaluate(() => {
+        const rows = [...document.querySelectorAll('fieldset[aria-label="Terminal keys"]')];
+        return {
+          viewport: [innerWidth, innerHeight],
+          pointerFine: matchMedia("(pointer: fine)").matches,
+          regions: document.querySelectorAll('section[aria-label="Terminal"], [role="region"][aria-label="Terminal"]')
+            .length,
+          rows: rows.map((row) => {
+            const box = row.getBoundingClientRect();
+            const view = row.parentElement;
+            return {
+              display: getComputedStyle(row).display,
+              box: [Math.round(box.width), Math.round(box.height)],
+              tabHidden: view?.getAttribute("aria-hidden") === "true",
+              insideHidden: Boolean(row.closest("[hidden]")),
+              tabBox: Math.round(view?.getBoundingClientRect().height ?? -1),
+            };
+          }),
+        };
+      });
+      throw new Error(`${error.message}\nTerminal keys state: ${JSON.stringify(state)}`);
+    });
+    const landscapeEscape = terminalKeys.getByRole("button", { name: "Escape", exact: true });
+    await landscapeEscape.scrollIntoViewIfNeeded();
+    await assertTouchTarget(landscapeEscape, "landscape Escape key", "phone");
+    await scrollPage.screenshot({ path: join(shots, "mobile-terminal-keys-landscape.png") });
     await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
     await atPage();
     assert.equal((await lastScroll()).behavior, "smooth", "short landscape Page scrolls smoothly");
@@ -1042,6 +1495,8 @@ try {
     await soundPage.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
     await soundPage.getByRole("button", { name: "Expand navigation" }).click();
     await soundPage.getByRole("button", { name: "Collapse navigation" }).waitFor();
+    // The expanding sidebar can move the sound button between mouse down and mouse up.
+    await soundPage.waitForFunction(() => !document.getAnimations().some((run) => run instanceof CSSTransition));
     await soundPage.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
     const soundDialog = soundPage.getByRole("dialog", { name: "Sound" });
     await soundDialog.getByText("Use your iPhone or iPad volume buttons to adjust YouTube audio.").waitFor();
@@ -1099,7 +1554,9 @@ try {
     await soundPage.waitForFunction(() => document.querySelector('[data-dock="floating"]'));
     await soundPage.setViewportSize({ width: 360, height: 400 });
     await assertContained(soundPage, player, "rotated floating player");
-    await player.getByText("YouTube asking you to sign in?").tap();
+    const playbackHelp = player.getByRole("button", { name: /Playback or sign-in trouble\?/ });
+    await assertTouchTarget(playbackHelp, "playback help button", "short-landscape");
+    await playbackHelp.tap();
     await assertContained(soundPage, player, "expanded playback recovery");
     const accountChoice = player.getByRole("button", { name: "Use YouTube sign-in" });
     await assertTouchTarget(accountChoice, "YouTube account player choice", "short-landscape");
@@ -1117,21 +1574,25 @@ try {
         "the regular player can receive the browser's YouTube session when third-party cookies are allowed",
       );
     }
-    await player.getByText("YouTube asking you to sign in?").tap();
+    await playbackHelp.tap();
     const accountFrame = await player.locator("iframe").elementHandle();
     await player.getByRole("button", { name: "Retry player" }).tap();
     assert.equal(await accountFrame.evaluate((frame) => frame.isConnected), false, "retry must replace the frame");
-    await player.getByText("YouTube asking you to sign in?").tap();
+    await playbackHelp.tap();
     await player.getByRole("button", { name: "Use private player" }).tap();
     assert.ok(
       (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube-nocookie.com/embed/"),
       "private player choice must restore the privacy-enhanced origin",
     );
-    await player.getByText("YouTube asking you to sign in?").tap();
-    const [youtubePage] = await Promise.all([
-      soundPage.waitForEvent("popup"),
-      player.getByRole("link", { name: "Play on YouTube" }).tap(),
-    ]);
+    // The private-player switch remounts Help. Open it, then tap Help again before using the header link.
+    await playbackHelp.tap();
+    await player.getByRole("region", { name: "Playback or sign-in trouble?" }).waitFor();
+    await player.getByRole("button", { name: /Playback or sign-in trouble\?/, expanded: true }).waitFor();
+    await playbackHelp.tap();
+    await player.getByRole("button", { name: /Playback or sign-in trouble\?/, expanded: false }).waitFor();
+    const openYouTube = player.getByRole("link", { name: "Open on YouTube" });
+    await assertTouchTarget(openYouTube, "Open on YouTube", "short-landscape");
+    const [youtubePage] = await Promise.all([soundPage.waitForEvent("popup"), openYouTube.tap()]);
     await youtubePage.waitForURL("https://www.youtube.com/watch**");
     assert.equal(new URL(youtubePage.url()).searchParams.get("v"), sound.stream.video);
     await player.waitFor({ state: "detached" });

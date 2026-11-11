@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import subprocess
+import tempfile
 import threading
 from collections import deque
 from collections.abc import Callable, Generator, Sequence
@@ -117,8 +118,8 @@ def write_private(path: Path, text: str, *, shared_dir: bool = False) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
     else:
         private_dir(path.parent)
-    temporary = path.with_name(f".{path.name}.tmp")
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, PRIVATE_FILE)
+    descriptor, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(name)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         handle.write(text)
         handle.flush()

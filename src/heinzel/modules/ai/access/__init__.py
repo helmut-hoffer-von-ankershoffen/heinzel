@@ -12,7 +12,7 @@ from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from heinzel import AccessStatus, Check, ConfiguredApiAccess, Module, Progress
+from heinzel import AccessStatus, Adapters, AiAccess, Check, ConfiguredApiAccess, Module, Progress
 from heinzel.modules.ai.access._chatgpt import CHATGPT_LOGIN, ChatGptAccess
 from heinzel.modules.ai.access._chatgpt import HOSTS as CHATGPT_HOSTS
 from heinzel.modules.ai.access._chatgpt import NAME as CHATGPT
@@ -34,7 +34,7 @@ from heinzel.modules.ai.access._service import AccessService
 module = Module(
     "access",
     "Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds.",
-    requires=["ai-access:read"],
+    inspects=["ai-access:read"],
 )
 module.settings(AccessSettings)
 
@@ -120,9 +120,17 @@ def use(
     return service.use(name)
 
 
-@module.operation(name="test", read_only=False, render=render_test, heads={"cli", "web"})
+@module.operation(
+    name="test",
+    read_only=False,
+    render=render_test,
+    heads={"cli", "web"},
+    requires=["ai-access:read"],
+    health_on_demand=True,
+)
 def live_check(
     service: AccessService,
+    options: Adapters[AiAccess],
     name: Annotated[
         str | None,
         Field(
@@ -134,7 +142,7 @@ def live_check(
 
     Claude Code answers one line within $0.05; the gateway runs its configured test command.
     """
-    return service.test(name)
+    return service.test(name, options)
 
 
 # Opens a browser and waits for its callback on 127.0.0.1: a person's own act, in a terminal (ADR 0057).

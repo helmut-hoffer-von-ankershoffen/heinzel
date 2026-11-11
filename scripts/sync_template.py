@@ -18,10 +18,20 @@ TEMPLATE = ROOT / "template"
 PYPROJECT_HEAD = ROOT / "scripts" / "template_pyproject_head.toml.tmpl"
 
 
-def _one_e2e_suite(text: str) -> str:
-    """The core splits its browser E2E files from the rest for CI (SUITE=cli|web); a plugin runs one suite."""
+def _plugin_test_suites(text: str) -> str:
+    """Remove Core's owning-unit mitigation and E2E partitions from plugin test commands."""
+    # This measured mitigation owns a Core-only module; plugin lanes keep their original complete command.
+    text = re.sub(
+        r"# Core Linux retirement mitigation:[^\n]*\n(?:[^\n]*\n)*?test-parallel:[^\n]*\n(?:\t[^\n]*\n)+",
+        "test-parallel: ## Unit and integration tests on 4 workers (3 on macOS), "
+        "stopping at the first failure; no coverage (the CI test matrix)\n"
+        '\t@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"\n'
+        "\t$(STEPS) \"tests=uv run pytest -m '($(TEST_LEVELS)) and not perf' "
+        '-n $(PARALLEL_WORKERS) -x -q --session-timeout=420 --durations=20"\n',
+        text,
+    )
     return re.sub(
-        r"# The browser E2E files[^\n]*\n(?:[^\n]*\n)*?test-e2e:[^\n]*\n(?:\t[^\n]*\n)+",
+        r"# Core E2E lanes[^\n]*\n(?:[^\n]*\n)*?test-e2e:[^\n]*\n(?:\t[^\n]*\n)+",
         "test-e2e: ## Run end-to-end tests (needs network), on 3 workers\n"
         '\t@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"\n'
         '\t$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x"\n',
@@ -29,9 +39,25 @@ def _one_e2e_suite(text: str) -> str:
     )
 
 
+def _without_quarantine(text: str) -> str:
+    """The quarantine lane reads the core's tests/quarantine.toml; plugins have no registry."""
+    text = text.replace(" test-quarantine quarantine-check quarantine-plan", "")
+    start = text.find("\n# The quarantine lane (scripts/quarantine.py)")
+    end = text.find("\ntest-browser-deps:", start)
+    return text[:start] + text[end:] if 0 <= start < end else text
+
+
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
-    text = (ROOT / "Makefile").read_text(encoding="utf-8")
+    text = (
+        _without_quarantine((ROOT / "Makefile").read_text(encoding="utf-8"))
+        # Core-only guards read core standards, CLI guides and E2E lane inventory.
+        .replace("\t@uv run --quiet --script scripts/scoped_checks.py early-fast\n", "")
+        .replace('\t@uv run --quiet --script scripts/scoped_checks.py early-preflight --base "$(BASE)"\n', "")
+        .replace("\tuv run --quiet --script scripts/build.py prepare\n", "")
+        .replace("uv run --quiet --script scripts/build.py sync", "uv sync --frozen --all-groups --quiet")
+        .replace("uv run --quiet --script scripts/build.py", "uv build")
+    )
     # Hook runner is repository tooling, not a plugin test dependency or part of its runtime closure.
     text = text.replace("uv run --quiet prek install", "uv tool run --from prek==0.5.7 prek install")
     text = text.replace(" template-test template-sync docs attributions fuzz demo", "")
@@ -44,7 +70,7 @@ def makefile() -> str:
     text = re.sub(r"\nlinux-user-manager-proof:.*?\n(?:\t.*\n)+", "\n", text)
     text = text.replace(" linux-user-manager-proof", "")
     # Core README e2e builds its own candidate wheel; plugins have no core web/notifier assets to prepare.
-    text = _one_e2e_suite(
+    text = _plugin_test_suites(
         re.sub(r"\ne2e-prepare:.*?\n(?:\t.*\n)+", "\n", text)
         .replace(" test-e2e e2e-prepare ", " test-e2e ")
         .replace("test-e2e: e2e-prepare", "test-e2e:")
@@ -100,13 +126,15 @@ def makefile() -> str:
     text = text.replace("build: web-build ## ", "build: ## ").replace("; the web app first)", ")")
     text = text.replace(" src/heinzel/heads/web/static", "")
     # Native process ownership belongs to the core; plugins carry neither its code nor build dependencies.
-    text = text.replace(" managed-backend-setup managed-backend-check", "")
+    text = text.replace(" managed-backend-setup managed-backend-static managed-backend-check", "")
     text = re.sub(
         r"\n# The managed backend has no Electron dependency;.*?\nMANAGED_TYPES := [^\n]*", "", text, flags=re.DOTALL
     )
     text = re.sub(r" \$\(MANAGED_(CHECK|TYPES)\)", "", text)
     text = text.replace("\n\t@$(MAKE) --no-print-directory managed-backend-setup", "")
-    text = re.sub(r"\n(managed-backend-setup|managed-backend-check):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(
+        r"\n(managed-backend-setup|managed-backend-static|managed-backend-check):.*?\n(?:\t.*\n)+", "\n", text
+    )
     # The native application is core-only; plugins do not carry the Electron window or Linux sandbox setup.
     electron_targets = {
         "desktop-electron-test",
@@ -114,6 +142,7 @@ def makefile() -> str:
         "desktop-electron-native",
         "desktop-electron-package",
         "test-macos-specific",  # the core's notifier, launchd and Finder tests
+        "test-macos-smoke",  # the same tests, as a pull request's macOS check
     }
     text = re.sub(
         r"(?m)^\.PHONY:.*$",
@@ -124,7 +153,7 @@ def makefile() -> str:
     # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
     # Likewise the macOS-specific tests: the notifier, launchd service and Finder code are the core's.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
-    text = re.sub(r"\n(?:notifier|test-macos-specific):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"\n(?:notifier|test-macos-specific|test-macos-smoke):.*?\n(?:\t.*\n)+", "\n", text)
     # The terminal art is drawn from the web app's drawing: plugins have none.
     text = re.sub(r"(?m)^(\.PHONY:.*?) terminal-art\b", r"\1", text)
     text = re.sub(r"\nterminal-art:.*?\n(?:\t.*\n)+", "\n", text)
@@ -145,9 +174,108 @@ def makefile() -> str:
     )
 
 
+def _without_batch_admission(text: str) -> str:
+    """Keep the core queue jobs out of the plugin workflow."""
+    start = text.find("\n  admission:\n")
+    end = text.find("\n  changes:\n", start)
+    return text[:start] + text[end:] if 0 <= start < end else text
+
+
+def _without_core_browser_setup(text: str) -> str:
+    """Plugins have neither the core web head nor its browser dependency steps."""
+    text = re.sub(
+        r"\n      - name: (?:Use Ubuntu's primary archive for browser dependencies|"
+        r"Select the verified alternate mirror for Ubuntu browser dependencies)\n"
+        r"        if: [^\n]*\n        run: [^\n]*",
+        "",
+        text,
+    )
+    return re.sub(
+        r"\n      - name: Install browser runtimes and host dependencies\n"
+        r"(?:        if: [^\n]*\n)?        run: make test-browser-deps",
+        "",
+        text,
+    )
+
+
+def _without_release_candidate(text: str) -> str:
+    """Keep owner-Core candidate selection and source proof out of independent plugin CI."""
+    # A plugin's suite fits one Linux cell; only the core outgrew it and shards by level.
+    text = re.sub(
+        r"\n {8}# One shard per level on Linux too:.*?\n {8}levels: \[unit, integration\]",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
+    text = text.replace(
+        " && matrix.levels == 'unit' # a cell every pull request runs", " # a cell every pull request runs"
+    )
+    text = text.replace(" && needs.changes.outputs.full_release != 'true'", "")
+    text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
+    return re.sub(r"\n {2}release-candidate-source:\n.*?(?=\n {2}ci-ok:)", "", text, flags=re.DOTALL)
+
+
+def _without_core_node_selection(text: str) -> str:
+    """Keep independent plugin Python lanes and their existing dependency groups unchanged."""
+    text = text.replace(
+        "\n    env:\n"
+        "      # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.\n"
+        "      CI_NODE_GROUP_ARGUMENT: ${{ matrix.levels != 'integration' && '--group=build' || '' }}\n",
+        "\n",
+    )
+    text = text.replace(' ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"}', "")
+    text = text.replace("--group test --group build", "--group test")
+    return re.sub(
+        r"\n      - name: Select the locked wheel Node without executing it\n"
+        r"(?:        if: [^\n]*\n)?        run: uv run --frozen --no-sync --no-build python scripts/ci_node.py",
+        "",
+        text,
+    )
+
+
+def _without_focused_admission(text: str) -> str:
+    """Keep the core's candidate-only routing out of the plugin workflow."""
+    text = re.sub(r"\n  focused-tests:\n.*?(?=\n  ci-ok:)", "", text, flags=re.DOTALL)
+    text = re.sub(r"\n      - name: Require successful focused workload.*", "", text, flags=re.DOTALL) + "\n"
+    text = re.sub(
+        r"(?m)^    if: needs\.changes\.outputs\.full_release == 'true' && \((.*)\) # Core candidate-only$",
+        r"    if: \1",
+        text,
+    )
+    text = text.replace(" || needs.changes.outputs.focused_mode != '' # Core focused structural", "")
+    text = text.replace(
+        " && needs.changes.outputs.full_release == 'true' && needs.changes.outputs.core",
+        " && needs.changes.outputs.core",
+    )
+    text = text.replace(", focused-tests]", "]")
+    return text.replace(
+        "enable-cache: ${{ needs.changes.outputs.full_release == 'true' }}\n"
+        "          cache-dependency-glob: uv.lock\n"
+        "          save-cache: false",
+        "enable-cache: true\n"
+        "          cache-dependency-glob: uv.lock\n"
+        "          save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache",
+    )
+
+
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
-    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    text = _without_focused_admission((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    # Batch admission is core queue coordination; plugins retain their complete workflow.
+    text = _without_batch_admission(text)
+    text = re.sub(r"(?m)^run-name:.*\n", "", text)
+    text = text.replace("    needs: admission\n", "")
+    text = text.replace("    if: github.event_name != 'push' || needs.admission.outputs.full != 'false'\n", "")
+    text = text.replace(
+        "always() && (github.event_name != 'push' || needs.admission.outputs.full != 'false')", "always()"
+    )
+    text = text.replace("needs: [admission, ", "needs: [")
+    # Plugins have no changed-path job; preserve their existing macOS matrix.
+    text = _without_release_candidate(_without_core_node_selection(text))
+    text = text.replace(
+        "PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.",
+        "PRs run the newest version; non-PR runs cover all versions.",
+    )
     text = re.sub(r"\n  template:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
     text = re.sub(
         r"\n      - name: Require the confidential terms\n.*?(?=\n      - run: make lint)", "", text, flags=re.DOTALL
@@ -158,14 +286,14 @@ def ci_workflow() -> str:
     )
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
     # The web head's app (ADR 0039) and ATTRIBUTIONS.md, the notices of what it bundles: plugins have neither.
-    text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
     text = re.sub(
-        r"\n      - name: Install browser runtimes and host dependencies\n"
-        r"(?:        if: [^\n]*\n)?        run: make test-browser-deps",
+        r"\n(?:      - if: needs\.changes\.outputs\.full_release == 'true'\n        run:|      - run:) "
+        r"make test-web[^\n]*",
         "",
         text,
     )
-    text = re.sub(r"\n      - run: make managed-backend-[^\n]*", "", text)
+    text = _without_core_node_selection(_without_core_browser_setup(text))
+    text = re.sub(r"\n      - run: make managed-backend-[^\n]*(?:\n        if: [^\n]*)?", "", text)
     # Only the core daemon uses the host's user service manager; plugins ship no such probe.
     text = re.sub(
         r"\n      - name: Inspect the Linux user manager without starting services\n.*?(?=\n      - )",
@@ -180,15 +308,17 @@ def ci_workflow() -> str:
     text = re.sub(r"\n  notifier:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
     # The Electron window and its native runtime are core-only; plugins carry no desktop app.
     text = re.sub(r"\n  electron:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
+    # The pull request's macOS smoke job runs the core's macOS-only tests: plugins have none.
+    text = re.sub(r"\n  macos-smoke:\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
     text = text[: text.index("  site-tests:\n")] + text[text.index("  e2e:\n") :]
     text = re.sub(r"\n  changes:\n.*?(?=\n  dependency-review:)", "", text, flags=re.DOTALL)
     # The template has no changed-path job; keep the E2E matrix as is, without core-only gating.
     text = text.replace("    needs: changes\n", "")
     text = re.sub(r"(?m)^    if: .*needs\.changes\.outputs\.core[^\n]*\n", "", text)
-    # A plugin has no browser E2E files to split off, so its E2E job stays one per OS.
+    # Core supervised/browser partitions do not exist in plugins: keep one complete E2E job per OS.
     text = text.replace("End-to-end ${{ matrix.suite }} (", "End-to-end (")
-    text = re.sub(r"(?m)^        # Three jobs per OS[^\n]*\n        suite: \[cli, web-1, web-2\]\n", "", text)
-    text = re.sub(r"(?m)^        if: startsWith\(matrix\.suite, 'web'\)\n", "", text)
+    text = re.sub(r"(?m)^        # Core E2E lanes:[^\n]*\n        suite: \[cli, supervised, web-1, web-2\]\n", "", text)
+    text = text.replace("        if: matrix.suite == 'supervised' || startsWith(matrix.suite, 'web')\n", "")
     text = text.replace("make test-e2e SUITE=${{ matrix.suite }}", "make test-e2e")
     text = text.replace("    needs: notifier\n", "")
     text = re.sub(r"    if: \$\{\{ !cancelled\(\) && needs\.notifier\.result[^\n]*\n", "", text)
@@ -200,7 +330,7 @@ def ci_workflow() -> str:
     )
     text = re.sub(r"\n      - name: Unpack Heinzel Notifier into the package\n[^\n]*\n[^\n]*", "", text)
     text = re.sub(r"\n      - name: Check the wheel ships Heinzel Notifier\n[^\n]*\n[^\n]*", "", text)
-    text = text.replace(", notifier, macos-specific, electron, build]", ", build]")
+    text = text.replace(", notifier, macos-specific, macos-smoke, electron, build]", ", build]")
     # Consumer compatibility belongs to core's public-contract release, never a plugin's own edit loop.
     text = re.sub(r"\n  consumer-(?:plan|check):\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
     text = re.sub(r"\n  local-plugin-(?:plan|check):\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
@@ -208,17 +338,23 @@ def ci_workflow() -> str:
     text = text.replace(", consumer-plan, consumer-check]", "]")
     # Removed jobs must also disappear from the stable required aggregate, irrespective of list order.
     removed = {
+        "batch-full",
         "changes",
         "site-tests",
         "template",
         "notifier",
         "macos-specific",
+        "macos-smoke",
         "electron",
         "consumer-plan",
         "consumer-check",
         "local-plugin-plan",
         "local-plugin-check",
         "core-wheel",
+        "release-candidate-source",
+        "quarantine-registry",
+        "quarantine-plan",
+        "quarantine",
     }
     text = re.sub(
         r"(?m)^    needs: \[([^\n]+)\]$",
@@ -229,7 +365,7 @@ def ci_workflow() -> str:
         ),
         text,
     )
-    # The core's CI covers every platform of the shared scripts/tools.toml; a plugin, possibly private and paying for
+    # Core CI covers Linux architectures and Apple-silicon macOS; a plugin, possibly private and paying for
     text = text.replace("    needs: []\n", "")
     # its minutes, sets up on the two most contributors use.
     text = re.sub(
@@ -239,7 +375,24 @@ def ci_workflow() -> str:
         count=1,
         flags=re.DOTALL,
     )
-    text = re.sub(r"\n# GitHub-hosted macOS runners.*?\n(?=jobs:)", "\n", text, flags=re.DOTALL)
+    # The extra endpoint branch is core-only; the plugin's existing PR branch below stays on newest Python.
+    text = re.sub(
+        r" \|\| github\.event_name == 'pull_request' && '\[[^']+\]'(?= \|\| github\.event_name == 'schedule')",
+        "",
+        text,
+    )
+    # Plugins do not have the core smoke job: retain their existing macOS PR tests and E2E coverage.
+    text = text.replace(
+        "github.event_name == 'pull_request' && '[]' || github.event_name == 'schedule'",
+        'github.event_name == \'pull_request\' && \'[{"os":"macos-latest","python":"3.15","levels":"unit"},'
+        '{"os":"macos-latest","python":"3.15","levels":"integration"}]\' || github.event_name == \'schedule\'',
+    )
+    text = text.replace(
+        "os: ${{ fromJSON(github.event_name == 'pull_request' && '[\"ubuntu-24.04\"]' || "
+        '\'["ubuntu-24.04","macos-latest"]\') }}',
+        "os: [ubuntu-24.04, macos-latest]",
+    )
+    text = re.sub(r"\n# Ordinary changes and main baselines.*?\n(?=jobs:)", "\n", text, flags=re.DOTALL)
     return text.replace(", template, build]", ", build]").replace(", changes,", ",")
 
 
@@ -253,6 +406,7 @@ def pyproject() -> str:
         '"pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8"]',
         dev,
     )
+    dev = re.sub(r"\n# Isolated wheel and editable backends[^\n]*\nbuild = [^\n]*", "", dev)
     # Only Heinzelmännchen itself needs these: the template renderer, its import contracts, its first-party plugin and
     # the type stubs of its own dependencies.
     dev = re.sub(r'\n    "(copier|import-linter|heinzel-[a-z]+>=|types-croniter)[^\n]*', "", dev)

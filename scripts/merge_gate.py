@@ -7,9 +7,10 @@
 Rule: nothing merges unless SonarCloud's quality gate passes and overall reliability, security and maintainability are
 rated A, for both the pull request's analysis and the project; and nothing merges at a coverage where the badge is red.
 
-Runs from .github/workflows/merge-gate.yml on `pull_request_target`, so a pull request can't change the gate that judges
-it: this file comes from the base branch and no pull request code is run. What it reads from the pull request's CI is
-a number, parsed strictly. Standard library only. Waits with a deadline, then fails closed: no answer is never a pass.
+Runs from .github/workflows/merge-gate.yml on `workflow_run` once a pull request's CI has finished, so a pull request
+can't change the gate that judges it: this file comes from the default branch and no pull request code is run. What it
+reads from the pull request's CI is a number, parsed strictly. Standard library only. Waits with a deadline, then fails
+closed: no answer is never a pass.
 
 Environment: GITHUB_REPOSITORY, GITHUB_TOKEN, PR_NUMBER and PR_HEAD_SHA (absent: the project only), COVERAGE_CHECK (the
 name of the CI job that measures coverage), CI_WORKFLOW (default .github/workflows/ci.yml).
@@ -51,6 +52,10 @@ TOTAL = re.compile(r"\d{1,3}(?:\.\d+)?")
 REDIRECTS = (301, 302, 303, 307, 308)
 MAX_PERCENT = 100
 RUN_URL = re.compile(r"/actions/runs/(\d+)")
+EVIDENCE_API = re.compile(
+    r"https://api\.github\.com/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/(?:artifacts/[1-9][0-9]*/zip|jobs/[1-9][0-9]*/steps/[1-9][0-9]*/logs)"
+)
+EVIDENCE_HOST = re.compile(r"productionresultssa[0-9]+\.blob\.core\.windows\.net")
 
 
 class UnavailableError(Exception):
@@ -64,7 +69,70 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         """Follow nothing."""
 
 
-def fetch(url: str, headers: dict[str, str] | None = None) -> bytes:
+def fetch_evidence(url: str, token: str, *, limit: int) -> bytes:
+    """Read bounded evidence via GitHub's authenticated, single-hop delegation.
+
+    Raises:
+        UnavailableError: The source, delegation, response or transport is invalid.
+    """
+    if not EVIDENCE_API.fullmatch(url) or not token or limit <= 0:
+        message = "invalid GitHub evidence request"
+        raise UnavailableError(message)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
+    request = urllib.request.Request(  # noqa: S310 - exact GitHub API URL checked above
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2026-03-10",
+        },
+    )
+    try:
+        try:
+            reply = opener.open(request, timeout=30)
+        except urllib.error.HTTPError as error:
+            location = error.headers.get("Location") if error.code in REDIRECTS else None
+            error.close()
+            try:
+                target = urllib.parse.urlsplit(location or "")
+                valid = (
+                    target.scheme == "https"
+                    and target.username is None
+                    and target.password is None
+                    and target.port in (None, 443)
+                    and "#" not in (location or "")
+                    and EVIDENCE_HOST.fullmatch(target.hostname or "") is not None
+                )
+            except ValueError:
+                valid = False
+            if not valid:
+                message = "invalid GitHub evidence delegation"
+                raise UnavailableError(message) from error
+            reply = opener.open(urllib.request.Request(location), timeout=30)  # noqa: S310 - verified delegation
+        with reply:
+            body = bytes(reply.read(limit + 1))
+        if len(body) > limit:
+            message = "GitHub evidence exceeded its byte limit"
+            raise UnavailableError(message)
+    except urllib.error.HTTPError as error:
+        error.close()
+        message = "GitHub evidence transport failed"
+        raise UnavailableError(message) from error
+    except OSError as error:
+        message = "GitHub evidence transport failed"
+        raise UnavailableError(message) from error
+    else:
+        return body
+
+
+def fetch(
+    url: str,
+    headers: dict[str, str] | None = None,
+    *,
+    limit: int | None = None,
+    storage_hosts: frozenset[str] | None = None,
+    redirects: int = 3,
+) -> bytes:
     """The body at url. A redirect is followed without the headers, because artifact storage refuses our token.
 
     Raises:
@@ -74,16 +142,22 @@ def fetch(url: str, headers: dict[str, str] | None = None) -> bytes:
     request = urllib.request.Request(url, headers=headers or {})  # noqa: S310 - fixed https API bases above
     try:
         with opener.open(request, timeout=30) as reply:
-            return bytes(reply.read())
+            body = bytes(reply.read() if limit is None else reply.read(limit + 1))
+            if limit is not None and len(body) > limit:
+                message = "GitHub evidence exceeded its byte limit"
+                raise UnavailableError(message)
+            return body
     except urllib.error.HTTPError as error:
         location = error.headers.get("Location") if error.code in REDIRECTS else None
         error.close()
-        if location and location.startswith("https://"):
-            return fetch(location)
-        message = f"{url} answered {error.code}"
+        if location and location.startswith("https://") and redirects > 0:
+            host = urllib.parse.urlsplit(location).hostname
+            if storage_hosts is None or host in storage_hosts:
+                return fetch(location, limit=limit, storage_hosts=storage_hosts, redirects=redirects - 1)
+        message = f"{urllib.parse.urlsplit(url).hostname} answered {error.code}"
         raise UnavailableError(message) from error
     except OSError as error:  # URLError and TimeoutError are OSErrors
-        message = f"{url} did not answer: {error}"
+        message = f"{urllib.parse.urlsplit(url).hostname} did not answer: {error}"
         raise UnavailableError(message) from error
 
 
@@ -229,35 +303,28 @@ class Gate:
         found = sorted(runs.get("check_runs", []), key=lambda r: r.get("started_at") or "", reverse=True)
         return found[0] if found and found[0].get("status") == "completed" else None
 
-    def measured(self, job: dict[str, Any]) -> float:
+    def measured(self, job: dict[str, Any], *, run_id: int | None = None) -> float:
         """The total the pull request's own CI measured.
 
         Raises:
             UnavailableError: The total can't be read.
         """
-        match = RUN_URL.search(job.get("details_url") or "")
-        if not match:
-            message = f"can't find the CI run of {job.get('name')}"
-            raise UnavailableError(message)
-        artifacts = self.github(f"actions/runs/{match[1]}/artifacts?name={ARTIFACT}").get("artifacts", [])
+        if run_id is None:
+            match = RUN_URL.search(job.get("details_url") or "")
+            if not match:
+                message = f"can't find the CI run of {job.get('name')}"
+                raise UnavailableError(message)
+            run_id = int(match[1])
+        artifacts = self.github(f"actions/runs/{run_id}/artifacts?name={ARTIFACT}").get("artifacts", [])
         if not artifacts:
             message = f"the CI run has no {ARTIFACT} artifact"
             raise UnavailableError(message)
+        if len(artifacts) != 1:
+            message = f"the CI run needs exactly one {ARTIFACT} artifact"
+            raise UnavailableError(message)
         headers = {"Authorization": f"Bearer {self.token}"}
         data = self.read_bytes(artifacts[0]["archive_download_url"], headers)
-        if len(data) > MAX_ARTIFACT:
-            message = f"the {ARTIFACT} artifact is too large"
-            raise UnavailableError(message)
-        try:
-            with zipfile.ZipFile(io.BytesIO(data)) as archive:
-                text = archive.read(f"{ARTIFACT}.txt").decode().strip()
-        except (zipfile.BadZipFile, KeyError, UnicodeDecodeError) as error:
-            message = f"can't read the {ARTIFACT} artifact: {error}"
-            raise UnavailableError(message) from error
-        if not TOTAL.fullmatch(text) or float(text) > MAX_PERCENT:
-            message = f"the {ARTIFACT} artifact is not a percentage: {text[:40]!r}"
-            raise UnavailableError(message)
-        return float(text)
+        return whole_total(data)
 
     def badge_total(self) -> float:
         """Main's published total, for a pull request whose CI skipped the measurement because no code changed.
@@ -287,6 +354,31 @@ class Gate:
             return [f"the {check} job ended with {conclusion}, so there is no coverage to judge: {job.get('html_url')}"]
         print(f"coverage {total}% ({source}), red below {floor}%", flush=True)
         return [] if total >= floor else [f"coverage {total}% is below {floor}%, where the badge turns red ({source})"]
+
+
+def whole_total(data: bytes) -> float:
+    """Read the original bounded full-project scalar artifact only.
+
+    Raises:
+        UnavailableError: The archive is missing or does not contain an exact legacy total.
+    """
+    if len(data) > MAX_ARTIFACT:
+        message = f"the {ARTIFACT} artifact is too large"
+        raise UnavailableError(message)
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            expected = f"{ARTIFACT}.txt"
+            if archive.namelist() != [expected] or archive.getinfo(expected).file_size > MAX_ARTIFACT:
+                message = f"{ARTIFACT} needs exactly one bounded whole-project scalar"
+                raise UnavailableError(message)
+            text = archive.read(expected).decode().strip()
+    except (zipfile.BadZipFile, KeyError, UnicodeDecodeError) as error:
+        message = f"can't read the {ARTIFACT} artifact: {error}"
+        raise UnavailableError(message) from error
+    if not TOTAL.fullmatch(text) or float(text) > MAX_PERCENT:
+        message = f"the {ARTIFACT} artifact is not a percentage: {text[:40]!r}"
+        raise UnavailableError(message)
+    return float(text)
 
 
 def red_below(workflow: str) -> float:

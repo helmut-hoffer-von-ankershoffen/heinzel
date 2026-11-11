@@ -129,6 +129,10 @@ class DaemonStatus(BaseModel):
 
     platform: str = Field(description="The platform's service manager: darwin (launchd) or linux (systemd).")
     installed: bool = Field(description="Whether the unit files exist.")
+    owned: bool = Field(
+        default=False,
+        description="Whether exact selected-profile files, tool and loaded manager identity were verified.",
+    )
     loaded: bool = Field(description="Whether launchd or systemd has the unit loaded.")
     paused: bool = Field(description="Whether ticks are paused with `hz system daemon pause`.")
     interval_minutes: int | None = Field(description="Minutes between ticks, as installed.")

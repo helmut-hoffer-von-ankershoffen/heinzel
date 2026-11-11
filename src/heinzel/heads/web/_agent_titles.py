@@ -4,11 +4,11 @@ import json
 import os
 from pathlib import Path
 
-import psutil
-
 
 def claude_title(main: int) -> str | None:
     """Return a live foreground Claude session's name, or None when it cannot be identified."""
+    import psutil  # noqa: PLC0415 - foreground inspection is needed only for an open terminal
+
     try:
         pid = os.tcgetpgrp(main)
         process = psutil.Process(pid)

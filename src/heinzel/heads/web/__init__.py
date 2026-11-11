@@ -1,15 +1,18 @@
-"""The web head: a React app (web/ in the repository) that the API head serves, started with `hz ui`.
+"""The web head: a React app (web/ in the repository) that the API head serves, started with `hz ui serve`.
 
 One origin serves both: the built app at `/`, every path the app routes falling back to its `index.html`, and the API
 head's endpoints under `/api`, built for the `web` head. The API part keeps every check of the REST head (a loopback
-Host on our port, no other Origin, no cross-site `Sec-Fetch-Site`) and adds a token: `hz ui` makes one per session and
+Host on our port, no other Origin, no cross-site `Sec-Fetch-Site`) and adds a token: `hz ui serve` makes one per
+session and
 opens the browser with it in the URL's fragment, which never reaches a server or a Referer; the app keeps it in
 `sessionStorage` and sends it as `Authorization: Bearer <token>` with every call. Requests without it are refused, so
 another page in the browser can't call operations even when it can reach the port. Every response carries a strict
 Content Security Policy that allows this origin only (ADR 0039).
 
-`hz ui` listens on one fixed port (`[hz] ui_port`), so an installed app keeps its origin, and with its session token
-the app pairs once for a device token it keeps, which every later `hz ui` accepts too (`_devices.py`, ADR 0046). The
+`hz ui serve` listens on one fixed port (`[hz] ui_port`), so an installed app keeps its origin, and with its session
+token
+the app pairs once for a device token it keeps, which every later `hz ui serve` accepts too (`_devices.py`, ADR
+0046). The
 app's manifest and service worker are top-level files of the build; the worker shows notifications and caches the
 app's shell, never API data.
 
@@ -17,8 +20,10 @@ Themes' font files are served outside `/api`, at `/theme-fonts/<theme>/<index>.w
 fetches a font for `FontFace` or `@font-face` itself and can't add a header. They pass the same Host, Origin and
 `Sec-Fetch-Site` checks, hold nothing private (what an installed plugin ships), and come through `ThemeFonts`, which
 checks each file again as it reads it (ADR 0044). Themes' logos are served the same way at
-`/theme-assets/<theme>/<light|dark|mark>.svg`, as `image/svg+xml` under a CSP of their own that loads and runs nothing.
-Soundscapes' audio files are served the same way at `/sound-assets/<name>/<layer-n|earcon-kind>.<ext>`, typed by their
+`/theme-assets/<theme>/<light|dark|mark>.svg`, as `image/svg+xml` under a CSP of their own that loads and runs
+nothing.
+Soundscapes' audio files are served the same way at `/sound-assets/<name>/<layer-n|earcon-kind>.<ext>`, typed by
+their
 checked signature (ADR 0058). The page itself (`index.html`) admits only fixed media frame origins from code:
 a stream origin only while the soundscape in effect is a stream. The
 configuration is read for each page, and any error admits no stream origin.
@@ -27,7 +32,7 @@ configuration is read for each page, and any error admits no stream origin.
 (`restart_required`, ADR 0047): the process executes `hz` again with the same arguments, handing over its listening
 socket and its token, so the open tab keeps its URL and its token and only waits a moment.
 
-Ctrl-C stops `hz ui` at once: the notice stream and the terminals end before the server waits for them
+Ctrl-C stops `hz ui serve` at once: the notice stream and the terminals end before the server waits for them
 (`_shutdown.py`).
 """
 
@@ -39,7 +44,7 @@ import secrets
 import socket
 import sys
 import threading
-import webbrowser
+import webbrowser as webbrowser
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -59,6 +64,7 @@ from heinzel.heads.web._ports import wait_for_port
 from heinzel.heads.web._shutdown import GRACE_SECONDS, KEEP_ALIVE_SECONDS, Stopping
 from heinzel.heads.web._shutdown import server as stopping_server
 from heinzel.heads.web._stream import add_stream
+from heinzel.heads.web._supervision import WebPublication, restart_when_settled
 from heinzel.heads.web._updates import add_updates
 from heinzel.kernel import (
     FONT_ROUTE,
@@ -89,7 +95,8 @@ SPLASH_SCRIPT = "'sha256-JVUEuicvI/AfBERQXDLXpEEPtcrdJe03yief1rkzoEY='"
 """The one inline script allowed, by its hash: the splash's in `web/index.html`, which paints the last theme before the
 app loads (ADR 0046). A test recomputes it from the file, so a changed script fails until this changes with it."""
 CSP = (
-    f"default-src 'none'; script-src 'self' {SPLASH_SCRIPT}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    f"default-src 'none'; script-src 'self' {SPLASH_SCRIPT}; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: https://raw.githubusercontent.com; "
     "font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; "
     "form-action 'none'; frame-ancestors 'none'"
 )
@@ -107,8 +114,9 @@ SECURITY_HEADERS = {
 }
 """How others may treat our answers; none of them limits what the page embeds. Never add COEP `require-corp`: it
 would block the stream soundscape's player (ADR 0058)."""
-NO_CACHE = frozenset({"sw.js", "manifest.webmanifest", "favicon.svg"})
-"""Top-level files a browser must check for a new version every time: the service worker and the manifest."""
+NO_CACHE = frozenset({"sw.js", "manifest.webmanifest", "favicon.svg", "offline.html", "boot-retry.js"})
+"""Top-level files a browser must check for a new version every time: the service worker, the manifest and the shell
+the worker keeps (the offline page and its retry script), so a new build's worker never keeps an older build's copy."""
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 NOT_FOUND = 404
 FONT_THEME = re.compile(r"[a-z](?:-?[a-z0-9]){0,63}")
@@ -117,7 +125,7 @@ LOGO_FILE = re.compile(r"(light|dark|mark|heinzel-(?:hat-(?:young|grown|old)|out
 SOUND_FILE = re.compile(r"(layer-[0-9]|earcon-[a-z]{1,16})\.(ogg|opus|mp3)")
 IMMUTABLE = "public, max-age=31536000, immutable"
 RESUME = "HEINZEL_UI_RESUME"
-"""How a restarting `hz ui` hands its listening socket and token to the process it becomes: `<fd>:<token>`. A
+"""How a restarting `hz ui serve` hands its listening socket and token to the process it becomes: `<fd>:<token>`. A
 variable of this process only, read and removed at start; never a setting, so no file can set it."""
 TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,}$")
 Execute = Callable[[str, list[str], dict[str, str]], object]
@@ -177,7 +185,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     restart: Callable[[], None] | None = None,
     stopping: Stopping | None = None,
 ) -> FastAPI:
-    """The app `hz ui` serves: the built web app at `/` and the web head's API, behind the token, at `/api`.
+    """The app `hz ui serve` serves: the built web app at `/` and the web head's API, behind the token, at `/api`.
 
     Args:
         kernel: The kernel whose operations the API exposes.
@@ -243,6 +251,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         restart=restart,
         accept=lambda presented: device.id if (device := paired.check(presented)) else None,
     )
+    app.state.lifecycle = endpoints.state.lifecycle
     add_pairing(endpoints, paired)
     add_updates(endpoints, kernel, static, restartable=restart is not None)
     app.state.auto_update = AutoUpdater(kernel, restart=restart, activity=activity)
@@ -489,13 +498,14 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     base: str | None = None,
     restartable: bool = True,
     execute: Execute = os.execve,
+    supervised: str | None = None,
     waiting: Callable[[str], None] = print,
 ) -> None:
     """Serve the web head on localhost until Ctrl-C stops it, with a new token, and open the browser at it.
 
     It returns once stopped; a restart (`POST /api/restart`) replaces the process instead.
 
-    Started by a restarting `hz ui` (the `HEINZEL_UI_RESUME` variable), it takes over that process's socket and
+    Started by a restarting `hz ui serve` (the `HEINZEL_UI_RESUME` variable), it takes over that process's socket and
     token instead and opens no browser: the tab is still open.
 
     Args:
@@ -506,8 +516,9 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
         static: The built app; None serves the API only, for `make web-dev`.
         base: The origin of the URL to announce, when another server serves the app (Vite in `make web-dev`).
         restartable: Whether `POST /api/restart` runs this process's command again; false where the command isn't
-            `hz ui` (`make web-dev`).
+            `hz ui serve` (`make web-dev`).
         execute: Replaces the process on restart; a fake in tests.
+        supervised: Exact installed OS-service generation; publishes owner-only local control, never a URL to logs.
         waiting: Reports a bounded wait when a recently stopped UI still holds the requested port.
 
     Raises:
@@ -532,10 +543,21 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
             handover.append(duplicate)
         server.should_exit = True
 
+    restart_server = restart_when_settled(
+        restart,
+        prefix=Path(sys.prefix),
+        state=kernel.settings.state_dir,
+        supervised=supervised is not None,
+    )
     stopping = Stopping()
     try:
         app = build(
-            kernel, port=bound, token=token, static=static, restart=restart if restartable else None, stopping=stopping
+            kernel,
+            port=bound,
+            token=token,
+            static=static,
+            restart=restart_server if restartable else None,
+            stopping=stopping,
         )
     except BaseException:
         sock.close()
@@ -549,14 +571,23 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     )
     server = stopping_server(config, stopping)
     url = session_url(bound, token, base)
+    lifecycle = app.state.lifecycle
+    publication = WebPublication(
+        Config.load(Path.home()).settings(Settings, KERNEL_SECTION).state_dir / "ui",
+        supervised,
+        bound,
+        lifecycle.instance,
+        lifecycle.version,
+        url,
+        restart_server,
+        lambda: setattr(server, "should_exit", True),
+    )
 
     def when_started() -> None:
         while not server.started and not server.should_exit:
             threading.Event().wait(0.05)
         if server.started:
-            announce(url)
-            if browser:
-                webbrowser.open(url)
+            publication.publish(announce, browser=browser)
 
     threading.Thread(target=when_started, daemon=True).start()
     updater: AutoUpdater = app.state.auto_update
@@ -565,6 +596,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
         server.run(sockets=[sock])
     finally:
         updater.stop()
+        publication.close()
         sock.close()
     if handover and not stopping.interrupted:  # Ctrl-C while restarting stops it
         command = [sys.executable, "-m", "heinzel", *sys.argv[1:]]
@@ -572,7 +604,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
 
 
 def _listening_on_loopback(sock: socket.socket) -> bool:
-    """Whether a handed-over socket is what `hz ui` listens on: TCP on 127.0.0.1, accepting connections."""
+    """Whether a handed-over socket is what `hz ui serve` listens on: TCP on 127.0.0.1, accepting connections."""
     try:
         if sock.family != socket.AF_INET or sock.type != socket.SOCK_STREAM or sock.getsockname()[0] != HOST:
             return False
@@ -591,7 +623,7 @@ def _listening_on_loopback(sock: socket.socket) -> bool:
 def _session(
     handed_over: str | None, port: int, waiting: Callable[[str], None] = print
 ) -> tuple[socket.socket, str, bool]:
-    """The listening socket and token: those a restarting `hz ui` handed over, else new ones; and whether resumed.
+    """The listening socket and token: those a restarting `hz ui serve` handed over, else new ones; and whether resumed.
 
     Raises:
         HeinzelError: If a fixed port stays busy after the bounded wait.

@@ -1,8 +1,9 @@
 // Playbooks' asset types (`hz heinzel playbooks`) and the assets found for them (`hz heinzel discover`).
-import { Search } from "lucide-react";
+import { ExternalLink, Search } from "lucide-react";
 import { useState } from "react";
 import { useDiscover, usePlaybooks } from "@/api/queries";
 import { Empty, Loaded, Page } from "@/components/common";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/card";
 import { t } from "@/i18n";
@@ -102,23 +103,18 @@ export function Assets() {
                     <li key={`${candidate.asset}/${candidate.ref}`}>
                       <Card>
                         <p className="font-medium">
-                          {candidate.url ? (
-                            <a
-                              href={candidate.url}
-                              className="text-primary underline-offset-2 hover:underline"
-                              rel="noreferrer noopener"
-                              target="_blank"
-                            >
-                              {candidate.title}
-                            </a>
-                          ) : (
-                            candidate.title
-                          )}{" "}
-                          <Badge>{candidate.asset}</Badge>
+                          {candidate.title} <Badge>{candidate.asset}</Badge>
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {candidate.playbook} · {candidate.hint} · <code className="font-mono">{candidate.ref}</code>
                         </p>
+                        {candidate.url && (
+                          <PaneActions>
+                            <PaneAction key="open" icon={ExternalLink} href={candidate.url}>
+                              {t("workflow.panel.open")}
+                            </PaneAction>
+                          </PaneActions>
+                        )}
                       </Card>
                     </li>
                   ))}

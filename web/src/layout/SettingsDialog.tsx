@@ -5,8 +5,10 @@ import { FolderOpen, Monitor, Moon, Sun, X } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
 import type { SchemaConfigReport, SchemaSettingInfo } from "@/api/client";
 import { useConfig, useExpert, useInfo, useNavigation, usePlugins, useRevealConfig, useSetExpert } from "@/api/queries";
+import { VisualizationSettings } from "@/audio/VisualizationSettings";
 import { ContributionControls, ContributionToggles } from "@/components/Contributions";
 import { Loaded } from "@/components/common";
+import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
@@ -36,6 +38,7 @@ import {
 } from "./settingsSections";
 import { ThemePreviews } from "./ThemePreviews";
 import { type Mode, useMode } from "./theme";
+import { WebServerSettings } from "./WebServerSettings";
 
 type Props = {
   section: string | null;
@@ -70,14 +73,11 @@ export function SettingsDialog({ section, initialQuery, onSection, onClose }: Pr
           <h2 id={titleId} className="text-ui font-medium">
             {t("settings.title")}
           </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t("settings.close")}
-            className="ml-auto flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <X aria-hidden className="size-(--icon)" />
-          </button>
+          <div data-pane-chrome="" className="ml-auto">
+            <PaneAction ghost icon={X} onClick={onClose}>
+              {t("settings.close")}
+            </PaneAction>
+          </div>
         </header>
         <Loaded query={config}>
           {(report) => (
@@ -264,25 +264,32 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                   <SoundSettings />
                 </div>
                 <div className="mt-6">
+                  <VisualizationSettings />
+                </div>
+                <div className="mt-6">
                   <ExpertRow />
                 </div>
               </>
             )}
             {current === "ai" && <AiAccessSetting />}
             {current === "notifications" && <NotificationSettings />}
+            {current === "web-server" && <WebServerSettings />}
             {current === "daemon" && (
               <>
                 {header}
                 <DaemonSettings />
               </>
             )}
-            {(matching.length > 0 || !["appearance", "ai", "notifications", "daemon"].includes(current)) && (
-              <Sections
-                settings={matching}
-                heading={current === "daemon" ? t("daemon.configuration") : page.title}
-                header={["appearance", "ai", "notifications", "daemon"].includes(current) ? undefined : header}
-                summary={page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined}
-              />
+            {(matching.length > 0 ||
+              !["appearance", "ai", "notifications", "daemon", "web-server"].includes(current)) && (
+              <div className={current === "daemon" ? "mt-8" : undefined}>
+                <Sections
+                  settings={matching}
+                  heading={current === "daemon" ? t("daemon.configuration") : page.title}
+                  header={["appearance", "ai", "notifications", "daemon"].includes(current) ? undefined : header}
+                  summary={page.status ?? (page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined)}
+                />
+              </div>
             )}
             <ViewSlot slot="settings" section={page.module ?? current} />
             {(page.module || TOGGLES[current]) && (
@@ -411,7 +418,9 @@ function ExpertRow() {
         )}
         {change.error && (
           <p role="alert" className="mt-1 text-xs text-bad">
-            {t("settings.expertFailed", { problem: change.error.message })}
+            {t("settings.expertFailed", {
+              problem: change.error.message,
+            })}
           </p>
         )}
       </div>

@@ -136,6 +136,8 @@ class OperationLet(Let):
     """Whether it does without its own requirements when nothing serves them: it asks `CapabilityView.serves` and
     degrades, so an unmet one is listed in the matrix but isn't a doctor finding, and its handle refuses only when
     called. Read-only operations only (ADR 0028)."""
+    health_on_demand: bool = False
+    """Health may be neutral while explicitly unbound; runtime requirements stay mandatory (ADR 0130)."""
     audience: Audience = "expert"
     """Who it is for in heads people browse (CLI help and completion, the web app's navigation): `everyday`
     operations are always listed, `expert` ones only in expert mode (`[hz] expert`). Hidden is never disabled: every
@@ -331,6 +333,8 @@ class CredentialLet(Let):
     """What the credential is for and where to get one, shown by `hz system credential list` and doctor."""
     service: str | None = None
     """Where it is kept; the qualified name of the declaring module when None. Name another to share one."""
+    required: bool = True
+    """Whether absence itself degrades health; False when the owning feature checks conditional or alternate auth."""
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)

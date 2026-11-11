@@ -12,7 +12,6 @@ import json
 import os
 import re
 import shlex
-import shutil
 import stat
 import subprocess
 import sys
@@ -23,8 +22,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, cast
-from urllib.parse import parse_qs, urlsplit, urlunsplit
+from typing import TYPE_CHECKING, Any, Literal, cast
+from urllib.parse import parse_qs, unquote, urlsplit, urlunsplit
+
+if TYPE_CHECKING:
+    from heinzel.kernel._offline_uv import VerifiedUV
 
 import tomlkit
 from packaging.requirements import InvalidRequirement, Requirement
@@ -41,6 +43,7 @@ from heinzel.kernel import _installation_continuity, _installed_metadata
 from heinzel.kernel._credentials import subprocess_environment
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._progress import Progress
+from heinzel.kernel._uv_locate import find_uv, missing_uv_message, with_search_path
 
 RECEIPT_FILENAME = "uv-receipt.toml"
 _MAX_RECEIPT_BYTES = 1024 * 1024
@@ -116,13 +119,23 @@ def _read_tool_receipt_bytes(prefix: Path) -> bytes:
 
 def _run(command: Sequence[str], environment: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     """Run a command; a timeout becomes exit code 124 (as with timeout(1)), so callers handle it like any failure."""
-    env = subprocess_environment() | dict(environment or {})
+    env = with_search_path(subprocess_environment() | dict(environment or {}))
     try:
         return subprocess.run(  # noqa: S603 - trusted parts, no shell
             command, capture_output=True, text=True, check=False, timeout=COMMAND_TIMEOUT, env=env
         )
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(command, 124, "", f"{command[0]} timed out after {COMMAND_TIMEOUT}s")
+
+
+def _run_exact(command: Sequence[str], environment: Mapping[str, str]) -> subprocess.CompletedProcess[str]:
+    """Run an offline removal with exactly its selected environment, never merging ambient resolver policy."""
+    try:
+        return subprocess.run(  # noqa: S603 - verified private executable and a fixed offline command
+            command, capture_output=True, text=True, check=False, timeout=COMMAND_TIMEOUT, env=dict(environment)
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(command, 124, "", "Offline removal timed out; inspect its local outcome.")
 
 
 def _core_requirement(source: str) -> str:  # noqa: C901 - validate several source forms before invoking uv
@@ -279,20 +292,48 @@ def _constraint_policy(data: dict[str, Any]) -> ToolConstraintPolicy:
 
 
 def _transient_entry(added: str) -> str:
-    """The receipt entry one exact-version guard becomes.
+    """The receipt entry one exact-version or hash-bound local wheel guard becomes.
 
     Raises:
-        HeinzelError: If `added` is anything but one plain exact-version requirement.
+        HeinzelError: If `added` is not a supported exact-version or hash-bound local wheel requirement.
     """
     requirement = Requirement(added)
+    if requirement.url is not None:
+        return _transient_wheel_entry(requirement)
     specifiers = list(requirement.specifier)
-    if requirement.url or requirement.marker or requirement.extras or len(specifiers) != 1:
+    if requirement.marker or requirement.extras or len(specifiers) != 1:
         raise HeinzelError(_CONSTRAINT_ERROR)
     specifier = specifiers[0]
     if specifier.operator != "==" or "*" in specifier.version:
         raise HeinzelError(_CONSTRAINT_ERROR)
     Version(specifier.version)
     entry = {"name": canonicalize_name(requirement.name, validate=True), "specifier": str(specifier)}
+    return json.dumps(entry, sort_keys=True, separators=(",", ":"))
+
+
+def _transient_wheel_entry(requirement: Requirement) -> str:
+    """Match uv's local wheel constraint entry; metadata verification separately checks the selected hash.
+
+    uv 0.13.7 retains the path in its receipt and drops the hash fragment. Only a hash-bound local wheel is accepted.
+
+    Raises:
+        HeinzelError: If this is not one exact hash-bound local wheel source.
+    """
+    source = urlsplit(requirement.url or "")
+    if (
+        requirement.marker
+        or requirement.extras
+        or source.scheme != "file"
+        or source.netloc
+        or source.query
+        or not source.path.startswith("/")
+        or not re.fullmatch(r"sha256=[a-f0-9]{64}", source.fragment)
+    ):
+        raise HeinzelError(_CONSTRAINT_ERROR)
+    name, _, _, _ = parse_wheel_filename(unquote(source.path.rsplit("/", 1)[-1]))
+    if name != canonicalize_name(requirement.name):
+        raise HeinzelError(_CONSTRAINT_ERROR)
+    entry = {"name": name, "path": unquote(source.path)}
     return json.dumps(entry, sort_keys=True, separators=(",", ":"))
 
 
@@ -322,7 +363,7 @@ def _without_added_options(raw: bytes, options: Mapping[str, object]) -> bytes:
 
 
 def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, added: tuple[str, ...]) -> bytes:
-    """Remove exactly the last, temporary exact-version constraints from a matching receipt.
+    """Remove exactly the last temporary constraints from a matching receipt.
 
     Raises:
         HeinzelError: If the policy or added constraints do not match exactly.
@@ -599,12 +640,13 @@ class Installation:
             progress: Shows that a command is running.
             prefix: Environment Heinzelmännchen runs in; defaults to `sys.prefix`.
             runner: Runs a command and returns the completed process.
-            uv: Path to the uv executable; defaults to the one on `PATH`.
+            uv: Path to the uv executable; defaults to the one on `PATH` or in uv's standard install directories.
         """
         self._progress = progress
         self.prefix = prefix or Path(sys.prefix)
         self._runner = runner
-        self._uv = uv or shutil.which("uv")
+        self._exact_runner: Runner = _run_exact
+        self._uv = uv or find_uv()
         self._tool_scope: ContextVar[
             tuple[
                 dict[str, str],
@@ -728,7 +770,7 @@ class Installation:
         added: str | tuple[str, ...],
         options: Mapping[str, object] | None = None,
     ) -> str:
-        """Remove exact-version guards only from the independently verified post-mutation generation.
+        """Remove version and verified wheel-source guards from the independently verified post-mutation generation.
 
         uv also records the resolver options a run was given (`[tool.options]`, such as `exclude-newer`); `options`
         names exactly those this mutation added, and they go too. Anything else in the receipt stays as it is.
@@ -802,6 +844,24 @@ class Installation:
             raise HeinzelError(msg)
         return result
 
+    def preserved_tool_wheel_constraints(self, requirements: list[str]) -> tuple[str, ...]:
+        """Keep unchanged verified wheel provenance while a plugin mutation retains installed packages.
+
+        A bare registry receipt may name a standard-app wheel installed through a verified transient override.
+        Its existing hash-bound source is authoritative only while the complete startup checkpoint still matches.
+
+        Raises:
+            HeinzelError: If metadata or the checkpoint changes during capture.
+        """
+        if not self.startup_state_matches():
+            return ()
+        before = self.startup_fingerprint()
+        result = _installed_metadata.preserved_wheel_constraints(self.prefix, requirements)
+        if self.startup_fingerprint() != before or not self.startup_state_matches():
+            msg = "The verified tool changed while preserving its wheel sources; no package change was started."
+            raise HeinzelError(msg)
+        return result
+
     def validate_install_constraints(self, requirements: list[str], constraints: tuple[str, ...]) -> None:
         """Validate captured requirement and constraint combinations without reading or executing the tool.
 
@@ -826,6 +886,27 @@ class Installation:
         """Check existing continuity evidence, without creating or refreshing it."""
         return _installation_continuity.matches(self.prefix, self._continuity_authority)
 
+    def clear_stale_startup_pending(self) -> bool:
+        """Remove a continuity pending marker an unfinished change left, once the tool matches its record again.
+
+        A put-back that restored the verified generation, or a change that failed before it changed anything, leaves
+        the marker although nothing is uncertain any more; it would hold every later update and web restart. True if
+        one was removed; a marker whose installation doesn't match the record stays.
+
+        Raises:
+            HeinzelError: If the marker is unsafe.
+            OSError: If it can't be removed durably.
+        """
+        return _installation_continuity.clear_stale_pending(self.prefix, self._continuity_authority)
+
+    def repaired_startup_state_matches(self) -> bool:
+        """`startup_state_matches`, after removing a stale pending marker (`clear_stale_startup_pending`)."""
+        try:
+            self.clear_stale_startup_pending()
+        except (OSError, HeinzelError):
+            return False
+        return self.startup_state_matches()
+
     def verify_tool_destination(self, store: Path, binary: Path) -> None:
         """Verify requested uv store and executable directory against this tool's receipt.
 
@@ -841,6 +922,82 @@ class Installation:
                 raise HeinzelError(msg)
         except OSError as exc:
             raise HeinzelError(msg) from exc
+
+    def tool_destination(self) -> tuple[Path, Path]:
+        """Return the verified running tool's store and script directory, without querying uv.
+
+        Raises:
+            HeinzelError: If the running tool's receipt or physical authority cannot be verified.
+            OSError: If a target cannot be inspected.
+        """
+        from heinzel.kernel._tool_uninstall import physical_directory  # noqa: PLC0415 - removal-only validation
+
+        target = self._current_tool_target()
+        store, binary = Path(target["UV_TOOL_DIR"]), Path(target["UV_TOOL_BIN_DIR"])
+        for path in (self.prefix, store, binary):
+            physical_directory(path)
+        return store, binary
+
+    def tool_entrypoints(self) -> tuple[Path, ...]:
+        """Return only the currently verified receipt-owned script links.
+
+        Raises:
+            HeinzelError: If the installation or any named script cannot be verified.
+        """
+        target = self._current_tool_target()
+        links = self._owned_tool_links(target)
+        return tuple(Path(target["UV_TOOL_BIN_DIR"]) / name for name in links)
+
+    def uninstall_offline(self, *, expected: str, executable: "VerifiedUV") -> None:
+        """Remove only this continuity-verified tool through offline uv under the caller's quiescence fence.
+
+        No refused or uncertain removal triggers a network restore. The caller retains its durable mutation gate.
+
+        Raises:
+            HeinzelError: If continuity, target, uv or the observed removal cannot be verified.
+            OSError: If a selected path cannot be inspected.
+        """
+        from heinzel.kernel._tool_uninstall import physical_directory  # noqa: PLC0415 - removal only
+
+        with self.tool_transaction():
+            target = self._current_tool_target()
+            prefix = self.prefix
+            for path in (prefix, Path(target["UV_TOOL_DIR"]), Path(target["UV_TOOL_BIN_DIR"])):
+                physical_directory(path)
+            links = self._owned_tool_links(target)
+            executable.verify()
+            if not self.startup_state_matches() or self.startup_fingerprint() != expected:
+                msg = "The Heinzel installation changed; nothing was uninstalled. Inspect its local installation."
+                raise HeinzelError(msg)
+            executable.verify()
+            environment = {"PATH": "/usr/bin:/bin", "LANG": "C", "UV_NO_CACHE": "1", **target}
+            command = [
+                str(executable.path),
+                "--offline",
+                "--no-config",
+                "--no-python-downloads",
+                "tool",
+                "uninstall",
+                "heinzel",
+            ]
+            try:
+                result = self._exact_runner(command, environment)
+            except (OSError, subprocess.SubprocessError) as exc:
+                msg = "Offline removal did not finish. Heinzel services remain stopped; inspect the local uv tool."
+                raise HeinzelError(msg) from exc
+            if (
+                result.returncode
+                or os.path.lexists(prefix)
+                or any(os.path.lexists(Path(target["UV_TOOL_BIN_DIR"]) / name) for name in links)
+            ):
+                msg = (
+                    "Offline removal could not be verified. Heinzel services remain stopped; inspect the local uv tool."
+                )
+                raise HeinzelError(msg)
+            from heinzel.kernel._offline_uv import fsync_directory  # noqa: PLC0415 - durable removal result
+
+            fsync_directory(Path(target["UV_TOOL_DIR"]))
+            fsync_directory(Path(target["UV_TOOL_BIN_DIR"]))
 
     def tool_constraints(self) -> list[str]:
         """Read existing uv tool constraints as normalized requirements for a subsequent install.
@@ -1217,15 +1374,16 @@ class Installation:
         Raises:
             HeinzelError: If the command fails.
         """
+        flags = ["-I", "-B"] if sys.dont_write_bytecode else ["-I"]
         try:
             result = subprocess.run(  # noqa: S603 - our own interpreter and module
-                [sys.executable, "-I", "-m", "heinzel", *args],
+                [sys.executable, *flags, "-m", "heinzel", *args],
                 capture_output=True,
                 text=True,
                 check=False,
                 timeout=HZ_TIMEOUT,
                 # A probe, not a person: no update check (ADR 0031) to wait for or to spend a request on.
-                env=subprocess_environment() | {"HZ_UPDATE_CHECK": "false"},
+                env=with_search_path(subprocess_environment()) | {"HZ_UPDATE_CHECK": "false"},
             )
         except subprocess.TimeoutExpired as exc:
             msg = f"`hz {' '.join(args)}` did not finish within {HZ_TIMEOUT}s after the change."
@@ -1246,6 +1404,5 @@ class Installation:
             HeinzelError: If uv is not installed.
         """
         if not self._uv:
-            msg = "uv is required to manage Heinzelmännchen's installation: https://docs.astral.sh/uv/"
-            raise HeinzelError(msg)
+            raise HeinzelError(missing_uv_message())
         return self._uv

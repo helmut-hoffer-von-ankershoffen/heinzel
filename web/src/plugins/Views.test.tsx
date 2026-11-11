@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { forwardRef, memo } from "react";
-import { describe, expect, it } from "vitest";
-import { loadView, type ViewEntry, viewComponent } from "./Views";
+import { afterEach, describe, expect, it } from "vitest";
+import { confirmOperation, dismissOperation, getRun, resetOperationRun } from "@/lib/operationRun";
+import { formCall, loadView, type ViewEntry, viewComponent } from "./Views";
 
 const props = {
   data: 42,
@@ -11,6 +12,7 @@ const props = {
   flowing: false,
   compact: false,
   run: () => undefined,
+  submit: async () => undefined,
 };
 
 const Plain = () => <p>Independent view</p>;
@@ -42,5 +44,41 @@ describe("installed view SDK", () => {
     await expect(loadView({ ...entry, abi: 1, bundle: "https://outside.example/view.js" })).rejects.toThrow(
       "installed local asset",
     );
+  });
+});
+
+const report = {
+  kind: "operation" as const,
+  operation: "submit",
+  arguments: {},
+  inputs: ["text"],
+  call: {
+    method: "POST" as const,
+    path: "/issues/submit",
+    query: {},
+    body: {},
+    command: "hz issues submit",
+    summary: "Report a problem or request something.",
+    read_only: false,
+  },
+};
+
+describe("a view's form", () => {
+  afterEach(() => resetOperationRun());
+  it("sends only declared inputs of a private mutation, shown as they will run", () => {
+    const call = formCall(report, { text: "It's broken" });
+    expect(call.body).toEqual({ text: "It's broken" });
+    expect(call.command).toBe(`hz issues submit --text 'It'"'"'s broken'`);
+    expect(() => formCall(report, { other: "x" })).toThrow("This form takes no other");
+    expect(() => formCall(report, { text: Number.NaN })).toThrow("text must be");
+    expect(() => formCall({ ...report, call: { ...report.call, body: null } }, { text: "x" })).toThrow();
+    expect(() => formCall({ kind: "navigate", path: "/" }, { text: "x" })).toThrow();
+    expect(() => formCall(undefined, {})).toThrow();
+  });
+  it("asks first and fails when the person cancels", async () => {
+    const pending = confirmOperation(formCall(report, { text: "x" }));
+    expect(getRun().stage).toBe("confirm");
+    dismissOperation();
+    await expect(pending).rejects.toThrow("Cancelled");
   });
 });

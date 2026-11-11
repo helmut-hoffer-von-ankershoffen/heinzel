@@ -11,7 +11,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`ai`](#ai) | How hz reaches AI, and what it spends: tokens and cost per run. |
 | [`ai.access`](#aiaccess) | Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds. |
 | [`graph`](#graph) | Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the flow waits. |
-| [`heinzel`](#heinzel) | Your Heinzelmännchen: durable helpers that draft your team's recurring work for your approval. |
+| [`heinzel`](#heinzel) | Your Heinzelmännchen: durable Heinzels that draft your team's recurring work for your approval. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
 | [`report`](#report) | Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`). |
 | [`system`](#system) | Inspect, configure, diagnose and update Heinzelmännchen itself. |
@@ -30,6 +30,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.notify`](#systemnotify) | Pop up what deserves your attention: in the web app while it is open, else natively. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, enable, disable, list and scaffold plugins. |
 | [`system.plugin.docs`](#systemplugindocs) | Document installed plugins: what each brings, as a model and as Markdown pages. |
+| [`system.prerequisite`](#systemprerequisite) | Inspect and prepare the external tools modules need. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
 | [`system.skill`](#systemskill) | List the skills plugins ship for AI, and hand chosen ones to Claude Code. |
@@ -38,6 +39,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`system.ui`](#systemui) | List what modules add to the web app: status items, header actions and Today widgets. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
+| [`ui`](#ui) | Open the web workspace or manage its optional persistent service. |
 
 ## `ai`
 
@@ -77,12 +79,20 @@ Settings: [`[graph]`](CONFIGURATION.md#graph).
 
 ## `heinzel`
 
-Your Heinzelmännchen: durable helpers that draft your team's recurring work for your approval.
+Your Heinzelmännchen: durable Heinzels that draft your team's recurring work for your approval.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
+| Create a named Heinzel from one prompt, then review and publish its bounded recurring draft grant. | `hz heinzel start-release-workflow` | — | — | — | yes |  |
+| Publish only the exact standing draft grant approved through the trusted human boundary. | `hz heinzel publish-draft-workflow` | — | — | `POST /api/heinzel/publish-draft-workflow` | yes |  |
+| Capture the human-edited marked section and revision for exact share review; send nothing. | `hz heinzel review-release-draft` | — | — | `POST /api/heinzel/review-release-draft` | yes |  |
+| Review the current edited section and explicitly approve one document-link delivery. | `hz heinzel approve-release-draft` | — | — | — | yes |  |
+| Deliver one document link for the exact edited revision approved by its owner. | `hz heinzel share-draft-link` | — | — | `POST /api/heinzel/share-draft-link` | yes |  |
+| Read the published workflow and durable release dispositions from this same chat. | `hz heinzel release-workflow` | — | — | `GET /api/heinzel/release-workflow` |  |  |
+| Revoke future recurring draft and notice effects under the shared document fence. | `hz heinzel revoke-release-workflow` | — | — | `POST /api/heinzel/revoke-release-workflow` | yes |  |
 | Read exact private skill draft files and requested sharing scope. | `hz heinzel skill-draft` | `heinzel_skill_draft` | — | `GET /api/heinzel/skill-draft` |  |  |
 | List private draft references without file contents. | `hz heinzel skill-drafts` | `heinzel_skill_drafts` | — | `GET /api/heinzel/skill-drafts` |  |  |
+| Create a Heinzel, retain its first prompt and answer it once through the selected chat backend. | `hz heinzel start-helper` | — | — | `POST /api/heinzel/start-helper` | yes |  |
 | Inspect the latest suggested name and look; it has not been applied. | `hz heinzel latest-profile-proposal` | — | — | `GET /api/heinzel/latest-profile-proposal` |  |  |
 | Answer one authenticated user's accepted message; an interrupted request is never silently replayed. | `hz heinzel answer-chat` | — | — | `POST /api/heinzel/answer-chat` | yes |  |
 | Read the recorded turn state; unresolved may still be running. | `hz heinzel chat-turn-state` | — | — | `GET /api/heinzel/chat-turn-state` |  |  |
@@ -126,6 +136,11 @@ Your profile, and the team, org and company you work with.
 | --- | --- | --- | --- | --- | --- | --- |
 | Show your profile: who you are, your role, time zone and working hours, and what is still missing. | `hz org show` | `org_show` | — | `GET /api/org/show` |  |  |
 | Show the meeting you are in now and your next one, from your calendar, or how to connect one. | `hz org agenda` | `org_agenda` | — | `GET /api/org/agenda` |  | expert |
+| Install a supervised worker; separately enable calendar reminders to consent to background reads. | `hz org calendar-reminders-install` | — | — | `POST /api/org/calendar-reminders-install` | yes | expert |
+| Stop and remove the supervised calendar reminder worker. | `hz org calendar-reminders-uninstall` | — | — | `POST /api/org/calendar-reminders-uninstall` | yes | expert |
+| Show calendar reminder consent and the supervised worker's state. | `hz org calendar-reminders-status` | — | — | `GET /api/org/calendar-reminders-status` |  | expert |
+| Run the supervised calendar reminder worker until its periodic restart. | `hz org calendar-reminder-worker` | — | — | — | yes | expert |
+| Show a week from your connected calendar. | `hz org calendar` | `org_calendar` | — | `GET /api/org/calendar` |  | expert |
 | Show what your team recommends beside what you have; apply only what you accept, to your user file. | `hz org sync` | `org_sync` | — | — | yes |  |
 
 Settings: [`[org]`](CONFIGURATION.md#org).
@@ -160,6 +175,7 @@ Inspect, configure, diagnose and update Heinzelmännchen itself.
 | List every module and the lets it advertises. | `hz system modules` | `system_modules` | `GET /system/modules` | `GET /api/system/modules` |  | expert |
 | Ask where Heinzelmännchen was installed from for its latest release, and whether to update. | `hz system release` | `system_release` | `GET /system/release` | `GET /api/system/release` |  | expert |
 | Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`. | `hz system update` | `system_update` | `POST /system/update` | `POST /api/system/update` | yes |  |
+| Uninstall the verified Heinzel tool offline, keeping your data and configuration. | `hz system uninstall` | — | — | — | yes |  |
 | Show the update channel, or say what switching changes and, with `--yes`, switch. | `hz system channel` | `system_channel` | `POST /system/channel` | `POST /api/system/channel` | yes |  |
 
 ## `system.agent`
@@ -227,6 +243,12 @@ Show whether each connector is signed in and serves something, and test one live
 | --- | --- | --- | --- | --- | --- | --- |
 | List connectors with their sign-in, what they serve and their tools; offline. | `hz system connector list` | `system_connector_list` | — | `GET /api/system/connector/list` |  | expert |
 | Test a connector live: one cheap read-only call through its tool, with a short timeout. | `hz system connector test` | `system_connector_test` | — | `GET /api/system/connector/test` |  | expert |
+| Show who a connector is signed in as, which of its grants hold, and its latest sign-in here. | `hz system connector access` | — | — | `GET /api/system/connector/access` |  | expert |
+| Sign a connector in through its vendor's own page, keeping what it holds and adding what you allow. | `hz system connector connect` | — | — | `POST /api/system/connector/connect` | yes | expert |
+| Show where a sign-in started here is: waiting for your consent, or how it ended. | `hz system connector flow` | — | — | `GET /api/system/connector/flow` |  | expert |
+| Stop a sign-in that is waiting for consent; nothing changes in your account. | `hz system connector cancel` | — | — | `POST /api/system/connector/cancel` | yes | expert |
+| Open a sign-in's consent page in the browser of the machine hz runs on, where the vendor returns to. | `hz system connector open` | — | — | `POST /api/system/connector/open` | yes | expert |
+| Sign a connector's tool out through its own command; reading and writing through it stop. | `hz system connector disconnect` | — | — | `POST /api/system/connector/disconnect` | yes | expert |
 
 ## `system.credential`
 
@@ -248,7 +270,7 @@ Run modules' jobs in the background, supervised by launchd or systemd.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| Install and load the launchd agent or systemd timer that ticks every few minutes. | `hz system daemon install` | — | — | `POST /api/system/daemon/install` | yes | expert |
+| Install and load scheduled Heinzels; native notifier installation is a separate choice. | `hz system daemon install` | — | — | `POST /api/system/daemon/install` | yes | expert |
 | Unload and remove the daemon's unit; receipts and logs stay. | `hz system daemon uninstall` | — | — | `POST /api/system/daemon/uninstall` | yes | expert |
 | Restart the daemon so it runs with the installed hz. | `hz system daemon restart` | `system_daemon_restart` | `POST /system/daemon/restart` | `POST /api/system/daemon/restart` | yes | expert |
 | Check-ins need a resumed daemon with 5m ticks and a matching service version. | `hz system daemon status` | `system_daemon_status` | `GET /system/daemon/status` | `GET /api/system/daemon/status` |  | expert |
@@ -310,6 +332,7 @@ Pop up what deserves your attention: in the web app while it is open, else nativ
 | Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up. | `hz system notify test` | — | — | `POST /api/system/notify/test` | yes | expert |
 | Install the native notifier (Heinzel Notifier on macOS) and pop up a test notification now. | `hz system notify install` | — | — | — | yes | expert |
 | End leftover Heinzel Notifier processes and make macOS forget its stray copies. | `hz system notify clean` | — | — | — | yes | expert |
+| Recover a durable notification store whose replay keys a legacy notice list replaced. | `hz system notify recover` | — | — | — | yes | expert |
 | Open the system's notification settings to allow hz's pop-ups (macOS: System Settings). | `hz system notify settings` | — | — | `POST /api/system/notify/settings` | yes | expert |
 
 Settings: [`[system.notify]`](CONFIGURATION.md#systemnotify).
@@ -323,7 +346,9 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | List installed plugins, enabled or not, with their source and the modules and adapters they bring. | `hz system plugin list` | `system_plugin_list` | `GET /system/plugin/list` | `GET /api/system/plugin/list` |  | expert |
+| Preview an owning public plugin's UI and CLI screenshots without installing it. | `hz system plugin showcase` | `system_plugin_showcase` | — | `GET /api/system/plugin/showcase` |  | expert |
 | Show what a plugin would install, then add it with `--confirm`; adding it again replaces it. | `hz system plugin add` | `system_plugin_add` | — | `POST /api/system/plugin/add` | yes | expert |
+| Install every plugin an installed plugin requires that is missing or too old, from the same catalog. | `hz system plugin repair` | `system_plugin_repair` | — | `POST /api/system/plugin/repair` | yes | expert |
 | List plugins changed on this machine since this server started: what a restart would load. | `hz system plugin pending` | `system_plugin_pending` | — | `GET /api/system/plugin/pending` |  | expert |
 | Read the status and result of a plugin add without repeating it. | `hz system plugin operation` | `system_plugin_operation` | — | `GET /api/system/plugin/operation` |  | expert |
 | Add the plugin in a directory on this machine, to try a plugin you are writing. | `hz system plugin develop` | — | — | — | yes | expert |
@@ -345,6 +370,18 @@ Document installed plugins: what each brings, as a model and as Markdown pages.
 | --- | --- | --- | --- | --- | --- | --- |
 | Show what each installed plugin brings; `--json` is the full model its page is built from. | `hz system plugin docs show` | `system_plugin_docs_show` | — | `GET /api/system/plugin/docs/show` |  | expert |
 | Write a Markdown page per installed plugin, with theme swatches and its recordings when they exist. | `hz system plugin docs build` | `system_plugin_docs_build` | — | — | yes | expert |
+
+## `system.prerequisite`
+
+Inspect and prepare the external tools modules need.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the external tools modules declare and how each is installed, without checking this machine. | `hz system prerequisite list` | `system_prerequisite_list` | `GET /system/prerequisite/list` | `GET /api/system/prerequisite/list` |  | expert |
+| Check locally whether the declared tools are usable, without installing anything or signing in. | `hz system prerequisite check` | `system_prerequisite_check` | — | `GET /api/system/prerequisite/check` |  | expert |
+| Install missing tools with Homebrew on macOS, or show what to do by hand; nothing is signed in. | `hz system prerequisite install` | — | — | — | yes | expert |
+
+Health checks: reported by `hz system doctor`.
 
 ## `system.runner`
 
@@ -374,6 +411,8 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Stage a schedule action for review in chat; creating the proposal never changes or activates it. | `hz chat propose-schedule-control` | — | — | `POST /api/system/runner/chat/propose-schedule-control` | yes |  |
 | Stage the exact current model policy for human review; no grant or model call is made. | `hz chat propose-model-policy` | — | — | `POST /api/system/runner/chat/propose-model-policy` | yes |  |
 | Stage current agent contract terms for human review. | `hz chat propose-agent-contract` | — | — | `POST /api/system/runner/chat/propose-agent-contract` | yes |  |
+| Stage exact owner-private captured write terms for separate human confirmation. | `hz chat propose-captured-write` | — | — | `POST /api/system/runner/chat/propose-captured-write` | yes |  |
+| Stage exact owner-private channel posting terms for separate human confirmation. | `hz chat propose-channel-item` | — | — | `POST /api/system/runner/chat/propose-channel-item` | yes |  |
 | Stage one exact notification draft for a human decision; no notice is sent. | `hz chat propose-agent-notification` | — | — | `POST /api/system/runner/chat/propose-agent-notification` | yes |  |
 | Stage current connected-read terms for an explicit human decision. | `hz chat propose-connected-read-review` | — | — | `POST /api/system/runner/chat/propose-connected-read-review` | yes |  |
 | Stage the current read-set review for an explicit human decision. | `hz chat propose-connected-read-set-review` | — | — | `POST /api/system/runner/chat/propose-connected-read-set-review` | yes |  |
@@ -470,3 +509,14 @@ Your team's repository: create one (`hz team new`), join one by its URL (`hz tea
 Settings: [`[team]`](CONFIGURATION.md#team).
 
 Health checks: reported by `hz system doctor`.
+
+## `ui`
+
+Open the web workspace or manage its optional persistent service.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Install web availability after login, separately from scheduled Heinzels. | `hz ui install` | — | — | — | yes |  |
+| Show exact OS ownership and the live web server's readiness and version. | `hz ui status` | — | — | — |  |  |
+| Restart the owned web service with its existing port and authenticated session. | `hz ui restart` | — | — | — | yes |  |
+| Remove only the owned web login service, preserving your data and paired devices. | `hz ui uninstall` | — | — | — | yes |  |

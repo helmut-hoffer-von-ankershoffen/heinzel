@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
 import { useThemes } from "@/api/queries";
+import { publishOwnAudio } from "@/audio/own";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { type Inputs, rampSeconds, type Signals, targetGain, type Why, why } from "./machine";
@@ -92,6 +93,14 @@ export function SoundEngine() {
     },
     current?.fade_seconds ?? 4,
   );
+  const streaming = Boolean(current?.stream && sound.started && level.playing);
+  const streamTitle = current?.title ?? "";
+  // A stream plays in its host's cross-origin frame: no in-page API can tap it, so the visualizer must capture it.
+  useEffect(() => {
+    if (!streaming) return;
+    publishOwnAudio({ mode: "frame", label: streamTitle });
+    return () => publishOwnAudio({ mode: "none" });
+  }, [streaming, streamTitle]);
   if (!current || !sound.started) return null;
   if (current.stream)
     return (
@@ -130,6 +139,7 @@ function LayeredPlayer({
     const context = new Context();
     const created = new Mixer(context);
     mixer.current = created;
+    publishOwnAudio({ mode: "analysed", analyser: created.analyser, label: soundscape.title });
     let cancelled = false; // stopped or switched while loading: what the closed context does next is no failure
     void context.resume();
     // After a reload there is no gesture yet: a context the browser keeps suspended isn't playing, so say so.
@@ -142,6 +152,7 @@ function LayeredPlayer({
       cancelled = true;
       clearTimeout(suspended);
       mixer.current = null;
+      publishOwnAudio({ mode: "none" });
       void created.close();
     };
   }, [soundscape]);

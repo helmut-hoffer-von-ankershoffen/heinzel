@@ -17,12 +17,14 @@ import textwrap
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request, urlopen
 
 import pytest
 
 from tests.e2e._mobile_server_output import MobileServerOutput, check_driver, redact, sanitize_timeout
+from tests.e2e._reopen_server import receipt_tail
 
 pytestmark = pytest.mark.e2e
 
@@ -95,7 +97,7 @@ def verify_fixture_plugins(env: dict[str, str]) -> None:
                 "assert actual=={('sound-demo','heinzel_sound_demo')}, 'Browser tests require a core-only environment'"
             ),
         ],
-        env=env,
+        env={"HOME": env["HZ_CONFIG_HOME"], "PATH": os.defpath, "PYTHONPATH": env["PYTHONPATH"]},
         capture_output=True,
         check=True,
         timeout=30,
@@ -146,6 +148,7 @@ def environment(tmp_path):
         "HZ_LOG_DIR": str(tmp_path / "log"),
         "HZ_SYSTEM_DAEMON__UNIT_DIR": str(tmp_path / "units"),
         "HZ_SYSTEM_CREDENTIAL__BACKEND": "environment",
+        "HZ_SYSTEM_PLUGIN__CATALOG_FEED": "",
         "HZ_PLUGINS_ENABLED": "true",
         "PYTHONPATH": os.pathsep.join((str(metadata.parent), str(REPO / "tests/fixtures/sound"))),
         # Let the real server admit the stream origin before the offline iframe layer/playback probe runs.
@@ -184,7 +187,7 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
 
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", "0"],
+        [sys.executable, "-m", "heinzel", "ui", "serve", "--port", "0"],
         cwd=REPO,
         env=env,
         stderr=subprocess.PIPE,
@@ -244,8 +247,11 @@ def _free_port() -> int:
 
 
 def _start_ui(env: dict[str, str], port: int) -> tuple[subprocess.Popen[str], str]:
+    command = [sys.executable, "-m", "heinzel"]
+    if env.get("HZ_REOPEN_RECEIPTS"):
+        command = [sys.executable, str(REPO / "tests/e2e/_reopen_server.py")]
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", str(port), "--no-browser"],
+        [*command, "ui", "serve", "--port", str(port), "--no-browser"],
         cwd=REPO,
         env=env,
         stderr=subprocess.PIPE,
@@ -302,6 +308,8 @@ def _stop_ui(ui: subprocess.Popen[str]) -> None:
 def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(environment, tmp_path, engine, mode):
     """Pair once with the printed link; Ctrl-C and a new `hz ui` with a new session token keep it signed in."""
     env, _ = environment
+    receipts = tmp_path / "navigation-receipts.jsonl"
+    env |= {"HZ_REOPEN_RECEIPTS": str(receipts)}
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(
@@ -311,6 +319,7 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
     port = _free_port()
 
     def drive(step: str, url: str) -> dict[str, object]:
+        receipt_offset = receipts.stat().st_size if receipts.exists() else 0
         driven = subprocess.run(
             [*run, "exec", "node", "e2e/device-reopen.mjs", engine, str(profile), step, url, mode],
             cwd=REPO,
@@ -319,7 +328,10 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
             check=False,
             timeout=120,
         )
-        assert driven.returncode == 0, driven.stderr + driven.stdout
+        progress = ""
+        if driven.returncode and receipts.exists():
+            progress = "\nServer GET / progress:\n" + receipt_tail(receipts, receipt_offset)
+        assert driven.returncode == 0, driven.stderr + driven.stdout + progress
         return json.loads(driven.stdout.strip().splitlines()[-1])
 
     ui, link = _start_ui(env, port)
@@ -340,7 +352,7 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
         assert reopened["signedIn"] is True, reopened
         # An unpaired device is refused, and says so.
         revoked = subprocess.run(
-            [sys.executable, "-m", "heinzel", "ui", "--revoke", "all"],
+            [sys.executable, "-m", "heinzel", "ui", "serve", "--revoke", "all"],
             cwd=REPO,
             env=env,
             capture_output=True,
@@ -355,80 +367,137 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
         _stop_ui(ui)
 
 
+class _WindowDriver:
+    """A Node browser driver that talks to this test on stdout/stdin, one line each (see device-live-restart.mjs)."""
+
+    def __init__(self, run: list[str], script: str, *args: str) -> None:
+        self.process = subprocess.Popen(
+            [*run, "exec", "node", script, *args],
+            cwd=REPO,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert self.process.stdin is not None
+        assert self.process.stdout is not None
+        assert self.process.stderr is not None
+        # Read the driver's stderr as it comes, so a full pipe never stalls it and a driver that dies says why.
+        self.said: list[str] = []
+        self.reader = threading.Thread(target=lambda: self.said.extend(self.process.stderr), daemon=True)
+        self.reader.start()
+
+    def answer(self) -> str:
+        assert self.process.stdout is not None
+        got = self.process.stdout.readline()
+        if not got:  # the driver ended before answering
+            self.process.wait(30)
+            self.reader.join(30)
+            pytest.fail(f"the browser driver exited {self.process.returncode} without answering: {''.join(self.said)}")
+        return got.strip()
+
+    def expect(self, line: str) -> None:
+        got = self.answer()
+        assert got == line, got + "".join(self.said)
+
+    def tell(self, line: str) -> None:
+        assert self.process.stdin is not None
+        self.process.stdin.write(f"{line}\n")
+        self.process.stdin.flush()
+
+    def close(self) -> None:
+        self.process.kill()
+        self.process.wait(30)
+        self.reader.join(30)  # stderr is at its end once the driver is gone; close it only after the reader let go
+        for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
+            if stream is not None:
+                stream.close()
+
+
 @pytest.mark.timeout(900)
 @pytest.mark.parametrize("engine", ["chromium", "webkit"])
 def test_an_open_app_window_reconnects_when_the_daemon_restarts_on_the_same_port(environment, tmp_path, engine):
     """Stop `hz ui` under an open, paired window and start it again: the window recovers and never asks to sign in."""
     env, _ = environment
-    run = _browser_ready(engine)
     port = _free_port()
     ui, link = _start_ui(env, port)
-    driver = subprocess.Popen(
-        [
-            *run,
-            "exec",
-            "node",
-            "e2e/device-live-restart.mjs",
-            engine,
-            str(tmp_path / "profile"),
-            link,
-            f"http://127.0.0.1:{port}/",
-        ],
-        cwd=REPO,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+    driver = _WindowDriver(
+        _browser_ready(engine),
+        "e2e/device-live-restart.mjs",
+        engine,
+        str(tmp_path / "profile"),
+        link,
+        f"http://127.0.0.1:{port}/",
     )
-    assert driver.stdin is not None
-    assert driver.stdout is not None
-    assert driver.stderr is not None
-    # Read the driver's stderr as it comes, so a full pipe never stalls it and a driver that dies says why.
-    said: list[str] = []
-    reader = threading.Thread(target=lambda: said.extend(driver.stderr), daemon=True)
-    reader.start()
-
-    def answer() -> str:
-        got = driver.stdout.readline()
-        if not got:  # the driver ended before answering
-            driver.wait(30)
-            reader.join(30)
-            pytest.fail(f"the browser driver exited {driver.returncode} without answering: {''.join(said)}")
-        return got.strip()
-
-    def expect(line: str) -> None:
-        got = answer()
-        assert got == line, got + "".join(said)
-
     try:
-        expect("READY")
+        driver.expect("READY")
         _stop_ui(ui)
-        driver.stdin.write("stopped\n")
-        driver.stdin.flush()
-        expect("DOWN")
+        driver.tell("stopped")
+        driver.expect("DOWN")
         ui, new_link = _start_ui(env, port)  # a new session token on the same port, so the same origin
         assert new_link != link
-        driver.stdin.write("started\n")
-        driver.stdin.flush()
-        result = json.loads(answer())
+        driver.tell("started")
+        result = json.loads(driver.answer())
         if result != {"restarted": True, "stayedSignedIn": True, "askedToSignIn": False, "reopened": True}:
-            driver.wait(60)
-            reader.join(30)
-            pytest.fail(f"{result}\nwhat the window went through:\n{''.join(said)}")
-        assert driver.wait(60) == 0
+            driver.process.wait(60)
+            driver.reader.join(30)
+            pytest.fail(f"{result}\nwhat the window went through:\n{''.join(driver.said)}")
+        assert driver.process.wait(60) == 0
     finally:
-        driver.kill()
-        driver.wait(30)
-        reader.join(30)  # stderr is at its end once the driver is gone; close it only after the reader let go
-        for stream in (driver.stdin, driver.stdout, driver.stderr):
-            if stream is not None:
-                stream.close()
+        driver.close()
+        _stop_ui(ui)
+
+
+@pytest.mark.timeout(900)
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_an_installed_window_opened_while_hz_is_down_opens_the_app_by_itself_when_hz_returns(
+    environment, tmp_path, engine
+):
+    """A paired phone window reopened while `hz ui serve` is down shows this build's offline page, then the app.
+
+    An older build's shell cache and remembered version are planted first: the worker named after this build must drop
+    them, so the offline page is never an older build's (an iPhone kept v0.7.27's).
+    """
+    env, _ = environment
+    port = _free_port()
+    ui, link = _start_ui(env, port)
+    driver = _WindowDriver(
+        _browser_ready(engine),
+        "e2e/pwa-reconnect.mjs",
+        engine,
+        str(tmp_path / "profile"),
+        link,
+        f"http://127.0.0.1:{port}/",
+    )
+    try:
+        driver.expect("READY")
+        _stop_ui(ui)
+        driver.tell("stopped")
+        driver.expect("DOWN")
+        ui, _ = _start_ui(env, port)  # a new session token on the same port: the paired device token signs in
+        driver.tell("started")
+        result = json.loads(driver.answer())
+        assert result == {
+            "offlineShowed": True,
+            "noVersionShown": True,
+            "noStaleOfflinePage": True,
+            "workerIsStamped": True,
+            "onlyThisBuildsCache": True,
+            "cachedOfflineIsCurrent": True,
+            "oldBuildCacheDropped": True,
+            "iconLoaded": True,
+            "openedByItself": True,
+            "askedToSignIn": False,
+        }, f"{result}\n{''.join(driver.said)}"
+        assert driver.process.wait(60) == 0
+    finally:
+        driver.close()
         _stop_ui(ui)
 
 
 @pytest.mark.timeout(600)
-def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(environment, tmp_path):
-    """Install on a row low in Discover shows its confirmation next to the click, focused, on desktop and phone."""
+def test_plugin_install_asks_once_in_the_operation_dialog_in_view(environment, tmp_path):
+    """Install on a row low in Discover asks once in the operation dialog, in view and focused, on desktop and phone."""
     env, _ = environment
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
@@ -437,7 +506,7 @@ def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(env
     )
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", "0", "--no-browser"],
+        [sys.executable, "-m", "heinzel", "ui", "serve", "--port", "0", "--no-browser"],
         cwd=REPO,
         env=env,
         stderr=subprocess.PIPE,
@@ -449,7 +518,7 @@ def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(env
         url = ui.stdout.readline().strip()
         assert url.startswith("http://127.0.0.1:")
         driven = subprocess.run(
-            [*run, "exec", "node", "e2e/plugin-install-inline.mjs", url, str(shots)],
+            [*run, "exec", "node", "e2e/plugin-install-confirm.mjs", url, str(shots)],
             cwd=REPO,
             capture_output=True,
             text=True,
@@ -513,7 +582,12 @@ def test_a_plugin_installed_outside_the_running_app_offers_restart_and_apply_in_
     )
     # A throwaway installation of the built wheel: `hz system plugin develop` changes only this environment.
     wheels = tmp_path / "wheels"
-    subprocess.run(["uv", "build", "--quiet", "--wheel", "--out-dir", str(wheels)], cwd=REPO, check=True, timeout=600)
+    subprocess.run(
+        [sys.executable, str(REPO / "scripts/build.py"), "--quiet", "--wheel", "--out-dir", str(wheels)],
+        cwd=REPO,
+        check=True,
+        timeout=600,
+    )
     venv = tmp_path / "venv"
     subprocess.run(["uv", "venv", "--quiet", str(venv)], check=True, timeout=120)
     wheel = next(wheels.glob("*.whl"))
@@ -540,7 +614,7 @@ def test_a_plugin_installed_outside_the_running_app_offers_restart_and_apply_in_
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
     hz = venv / "bin" / "hz"
     ui = subprocess.Popen(
-        [str(hz), "ui", "--port", "0", "--no-browser"],
+        [str(hz), "ui", "serve", "--port", "0", "--no-browser"],
         cwd=tmp_path,
         env=env,
         stderr=subprocess.PIPE,
@@ -633,7 +707,7 @@ def test_theme_image_viewports_preserve_the_cap_hinge_in_actual_chromium(tmp_pat
     assert result == {"comparisons": 27, "reduced": True, "errors": []}
 
 
-# The sections of web/e2e/mobile-responsive.mjs: each viewport sweep, and the phone flows (scroll, sound, notification).
+# The sections of web/e2e/mobile-responsive.mjs: viewports, phone flows, and share on both browser engines.
 # Each runs in its own driver child against its own `hz ui` and isolated directories, so the cases are independent.
 MOBILE_VIEWPORTS = (
     "narrow-portrait",
@@ -643,7 +717,7 @@ MOBILE_VIEWPORTS = (
     "wide-landscape",
     "short-landscape",
 )
-MOBILE_SECTIONS = (*MOBILE_VIEWPORTS, "phone")
+MOBILE_SECTIONS = (*MOBILE_VIEWPORTS, "phone", "share-chromium", "share-webkit", "updates-actions")
 # The driver child's deadline per section. One section is a seventh or less of what the single 300 s child covered
 # (all of it took 205 s on Ubuntu and 294 s on macOS; a section ran in 15-45 s locally), so this leaves a section 2.5x
 # its expected time, and a hung one fails in two minutes instead of five.
@@ -658,12 +732,30 @@ def test_mobile_sections_cover_every_viewport_of_the_driver():
 
 
 def check_mobile_result(section, result):
-    """A viewport section proves exactly its own case; the phone section, the docked player and iPhone controls."""
+    """Each section reports its own viewport or phone-flow evidence."""
     assert result["evidence"] == "mobile/touch emulation; not physical iPhone Safari"
-    if section == "phone":
+    if section in ("share-chromium", "share-webkit"):
+        assert result["engine"].startswith("Chromium " if section == "share-chromium" else "WebKit ")
+        assert result["cases"] == []
+        assert result["share"] == {
+            "cancellation": True,
+            "failure": True,
+            "copy": True,
+            "unsupported": True,
+            "wraps": True,
+        }
+    elif section == "phone":
         assert result["cases"] == []
         assert result["dockedPlayer"]["popOutUsable"] is True
         assert result["iphoneControls"] == {"deviceVolume": True, "notificationTest": True, "serverActionsHidden": True}
+    elif section == "updates-actions":
+        assert result["cases"] == []
+        assert [profile["name"] for profile in result["updateActions"]] == [
+            "desktop-fine",
+            "portrait-fine",
+            "landscape-fine",
+            "desktop-coarse",
+        ]
     else:
         assert [case["name"] for case in result["cases"]] == [section]
         assert "dockedPlayer" not in result
@@ -679,12 +771,15 @@ def report_mobile_time(capfd, section, begun):
 @pytest.mark.e2e_early
 @pytest.mark.parametrize("section", MOBILE_SECTIONS)
 def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(environment, tmp_path, capfd, section):
-    """Chromium mobile emulation checks responsive reachability; it is not a physical iPhone Safari test."""
+    """Mobile emulation checks responsive reachability; it is not a physical iPhone Safari test."""
     env, _recorded = environment
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    use_webkit = section == "share-webkit" or (
+        section != "share-chromium" and os.environ.get("PLAYWRIGHT_BROWSER") == "webkit"
+    )
     subprocess.run(
-        [*run, "exec", "playwright-core", "install", "chromium"],
+        [*run, "exec", "playwright-core", "install", "webkit" if use_webkit else "chromium"],
         cwd=REPO,
         check=True,
         timeout=600,
@@ -693,7 +788,7 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
     # One directory per section: workers running other sections in parallel must not overwrite each other's files.
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots")) / section
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE
+        [sys.executable, "-m", "heinzel", "ui", "serve", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE
     )
     capture = MobileServerOutput(ui)
     token = ""
@@ -759,7 +854,11 @@ def drive_ui_script(env, tmp_path, script):
     )
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+        [sys.executable, "-m", "heinzel", "ui", "serve", "--port", "0"],
+        cwd=REPO,
+        env=env,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     try:
         assert ui.stderr is not None
@@ -817,3 +916,273 @@ def test_sound_picker_stays_open_and_plays_the_pick_in_mounted_chromium(environm
     result = drive_ui_script(env, tmp_path, "sound-picker.mjs")
 
     assert result == {"stayedOpen": True, "played": True, "switched": True, "closes": ["Escape", "outside"]}
+
+
+def gallery_profile_preflight(backend_env, tmp_path, denied):
+    """Check typed fixture settings, offline Doctor, and neutral UI startup."""
+    # Resolve every declared settings model through the normal SDK, and retain
+    # the unmodified offline Doctor output (including warnings) for review.
+    sdk = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import json; from heinzel.kernel import boot; "
+                "print(json.dumps([name for name, _ in boot().settings_of()]))"
+            ),
+        ],
+        env=backend_env,
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert json.loads(sdk.stdout.strip())
+    (tmp_path / "typed-settings.json").write_text(sdk.stdout, encoding="utf-8")
+    doctor = subprocess.run(
+        [sys.executable, "-m", "heinzel", "system", "doctor", "--json"],
+        env=backend_env,
+        cwd=REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    (tmp_path / "offline-doctor.json").write_text(doctor.stdout, encoding="utf-8")
+    (tmp_path / "offline-doctor.stderr.txt").write_text(doctor.stderr, encoding="utf-8")
+    (tmp_path / "offline-doctor.exit.txt").write_text(f"{doctor.returncode}\n", encoding="utf-8")
+    json.loads(doctor.stdout)
+    assert not denied.exists(), "SDK or offline Doctor attempted an outbound request"
+
+    # A separate neutral profile starts the normal UI without the scenario's
+    # workflow directory or copied authority, under the same network policy.
+    neutral = tmp_path / "neutral"
+    neutral.mkdir()
+    neutral_env = dict(backend_env)
+    for key in (
+        "HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_STATE_HOME",
+        "TMPDIR",
+        "HZ_CONFIG_HOME",
+        "HZ_DATA_DIR",
+        "HZ_CACHE_DIR",
+        "HZ_STATE_DIR",
+        "HZ_LOG_DIR",
+        "HZ_SYSTEM_DAEMON__UNIT_DIR",
+        "HZ_HEINZEL__USER_DIR",
+    ):
+        neutral_env[key] = str(neutral / key.lower())
+    Path(neutral_env["HOME"]).mkdir()
+    Path(neutral_env["TMPDIR"]).mkdir()
+    Path(neutral_env["HZ_HEINZEL__USER_DIR"]).mkdir()
+    neutral_env["HZ_GALLERY_INITIALIZED"] = str(neutral / "initialized")
+    neutral_env["HZ_GALLERY_DENIAL_LOG"] = str(neutral / "denied")
+    neutral_sdk = subprocess.run(
+        sdk.args, env=neutral_env, cwd=REPO, check=True, capture_output=True, text=True, timeout=60
+    )
+    assert json.loads(neutral_sdk.stdout.strip())
+    (neutral / "typed-settings.json").write_text(neutral_sdk.stdout, encoding="utf-8")
+    neutral_doctor = subprocess.run(
+        doctor.args, env=neutral_env, cwd=REPO, check=False, capture_output=True, text=True, timeout=120
+    )
+    (neutral / "offline-doctor.json").write_text(neutral_doctor.stdout, encoding="utf-8")
+    (neutral / "offline-doctor.stderr.txt").write_text(neutral_doctor.stderr, encoding="utf-8")
+    (neutral / "offline-doctor.exit.txt").write_text(f"{neutral_doctor.returncode}\n", encoding="utf-8")
+    json.loads(neutral_doctor.stdout)
+    Path(neutral_env["HZ_GALLERY_INITIALIZED"]).unlink()
+    neutral_ui = subprocess.Popen(
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0", "--no-browser"],
+        cwd=REPO,
+        env=neutral_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    # --no-browser prints the owned URL to stdout; merge diagnostics into the
+    # same pipe so the bounded reader drains the exact startup channel.
+    neutral_output = MobileServerOutput(SimpleNamespace(stderr=neutral_ui.stdout, poll=neutral_ui.poll), bare_url=True)
+    try:
+        neutral_address = urlsplit(neutral_output.wait_url(timeout=30))
+        assert neutral_address.scheme == "http"
+        assert neutral_address.hostname == "127.0.0.1"
+        assert Path(neutral_env["HZ_GALLERY_INITIALIZED"]).read_text(encoding="utf-8")
+        from urllib.request import ProxyHandler, build_opener
+
+        with build_opener(ProxyHandler({})).open(f"http://127.0.0.1:{neutral_address.port}/", timeout=10) as response:
+            assert response.status == 200
+    finally:
+        neutral_ui.terminate()
+        neutral_ui.wait(30)
+        neutral_output.close()
+        if neutral_ui.stdout is not None:
+            neutral_ui.stdout.close()
+    assert not Path(neutral_env["HZ_GALLERY_DENIAL_LOG"]).exists(), "Neutral UI attempted an outbound request"
+
+
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+@pytest.mark.timeout(600)
+def test_plugin_gallery_is_lazy_accessible_and_responsive_in_both_engines(environment, tmp_path, engine):
+    """The built Plugins screen previews actual declared media at desktop and all six phone sizes."""
+    fixture_env, _recorded = environment
+    home = tmp_path / "home"
+    home.mkdir()
+    # The gallery process receives no ambient provider, proxy, credential or HOME settings.
+    env = {key: value for key, value in fixture_env.items() if key.startswith("HZ_")}
+    env.update(
+        {
+            "HOME": str(home),
+            "XDG_CONFIG_HOME": str(home / "config"),
+            "XDG_DATA_HOME": str(home / "data"),
+            "XDG_CACHE_HOME": str(home / "cache"),
+            "XDG_STATE_HOME": str(home / "state"),
+            "TMPDIR": str(tmp_path),
+            "PATH": os.defpath,
+            "PYTHONPATH": fixture_env["PYTHONPATH"],
+            "BROWSER": fixture_env["BROWSER"],
+            "PLAYWRIGHT_BROWSER": engine,
+            "PLAYWRIGHT_BROWSERS_PATH": str(
+                Path.home() / ("Library/Caches/ms-playwright" if sys.platform == "darwin" else ".cache/ms-playwright")
+            ),
+        }
+    )
+    assert web_build.current(), "Prepare the locked web build before this offline test"
+    assert web_build.installed(), "Prepare the locked web dependencies before this offline test"
+    shots = tmp_path / "screenshots"
+    denied = tmp_path / "backend-network-denied.txt"
+    initialized = tmp_path / "backend-network-initialized.txt"
+    backend_env = env | {
+        "HZ_AUTO_UPDATE": "false",
+        "HZ_UPDATE_CHECK": "false",
+        "HZ_GALLERY_DENIAL_LOG": str(denied),
+        "HZ_GALLERY_INITIALIZED": str(initialized),
+        "PYTHONPATH": os.pathsep.join((str(REPO / "tests/fixtures/gallery_offline"), env["PYTHONPATH"])),
+    }
+    canary = (
+        "import socket\n"
+        "try: socket.socket().connect(('1.1.1.1', 443))\n"
+        "except PermissionError: pass\n"
+        "else: raise AssertionError('network denial was not installed')\n"
+    )
+    subprocess.run([sys.executable, "-c", canary], env=backend_env, cwd=REPO, check=True, timeout=30)
+    assert initialized.read_text(encoding="utf-8") == "gallery network denial active\n"
+    assert denied.read_text(encoding="utf-8") == "blocked outbound request\n"
+    initialized.unlink()
+    denied.unlink()
+
+    gallery_profile_preflight(backend_env, tmp_path, denied)
+    if os.environ.get("HZ_GALLERY_PREFLIGHT_ONLY") == "1":
+        pytest.skip("Non-capture fixture preflight only; gallery assertions were not run")
+    initialized.unlink()
+    ui = subprocess.Popen(
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=backend_env, stderr=subprocess.PIPE
+    )
+    output = MobileServerOutput(ui)
+    token = ""
+    try:
+        address = output.wait_url()
+        assert initialized.read_text(encoding="utf-8") == "gallery network denial active\n"
+        token = parse_qs(urlsplit(address).fragment).get("token", [""])[0]
+        driven = subprocess.run(
+            [str(web_build.node_bin() / "node"), "e2e/plugin-gallery-proof.mjs", address, str(shots)],
+            cwd=REPO / "web",
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=180,
+        )
+        check_driver(driven.returncode, redact(driven.stderr, token))
+        assert json.loads(driven.stdout.strip().splitlines()[-1]) == {
+            "engine": engine,
+            "viewports": 7,
+            "gallery": True,
+            "axe": True,
+        }
+    finally:
+        ui.terminate()
+        ui.wait(30)
+        output.close()
+        if ui.stderr is not None:
+            ui.stderr.close()
+    assert not denied.exists(), "The synthetic backend attempted an unexpected outbound request"
+
+
+@pytest.mark.timeout(600)
+def test_calendar_panel_on_phone_and_desktop_in_both_browsers(environment, tmp_path):
+    """Exercise the private calendar panel using fixture events on both browser engines."""
+    env, _recorded = environment
+    web_build.ensure_built()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    for engine in ("chromium", "webkit"):
+        subprocess.run([*run, "exec", "playwright-core", "install", engine], cwd=REPO, check=True, timeout=600)
+    ui = subprocess.Popen(
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE
+    )
+    capture = MobileServerOutput(ui)
+    try:
+        url = capture.wait_url()
+        result = subprocess.run(
+            [
+                *run,
+                "exec",
+                "node",
+                "e2e/calendar.mjs",
+                url,
+                str(Path(os.environ.get("HZ_SCREENSHOTS", tmp_path)) / "calendar"),
+            ],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+        )
+        assert result.returncode == 0, redact(result.stderr, parse_qs(urlsplit(url).fragment).get("token", [""])[0])
+    finally:
+        ui.terminate()
+        ui.wait(30)
+        capture.close()
+        if ui.stderr is not None:
+            ui.stderr.close()
+
+
+@pytest.mark.timeout(600)
+def test_desktop_title_bar_row_in_mounted_chromium_and_unchanged_browser(environment, tmp_path):
+    """The macOS desktop bridge makes one draggable 44 px row with clickable controls; a browser keeps 48 px."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "titlebar.mjs")
+    assert result["browser"] == {"topbar": 48}
+    assert result["desktop"]["order"][1:] == ["Collapse navigation", "Today", "Notifications", "Search"]
+    assert result["collapsed"]["expandX"] >= 80
+
+
+@pytest.mark.timeout(600)
+def test_right_sidebar_resizes_by_drag_and_keys_and_keeps_its_width(environment, tmp_path):
+    """The divider drags and answers keys, the width survives a reload, the terminal refits, a phone has no handle."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "sidebar-resize.mjs")
+    assert result == {"refit": True, "phone": "no handle"}
+
+
+@pytest.mark.timeout(600)
+def test_settings_search_font_floor_precedes_focus_for_phone_input_modes(environment, tmp_path):
+    """The real search field retains its minimum and enlarged theme size before any autofocus."""
+    env, _recorded = environment
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run([*run, "exec", "playwright-core", "install", "webkit"], cwd=REPO, check=True, timeout=600)
+    result = drive_ui_script(env, tmp_path, "search-field-font.mjs")
+    assert len(result["cases"]) == 8
+    assert all(case["fontSize"] >= max(16, case["themeSize"]) for case in result["cases"])
+
+
+@pytest.mark.timeout(600)
+def test_phone_pages_never_pan_sideways(environment, tmp_path):
+    """On 375 and 390 px touch viewports no main page, panel or dialog scrolls or pans horizontally."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "no-horizontal-pan.mjs")
+    pages = ("today", "forecast", "notifications", "calendar", "heinzels", "settings", "terminal")
+    assert result["cases"] == [
+        {"viewport": viewport, "page": page} for viewport in ("iphone-375", "iphone-390") for page in pages
+    ]

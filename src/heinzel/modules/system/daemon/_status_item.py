@@ -64,8 +64,8 @@ def status_item(status: DaemonStatus, now: datetime | None = None) -> StatusItem
         detail.append(
             DetailLine(
                 text=(
-                    f"Installed for hz {status.installed_version or 'unknown'}; the last check ran "
-                    f"{status.version or 'unknown'}; this is {__version__}"
+                    f"The background service still runs hz {status.version or status.installed_version or 'unknown'}; "
+                    f"restart it to use {__version__}."
                 ),
                 tone="bad",
             )
@@ -96,7 +96,7 @@ def status_item(status: DaemonStatus, now: datetime | None = None) -> StatusItem
         )
     upcoming = last + interval if interval else None
     return StatusItem(
-        text="Daemon needs a restart · version mismatch"
+        text="Daemon needs a restart"
         if status.version_mismatch
         else "Daemon running · next check"
         if upcoming

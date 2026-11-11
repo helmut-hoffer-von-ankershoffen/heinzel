@@ -1,0 +1,2 @@
+ok Removed <tmp>/system/Applications/Heinzelmaennchen.app
+Your Heinzel profile and settings are kept.

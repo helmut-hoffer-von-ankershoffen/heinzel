@@ -1,3 +1,4 @@
+import { execFileSync, spawnSync } from "node:child_process";
 import { access, lstat, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { verifyRuntime } from "./runtime-inventory.mjs";
@@ -23,4 +24,17 @@ try {
 }
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const expectedVersion = await verifyRuntime(archivePath, packageRoot);
-console.log(`Verified exact app.asar runtime for ${appName} at core v${expectedVersion}; unsigned artifacts only.`);
+if (isMac) {
+  const bundle = fileURLToPath(new URL("Heinzelmaennchen.app", app));
+  // A broken seal makes macOS call the app damaged; this must hold for every macOS package.
+  execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", "--verbose=2", bundle], { stdio: "inherit" });
+  const details = spawnSync("/usr/bin/codesign", ["-dv", bundle], { encoding: "utf8" }).stderr;
+  if (!/Signature=adhoc/.test(details) || !/Sealed Resources version=2/.test(details) ||
+      !/Identifier=org\.heinzelmaennchen\.desktop/.test(details)) {
+    throw new Error(`Expected an ad-hoc sealed org.heinzelmaennchen.desktop bundle:\n${details}`);
+  }
+  // Not notarized, so Gatekeeper rejects an assessment; record the verdict, never launch the app.
+  const assessment = spawnSync("/usr/sbin/spctl", ["--assess", "-vv", "--type", "exec", bundle], { encoding: "utf8" });
+  console.log(`Gatekeeper assessment (expected: rejected, not notarized): ${(assessment.stderr || assessment.stdout).trim()}`);
+}
+console.log(`Verified exact app.asar runtime for ${appName} at core v${expectedVersion}; ad-hoc sealed, not notarized.`);

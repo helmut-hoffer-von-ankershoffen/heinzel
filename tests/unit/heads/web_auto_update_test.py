@@ -17,6 +17,7 @@ from heinzel.kernel import (
     CorePin,
     Installation,
     OperationLet,
+    PluginNews,
     PluginRelease,
     PluginReleases,
     ReleaseFacts,
@@ -603,6 +604,49 @@ def test_a_plugin_from_git_or_a_folder_is_named_to_update_by_hand_while_the_rest
     assert made.applied[0]["plugins"] == {"heinzel-example": "2.0.0"}
 
 
+def test_holds_name_pinned_and_source_plugins_but_not_those_that_follow_updates(make_kernel, tmp_path):
+    made, _clock, _calls, kernel = updater(make_kernel, tmp_path)
+    receipt = Receipt(CorePin("release", "heinzel", ref="v0.1.0", git="https://github.com/org/heinzel"), tmp_path)
+    receipt.plugin_pins = lambda: [
+        CorePin("index", "heinzel-google==0.9.1", ref="==0.9.1", name="heinzel-google"),
+        CorePin("index", "heinzel-clock>=1", ref=">=1", name="heinzel-clock"),
+        CorePin("index", "heinzel-bare", name="heinzel-bare"),
+        CorePin(
+            "ref",
+            "heinzel-acme @ git+https://example.test/a@main",
+            ref="main",
+            name="heinzel-acme",
+            git="https://example.test/a",
+        ),
+        CorePin("local", "heinzel-dev @ file:///x", ref="/x", name="heinzel-dev"),
+    ]
+    kernel.bind(Installation, receipt)
+    holds = [(hold.name, hold.why, hold.version, hold.how) for hold in made.status().holds]
+    assert holds == [
+        ("heinzel-acme", "source", None, "git"),
+        ("heinzel-dev", "source", None, "folder"),
+        ("heinzel-google", "pinned", "0.9.1", None),
+    ]
+
+
+def test_the_status_says_whether_hz_and_the_plugins_each_answered_at_the_last_look(make_kernel, tmp_path):
+    made, clock, _calls, kernel = updater(make_kernel, tmp_path)
+    assert made.status().checked_at is None
+    assert made.status().plugins_checked is None
+    advance(made, clock, 5 * 60)
+    assert (made.status().core_checked, made.status().plugins_checked) == (True, True)
+    assert made.status().checked_at is not None
+
+    class Down(Plugins):
+        def newer_releases(self, timeout):
+            raise OSError(errno.ECONNREFUSED, "offline")
+
+    kernel.bind(PluginReleases, Down())
+    clock.now += timedelta(minutes=31)
+    made.check(clock.now)
+    assert (made.status().core_checked, made.status().plugins_checked) == (True, False)
+
+
 def test_a_left_copy_is_put_back_at_start_only_while_no_other_server_applies(make_kernel, tmp_path, monkeypatch):
     asked = []
     monkeypatch.setattr(AutoUpdater, "_recover_with_lock", lambda self: asked.append(True))
@@ -660,3 +704,414 @@ def test_a_restart_that_fails_stops_showing_applying_and_says_what_to_do(make_ke
         "hz 9.9.9 is installed, but this server couldn't restart into it, so hz 1.0.0 keeps running. "
         "Restart hz ui to finish the update."
     )
+
+
+def test_the_log_says_what_holds_the_countdown_off_and_when_it_opens(make_kernel, tmp_path, caplog):
+    made, clock, _, _ = updater(make_kernel, tmp_path)
+    made._activity.enter("POST /api/system/config/set")
+    with caplog.at_level("INFO", logger=auto.__name__):
+        advance(made, clock, 5 * 60)
+        made._activity.leave("POST /api/system/config/set")
+        advance(made, clock, 1)
+    lines = [record.getMessage() for record in caplog.records]
+    assert "automatic update found: hz 9.9.9, heinzel-example 2.0.0" in lines
+    assert "automatic update waits for: POST /api/system/config/set" in lines
+    assert lines.index("automatic update waits for nothing") < lines.index("automatic update countdown opened")
+
+
+def test_turning_automatic_updates_on_checks_at_once_not_at_the_next_half_hour(make_kernel, tmp_path):
+    made, clock, _, _ = updater(make_kernel, tmp_path)
+    advance(made, clock, 5 * 60)  # the first check: nothing announced yet would wait half an hour for the next
+    made.plan.core = None
+    made._save()
+    on = [False]
+    made._read_settings = lambda: Settings(
+        state_dir=tmp_path / "state", cache_dir=tmp_path / "cache", auto_update=on[0], update_check=True
+    )
+    advance(made, clock, 60)  # off
+    assert made.status().phase == "off"
+    checked = []
+    real = made.check
+    made.check = lambda now: checked.append(now) or real(now)
+    on[0] = True
+    assert made.reason() is None
+    advance(made, clock, 1)  # turned on, a minute after the last check
+    assert checked == [clock.now]
+
+
+# A later update by other means: the old failure is history ------------------------------------------------------------
+
+
+def test_a_failure_another_version_reported_is_history_once_the_server_runs_a_later_version(make_kernel, tmp_path):
+    made, clock, _, kernel = updater(make_kernel, tmp_path, outcome=RuntimeError("uv failed"))
+    advance(made, clock, 5 * 60)
+    advance(made, clock, 30)
+    assert made.status().message == auto.failure_message("1.0.0")
+    assert made.plan.failed_on == "1.0.0"
+    # `hz system update` (or the footer) installed 9.9.9 and restarted the web server: no stale failure, no news.
+    after = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="9.9.9", settings=made._read_settings
+    )
+    status = after.status()
+    assert (status.message, status.core) == (None, None)
+    assert after.plan.retry_at is None
+    assert status.plugins == {"heinzel-example": "2.0.0"}  # the next check says whether the plugin is current too
+    assert after.plan.window_at == clock.now  # it waits for nothing but its own countdown, not for six hours
+
+
+def test_a_failure_from_an_older_state_file_is_history_once_its_news_is_installed(make_kernel, tmp_path):
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    auto.found(made.plan, "9.9.9", {}, clock.now)
+    auto.failed(made.plan, auto.failure_message("1.0.0"), clock.now)  # as 0.9.26 and older wrote it: no version
+    made._save()
+    after = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="9.9.9", settings=made._read_settings
+    )
+    assert (after.status().message, after.plan.core, after.plan.retry_at) == (None, None, None)
+
+
+def test_the_same_version_keeps_its_failure_and_plugin_news_keeps_waiting(make_kernel, tmp_path):
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    auto.found(made.plan, "9.9.9", {"heinzel-example": "2.0.0"}, clock.now)
+    auto.failed(made.plan, auto.failure_message("1.0.0"), clock.now, "1.0.0")
+    made._save()
+    same = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="1.0.0", settings=made._read_settings
+    )
+    assert same.status().message == auto.failure_message("1.0.0")
+    assert same.plan.retry_at == clock.now + timedelta(hours=6)
+    later = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="9.9.9", settings=made._read_settings
+    )
+    assert (later.plan.core, later.plan.plugins) == (None, {"heinzel-example": "2.0.0"})
+    assert (later.plan.message, later.plan.retry_at, later.plan.window_at) == (None, None, clock.now)
+
+
+def test_plugin_news_the_installation_already_has_is_forgotten_at_start(make_kernel, tmp_path):
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    auto.found(made.plan, None, {"heinzel-example": "2.0.0"}, clock.now)
+    made._save()
+    kernel.resolve(Installation).installed_versions = lambda names: {"heinzel-example": "2.0.0"}
+    after = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="1.0.0", settings=made._read_settings
+    )
+    assert (after.plan.plugins, after.plan.window_at, after.status().phase) == ({}, None, "idle")
+
+
+def test_an_older_files_plugin_failure_is_history_once_a_manual_update_installed_the_plugin(make_kernel, tmp_path):
+    """The Mini, 0.9.26 to 0.9.27: a backoff written without a version survived a successful update by hand."""
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    auto.found(made.plan, None, {"heinzel-example": "2.0.0"}, clock.now)
+    auto.failed(made.plan, auto.failure_message("1.0.0"), clock.now)  # no `failed_on`: as 0.9.26 wrote it
+    made._save()
+    kernel.resolve(Installation).installed_versions = lambda names: {"heinzel-example": "2.0.0"}
+    after = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="1.0.0", settings=made._read_settings
+    )
+    assert (after.plan.plugins, after.plan.retry_at, after.status().message) == ({}, None, None)
+
+
+def test_an_older_files_failure_with_news_still_pending_keeps_its_backoff(make_kernel, tmp_path):
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    auto.found(made.plan, None, {"heinzel-example": "2.0.0"}, clock.now)
+    auto.failed(made.plan, auto.failure_message("1.0.0"), clock.now)
+    made._save()
+    kernel.resolve(Installation).installed_versions = lambda names: {"heinzel-example": "1.0.0"}
+    after = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="1.0.0", settings=made._read_settings
+    )
+    assert after.plan.retry_at == clock.now + timedelta(hours=6)
+
+
+# Plugins pinned to a tagged GitHub commit, and plugins that need plugins (ADR 0137) -----------------------------------
+
+MAPS, WEATHER = "d" * 40, "b" * 40
+PLUGIN_REPO = "https://github.com/acme-example/heinzel-plugins"
+
+
+class TaggedPlugins(PluginReleases):
+    """Tagged releases as `PyPIPluginReleases.announceable` answers: dependencies first, one line per held one."""
+
+    def __init__(self, *, tags=None, held=(), offline=False):
+        self.tags = {"heinzel-maps": MAPS, "heinzel-weather": WEATHER} if tags is None else tags
+        self.held, self.offline = list(held), offline
+
+    def announceable(self, timeout, old_enough):
+        releases = {
+            "heinzel-maps": PluginRelease("0.3.0", START - timedelta(days=7), commit=MAPS),
+            "heinzel-weather": PluginRelease("0.4.1", START - timedelta(days=7), commit=WEATHER),
+            "heinzel-clock": PluginRelease("1.1.0", START - timedelta(hours=1)),  # too new for the minimum age
+        }
+        moving = {name: release for name, release in releases.items() if old_enough(release)}
+        return PluginNews(moving, self.held, ["heinzel-maps", "heinzel-weather"])
+
+    def tag_commit(self, name, version, timeout):
+        if self.offline:
+            msg = "offline"
+            raise OSError(msg)
+        return self.tags.get(name)
+
+    def release(self, name, version, timeout):
+        return PluginRelease(version, START - timedelta(days=7)) if name == "heinzel" else None
+
+
+def tagged_pin(name):
+    return CorePin("commit", f"{name} @ git+{PLUGIN_REPO}@{'a' * 40}", ref="a" * 40, name=name, git=PLUGIN_REPO)
+
+
+def tagged_updater(make_kernel, tmp_path, plugins):
+    made, clock, calls, kernel = updater(make_kernel, tmp_path)
+    receipt = Receipt(CorePin("release", "heinzel", ref="v0.1.0", git="https://github.com/org/heinzel"), tmp_path)
+    receipt.plugin_pins = lambda: [
+        tagged_pin("heinzel-maps"),
+        tagged_pin("heinzel-weather"),
+        CorePin("ref", "heinzel-crm @ git+https://example.test/crm@main", ref="main", name="heinzel-crm"),
+    ]
+    kernel.bind(Installation, receipt)
+    kernel.bind(PluginReleases, plugins)
+    return made, clock, calls
+
+
+def test_tagged_plugins_are_announced_with_their_commits_dependencies_first_and_are_no_longer_by_hand(
+    make_kernel, tmp_path
+):
+    line = "heinzel-route 2.0.0 waits for heinzel-maps: it needs heinzel-maps>=0.4, and no release of it ..."
+    made, clock, calls = tagged_updater(make_kernel, tmp_path, TaggedPlugins(held=[line]))
+    assert made.status().by_hand == ["heinzel-crm", "heinzel-maps", "heinzel-weather"]  # before any check
+    advance(made, clock, 5 * 60)
+    status = made.status()
+    assert status.by_hand == ["heinzel-crm"]  # only what is still updated by hand
+    assert status.plugins == {"heinzel-maps": "0.3.0", "heinzel-weather": "0.4.1"}  # heinzel-clock is too new
+    assert status.plugins_held == [line]
+    # The Updates pane's facts sit beside the held plugins: both answered at this look, and the git-ref plugin
+    # (installed from a source) is listed among the holds the pane names.
+    assert (status.core_checked, status.plugins_checked) == (True, True)
+    assert status.checked_at is not None
+    assert [(hold.name, hold.why) for hold in status.holds] == [("heinzel-crm", "source")]
+    advance(made, clock, 30)
+    assert calls == {"restart": 1, "update": 1}  # hz and the plugins in one update
+    news = made.applied[0]
+    assert list(news["plugins"]) == ["heinzel-maps", "heinzel-weather"]  # the dependency first
+    assert news["plugin_commits"] == {"heinzel-maps": MAPS, "heinzel-weather": WEATHER}
+    assert news["core"] == "9.9.9"  # a held plugin never holds hz
+
+
+@pytest.mark.parametrize("plugins", [TaggedPlugins(tags={"heinzel-maps": MAPS}), TaggedPlugins(offline=True)])
+def test_a_plugin_tag_that_moved_or_cant_be_asked_installs_nothing(make_kernel, tmp_path, plugins):
+    made, clock, calls = tagged_updater(make_kernel, tmp_path, plugins)
+    advance(made, clock, 5 * 60)
+    advance(made, clock, 30)
+    assert calls["update"] == 0
+    message = made.status().message or ""
+    if plugins.offline:
+        assert message == auto.failure_message("1.0.0")
+    else:
+        assert message.startswith("The tag of heinzel-weather 0.4.1 names another commit than when it was announced")
+
+
+def test_the_plan_keeps_plugin_commits_what_it_follows_and_what_waits_across_a_restart():
+    plan = Plan(
+        plugins={"heinzel-maps": "0.3.0"},
+        plugin_commits={"heinzel-maps": MAPS},
+        followed=["heinzel-maps"],
+        held_plugins=["heinzel-weather 0.4.1 waits for heinzel-maps: ..."],
+    )
+    again = Plan.from_json(json.loads(json.dumps(plan.to_json())), fresh=True)
+    assert (again.plugin_commits, again.followed, again.held_plugins) == (
+        plan.plugin_commits,
+        plan.followed,
+        plan.held_plugins,
+    )
+    auto.done(again, "Updated.")
+    assert (again.plugins, again.plugin_commits, again.followed) == ({}, {}, ["heinzel-maps"])
+
+
+def test_desktop_refresh_only_updates_an_existing_installation(make_kernel, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from heinzel.heads import _desktop_installation
+
+    made, _, _, kernel = updater(make_kernel, tmp_path)
+    calls = []
+    receipt = kernel.resolve(Installation)
+    monkeypatch.setattr(auto.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(auto.os.path, "lexists", lambda _: True)
+    monkeypatch.setattr(receipt, "tool_entrypoints", lambda: [Path("/isolated/bin/hz")], raising=False)
+    monkeypatch.setattr(_desktop_installation, "install_desktop", lambda *a, **kw: calls.append((a, kw)) or "updated")
+    made._refresh_desktop()
+    assert calls == [(("1.0.0", Path("/isolated/bin/hz")), {"update_only": True})]
+    monkeypatch.setattr(auto.os.path, "lexists", lambda _: False)
+    made._refresh_desktop()
+    assert len(calls) == 1
+    monkeypatch.setattr(auto.platform, "system", lambda: "Linux")
+    made._refresh_desktop()
+    assert len(calls) == 1
+
+    # An installed tool without an hz entry point must not create an app.
+    monkeypatch.setattr(auto.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(auto.os.path, "lexists", lambda _: True)
+    monkeypatch.setattr(receipt, "tool_entrypoints", lambda: [SimpleNamespace(name="other")], raising=False)
+    made._refresh_desktop()
+    assert len(calls) == 1
+
+
+def test_plugin_repair_restarts_only_after_success_and_contains_restart_errors(caplog):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from heinzel import HeinzelError
+
+    operation = SimpleNamespace(name=auto.REPAIR_OPERATION[1], func=lambda: None)
+    record = SimpleNamespace(qualname=auto.REPAIR_OPERATION[0])
+
+    class Kernel:
+        available_now = True
+        result = SimpleNamespace(needs=["missing"], message="installed", restart_required=True)
+
+        def lets(self, _kind):
+            return [(record, operation)]
+
+        def available(self, _func):
+            return self.available_now
+
+        def resolve(self, _kind):
+            return SimpleNamespace(local=lambda _name: nullcontext())
+
+        def invoke(self, _operation, **kwargs):
+            assert kwargs == {"automatic": True}
+            if isinstance(self.result, Exception):
+                raise self.result
+            return self.result
+
+    kernel = Kernel()
+    made = AutoUpdater.__new__(AutoUpdater)
+    made._kernel = kernel
+    calls = []
+    made._restart = lambda: calls.append("restart")
+    made._repair_plugins()
+    assert calls == ["restart"]
+    kernel.result = HeinzelError("busy")
+    made._repair_plugins()
+    assert calls == ["restart"]
+    kernel.available_now = False
+    made._repair_plugins()
+    assert calls == ["restart"]
+    kernel.available_now = True
+    kernel.result = SimpleNamespace(needs=[], restart_required=True)
+
+    def failed_restart():
+        message = "restart failed"
+        raise RuntimeError(message)
+
+    made._restart = failed_restart
+    made._repair_plugins()
+    assert any(getattr(record, "error", None) == "restart failed" for record in caplog.records)
+
+
+def test_announced_update_forwards_exact_versions_and_recovery_handles_failure(caplog):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    operation = SimpleNamespace(name=auto.UPDATE_OPERATION)
+    record = SimpleNamespace(qualname=auto.UPDATE_MODULE)
+
+    class Kernel:
+        def __init__(self):
+            self.calls = []
+            self.broken = False
+
+        def lets(self, _kind):
+            return [(record, operation)]
+
+        def resolve(self, _kind):
+            return SimpleNamespace(local=lambda _name: nullcontext())
+
+        def invoke(self, _operation, **kwargs):
+            self.calls.append(kwargs)
+            if self.broken:
+                message = "recovery failed"
+                raise RuntimeError(message)
+            return "installed"
+
+    kernel = Kernel()
+    made = AutoUpdater.__new__(AutoUpdater)
+    made._kernel = kernel
+    news = {
+        "core": "2.0",
+        "plugins": {"heinzel-example": "3.0"},
+        "commit": "abc",
+        "plugin_commits": {"heinzel-example": "def"},
+    }
+    assert made._update(news) == "installed"
+    assert kernel.calls == [
+        {"core": "2.0", "plugins": ["heinzel-example==3.0"], "commit": "abc", "plugin_commits": ["heinzel-example@def"]}
+    ]
+    operation.name = auto.RECOVER_OPERATION
+    kernel.broken = True
+    made._recover_with_lock()
+    assert "finishing an interrupted automatic update failed" in caplog.text
+    operation.name = "unrelated"
+    with pytest.raises(RuntimeError, match="system module is off"):
+        made._update(news)
+
+
+def test_unreadable_plugin_receipt_is_reported_and_not_interpreted_as_safe(make_kernel, tmp_path):
+    made, _, _, kernel = updater(make_kernel, tmp_path)
+    receipt = kernel.resolve(Installation)
+
+    def unreadable():
+        message = "receipt unavailable"
+        raise OSError(message)
+
+    receipt.plugin_pins = unreadable
+    assert made.by_hand() == ["the plugins (the uv receipt can't be read)"]
+    assert made.holds() == []
+
+
+def test_update_loop_logs_failed_tick_and_continues_without_starting_a_thread(make_kernel, tmp_path, caplog):
+    made, _, _, _ = updater(make_kernel, tmp_path)
+
+    class Stop:
+        calls = 0
+
+        def wait(self, seconds):
+            assert seconds == auto.STEP_SECONDS
+            self.calls += 1
+            return self.calls > 1
+
+    def broken_tick():
+        message = "tick failed"
+        raise RuntimeError(message)
+
+    made._stop = Stop()
+    made.tick = broken_tick
+    made._run()
+    assert made._stop.calls == 2
+    assert "automatic update step failed" in caplog.text
+
+
+def test_manual_recheck_when_auto_updates_are_off_still_checks_core_but_is_throttled(
+    make_kernel, tmp_path, monkeypatch
+):
+    made, clock, _, _ = updater(make_kernel, tmp_path, on=False)
+    calls = []
+
+    class Cache:
+        error = None
+
+        def __init__(self, _path):
+            pass
+
+        def refresh(self, source, timeout):
+            calls.append((source, timeout))
+
+    monkeypatch.setattr(auto, "ReleaseCache", Cache)
+    first = made.recheck()
+    assert first.core_checked is True
+    assert first.plugins_checked is False
+    assert len(calls) == 1
+    made.recheck()
+    assert len(calls) == 1
+    clock.now += timedelta(seconds=11)
+    made.recheck()
+    assert len(calls) == 2

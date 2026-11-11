@@ -20,5 +20,5 @@ if executable is None:
     msg = "Install uv before previewing this plugin."
     raise SystemExit(msg)
 subprocess.run(  # noqa: S603 - interactive: no timeout; preview stays open until Ctrl-C
-    [executable, "run", "hz", "ui", "--no-browser", "--port", "0"], env=environment, cwd=root, check=True
+    [executable, "run", "hz", "ui", "serve", "--no-browser", "--port", "0"], env=environment, cwd=root, check=True
 )

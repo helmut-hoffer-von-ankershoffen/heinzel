@@ -19,9 +19,27 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from heinzel import Check, Config, Delivery, HeinzelError, Kernel, Notice, NoticeKind, Notifications, Settings, Status
+from heinzel import (
+    Check,
+    Config,
+    Delivery,
+    HeinzelError,
+    Kernel,
+    Notice,
+    NoticeHelper,
+    NoticeKind,
+    Notifications,
+    OperationLet,
+    ResolveWhen,
+    Settings,
+    Status,
+    clean_text,
+)
 from heinzel.kernel import KERNEL_SECTION
+from heinzel.kernel._calendar_reminders import agenda_plan
+from heinzel.kernel._logging import get_logger, log_event
 from heinzel.modules.system.notify import _policy as policy
+from heinzel.modules.system.notify import _resolve
 from heinzel.modules.system.notify._channels import (
     SHOWN,
     DaemonState,
@@ -38,13 +56,15 @@ from heinzel.modules.system.notify._models import (
     NoticeList,
     NotifySettings,
     Opened,
+    Recovered,
     Tested,
 )
 from heinzel.modules.system.notify._native import ALLOW, DENIED_DETAIL, DENIED_FIX, HEINZEL, ICON_CACHE, Native, native
-from heinzel.modules.system.notify._store import Store
-from heinzel.modules.system.notify._watch import daemon_state, watch
+from heinzel.modules.system.notify._store import INTEGRITY_LEGACY, Store, recover
+from heinzel.modules.system.notify._watch import daemon_state, doctor_problems, watch
 
 logger = logging.getLogger(__name__)
+_EVENTS = get_logger("system.notify")
 MODULE_SECTION = "system.notify"
 WATCHED_FOR = timedelta(seconds=30)
 """After a head last said it shows notices, the daemon holds back this long: the web app says so every few seconds."""
@@ -58,6 +78,18 @@ STRAY_EVERY = timedelta(days=1)
 """How often the daemon asks macOS to forget copies of Heinzel Notifier it met at other paths (it takes seconds)."""
 STALE = timedelta(hours=12)
 """A notice that waited longer than this to be shown doesn't pop up any more; it stays in the list."""
+MAX_LOG_PROBLEM = 280
+
+
+def _calendar_keys(kernel: Kernel, now: datetime) -> set[str]:
+    """Read the generic agenda operation afresh; absence and provider errors validate no reminders."""
+    operation = next(
+        (let for owner, let in kernel.lets(OperationLet) if (owner.qualname, let.name) == ("org", "agenda")), None
+    )
+    if operation is None or not kernel.available(operation.func):
+        return set()
+    agenda = kernel.call(operation.func)
+    return {reminder.key for reminder in agenda_plan(agenda, now) if reminder.due <= now < reminder.expires}
 
 
 class NotifyService(Notifications):
@@ -96,6 +128,16 @@ class NotifyService(Notifications):
         self.opener: Callable[[list[str]], None] = _open
         """Starts a program and doesn't wait (`open` on macOS); tests replace it so nothing opens."""
         self.platform = sys.platform
+        self.calendar_valid: Callable[[datetime], set[str]] | None = None
+        self._refresh_settings: Callable[[], NotifySettings] = lambda: self.settings
+        self.installed: Callable[[], str] = _resolve.installed_version
+        """The hz installed on this machine, read from disk each time; tests replace it."""
+        self.capability: _resolve.CapabilityProbe | None = None
+        """Asks a capability's state for a notice's condition; set by `for_user`, None asks nothing."""
+        self.problems: _resolve.ProblemsProbe | None = None
+        """The health checks that aren't up, for a notice's `checks_up`; set by `for_user`, None asks nothing."""
+        self._health_resolved_at: datetime | None = None
+        self._refresh_hours: Callable[[], policy.Hours] = lambda: self.hours
 
     @classmethod
     def for_user(cls, kernel: Kernel) -> "NotifyService":
@@ -106,10 +148,20 @@ class NotifyService(Notifications):
             settings,
             config.settings(NotifySettings, MODULE_SECTION),
             config.section("org"),
-            ui_url=lambda route: f"http://127.0.0.1:{settings.ui_port}{route}",  # `hz ui`'s fixed port (ADR 0046)
+            ui_url=lambda route: f"http://127.0.0.1:{settings.ui_port}{route}",  # `hz ui serve`'s fixed port (ADR 0046)
         )
         service.watcher = lambda: watch(kernel, service, service.wanted)
+        service.calendar_valid = lambda now: _calendar_keys(kernel, now)
+
+        def refresh_settings() -> NotifySettings:
+            current = Config.load(Path.home())
+            service.hours = policy.working_hours(current.section("org"), policy.local_zone())
+            return current.settings(NotifySettings, MODULE_SECTION)
+
+        service._refresh_settings = refresh_settings
         service.daemon = lambda: daemon_state(kernel)
+        service.capability = _resolve.kernel_probe(kernel)
+        service.problems = lambda: doctor_problems(kernel)
         return service
 
     @property
@@ -144,6 +196,16 @@ class NotifyService(Notifications):
 
     # What modules call -----------------------------------------------------------------------------------------------
 
+    def enabled(self, kind: NoticeKind) -> bool:
+        """Read current user consent; configuration failures fail closed."""
+        try:
+            self.settings = self._refresh_settings()
+            self.hours = self._refresh_hours()
+            return self.settings.wants(kind)
+        except Exception:  # noqa: BLE001 - unreadable consent cannot authorize a background read
+            logger.warning("notification settings unavailable")
+            return False
+
     def emit(  # noqa: PLR0913 - what a notice is, all by keyword
         self,
         kind: NoticeKind,
@@ -154,9 +216,16 @@ class NotifyService(Notifications):
         command: str,
         key: str,
         urgent: bool = False,
+        helper: NoticeHelper | None = None,
+        resolve_when: ResolveWhen | None = None,
     ) -> Notice | None:
-        """Record a notice under the policy; the earlier one when it repeats; None if its kind is off or it failed."""
+        """Record a notice under the policy; the earlier one when it repeats; None if its kind is off or it failed.
+
+        A notice whose `resolve_when` already holds is not recorded: it would only disappear again.
+        """
         if not self.settings.wants(kind):
+            return None
+        if resolve_when is not None and _resolve.holds(resolve_when, self.installed(), self.capability) is not None:
             return None
         now = self._clock()
         window = timedelta(hours=self.settings.repeat_hours)
@@ -178,6 +247,8 @@ class NotifyService(Notifications):
                 due=decision.due,
                 popup=decision.popup,
                 held=decision.held,
+                helper=helper,
+                resolve_when=resolve_when,
             )
             notices.append(notice)
             return notice
@@ -189,10 +260,21 @@ class NotifyService(Notifications):
             return None
 
     def emit_once(  # noqa: PLR0913 - the notice fields match emit
-        self, kind: NoticeKind, title: str, body: str, *, route: str, command: str, key: str
+        self,
+        kind: NoticeKind,
+        title: str,
+        body: str,
+        *,
+        route: str,
+        command: str,
+        key: str,
+        helper: NoticeHelper | None = None,
+        expires: datetime | None = None,
     ) -> bool:
         """Persist a notice and replay key together, independent of repeat policy and display retention."""
-        if not self.settings.wants(kind):
+        if not (self.enabled(kind) if kind is NoticeKind.CALENDAR else self.settings.wants(kind)):
+            return False
+        if expires is not None and (expires.tzinfo is None or expires.utcoffset() is None):
             return False
         now = self._clock()
 
@@ -209,16 +291,33 @@ class NotifyService(Notifications):
                     key=key,
                     at=now,
                     due=decision.due,
+                    expires=expires,
                     popup=decision.popup,
                     held=decision.held,
+                    helper=helper,
                 )
             )
 
         try:
-            return self.store.change_once(now, key, record)
+            return self.store.change_once(now, key, record, expires=expires)
         except OSError:
             logger.warning("can't record a durable notice in %s", self.store.directory, exc_info=True)
             return False
+
+    def withdraw(self, key: str) -> bool:
+        """Suppress pending matching notices atomically while retaining their replay keys."""
+
+        def suppress(notices: list[Notice]) -> None:
+            for index, notice in enumerate(notices):
+                if notice.key == key and notice.delivered_by is None:
+                    notices[index] = notice.model_copy(update={"popup": False, "held": "withdrawn"})
+
+        try:
+            self.store.change(self._clock(), suppress)
+        except OSError:
+            logger.warning("can't withdraw a notice in %s", self.store.directory, exc_info=True)
+            return False
+        return True
 
     def forget_once(self, key: str) -> bool:
         """Remove a completed outbox receipt while preserving its display notice."""
@@ -243,8 +342,76 @@ class NotifyService(Notifications):
     # What heads call -------------------------------------------------------------------------------------------------
 
     def recent(self, limit: int = 50) -> list[Notice]:
-        """The latest notices, newest first."""
-        return list(reversed(self.store.read()))[:limit]
+        """The latest notices that are still shown, newest first: resolved ones have disappeared."""
+        return self._shown(list(reversed(self.store.read())))[:limit]
+
+    def _shown(self, notices: list[Notice]) -> list[Notice]:
+        """`notices` without resolved ones or conditions already met by installed metadata.
+
+        Capability and doctor checks run at resolution time. A read never runs another module's operation.
+        """
+        installed = self.installed()
+        return [
+            notice
+            for notice in notices
+            if notice.resolved_at is None
+            and not (
+                (when := _resolve.condition(notice)) is not None
+                and _resolve.at_read(when)
+                and _resolve.holds(when, installed, None) is not None
+            )
+        ]
+
+    def _resolvable(self, notices: list[Notice], *, check_health: bool = True) -> dict[str, str]:
+        """The ids of shown notices whose condition holds now, each with why."""
+        installed = self.installed()
+        probe = _resolve.cached(self.capability) if self.capability is not None else None
+        problems = _resolve.once(self.problems) if check_health and self.problems is not None else None
+        found: dict[str, str] = {}
+        for notice in notices:
+            when = _resolve.condition(notice) if notice.resolved_at is None else None
+            if when is not None and (why := _resolve.holds(when, installed, probe, problems)) is not None:
+                found[notice.id] = why
+        return found
+
+    def resolve(self, *, check_health: bool = True) -> int:
+        """Resolve the shown notices whose condition holds now; how many. Never touches whether one was read.
+
+        Capabilities are asked outside the store's lock; the write then marks only notices still unresolved.
+        """
+        try:
+            found = self._resolvable(self.store.read(), check_health=check_health)
+        except OSError:
+            return 0
+        if not found:
+            return 0
+        now = self._clock()
+
+        marked: list[str] = []
+
+        def mark(notices: list[Notice]) -> int:
+            marked.clear()
+            for index, notice in enumerate(notices):
+                if notice.id in found and notice.resolved_at is None:
+                    notices[index] = notice.model_copy(update={"resolved_at": now, "resolved": found[notice.id]})
+                    marked.append(notice.id)
+            return len(marked)
+
+        try:
+            resolved = self.store.change(now, mark)
+        except OSError:
+            logger.warning("can't resolve notices in %s", self.store.directory, exc_info=True)
+            return 0
+        for notice_id in marked:
+            log_event(
+                _EVENTS,
+                "notify.resolve.notice",
+                operation="system.notify:resolve",
+                outcome="ok",
+                notice=notice_id,
+                reason=found[notice_id],
+            )
+        return resolved
 
     def due(self, now: datetime | None = None) -> list[Notice]:
         """Notices to pop up now, oldest first: not shown, their time come, not stale, within the hour's rate limit.
@@ -253,21 +420,78 @@ class NotifyService(Notifications):
         """
         now = now or self._clock()
         notices = self.store.read()
+        visible = {notice.id for notice in self._shown(notices)}
         shown = sum(
             1 for n in notices if n.delivered_at is not None and now - policy.RATE_WINDOW < n.delivered_at <= now
         )
-        waiting = [n for n in notices if n.popup and n.delivered_by is None and n.due <= now and now - n.due <= STALE]
+        waiting = [
+            n
+            for n in notices
+            if n.popup
+            and n.id in visible
+            and n.delivered_by is None
+            and n.due <= now
+            and now - n.due <= STALE
+            and (n.expires is None or now < n.expires)
+        ]
+        waiting = self._valid_calendars(waiting, now)
+        instant = self._clock()
+        waiting = [n for n in waiting if n.expires is None or instant < n.expires]
         return waiting[: max(0, self.settings.per_hour - shown)]
+
+    def _valid_calendars(self, notices: list[Notice], now: datetime) -> list[Notice]:
+        """Refresh the provider before a calendar notice is offered or claimed, failing closed."""
+        calendar = [notice for notice in notices if notice.kind is NoticeKind.CALENDAR]
+        if not calendar:
+            return notices
+        valid: set[str] = set()
+        if self.enabled(NoticeKind.CALENDAR) and self.calendar_valid is not None:
+            try:
+                valid = self.calendar_valid(now)
+            except Exception:
+                logger.warning("calendar reminder validation failed", exc_info=True)
+        # Provider reads can block across expiry or a settings edit. Recheck after they return.
+        permitted = self._calendar_permitted()
+        instant = self._clock()
+        return [
+            notice
+            for notice in notices
+            if notice.kind is not NoticeKind.CALENDAR
+            or (notice.key in valid and permitted and (notice.expires is None or instant < notice.expires))
+        ]
+
+    def _calendar_permitted(self, by: Delivery | None = None) -> bool:
+        """Refresh consent and the policy at a presentation boundary, failing closed."""
+        if not self.enabled(NoticeKind.CALENDAR):
+            return False
+        return (
+            not self.settings.quiet
+            and (not self.settings.working_hours or policy.next_start(self.hours, self._clock()) is None)
+            and (by is not Delivery.DAEMON or self.settings.native)
+        )
 
     def deliver(self, ids: Sequence[str], by: Delivery) -> list[Notice]:
         """Mark notices as shown by `by`; the ones that weren't shown before."""
         wanted, now = set(ids), self._clock()
+        candidates = [notice for notice in self.store.read() if notice.id in wanted]
+        wanted = {notice.id for notice in self._valid_calendars(candidates, now)}
+        if by is Delivery.DAEMON and not self.settings.native:
+            wanted -= {notice.id for notice in candidates if notice.kind is NoticeKind.CALENDAR}
+        now = self._clock()
 
         def mark(notices: list[Notice]) -> list[Notice]:
+            calendar_allowed = self._calendar_permitted(by)
+            instant = self._clock()
             marked: list[Notice] = []
             for index, notice in enumerate(notices):
-                if notice.id in wanted and notice.delivered_by is None:
-                    notices[index] = notice.model_copy(update={"delivered_by": by, "delivered_at": now})
+                if (
+                    notice.id in wanted
+                    and notice.delivered_by is None
+                    and notice.popup
+                    and (notice.kind is not NoticeKind.CALENDAR or calendar_allowed)
+                    and (notice.expires is None or instant < notice.expires)
+                ):
+                    notices[index] = notice.model_copy(update={"delivered_by": by, "delivered_at": instant})
                     marked.append(notices[index])
             return marked
 
@@ -288,8 +512,16 @@ class NotifyService(Notifications):
         A notice the notifier refused stays due and is tried again at the next tick, until it is stale. First, once
         an hour, it looks for doctor's findings and a newer release (`look`), so they pop up in the same tick.
         """
-        self._end_leftover_instances()
+        self.enabled(NoticeKind.CALENDAR)  # refresh native, quiet and profile policy before any presentation
+        if self.settings.native:
+            self._end_leftover_instances()
         self.look()
+        now = self._clock()
+        last = self._health_resolved_at
+        check_health = self.settings.wants(NoticeKind.DOCTOR) and (last is None or not now - LOOK_EVERY < last <= now)
+        if check_health:
+            self._health_resolved_at = now
+        self.resolve(check_health=check_health)
         if not self.settings.native or self.is_watched() or self.notifier.name is None:
             return 0
         # Claimed before they pop up, under the store's lock, so a web app can't show the same ones meanwhile.
@@ -299,8 +531,31 @@ class NotifyService(Notifications):
         for index, notice in enumerate(claimed):
             url = self._ui_url(event_route(notice)) if self.notifier.clicks else None
             body = notice.body if url is not None else _with_command(notice.body, notice.command)
-            if (problem := self.notifier.post(notice.title, body, url=url)) is not None:
-                logger.warning("couldn't show notice %s: %s", notice.id, problem)
+            if notice.kind is NoticeKind.CALENDAR and (
+                not self._calendar_permitted(Delivery.DAEMON)
+                or (notice.expires is not None and self._clock() >= notice.expires)
+            ):
+                self._release([notice])
+                continue
+            if (
+                problem := self.notifier.post(
+                    notice.title,
+                    body,
+                    url=url,
+                    helper=notice.helper,
+                    sound=self.settings.sound,
+                    ident=notice.id,
+                    thread=notice.route,
+                )
+            ) is not None:
+                log_event(
+                    logger,
+                    "notify.native.post",
+                    level=logging.WARNING,
+                    outcome="error",
+                    notice_id=notice.id,
+                    problem=" ".join(clean_text(problem).split())[:MAX_LOG_PROBLEM],
+                )
                 self._release(claimed[index:])  # the next would fail the same way; they wait for the next tick
                 break
             posted += 1
@@ -311,7 +566,8 @@ class NotifyService(Notifications):
     def _end_leftover_instances(self, *, install: bool = True) -> None:
         """End Heinzel Notifier processes that outlived any notification: a build that couldn't end itself, or a hang.
 
-        Every tick does it, so an installation heals itself the first tick after it is updated. Its failure is logged.
+        Every tick with native delivery enabled does it, so an installation heals itself after it is updated.
+        Its failure is logged.
         """
         notifier = self.notifier
         if notifier.name != HEINZEL or notifier.app is None:
@@ -351,6 +607,26 @@ class NotifyService(Notifications):
         if forgotten:
             logger.warning("macOS forgot %d stray Heinzel Notifier cop(ies)", forgotten)
         return forgotten
+
+    def recover(self, *, apply: bool) -> Recovered:
+        """Archive and restart a durable store a legacy writer overwrote; refuse every other shape untouched.
+
+        On a store that verifies (afterwards), it also finds the notices whose condition holds, such as a stale "hz X
+        is available" once X is installed, and with `apply` resolves them, so they disappear with a reason.
+        """
+        result = recover(self.store, self._clock(), apply=apply)
+        if result.state not in {"healthy", "recovered"}:
+            return result
+        resolved = self.resolve() if apply else len(self._resolvable(self.store.read()))
+        if not resolved:
+            return result
+        verb = "Resolved" if apply else "Run again with --apply to resolve"
+        return result.model_copy(
+            update={
+                "resolved": resolved,
+                "detail": f"{result.detail} {verb} {resolved} notice(s) whose condition holds.",
+            }
+        )
 
     def clean(self) -> Cleaned:
         """End every leftover Heinzel Notifier process (ones that ran longer than five minutes)."""
@@ -475,9 +751,14 @@ class NotifyService(Notifications):
             next=steps,
         )
 
-    def listing(self, limit: int, *, before: str | None = None) -> NoticeList:
-        """The latest notices (older than `before`, an id, for paging) and how they reach you."""
+    def listing(self, limit: int, *, before: str | None = None, resolved: bool = False) -> NoticeList:
+        """The latest notices (older than `before`, an id, for paging) and how they reach you.
+
+        Resolved notices have disappeared; `resolved` keeps them, for their history.
+        """
         kept = list(reversed(self.store.read()))
+        if not resolved:
+            kept = self._shown(kept)
         if before is not None:
             kept = [notice for notice in kept if notice.id < before]
         notices = kept[:limit]
@@ -489,7 +770,20 @@ class NotifyService(Notifications):
         return Delivered(delivered=[notice.id for notice in self.deliver(ids, Delivery.WEB)])
 
     def health(self) -> list[Check]:
-        """How notices reach you, for `hz system doctor`; degraded only while the native notifier refuses pop-ups."""
+        """Report durable store integrity and how notices reach you, without changing notification state."""
+        if problem := self.store.integrity_problem():
+            fix = (
+                "Preserve the store for recovery review; "
+                "use a coherent trusted backup if replay evidence is damaged. "
+                "Do not delete its marker or rebuild replay keys."
+            )
+            if problem == INTEGRITY_LEGACY:
+                fix = (
+                    "Restore a coherent trusted backup if you have one; otherwise run "
+                    "`hz system notify recover --apply` in your own terminal, which archives the store with a receipt "
+                    "and starts a new replay-key set. Do not delete its marker or rebuild replay keys by hand."
+                )
+            return [Check(name="notification store", status=Status.DOWN, detail=problem, fix=fix)]
         settings = self.settings
         if not settings.enabled:
             return [Check(name="notifications", status=Status.UP, detail="off ([system.notify] enabled = false)")]

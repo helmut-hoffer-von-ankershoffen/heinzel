@@ -85,15 +85,15 @@ def test_hz_ui_lists_and_revokes_devices(make_kernel, devices, monkeypatch):
     devices.pair("Chrome on macOS")
     runner = CliRunner()
     app = cli(make_kernel(builtins=True))
-    listed = runner.invoke(app, ["ui", "--devices"])
+    listed = runner.invoke(app, ["ui", "serve", "--devices"])
     assert listed.exit_code == 0
     assert "Safari on macOS" in listed.output
     assert first.id in listed.output
-    revoked = runner.invoke(app, ["ui", "--revoke", first.id])
+    revoked = runner.invoke(app, ["ui", "serve", "--revoke", first.id])
     assert revoked.exit_code == 0
     assert [d.name for d in devices.paired()] == ["Chrome on macOS"]
-    assert runner.invoke(app, ["ui", "--revoke", "nope"]).exit_code == 1
-    assert runner.invoke(app, ["ui", "--revoke", "all"]).exit_code == 0
+    assert runner.invoke(app, ["ui", "serve", "--revoke", "nope"]).exit_code == 1
+    assert runner.invoke(app, ["ui", "serve", "--revoke", "all"]).exit_code == 0
     assert devices.paired() == []
 
 

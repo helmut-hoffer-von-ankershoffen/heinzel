@@ -27,13 +27,17 @@ import io
 import os
 import platform
 import re
+import secrets
 import shutil
 import ssl
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import tomllib
+import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from collections.abc import Callable, Iterable
@@ -51,13 +55,43 @@ REQUIRED = frozenset({"build", "web"})
 """Groups whose missing tools fail `make doctor`; `web` only where there is a web/ app (not in plugins)."""
 WEB_APP = ROOT / "web" / "package.json"
 TIMEOUT = 120
+DOWNLOAD_ATTEMPTS = 3
+DOWNLOAD_ERROR_PATH_LIMIT = 256
 SHA256 = re.compile(r"[0-9a-f]{64}")
+RELEASE_ASSET = re.compile(
+    r"https://github\.com/(?P<repo>[\w.-]+/[\w.-]+)/releases/download/(?P<tag>[^/-][^/]*)/(?P<name>[^/?#-][^/?#]*)"
+)
 # CA bundles of common Linux distributions, for Pythons whose OpenSSL looks elsewhere.
 CA_BUNDLES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt")
+
+# Split callable argument lists to avoid the shared template's variable delimiter.
+type FetchBytes[T] = Callable[
+    [T],
+    bytes,
+]
+type FindProgram = Callable[
+    [str],
+    str | None,
+]
 
 
 class ToolError(Exception):
     """A tool can't be installed; the message says why and what to do."""
+
+
+class NoCredentialsError(ToolError):
+    """The authenticated route cannot work here: a hosted CI step without a token for gh."""
+
+
+HOSTED_PAUSE = 20
+"""Seconds (jittered) before the second direct round when a hosted step has no token for the gh route."""
+
+
+def hosted_without_token() -> bool:
+    """A GitHub Actions step that passes no GH_TOKEN or GITHUB_TOKEN, where gh cannot authenticate."""
+    return os.environ.get("GITHUB_ACTIONS") == "true" and not (
+        os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    )
 
 
 @dataclass(frozen=True)
@@ -190,14 +224,78 @@ def ssl_context() -> ssl.SSLContext:
     return context
 
 
+def _interrupted_transport(error: OSError | http.client.HTTPException) -> bool:
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    return isinstance(reason, (ssl.SSLEOFError, ConnectionResetError, http.client.IncompleteRead))
+
+
 def http_get(url: str) -> bytes:
-    """The body at a URL, following redirects; proxies come from the usual environment variables."""
-    request = urllib.request.Request(url, headers={"User-Agent": "heinzel-dev-tools"})  # noqa: S310 - https only (load)
-    with urllib.request.urlopen(request, timeout=TIMEOUT, context=ssl_context()) as response:  # noqa: S310
-        return bytes(response.read())
+    """The URL's body, with at most three attempts for interrupted transfers or transient gateways.
+
+    Retry socket timeouts use the original budget's remaining time. Redirects and proxies use urllib's defaults.
+    Certificate, protocol and HTTP errors other than 502/503/504 fail immediately.
+
+    Raises:
+        OSError: the connection or TLS verification failed.
+        http.client.HTTPException: the response was interrupted or invalid.
+    """
+    deadline = time.monotonic() + TIMEOUT
+    timeout: float = TIMEOUT
+    attempt = 0
+    while True:
+        request = urllib.request.Request(url, headers={"User-Agent": "heinzel-dev-tools"})  # noqa: S310 - https only (load)
+        try:
+            with urllib.request.urlopen(  # noqa: S310 - https only (load)
+                request, timeout=timeout, context=ssl_context()
+            ) as response:
+                return bytes(response.read())
+        except (OSError, http.client.HTTPException) as error:
+            transient_gateway = isinstance(error, urllib.error.HTTPError) and error.code in (502, 503, 504)
+            if isinstance(error, urllib.error.HTTPError):
+                error.close()
+            attempt += 1
+            delay = 0.5 * attempt * (0.5 + secrets.randbelow(1001) / 1000)  # jitter spreads the retries
+            if (
+                not (transient_gateway or _interrupted_transport(error))
+                or attempt == DOWNLOAD_ATTEMPTS
+                or deadline - time.monotonic() <= delay
+            ):
+                error.add_note(f"heinzel-download-attempts={attempt}")
+                raise
+            # Restart from byte zero; fetch still checks the entire body before caching or installing it.
+            time.sleep(delay)
+            timeout = deadline - time.monotonic()
+            if timeout <= 0:
+                error.add_note(f"heinzel-download-attempts={attempt}")
+                raise
 
 
-def download_bytes(url: str, get: Callable[[str], bytes] = http_get) -> bytes:
+def _download_failure_detail(error: OSError | http.client.HTTPException) -> str:
+    notes: list[str] = getattr(error, "__notes__", [])
+    prefix = "heinzel-download-attempts="
+    counts = [note.removeprefix(prefix) for note in notes if note.startswith(prefix)]
+    attempts = next((count for count in reversed(counts) if count in {"1", "2", "3"}), None)
+    detail = str(error) or type(error).__name__
+    if isinstance(error, urllib.error.HTTPError):
+        # HTTP error text and signed query strings can contain credentials. Only the
+        # parsed hostname/path belong in the extra observation; no headers or body.
+        detail = f"HTTP Error {error.code}"
+        try:
+            parsed = urllib.parse.urlsplit(error.url)
+            host = "".join(char for char in parsed.hostname or "" if char.isprintable() and not char.isspace())[:253]
+            path = "".join(char for char in parsed.path if char.isprintable() and not char.isspace())
+            if len(path) > DOWNLOAD_ERROR_PATH_LIMIT:
+                path = path[:DOWNLOAD_ERROR_PATH_LIMIT] + "..."
+            if host:
+                detail += f"; last HTTP endpoint={host}{path}"
+        except ValueError:
+            pass  # Malformed remote URL metadata must not hide the original failure.
+    if attempts is not None:
+        detail += f"; attempts={attempts}"
+    return detail
+
+
+def download_bytes(url: str, get: FetchBytes[str] = http_get) -> bytes:
     """The bytes at a URL.
 
     Raises:
@@ -206,16 +304,74 @@ def download_bytes(url: str, get: Callable[[str], bytes] = http_get) -> bytes:
     try:
         return get(url)
     except (OSError, http.client.HTTPException) as error:
-        msg = f"download failed ({error or type(error).__name__})"
+        msg = f"download failed ({_download_failure_detail(error)})"
         raise ToolError(msg) from error
 
 
+def gh_release_get(url: str) -> bytes:
+    """A GitHub release asset through `gh release download`, the authenticated route.
+
+    It keeps working while the anonymous download edge answers 504.
+
+    Raises:
+        NoCredentialsError: a hosted CI step passes no token, so gh cannot authenticate.
+        ToolError: the URL is no GitHub release asset, gh is missing, or gh could not fetch it.
+    """
+    match = RELEASE_ASSET.fullmatch(url)
+    gh = on_path("gh")
+    if match is None or gh is None:
+        msg = "no authenticated route (needs a GitHub release asset and gh)"
+        raise ToolError(msg)
+    if hosted_without_token():
+        msg = "gh fallback skipped: this hosted CI step has no GH_TOKEN"
+        raise NoCredentialsError(msg)
+    with tempfile.TemporaryDirectory(prefix="heinzel-dev-gh-") as directory:
+        # gh found on PATH or in .tools/bin; tag, repository and name come from the pinned manifest URL
+        try:
+            result = subprocess.run(  # noqa: S603
+                [
+                    str(gh),
+                    "release",
+                    "download",
+                    match["tag"],
+                    "-R",
+                    match["repo"],
+                    "-p",
+                    match["name"],
+                    "-D",
+                    directory,
+                ],
+                capture_output=True,
+                check=False,
+                timeout=TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            msg = f"gh release download timed out after {TIMEOUT} s"
+            raise ToolError(msg) from None
+        except OSError as error:
+            msg = f"gh release download could not start ({type(error).__name__})"
+            raise ToolError(msg) from None
+        asset = Path(directory) / match["name"]
+        if result.returncode != 0 or not asset.is_file():
+            msg = f"gh release download failed (exit {result.returncode})"
+            raise ToolError(msg)
+        return asset.read_bytes()
+
+
 def fetch(
-    download: Download, cache: Path = CACHE, get: Callable[[str], bytes] = http_get, *, cached_ok: bool = True
+    download: Download,
+    cache: Path = CACHE,
+    get: FetchBytes[str] = http_get,
+    *,
+    cached_ok: bool = True,
+    fallback: FetchBytes[str] = gh_release_get,
 ) -> bytes:
     """A pinned file's bytes, from the cache or the network, refused unless they match the checksum.
 
     `cached_ok=False` always downloads (and refreshes the cache), to check the file is still published.
+    When the retried download fails, a GitHub release asset is fetched once more through `fallback` (gh); where
+    gh has no token (a hosted CI step) the direct download gets a second round after a pause instead. Either way
+    the bytes are checked against the pin before they are cached or returned.
 
     Raises:
         ToolError: the download failed or doesn't match the checksum.
@@ -225,7 +381,21 @@ def fetch(
         data = cached.read_bytes()
         if hashlib.sha256(data).hexdigest() == download.sha256:
             return data
-    data = download_bytes(download.url, get)
+    try:
+        data = download_bytes(download.url, get)
+    except ToolError as error:
+        try:
+            data = fallback(download.url)
+        except NoCredentialsError as alternative:
+            time.sleep(HOSTED_PAUSE * (0.5 + secrets.randbelow(1001) / 1000))  # jitter spreads the retries
+            try:
+                data = download_bytes(download.url, get)
+            except ToolError as second:
+                msg = f"{error}; {alternative}; second direct round: {second}"
+                raise ToolError(msg) from error
+        except ToolError as alternative:
+            msg = f"{error}; fallback: {alternative}"
+            raise ToolError(msg) from error
     actual = hashlib.sha256(data).hexdigest()
     if actual != download.sha256:
         msg = f"checksum mismatch for {download.url}: expected {download.sha256}, got {actual}"
@@ -292,7 +462,7 @@ def install(
     tool: Tool,
     platform_: str,
     tools_dir: Path = TOOLS_DIR,
-    fetch_: Callable[[Download], bytes] = fetch,
+    fetch_: FetchBytes[Download] = fetch,
 ) -> Result:
     """Install the pinned binary for this platform unless it is already there; idempotent and safe to interrupt."""
     download = tool.files.get(platform_)
@@ -340,7 +510,7 @@ def run(
     platform_: str,
     arguments: list[str],
     tools_dir: Path = TOOLS_DIR,
-    fetch_: Callable[[Download], bytes] = fetch,
+    fetch_: FetchBytes[Download] = fetch,
 ) -> int:
     """Run a tool, installing it first if needed; only an installation or a failure prints anything (on stderr)."""
     result = install(tool, platform_, tools_dir, fetch_)
@@ -352,7 +522,7 @@ def run(
     return 1
 
 
-def pin(name: str, manifest: Path = MANIFEST, get: Callable[[str], bytes] = http_get) -> list[str]:
+def pin(name: str, manifest: Path = MANIFEST, get: FetchBytes[str] = http_get) -> list[str]:
     """Download a tool's files for the version in the manifest and write their checksums into it.
 
     Raises:
@@ -447,7 +617,7 @@ def checks(  # noqa: PLR0913 - what it looks at, injectable for tests
     platform_: str,
     tools: dict[str, Tool],
     tools_dir: Path = TOOLS_DIR,
-    which: Callable[[str], str | None] = shutil.which,
+    which: FindProgram = shutil.which,
     output: Callable[..., tuple[int, str]] = _output,
     *,
     web_app: Path = WEB_APP,

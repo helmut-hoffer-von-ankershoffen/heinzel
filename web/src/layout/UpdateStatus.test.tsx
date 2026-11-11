@@ -1,10 +1,15 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
+import { Providers, queryClient } from "@/App";
+import type { Phase, PhaseState } from "@/lib/operationRun";
 import { shell } from "@/test/fixtures";
-import { mockApi, renderAt } from "@/test/render";
+import { expectPane } from "@/test/pane";
+import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { KEY } from "@/updates/autoUpdateApi";
 import { startUpdate } from "@/updates/controller";
 import { preserveUpdateWork } from "@/updates/work";
+import { UpdateStatus } from "./UpdateStatus";
 
 vi.mock("@/updates/controller", async (load) => ({
   ...(await load<typeof import("@/updates/controller")>()),
@@ -24,43 +29,61 @@ it("opens the update details without installing until the button is chosen", asy
   mockApi({ ...shell, "/api/update-status": status });
   const user = userEvent.setup();
   renderAt("/");
-  const icon = await screen.findByRole("button", { name: "Update available, warning" });
+  const icon = await screen.findByRole("button", { name: "Updates available, warning" });
   expect(icon).toHaveClass("animate-pulse", "text-bad");
   await user.hover(icon);
   expect(startUpdate).not.toHaveBeenCalled();
   await user.click(icon);
   expect(startUpdate).not.toHaveBeenCalled();
   expect(await screen.findByText(/^Last installed:/)).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Update hz and plugins" }));
+  expect(screen.getByText("Heinzel 0.2.0 is available")).toBeInTheDocument();
+  await expectPane(screen.getByRole("region", { name: "Updates available" }));
+  await user.click(screen.getByRole("button", { name: "Update now" }));
   expect(startUpdate).toHaveBeenCalledTimes(1);
 });
 
-it("shows a green update control when the installed version is current", async () => {
+it("shows inspection guidance without an unusable verify action after a lost acknowledgement", async () => {
+  mockApi({ ...shell, "/api/update-status": status });
+  sessionStorage.setItem("hz.update.receipt", JSON.stringify({ stage: "uncertain" }));
+  try {
+    renderAt("/");
+    const icon = await screen.findByRole("button", { name: /Updates available.*error/i });
+    await userEvent.setup().click(icon);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Run hz system info");
+    expect(screen.queryByRole("button", { name: "Verify update again" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
+    expect(startUpdate).not.toHaveBeenCalled();
+  } finally {
+    sessionStorage.removeItem("hz.update.receipt");
+  }
+});
+
+it("keeps a current core neutral because an empty plan cannot establish every plugin is current", async () => {
   mockApi({ ...shell, "/api/update-status": { ...status, latest: status.current, available: false } });
   renderAt("/");
-  const icon = await screen.findByRole("button", { name: "Up to date, OK" });
+  const icon = await screen.findByRole("button", { name: "Updates, off" });
   await waitFor(() => {
-    expect(icon).toHaveClass("text-ok");
+    expect(icon).not.toHaveClass("text-ok");
     expect(icon).not.toHaveClass("animate-pulse", "text-bad");
   });
   await userEvent.setup().hover(icon);
-  expect(await screen.findByText("Installed: hz 0.1.0")).toBeInTheDocument();
+  expect(await screen.findByText("Couldn't check plugin updates right now")).toBeInTheDocument();
   const expectedDate = new Date(status.installed_at).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
   });
   expect(screen.getByText(`Last installed: ${expectedDate}`)).toBeInTheDocument();
-  expect(screen.queryByText("Up to date · hz 0.1.0")).not.toBeInTheDocument();
+  expect(screen.queryByText(/is up to date/)).not.toBeInTheDocument();
 });
 
-it("allows an explicit plugin refresh while core is current without starting it on inspection", async () => {
+it("labels the explicit full updater as manual when no cached update is known", async () => {
   mockApi({ ...shell, "/api/update-status": { ...status, latest: status.current, available: false } });
   const user = userEvent.setup();
   renderAt("/");
-  await user.click(await screen.findByRole("button", { name: "Up to date, OK" }));
+  await user.click(await screen.findByRole("button", { name: "Updates, off" }));
   expect(startUpdate).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Update hz and plugins" }));
+  await user.click(screen.getByRole("button", { name: "Manually update…" }));
   expect(startUpdate).toHaveBeenCalledTimes(1);
 });
 
@@ -71,9 +94,9 @@ it("shows a manual-install reason instead of overriding a deliberate pin", async
   });
   const user = userEvent.setup();
   renderAt("/");
-  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
+  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
   expect(await screen.findByText(/Deliberate pin/)).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Update hz and plugins" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
   expect(startUpdate).not.toHaveBeenCalled();
 });
 
@@ -89,8 +112,8 @@ it("does not start by itself and keeps the mounted Composer draft across the upd
     preserveUpdateWork();
     return "Reloading";
   });
-  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
-  await user.click(screen.getByRole("button", { name: "Update hz and plugins" }));
+  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
+  await user.click(screen.getByRole("button", { name: "Update now" }));
   expect(sessionStorage.getItem("hz.update.composer")).toContain("Keep this draft through the update");
   first.unmount();
 
@@ -103,9 +126,15 @@ it("reports an installer failure and never retries installation without another 
   vi.mocked(startUpdate).mockRejectedValueOnce(new Error("Installer failed before changing hz."));
   const user = userEvent.setup();
   renderAt("/");
-  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
-  await user.click(screen.getByRole("button", { name: "Update hz and plugins" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Installer failed before changing hz.");
+  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
+  await user.click(screen.getByRole("button", { name: "Update now" }));
+  // The popover and the operation dialog that showed its steps both say why.
+  await waitFor(() =>
+    expect(screen.getAllByRole("alert").map((alert) => alert.textContent)).toEqual([
+      expect.stringContaining("Installer failed before changing hz."),
+      expect.stringContaining("Installer failed before changing hz."),
+    ]),
+  );
   expect(startUpdate).toHaveBeenCalledTimes(1);
 });
 
@@ -114,7 +143,7 @@ it("does not claim to be up to date or invent an installation date when those fa
   renderAt("/");
   const icon = await screen.findByRole("button", { name: "Updates, off" });
   await userEvent.setup().hover(icon);
-  expect(await screen.findByText("Update availability is unavailable.")).toBeInTheDocument();
+  expect(await screen.findByText("Checking for updates…")).toBeInTheDocument();
   expect(screen.getByText("Installation date unavailable.")).toBeInTheDocument();
   expect(screen.queryByText("Up to date")).not.toBeInTheDocument();
 });
@@ -142,11 +171,11 @@ it("opens details before updating with a fine pointer too", async () => {
   mockApi({ ...shell, "/api/update-status": status });
   const user = userEvent.setup();
   renderAt("/");
-  const icon = await screen.findByRole("button", { name: "Update available, warning" });
+  const icon = await screen.findByRole("button", { name: "Updates available, warning" });
   await user.hover(icon);
   await user.click(icon);
   expect(startUpdate).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Update hz and plugins" }));
+  await user.click(screen.getByRole("button", { name: "Update now" }));
   expect(startUpdate).toHaveBeenCalledTimes(1);
   match.mockRestore();
 });
@@ -173,11 +202,11 @@ it("has the Automatic updates switch, on by default, which saves the same settin
   });
   const user = userEvent.setup();
   renderAt("/");
-  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
+  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
   const toggle = await screen.findByRole("switch", { name: "Automatic updates" });
   await waitFor(() => expect(toggle).toBeEnabled());
   expect(toggle).toHaveAttribute("aria-checked", "true");
-  expect(screen.getByText(/after a 30-second warning you can postpone/)).toBeInTheDocument();
+  expect(screen.queryByText(/after a 30-second warning you can postpone/)).not.toBeInTheDocument();
   await user.click(toggle);
   await waitFor(() =>
     expect(calls.find((call) => call.url.includes("/system/config/set"))?.url).toContain("key=hz.auto_update"),
@@ -193,7 +222,7 @@ it("disables the footer switch and says why while hz runs from a source checkout
   });
   const user = userEvent.setup();
   renderAt("/");
-  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
+  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
   const toggle = await screen.findByRole("switch", { name: "Automatic updates" });
   await waitFor(() => expect(toggle).toBeDisabled());
   expect(toggle).toHaveAttribute("aria-checked", "false");
@@ -210,7 +239,7 @@ it("disables the footer switch and says so while update checks are off", async (
   });
   const user = userEvent.setup();
   renderAt("/");
-  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
+  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
   const toggle = await screen.findByRole("switch", { name: "Automatic updates" });
   await waitFor(() => expect(toggle).toBeDisabled());
   expect(toggle).toHaveAttribute("aria-checked", "false");
@@ -222,10 +251,162 @@ it("names the plugins from git or a folder that are updated by hand", async () =
     ...shell,
     "/api/update-status": status,
     "/api/system/config/show": config,
-    "/api/auto-update": { phase: "off", development: null, held: null, by_hand: ["heinzel-crm"] },
+    "/api/auto-update": {
+      phase: "idle",
+      development: null,
+      held: null,
+      by_hand: ["heinzel-crm"],
+      holds: [{ name: "heinzel-crm", why: "source", how: "git" }],
+    },
   });
   const user = userEvent.setup();
   renderAt("/");
-  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
-  expect(await screen.findByText(/^Update by hand: heinzel-crm\./)).toBeInTheDocument();
+  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
+  expect(
+    await screen.findByText(
+      "heinzel-crm is installed from the Heinzel catalog source and isn't followed for updates yet",
+    ),
+  ).toBeInTheDocument();
+});
+
+const plan = {
+  enabled: true,
+  reason: null,
+  phase: "idle",
+  version: "0.1.0",
+  core: null,
+  plugins: {},
+  seconds_left: null,
+  apply_at: null,
+  next_window_at: null,
+  postponements: 0,
+  message: null,
+};
+
+it.each([
+  ["plugin only", false, { "heinzel-example": "2.0.0" }, "heinzel-example 2.0.0 is available"],
+  ["core only", true, {}, "Heinzel 0.2.0 is available"],
+  ["core and plugin", true, { "heinzel-example": "2.0.0" }, "heinzel-example 2.0.0 is available"],
+] as const)("shows %s cached news without mutating on inspection", async (_name, core, plugins, line) => {
+  const { calls } = mockApi({
+    ...shell,
+    "/api/update-status": { ...status, available: core, latest: core ? status.latest : status.current },
+    "/api/auto-update": { ...plan, plugins },
+  });
+  renderAt("/");
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Updates available, warning" }));
+  expect(await screen.findByText(line)).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: core && Object.keys(plugins).length ? "Update all" : "Update now" }),
+  ).toBeInTheDocument();
+  expect(startUpdate).not.toHaveBeenCalled();
+  expect(
+    calls
+      .filter((call) => /\/(auto-update|update-status)$/.test(new URL(call.url).pathname))
+      .every((call) => call.method === "GET"),
+  ).toBe(true);
+});
+
+it.each([
+  { state: "empty", answer: plan },
+  { state: "disabled", answer: { ...plan, phase: "off", enabled: false } },
+  { state: "failed", answer: { status: 503, body: {} } },
+])("does not label the update plan current when its state is $state", async ({ answer }) => {
+  mockApi({
+    ...shell,
+    "/api/update-status": { ...status, latest: status.current, available: false },
+    "/api/auto-update": answer,
+  });
+  renderAt("/");
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Updates, off" }));
+  expect(screen.queryByText(/up to date/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
+  const manual = screen.getByRole("button", { name: "Manually update…" });
+  // Switches stay in the body; the action sits in the bottom row under the divider (design/README.md).
+  expect(manual.closest("[data-pane-actions]")).toHaveClass("border-t");
+  for (const toggle of screen.queryAllByRole("switch")) expect(toggle.closest("[data-pane-actions]")).toBeNull();
+  expect(startUpdate).not.toHaveBeenCalled();
+});
+
+it("observes the live plan instead of the indefinitely cached installation facts", async () => {
+  mockApi({
+    ...shell,
+    "/api/update-status": { ...status, latest: status.current, available: false },
+    "/api/auto-update": plan,
+  });
+  const client = queryClient();
+  client.setQueryData([...KEY, "held", null], { ...plan, plugins: { "heinzel-old": "9.0.0" } });
+  client.setQueryData(KEY, plan);
+  render(
+    <Providers client={client}>
+      <UpdateStatus />
+    </Providers>,
+  );
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Updates, off" }));
+  expect(screen.queryByText(/heinzel-old/)).not.toBeInTheDocument();
+  await act(async () => {
+    client.setQueryData(KEY, { ...plan, plugins: { "heinzel-example": "2.0.0" } });
+  });
+  expect(await screen.findByText("heinzel-example 2.0.0 is available")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Update now" })).toBeInTheDocument();
+  expect(startUpdate).not.toHaveBeenCalled();
+});
+
+const planWith = {
+  enabled: true,
+  reason: null,
+  phase: "idle",
+  version: "0.1.0",
+  core: null,
+  plugins: { notes: "1.2.0" },
+};
+const checked = { ...planWith, core_checked: true, plugins_checked: true, seconds_left: null, apply_at: null };
+
+type Report = (phases: Phase[]) => void;
+const steps = (...states: PhaseState[]): Phase[] =>
+  ["Heinzel", "notes"].map((label, index) => ({ id: label, label, state: states[index] ?? "pending" }));
+
+async function openWhileUpdating(run: (report: Report) => Promise<string>) {
+  mockApi({ ...shell, "/api/update-status": status, "/api/auto-update": checked });
+  vi.mocked(startUpdate).mockImplementationOnce(async (_signal, _onPhase, _transport, report) =>
+    run(report ?? (() => {})),
+  );
+  const user = userEvent.setup();
+  const view = renderAt("/");
+  await user.click(await screen.findByRole("button", { name: /Updates available/ }));
+  await screen.findByText("Heinzel 0.2.0 is available");
+  await user.click(screen.getByRole("button", { name: /Update all/ }));
+  return view;
+}
+
+it("draws the steps the head reports as segments while core and plugins update, and passes axe", async () => {
+  const view = await openWhileUpdating(async (report) => {
+    report(steps("done", "running"));
+    return new Promise<string>(() => {});
+  });
+  const bar = await screen.findByRole("progressbar", { name: "Update progress" });
+  expect(bar).toHaveAttribute("max", "2");
+  expect(bar).toHaveAttribute("value", "1");
+  expect(screen.getByText("Heinzel: done")).toBeInTheDocument();
+  expect(screen.getByText("notes: in progress")).toBeInTheDocument();
+  await expectAccessible(view.container);
+});
+
+it("shows a failed step as failed and keeps the bar next to the error", async () => {
+  await openWhileUpdating(async (report) => {
+    report(steps("done", "failed"));
+    throw new Error("Installer failed before changing hz.");
+  });
+  expect((await screen.findAllByText("Installer failed before changing hz.")).length).toBeGreaterThan(0);
+  expect(await screen.findByRole("progressbar", { name: "Update progress" })).toHaveAttribute("value", "1");
+  expect(screen.getByText("notes: failed")).toBeInTheDocument();
+});
+
+it("shows no bar before an update runs", async () => {
+  mockApi({ ...shell, "/api/update-status": status, "/api/auto-update": checked });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: /Updates available/ }));
+  await screen.findByText("Heinzel 0.2.0 is available");
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
 });

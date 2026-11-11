@@ -64,7 +64,7 @@ def acme() -> Module:  # noqa: C901 - one test module with every kind of source 
 
     @module.status(source="report", order=10)
     def reviews(result: dict[str, int]) -> StatusItem:
-        return StatusItem(text=f"{result['open']} reviews", effect=RunOperation(operation="sync"))
+        return StatusItem(text=f"{result['open']} reviews", effect=RunOperation(operation="sync"), footer_priority=777)
 
     @module.status(source="secret")
     def leaky(result: str) -> StatusItem:
@@ -114,6 +114,7 @@ def test_items_are_sorted_by_order_and_each_failure_stays_its_own(service):
     reviews, leaky, down = entries
     assert reviews.item is not None
     assert reviews.item.text == "3 reviews"
+    assert reviews.model_dump()["item"]["footer_priority"] == 777
     assert reviews.problem is None
     assert (leaky.item, leaky.problem) == (None, "acme:leaky failed: RuntimeError")  # never the exception's text
     assert down.problem == "acme:down: Acme is down"  # a HeinzelError's message, cleaned
@@ -252,6 +253,43 @@ def test_operation_arguments_must_fit_the_operation(make_kernel):
     other.action("extra", label="x", icon="zap", effect=RunOperation(operation="act", arguments={"count": 1, "x": 2}))
     (extra,) = [e for e in make_kernel(builtins=True, delta=other).resolve(UiService).actions() if e.module == "delta"]
     assert extra.problem == "`act` takes no argument x"
+
+
+def test_a_view_form_types_only_a_private_mutation_s_declared_inputs(make_kernel):
+    def forms(name: str, first: RunOperation, second: RunOperation) -> Module:
+        module = Module(name, "Forms.")
+
+        @module.operation(read_only=False, private=True)
+        def send(text: Annotated[str, Field(description="What to send.")], urgent: bool = False) -> str:
+            """Send something."""
+            return text
+
+        @module.operation(read_only=False)
+        def public(text: Annotated[str, Field(description="Text.")]) -> str:
+            """Public."""
+            return text
+
+        module.action("first", label="x", icon="zap", effect=first)
+        module.action("second", label="x", icon="zap", effect=second)
+        return module
+
+    ok = RunOperation(operation="send", inputs=("text",))
+    query = RunOperation(operation="public", inputs=("text",))
+    twice = RunOperation(operation="send", arguments={"text": "a"}, inputs=("text",))
+    unknown = RunOperation(operation="send", inputs=("text", "other"))
+    kernel = make_kernel(builtins=True, epsilon=forms("epsilon", ok, query), zeta=forms("zeta", twice, unknown))
+    entries = {e.id: e for e in kernel.resolve(UiService).actions()}
+    good = entries["epsilon:first"]
+    assert good.problem is None
+    assert isinstance(good.effect, RunOperation)
+    assert good.effect.inputs == ("text",)
+    assert good.effect.call is not None
+    assert (good.effect.call.method, good.effect.call.body, good.effect.call.command) == ("POST", {}, "hz epsilon send")
+    assert entries["epsilon:second"].problem == (
+        "`public` takes what a person types only as a private mutation with a JSON body"
+    )
+    assert entries["zeta:first"].problem == "`send` argument text is both fixed and typed"
+    assert entries["zeta:second"].problem == "`send` takes no argument other"
 
 
 def test_show_and_hide_write_the_person_s_choice_per_slot(service):

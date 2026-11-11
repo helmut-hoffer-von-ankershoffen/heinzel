@@ -1,6 +1,7 @@
 // Automatic updates against a fake newer release (ADR 0116): countdown, reload, postpone, the popup's return, apply.
 // node auto-update.mjs URL FOLDER    URL is the printed link; FOLDER is the fake release's (tests/fixtures/auto_update)
 
+import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { chromium } from "playwright-core";
 import { until } from "./until.mjs";
@@ -8,9 +9,22 @@ import { until } from "./until.mjs";
 const [url, folder] = process.argv.slice(2);
 const browser = await chromium.launch();
 const result = {};
+let watch;
 try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
+  // The first-run wizard opens once the profile answers; wait for that answer instead of a fixed pause.
+  const profileAnswered = page.waitForResponse((r) => r.url().includes("/api/org/show") && r.ok(), { timeout: 30000 });
   await page.goto(url);
+  const installedProfile = await page.evaluate(async () => {
+    const response = await fetch("/api/org/show", {
+      headers: { Authorization: `Bearer ${sessionStorage.getItem("hz.token") ?? ""}` },
+    });
+    if (!response.ok) throw new Error("The installed-profile precondition was unavailable");
+    return response.json();
+  });
+  assert.equal(installedProfile.complete, true, "The update journey requires an already configured profile");
+  const profileFields = (profile) => [profile.handle, profile.name, profile.role, profile.timezone];
+  assert.deepEqual(profileFields(installedProfile), ["mira", "Mira Example", "engineering-manager", "Europe/Berlin"]);
   await page.getByRole("contentinfo").waitFor({ timeout: 30000 });
   const api = (path, method = "GET") =>
     page.evaluate(
@@ -21,6 +35,35 @@ try {
       },
       [path, method],
     );
+  // A timeline of the server's plan, every half second, for the failure report: what the server said and when.
+  const timeline = [];
+  const started = Date.now();
+  watch = setInterval(async () => {
+    try {
+      const s = await api("auto-update");
+      const page_ = await page.evaluate(() => ({
+        popupInDom: document.querySelector('[role="alertdialog"]') !== null,
+        rootInert: document.getElementById("root")?.hasAttribute("inert") ?? null,
+        splash: document.getElementById("splash")?.hidden === false,
+        dialogs: [...document.querySelectorAll('[role="dialog"]')].map((d) => d.getAttribute("aria-label") ?? d.id),
+      }));
+      timeline.push({
+        at: Date.now() - started,
+        ...page_,
+        phase: s.phase,
+        reason: s.reason,
+        core: s.core,
+        plugins: s.plugins,
+        left: s.seconds_left,
+        next: s.next_window_at,
+        message: s.message,
+      });
+      if (timeline.length > 120) timeline.shift();
+    } catch (error) {
+      timeline.push({ at: Date.now() - started, error: String(error) });
+    }
+  }, 500);
+  result.timeline = timeline;
   const popup = page.getByRole("alertdialog");
   const seconds = async () => Number((await popup.textContent()).match(/in (\d+) s/)[1]);
 
@@ -34,7 +77,8 @@ try {
     });
   // A fresh state folder opens the first-run wizard over the app: close it, as a person would.
   const wizard = page.getByRole("dialog", { name: "Set up hz" });
-  await page.waitForTimeout(1500);
+  await profileAnswered;
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   if (await wizard.isVisible()) {
     await wizard.getByRole("button", { name: "Close setup" }).click();
     await wizard.waitFor({ state: "hidden", timeout: 15000 });
@@ -71,12 +115,28 @@ try {
 
   // Publish the fake release once the app is ready: a check finds it within seconds; the countdown starts at 30.
   writeFileSync(`${folder}/release`, "99.0.0\n");
-  await popup.waitFor({ timeout: 60000 });
+  // The same 60 seconds as before, split: first the server's own plan must reach its countdown, then the window
+  // must show it. A failure then says which side didn't: the scheduler, or the page.
+  await until(async () => (await api("auto-update")).phase === "countdown", {
+    timeout: 50000,
+    interval: 250,
+    message: "The server's plan never reached its countdown after the release was published",
+  });
+  result.serverCountdown = true;
+  await popup.waitFor({ timeout: 10000 });
   result.text = await popup.textContent();
   result.first = await seconds();
   result.buttons = await popup.getByRole("button").allTextContents();
-  await page.waitForTimeout(2500);
-  result.ticking = await seconds();
+  // Ticking: within the same 2.5 s as before the countdown must show less; stop as soon as it does.
+  result.ticking = (
+    await until(
+      async () => {
+        const left = await seconds();
+        return left < result.first && { left };
+      },
+      { timeout: 2500, interval: 250, message: "The countdown didn't tick down" },
+    ).catch(async () => ({ left: await seconds() }))
+  ).left;
 
   // The plan is the server's: a reload shows what is left, not a fresh 30.
   await page.reload();
@@ -119,11 +179,17 @@ try {
   await message.waitFor({ timeout: 30000 });
   result.message = await message.textContent();
   result.signedIn = (await page.getByRole("contentinfo").count()) > 0;
+  const updatedProfile = await api("org/show");
+  result.profileRetained =
+    updatedProfile.complete === true &&
+    JSON.stringify(profileFields(updatedProfile)) === JSON.stringify(profileFields(installedProfile));
   result.after = (await api("auto-update")).phase;
+  delete result.timeline; // only for a failure report
   console.log(JSON.stringify(result));
 } catch (error) {
   console.log(JSON.stringify({ ...result, error: String(error) }));
   process.exitCode = 1;
 } finally {
+  clearInterval(watch);
   await browser.close();
 }

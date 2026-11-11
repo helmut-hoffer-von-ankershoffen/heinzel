@@ -72,7 +72,7 @@ def test_banner_matches_the_golden():
     assert lines == [line.rstrip() for line in GOLDEN.read_text().splitlines()]
 
 
-def test_banner_keeps_the_words_readable_beside_the_art():
+def test_banner_keeps_the_words_readable_under_the_art():
     console = tty()
     console.print(_playful.banner(LINES), end="")
     text = console.export_text()
@@ -113,8 +113,8 @@ def test_real_banner_uses_the_exact_two_line_tagline(make_kernel, monkeypatch: p
     monkeypatch.delenv("NO_COLOR", raising=False)
     _banner(make_kernel())
     lines = console.export_text().splitlines()
-    first = next(index for index, line in enumerate(lines) if "helpers accelerating" in line)
-    assert lines[first].endswith("helpers accelerating product teams,")
+    first = next(index for index, line in enumerate(lines) if "Heinzels accelerating" in line)
+    assert lines[first].endswith("Heinzels accelerating product teams,")
     assert lines[first + 1].endswith("like the little elves from Cologne")
 
 

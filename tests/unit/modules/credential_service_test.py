@@ -238,3 +238,53 @@ def test_remove_reports_whether_there_was_a_value():
     service.set("api-token", "example", read=lambda _: SENTINEL)
     assert service.remove("api-token", None).removed
     assert not service.remove("api-token", None).removed
+
+
+@pytest.mark.parametrize("backend", [MemoryBackend(), EnvironmentBackend(), KeyringBackend(MacKeychain())])
+def test_unused_optional_credentials_do_not_degrade_health(backend):
+    module = Module("example", "Optional provider authentication.")
+    module.credential("token", purpose="Only used by the selected provider.", required=False)
+    checks = service_with(backend, ("example", module)).checks()
+    assert all(check.status is Status.UP for check in checks)
+    assert "not stored" in checks[1].detail
+    assert checks[1].fix == ""
+
+
+@pytest.mark.parametrize("mandatory_first", [True, False])
+def test_optional_shared_declaration_cannot_hide_a_mandatory_requirement(mandatory_first):
+    required, optional = Module("a", "Required."), Module("b", "Optional.")
+    required.credential("token", purpose="Required by an enabled module.", service="shared")
+    optional.credential("token", purpose="Optional alternative.", service="shared", required=False)
+    modules = [("a", required), ("b", optional)]
+    if not mandatory_first:
+        modules.reverse()
+    checks = service_with(MemoryBackend(), *modules).checks()
+    assert len(checks) == 2
+    assert checks[1].status is Status.DEGRADED
+    assert "Required by an enabled module" in checks[1].detail
+
+
+def test_optional_credentials_still_report_unsafe_storage_and_backend_errors():
+    module = Module("example", "Optional.")
+    module.credential("token", purpose="Optional.", required=False)
+    checks = service_with(KeyringBackend(PlaintextKeyring()), ("example", module)).checks()
+    assert checks[0].status is Status.DEGRADED
+    with pytest.raises(HeinzelError, match="could not read"):
+        service_with(KeyringBackend(MacKeychain(error=KeyringError("locked"))), ("example", module)).checks()
+
+
+def test_stored_optional_environment_credentials_keep_the_security_warning(monkeypatch):
+    module = Module("example", "Optional.")
+    module.credential("token", purpose="Optional.", required=False)
+    monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_TOKEN", SENTINEL)
+    checks = service_with(EnvironmentBackend(), ("example", module)).checks()
+    assert checks[0].status is Status.DEGRADED
+    assert checks[1].detail == "stored"
+
+
+def test_optional_declarations_still_report_environment_name_collisions():
+    first, second = Module("first", "Optional."), Module("second", "Optional.")
+    first.credential("token", purpose="Optional.", service="foo.bar", required=False)
+    second.credential("token", purpose="Optional.", service="foo-bar", required=False)
+    checks = service_with(MemoryBackend(), ("first", first), ("second", second)).checks()
+    assert next(check for check in checks if check.name.startswith("variable")).status is Status.DEGRADED

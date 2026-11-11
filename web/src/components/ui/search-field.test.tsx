@@ -16,6 +16,8 @@ describe("SearchField", () => {
       </>,
     );
     expect(screen.getByRole("searchbox")).toHaveClass("outline-none");
+    // A custom text-ui utility is ambiguous beside text-foreground; keep the shared intrinsic font rule.
+    expect(screen.getByRole("searchbox")).toHaveClass("search-field-input", "text-foreground");
     expect(box()).not.toHaveClass("ring-1");
     await user.tab();
     await user.tab();

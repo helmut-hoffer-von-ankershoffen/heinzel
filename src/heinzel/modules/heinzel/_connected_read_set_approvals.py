@@ -174,6 +174,22 @@ class ConnectedReadSetApprovals:
             raise HeinzelError(msg)
         return grant
 
+    def verify_approved(self, session: str, expected: ReadSetReview) -> None:
+        """Re-observe every source around the exact owner-approved set without granting or reading anything.
+
+        Raises:
+            HeinzelError: If approval, owner, source, account or exact set terms changed.
+        """
+        digest = arguments_hash(expected.model_dump(mode="json"))
+        if arguments_hash(self.approved(session).model_dump(mode="json")) != digest:
+            msg = "The approved read set changed"
+            raise HeinzelError(msg)
+        for entry in expected.proposal.entries:
+            self.reviews.grants.verify_proposed_terms(session, self.reviews.entry_grant(entry))
+        if arguments_hash(self.approved(session).model_dump(mode="json")) != digest:
+            msg = "The approved read set changed during observation"
+            raise HeinzelError(msg)
+
     def revoke(self, session: str, request: str) -> None:
         """Revoke the whole exact active set under the owner turn fence.
 

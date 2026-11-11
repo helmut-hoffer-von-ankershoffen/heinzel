@@ -98,8 +98,8 @@ try {
           },
         );
         await page.goto(`http://127.0.0.1:${address.port}/e2e/item-policy.html`);
-        await page.getByText("Recurring agent turns", { exact: true }).click();
-        const notice = page.getByRole("checkbox", { name: /Allow this agent to queue local notifications/ });
+        await page.getByText("Recurring Heinzel turns", { exact: true }).click();
+        const notice = page.getByRole("checkbox", { name: /Allow this Heinzel to queue local notifications/ });
         assert.equal(await notice.isChecked(), false);
         await notice.check();
         assert.equal(
@@ -114,7 +114,7 @@ try {
         await page.getByRole("button", { name: "Propose recurring turns" }).click();
         await page.getByRole("button", { name: "Retry same proposal" }).waitFor();
         await page.reload();
-        await page.getByText("Recurring agent turns", { exact: true }).click();
+        await page.getByText("Recurring Heinzel turns", { exact: true }).click();
         assert.equal(submissions.length, 1);
         assert.equal(await page.getByLabel("Notification deduplication").inputValue(), "revision");
         await page.getByRole("button", { name: "Retry same proposal" }).click();
@@ -126,7 +126,7 @@ try {
         assert.equal(confirms, 0);
         await page.getByText(/Provider-reported collection events/).waitFor();
         await page.getByRole("button", { name: "Review this schedule" }).click();
-        const card = page.getByRole("heading", { name: "Review agent schedule" }).locator("..");
+        const card = page.getByRole("heading", { name: "Review Heinzel schedule" }).locator("..");
         assert.match((await card.textContent()) ?? "", /revision/);
         await page.evaluate(axe);
         const violations = await page.evaluate(() =>

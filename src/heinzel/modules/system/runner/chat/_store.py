@@ -177,8 +177,12 @@ class ChatStore(McpChatSessions):
         for action in chat.actions:  # what the person reads is derived from what runs, never stored text
             self._check_personal_action(chat, action.module, action.operation, action.arguments)
             if action.module == "heinzel" and action.operation in {
+                "publish-draft-workflow",
+                "share-draft-link",
                 "approve-model-grant",
                 "accept-agent-contract",
+                "execute-captured-write",
+                "deliver-channel-item",
                 "approve-connected-read",
                 "approve-connected-read-set",
                 "approve-agent-schedule",
@@ -186,13 +190,22 @@ class ChatStore(McpChatSessions):
             }:
                 # The review remains visible in the action, not in model-visible transcript text.
                 action.command = (
-                    "Review notification"
+                    "Review the bounded standing draft grant and initial release baseline"
+                    if action.operation == "publish-draft-workflow"
+                    else "Review the complete edited draft, exact revision and link destination"
+                    if action.operation == "share-draft-link"
+                    else "Review exact channel posting account, destination, scope and full message"
+                    if action.operation == "deliver-channel-item"
+                    else "Review notification"
                     if action.operation == "queue-agent-notification"
                     else "Review connected read"
                     if action.operation in {"approve-connected-read", "approve-connected-read-set"}
-                    else "Review agent schedule"
+                    else "Review Heinzel schedule"
                     if action.operation == "approve-agent-schedule"
-                    else "Review agent contract"
+                    else "Review inserting or appending this text, or creating a new slide with it. "
+                    "Check the exact target, section/tab and base revision. Current content is not shown."
+                    if action.operation == "execute-captured-write"
+                    else "Review Heinzel terms"
                     if action.operation == "accept-agent-contract"
                     else "Review model policy"
                 )
@@ -210,8 +223,12 @@ class ChatStore(McpChatSessions):
             not in {
                 "schedule-control",
                 "propose-check-in",
+                "publish-draft-workflow",
+                "share-draft-link",
                 "approve-model-grant",
                 "accept-agent-contract",
+                "execute-captured-write",
+                "deliver-channel-item",
                 "approve-connected-read",
                 "approve-connected-read-set",
                 "approve-agent-schedule",
@@ -573,8 +590,12 @@ class StoreGate(ActionGate):
         """
         chat = self._store.load(call.session)
         if call.module == "heinzel" and call.operation in {
+            "publish-draft-workflow",
+            "share-draft-link",
             "approve-model-grant",
             "accept-agent-contract",
+            "execute-captured-write",
+            "deliver-channel-item",
             "approve-connected-read",
             "approve-connected-read-set",
             "approve-agent-schedule",

@@ -1,7 +1,7 @@
 [project]
 name = "heinzel"
-version = "0.9.13"
-description = "An open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine."
+version = "0.9.38"
+description = "An open-source crew of Heinzels that drafts your team's busywork and asks before anything leaves your machine."
 readme = "PYPI.md"
 authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
 license = "MIT"
@@ -22,7 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3.15",
     "Typing :: Typed",
 ]
-dependencies = ["croniter>=6.2.4", "fastapi>=0.161", "keyring>=25.6", "mcp>=2.3", "packaging>=25.0", "platformdirs>=4.5", "pluggy>=1.6.0,<2", "psutil==7.2.2", "pydantic>=2.12.0,<3", "pydantic-ai-slim==2.61.0", "pydantic-settings>=2.11.0,<3", "pyyaml>=6.0.2,<7", "rich>=14.2.0", "tomlkit>=0.13", "typer>=0.23.0", "uvicorn>=0.54", "wsproto>=1.3"]
+dependencies = ["croniter>=6.2.4", "fastapi>=0.161", "keyring>=25.6", "mcp>=2.3", "packaging>=25.0", "platformdirs>=4.5", "pluggy>=1.6.0,<2", "psutil==7.2.2", "pydantic>=2.12.0,<3", "pydantic-ai-slim==2.61.0", "pydantic-settings>=2.11.0,<3", "pyyaml>=6.0.2,<7", "rich>=14.2.0", "tomlkit>=0.13", "typer>=0.23.0", "uv==0.13.7", "uvicorn>=0.54", "wsproto>=1.3"]
 
 [project.optional-dependencies]
 # A vendor's client for the `pydantic-ai` AI access option (ADR 0050, 0057); the core imports only pydantic_ai.
@@ -45,6 +45,8 @@ Changelog = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main
 Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
 
 [dependency-groups]
+# Isolated wheel and editable backends, prepared before builds (ADR 0125); never runtime dependencies.
+build = ["hatchling>=1.32.4", "editables>=0.5", "nodejs-wheel-binaries==24.19.0"]
 # What the unit, integration and e2e tests need, and no more: CI installs only this group for the test matrix.
 test = ["coverage>=7.12", "httpx>=0.28", "hypothesis>=6.140", "jsonschema>=4.26", "markdown>=3.10", "pydantic-ai-slim[openai]==2.61.0", "prek>=0.2", "pytest>=9.0.3,<10", "pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8", "types-psutil>=7.2.2.20260906"]
 # Fuzzing the contract parser (`make fuzz`, weekly in CI); atheris has wheels for x86_64 Linux, Python 3.12 to 3.14.
@@ -233,7 +235,7 @@ example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
 [tool.bumpversion]
-current_version = "0.9.13"
+current_version = "0.9.38"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = false
@@ -367,7 +369,7 @@ forbidden_modules = ["heinzel.heads"]
 [[tool.importlinter.contracts]]
 name = "Every module could be a plugin: system's submodules don't import each other"
 type = "independence"
-modules = ["heinzel.modules.system.agent", "heinzel.modules.system.capability", "heinzel.modules.system.changelog", "heinzel.modules.system.claude", "heinzel.modules.system.state", "heinzel.modules.system.config", "heinzel.modules.system.connector", "heinzel.modules.system.lifecycle", "heinzel.modules.system.credential", "heinzel.modules.system.daemon", "heinzel.modules.system.directory", "heinzel.modules.system.doctor", "heinzel.modules.system.expert", "heinzel.modules.system.layer", "heinzel.modules.system.notify", "heinzel.modules.system.plugin", "heinzel.modules.system.runner", "heinzel.modules.system.skill", "heinzel.modules.system.sound", "heinzel.modules.system.theme", "heinzel.modules.system.ui"]
+modules = ["heinzel.modules.system.agent", "heinzel.modules.system.capability", "heinzel.modules.system.changelog", "heinzel.modules.system.claude", "heinzel.modules.system.state", "heinzel.modules.system.config", "heinzel.modules.system.connector", "heinzel.modules.system.lifecycle", "heinzel.modules.system.credential", "heinzel.modules.system.daemon", "heinzel.modules.system.directory", "heinzel.modules.system.doctor", "heinzel.modules.system.expert", "heinzel.modules.system.layer", "heinzel.modules.system.notify", "heinzel.modules.system.plugin", "heinzel.modules.system.prerequisite", "heinzel.modules.system.runner", "heinzel.modules.system.skill", "heinzel.modules.system.sound", "heinzel.modules.system.theme", "heinzel.modules.system.ui"]
 
 [[tool.importlinter.contracts]]
 name = "Every module could be a plugin: top-level modules don't import each other, they inject services by type"

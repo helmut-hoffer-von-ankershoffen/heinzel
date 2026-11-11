@@ -11,7 +11,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from heinzel import CallIdentity, CurrentUser, HeinzelError, Module, Principal
 from heinzel.kernel._exposure import exposed
 from heinzel.modules.heinzel._engine import TurnLimits
-from heinzel.modules.heinzel._host_tools import HostToolCatalog, _schema
+from heinzel.modules.heinzel._host_tools import HostToolCatalog, OperationFailedError, _schema
 from heinzel.modules.heinzel._interactive_turn import InteractiveTurn
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -20,6 +20,65 @@ from heinzel.modules.heinzel._session_repository import PersonalSessionRepositor
 from heinzel.modules.heinzel._tool_argument_policy import ExactArgumentPolicy
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize(
+    ("payload", "accepted"),
+    [(["x"] * 3999, True), (["x"] * 4000, False), (["é" * 7998], True), (["é" * 7999], False)],
+)
+@pytest.mark.parametrize("projection", [None, lambda text, limit: text], ids=["ordinary", "unbounded-projection"])
+def test_result_keeps_every_value_within_the_16000_utf8_byte_limit(
+    make_kernel, tmp_path, payload, accepted, projection
+):
+    module = Module("fixture", "Bounded result")
+
+    @module.operation()
+    def inspect() -> list[str]:
+        """Return a bounded local fixture value."""
+        return payload
+
+    kernel = make_kernel(fixture=module)
+    current = CurrentUser(tmp_path / "identity")
+    kernel.bind(CurrentUser, current)
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1))
+        session = crud.new_chat("bounded").session_id
+        catalog = HostToolCatalog(
+            kernel,
+            current,
+            crud,
+            session,
+            frozenset({"fixture:inspect"}),
+            verified_code=lambda _: "a" * 64,
+            oversized_result=projection,
+        )
+        descriptor = catalog.preview()[0]
+        grant = ModelGrant(
+            request_id="grant",
+            revision=1,
+            access="pydantic-ai",
+            model="openai:model",
+            requests=1,
+            total_tokens=1000,
+            output_tokens=100,
+            timeout_seconds=10,
+            message_cap_usd="1",
+            session_cap_usd="2",
+            owner_cap_usd="3",
+            allowed_tools={descriptor.identity: descriptor.binding_sha256},
+        )
+        grants = ModelGrants(crud)
+        grants.propose(session, grant)
+        grants.approve(session, "grant", grants.issue(session, "grant", "fixture-human-review"))
+        with repo.main_writer(session) as writer:
+            if accepted:
+                result = catalog.invoke(grant, "fixture:inspect", {}, turn_writer=writer)
+                assert len(result.encode("utf-8")) <= 16_000
+                assert json.loads(result) == payload
+            else:
+                with pytest.raises(OperationFailedError, match="did not produce a usable result"):
+                    catalog.invoke(grant, "fixture:inspect", {}, turn_writer=writer)
 
 
 def test_granted_read_fences_code_owner_turn_and_model_arguments(make_kernel, tmp_path):  # noqa: PLR0915
@@ -56,6 +115,22 @@ def test_granted_read_fences_code_owner_turn_and_model_arguments(make_kernel, tm
         no_verifier = HostToolCatalog(kernel, current, crud, session, allowed)
         with pytest.raises(HeinzelError, match="verified implementation"):
             no_verifier.preview()
+        for invalid_identity in (None, "", "g" * 64):
+            invalid = HostToolCatalog(
+                kernel, current, crud, session, allowed, verified_code=lambda _, value=invalid_identity: value
+            )
+            with pytest.raises(HeinzelError, match="verified implementation"):
+                invalid.preview()
+
+        def failing_verifier(_item):
+            msg = "PRIVATE_VERIFIER_SECRET"
+            raise RuntimeError(msg)
+
+        failed = HostToolCatalog(kernel, current, crud, session, allowed, verified_code=failing_verifier)
+        with pytest.raises(HeinzelError, match="verified implementation") as error:
+            failed.preview()
+        assert "PRIVATE_VERIFIER_SECRET" not in str(error.value)
+        assert error.value.__suppress_context__
         code_identity = ["a" * 64]
         catalog = HostToolCatalog(kernel, current, crud, session, allowed, verified_code=lambda _item: code_identity[0])
         preview = catalog.preview()
@@ -92,12 +167,17 @@ def test_granted_read_fences_code_owner_turn_and_model_arguments(make_kernel, tm
         grants = ModelGrants(crud)
         grants.propose(session, grant)
         grants.approve(session, "grant", grants.issue(session, "grant", "fixture-human-review"))
+        assert catalog.approved_preview(session, grant) == preview
+        with pytest.raises(HeinzelError, match="current grant"):
+            catalog.approved_preview("different-session", grant)
         with repo.main_writer(session) as writer:
             with pytest.raises(HeinzelError, match="unavailable"):
                 catalog.invoke(grant, "fixture:fetch", {"path": "/private"}, turn_writer=writer)
             with pytest.raises(HeinzelError, match="Invalid operation"):
                 catalog.invoke(grant, "fixture:inspect", {"current": "injected"}, turn_writer=writer)
             code_identity[0] = "b" * 64
+            with pytest.raises(HeinzelError, match="unavailable or has changed"):
+                catalog.approved_preview(session, grant)
             with pytest.raises(HeinzelError, match="schema changed"):
                 catalog.invoke(grant, "fixture:inspect", {}, turn_writer=writer)
             code_identity[0] = "a" * 64
@@ -136,6 +216,15 @@ def test_granted_read_fences_code_owner_turn_and_model_arguments(make_kernel, tm
         stranger = CallIdentity(
             Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read"})
         )
+        with pytest.raises(HeinzelError, match="owner cannot be verified"):
+            HostToolCatalog(
+                kernel,
+                CurrentUser(tmp_path / "unbound-identity"),
+                crud,
+                session,
+                allowed,
+                verified_code=lambda _: "a" * 64,
+            )
         with current.using(stranger), pytest.raises(HeinzelError, match="different owner"):
             catalog.preview()
         with current.using(stranger), pytest.raises(HeinzelError, match="different owner"):

@@ -13,6 +13,9 @@ from heinzel import Kernel
 NOT_FROM_A_CHAT = frozenset(
     {
         ("system", "update"),
+        ("ui", "install"),
+        ("ui", "restart"),
+        ("ui", "uninstall"),
         ("system.agent", "install"),
         ("system.agent", "uninstall"),
         ("system.config", "init"),

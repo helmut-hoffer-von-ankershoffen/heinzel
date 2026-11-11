@@ -1,8 +1,10 @@
 import importlib.util
 import json
+import logging
 import os
 import subprocess
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -158,16 +160,20 @@ def git_in(directory, *args):
     ).stdout.strip()
 
 
-@pytest.fixture
-def repo(tmp_path, monkeypatch):
+def build_repo(tmp_path, monkeypatch, *, include_generated=False):
     # A pre-push hook exports GIT_DIR and GIT_INDEX_FILE: without this, the test would write into the real repository.
     for key in [key for key in os.environ if key.startswith("GIT_")]:
         monkeypatch.delenv(key)
+    for name, value in {
+        "GIT_AUTHOR_NAME": "T",
+        "GIT_AUTHOR_EMAIL": "t@example.org",
+        "GIT_COMMITTER_NAME": "T",
+        "GIT_COMMITTER_EMAIL": "t@example.org",
+    }.items():
+        monkeypatch.setenv(name, value)
     root = tmp_path / "repo"
     root.mkdir()
     git_in(root, "init", "-q", "-b", "main")
-    git_in(root, "config", "user.email", "t@example.org")
-    git_in(root, "config", "user.name", "T")
     (root / "INTENT.md").write_text("intent\n")
     (root / "old.py").write_text("print(1)\n")
     (root / "gone.py").write_text("print(2)\n")
@@ -177,9 +183,18 @@ def repo(tmp_path, monkeypatch):
     (root / "old.py").rename(root / "new.py")
     (root / "gone.py").unlink()
     (root / "added.txt").write_text("hello\n")
+    if include_generated:
+        for path in source_review.GENERATED_PAIR:
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            (root / path).write_text("generated\n" * 100)
     git_in(root, "add", "-A")
     git_in(root, "commit", "-qm", "head")
     return root, base, git_in(root, "rev-parse", "HEAD")
+
+
+@pytest.fixture
+def repo(tmp_path, monkeypatch):
+    return build_repo(tmp_path, monkeypatch)
 
 
 def repo_config(root, base, head):
@@ -507,14 +522,29 @@ def passing(head, **changes):
 
 
 @pytest.fixture
-def repo_with_pair(repo):
-    root, base, _ = repo
-    for path in source_review.GENERATED_PAIR:
-        (root / path).parent.mkdir(parents=True, exist_ok=True)
-        (root / path).write_text("generated\n" * 100)
-    git_in(root, "add", ".")
-    git_in(root, "commit", "-qm", "pair")
-    return root, base, git_in(root, "rev-parse", "HEAD")
+def repo_with_pair(tmp_path, monkeypatch):
+    original_git = git_in
+
+    def traced_git(directory, *args):
+        started = time.monotonic()
+        try:
+            return original_git(directory, *args)
+        finally:
+            logging.getLogger(__name__).info("fixture git %s: %.3fs", args[0], time.monotonic() - started)
+
+    monkeypatch.setattr(sys.modules[__name__], "git_in", traced_git)
+    result = build_repo(tmp_path, monkeypatch, include_generated=True)
+    original_bounded = source_review.run_bounded
+
+    def traced_bounded(command, **kwargs):
+        started = time.monotonic()
+        try:
+            return original_bounded(command, **kwargs)
+        finally:
+            logging.getLogger(__name__).info("payload git %s: %.3fs", command[3], time.monotonic() - started)
+
+    monkeypatch.setattr(source_review, "run_bounded", traced_bounded)
+    return result
 
 
 def test_a_regenerated_pair_is_omitted_with_its_digests(repo_with_pair, monkeypatch):
@@ -523,7 +553,11 @@ def test_a_regenerated_pair_is_omitted_with_its_digests(repo_with_pair, monkeypa
     payload, manifest, names = source_review.build_payload(repo_config(root, base, head))
     data = json.loads(payload)
     assert manifest["generated_pair_omitted"] is True
-    assert set(source_review.GENERATED_PAIR) <= set(names)
+    assert set(names) == {*source_review.GENERATED_PAIR, "added.txt", "gone.py", "new.py", "old.py"}
+    assert data["sources"][f"{base}:old.py"]["text"] == "print(1)\n"
+    assert data["sources"][f"{head}:old.py"] is None
+    assert data["sources"][f"{head}:new.py"]["text"] == "print(1)\n"
+    assert data["sources"][f"{head}:gone.py"] is None
     record = data["sources"][f"{head}:web/openapi.json"]
     assert record["omitted"] == "generated"
     assert "text" not in record

@@ -8,14 +8,14 @@ on:
   schedule:
     - cron: "23 5 * * *" # daily: new advisories and upstream changes break unchanged code too
 
-permissions:
-  contents: read
+permissions: {}
 
 # Every commit on main gets its own group, so a later push never replaces a queued run or cancels a running one and
-# each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs.
+# each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs, except a
+# release PR (head release/*): its full-suite run is release evidence and is never cancelled.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }}
 
 env:
   UV_FROZEN: "1"
@@ -23,6 +23,8 @@ env:
 
 jobs:
   dependency-review:
+    permissions:
+      contents: read
     name: Dependency review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -36,6 +38,8 @@ jobs:
           fail-on-severity: moderate
 
   commits:
+    permissions:
+      contents: read
     name: Conventional commits
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -45,7 +49,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - name: Commit messages, pull request title and branch (conventional, no confidential terms)
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
@@ -55,6 +59,8 @@ jobs:
         run: make commits
 
   lint:
+    permissions:
+      contents: read
     name: Lint, contracts and types
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -62,7 +68,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -73,6 +79,8 @@ jobs:
       - run: make typecheck
 
   secrets:
+    permissions:
+      contents: read
     name: Secret scan
     runs-on: ubuntu-24.04
     timeout-minutes: 3
@@ -81,26 +89,34 @@ jobs:
         with:
           fetch-depth: 0 # every commit, not just the tip
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false # The pinned-tool launcher has no Python dependencies.
       - name: Scan the history for credentials (gitleaks pinned in scripts/tools.toml, checksum verified)
+        env:
+          # Keep more decompressed Git base objects in memory during the history walk.
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.deltaBaseCacheLimit
+          GIT_CONFIG_VALUE_0: 768m
         run: make secrets
 
   setup:
+    permissions:
+      contents: read
     name: make setup (${{ matrix.os }})
-    # What a contributor runs on a fresh machine, on each platform scripts/tools.toml pins: `make setup` installs
+    # What a contributor runs on Linux architectures and Apple-silicon macOS: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 10
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'pull_request' }} # stop waiting for other setup cells on a red PR
       matrix:
         os: [ubuntu-24.04, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -112,6 +128,8 @@ jobs:
         run: make tools-verify
 
   audit:
+    permissions:
+      contents: read
     name: Dependency audit
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -119,7 +137,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -127,24 +145,26 @@ jobs:
       - run: make audit
 
   test:
+    permissions:
+      contents: read
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 10
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }} # a red cell is enough to know on a pull request
       matrix:
         os: [ubuntu-24.04]
-        python: ["3.12", "3.13", "3.14", "3.15"]
+        # Linux: oldest and newest Python on a pull request, every supported one on main, schedule and dispatch.
+        python: ${{ fromJSON(github.event_name == 'pull_request' && '["3.12","3.15"]' || '["3.12","3.13","3.14","3.15"]') }}
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
-        # under that same cap. Newest Python on a pull request, oldest and newest on main and dispatches, all on schedule.
+        # under that same cap. PRs run the newest version; non-PR runs cover all versions.
         include:
-          ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+          ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -179,7 +199,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -204,6 +224,8 @@ jobs:
           MINIMUM_ORANGE: 80
 
   perf:
+    permissions:
+      contents: read
     name: Performance tests
     # Timing assertions (linear time) run here only: on a loaded developer machine they flake, so neither the
     # pre-push hook nor the test matrix runs them.
@@ -215,7 +237,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -227,18 +249,17 @@ jobs:
   e2e:
     name: End-to-end (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-latest] # macOS on pull requests too: main must not be the first place it runs
+        os: [ubuntu-24.04, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # the install-from-git tests clone this repository
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -261,6 +282,8 @@ jobs:
 
 
   build:
+    permissions:
+      contents: read
     name: Build
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -268,7 +291,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - run: make build
       - name: Check the wheel ships the package
         run: unzip -l dist/*.whl | grep -q '[[ package_name ]]/__init__.py'
@@ -278,7 +301,111 @@ jobs:
           path: dist/
 
 
+  stop-after-dependency-review:
+    name: Stop after dependency-review failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [dependency-review]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-commits:
+    name: Stop after commits failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [commits]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-lint:
+    name: Stop after lint failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [lint]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-secrets:
+    name: Stop after secrets failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [secrets]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-setup:
+    name: Stop after setup failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [setup]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-audit:
+    name: Stop after audit failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [audit]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
   ci-ok:
+    permissions:
+      contents: read
     name: CI OK
     if: always()
     needs: [dependency-review, commits, lint, secrets, setup, audit, test, coverage, perf, e2e, build]

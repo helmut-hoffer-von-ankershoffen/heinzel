@@ -157,40 +157,95 @@ def _known(sha: str) -> bool:
     return True
 
 
-def _pushed_refs() -> list[tuple[str, str]]:
-    """The `(local sha, remote sha)` of each ref git is about to push, from the pre-push hook's standard input."""
-    if sys.stdin is None or sys.stdin.isatty():
-        return []
+def _push_input() -> str | None:
+    """Prefer real Git input; accept preserved bytes only inside the hook runner.
+
+    Raises:
+        ValueError: If a preserved-input marker is inherited outside the pre-push runner.
+    """
+    direct = sys.stdin.read() if sys.stdin is not None and not sys.stdin.isatty() else ""
+    if direct:
+        return direct
+    if saved := os.environ.get("HZ_DEV_PUSH_REFS_FILE"):
+        if os.environ.get("PRE_COMMIT") != "1" or os.environ.get("PREK_HOOK_STAGE") != "pre-push":
+            msg = "Preserved push input is valid only inside the pre-push runner"
+            raise ValueError(msg)
+        return Path(saved).read_text(encoding="utf-8", errors="surrogateescape")
+    return None
+
+
+def _pushed_refs(raw: str) -> list[tuple[str, str]]:
+    """The `(local sha, remote sha)` of each ref Git is about to push.
+
+    Raises:
+        ValueError: If the supplied ref list contains a malformed record.
+    """
     sha = r"[0-9a-f]{40}|[0-9a-f]{64}"
     refs = []
-    for line in sys.stdin.read().splitlines():
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
         parts = line.split()
         if len(parts) == 4 and re.fullmatch(sha, parts[1]) and re.fullmatch(sha, parts[3]):  # noqa: PLR2004
             refs.append((parts[1], parts[3]))
+        else:
+            msg = "The pushed-ref list is invalid"
+            raise ValueError(msg)
     return refs
 
 
-def _push_range() -> list[str]:
+def _destination_commits() -> list[str]:
+    """Exclude only commits currently advertised by the actual push destination.
+
+    Raises:
+        ValueError: If the push destination cannot be inspected or returns malformed refs.
+    """
+    destination = os.environ.get("PRE_COMMIT_REMOTE_URL")
+    if not destination:
+        return []
+    try:
+        advertised = _git("ls-remote", "--refs", "--", destination)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        msg = "The push destination could not be inspected"
+        raise ValueError(msg) from None
+    commits = []
+    for line in advertised.splitlines():
+        parts = line.split()
+        if len(parts) != 2 or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", parts[0]):  # noqa: PLR2004
+            msg = "The push destination returned invalid refs"
+            raise ValueError(msg)
+        if _known(parts[0]):
+            commits.append(parts[0])
+    return commits
+
+
+def _push_range(raw: str | None = None) -> list[str]:
     """What a push sends: the commits reachable from what is pushed that the remote has not got.
 
-    The ref and sha come from the hook's standard input (so `git push origin other:name` scans `other`, not HEAD); else
-    from `$PRE_COMMIT_FROM_REF` and `$PRE_COMMIT_TO_REF`; else HEAD. A new ref counts every commit no remote branch
-    has. Nothing is exempt: old commits in the range are scanned like new ones.
+    The ref and sha come from Git's input preserved by the hook shim (or direct standard input), so
+    `git push origin other:name` scans `other`, not HEAD. Without that input, the runner's first range plus all local
+    branches remain the conservative fallback. A new ref counts every commit the push destination has not got.
+    Nothing is exempt: old commits in the range are scanned like new ones.
     """
+    if raw is None:
+        raw = _push_input()
     tips, bases = [], []
-    for local, remote in _pushed_refs():
+    for local, remote in _pushed_refs(raw or ""):
         if set(local) != {"0"}:  # a deletion sends no commits
             tips.append(_revision(local))
         if set(remote) != {"0"} and _known(remote):
             bases.append(_revision(remote))
     if not tips:
+        if raw is not None:
+            # Git supplied no new commit tips (an empty push or deletions only).
+            return ["--all", "--not", "--all"]
         start, end = os.environ.get("PRE_COMMIT_FROM_REF", ""), os.environ.get("PRE_COMMIT_TO_REF") or "HEAD"
         # Under prek the variables name the first pushed ref only and standard input is empty, so every local branch
         # no remote has yet is scanned too: a second ref of `git push origin a b` or `--all` cannot slip through.
         tips = [_revision(end), "--branches"]
         if start and set(start) != {"0"} and _known(start):
             bases = [_revision(start)]
-    return [*tips, "--not", *bases, "--remotes"]
+    return [*tips, "--not", *bases, *_destination_commits()]
 
 
 def _hunk(header: re.Match[str]) -> tuple[int, int, int]:
@@ -243,7 +298,14 @@ def _push_sources() -> Iterator[tuple[str, str]]:
     Yields:
         `(where, text)` pairs to scan.
     """
-    for sha in _git("rev-list", *_push_range(), "--").split():
+    raw = _push_input()
+    if raw is not None:
+        _pushed_refs(raw)  # Validate every record before looking at its names.
+        for line in raw.splitlines():
+            parts = line.split()
+            if parts and set(parts[1]) != {"0"}:
+                yield "push ref", f"{parts[0]}\n{parts[2]}"
+    for sha in _git("rev-list", *_push_range(raw), "--").split():
         yield f"commit {sha[:12]}", _git("log", "-1", "--format=%an <%ae>%n%cn <%ce>%n%B", sha)
         names = _git("diff-tree", "--no-commit-id", "--name-only", "-r", "-m", "-z", "--root", sha)
         for path in dict.fromkeys(names.split("\0")):

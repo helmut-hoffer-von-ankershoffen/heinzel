@@ -20,7 +20,7 @@ from packaging.utils import canonicalize_name
 from pydantic import ValidationError
 from pydantic_core import PydanticUndefined, to_jsonable_python
 
-from heinzel import HeinzelError, Kernel, __version__
+from heinzel import HeinzelError, Homebrew, Kernel, __version__
 from heinzel.kernel import (
     CORE_DISTRIBUTION,
     CredentialLet,
@@ -32,6 +32,7 @@ from heinzel.kernel import (
     ModuleRecord,
     OperationLet,
     PlaybookLet,
+    PrerequisiteLet,
     ProviderLet,
     RequirementLet,
     ServiceLet,
@@ -46,7 +47,6 @@ from heinzel.kernel import (
 )
 from heinzel.modules.system.plugin._models import PluginInfo
 from heinzel.modules.system.plugin._service import REPOSITORY, PluginService, short_name
-from heinzel.modules.system.plugin.docs._files import read_recording
 from heinzel.modules.system.plugin.docs._models import (
     AdapterDoc,
     AssetTypeDoc,
@@ -62,6 +62,7 @@ from heinzel.modules.system.plugin.docs._models import (
     ParameterDoc,
     PlaybookDoc,
     PluginPage,
+    PrerequisiteDoc,
     Recording,
     Scene,
     SettingDoc,
@@ -80,6 +81,7 @@ SECTIONED_LETS = (
     OperationLet,
     SettingsLet,
     CredentialLet,
+    PrerequisiteLet,
     ProviderLet,
     RequirementLet,
     ThemeLet,
@@ -284,6 +286,7 @@ class DocsService:
             operations=operations,
             settings=[s for let in settings for s in _settings(record.qualname, let)],
             credentials=[_credential(record, let) for let in lets if isinstance(let, CredentialLet)],
+            prerequisites=[_prerequisite(record, let) for let in lets if isinstance(let, PrerequisiteLet)],
             health_checks=any(isinstance(let, HealthLet) for let in lets),
             info=any(isinstance(let, InfoLet) for let in lets),
             setup=SetupDoc(
@@ -483,6 +486,29 @@ def _credential(record: ModuleRecord, let: CredentialLet) -> CredentialDoc:
     return CredentialDoc(name=let.name, purpose=let.purpose, service=service, command=command)
 
 
+def _prerequisite(record: ModuleRecord, let: PrerequisiteLet) -> PrerequisiteDoc:
+    """The page's row, from the one declaration doctor, setup and the installer read; no predicate runs."""
+    if isinstance(let.macos, Homebrew):
+        macos = f"`brew install {'--cask ' if let.macos.cask else ''}{let.macos.package}`"
+    elif let.macos is not None:
+        macos = let.macos.text
+    else:
+        macos = "Not needed or no installer declared."
+    return PrerequisiteDoc(
+        executable=let.name,
+        title=let.title or let.name,
+        purpose=let.purpose,
+        when=let.when,
+        condition=let.condition,
+        minimum_version=let.minimum_version,
+        requires_apple_developer_tools=let.requires_apple_developer_tools,
+        macos=macos,
+        linux=let.linux.text,
+        check=f"hz system prerequisite check --owner {record.qualname}"
+        + (" --context feature" if let.when == "feature" else ""),
+    )
+
+
 def _adapter(let: ProviderLet) -> AdapterDoc:
     return AdapterDoc(
         adapter=let.adapter,
@@ -652,6 +678,8 @@ def recording(scene: Scene, directory: Path | None) -> Recording:
     Raises:
         HeinzelError: If a recording is unsafe, oversized or its transcript is not UTF-8 text.
     """
+    from heinzel.modules.system.plugin.docs._files import read_recording  # noqa: PLC0415 - recordings are read only when documenting
+
     base = f"{ASSETS}/{scene.name}"
     if directory is None:
         return Recording(scene=scene.name, animation=None, still=None, video=None)

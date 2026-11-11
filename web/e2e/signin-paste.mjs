@@ -12,7 +12,7 @@ try {
   const origin = new URL(url).origin;
   await page.goto(`${origin}/`);
   await page.getByText("Sign in again").first().waitFor({ timeout: 20000 });
-  const field = page.getByLabel("Paste the link `hz ui` printed");
+  const field = page.getByLabel("Paste the link `hz ui serve` printed");
   await field.waitFor();
   await page.screenshot({ path: `${shots}/signin-paste-refused.png` });
   await field.fill(`${origin.replace("127.0.0.1", "localhost")}/#token=x`);

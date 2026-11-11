@@ -2,6 +2,7 @@
 
 import pytest
 
+from heinzel import HeinzelError
 from heinzel.kernel._approval import ApprovalConfirmation
 from heinzel.modules.heinzel._connected_read_set_preview import read_set_tool_preview
 from tests.unit.modules.connected_read_set_approval_test import _prepare
@@ -19,6 +20,19 @@ def _approved(connected):
     with confirmation.using("heinzel", "approve-connected-read-set", args):
         approvals.approve(session, "review", payload, proof, confirmation)
     return current, crud, session, grants, state, sets, reviews, review, approvals
+
+
+def test_read_set_continuity_rechecks_each_source_without_reading_or_broadening(connected):
+    _, _, session, _, state, _, _, review, approvals = _approved(connected)
+    approvals.verify_approved(session, review)
+    assert state["reads"] == 0
+    state["account"] = "another-account"
+    with pytest.raises(HeinzelError, match="changed"):
+        approvals.verify_approved(session, review)
+    state["account"] = "account-a"
+    approvals.revoke(session, review.request_id)
+    with pytest.raises(HeinzelError, match="revoked"):
+        approvals.verify_approved(session, review)
 
 
 def test_preview_requires_exact_approved_owner_set_and_never_executes(connected):

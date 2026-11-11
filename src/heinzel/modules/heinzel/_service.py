@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import quote
 
-from croniter import CroniterBadDateError, croniter
 from pydantic import BaseModel, JsonValue
 from pydantic_core import to_jsonable_python
 
@@ -63,9 +62,13 @@ from heinzel.kernel import (
     record_usage,
     toml_value,
 )
+from heinzel.kernel._features import feature_enabled
 from heinzel.modules.heinzel import _measure, _playbooks
 from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules, ScheduleBinding
+from heinzel.modules.heinzel._channel_delivery import ChannelDelivery
 from heinzel.modules.heinzel._contracts import Contract, collect, read_contract
+from heinzel.modules.heinzel._draft_workflow_operations import run_workflow, workflow_jobs
+from heinzel.modules.heinzel._draft_workflow_publication import DraftWorkflowPublication
 from heinzel.modules.heinzel._graph import CODES as GRAPH_CODES
 from heinzel.modules.heinzel._graph import asset as asset_id
 from heinzel.modules.heinzel._graph import build as build_graph
@@ -468,7 +471,7 @@ class HeinzelService:
             ),
             Step(
                 command=f"hz heinzel wake {qualified} --dry-run",
-                why="the packet the helper would get; nothing is spent",
+                why="the packet the Heinzel would get; nothing is spent",
             ),
             Step(
                 command=f"hz heinzel wake {qualified}",
@@ -551,7 +554,47 @@ class HeinzelService:
             jobs.extend(self._check_in_jobs(sessions))
             if schedules is not None:
                 jobs.extend(self._autonomous_jobs(sessions, schedules))
+        if feature_enabled(self._kernel.settings, "connected_channels"):
+
+            def replies() -> JsonValue:
+                return self._kernel.resolve(ChannelDelivery).apply_channel_replies()
+
+            jobs.append(
+                JobLet(
+                    name="consume-channel-replies",
+                    func=replies,
+                    summary="Consume reviewed owner channel replies",
+                    schedule="* * * * *",
+                    retries=0,
+                )
+            )
+        if self._kernel.provides(DraftWorkflowPublication):
+            host = self._kernel.resolve(DraftWorkflowPublication)
+            for session, request in workflow_jobs(host):
+                jobs.append(self._draft_job(host, session, request))
         return CompiledJobs(jobs=tuple(jobs))
+
+    @staticmethod
+    def _draft_job(host: DraftWorkflowPublication, session: str, request: str) -> JobLet:
+        def run(slot: datetime) -> JsonValue:
+            return run_workflow(host, session, request, slot)
+
+        def unavailable() -> JsonValue:
+            msg = "A release workflow requires a daemon schedule slot"
+            raise HeinzelError(msg)
+
+        return JobLet(
+            name="draft-" + session.lower(),
+            func=unavailable,
+            run_for_slot=run,
+            scheduled_only=True,
+            max_tick_interval=timedelta(seconds=300),
+            summary="Owner-published recurring release draft",
+            schedule="*/5 * * * *",
+            timeout=timedelta(seconds=120),
+            retries=0,
+            catch_up=CatchUp.LATEST,
+        )
 
     def _autonomous_jobs(self, sessions: SessionCrud, schedules: AutonomousSchedules) -> list[JobLet]:
         """Compile only exact approved generic schedules; old notices remain separate."""
@@ -583,8 +626,8 @@ class HeinzelService:
         """A daemon tick uses its real slot; the user-approved binding is rechecked at launch."""
 
         def run(slot: datetime) -> JsonValue:
-            asyncio.run(schedules.tick(binding.session_id, binding.request_id, slot))
-            return {"status": "completed"}
+            result = asyncio.run(schedules.tick(binding.session_id, binding.request_id, slot))
+            return {"status": "quiet-hours" if result is None else "completed"}
 
         def unavailable() -> JsonValue:
             msg = "An agent schedule requires a daemon schedule slot"
@@ -839,6 +882,8 @@ class HeinzelService:
 
     def _next_run(self, schedule: str) -> datetime | None:
         """The next slot of a cron expression in local time, as the daemon reads it; none if it never fires."""
+        from croniter import CroniterBadDateError, croniter  # noqa: PLC0415 - parse only when a schedule is used
+
         now = self._clock().astimezone()
         try:
             iterator = croniter(schedule, now.replace(tzinfo=None))

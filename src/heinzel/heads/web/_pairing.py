@@ -24,9 +24,9 @@ def add_pairing(app: FastAPI, devices: Devices) -> None:
 
     @app.post("/_web/device", include_in_schema=False)
     async def pair(request: Request, body: Pairing) -> JSONResponse:
-        # Only the token `hz ui` opened this tab with may pair: a device token never makes more of itself.
+        # Only the token `hz ui serve` opened this tab with may pair: a device token never makes more of itself.
         if getattr(request.state, "auth", None) != "session":
-            problem = "Refused: pair with the link `hz ui` opened, not with a device token."
+            problem = "Refused: pair with the link `hz ui serve` opened, not with a device token."
             return JSONResponse(status_code=FORBIDDEN, content={"error": problem})
         device, token = devices.pair(body.name)
         return JSONResponse({"id": device.id, "name": device.name, "token": token})

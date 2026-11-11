@@ -9,6 +9,7 @@ import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { watchViewport } from "@/lib/viewport";
 import { FOOTER_RELOCATED, useFooterVisibility } from "./FooterLayout";
+import { actionStructureProblems, assertActionStructure, PaneActions, PaneLeave, PaneTitle } from "./PaneActions";
 
 export type State = "ok" | "warn" | "bad" | "off";
 
@@ -45,6 +46,10 @@ export function FooterItem({
   popoverClassName,
   paneName,
   hideHeading = false,
+  steady = false,
+  actions,
+  actionRow,
+  freeform,
 }: {
   /** What it says, as its accessible name and the pane's heading. */
   label: string;
@@ -60,7 +65,7 @@ export function FooterItem({
   /** A compact custom trigger; the button keeps its accessible label. */
   content?: ReactNode;
   /** The pane's body: detail lines, links, buttons. */
-  children?: ReactNode;
+  children?: ReactNode | ((close: () => void) => ReactNode);
   align?: "left" | "right";
   /** Extra trigger styling for a specific status, such as pulsing when an update is ready. */
   className?: string;
@@ -70,19 +75,36 @@ export function FooterItem({
   paneName?: string;
   /** No visible heading, when the trigger already shows the same words. */
   hideHeading?: boolean;
+  /** `text` changes while shown (a clock): fixed-width digits and a width that never shrinks, so neighbours stay put. */
+  steady?: boolean;
+  /** Every action of the pane: `PaneAction`s in the one bottom row under a divider, after all content. */
+  actions?: ReactNode;
+  /** The row's layout: a pane leads with words (default); an inline confirmation answers like a dialog. */
+  actionRow?: { align?: "start" | "end"; words?: "lead" | "all" };
+  /**
+   * Why this pane may not follow the pane structure (content, divider, one row of action buttons). Only the
+   * version pane, whose release notes are prose with their own links; allowlisted in paneActionsStandards.test.ts.
+   */
+  freeform?: string;
 }) {
+  // Longest text seen, in characters: monospace `ch` units make the slot's width exact and never smaller.
+  const widest = useRef(0);
+  if (steady && text) widest.current = Math.max(widest.current, [...text].length);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [pinned, setPinned] = useState(false);
   const timer = useRef<number | undefined>(undefined);
   const wrapper = useRef<HTMLSpanElement>(null);
   const pane = useRef<HTMLDivElement>(null);
-  const [at, setAt] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
+  const [positioned, setPositioned] = useState(false);
   const position = useRef<(() => void) | null>(null);
   const returningFocus = useRef(false);
   const visible = useFooterVisibility();
   const id = useId();
   const open = visible && (hovered || focused || pinned);
+  // In development and tests, an open pane that breaks the structure fails loudly, on each render and late change.
+  const structured = useRef(!freeform);
+  structured.current = !freeform;
   useEffect(() => {
     if (!visible) {
       setHovered(false);
@@ -92,13 +114,15 @@ export function FooterItem({
   }, [visible]);
   useLayoutEffect(() => {
     if (!open) {
-      setAt(null);
+      setPositioned(false);
       return;
     }
     const anchor = wrapper.current,
       element = pane.current;
     if (!anchor || !element) return;
+    let active = true;
     const place = () => {
+      if (!active) return;
       const box = element.getBoundingClientRect(),
         trigger = anchor.getBoundingClientRect();
       const maxHeight = popoverHeight(trigger);
@@ -110,29 +134,42 @@ export function FooterItem({
         ...placePopover(target, { width: box.width, height: Math.min(box.height, maxHeight) }, "above"),
         maxHeight,
       };
-      setAt((current) =>
-        current?.left === next.left && current.top === next.top && current.maxHeight === next.maxHeight
-          ? current
-          : next,
-      );
+      // A descendant query can commit without rerendering this footer item. Place at its mutation
+      // checkpoint, before a physical press can finish against the child's new geometry.
+      for (const key of ["left", "top", "maxHeight"] as const) {
+        const value = `${next[key]}px`;
+        if (element.style[key] !== value) element.style[key] = value;
+      }
+      setPositioned(true);
     };
     position.current = place;
     place();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
     observer?.observe(anchor);
     observer?.observe(element);
+    const mutations = new MutationObserver((records) => {
+      // Ignore placement's own writes; content changes still need synchronous measurement.
+      if (records.some((record) => record.target !== element || record.attributeName !== "style")) {
+        if (structured.current) assertActionStructure(element);
+        place();
+      }
+    });
+    mutations.observe(element, { subtree: true, childList: true, characterData: true, attributes: true });
     const unwatchViewport = watchViewport(place);
     window.addEventListener(FOOTER_RELOCATED, place);
     window.addEventListener("scroll", place, true);
     return () => {
+      active = false;
       position.current = null;
       observer?.disconnect();
+      mutations.disconnect();
       unwatchViewport();
       window.removeEventListener(FOOTER_RELOCATED, place);
       window.removeEventListener("scroll", place, true);
     };
   }, [open, align]);
   useLayoutEffect(() => {
+    if (open && structured.current && pane.current) assertActionStructure(pane.current);
     if (open) position.current?.();
   });
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -197,6 +234,7 @@ export function FooterItem({
         className={cn(
           "relative flex h-6 min-w-6 items-center justify-center gap-1 rounded px-1 hover:bg-accent/60 disabled:cursor-wait disabled:opacity-60",
           Icon ? COLOUR[state] : "text-ui-sm hover:text-foreground",
+          steady && "font-mono tabular-nums",
           className,
         )}
       >
@@ -208,7 +246,12 @@ export function FooterItem({
             </span>
           </>
         ) : content === undefined ? (
-          <span>{text}</span>
+          <span
+            className={steady ? "inline-block text-center" : undefined}
+            style={steady ? { minWidth: `${widest.current}ch` } : undefined}
+          >
+            {text}
+          </span>
         ) : (
           content
         )}
@@ -220,8 +263,11 @@ export function FooterItem({
           <div
             ref={pane}
             id={id}
-            className="viewport-popover fixed z-[var(--layer-popover,40)] overflow-y-auto rounded-xl"
-            style={at ?? { left: 0, top: 0, visibility: "hidden" }}
+            className={cn(
+              "viewport-popover fixed overflow-y-auto rounded-xl",
+              pinned ? "z-[calc(var(--layer-popover,40)+1)]" : "z-[var(--layer-popover,40)]",
+            )}
+            style={{ visibility: positioned ? undefined : "hidden" }}
             onMouseEnter={() => {
               window.clearTimeout(timer.current);
               setHovered(true);
@@ -232,23 +278,25 @@ export function FooterItem({
             }}
             onFocus={() => setFocused(true)}
           >
-            <section
-              aria-label={paneName ?? label}
-              className={cn(
-                "w-72 max-w-full rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl",
-                popoverClassName,
-              )}
-            >
-              {!hideHeading && (
-                <p className="px-1.5 py-1 font-medium">
-                  <span className="min-w-0">{label}</span>
-                </p>
-              )}
-              {children}
-            </section>
+            <PaneLeave.Provider value={close}>
+              <section
+                aria-label={paneName ?? label}
+                className={cn(
+                  "w-72 max-w-full rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl",
+                  popoverClassName,
+                )}
+              >
+                {!hideHeading && <PaneTitle>{label}</PaneTitle>}
+                {typeof children === "function" ? children(close) : children}
+                <PaneActions {...actionRow}>{actions}</PaneActions>
+              </section>
+            </PaneLeave.Provider>
           </div>,
           document.body,
         )}
     </span>
   );
 }
+
+/** The action structure check, by its footer-pane name for the tests that already use it. */
+export const paneStructureProblems = actionStructureProblems;

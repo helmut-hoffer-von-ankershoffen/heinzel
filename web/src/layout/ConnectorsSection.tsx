@@ -4,8 +4,10 @@
 import { ChevronLeft, Plug } from "lucide-react";
 import type { ReactNode } from "react";
 import type { SchemaSettingInfo } from "@/api/client";
-import { useCapabilities } from "@/api/queries";
+import { useCapabilities, useConnectorReport } from "@/api/queries";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { PluginsPending } from "./PluginsPending";
 import { BINDINGS, group, type SettingsNav } from "./settingsSections";
 
 type Connector = SettingsNav["connectors"][number];
@@ -14,6 +16,12 @@ type Connector = SettingsNav["connectors"][number];
 const connects = (connector: Connector) => [
   ...new Set((connector.plugin.capabilities ?? []).map((capability) => capability.split(":").at(-1) ?? capability)),
 ];
+
+const DIAGNOSTIC_STATUS = {
+  up: "connectors.diagnosticsUp",
+  degraded: "connectors.diagnosticsDegraded",
+  down: "connectors.diagnosticsDown",
+} as const;
 
 type Props = {
   connectors: Connector[];
@@ -25,6 +33,7 @@ type Props = {
 
 export function ConnectorsSection({ connectors, open, settings, onOpen, renderSettings }: Props) {
   const capabilities = useCapabilities();
+  const report = useConnectorReport(open !== undefined);
   /** The capabilities bound to one of `connector`'s adapters, from `[capabilities]`. */
   const used = (connector: Connector) => {
     const adapters = new Set((connector.plugin.capabilities ?? []).map((capability) => capability.split(":")[0]));
@@ -35,22 +44,79 @@ export function ConnectorsSection({ connectors, open, settings, onOpen, renderSe
   if (open) {
     const own = settings.filter((setting) => open.groups.includes(group(setting.section)));
     const bound = used(open);
+    const providers = (report.data?.connectors ?? []).filter(
+      (provider) => provider.distribution === open.plugin.distribution,
+    );
     return (
       <>
-        <button
+        <PluginsPending inline />
+        <Button
           type="button"
+          size="sm"
+          variant="ghost"
           onClick={() => onOpen("connectors")}
-          className="mb-3 -ml-1.5 flex items-center gap-1 rounded-lg px-1.5 py-1 text-ui-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+          className="mb-3 -ml-2.5 text-muted-foreground"
         >
-          <ChevronLeft aria-hidden className="size-4 text-icon" />
+          <ChevronLeft aria-hidden />
           {t("connectors.title")}
-        </button>
+        </Button>
         <p className="mb-1 text-sm text-muted-foreground">{open.plugin.summary}</p>
         <p className="mb-4 text-sm text-muted-foreground">
           {t("connectors.connects", { what: connects(open).join(", ") })}
           {" · "}
           {bound.length ? t("connectors.usedFor", { what: bound.join(", ") }) : t("connectors.unused")}
         </p>
+        <section className="mb-4 space-y-2 rounded-xl border border-border bg-card p-3 text-sm">
+          <h3 className="font-medium">{t("connectors.signIn")}</h3>
+          {providers.length === 0 ? (
+            <p className="text-muted-foreground">
+              {t(report.isPending ? "connectors.signInLoading" : "connectors.signInUnknown")}
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {providers.map(({ name, title, login }) => (
+                <li key={name}>
+                  {providers.length > 1 && <p className="font-medium">{title}</p>}
+                  <p>
+                    {t(
+                      login?.signed_in === true
+                        ? "connectors.signInStored"
+                        : login?.signed_in === false
+                          ? "connectors.signInMissing"
+                          : "connectors.signInUnknown",
+                    )}
+                  </p>
+                  {login?.account && <p className="text-muted-foreground">{login.account}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <details className="mb-4 rounded-xl border border-border bg-card p-3 text-sm">
+          <summary className="cursor-pointer font-medium">{t("connectors.diagnostics")}</summary>
+          <p className="mt-2 text-muted-foreground">{t("connectors.diagnosticsHint")}</p>
+          {providers.flatMap((provider) => provider.checks).length === 0 ? (
+            <p className="mt-2 text-muted-foreground">{t("connectors.diagnosticsNone")}</p>
+          ) : (
+            <ul className="mt-2 space-y-2">
+              {providers.flatMap((provider) =>
+                provider.checks.map((check) => (
+                  <li key={`${provider.name}:${check.name}`}>
+                    <p>
+                      <span className="font-medium">{check.name}</span>
+                      {" · "}
+                      <span>{t(DIAGNOSTIC_STATUS[check.status])}</span>
+                    </p>
+                    {check.detail && <p className="text-muted-foreground">{check.detail}</p>}
+                    {check.fix && (
+                      <p className="text-muted-foreground">{t("connectors.diagnosticsFix", { fix: check.fix })}</p>
+                    )}
+                  </li>
+                )),
+              )}
+            </ul>
+          )}
+        </details>
         {own.length ? (
           renderSettings(own, open.title)
         ) : (
@@ -65,6 +131,7 @@ export function ConnectorsSection({ connectors, open, settings, onOpen, renderSe
   const bindings = settings.filter((setting) => group(setting.section) === BINDINGS);
   return (
     <>
+      <PluginsPending inline />
       <h3 className="mb-1 text-ui font-medium">{t("connectors.title")}</h3>
       <p className="mb-4 text-sm text-muted-foreground">{t("connectors.intro")}</p>
       {connectors.length === 0 ? (

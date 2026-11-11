@@ -127,7 +127,9 @@ def open_check_in(
 
 
 # Spends money, within the per-message and the session cap.
-@module.operation(read_only=False, heads=HEADS, requires=["agent-runner:read"], audience="everyday")
+@module.operation(
+    read_only=False, heads=HEADS, requires=["agent-runner:read"], health_on_demand=True, audience="everyday"
+)
 def send(  # noqa: PLR0913, PLR0917 - one parameter per input of the operation
     service: ChatService,
     runner: AgentRunner,
@@ -287,6 +289,48 @@ def propose_agent_contract(
 ) -> ChatSession:
     """Stage current agent contract terms for human review."""
     return service.propose_agent_contract(durable_session, request_id)
+
+
+@module.operation(read_only=False, heads=HEADS, audience="everyday")
+def propose_captured_write(
+    service: ChatService,
+    durable_session: Annotated[
+        str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$", description="Owner-scoped personal conversation.")
+    ],
+    request_id: Annotated[
+        str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", description="Identity of the captured write draft.")
+    ],
+) -> ChatSession:
+    """Stage exact owner-private captured write terms for separate human confirmation."""
+    return service.propose_captured_write(durable_session, request_id)
+
+
+@module.operation(private=True, read_only=False, heads={"web"}, audience="everyday")
+def propose_release_draft_share(
+    service: ChatService,
+    durable_session: Annotated[
+        str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$", description="Owner-scoped personal conversation.")
+    ],
+    request_id: Annotated[
+        str, Field(pattern=r"^[0-9a-f]{64}$", description="The exact prepared release draft review identity.")
+    ],
+) -> ChatSession:
+    """Stage the edited draft link for separate human confirmation."""
+    return service.propose_release_draft_share(durable_session, request_id)
+
+
+@module.operation(read_only=False, heads=HEADS, audience="everyday")
+def propose_channel_item(
+    service: ChatService,
+    durable_session: Annotated[
+        str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$", description="Owner-scoped personal conversation.")
+    ],
+    request_id: Annotated[
+        str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", description="Identity of the channel posting draft.")
+    ],
+) -> ChatSession:
+    """Stage exact owner-private channel posting terms for separate human confirmation."""
+    return service.propose_channel_item(durable_session, request_id)
 
 
 @module.operation(read_only=False, heads=HEADS, audience="everyday")

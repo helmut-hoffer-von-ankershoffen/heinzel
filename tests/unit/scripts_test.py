@@ -33,8 +33,8 @@ CALLERS = [
     *sorted((REPO / ".github" / "workflows").glob("*.yml")),
 ]
 CALL = re.compile(
-    r"(?P<runner>\buv run(?P<flags>(?: --python [0-9]+(?:\.[0-9]+)?| -[\w-]+)*)(?P<python> python3?)? )?"
-    r"scripts/(?P<name>[\w-]+\.py)\b"
+    r"(?P<runner>\buv run(?P<flags>(?: --python [0-9]+(?:\.[0-9]+)?| -[\w-]+)*)(?P<python> python3?(?: -I)?)? )?"
+    r"(?P<isolated>\bpython3 -I )?scripts/(?P<name>[\w-]+\.py)\b"
 )
 FILE_TEST = re.compile(r"\[\s+-[ef]\s+(['\"]?)scripts/[\w-]+\.py\1\s+\]")
 
@@ -61,7 +61,7 @@ def metadata_problems(script: Path) -> list[str]:
     metadata = inline_metadata(script)
     if project_bound(script):
         problems = [] if metadata is None else ["is project-bound but has a `# /// script` block"]
-        if not re.search(r"(?m)^(from|import) heinzel\b", text):
+        if not re.search(r"(?m)^[ \t]*(from|import) heinzel\b", text):
             problems.append("is project-bound but doesn't import heinzel; give it a `# /// script` block instead")
         return problems
     if metadata is None:
@@ -89,12 +89,14 @@ def call_problems(text: str, standalone: set[str], bound: set[str], stdlib: set[
         code = FILE_TEST.sub("", line.split(" #", 1)[0])  # A shell file-existence predicate doesn't execute the file.
         for call in CALL.finditer(code):
             name, flags = call["name"], (call["flags"] or "").split()
-            isolated_stdlib = (
-                name in (stdlib or set())
-                and call["runner"]
-                and call["python"]
-                and "--no-build" in flags
-                and ({"--frozen", "--no-sync"} <= set(flags) or {"--no-project", "--python", "3.14"} <= set(flags))
+            isolated_stdlib = name in (stdlib or set()) and (
+                call["isolated"]
+                or (
+                    call["runner"]
+                    and call["python"]
+                    and "--no-build" in flags
+                    and ({"--frozen", "--no-sync"} <= set(flags) or {"--no-project", "--python", "3.14"} <= set(flags))
+                )
             )
             if (
                 name in standalone
@@ -148,7 +150,11 @@ def test_callers_run_scripts_the_way_they_declare(caller):
 
 @pytest.mark.parametrize(
     "launcher",
-    ["uv run --no-project --frozen --no-build --python 3.14 python", "uv run --frozen --no-sync --no-build python"],
+    [
+        "uv run --no-project --frozen --no-build --python 3.14 python",
+        "uv run --frozen --no-sync --no-build python",
+        "python3 -I",
+    ],
 )
 def test_hardened_python_launchers_only_bypass_script_resolution_for_stdlib(launcher):
     standalone = {"plain.py", "dependency.py"}

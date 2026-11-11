@@ -277,7 +277,7 @@ def test_compiled_daemon_notification_requires_exact_read_and_schedule_consents(
             self.calls = []
 
         @override
-        def emit_once(self, _kind, title, body, *, route, command, key):
+        def emit_once(self, _kind, title, body, *, route, command, key, helper=None):
             self.calls.append((title, body, key))
             return True
 
@@ -498,7 +498,7 @@ def test_compiled_rolling_read_item_revision_notices_survive_restart_and_revoke(
             self.calls = []
 
         @override
-        def emit_once(self, _kind, title, body, *, route, command, key):
+        def emit_once(self, _kind, title, body, *, route, command, key, helper=None):
             self.calls.append((title, body, key))
             return True
 
@@ -594,3 +594,34 @@ def _exercise_item_ticks(context):
         tick()
     assert state["reads"] == 3
     assert len(notices.calls) == 2
+
+
+def test_rolling_proposal_refuses_an_active_turn_without_recording_authority(make_kernel, tmp_path, monkeypatch):
+    client, kernel, current, session, state = _fixture(make_kernel, tmp_path, monkeypatch)
+    body = {
+        "session_id": session,
+        "request_id": "after-owned-answer",
+        "capability": "calendar",
+        "method": "events",
+        "fixed_arguments": {},
+        "window_policy": {
+            "parameter": "window",
+            "lookback_seconds": 60,
+            "lookahead_seconds": 600,
+            "timezone": "Europe/Berlin",
+        },
+    }
+    with current.local("cli"), kernel.resolve(ConnectedReadGrants).crud.repository.main_writer(session):
+        blocked = client.post("/api/heinzel/propose-rolling-connected-read", headers=AUTH, json=body)
+    assert blocked.status_code == 400
+    assert "another writer" in blocked.json()["error"]
+    assert (
+        client.get("/api/heinzel/connected-read-state", headers=AUTH, params={"session_id": session}).json()["status"]
+        == "none"
+    )
+    assert state["reads"] == 0
+    # A later explicit request after the turn settles is a proposal, never approval or a data read.
+    proposed = client.post("/api/heinzel/propose-rolling-connected-read", headers=AUTH, json=body)
+    assert proposed.status_code == 200
+    assert proposed.json()["request_id"] == body["request_id"]
+    assert state["reads"] == 0

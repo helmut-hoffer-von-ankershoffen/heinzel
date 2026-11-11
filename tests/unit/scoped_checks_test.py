@@ -1,4 +1,8 @@
+import hashlib
 import importlib.util
+import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -14,6 +18,123 @@ scoped = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(scoped)
 sys.path.insert(0, str(REPO / "scripts"))
 import related_tests as scoped_related  # noqa: E402 - needs the scripts path above
+
+
+@pytest.fixture(autouse=True)
+def _without_host_gate(monkeypatch):
+    """Keep mocked dispatch independent of the caller's gate and source-bound hook packet."""
+    monkeypatch.setattr(scoped.shutil, "which", lambda _: None)
+    monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE", raising=False)
+    monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE_SHA256", raising=False)
+
+
+def test_mocked_dispatch_isolates_an_inherited_source_bound_packet(monkeypatch, tmp_path):
+    packet = tmp_path / "caller-scope.json"
+    data = json.dumps(
+        {
+            "schema": 1,
+            "base": "a" * 40,
+            "head": "b" * 40,
+            "tree": "c" * 40,
+            "owning": ["tests/unit/caller_test.py"],
+            "hosted_only": [],
+        }
+    ).encode()
+    packet.write_bytes(data)
+    monkeypatch.setenv("HZ_LOCAL_TEST_SCOPE", str(packet))
+    monkeypatch.setenv("HZ_LOCAL_TEST_SCOPE_SHA256", hashlib.sha256(data).hexdigest())
+    # Reproduce entering this module from the real pre-push environment.
+    _without_host_gate.__wrapped__(monkeypatch)
+    assert "HZ_LOCAL_TEST_SCOPE" not in os.environ
+    assert "HZ_LOCAL_TEST_SCOPE_SHA256" not in os.environ
+    assert scoped.local_python_scope(["docs/guides/install.md"], "d" * 40) is None
+
+
+@pytest.fixture
+def gate_calls(monkeypatch, tmp_path):
+    gate = str(tmp_path / "hz-gate")
+    monkeypatch.setattr(scoped.shutil, "which", lambda _: gate)
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(scoped.subprocess, "run", run)
+    return gate, calls
+
+
+@pytest.mark.parametrize(("mode", "timeout"), [("preflight", 1800), ("fast", 300)])
+def test_a_full_core_check_passes_the_actual_make_command_to_the_heavy_gate(monkeypatch, gate_calls, mode, timeout):
+    gate, calls = gate_calls
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", mode, "--base", "origin/main"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: ["README.md"])
+    monkeypatch.setenv("HZ_GATE_LIGHT", "1")
+
+    scoped.main()
+
+    [(command, kwargs)] = calls
+    target = ["preflight", "BASE=" + "a" * 40] if mode == "preflight" else ["check-fast"]
+    assert command == [gate, "--timeout", str(timeout), "make", *target]
+    assert "HZ_GATE_LIGHT" not in kwargs["env"]
+    queue_wait = int(kwargs["env"]["HZ_GATE_MAX_WAIT"])
+    assert kwargs["timeout"] > queue_wait + timeout  # the outer watchdog leaves room for admission and execution
+
+
+def test_only_the_selected_documentation_push_checks_take_the_light_lane(monkeypatch, gate_calls):
+    gate, calls = gate_calls
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: ["docs/guides/install.md"])
+
+    with pytest.raises(SystemExit) as done:
+        scoped.main()
+
+    assert done.value.code == 0
+    [(guard, guard_kwargs), (docs, docs_kwargs)] = calls
+    assert guard == [gate, "--timeout", "180", *scoped.early_guard_commands(["docs/guides/install.md"])[0]]
+    assert docs == [
+        gate,
+        "--timeout",
+        "600",
+        "uv",
+        "run",
+        "--quiet",
+        "--script",
+        "scripts/steps.py",
+        *scoped.DOCS_STEPS,
+    ]
+    assert guard_kwargs["env"]["HZ_GATE_LIGHT"] == docs_kwargs["env"]["HZ_GATE_LIGHT"] == "1"
+
+
+@pytest.mark.parametrize(
+    ("requested", "expected"), [("0", "3600"), ("-1", "3600"), ("bad", "3600"), ("9999", "3600"), ("5", "5")]
+)
+def test_a_caller_cannot_skip_the_gate_or_raise_its_queue_deadline(monkeypatch, gate_calls, requested, expected):
+    gate, calls = gate_calls
+    monkeypatch.setenv("HZ_GATE_HELD", "4242")
+    monkeypatch.setenv("HZ_GATE_MAX_WAIT", requested)
+
+    scoped.run_check(["make", "check-fast"], timeout=300)
+
+    [(command, kwargs)] = calls
+    assert command == [gate, "--timeout", "300", "make", "check-fast"]
+    assert kwargs["env"]["HZ_GATE_HELD"] == "4242"  # the host decides whether the holder is real
+    assert kwargs["env"]["HZ_GATE_MAX_WAIT"] == expected
+    assert kwargs["timeout"] == 2 * int(expected) + 310
+
+
+@pytest.mark.parametrize("gate_path", [None, "bin/hz-gate"])
+def test_checks_run_directly_with_the_same_runtime_limit_without_an_absolute_gate(monkeypatch, gate_calls, gate_path):
+    _, calls = gate_calls
+    monkeypatch.setattr(scoped.shutil, "which", lambda _: gate_path)
+
+    scoped.run_check(["make", "check-fast"], timeout=300)
+
+    [(command, kwargs)] = calls
+    assert command == ["make", "check-fast"]
+    assert kwargs["timeout"] == 300
 
 
 def names(steps: list[str]) -> list[str]:
@@ -33,6 +154,91 @@ def test_site_assets_and_configuration_run_only_the_documentation_checks():
 def test_web_files_alone_run_the_web_checks_without_python_unit_tests_or_the_managed_backend():
     steps = scoped.scoped_steps(["web/src/components/ErrorScreen.tsx"])
     assert names(steps) == ["web-prepare", "web-lint", "web-client", "web-types", "web-tests"]
+
+
+@pytest.mark.parametrize(
+    ("selection", "arguments"),
+    [
+        (None, ""),
+        (
+            "web/src/sound/StreamPlayer.test.tsx web/src/sound/stream.test.ts",
+            " --maxWorkers=2 ./src/sound/StreamPlayer.test.tsx ./src/sound/stream.test.ts",
+        ),
+    ],
+)
+def test_web_push_keeps_all_guards_and_only_changes_the_vitest_step(monkeypatch, gate_calls, selection, arguments):
+    gate, calls = gate_calls
+    changed = ["docs/guides/install.md", "web/src/sound/PlayerCard.tsx"]
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: changed)
+    monkeypatch.setenv("WEB_TESTS", "")  # The scoped path does not accept a Make command override.
+    monkeypatch.delenv("WEB_TEST_FILES", raising=False)
+    if selection is not None:
+        monkeypatch.setenv("WEB_TEST_FILES", selection)
+
+    with pytest.raises(SystemExit) as done:
+        scoped.main()
+
+    assert done.value.code == 0
+    [(guard, _), (command, _)] = calls
+    assert guard == [gate, "--timeout", "180", *scoped.early_guard_commands(changed)[0]]
+    assert command == [
+        gate,
+        "--timeout",
+        "600",
+        "uv",
+        "run",
+        "--quiet",
+        "--script",
+        "scripts/steps.py",
+        *scoped.DOCS_STEPS,
+        f"web-prepare={scoped.WEB} prepare",
+        *scoped.WEB_STEPS[:-1],
+        f"&web-tests={scoped.WEB} exec vitest run{arguments}",
+    ]
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        "",
+        " \t ",
+        "--passWithNoTests",
+        "web/src/sound/StreamPlayer.test.tsx;whoami",
+        "web/src/sound/$(whoami).test.ts",
+        "web/src/sound/../sound/StreamPlayer.test.tsx",
+        "/web/src/sound/StreamPlayer.test.tsx",
+        "web/src/sound/*.test.ts",
+        "web/src/sound/PlayerCard.tsx",
+        "web/src/sound/StreamPlayer.test.tsx web/src/missing.test.ts",
+    ],
+)
+def test_invalid_web_push_selection_fails_before_launching_vitest(monkeypatch, gate_calls, capsys, selection):
+    _, calls = gate_calls
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: ["web/src/sound/PlayerCard.tsx"])
+    monkeypatch.setenv("WEB_TEST_FILES", selection)
+
+    with pytest.raises(SystemExit) as done:
+        scoped.main()
+
+    assert done.value.code == 2
+    assert "WEB_TEST_FILES" in capsys.readouterr().err
+    assert calls == []
+
+
+def test_web_push_does_not_accept_a_symlink_as_a_test_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(scoped, "ROOT", tmp_path)
+    outside = tmp_path / "outside.test.ts"
+    outside.touch()
+    alias = tmp_path / "web" / "src" / "alias.test.ts"
+    alias.parent.mkdir(parents=True)
+    alias.symlink_to(outside)
+
+    with pytest.raises(ValueError, match="existing web test file"):
+        scoped.scoped_steps(["web/src/feature.ts"], web_test_files="web/src/alias.test.ts")
 
 
 def test_documents_and_web_files_run_both():
@@ -157,6 +363,34 @@ def test_imports_follow_the_defining_module_not_the_package_that_re_exports_it()
     assert "tests/unit/modules/system_update_test.py" in graph.dependents({"src/heinzel/modules/system/_update.py"})
 
 
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "if True: import heinzel.kernel\n",
+        "value = 1; import heinzel.kernel\n",
+        "import \\\n    heinzel.kernel\n",
+        "from heinzel.kernel import (  # factory )\n    Config,  # a (comment)\n)\n",
+    ],
+)
+def test_valid_import_syntax_keeps_its_dependents_in_the_graph(tmp_path, monkeypatch, statement):
+    monkeypatch.setattr(scoped_related, "ROOT", tmp_path)
+    package = tmp_path / "src/heinzel/kernel/__init__.py"
+    package.parent.mkdir(parents=True)
+    package.write_text("class Config: pass\n", encoding="utf-8")
+    test = tmp_path / "tests/unit/example_test.py"
+    test.parent.mkdir(parents=True)
+    test.write_text(statement, encoding="utf-8")
+    graph = scoped_related.Graph()
+    assert "tests/unit/example_test.py" in graph.dependents({"src/heinzel/kernel/__init__.py"})
+
+
+def test_every_import_resolves_to_a_file_of_the_tree_even_on_a_case_insensitive_disk():
+    """`from heinzel import Kernel` once resolved to a `heinzel/Kernel` package only a macOS disk claims."""
+    graph = scoped_related.graph()
+    assert {target for targets in graph.imports.values() for target in targets} <= graph.known
+    assert "src/heinzel/kernel/_kernel.py" in graph.imports["tests/unit/kernel/kernel_test.py"]
+
+
 def test_make_check_fast_by_hand_is_the_full_unit_run():
     makefile = (REPO / "Makefile").read_text(encoding="utf-8")
     assert "UNIT_TARGETS ?=\n" in makefile
@@ -169,3 +403,327 @@ def test_the_pre_push_hook_keeps_the_confidentiality_and_commit_checks():
     assert "id: confidentiality-branch" in config
     assert "id: check-fast" in config
     assert "scoped_checks.py push" in config
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("docs/guides/install.md", {"guides"}),
+        ("docs/guides/install.md.bak", set()),
+        ("docs/ARCHITECTURE.md", set()),
+        ("web/src/main.tsx", set()),
+        ("plugins/example/module.py", set()),
+        ("tests/fixtures/example.py", {"standards"}),
+        ("template/tests/conftest.py", {"standards"}),
+        ("src/heinzel/modules/system/__init__.py", {"standards", "guides"}),
+        (
+            ".github/workflows/ci.yml",
+            {"browser_runtime_setup", "ci_supervised", "ci", "web_build", "e2e_lane_partition"},
+        ),
+        (
+            "tests/e2e/offline_uninstall_test.py",
+            {"standards", "browser_runtime_setup", "ci_supervised", "ci", "web_build", "e2e_lane_partition"},
+        ),
+        ("Makefile", {"browser_runtime_setup", "ci_supervised", "ci", "web_build", "e2e_lane_partition"}),
+        (
+            "tests/e2e/new_test.py",
+            {"standards", "browser_runtime_setup", "ci_supervised", "ci", "web_build", "e2e_lane_partition"},
+        ),
+        (
+            "tests/unit/web_build_test.py",
+            {"standards", "browser_runtime_setup", "ci_supervised", "ci", "web_build", "e2e_lane_partition"},
+        ),
+    ],
+)
+def test_early_guards_select_only_owning_inputs(path, expected):
+    commands = scoped.early_guard_commands([path])
+    actual = {
+        Path(argument.split("::")[0]).stem.removesuffix("_test")
+        for command in commands
+        for argument in command
+        if argument.startswith("tests/") and (argument.endswith(".py") or "::" in argument)
+    }
+    assert actual == expected
+    for command in commands:
+        if "tests/e2e" in command:
+            assert command[command.index("-m") + 1] == "integration"
+            assert "tests/integration/e2e_lane_partition_test.py" in command
+
+
+@pytest.mark.parametrize("path", ["tests/fixtures/example.py", "docs/guides/install.md", ".github/workflows/ci.yml"])
+def test_push_stops_at_failing_existing_guard_before_any_full_or_scoped_commands(monkeypatch, path):
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: [path])
+    calls = []
+
+    def fail(command, **kwargs):
+        calls.append(command)
+        assert kwargs["check"] is True
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(scoped.subprocess, "run", fail)
+    with pytest.raises(subprocess.CalledProcessError):
+        scoped.main()
+    assert calls == scoped.early_guard_commands([path])[:1]
+
+
+@pytest.mark.parametrize("target", ["check-fast", "preflight"])
+def test_direct_make_stops_before_web_preparation_or_full_checks_when_early_guard_fails(tmp_path, target):
+    """Execute the real Make recipe with a failing guard runner; no product command can run."""
+    executable = tmp_path / "uv"
+    record = tmp_path / "commands"
+    executable.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$EARLY_GUARD_RECORD"\nexit 23\n')
+    executable.chmod(0o700)
+    result = subprocess.run(
+        ["make", "--no-print-directory", target],
+        cwd=REPO,
+        env={**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"], "EARLY_GUARD_RECORD": str(record)},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode != 0
+    commands = record.read_text().splitlines()
+    assert len(commands) == 1
+    assert "scripts/scoped_checks.py early-" in commands[0]
+    assert ("early-preflight --base" in commands[0]) is (target == "preflight")
+
+
+def test_core_early_guards_are_not_copied_into_the_plugin_template():
+    spec = importlib.util.spec_from_file_location("sync_template_early", REPO / "scripts/sync_template.py")
+    assert spec
+    assert spec.loader
+    sync = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sync)
+    assert "scoped_checks.py early-" not in sync.makefile()
+
+
+@pytest.mark.parametrize("mode", ["early-fast", "early-preflight"])
+def test_direct_make_guards_include_branch_and_uncommitted_inputs(monkeypatch, mode):
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", mode, "--base", "HEAD~1"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda base: "a" * 40 if base == "HEAD~1" else None)
+    calls = []
+
+    def changed(mode, base):
+        assert base == "a" * 40
+        return ["docs/guides/install.md"] if mode == "preflight" else ["tests/fixtures/example.py"]
+
+    monkeypatch.setattr(scoped, "changed_paths", changed)
+    monkeypatch.setattr(scoped, "run_early_guards", calls.append)
+    scoped.main()
+    assert calls == [["docs/guides/install.md", "tests/fixtures/example.py"]]
+
+
+def test_early_ci_guards_use_whole_owning_files_so_test_renames_do_not_break_preflight():
+    command, partition = scoped.early_guard_commands([".github/workflows/ci.yml"])
+    assert {argument for argument in command if argument.startswith("tests/")} == {
+        "tests/unit/browser_runtime_setup_test.py",
+        "tests/unit/ci_supervised_test.py",
+        "tests/unit/ci_test.py",
+        "tests/unit/web_build_test.py",
+    }
+    assert "tests/e2e" in partition
+    assert partition[partition.index("-m") + 1] == "integration"
+
+
+@pytest.fixture
+def local_scope_packet(monkeypatch, tmp_path):
+    """Only disposable files are inspected; no desktop module is imported or collected."""
+    own = "tests/unit/owned_test.py"
+    hosted = "tests/unit/heads/desktop_installation_test.py"
+    for name in (own, hosted):
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# selection fixture only\n")
+    monkeypatch.setattr(scoped, "ROOT", tmp_path)
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "b" * 40)
+    monkeypatch.setattr(scoped, "resolve_tree", lambda: "c" * 40)
+    monkeypatch.setattr(scoped.subprocess, "check_output", lambda *_, **__: "")
+    monkeypatch.setattr(scoped_related, "related_tests", lambda _: [own, hosted])
+    packet = {
+        "schema": 1,
+        "base": "a" * 40,
+        "head": "b" * 40,
+        "tree": "c" * 40,
+        "owning": [own, hosted + "::test_safe"],
+        "hosted_only": [hosted + "::test_safe"],
+    }
+    path = tmp_path / "scope.json"
+
+    def bind(value=packet, raw=None):
+        data = raw if raw is not None else json.dumps(value).encode()
+        path.write_bytes(data)
+        monkeypatch.setenv("HZ_LOCAL_TEST_SCOPE", str(path))
+        monkeypatch.setenv("HZ_LOCAL_TEST_SCOPE_SHA256", hashlib.sha256(data).hexdigest())
+
+    bind()
+    return packet, bind, own, hosted
+
+
+def test_explicit_scope_keeps_all_local_owning_checks_and_only_declared_hosted_obligations(local_scope_packet):
+    packet, _, own, _ = local_scope_packet
+    assert scoped.local_python_scope([own], "a" * 40) == ([own], packet["hosted_only"])
+    assert scoped.python_overrides([own], [own]) == [
+        "WEB_TESTS=",
+        "MANAGED_CHECK=",
+        f"FAST_TYPES={scoped.TYPES}",
+        f"UNIT_TARGETS={own}",
+    ]
+
+
+@pytest.mark.parametrize("field", ["base", "head", "tree", "schema"])
+def test_explicit_scope_rejects_stale_source_and_boolean_schema(local_scope_packet, field):
+    packet, bind, own, _ = local_scope_packet
+    packet[field] = True if field == "schema" else "d" * 40
+    bind()
+    with pytest.raises(ValueError, match="exact base/head/tree"):
+        scoped.local_python_scope([own], "a" * 40)
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        "",
+        "--help",
+        "tests/unit/../bad_test.py",
+        "tests/unit/owned_test.py;id",
+        "tests/unit/owned_test.py --timeout=0",
+        "tests/e2e/owned_test.py",
+        4,
+    ],
+)
+def test_explicit_scope_rejects_options_commands_traversal_and_nonunit_selectors(local_scope_packet, selector):
+    packet, bind, own, _ = local_scope_packet
+    packet["owning"] = [selector]
+    packet["hosted_only"] = []
+    bind()
+    with pytest.raises(ValueError, match="invalid selector"):
+        scoped.local_python_scope([own], "a" * 40)
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "duplicate",
+        "empty",
+        "too-many",
+        "omitted-hosted",
+        "false-hosted",
+        "only-hosted",
+        "foreign",
+        "omitted-changed",
+        "unknown-field",
+    ],
+)
+def test_explicit_scope_rejects_incomplete_or_unbounded_owning_scope(local_scope_packet, problem):
+    packet, bind, own, _ = local_scope_packet
+    changed = [own]
+    if problem == "duplicate":
+        packet["owning"].append(own)
+    elif problem == "empty":
+        packet["owning"] = []
+    elif problem == "too-many":
+        packet["owning"] = [own] * 65
+    elif problem == "omitted-hosted":
+        packet["hosted_only"] = []
+    elif problem == "false-hosted":
+        packet["hosted_only"].append(own)
+    elif problem == "only-hosted":
+        packet["owning"] = packet["hosted_only"]
+    elif problem == "foreign":
+        packet["owning"].append("tests/unit/foreign_test.py")
+    elif problem == "omitted-changed":
+        changed.append("tests/unit/missing_test.py")
+    elif problem == "unknown-field":
+        packet["command"] = "anything"
+    bind()
+    with pytest.raises(ValueError, match="local scope"):
+        scoped.local_python_scope(changed, "a" * 40)
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "digest",
+        "missing-path",
+        "missing-digest",
+        "oversize",
+        "duplicate-json",
+        "dirty",
+        "missing-file",
+        "symlink",
+        "unmapped",
+    ],
+)
+def test_explicit_scope_rejects_unreviewed_bytes_or_unsafe_checkout(local_scope_packet, monkeypatch, tmp_path, problem):
+    _, bind, own, _ = local_scope_packet
+    changed = [own]
+    if problem == "digest":
+        monkeypatch.setenv("HZ_LOCAL_TEST_SCOPE_SHA256", "0" * 64)
+    elif problem == "missing-path":
+        monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE")
+    elif problem == "missing-digest":
+        monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE_SHA256")
+    elif problem == "oversize":
+        bind(raw=b" " * (scoped.LOCAL_SCOPE_MAX + 1))
+    elif problem == "duplicate-json":
+        bind(raw=b'{"schema":1,"schema":1}')
+    elif problem == "dirty":
+        monkeypatch.setattr(scoped.subprocess, "check_output", lambda *_, **__: own)
+    elif problem == "missing-file":
+        (tmp_path / own).unlink()
+    elif problem == "symlink":
+        (tmp_path / own).unlink()
+        (tmp_path / own).symlink_to(tmp_path / "scope.json")
+    elif problem == "unmapped":
+        monkeypatch.setattr(scoped_related, "related_tests", lambda _: None)
+    with pytest.raises(ValueError, match="local scope"):
+        scoped.local_python_scope(changed, "a" * 40)
+
+
+def test_explicit_scope_is_opt_in_and_does_not_change_legacy_selection(monkeypatch):
+    monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE", raising=False)
+    monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE_SHA256", raising=False)
+    assert scoped.local_python_scope(["scripts/scoped_checks.py"], "a" * 40) is None
+    monkeypatch.setattr(scoped_related, "related_tests", lambda _: ["tests/unit/scoped_checks_test.py"])
+    assert scoped.python_overrides(["scripts/scoped_checks.py"])[-1] == "UNIT_TARGETS=tests/unit/scoped_checks_test.py"
+
+
+def test_readonly_preview_matches_actual_normal_hook_commands(local_scope_packet, monkeypatch, capsys):
+    packet, _, own, _ = local_scope_packet
+    # main resolves the base independently; the packet still binds HEAD separately.
+    monkeypatch.setattr(scoped, "resolve_base", lambda ref: "b" * 40 if ref == "HEAD" else "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: [own])
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push", "--show-python-push-plan"])
+    calls = []
+    monkeypatch.setattr(
+        scoped, "run_check", lambda command, **kwargs: calls.append(command) or subprocess.CompletedProcess(command, 0)
+    )
+    with pytest.raises(SystemExit) as preview:
+        scoped.main()
+    assert preview.value.code == 0
+    assert calls == []
+    plan = json.loads(capsys.readouterr().out)
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    with pytest.raises(SystemExit) as executed:
+        scoped.main()
+    assert executed.value.code == 0
+    assert calls == [*plan["early_guards"], plan["check"]]
+    assert plan["early_guards"] == scoped.early_guard_commands([own])
+    assert plan["hosted_only"] == packet["hosted_only"]
+    assert plan["check"] == [
+        "make",
+        "check-fast",
+        "WEB_TESTS=",
+        "MANAGED_CHECK=",
+        f"FAST_TYPES={scoped.TYPES}",
+        f"UNIT_TARGETS={own}",
+    ]
+
+
+def test_explicit_local_python_scope_cannot_trim_web_checks(local_scope_packet):
+    _, _, own, _ = local_scope_packet
+    with pytest.raises(ValueError, match="only supported for the owning Python"):
+        scoped.local_python_scope([own, "web/src/changed.ts"], "a" * 40)

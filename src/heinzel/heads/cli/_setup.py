@@ -13,7 +13,7 @@ import json
 import shlex
 import sys
 import warnings
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -39,6 +39,9 @@ from heinzel.kernel import (
     Kernel,
     ModuleRecord,
     OperationLet,
+    PrerequisiteCheck,
+    PrerequisiteLet,
+    PrerequisiteService,
     Prompter,
     ScriptExhausted,
     SettingsLet,
@@ -50,7 +53,8 @@ DOCTOR = ("system.doctor", "doctor")
 EX_INTERRUPTED = 130  # what shells report for a process stopped by Ctrl-C (128 + SIGINT)
 HELP = (
     "Set up what is still missing, wizard style: every step not finished yet, in order; optional steps can be "
-    "skipped, and a run continues where the last one stopped. With MODULE, set up only that module."
+    "skipped, and a run continues where the last one stopped. A step's missing tools are installed first, after "
+    "you agree. With MODULE, set up only that module."
 )
 MODULE_HELP = "Set up only this module, by qualified name (`hz setup clock`); every module when left out."
 PRIVACY = (
@@ -114,6 +118,7 @@ class Outcome(StrEnum):
     KEPT = "kept"
     SKIPPED = "skipped"
     FAILED = "failed"
+    PENDING = "pending"
     INTERRUPTED = "interrupted"
     NOT_REACHED = "not reached"
 
@@ -126,6 +131,8 @@ class StepResult:
     required: bool
     outcome: Outcome
     detail: str = ""
+    prerequisites: bool = False
+    """Whether this is the preparation of an owner that has no setup step, not a step of its own (ADR 0112)."""
 
 
 def steps(kernel: Kernel) -> list[tuple[ModuleRecord, SetupLet]]:
@@ -146,6 +153,13 @@ def steps(kernel: Kernel) -> list[tuple[ModuleRecord, SetupLet]]:
             pair[0].path,
         ),
     )
+
+
+def prerequisite_owners(kernel: Kernel, plan: list[tuple[ModuleRecord, SetupLet]]) -> list[ModuleRecord]:
+    """Modules that declare external tools but have no step in `plan`; their tools are prepared on their own."""
+    with_step = {record.qualname for record, _ in plan}
+    owners = {record.qualname: record for record, _ in kernel.lets(PrerequisiteLet) if record.qualname not in with_step}
+    return sorted(owners.values(), key=lambda record: (not record.origin.builtin, record.path))
 
 
 def is_configured(kernel: Kernel, record: ModuleRecord) -> bool:
@@ -197,9 +211,39 @@ class Runner:
         self.from_file = from_file
         kernel.bind(Prompter, prompter)
 
-    def run(self, plan: list[tuple[ModuleRecord, SetupLet]], *, offer_skip: bool) -> list[StepResult]:
-        """Run each step in turn; after Ctrl-C the rest are not reached and earlier steps keep what they wrote."""
+    def run(
+        self,
+        plan: list[tuple[ModuleRecord, SetupLet]],
+        *,
+        offer_skip: bool,
+        owners: Sequence[ModuleRecord] = (),
+    ) -> list[StepResult]:
+        """Prepare the tools of `owners`, then run each step; after Ctrl-C the rest are not reached.
+
+        Earlier steps keep what they wrote.
+        """
         results: list[StepResult] = []
+        for record in owners:
+            try:
+                results += self._owner_tools(record)
+            except Exception as exc:
+                if isinstance(exc, ScriptExhausted):
+                    raise
+                results.append(
+                    StepResult(
+                        module=record.qualname,
+                        required=False,
+                        outcome=Outcome.PENDING,
+                        detail=f"its tools could not be checked: {exc}",
+                        prerequisites=True,
+                    )
+                )
+            except KeyboardInterrupt:
+                self.prompter.say("")
+                results.append(StepResult(module=record.qualname, required=False, outcome=Outcome.INTERRUPTED))
+                return results + [
+                    StepResult(module=r.qualname, required=s.required, outcome=Outcome.NOT_REACHED) for r, s in plan
+                ]
         for index, (record, let) in enumerate(plan):
             try:
                 results.append(self._step(record, let, offer_skip=offer_skip))
@@ -244,6 +288,52 @@ class Runner:
         self.prompter.say(f"{record.qualname} failed: {detail}")
         return StepResult(module=record.qualname, required=let.required, outcome=Outcome.FAILED, detail=detail)
 
+    def _owner_tools(self, record: ModuleRecord) -> list[StepResult]:
+        """The preparation of an owner without a setup step: nothing when its tools are fine, else one row."""
+        acted, unmet = self._prepare(record)
+        if unmet:
+            detail = "; ".join(f"{check.requirement.name}: {check.detail}" for check in unmet)
+            return [
+                StepResult(
+                    module=record.qualname,
+                    required=False,
+                    outcome=Outcome.PENDING,
+                    detail=detail,
+                    prerequisites=True,
+                )
+            ]
+        if acted:
+            return [StepResult(module=record.qualname, required=False, outcome=Outcome.DONE, prerequisites=True)]
+        return []
+
+    def _prepare(self, record: ModuleRecord) -> tuple[bool, list[PrerequisiteCheck]]:
+        """Make the owner's external tools usable before its step: show, ask, install, check again (ADR 0112).
+
+        Nothing is installed without a person who said yes, and nobody is signed in.
+
+        Returns:
+            Whether anything was missing, and the checks that still need the person afterwards.
+        """
+        if not self.kernel.provides(PrerequisiteService):
+            return False, []
+        service = self.kernel.resolve(PrerequisiteService)
+        unmet = service.check(record.qualname, context="setup").unmet
+        if not unmet:
+            return False, []
+        for check in unmet:
+            tool = check.requirement
+            self.prompter.say(f"{tool.title} ({tool.name}) is not ready for {record.qualname}: {tool.purpose}")
+            self.prompter.say(f"  {check.detail}")
+        names = ", ".join(check.requirement.name for check in unmet if check.automatic)
+        command = f"hz system prerequisite install --owner {record.qualname} --confirm"
+        if names and self.prompter.interactive and self.prompter.confirm(f"Install {names} with Homebrew now?"):
+            unmet = service.install(record.qualname, context="setup").unmet
+            for check in unmet:
+                self.prompter.say(f"  {check.requirement.name}: {check.detail}")
+        elif names:
+            self.prompter.say(f"  Nothing was installed. To install: {command}")
+        return True, unmet
+
     def _reset_hint(self, record: ModuleRecord, exc: ValidationError) -> str:
         """How to reset the invalid setting, when it is one of the module's own."""
         models = [let.model for owner, let in self.kernel.lets(SettingsLet) if owner.qualname == record.qualname]
@@ -280,8 +370,21 @@ class Runner:
                 return Outcome.KEPT
         elif offer_skip and not let.required and not ask(f"Set up {record.qualname} now?"):
             return Outcome.SKIPPED
+        self._require_tools(record)
         self.kernel.call(let.func)
         return Outcome.DONE
+
+    def _require_tools(self, record: ModuleRecord) -> None:
+        """Prepare the owner's tools; its step must not run while some are unready.
+
+        Raises:
+            HeinzelError: If a tool is still not ready, naming it and what to do.
+        """
+        if unmet := self._prepare(record)[1]:
+            msg = "Its tools are not ready, so the step did not run: " + "; ".join(
+                f"{check.requirement.name} ({check.detail})" for check in unmet
+            )
+            raise HeinzelError(msg)
 
 
 def invalid(exc: ValidationError) -> str:
@@ -298,6 +401,8 @@ def summary(results: list[StepResult]) -> Table:
         table.add_column(column, overflow="fold")
     for result in results:
         kind = "required" if result.required else "optional"
+        if result.prerequisites:
+            kind = "tools"
         table.add_row(Text(result.module), kind, result.outcome.value, Text(result.detail))
     return table
 
@@ -412,7 +517,10 @@ class SetupCommands:
             return f"No module is named {name!r}. {having}"
         if any(owner.qualname == name for owner, _ in self.kernel.lets(SetupLet)):
             return f"The setup step of {name!r} can't run: something it needs is missing (`hz system doctor`). {having}"
-        return f"Module {name!r} has no setup step. {having}"
+        tools = ""
+        if any(owner.qualname == name for owner, _ in self.kernel.lets(PrerequisiteLet)):
+            tools = f" Its tools: `hz system prerequisite check --owner {name}`."
+        return f"Module {name!r} has no setup step. {having}{tools}"
 
     def _everything(
         self,
@@ -422,12 +530,9 @@ class SetupCommands:
         *,
         as_json: bool,
     ) -> None:
+        owners = prerequisite_owners(self.kernel, plan)
         if not plan:
-            if as_json:
-                typer.echo(json.dumps({"steps": [], "doctor": None}, indent=2))
-            else:
-                self.console.print("No module has a setup step.")
-                self._notice()
+            self._tools_only(owners, as_json=as_json)
             return
         prompter = self.prompter(plan, presets, as_json=as_json)
         if not as_json and _playful.allowed(self.kernel.settings, self.console):
@@ -447,8 +552,23 @@ class SetupCommands:
             names = ", ".join(f"{r.qualname} ({'required' if s.required else 'optional'})" for r, s in pending)
             prompter.say(f"Still to do: {names}.")
             prompter.say("Ctrl-C stops; steps already finished keep what they wrote, and `hz setup` continues there.")
-        results = Runner(self.kernel, prompter, state).run(pending, offer_skip=True)
+        results = Runner(self.kernel, prompter, state).run(pending, offer_skip=True, owners=owners)
         self.finish(results, as_json=as_json)
+
+    def _tools_only(self, owners: list[ModuleRecord], *, as_json: bool) -> None:
+        """No module has a step: prepare the tools of the owners that declare some, and say so when none needs it."""
+        bound = self.kernel.resolve(Prompter)
+        prompter = bound
+        if not bound.interactive:
+            prompter = ConsolePrompter(self.err_console if as_json else self.console) if has_terminal() else Prompter()
+        results = Runner(self.kernel, prompter).run([], offer_skip=True, owners=owners)
+        if results:
+            self.finish(results, as_json=as_json)
+        elif as_json:
+            typer.echo(json.dumps({"steps": [], "doctor": None}, indent=2))
+        else:
+            self.console.print("No module has a setup step.")
+            self._notice()
 
     @staticmethod
     def pending(plan: list[tuple[ModuleRecord, SetupLet]], state: SetupState) -> list[tuple[ModuleRecord, SetupLet]]:
@@ -600,4 +720,5 @@ def _json(result: StepResult) -> dict[str, object]:
         "required": result.required,
         "outcome": result.outcome.value,
         "detail": result.detail,
+        "prerequisites": result.prerequisites,
     }

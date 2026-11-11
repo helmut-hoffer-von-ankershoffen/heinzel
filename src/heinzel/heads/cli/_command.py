@@ -5,7 +5,7 @@ from collections.abc import Callable
 from datetime import date, datetime, time
 from enum import StrEnum
 from types import UnionType
-from typing import Annotated, Any, get_args, get_origin
+from typing import Annotated, Any, Literal, get_args, get_origin
 
 import typer
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -17,7 +17,6 @@ from heinzel.heads._presence import mark_presence
 from heinzel.heads.cli import _playful
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, show, to_json
-from heinzel.heads.cli._setup import ConsolePrompter, has_terminal
 from heinzel.kernel import CurrentUser, HeinzelError, Kernel, OperationLet, Prompter
 
 FORMAT_PARAMETER = "output_format"
@@ -29,6 +28,13 @@ class Format(StrEnum):
 
     TEXT = "text"
     JSON = "json"
+
+
+def has_terminal() -> bool:
+    """Check terminal availability on demand while retaining the command's existing prompt boundary."""
+    from heinzel.heads.cli._setup import has_terminal as terminal_available  # noqa: PLC0415 - only when executing a command
+
+    return terminal_available()
 
 
 def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prologue and epilogue
@@ -46,7 +52,8 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
 
     The command's signature is the operation's, minus injected parameters, plus `--format` and its shorthand `--json`.
     Parameters without a default become arguments, the others options; `Field(description=...)` becomes their help
-    text. Progress goes to stderr and is silent for JSON output, so stdout always holds just the result.
+    text. Progress goes to stderr, so stdout always holds just the result. With JSON output an operation's named
+    steps go to stderr as one JSON object per `phase` event, and are left out when stderr is stdout (`2>&1`).
     `prologue` runs before text output, with the result, and `epilogue` after it; neither runs for JSON.
     """
     parameters = [
@@ -75,15 +82,26 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
     )
 
     def run(**kwargs: Any) -> None:  # noqa: ANN401 - forwarded to the operation
+        from heinzel.heads.cli._setup import ConsolePrompter  # noqa: PLC0415 - prompts only run with a command
+
         chosen = kwargs.pop(FORMAT_PARAMETER)
         as_json = kwargs.pop(JSON_PARAMETER) or (chosen or Format(kernel.settings.output_format)) is Format.JSON
         progress.enabled = not as_json
+        progress.as_json = as_json
         # On a terminal, and not for scripts (--json), operations that ask (a plugin's preview) may ask.
         kernel.bind(Prompter, ConsolePrompter(console) if has_terminal() and not as_json else Prompter())
         try:
-            with kernel.resolve(CurrentUser).local("cli"):
+            # The supported service-manager tick is a trusted owner CLI entry point. MCP keeps its own
+            # context, so a model-triggered tick cannot obtain the daemon's standing-grant authority.
+            identity: Literal["daemon", "cli"] = (
+                "daemon" if module == "system.daemon" and operation.name == "tick" else "cli"
+            )
+            with kernel.resolve(CurrentUser).local(identity):
                 mark_presence(kernel, module)
-                result = kernel.invoke(operation, **kwargs)
+                try:
+                    result = kernel.invoke(operation, **kwargs)
+                finally:
+                    progress.finish()
         except HeinzelError as exc:
             if not as_json and _playful.allowed(kernel.settings, err_console):
                 err_console.print(_playful.glyph(), end=" ")

@@ -3,6 +3,7 @@
 import importlib.util
 import stat
 import subprocess
+import sys
 import tomllib
 import zipfile
 from pathlib import Path
@@ -20,7 +21,11 @@ SPEC.loader.exec_module(release)
 
 def test_current_built_wheel_provides_the_isolated_launchers(tmp_path):
     subprocess.run(
-        ["uv", "build", "--wheel", "--out-dir", str(tmp_path)], cwd=ROOT, check=True, capture_output=True, timeout=300
+        [sys.executable, str(ROOT / "scripts/build.py"), "--wheel", "--out-dir", str(tmp_path)],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        timeout=300,
     )
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
     # SDK wheels built on Linux need not contain the macOS notifier. The release build supplies and validates it.

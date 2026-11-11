@@ -6,17 +6,16 @@ Only the deterministic local tool below can execute. Other requests become priva
 
 import hashlib
 import json
-import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, cast
 
-from pydantic import BaseModel, Field, JsonValue, TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 from pydantic_ai.models import Model
 
-from heinzel import ConfiguredApiAccess, CurrentUser, HeinzelError, Kernel, SessionEvent
+from heinzel import ConfiguredApiAccess, CurrentUser, HeinzelError, Kernel, SessionEvent, SessionWriter
 from heinzel.modules.heinzel._budget_reservation import initialize_budget
+from heinzel.modules.heinzel._captured_write_tools import DocumentDraftTools, document_draft_schema, new_file_schema
 from heinzel.modules.heinzel._claude_subscription_model import ClaudeSubscriptionModel
 from heinzel.modules.heinzel._connected_grants import ConnectedReadFailedError, ConnectedReadGrants
 from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
@@ -36,12 +35,12 @@ from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import BackendBinding, SessionMessage
 from heinzel.modules.heinzel._source_set_suggestions import SourceSetSuggestionTools, source_set_suggestion_schemas
 from heinzel.modules.heinzel._source_suggestions import SourceSuggestionTools, source_suggestion_schemas
+from heinzel.modules.heinzel._turn_activity import ToolActivity, TurnActivityProjection, interactive_turn_id
 from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
 from heinzel.modules.heinzel._turn_skill_adapter import TurnSkillAdapter, skill_tool_schemas
 from heinzel.modules.heinzel._user_proposal_tools import UserProposalTools, user_proposal_schemas
 
 _MAX_ARGUMENT_BYTES = 16000
-_MAX_ACTIVITY = 100
 _MAX_CURRENT_JSON_BYTES = 24_000
 _MAX_HISTORY_JSON_BYTES = 12_000
 _JSON = TypeAdapter(dict[str, JsonValue])
@@ -58,23 +57,6 @@ def _word_count(arguments: dict[str, JsonValue]) -> str:
 _READ_TOOLS: dict[str, Callable[[dict[str, JsonValue]], str]] = {"text.word_count": _word_count}
 
 
-def interactive_turn_id(request_id: str) -> str:
-    """Derive the stable durable turn identity for one accepted message request."""
-    return "interactive-" + hashlib.sha256(request_id.encode()).hexdigest()
-
-
-class ToolActivity(BaseModel):
-    """A redacted host-observed tool invocation or denial."""
-
-    seq: int = Field(description="Sequence of this event in the owner's control journal.")
-    at: datetime = Field(description="When the host recorded this event, in UTC.")
-    turn_id: str = Field(description="The exact durable turn associated with this tool event.")
-    tool: str = Field(description="The host-recorded tool name, without its arguments.")
-    status: Literal["requested", "completed", "failed", "denied"] = Field(
-        description="Whether dispatch was requested, completed, failed, or refused by the host."
-    )
-
-
 class InteractiveTurn:
     """A single owner's durable turn; it cannot run unmediated external tools or approve writes."""
 
@@ -86,6 +68,27 @@ class InteractiveTurn:
         if self._crud.repository.principal_id != self._owner:
             msg = "This turn belongs to a different authenticated owner"
             raise HeinzelError(msg)
+
+    def _dispatch_draft(  # noqa: PLR0913, PLR0917 - explicit owner-turn activity and tool binding
+        self,
+        tools: DocumentDraftTools | None,
+        session: str,
+        turn: str,
+        call: int,
+        name: str,
+        arguments: dict[str, JsonValue],
+    ) -> str:
+        self._event(session, turn, call, name, "requested")
+        if tools is None:
+            self._event(session, turn, call, name, "denied")
+            return "Document drafting is unavailable."
+        try:
+            result = (tools.dispatch if name == "document:draft" else tools.create)(arguments, call)
+        except (HeinzelError, ValueError):
+            self._event(session, turn, call, name, "denied")
+            return "The draft could not be recorded; inspect its current terms."
+        self._event(session, turn, call, name, "completed")
+        return result
 
     async def run_connected(  # noqa: PLR0913 - distinct trusted binding and turn policy values
         self,
@@ -205,6 +208,7 @@ class InteractiveTurn:
         connected_set: ConnectedReadSetApprovals | None = None,
         scheduled_notifications: ScheduledNotifications | None = None,
         prepare: Callable[[], None] | None = None,
+        draft_tools: Callable[[SessionWriter], DocumentDraftTools | None] | None = None,
     ) -> SessionMessage:
         """Execute one accepted message; an interrupted attempt never automatically re-executes.
 
@@ -362,6 +366,7 @@ class InteractiveTurn:
                 else None
             )
 
+            document_drafts = draft_tools(turn_writer) if draft_tools is not None else None
             calls = 0
             user_tools = (
                 UserProposalTools(
@@ -436,6 +441,8 @@ class InteractiveTurn:
                         return "The private proposal could not be recorded; inspect its current terms."
                     self._event(session_id, turn, calls, name, "completed")
                     return result
+                if name in {"document:draft", "document:create"}:
+                    return self._dispatch_draft(document_drafts, session_id, turn, calls, name, args)
                 if name in _READ_TOOLS and allow_ungranted_tools:
                     # The prototype's pure local tool is not part of the reviewed registered catalog.
                     if expected_grant is not None:
@@ -604,6 +611,12 @@ class InteractiveTurn:
                         [{"name": tool.identity, "schema": tool.schema} for tool in schemas]
                         + (skill_tool_schemas(expected_grant) if expected_grant else [])
                         + (user_proposal_schemas() if user_tools else [])
+                        + ([new_file_schema()] if document_drafts is not None else [])
+                        + (
+                            [document_draft_schema()]
+                            if document_drafts is not None and document_drafts.has_document
+                            else []
+                        )
                         + (playbook_tool_schemas() if playbook_tools else [])
                         + (schedule_suggestion_schemas() if schedule_tools else [])
                         + (source_suggestion_schemas() if source_tools else [])
@@ -650,79 +663,7 @@ class InteractiveTurn:
             HeinzelError: If the owner, limit or event provenance is invalid.
         """
         self._check_owner()
-        if type(limit) is not int or not 1 <= limit <= _MAX_ACTIVITY:
-            msg = "Choose between 1 and 100 tool activity items"
-            raise HeinzelError(msg)
-        events = self._crud.repository.control_read(session_id).events
-        starts = {
-            event.turn: event.seq
-            for event in events
-            if event.kind == "interactive.started"
-            and isinstance(event.data.get("message_id"), str)
-            and event.turn == interactive_turn_id(cast("str", event.data["message_id"]))
-        }
-        selected = [event for event in events if event.kind in {"interactive.tool", "interactive.skill-tool"}][-limit:]
-        projected: list[ToolActivity] = []
-        for event in selected:
-            if event.turn is None:
-                msg = "A tool activity event has no durable turn provenance"
-                raise HeinzelError(msg)
-            name = event.data.get("tool")
-            status = event.data.get("status")
-            if event.kind == "interactive.skill-tool":
-                if (
-                    event.turn not in starts
-                    or starts[event.turn] >= event.seq
-                    or event.key is None
-                    or not event.key.startswith("skill-turn-")
-                    or name not in {"skill.propose_draft", "skill.propose_sharing"}
-                    or status != "completed"
-                ):
-                    msg = "A skill activity event has invalid provenance"
-                    raise HeinzelError(msg)
-                reference = event.key.removeprefix("skill-")
-                source_kind = "skill.draft" if name == "skill.propose_draft" else "skill.sharing"
-                prefix = "skill-draft-" if name == "skill.propose_draft" else "skill-sharing-"
-                if not any(
-                    item.kind == source_kind
-                    and item.key == prefix + reference
-                    and starts[event.turn] < item.seq < event.seq
-                    for item in events
-                ):
-                    msg = "A skill activity event lacks its private proposal"
-                    raise HeinzelError(msg)
-                if name == "skill.propose_draft":
-                    self._crud.skill_draft(session_id, reference)
-                else:
-                    self._crud.skill_sharing(session_id, reference)
-                projected.append(
-                    ToolActivity(seq=event.seq, at=event.ts, turn_id=event.turn, tool=name, status="completed")
-                )
-                continue
-            if (
-                event.turn not in starts
-                or starts[event.turn] >= event.seq
-                or not isinstance(name, str)
-                or (
-                    name not in _READ_TOOLS
-                    and name not in {"unavailable", "hz.read", "connected_read", "connected_read_set"}
-                    and re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}:[a-z][a-z0-9-]{0,127}", name) is None
-                )
-                or status not in {"requested", "completed", "failed", "denied"}
-                or (name == "unavailable" and status != "denied")
-            ):
-                msg = "A tool activity event has invalid provenance"
-                raise HeinzelError(msg)
-            projected.append(
-                ToolActivity(
-                    seq=event.seq,
-                    at=event.ts,
-                    turn_id=event.turn,
-                    tool=name,
-                    status=cast("Literal['requested', 'completed', 'failed', 'denied']", status),
-                )
-            )
-        return projected
+        return TurnActivityProjection(self._crud).activity(session_id, limit=limit)
 
     def _event(self, session: str, turn: str, call: int, name: str, status: str) -> None:
         """Record only host-selected tool name and disposition, never arguments or results."""

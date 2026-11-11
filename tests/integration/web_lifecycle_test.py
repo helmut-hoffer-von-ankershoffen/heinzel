@@ -26,6 +26,9 @@ def test_lifecycle_is_authenticated_stable_and_replaced_with_the_server(make_ker
         base_url="http://127.0.0.1:8000",
     )
     assert client.get("/api/lifecycle").status_code == 401
+    assert client.post("/api/restart").status_code == 401
+    assert client.post("/api/restart", headers={"Authorization": "Bearer wrong-token"}).status_code == 401
+    assert calls == []
     before = client.get("/api/lifecycle", headers=AUTH)
     assert before.headers["Cache-Control"] == "no-store"
     assert before.json()["restartable"] is True
@@ -84,6 +87,18 @@ def test_loaded_configuration_is_bound_to_instance_and_strict_json_types(make_ke
         assert not client.post("/api/lifecycle/verify", headers=AUTH, json={**body, key: value}).json()["matches"]
     for value in (True, "1", 1.0, None, 11, -1):
         body["settings"][0]["value"] = value
+        assert not client.post("/api/lifecycle/verify", headers=AUTH, json=body).json()["matches"]
+
+
+def test_feature_flag_verification_ignores_order_but_requires_exact_flags(make_kernel, settings):
+    startup = settings.model_copy(update={"features": frozenset({"old_flag", "connected_history"})})
+    client = lifecycle_client(make_kernel(settings_=startup))
+    body = expectation(client, [{"section": "hz", "key": "features", "value": []}])
+    for flags in (["old_flag", "connected_history"], ["connected_history", "old_flag"]):
+        body["settings"][0]["value"] = flags
+        assert client.post("/api/lifecycle/verify", headers=AUTH, json=body).json()["matches"]
+    for flags in (["old_flag"], ["old_flag", "connected_history", "old_flag"], ["old_flag", True]):
+        body["settings"][0]["value"] = flags
         assert not client.post("/api/lifecycle/verify", headers=AUTH, json=body).json()["matches"]
 
 

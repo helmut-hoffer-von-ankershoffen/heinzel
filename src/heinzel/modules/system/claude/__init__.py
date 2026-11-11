@@ -8,6 +8,8 @@ a file is expected in is not followed. Names can reveal employers and customers,
 web app; the MCP and REST heads get counts.
 """
 
+from rich.console import RenderableType
+
 from heinzel import Check, Module
 from heinzel.modules.system.claude._models import (
     ClaudeScan,
@@ -16,8 +18,22 @@ from heinzel.modules.system.claude._models import (
     FoundSkill,
     Skipped,
 )
-from heinzel.modules.system.claude._render import render_scan, render_summary
 from heinzel.modules.system.claude._service import ClaudeService
+
+
+def render_scan(scan: ClaudeScan) -> RenderableType:
+    """Servers and skills in two tables, then what was skipped; no value of any secret is ever in them."""
+    from heinzel.modules.system.claude._render import render_scan  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_scan(scan)
+
+
+def render_summary(summary: ClaudeSummary) -> RenderableType:
+    """The counts in two lines."""
+    from heinzel.modules.system.claude._render import render_summary  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_summary(summary)
+
 
 module = Module("claude", "See the MCP servers and skills you already set up for Claude, without using any of them.")
 module.service(ClaudeService, ClaudeService.for_user)

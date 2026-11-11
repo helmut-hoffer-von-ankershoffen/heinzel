@@ -3,8 +3,8 @@
 Python imports this file at start when its folder is on PYTHONPATH, so the fakes hold in `hz ui` and in the process a
 restart in place becomes. They are active only when HZ_E2E_FAKE_RELEASE names a folder:
 
-- once the test writes `release` there, the newest stable release is 99.0.0 and a plugin has 9.0.0, until an update
-  "installs" them; the server checks every two seconds;
+- once the test writes `release` there, the newest stable release is 99.0.0 and a plugin has 9.0.0 (which needs no
+  other plugin), until an update "installs" them; the server checks every two seconds;
 - `system.apply_announced` writes `applied` in that folder instead of running uv, then starts this hz as its trial;
 - the server's clock runs ahead by the seconds in `clock` there, so the test can skip a postponed hour;
 - the installation counts as a uv tool on a release tag.
@@ -20,7 +20,7 @@ FOLDER = os.environ.get("HZ_E2E_FAKE_RELEASE")
 if FOLDER:
     from heinzel import __version__
     from heinzel.heads.web import _auto_update
-    from heinzel.kernel import CorePin, Installation, PluginRelease, ReleaseFacts
+    from heinzel.kernel import CorePin, Installation, PluginNews, PluginRelease, ReleaseFacts
     from heinzel.modules.system import _plugin_releases, _service, _update
     from heinzel.modules.system._models import AnnouncedUpdate
 
@@ -50,6 +50,10 @@ if FOLDER:
     def release_facts(self: object, version: str, timeout: float) -> ReleaseFacts:
         return ReleaseFacts(version, LONG_AGO, None)
 
+    def announceable(self: object, timeout: float, old_enough: Any) -> PluginNews:
+        """The fake plugin release needs nothing, so it moves alone; its closure has its own unit tests."""
+        return PluginNews({name: r for name, r in newer_releases(self, timeout).items() if old_enough(r)})
+
     def release(self: object, name: str, version: str, timeout: float) -> PluginRelease:
         return PluginRelease(version, LONG_AGO)
 
@@ -78,6 +82,7 @@ if FOLDER:
     _service.GitHubReleases.release_facts = release_facts  # type: ignore[method-assign]
     _update.UpdateService.apply_announced = apply_announced  # type: ignore[method-assign]
     _plugin_releases.PyPIPluginReleases.release = release  # type: ignore[method-assign]
+    _plugin_releases.PyPIPluginReleases.announceable = announceable  # type: ignore[method-assign]
     _auto_update._now = now
     _auto_update.FIRST_CHECK = (timedelta(seconds=1), timedelta(seconds=2))
     _auto_update.CHECK_EVERY = timedelta(seconds=2)

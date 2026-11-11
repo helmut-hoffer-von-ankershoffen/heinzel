@@ -14,6 +14,7 @@ from heinzel.kernel._approval import arguments_hash
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
 from heinzel.modules.heinzel._input_receipts import existing_input_receipt_key
 from heinzel.modules.heinzel._item_evidence import ItemLookup, dedupe_key, resolve_current_item
+from heinzel.modules.heinzel._notice_identity import notice_helper
 from heinzel.modules.heinzel._notification_proposals import NotificationProposal
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -228,6 +229,7 @@ class ScheduledNotifications:
                 route=f"/heinzel?chat={self.session}",
                 command="hz heinzel sessions",
                 key=key,
+                helper=notice_helper(self.crud, self.session, "scheduled notice"),
             )
         except Exception:  # noqa: BLE001 - never disclose provider diagnostics
             recorded = False

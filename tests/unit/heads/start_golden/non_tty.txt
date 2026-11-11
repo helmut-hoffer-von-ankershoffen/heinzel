@@ -1,0 +1,3 @@
+Heinzelmännchen is running: it opens in your browser. Say hello in the chat.
+[exec hz ui open]
+[exit 0]

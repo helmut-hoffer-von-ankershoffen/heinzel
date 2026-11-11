@@ -185,7 +185,7 @@ export function AgentContractAcceptance({
           <ActionCard
             action={action}
             busy={busy}
-            proposalTitle="Review agent terms"
+            proposalTitle="Review Heinzel terms"
             onDecide={(confirm) => void decide(confirm)}
           />
         </ol>

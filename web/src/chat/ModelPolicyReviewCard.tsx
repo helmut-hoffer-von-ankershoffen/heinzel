@@ -54,7 +54,7 @@ export function ModelPolicyReviewCard({
   return (
     <section aria-label="Model policy review" className="space-y-2 rounded border border-border p-3 text-sm">
       <h3 className="font-medium">Model policy awaiting review</h3>
-      <p>Review the proposed model, limits and tool permissions for this agent.</p>
+      <p>Review the proposed model, limits and tool permissions for this Heinzel.</p>
       <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-background p-2 text-xs">
         {JSON.stringify(review, null, 2)}
       </pre>

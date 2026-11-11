@@ -1,4 +1,5 @@
 name: CI
+run-name: "${{ github.event_name == 'push' && 'CI batch admission ' || 'CI ' }}${{ github.sha }}"
 
 on:
   push:
@@ -8,51 +9,144 @@ on:
   schedule:
     - cron: "23 5 * * *" # daily: new advisories and upstream changes break unchanged code too
 
-permissions:
-  contents: read
+permissions: {}
 
 # Every commit on main gets its own group, so a later push never replaces a queued run or cancels a running one and
-# each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs.
+# each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs, except a
+# release PR (head release/*): its full-suite run is release evidence and is never cancelled.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }}
 
 env:
   UV_FROZEN: "1"
   FORCE_COLOR: "1"
 
-# GitHub-hosted macOS runners are the scarce resource, so a pull request runs macOS on the newest Python only, one
-# `make setup`, the macOS end-to-end suite on every pull request that is not site-only, and the notifier app when its
-# sources change. The broad platform matrix runs off pull requests.
-# Provider-specific integration checks live with their owning plugins.
-# TEMPORARY (owner's decision): a macOS failure must not block merges or releases while the pull request queue drains and
-# macOS is fixed step by step. Matrix jobs with a macOS cell set `continue-on-error` for those cells only, so the cell still
-# runs and its failure is visible in the job's log and annotations, but the job reports success to `CI OK`. Linux cells still
-# fail the workflow. Remove every `continue-on-error` line once macOS has 20 clean runs in a row.
+# Ordinary changes and main baselines require a reviewed, exact focused scope.
+# The full matrix is reserved for the canonical release candidate. Cheap checks
+# still cancel failing same-repository PR runs. Fork workloads stay read-only.
 jobs:
+  admission:
+    name: Main batch admission
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      contents: read
+      actions: read
+      statuses: read
+      pull-requests: read
+    outputs:
+      full: ${{ steps.batch.outputs.full }}
+      base: ${{ steps.batch.outputs.base }}
+      run: ${{ steps.batch.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - id: batch
+        name: Resolve the aggregate base and any explicit batch delegation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --no-build --script scripts/main_batch.py
+
+  batch-full:
+    permissions:
+      contents: read
+    name: Main batch focused scope (${{ needs.admission.outputs.base }})
+    needs: [admission, changes]
+    if: github.event_name == 'push' && needs.changes.outputs.focused_mode != '' && needs.admission.outputs.base != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - run: echo 'The validated aggregate base selects the focused batch scope.'
+
+  batch-delegated:
+    permissions:
+      contents: read
+    name: Main batch delegated to ${{ needs.admission.outputs.run }}
+    needs: admission
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.admission.outputs.full == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Record delegation without claiming CI OK for this intermediate commit
+        env:
+          FINAL_RUN: ${{ needs.admission.outputs.run }}
+        run: echo "Integration CI is recorded by final main run $FINAL_RUN" >> "$GITHUB_STEP_SUMMARY"
+
   changes:
+    permissions:
+      contents: read
+      pull-requests: read
+    needs: admission
+    if: github.event_name != 'push' || needs.admission.outputs.full != 'false'
     name: Changed paths
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
+      batch_base: ${{ needs.admission.outputs.base }}
       notifier: ${{ steps.paths.outputs.notifier }}
       contracts: ${{ steps.paths.outputs.contracts }}
       electron: ${{ steps.paths.outputs.electron }}
       core: ${{ steps.paths.outputs.core }}
       plugins: ${{ steps.paths.outputs.plugins }}
       site_only: ${{ steps.paths.outputs.site_only }}
+      macos_full: ${{ steps.paths.outputs.macos_full }}
+      scheduled_maintenance: ${{ steps.maintenance.outputs.selected }}
+      full_release: ${{ steps.release.outputs.full_release }}
+      focused_matrix: ${{ steps.focused.outputs.focused_matrix }}
+      focused_mode: ${{ steps.focused.outputs.focused_mode }}
+      focused_base: ${{ steps.focused.outputs.focused_base }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: maintenance
+        name: Select bounded scheduled main maintenance
+        if: github.event_name == 'schedule'
+        run: |
+          if [ "$GITHUB_REPOSITORY" != helmut-hoffer-von-ankershoffen/heinzel ] || [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Scheduled maintenance requires the canonical main branch"
+            exit 1
+          fi
+          echo 'selected=true' >> "$GITHUB_OUTPUT"
+      - if: github.event_name != 'schedule'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
+      - if: github.event_name != 'schedule'
+        uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - id: release
+        name: Recognize the canonical open release candidate
+        if: github.event_name != 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I scripts/release_candidate.py select --output "$GITHUB_OUTPUT"
+      - id: focused
+        name: Resolve the exact reviewed focused plan
+        if: github.event_name != 'schedule' && steps.release.outputs.full_release != 'true'
+        env:
+          FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
+          FOCUSED_CI_PLANS_V2_0: ${{ vars.FOCUSED_CI_PLANS_V2_0 }}
+          FOCUSED_CI_PLANS_V2_1: ${{ vars.FOCUSED_CI_PLANS_V2_1 }}
+          FOCUSED_CI_PLANS_V2_2: ${{ vars.FOCUSED_CI_PLANS_V2_2 }}
+          FOCUSED_CI_PLANS_V2_3: ${{ vars.FOCUSED_CI_PLANS_V2_3 }}
+          BATCH_BASE: ${{ needs.admission.outputs.base }}
+        run: python3 -I scripts/focused_plan.py
       - id: paths
         name: Heinzel Notifier is built always, except on a pull request that leaves its sources alone
+        if: github.event_name != 'schedule'
         env:
           EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          FULL_RELEASE: ${{ steps.release.outputs.full_release }}
+          BASE: ${{ needs.admission.outputs.base || github.event.pull_request.base.sha || github.event.before }}
+          BATCH_BASE: ${{ needs.admission.outputs.base }}
         run: |
-          changed="$(git diff --name-only "$BASE...HEAD" || true)"
+          changed="$(git diff --name-only "$BASE...HEAD")" || changed=""
+          full_release="${FULL_RELEASE:-false}"
           # A push to main of prose alone: the pull request already ran everything on the same content. docs/ also
           # holds the install scripts, and release commits change CHANGELOG.md, so neither counts.
           prose_push=false
@@ -64,16 +158,29 @@ jobs:
           # README's commands, and nested Markdown can be a template or a skill, so those do not count. These paths
           # are documents and tooling to the pre-push scope too; ci_test.py pins that.
           site_only=false
-          if [ "$EVENT" = pull_request ] && [ -n "$changed" ] \
+          if [ "$EVENT" = pull_request ] && [ "$full_release" != true ] && [ -n "$changed" ] \
             && ! grep -qvE '^(docs/.*|[^/]*\.md|mkdocs\.yml|scripts/(site_[a-z_]+|check_docs)\.py|tests/unit/(site_[a-z_]+|docs_style|documentation)_test\.py)$' <<< "$changed" \
             && ! grep -qE '^(CHANGELOG|README)\.md$|^docs/.*\.sh$' <<< "$changed"; then
             site_only=true
           fi
           echo "site_only=$site_only" >> "$GITHUB_OUTPUT"
+          # PR portable tests run on Linux plus real macOS smoke. Native/platform changes retain macOS E2E and Electron;
+          # only known portable UI, model and CI paths omit them; build/dependency inputs and unknown paths keep them.
+          # Non-PR runs always retain the complete macOS matrix.
+          macos_full=true
+          if [ "$EVENT" = pull_request ] && [ "$full_release" != true ] && [ -n "$changed" ] \
+            && ! grep -qvE '^(src/heinzel/(kernel/_(contributions|exposure)\.py$|modules/team/_(models|render)\.py$)|web/(src/|e2e/|openapi\.json$)|tests/(unit/|integration/|e2e/)|scripts/(main_batch|sync_template|ci_logs|scoped_checks|merge_gate|source_review|review_tier)\.py$|docs/|\.github/(workflows/ci\.yml$|[^/]*\.md$)|template/\.github/workflows/ci\.yml\.jinja$|[^/]*\.md$)' <<< "$changed" \
+            && ! grep -qE '^(tests/(e2e/.*(install|daemon|update|ui_service)|.*(macos|notifier|supervision|tool_install|session_io|reveal|acceptance))|web/e2e/.*(install|daemon|update|native|electron|desktop|macos|notifier)|docs/.*\.sh$)' <<< "$changed"; then
+            macos_full=false
+          fi
+          echo "macos_full=$macos_full" >> "$GITHUB_OUTPUT"
+          if [ -n "${BATCH_BASE:-}" ]; then
+            prose_push=false
+          fi
           if [ "$prose_push" = true ]; then
             echo "core=false" >> "$GITHUB_OUTPUT"
             core_work=false
-          elif [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ] \
+          elif [ "$full_release" = true ] || [ -n "${BATCH_BASE:-}" ] || [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ] \
             || [ -z "$changed" ] || grep -qvE '^plugins/' <<< "$changed"; then
             echo "core=true" >> "$GITHUB_OUTPUT"
             core_work=true
@@ -86,21 +193,22 @@ jobs:
           else
             echo "plugins=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$core_work" = true ] && { [ "$EVENT" != pull_request ] \
+          if [ "$core_work" = true ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] \
             || grep -qE '^(src/heinzel/modules/system/notify/macos/|scripts/notifier\.py$|scripts/tools\.toml$|Makefile$|pyproject\.toml$|\.github/workflows/ci\.yml$)' <<< "$changed"; }; then
             echo "notifier=true" >> "$GITHUB_OUTPUT"
           else
             echo "notifier=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$core_work" = true ] && { [ "$EVENT" != pull_request ] \
+          if [ "$core_work" = true ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] \
             || grep -qE '^(src/heinzel/kernel/|src/heinzel/__init__\.py$|src/heinzel/heads/|src/heinzel/modules/system/ui/|web/src/plugins/)' <<< "$changed"; }; then
             echo "contracts=true" >> "$GITHUB_OUTPUT"
           else
             echo "contracts=false" >> "$GITHUB_OUTPUT"
           fi
           # A push to main needs Electron only for the paths a pull request needs it for; an unknown diff runs it.
-          if [ "$core_work" = true ] && [ -f desktop/package.json ] && { [ "$EVENT" = schedule ] \
+          if [ "$core_work" = true ] && [ -f desktop/package.json ] && { [ "$full_release" = true ] || [ "$EVENT" = schedule ] \
             || [ "$EVENT" = workflow_dispatch ] || [ -z "$changed" ] \
+            || { [ "$EVENT" = pull_request ] && [ "$macos_full" = true ] && [ "$site_only" = false ]; } \
             || grep -qE '^(desktop/|Makefile$|scripts/sync_template\.py$|\.github/workflows/ci\.yml$)' <<< "$changed"; }; then
             echo "electron=true" >> "$GITHUB_OUTPUT"
           else
@@ -108,6 +216,8 @@ jobs:
           fi
 
   dependency-review:
+    permissions:
+      contents: read
     name: Dependency review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -121,6 +231,8 @@ jobs:
           fail-on-severity: moderate
 
   commits:
+    permissions:
+      contents: read
     name: Conventional commits
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -130,7 +242,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - name: Commit messages, pull request title and branch (conventional, no confidential terms)
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
@@ -140,20 +252,22 @@ jobs:
         run: make commits
 
   lint:
+    permissions:
+      contents: read
     name: Lint, contracts and types
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '' # Core focused structural
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
-          enable-cache: true
+          enable-cache: ${{ needs.changes.outputs.full_release == 'true' }}
           cache-dependency-glob: uv.lock
-          save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
+          save-cache: false
       - name: Require the confidential terms
         # Without the secret the confidentiality check would silently pass; pull requests from forks have no secrets.
         if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
@@ -163,11 +277,20 @@ jobs:
       - run: make lint
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
-      - run: make managed-backend-setup managed-backend-check # private Node process owner; core only
+      - run: make managed-backend-setup # private Node process owner
+      - run: make managed-backend-static
+        if: needs.changes.outputs.full_release != 'true'
+      - run: make managed-backend-check
+        if: needs.changes.outputs.full_release == 'true'
       - run: make typecheck
-      - run: make test-web # the web app's component tests (Vitest with axe); core only
+      - if: needs.changes.outputs.full_release == 'true'
+        run: make test-web # full candidate component suite
 
   secrets:
+    permissions:
+      contents: read
+    needs: admission
+    if: github.event_name != 'push' || needs.admission.outputs.full != 'false'
     name: Secret scan
     runs-on: ubuntu-24.04
     timeout-minutes: 3
@@ -176,28 +299,36 @@ jobs:
         with:
           fetch-depth: 0 # every commit, not just the tip
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false # The pinned-tool launcher has no Python dependencies.
       - name: Scan the history for credentials (gitleaks pinned in scripts/tools.toml, checksum verified)
+        env:
+          # Keep more decompressed Git base objects in memory during the history walk.
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.deltaBaseCacheLimit
+          GIT_CONFIG_VALUE_0: 768m
         run: make secrets
 
   setup:
+    permissions:
+      contents: read
     name: make setup (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.core == 'true'
-    # What a contributor runs on a fresh machine, on each platform scripts/tools.toml pins: `make setup` installs
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true') # Core candidate-only
+    # What a contributor runs on Linux architectures and Apple-silicon macOS: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 10
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'pull_request' }} # stop waiting for other setup cells on a red PR
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04","ubuntu-24.04-arm","macos-latest"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-latest","macos-15-intel"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' && '["ubuntu-24.04","ubuntu-24.04-arm"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -209,8 +340,10 @@ jobs:
         run: make tools-verify
 
   audit:
+    permissions:
+      contents: read
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '' # Core focused structural
     name: Dependency audit
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -218,34 +351,42 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
-          enable-cache: true
+          enable-cache: ${{ needs.changes.outputs.full_release == 'true' }}
           cache-dependency-glob: uv.lock
-          save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
+          save-cache: false
       - run: make audit
 
   test:
+    permissions:
+      contents: read
     needs: changes
-    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 10
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }} # a red cell is enough to know on a pull request
       matrix:
         os: [ubuntu-24.04]
-        python: ["3.12", "3.13", "3.14", "3.15"]
+        # Linux: oldest and newest Python on a pull request, every supported one on main, schedule and dispatch.
+        python: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '["3.12","3.15"]' || '["3.12","3.13","3.14","3.15"]') }}
+        # One shard per level on Linux too: the whole suite ran 4m42-6m50 against the 420 s cap on 4 vCPU and hit it
+        # under runner contention with every test passing (#585). Each shard keeps that same cap.
+        levels: [unit, integration]
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
-        # under that same cap. Newest Python on a pull request, oldest and newest on main and dispatches, all on schedule.
+        # under that same cap. PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.
         include:
-          ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+          ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+    env:
+      # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.
+      CI_NODE_GROUP_ARGUMENT: ${{ matrix.levels != 'integration' && '--group=build' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -253,14 +394,17 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install wheel dependencies
         if: matrix.python != '3.15'
-        run: uv sync --frozen --no-build --no-dev --group test
+        run: uv sync --frozen --no-build --no-dev --group test ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"}
       - name: Install Python 3.15 dependencies with the verified PyYAML compatibility build
         if: matrix.python == '3.15'
         run: |
-          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
+          uv sync --frozen --no-build --no-dev --group test ${CI_NODE_GROUP_ARGUMENT:+"$CI_NODE_GROUP_ARGUMENT"} --no-install-package pyyaml
           bash scripts/bootstrap-pyyaml.sh
+      - name: Select the locked wheel Node without executing it
+        if: matrix.levels != 'integration'
+        run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - name: Inspect the Linux user manager without starting services
-        if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.14'
+        if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.12' && matrix.levels == 'unit' # a cell every pull request runs
         env:
           UV_NO_SYNC: "1"
           PROBE_PREFIX: heinzel-probe-${{ github.run_id }}
@@ -274,7 +418,7 @@ jobs:
 
   coverage:
     needs: changes
-    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     name: Coverage
     # One measured run, in parallel with the matrix instead of after it.
     runs-on: ubuntu-24.04
@@ -288,13 +432,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.14"
-      - run: uv sync --frozen --no-build --no-dev --group test
+      - run: uv sync --frozen --no-build --no-dev --group test --group build
+      - name: Select the locked wheel Node without executing it
+        run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - run: make test
       - name: Record the total for the merge gate
         run: uv run --no-build coverage report --format=total --precision=2 > coverage-total.txt
@@ -313,8 +459,10 @@ jobs:
           MINIMUM_ORANGE: 80
 
   perf:
+    permissions:
+      contents: read
     needs: changes
-    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     name: Performance tests
     # Timing assertions (linear time) run here only: on a loaded developer machine they flake, so neither the
     # pre-push hook nor the test matrix runs them.
@@ -326,7 +474,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -336,8 +484,10 @@ jobs:
       - run: make test-perf
 
   site-tests:
+    permissions:
+      contents: read
     needs: changes
-    if: needs.changes.outputs.site_only == 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.site_only == 'true') # Core candidate-only
     name: Site tests
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -345,7 +495,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -356,36 +506,41 @@ jobs:
   e2e:
     name: End-to-end ${{ matrix.suite }} (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-latest] # macOS on pull requests too: main must not be the first place it runs
-        # Three jobs per OS: the tool-install and CLI tests, and the browser tests in two halves so none competes for or outlasts 3 vCPUs
-        suite: [cli, web-1, web-2]
+        os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
+        # Core E2E lanes: supervised cold starts, tool-install/CLI, and two browser halves; every lane blocks CI OK.
+        suite: [cli, supervised, web-1, web-2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # the install-from-git tests clone this repository
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
       - name: Reuse the browsers this lockfile's Playwright installs
-        if: startsWith(matrix.suite, 'web')
+        if: matrix.suite == 'supervised' || startsWith(matrix.suite, 'web')
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
+      - name: Use Ubuntu's primary archive for browser dependencies
+        if: matrix.os == 'ubuntu-24.04' && (matrix.suite == 'supervised' || startsWith(matrix.suite, 'web'))
+        run: sudo sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources
+      - name: Select the verified alternate mirror for Ubuntu browser dependencies
+        if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && matrix.os == 'ubuntu-24.04' && (matrix.suite == 'supervised' || startsWith(matrix.suite, 'web'))
+        run: make -f scripts/ubuntu_browser_mirror.mk
       - name: Install browser runtimes and host dependencies
-        if: startsWith(matrix.suite, 'web')
+        if: matrix.suite == 'supervised' || startsWith(matrix.suite, 'web')
         run: make test-browser-deps
       # Keep the full pytest traceback in CI logs when a browser interaction flakes; the step wrapper's default tail
       # can otherwise hide the test name and the action that timed out.
@@ -397,8 +552,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   template:
+    permissions:
+      contents: read
     name: Plugin template
-    needs: lint # the slowest offline check runs only once the cheap ones pass
+    needs: [lint, changes] # the slowest offline check runs only once the cheap ones pass
+    if: needs.changes.outputs.full_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -406,7 +564,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -414,16 +572,18 @@ jobs:
       - run: make template-test AUDIT=1
 
   notifier:
+    permissions:
+      contents: read
     name: Heinzel Notifier (macOS app)
     needs: changes
-    if: needs.changes.outputs.notifier == 'true'
+    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.notifier == 'true') # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - run: make notifier
       - name: Real launches leave no process behind (ADR 0043)
         run: make test-notifier
@@ -435,16 +595,18 @@ jobs:
           path: notifier.tar.gz
 
   macos-specific:
+    permissions:
+      contents: read
     name: macOS-specific tests
     needs: changes
-    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -459,21 +621,60 @@ jobs:
           VERBOSE: "1"
         run: make test-macos-specific
 
-  electron:
-    name: Electron (${{ matrix.os }})
+  macos-smoke:
+    permissions:
+      contents: read
+    name: macOS smoke
+    # Every app PR checks the CLI and macOS-only tests; full-macOS PRs also run the other platform jobs.
+    # Build the notifier so the real-launch tests cannot silently skip.
     needs: changes
-    if: needs.changes.outputs.electron == 'true'
-    runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, macos-latest]
+    if: needs.changes.outputs.full_release == 'true' && (github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    runs-on: macos-latest
+    timeout-minutes: 10
+    env:
+      UV_NO_SYNC: "1"
+      VERBOSE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          save-cache: false # pull requests reuse main's cache
+      - name: Install what the tests need, and no more
+        run: uv sync --frozen --no-build --no-dev --group test
+      - name: Build Heinzel Notifier for the real-launch tests
+        run: make notifier
+      - name: The CLI starts, and the tests that only exercise macOS behaviour pass (serially)
+        run: make test-macos-smoke
+      - name: Pack Heinzel Notifier for the wheel
+        run: tar -czf notifier.tar.gz -C src/heinzel/modules/system/notify/macos HeinzelNotifier.app
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: notifier
+          path: notifier.tar.gz
+
+  electron:
+    permissions:
+      contents: read
+    name: Electron (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.electron == 'true') # Core candidate-only
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require Apple silicon for macOS CI
+        if: runner.os == 'macOS'
+        run: make ci-macos-arm
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.19.0
@@ -500,22 +701,24 @@ jobs:
         run: make desktop-electron-native
 
   build:
+    permissions:
+      contents: read
     name: Build
-    needs: [changes, notifier]
-    if: ${{ !cancelled() && needs.changes.outputs.core == 'true' && needs.notifier.result != 'failure' }}
+    needs: [changes, notifier, macos-smoke]
+    if: ${{ !cancelled() && needs.changes.outputs.full_release == 'true' && needs.changes.outputs.core == 'true' && needs.notifier.result != 'failure' && needs.macos-smoke.result != 'failure' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-      - if: needs.notifier.result == 'success'
+      - uses: ./.github/actions/setup-uv
+      - if: needs.notifier.result == 'success' || needs.macos-smoke.result == 'success'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: notifier
       - name: Unpack Heinzel Notifier into the package
-        if: needs.notifier.result == 'success'
+        if: needs.notifier.result == 'success' || needs.macos-smoke.result == 'success'
         run: tar -xzf notifier.tar.gz -C src/heinzel/modules/system/notify/macos && rm notifier.tar.gz
       - run: make build
       - name: Check the wheel ships the changelog
@@ -525,7 +728,7 @@ jobs:
       - name: Check the wheel ships the web app
         run: unzip -l dist/heinzel-[0-9]*.whl | grep -q 'heinzel/heads/web/static/index.html'
       - name: Check the wheel ships Heinzel Notifier
-        if: needs.notifier.result == 'success'
+        if: needs.notifier.result == 'success' || needs.macos-smoke.result == 'success'
         run: unzip -l dist/heinzel-[0-9]*.whl | grep -q 'HeinzelNotifier.app/Contents/MacOS/notifier'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -533,16 +736,18 @@ jobs:
           path: dist/
 
   core-wheel:
+    permissions:
+      contents: read
     name: Plugin SDK candidate
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.core == 'true') # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - name: Build core artifacts for isolated consumer checks
         run: make build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -551,9 +756,11 @@ jobs:
           path: dist/heinzel-*.whl
 
   local-plugin-plan:
+    permissions:
+      contents: read
     name: Optional source plugins
     needs: changes
-    if: needs.changes.outputs.plugins == 'true' || needs.changes.outputs.contracts == 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.plugins == 'true' || needs.changes.outputs.contracts == 'true') # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -570,10 +777,10 @@ jobs:
           ref: ${{ vars.PLUGIN_COMPAT_REF || 'main' }}
           path: .plugin-tooling
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - id: plan
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE: ${{ needs.changes.outputs.batch_base || github.event.pull_request.base.sha || github.event.before }}
           CONTRACT: ${{ needs.changes.outputs.contracts == 'true' && 'core:plugin-api@1' || '' }}
           PLUGIN_SOURCE_ROOT: ${{ github.workspace }}
         run: |
@@ -611,7 +818,7 @@ jobs:
         with:
           name: plugin-core
           path: candidate
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: ./.github/actions/setup-uv
       - id: core
         env:
           CORE_URL: ${{ vars.CORE_ARTIFACT }}
@@ -638,9 +845,11 @@ jobs:
           fi
 
   consumer-plan:
+    permissions:
+      contents: read
     name: Public contract consumers
     needs: [changes, core-wheel]
-    if: needs.changes.outputs.contracts == 'true'
+    if: needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.contracts == 'true') # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -650,13 +859,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: helmut-hoffer-von-ankershoffen/heinzel-plugins
-          ref: ${{ vars.PLUGIN_COMPAT_REF || 'main' }}
+          ref: c64ccd4d203ac1f5d4ad3d1455b8ef6f3b5122cc # candidate dependency locks + ADR 0141 Issue fields; restore main after SDK publication
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: plugin-core
           path: candidate
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Check out this exact core revision's bootstrap action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .core-bootstrap
+          sparse-checkout: .github/actions/setup-uv
+          persist-credentials: false
+      - uses: ./.core-bootstrap/.github/actions/setup-uv
       - id: plan
         run: |
           make plan CONTRACT=core:plugin-api@1 CORE="$(realpath candidate/*.whl)" > plan.json
@@ -666,6 +882,8 @@ jobs:
           cat plan.json >> "$GITHUB_STEP_SUMMARY"
 
   consumer-check:
+    permissions:
+      contents: read
     name: Consumer (${{ matrix.name }})
     needs: consumer-plan
     if: needs.consumer-plan.outputs.selected == 'True'
@@ -678,22 +896,285 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: helmut-hoffer-von-ankershoffen/heinzel-plugins
-          ref: ${{ vars.PLUGIN_COMPAT_REF || 'main' }}
+          ref: c64ccd4d203ac1f5d4ad3d1455b8ef6f3b5122cc # candidate dependency locks + ADR 0141 Issue fields; restore main after SDK publication
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: plugin-core
           path: candidate
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Check out this exact core revision's bootstrap action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .core-bootstrap
+          sparse-checkout: .github/actions/setup-uv
+          persist-credentials: false
+      - uses: ./.core-bootstrap/.github/actions/setup-uv
       - name: Test one consumer against the built public contract
         env:
           PLUGIN: ${{ matrix.name }}
         run: make check NAME="$PLUGIN" CORE="$(realpath candidate/*.whl)"
 
+  stop-after-dependency-review:
+    name: Stop after dependency-review failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [dependency-review]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-commits:
+    name: Stop after commits failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [commits]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-lint:
+    name: Stop after lint failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [lint]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-secrets:
+    name: Stop after secrets failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [secrets]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-setup:
+    name: Stop after setup failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [setup]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-audit:
+    name: Stop after audit failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [audit]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  release-candidate-source:
+    name: Release candidate source
+    needs: changes
+    if: needs.changes.outputs.full_release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - name: Bind the actual tested tree to the exact release head
+        run: python3 -I scripts/release_candidate.py record --output reports/release-candidate.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-candidate-source
+          path: reports/release-candidate.json
+          if-no-files-found: error
+
+  # The quarantine lane (scripts/quarantine.py): tests/quarantine.toml takes a known flake out of every required job
+  # for at most 7 days. The required registry fails on an expired entry.
+  # The separate advisory quarantine lane runs on the full candidate.
+  quarantine-registry:
+    permissions:
+      contents: read
+    needs: admission
+    if: github.event_name != 'push' || needs.admission.outputs.full != 'false'
+    name: Quarantine registry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - run: make quarantine-check
+
+  quarantine-plan:
+    permissions:
+      contents: read
+    name: Quarantine plan
+    needs: changes
+    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      selected: ${{ steps.plan.outputs.selected }}
+      browsers: ${{ steps.plan.outputs.browsers }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - id: plan
+        run: make --no-print-directory quarantine-plan >> "$GITHUB_OUTPUT"
+
+  quarantine:
+    permissions:
+      contents: read
+    name: Quarantine (${{ matrix.os }})
+    needs: [changes, quarantine-plan]
+    # Non-blocking by design: not in `CI OK`, and `make test-quarantine` exits 0 whatever the tests do.
+    if: needs.changes.outputs.full_release == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true') && needs.quarantine-plan.outputs.selected == 'true') # Core candidate-only
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # an end-to-end entry may clone this repository
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          save-cache: false # the required jobs own the cache
+      - name: Use Ubuntu's primary archive for browser dependencies
+        if: matrix.os == 'ubuntu-24.04' && needs.quarantine-plan.outputs.browsers == 'true'
+        run: sudo sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources
+      - name: Install browser runtimes and host dependencies
+        if: needs.quarantine-plan.outputs.browsers == 'true'
+        run: make test-browser-deps
+      - name: Run only the quarantined tests, retrying a failure up to 3 times, and report each result
+        run: make test-quarantine
+        env:
+          VERBOSE: "1"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # read-only; as in the e2e job, for an end-to-end entry
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quarantine-report-${{ matrix.os }}
+          path: reports/quarantine.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  focused-tests:
+    name: Focused tests (${{ matrix.lane }})
+    needs: changes
+    if: needs.changes.outputs.focused_mode != ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.focused_matrix || '{"include":[]}') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: false
+          save-cache: false
+      - name: Use Ubuntu's primary archive for browser dependencies
+        if: runner.os == 'Linux' && matrix.kind == 'e2e'
+        run: sudo sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
+      - name: Install browser runtimes and host dependencies
+        if: matrix.kind == 'e2e'
+        run: make test-browser-deps
+      - name: Run the exact reviewed selection with fresh evidence
+        env:
+          FOCUSED_LANE: ${{ matrix.lane }}
+          FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}
+          FOCUSED_CI_PLANS_V2_0: ${{ vars.FOCUSED_CI_PLANS_V2_0 }}
+          FOCUSED_CI_PLANS_V2_1: ${{ vars.FOCUSED_CI_PLANS_V2_1 }}
+          FOCUSED_CI_PLANS_V2_2: ${{ vars.FOCUSED_CI_PLANS_V2_2 }}
+          FOCUSED_CI_PLANS_V2_3: ${{ vars.FOCUSED_CI_PLANS_V2_3 }}
+          BATCH_BASE: ${{ needs.changes.outputs.focused_base }}
+          PYTHONPATH: .
+        run: uv run --no-build --frozen --script scripts/focused_coverage.py
+      - name: Upload focused CI evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: focused-pr-evidence-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/focused-evidence/
+          if-no-files-found: error
+          retention-days: 7
+
   ci-ok:
+    permissions:
+      contents: read
     name: CI OK
-    if: always()
-    needs: [dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check]
+    if: always() && (github.event_name != 'push' || needs.admission.outputs.full != 'false')
+    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry, focused-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -706,4 +1187,25 @@ jobs:
               success | skipped) ;;
               *) echo "A required job ended with: $result"; exit 1 ;;
             esac
+          done
+      - name: Require successful focused workload and all owning checks
+        if: github.event_name == 'schedule' || needs.changes.outputs.focused_mode != ''
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
+          SCHEDULED_MAINTENANCE: ${{ needs.changes.outputs.scheduled_maintenance }}
+        run: |
+          required=(admission changes lint secrets audit quarantine-registry)
+          if [ "$EVENT" = schedule ]; then
+            if [ "$SCHEDULED_MAINTENANCE" != true ]; then
+              echo "::error::Scheduled maintenance was not selected"
+              exit 1
+            fi
+          else
+            required+=(focused-tests)
+            if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review); fi
+          fi
+          for job in "${required[@]}"; do
+            jq -e --arg job "$job" '.[$job].result == "success"' <<< "$RESULTS" >/dev/null \
+              || { echo "::error::Required $EVENT workload job did not pass: $job"; exit 1; }
           done

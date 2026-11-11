@@ -145,7 +145,7 @@ def test_help_lists_only_everyday_commands_and_says_how_many_are_hidden(app, mak
     assert "graph" not in top_level(app, "heinzel")
     kernel = make_kernel(builtins=True, **example_modules())
     expert = sum(let.audience == "expert" for _, let in kernel.lets(OperationLet) if kernel.available(let.func))
-    hidden = expert + 3  # and `hz system serve mcp | api | daemon`
+    hidden = expert + 5  # and the server plus MCP setup/check commands
     last = screen.strip().splitlines()[-1].strip()
     assert f"{hidden} more commands for experts are hidden; hz system expert on lists them." in screen
     assert last.startswith(f"v{__version__}")
@@ -246,9 +246,9 @@ def test_system_info_json(app):
     assert info["sections"] == {  # an empty section is left out
         "example": {"greeting": "hi"},
         "system.capability": {
-            "ai → ai-access:read": "claude-code → api.anthropic.com",
-            "ai.access → ai-access:read": "claude-code → api.anthropic.com",
+            "ai.access test → ai-access:read": "claude-code → api.anthropic.com",
             "org agenda → calendar:read": "optional: not connected: no adapter bound",
+            "org calendar → calendar:read": "optional: not connected: no adapter bound",
             "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
             "system.runner.chat send → agent-runner:read": "claude-code → api.anthropic.com",
         },
@@ -576,6 +576,7 @@ def test_commands_are_sorted(app):
         "modules",
         "notify",
         "plugin",
+        "prerequisite",
         "release",
         "runner",
         "serve",
@@ -584,6 +585,7 @@ def test_commands_are_sorted(app):
         "state",
         "theme",
         "ui",
+        "uninstall",
         "update",
     ]
     assert system.list_commands(None) == expected
@@ -637,8 +639,19 @@ def test_invalid_arguments_are_rejected_before_running(make_kernel):
 # Agent-ready: every operation's command takes --json. The servers are commands but no operations: they run until
 # stopped and print no result to format.
 # `hz chat` without a subcommand is the interactive chat, which prints no result either (ADR 0045).
-SERVERS = {"hz system serve api", "hz system serve daemon", "hz system serve mcp", "hz ui", "hz chat"}
+SERVERS = {
+    "hz system serve api",
+    "hz system serve daemon",
+    "hz system serve mcp",
+    "hz system serve mcp-check",
+    "hz system serve mcp-install-project",
+    "hz ui",
+    "hz ui serve",
+    "hz ui open",
+    "hz chat",
+}
 SETUP: set[str] = set()  # `hz setup` and `hz join` take --json too (ADR 0032, amended)
+DESKTOP = {"hz app install", "hz app uninstall", "hz app refresh"}  # Native lifecycle commands, not operations.
 
 
 def leaves_without_json(command, path: str = "hz") -> list[str]:
@@ -696,10 +709,10 @@ def test_every_operation_accepts_json(make_kernel):
             **example_modules(),
         )
     )
-    assert set(leaves_without_json(typer.main.get_command(app))) == SERVERS | SETUP
+    assert set(leaves_without_json(typer.main.get_command(app))) == SERVERS | SETUP | DESKTOP
     help_text = " ".join(click.unstyle(runner.invoke(app, ["--help"]).output).split())  # CI forces colours
     assert "Every operation accepts --json" in help_text
-    assert "Heinzelmännchen: helpers accelerating product teams" not in help_text
+    assert "Heinzelmännchen: Heinzels accelerating product teams" not in help_text
 
 
 def test_the_cli_loads_no_serving_stack():

@@ -33,17 +33,10 @@ from heinzel.heads._exposure import collapses, owns_path, restricts
 from heinzel.heads.cli import _playful, _update
 from heinzel.heads.cli._branding import TAGLINE
 from heinzel.heads.cli._branding import footer as brand_footer
-from heinzel.heads.cli._chat import CHAT, chat_callback
-from heinzel.heads.cli._chat import HELP as CHAT_HELP
 from heinzel.heads.cli._command import command
-from heinzel.heads.cli._discovery import command_tree
-from heinzel.heads.cli._join import HELP as JOIN_HELP
-from heinzel.heads.cli._join import JoinCommand
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
 from heinzel.heads.cli._serve import UI_HELP, serve_group, ui_command
-from heinzel.heads.cli._setup import HELP as SETUP_HELP
-from heinzel.heads.cli._setup import SetupCommands
 from heinzel.heads.cli._update import print_changelog_header, print_notice, start_check
 from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Origin, Progress, boot
 
@@ -79,14 +72,69 @@ class SortedGroup(TyperGroup):
         return sorted(self.commands)
 
 
-def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
+def build(kernel: Kernel, *, plain: bool = False, ui_only: bool = False) -> typer.Typer:
     """Build the `hz` command tree from the modules registered with the kernel.
 
     Args:
         kernel: The booted kernel.
         plain: Help without Rich markup and footer, for the generated reference docs: every command listed, the ones
             for experts marked.
+        ui_only: Build only the UI subtree for direct UI invocations; root discovery uses the complete tree.
     """
+    app, mount = _root(kernel, plain=plain)
+    if ui_only:
+        mount.ui(app)
+        return app
+    from heinzel.heads.cli._app import desktop_group  # noqa: PLC0415 - only full CLI trees need desktop management
+    from heinzel.heads.cli._chat import CHAT, chat_callback  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._chat import HELP as CHAT_HELP  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._join import HELP as JOIN_HELP  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._join import JoinCommand  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._setup import HELP as SETUP_HELP  # noqa: PLC0415 - only full CLI trees need these commands
+    from heinzel.heads.cli._setup import SetupCommands  # noqa: PLC0415 - only full CLI trees need these commands
+
+    footer = mount.footer
+    progress = mount.progress
+    count = mount(app, None) + Count(commands=5)  # setup, join, ui and two desktop app commands
+    # Top level by the maintainer's decision, the one exception to ADR 0018, and the only way to run a step (ADR 0032).
+    setup = SetupCommands(kernel, console, err_console).command()
+    app.command(name="setup", help=SETUP_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(setup)
+    # The invite line, `uvx heinzel join <team repository>`: the second exception to ADR 0018, by the maintainer.
+    join = JoinCommand(kernel, console, err_console).command()
+    app.command(name="join", help=JOIN_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(join)
+    # Top level too, by the maintainer's decision: the web head is how people who don't live in a terminal start
+    # (ADR 0039, "a web head: a React app served by the API head").
+    _mount_ui(app, mount.groups, kernel, err_console)
+    app.add_typer(desktop_group(kernel, console, err_console), name="app", cls=SortedGroup, rich_help_panel=CORE_PANEL)
+    # `hz chat` at the top level as well, by the maintainer's decision: the chat is what a person talks to, and
+    # without a subcommand it is the interactive chat (ADR 0045).
+    if chat := mount.groups.get(CHAT):
+        chat.callback(invoke_without_command=True, no_args_is_help=False, help=CHAT_HELP)(
+            chat_callback(kernel, console, err_console, progress)
+        )
+        # Only at the top level: one path for one group, so help, docs and messages all say `hz chat`.
+        if runner := mount.groups.get(CHAT.rpartition(".")[0]):
+            runner.registered_groups = [g for g in runner.registered_groups if g.typer_instance is not chat]
+        app.add_typer(chat, name="chat", cls=SortedGroup, rich_help_panel=CORE_PANEL)
+    if system := mount.groups.get("system"):
+        # Starting servers is for experts: agents and scripts are configured once, by someone who knows `hz`.
+        serve = serve_group(SortedGroup, footer, kernel, console, err_console)
+        for info in serve.registered_commands:
+            info.help = mount.help(info.help or inspect.getdoc(info.callback) or "", expert=True)
+        serve.info.help = mount.help(serve.info.help or "", expert=True)
+        system.add_typer(serve, cls=SortedGroup, hidden=mount.hides(expert=True))
+        servers = Count(len(serve.registered_commands), len(serve.registered_commands))
+        count += servers
+        mount.hint(system, mount.counts["system"] + servers)
+    if not plain:  # the generated reference documents the commands to use, not the old ones
+        mount.aliases(app)
+        hidden = 0 if mount.expert else count.expert
+        app.info.epilog = start_screen_footer(kernel, hidden)
+    return app
+
+
+def _root(kernel: Kernel, *, plain: bool) -> tuple[typer.Typer, "_Mount"]:
+    """Construct the shared root options and logging callback before mounting command schemas."""
     footer = None if plain else brand_footer(console.width)
     app = typer.Typer(
         name="hz",
@@ -103,6 +151,8 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
 
     def print_command_tree(ctx: typer.Context, value: bool) -> None:
         if value:
+            from heinzel.heads.cli._discovery import command_tree  # noqa: PLC0415 - only explicit schema discovery
+
             console.print(
                 json.dumps(command_tree(kernel, ctx), indent=2), markup=False, highlight=False, soft_wrap=True
             )
@@ -139,57 +189,84 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
     progress = ConsoleProgress(err_console, playful=_playful.allowed(kernel.settings, err_console))
     kernel.bind(Progress, progress)
     mount = _Mount(kernel, progress, footer, plain=plain, expert=kernel.settings.expert)
-    count = mount(app, None) + Count(commands=3)  # setup, join and ui: everyday, for everyone
-    # Top level by the maintainer's decision, the one exception to ADR 0018, and the only way to run a step (ADR 0032).
-    setup = SetupCommands(kernel, console, err_console).command()
-    app.command(name="setup", help=SETUP_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(setup)
-    # The invite line, `uvx heinzel join <team repository>`: the second exception to ADR 0018, by the maintainer.
-    join = JoinCommand(kernel, console, err_console).command()
-    app.command(name="join", help=JOIN_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(join)
-    # Top level too, by the maintainer's decision: the web head is how people who don't live in a terminal start
-    # (ADR 0039, "a web head: a React app served by the API head").
-    app.command(name="ui", help=UI_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(ui_command(kernel, err_console))
-    # `hz chat` at the top level as well, by the maintainer's decision: the chat is what a person talks to, and
-    # without a subcommand it is the interactive chat (ADR 0045).
-    if chat := mount.groups.get(CHAT):
-        chat.callback(invoke_without_command=True, no_args_is_help=False, help=CHAT_HELP)(
-            chat_callback(kernel, console, err_console, progress)
-        )
-        # Only at the top level: one path for one group, so help, docs and messages all say `hz chat`.
-        if runner := mount.groups.get(CHAT.rpartition(".")[0]):
-            runner.registered_groups = [g for g in runner.registered_groups if g.typer_instance is not chat]
-        app.add_typer(chat, name="chat", cls=SortedGroup, rich_help_panel=CORE_PANEL)
-    if system := mount.groups.get("system"):
-        # Starting servers is for experts: agents and scripts are configured once, by someone who knows `hz`.
-        serve = serve_group(SortedGroup, footer, kernel, console, err_console)
-        for info in serve.registered_commands:
-            info.help = mount.help(info.help or inspect.getdoc(info.callback) or "", expert=True)
-        serve.info.help = mount.help(serve.info.help or "", expert=True)
-        system.add_typer(serve, cls=SortedGroup, hidden=mount.hides(expert=True))
-        servers = Count(len(serve.registered_commands), len(serve.registered_commands))
-        count += servers
-        mount.hint(system, mount.counts["system"] + servers)
-    if not plain:  # the generated reference documents the commands to use, not the old ones
-        mount.aliases(app)
-        hidden = 0 if mount.expert else count.expert
-        app.info.epilog = start_screen_footer(kernel, hidden)
-    return app
+    return app, mount
+
+
+def _mount_ui(app: typer.Typer, groups: dict[str, typer.Typer], kernel: Kernel, error: Console) -> None:
+    ui = groups.get("ui") or typer.Typer()
+
+    @ui.callback(invoke_without_command=True, no_args_is_help=False, help=UI_HELP)
+    def group(
+        ctx: typer.Context,
+        port: Annotated[int | None, typer.Option(hidden=True)] = None,
+        browser: Annotated[bool, typer.Option("--browser/--no-browser", hidden=True)] = True,
+        supervised: Annotated[str | None, typer.Option(hidden=True)] = None,
+    ) -> None:
+        # Published service launchers retain this exact legacy vector until explicitly reinstalled.
+        if supervised is not None:
+            if ctx.invoked_subcommand is not None or port is None or browser:
+                problem = "Use `hz ui serve` for foreground serving."
+                raise typer.BadParameter(problem)
+            error.print("The legacy foreground flags are deprecated; use `hz ui serve`.")
+            ui_command(kernel, error)(ctx, port=port, browser=False, supervised=supervised)
+        elif port is not None or getattr(ctx.get_parameter_source("browser"), "name", None) == "COMMANDLINE":
+            # Published updaters trial and exec the older foreground vector; socket handoff still validates in web.
+            if ctx.invoked_subcommand is not None:
+                problem = "Use `hz ui serve` for foreground serving."
+                raise typer.BadParameter(problem)
+            error.print("The legacy foreground flags are deprecated; use `hz ui serve`.")
+            ui_command(kernel, error)(ctx, port=port, browser=browser)
+        elif ctx.invoked_subcommand is None:
+            typer.echo(ctx.get_help())
+
+    ui.command("serve", help="Run the web server in the foreground; Ctrl-C stops it.")(ui_command(kernel, error))
+    ui.command("open", help="Open the owned web service, or run in the foreground when none is installed.")(
+        ui_command(kernel, error, open_existing=True)
+    )
+    if "ui" not in groups:
+        app.add_typer(ui, name="ui", cls=SortedGroup, rich_help_panel=CORE_PANEL)
+
+
+def show(kernel: Kernel, output: Console) -> None:
+    """Render the interactive overview on demand, retaining the CLI's existing call boundary."""
+    from heinzel.heads.cli._overview import show as render_overview  # noqa: PLC0415 - only the bare interactive command
+
+    render_overview(kernel, output)
 
 
 def main() -> None:
     """Entry point of the `hz` executable."""
+    if sys.argv[1:3] == ["system", "uninstall"]:
+        from heinzel.heads.cli._uninstall import main as uninstall_main  # noqa: PLC0415 - parse maintenance before discovery
+
+        sys.exit(uninstall_main(sys.argv[3:]))
     try:
         kernel = boot()
     except (HeinzelError, ValidationError) as exc:
         err_console.print(message("Configuration error:", str(exc)))
         err_console.print("Check the files `hz system config show` lists and your HZ_* environment variables.")
         sys.exit(EX_CONFIG)
-    # Discovery stays offline; ordinary invocations check in the background at most once an hour (ADR 0031).
-    check = None if "--command-tree" in sys.argv[1:] else start_check(kernel)
-    if not sys.argv[1:]:
-        _banner(kernel)  # the bare `hz`: the start screen follows
+    bare = not sys.argv[1:]
+    interactive = bare and sys.stdout.isatty() and sys.stdin.isatty()
+    # Interactive status and discovery stay offline.
+    check = None if interactive or "--command-tree" in sys.argv[1:] else start_check(kernel)
+    if bare:
+        _banner(kernel)
+    if interactive:
+        show(kernel, console)
+        console.print()
+        build(kernel)(args=["--help"], standalone_mode=False)
+        return
     try:
-        build(kernel)()
+        # Root discovery/help/version still build the complete tree. Click parses the same UI group,
+        # including service subcommands and invalid options, for an invocation beginning with `ui`.
+        ui_only = (
+            sys.argv[1:2] == ["ui"]
+            and any(record.module.name == "ui" for record in kernel.children(None))
+            and not any(arg in {"--help", "-h", "--command-tree", "--version", "-V"} for arg in sys.argv[2:])
+        )
+        app = build(kernel, ui_only=True) if ui_only else build(kernel)
+        app()
     finally:
         if check is not None:
             check.wait()
@@ -242,14 +319,29 @@ class _Mount:
         for _, entry in sorted(entries, key=lambda pair: pair[0]):
             match entry:
                 case OperationLet():
+                    expert = entry.audience == "expert"
+                    summary = self.help(entry.summary, expert=expert)
+                    detail = None
+                    if not self.plain and (qualname, entry.name) == ("system", "update"):
+                        detail = inspect.getdoc(entry.func)
                     parent.command(
-                        name=entry.name, help=self.help(entry.summary, expert=entry.audience == "expert"),
-                        epilog=footer, hidden=self.hides(expert=entry.audience == "expert"),
-                    )(self._command(entry, (qualname, entry.name)))  # fmt: skip
+                        name=entry.name,
+                        help=detail or summary,
+                        short_help=summary if detail else None,
+                        epilog=footer,
+                        hidden=self.hides(expert=expert),
+                    )(self._command(entry, (qualname, entry.name)))
                     count += _count(entry)
                 case ModuleRecord():
                     count += self._module(parent, qualname, entry)
         return count
+
+    def ui(self, app: typer.Typer) -> None:
+        """Mount the complete UI subtree without constructing unrelated operation schemas."""
+        for record in self.kernel.children(None):
+            if record.module.name == "ui":
+                self._module(app, None, record)
+        _mount_ui(app, self.groups, self.kernel, err_console)
 
     def hides(self, *, expert: bool) -> bool:
         """Whether a command or group for experts (when `expert`) is hidden in this tree."""

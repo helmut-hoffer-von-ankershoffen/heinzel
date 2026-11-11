@@ -3,7 +3,7 @@
 // same split `hz --help` makes (ADR 0041). A screen that isn't listed still opens by its URL.
 import { Boxes, type LucideIcon, Network, Shapes, Share2, Users, Workflow } from "lucide-react";
 import type { SchemaExpertMode } from "@/api/client";
-import { HeinzelFace } from "@/components/HeinzelFace";
+import { HeinzelTeam } from "@/components/HeinzelTeam";
 import type { MessageKey } from "@/i18n";
 
 /** An operation as `hz system expert` names it: its module's qualified name and its own, e.g. `heinzel:graph`. */
@@ -22,7 +22,8 @@ export const CONTRACTS_SECTION: MessageKey = "nav.contracts";
 // The navigation holds only what people work with to get their work done. hz itself (the doctor, daemon jobs,
 // plugins) lives in the account menu and in Settings; its screens still open by URL (`/doctor`).
 export const sections: NavSection[] = [
-  { label: "nav.heinzelmaennchen", to: "/heinzel", icon: HeinzelFace, operation: "heinzel:list", items: [] },
+  // Several Heinzels: the team glyph, where one Heinzel (a node, a contribution) gets the single face.
+  { label: "nav.heinzelmaennchen", to: "/heinzel", icon: HeinzelTeam, operation: "heinzel:list", items: [] },
   {
     label: CONTRACTS_SECTION,
     items: [

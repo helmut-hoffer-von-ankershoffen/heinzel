@@ -11,6 +11,8 @@ Instructions for coding agents and humans working on [[ project_name ]], a plugi
 3. **Every change is tested** as `unit`, `integration` or `e2e`; the suite refuses anything else.
 4. **Conventional commits**, always. Versions and the changelog are derived from them.
 5. **Review before you finish** with the `review` skill and resolve every Critical and Required finding.
+6. **macOS CI uses Apple silicon (ARM64) only.** Use `macos-latest`, retain the bootstrap architecture check,
+   and never add Intel macOS runner labels. Preserve Python-version, native and browser checks on ARM.
 
 ## Commands
 

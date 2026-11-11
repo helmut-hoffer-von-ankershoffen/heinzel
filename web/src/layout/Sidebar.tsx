@@ -23,12 +23,12 @@ import {
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { NavLink, useLocation } from "react-router";
+import { Link, matchPath, NavLink, useLocation } from "react-router";
 import { useContracts, useExpert, useNavigation, useProfile, useSetExpert } from "@/api/queries";
 import { ICONS, StatusItems, useEffectRunner } from "@/components/Contributions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { contributionPath } from "@/lib/navigation";
+import { contributionIsActive, contributionPath } from "@/lib/navigation";
 import { placePopover } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { ViewSlot } from "@/plugins/Views";
@@ -62,17 +62,28 @@ const railLink = ({ isActive }: { isActive: boolean }) =>
 /** A line of the sidebar with a full-width hairline under it, like the account line's above it. */
 const HAIRLINE_BELOW = "-mx-2 flex shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 px-3";
 
-type Props = { collapsed: boolean; onToggle: () => void; onSearch: () => void; onNotifications: () => void };
+type Props = {
+  collapsed: boolean;
+  /** The desktop app draws no native title bar: the first line becomes its 44 px row, after the traffic lights. */
+  titlebar?: boolean;
+  onToggle: () => void;
+  onSearch: () => void;
+  onNotifications: () => void;
+};
 
-export function Sidebar({ collapsed, onToggle, onSearch, onNotifications }: Props) {
+/** The desktop title bar row's segment over the sidebar: draggable, its controls not (index.css). */
+const TITLEBAR_ROW =
+  "-mx-2 flex h-(--titlebar-height) shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20";
+
+export function Sidebar({ collapsed, titlebar = false, onToggle, onSearch, onNotifications }: Props) {
   return collapsed ? (
-    <Rail onToggle={onToggle} onSearch={onSearch} onNotifications={onNotifications} />
+    <Rail titlebar={titlebar} onToggle={onToggle} onSearch={onSearch} onNotifications={onNotifications} />
   ) : (
-    <Full onToggle={onToggle} onSearch={onSearch} onNotifications={onNotifications} />
+    <Full titlebar={titlebar} onToggle={onToggle} onSearch={onSearch} onNotifications={onNotifications} />
   );
 }
 
-function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">) {
+function Full({ titlebar, onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">) {
   const contracts = useContracts();
   const expert = useExpert();
   const [folded, toggle] = useFolded();
@@ -85,37 +96,91 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
   );
   return (
     <div className="flex h-full flex-col px-2">
-      {/* The same height and hairline as the main column's top bar, so both lines run across the window. */}
-      <div className={cn(HAIRLINE_BELOW, "h-12")}>
-        <ThemeLogo />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggle}
-          aria-expanded
-          aria-label={t("nav.collapse")}
-          title={t("nav.collapse")}
-          className="ml-auto text-icon"
-        >
-          <PanelLeftClose aria-hidden />
-        </Button>
-      </div>
-      <div className={cn(HAIRLINE_BELOW, "h-12 justify-evenly")}>
-        <NavLink to="/" end className={topButton} aria-label={t("nav.home")} title={t("nav.home")}>
-          <Home aria-hidden />
-        </NavLink>
-        <BellButton onOpen={onNotifications} className={topButton({ isActive: false })} />
-        <button
-          type="button"
-          onClick={onSearch}
-          aria-keyshortcuts="Meta+K Control+K"
-          aria-label={t("search.open")}
-          title={`${t("search.open")} (⌘K)`}
-          className={topButton({ isActive: false })}
-        >
-          <Search aria-hidden />
-        </button>
-      </div>
+      {titlebar ? (
+        <>
+          {/* The window's title bar row: the traffic lights, then the toggle where it never moves, Home, Bell and Search.
+              The theme's lockup follows below it and carries the name the window chrome no longer draws. */}
+          <div data-titlebar className={cn(TITLEBAR_ROW, "pr-3 pl-[calc(var(--titlebar-inset-left)+0.25rem)]")}>
+            {/* The top bar's icon button, with a 44 px touch target around its 36 px. */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onToggle}
+              aria-expanded
+              aria-label={t("nav.collapse")}
+              title={t("nav.collapse")}
+              className="relative shrink-0 text-icon before:absolute before:-inset-1 before:content-['']"
+            >
+              <PanelLeftClose aria-hidden />
+            </Button>
+            <NavLink to="/" end className={topButton} aria-label={t("nav.home")} title={t("nav.home")}>
+              <Home aria-hidden />
+            </NavLink>
+            <BellButton onOpen={onNotifications} className={topButton({ isActive: false })} />
+            <button
+              type="button"
+              onClick={onSearch}
+              aria-keyshortcuts="Meta+K Control+K"
+              aria-label={t("search.open")}
+              title={`${t("search.open")} (⌘K)`}
+              className={topButton({ isActive: false })}
+            >
+              <Search aria-hidden />
+            </button>
+          </div>
+          <div className={cn(HAIRLINE_BELOW, "h-12")}>
+            <Link
+              to="/"
+              aria-label={t("nav.brand")}
+              className="ml-0.5 flex min-w-0 items-center rounded-lg px-1 py-1 transition-colors hover:bg-accent/70"
+            >
+              <ThemeLogo />
+            </Link>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* The same height and hairline as the main column's top bar, so both lines run across the window. The brand
+          is the way home, named by its wordmark; its mark starts where the navigation's icons do. */}
+          <div className={cn(HAIRLINE_BELOW, "h-12")}>
+            <Link
+              to="/"
+              aria-label={t("nav.brand")}
+              className="ml-0.5 flex min-w-0 items-center rounded-lg px-1 py-1 transition-colors hover:bg-accent/70"
+            >
+              <ThemeLogo />
+            </Link>
+            {/* The top bar's icon button, with a 44 px touch target around its 36 px. */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onToggle}
+              aria-expanded
+              aria-label={t("nav.collapse")}
+              title={t("nav.collapse")}
+              className="relative ml-auto shrink-0 text-icon before:absolute before:-inset-1 before:content-['']"
+            >
+              <PanelLeftClose aria-hidden />
+            </Button>
+          </div>
+          <div className={cn(HAIRLINE_BELOW, "h-12 justify-evenly")}>
+            <NavLink to="/" end className={topButton} aria-label={t("nav.home")} title={t("nav.home")}>
+              <Home aria-hidden />
+            </NavLink>
+            <BellButton onOpen={onNotifications} className={topButton({ isActive: false })} />
+            <button
+              type="button"
+              onClick={onSearch}
+              aria-keyshortcuts="Meta+K Control+K"
+              aria-label={t("search.open")}
+              title={`${t("search.open")} (⌘K)`}
+              className={topButton({ isActive: false })}
+            >
+              <Search aria-hidden />
+            </button>
+          </div>
+        </>
+      )}
       <nav aria-label={t("nav.label")} className="mt-2 min-h-0 flex-1 overflow-y-auto">
         <ul className="flex flex-col gap-0.5">
           {listedSections.map((section) => (
@@ -168,7 +233,8 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
         </ul>
         <ProviderNavigation />
       </nav>
-      <div className="mt-4 flex shrink-0 flex-col">
+      {/* Spaced from the navigation only while it holds something: an empty slot leaves no band behind. */}
+      <div className="not-empty:mt-4 flex shrink-0 flex-col">
         <ViewSlot slot="sidebar" />
         <StatusItems slot="sidebar" className="pb-1" />
       </div>
@@ -205,24 +271,46 @@ function useFolded(): [Set<string>, (label: string) => void] {
   return [folded, toggle];
 }
 
-function Rail({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">) {
+function Rail({ titlebar, onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">) {
   const expert = useExpert();
   return (
     <div className="flex h-full flex-col items-center">
-      <div className="flex h-12 w-full shrink-0 items-center justify-center border-b-[0.5px] border-foreground/20">
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={false}
-          aria-label={t("nav.expand")}
-          title={t("nav.expand")}
-          className="group flex size-9 items-center justify-center rounded-lg text-icon transition-colors hover:bg-accent/70 [&_svg]:size-(--icon)"
+      {titlebar ? (
+        // The title bar row over the rail: the expand button sits after the traffic lights and overhangs the main
+        // column, whose header starts after it (--titlebar-main-start). The rail's mark row is not needed then.
+        <div
+          data-titlebar
+          // It reaches over the rail's right border and the main column's start up to the top bar, so the row stays one
+          // surface and drags there, while no later drag box covers the expand button (index.css).
+          className="relative z-10 h-(--titlebar-height) w-[calc(100%+1px+var(--titlebar-main-start))] self-start shrink-0 border-b-[0.5px] border-foreground/20 bg-sidebar"
         >
-          {/* The theme's mark until the pointer or focus is on it; then what a click does. */}
-          <ThemeLogo mark className="size-7 group-hover:hidden group-focus-visible:hidden" />
-          <PanelLeftOpen aria-hidden className="hidden group-hover:block group-focus-visible:block" />
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={false}
+            aria-label={t("nav.expand")}
+            title={t("nav.expand")}
+            className="absolute top-1 left-[max(0.625rem,var(--titlebar-inset-left))] z-10 flex size-9 items-center justify-center rounded-lg text-icon transition-colors hover:bg-accent/70 [&_svg]:size-(--icon)"
+          >
+            <PanelLeftOpen aria-hidden />
+          </button>
+        </div>
+      ) : (
+        <div className="flex h-12 w-full shrink-0 items-center justify-center border-b-[0.5px] border-foreground/20">
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={false}
+            aria-label={t("nav.expand")}
+            title={t("nav.expand")}
+            className="group flex size-9 items-center justify-center rounded-lg text-icon transition-colors hover:bg-accent/70 [&_svg]:size-(--icon)"
+          >
+            {/* The theme's mark until the pointer or focus is on it; then what a click does. */}
+            <ThemeLogo mark className="size-7 group-hover:hidden group-focus-visible:hidden" />
+            <PanelLeftOpen aria-hidden className="hidden group-hover:block group-focus-visible:block" />
+          </button>
+        </div>
+      )}
       <div className="flex w-full shrink-0 flex-col items-center gap-1 border-b-[0.5px] border-foreground/20 py-2">
         <NavLink to="/" end className={railLink} aria-label={t("nav.home")} title={t("nav.home")}>
           <Home aria-hidden />
@@ -267,6 +355,17 @@ function ProviderNavigation({ compact = false }: { compact?: boolean }) {
           const Icon = ICONS[entry.icon];
           const effect = entry.sidebar;
           if (!effect) return null;
+          const active =
+            effect.kind === "navigate"
+              ? contributionIsActive(
+                  effect.path,
+                  location,
+                  matchPath(
+                    { path: new URL(effect.path, "https://navigation.invalid").pathname, end: true },
+                    location.pathname,
+                  ) !== null,
+                )
+              : false;
           const content = (
             <>
               <Icon aria-hidden />
@@ -276,15 +375,15 @@ function ProviderNavigation({ compact = false }: { compact?: boolean }) {
           return (
             <li key={entry.id}>
               {effect.kind === "navigate" ? (
-                <NavLink
+                <Link
                   to={contributionPath(effect.path, location)}
-                  end
-                  className={compact ? railLink : link}
+                  className={compact ? railLink({ isActive: active }) : link({ isActive: active })}
                   title={entry.title}
                   aria-label={compact ? entry.title : undefined}
+                  aria-current={active ? "page" : undefined}
                 >
                   {content}
-                </NavLink>
+                </Link>
               ) : (
                 <button
                   type="button"
@@ -394,7 +493,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
         "relative flex items-center gap-1",
         // The compact controls determine their own height; the divider stays above the whole cluster.
         "shrink-0 border-t-[0.5px] border-foreground/20 [&>button]:shrink-0",
-        compact ? "w-full flex-col gap-1 py-2" : "-mx-2 mt-2 h-[60px] px-2",
+        compact ? "w-full flex-col gap-1 py-2" : "-mx-2 h-12 px-2",
       )}
     >
       {open &&
@@ -429,7 +528,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
             <MenuLink to="?panel=changelog" icon={FileClock} onSelect={close}>
               {t("account.changelog")}
             </MenuLink>
-            <MenuLink href={`${REPO}#readme`} icon={Info} onSelect={close}>
+            <MenuLink href="https://heinzel.team/guides/first-steps/" icon={Info} onSelect={close}>
               {t("account.learn")}
             </MenuLink>
           </div>,
@@ -470,8 +569,6 @@ function Footer({ compact = false }: { compact?: boolean }) {
   );
 }
 
-const REPO = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
-
 type MenuLinkProps = {
   icon: LucideIcon;
   onSelect: () => void;
@@ -479,7 +576,7 @@ type MenuLinkProps = {
   children: React.ReactNode;
 } & ({ to: string; href?: never } | { href: string; to?: never });
 
-/** One row of the account menu: a screen of the app, or a page on GitHub in a new tab. */
+/** One row of the account menu: a screen of the app, or an external page in a new tab. */
 function MenuLink({ icon: Icon, onSelect, shortcut, children, ...target }: MenuLinkProps) {
   const row =
     "flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-ui text-foreground/90 transition-colors hover:bg-accent [&_svg]:size-(--icon) [&_svg]:shrink-0 [&_svg]:stroke-[1.75] [&_svg]:text-icon";

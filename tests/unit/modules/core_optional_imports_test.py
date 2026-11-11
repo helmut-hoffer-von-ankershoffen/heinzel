@@ -27,19 +27,20 @@ def test_core_cli_and_private_api_discovery_without_provider_sdks(tmp_path):
         "PYTHONPATH": str(tmp_path),
         "HZ_PLUGINS_ENABLED": "false",
     }
-    cli = subprocess.run(
-        [sys.executable, "-c", "import sys; sys.argv=['hz', '--version']; from heinzel.heads.cli import main; main()"],
-        cwd=tmp_path,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-    )
-    assert cli.returncode == 0, cli.stderr
-    assert "hz " in cli.stdout
+    # One fresh interpreter for both checks: each start imports the whole core, and two of them made this the
+    # slowest unit test (over its 5 s budget on a loaded machine).
     source = """\
+import contextlib, io, sys
 from decimal import Decimal
+from heinzel.heads.cli import main
+out = io.StringIO()
+sys.argv = ['hz', '--version']
+with contextlib.redirect_stdout(out):
+    try:
+        main()
+    except SystemExit as exit:
+        assert exit.code in (None, 0), exit.code
+assert 'hz ' in out.getvalue(), out.getvalue()
 from heinzel import HeinzelError
 from heinzel.kernel import Kernel, discover
 from heinzel.kernel._exposure import exposed
@@ -56,7 +57,7 @@ except HeinzelError as error:
 else:
     raise AssertionError('selected provider must fail without its optional SDK')
 """
-    discovery = subprocess.run(
+    checked = subprocess.run(
         [sys.executable, "-c", source],
         cwd=tmp_path,
         env=env,
@@ -65,4 +66,4 @@ else:
         check=False,
         timeout=30,
     )
-    assert discovery.returncode == 0, discovery.stderr
+    assert checked.returncode == 0, checked.stderr

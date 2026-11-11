@@ -41,8 +41,21 @@ if [[ "$next" == "$current" ]] && git rev-parse -q --verify "refs/tags/v$current
 fi
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null && die "tag $tag already exists"
 
+# This script is shared with plugin repositories. Only the Core distribution needs the app's release contract.
+project="$(uv version --color never)"
+foreground_patch="$work/foreground-ui.patch"
+if [[ "${project%% *}" == "heinzel" ]]; then
+  uv run --frozen --no-sync --no-build python -I scripts/prepare_release_ui.py "$next" > "$foreground_patch"
+fi
+
 echo "Preparing $tag (was $current)" >&2
 git switch --quiet --create "release/$tag"
+if [[ -s "$foreground_patch" ]]; then
+  git apply --index "$foreground_patch"
+fi
+if [[ "${project%% *}" == "heinzel" ]]; then
+  uv run --frozen --no-sync --no-build python -I scripts/acceptance/run_acceptance.py --check-foreground-ui "$next" >&2
+fi
 if [[ "$next" != "$current" ]]; then
   uv run --frozen --no-sync --no-build bump-my-version bump --new-version "$next" --no-commit --no-tag --allow-dirty >&2
 fi
@@ -55,6 +68,8 @@ if [[ -f CHANGELOG.md ]]; then cp CHANGELOG.md "$work/previous.md"; fi
 uv run --frozen --no-sync --no-build git-cliff --offline --tag "$tag" --output CHANGELOG.md
 uv run --frozen --no-sync --no-build python scripts/changelog_intros.py "$work/previous.md" CHANGELOG.md --version "$next" \
   --intro "${INTRO:-}"
+# A combine's squash commit lists its members in the body; give each its own entry, and the intro their titles.
+uv run --frozen --no-sync --no-build python scripts/changelog_combines.py CHANGELOG.md --version "$next"
 git add --update
 git commit --quiet --message "chore(release): $tag"
 

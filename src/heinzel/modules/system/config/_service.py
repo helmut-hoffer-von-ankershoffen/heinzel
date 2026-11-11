@@ -20,7 +20,16 @@ from pydantic_core import to_jsonable_python
 from tomlkit.exceptions import ParseError
 
 from heinzel import Config, ConfigEditor, ConfigListChange, CurrentUser, HeinzelError, Kernel, ModuleSettings
-from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, jsonable, toml_value, user_config_dir
+from heinzel.kernel import (
+    FILENAME,
+    PROJECT_FILENAME,
+    ConfigFile,
+    env_prefix,
+    feature_catalog,
+    jsonable,
+    toml_value,
+    user_config_dir,
+)
 from heinzel.modules.system.config._models import (
     ConfigFileInfo,
     ConfigReport,
@@ -62,10 +71,13 @@ class ConfigService(ConfigEditor):
 
     def report(self) -> ConfigReport:
         """The files Heinzelmännchen reads, every setting in effect, and whether a file can be revealed here."""
-        # Read now, not as booted: `hz ui` keeps running while it and terminals change the files.
+        # Read now, not as booted: `hz ui serve` keeps running while it and terminals change the files.
         config = self._kernel.config.reread()
         sections = [(section, _fresh(config, section, settings)) for section, settings in self._kernel.settings_of()]
         schemas = {type(settings): setting_schemas(type(settings)) for _, settings in sections}
+        for section, settings in sections:
+            if section == "hz" and "features" in schemas[type(settings)]:
+                schemas[type(settings)]["features"]["x-feature-catalog"] = feature_catalog()
         return ConfigReport(
             files=[self._file(file) for file in config.files],
             can_reveal=self.revealer.unsupported() is None,

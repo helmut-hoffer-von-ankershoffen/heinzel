@@ -17,7 +17,9 @@ def _run(tmp_path: Path, workers: int) -> list[list[str]]:
     case = tmp_path / f"case-{workers}"
     tests = case / "tests"
     tests.mkdir(parents=True)
-    conftest = (root / "tests" / "conftest.py").read_text()
+    # Only the scheduling plugin, not the root conftest: the three nested workers then start without importing heinzel,
+    # which took this run past its 10 s guard on a loaded macOS runner (bead 0bb). The hooks are the same code.
+    conftest = (root / "tests" / "_e2e_schedule.py").read_text()
     (tests / "conftest.py").write_text(
         conftest
         + "\n\ndef pytest_collection_finish(session):\n"
@@ -40,9 +42,25 @@ def _run(tmp_path: Path, workers: int) -> list[list[str]]:
         "LANG": "C",
         "PYTHONDONTWRITEBYTECODE": "1",
         "HZ_ORDER_DIR": str(case),
+        # Only xdist is needed: without plugin autoload the four nested interpreters skip loading every other plugin.
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
     }
     guard = GuardedCommand(
-        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-m", "e2e", "-n", str(workers), "-q", "tests"],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-p",
+            "xdist",
+            "-p",
+            "no:cacheprovider",
+            "-m",
+            "e2e",
+            "-n",
+            str(workers),
+            "-q",
+            "tests",
+        ],
         env=env,
         cwd=case,
     )

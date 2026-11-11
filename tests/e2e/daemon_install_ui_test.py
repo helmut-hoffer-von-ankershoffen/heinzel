@@ -6,7 +6,6 @@ The service is the real `DaemonService` with every effect replaced: a recording 
 
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -20,34 +19,30 @@ from tests.e2e._browser_result import check_browser, require_browser, wait_brows
 from tests.e2e._mounted import MountedServer
 from tests.e2e.docs_test import GuardedCommand
 from tests.e2e.durable_five_minute_journey_test import BROWSER_CACHE, web_build
+from tests.fixtures.daemon_manager import RecordedManager, record_tool
 
 pytestmark = pytest.mark.e2e
 ROOT = Path(__file__).resolve().parents[2]
 
 
-class FakeLaunchd:
+class FakeLaunchd(RecordedManager):
     """`launchctl` and `uv` as one recording runner; `bootstrap` waits for the browser to release it."""
 
     def __init__(self, bin_dir: Path, release: Path) -> None:
-        self.bin_dir = bin_dir
+        super().__init__(bin_dir)
         self.release = release
-        self.loaded = False
-        self.verbs: list[str] = []
+
+    @property
+    def mutations(self) -> list[str]:
+        """Mutations only; ownership inspection also queries the manager's identity and registration."""
+        return [command.split()[0] for command in super().verbs()]
 
     def __call__(self, command):
-        if command[1:] == ["tool", "dir", "--bin"]:
-            return subprocess.CompletedProcess(command, 0, f"{self.bin_dir}\n", "")
-        verb = next(part for part in command[1:] if not part.startswith("-"))
-        self.verbs.append(verb)
-        if verb == "bootstrap":
+        if command[1:2] == ["bootstrap"]:
             deadline = time.monotonic() + 60
             while not self.release.exists() and time.monotonic() < deadline:
                 time.sleep(0.05)
-            self.loaded = True
-        elif verb == "bootout":
-            self.loaded = False
-        code = 0 if verb != "print" or self.loaded else 113
-        return subprocess.CompletedProcess(command, code, "", "")
+        return super().__call__(command)
 
 
 def _fake_service(make_kernel, tmp_path, session):
@@ -57,6 +52,7 @@ def _fake_service(make_kernel, tmp_path, session):
     (bin_dir / "hz").touch()
     release = tmp_path / "release"
     launchd = FakeLaunchd(bin_dir, release)
+    installation = record_tool(tmp_path / "tools/heinzel", bin_dir)
     settings = Settings(
         data_dir=tmp_path / "data",
         cache_dir=tmp_path / "cache",
@@ -78,7 +74,10 @@ def _fake_service(make_kernel, tmp_path, session):
         install_notifier=lambda: None,
         birth_fence=lambda: None,
         process_birth=lambda: None,
+        quiescence_installation=installation,
+        quiescence_probe=launchd.probe,
     )
+    launchd.attach(service)
     kernel.bind(DaemonService, service)
     return kernel, launchd, release, units
 
@@ -121,8 +120,8 @@ def test_mounted_footer_installs_and_removes_the_daemon(make_kernel, tmp_path, m
         result = json.loads(stdout.strip().splitlines()[-1])
         assert result["session"] == session
         if session == "Aqua":
-            assert launchd.verbs.count("bootstrap") == 1  # one click, one install, whatever the double click did
+            assert launchd.mutations.count("bootstrap") == 1  # one click, one install, whatever the double click did
             assert not (units / f"{LABEL}.plist").exists()  # and the uninstall at the end removed it again
         else:
-            assert launchd.verbs == []  # the outside session changed nothing at all
+            assert launchd.mutations == []  # read-only ownership inspection is allowed; the session changed nothing
             assert not units.exists()

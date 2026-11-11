@@ -9,6 +9,7 @@ first; it applies none of them.
 from typing import Annotated
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import Check, Module
 from heinzel.modules.system.layer._models import (
@@ -19,8 +20,22 @@ from heinzel.modules.system.layer._models import (
     RecommendationView,
     StackView,
 )
-from heinzel.modules.system.layer._render import render_list, render_stack
 from heinzel.modules.system.layer._service import LayerService, set_command
+
+
+def render_list(listing: LayerList) -> RenderableType:
+    """The installed layers, then what is wrong with them."""
+    from heinzel.modules.system.layer._render import render_list  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_list(listing)
+
+
+def render_stack(view: StackView) -> RenderableType:
+    """The stack in one line, its layers, the recommendations most specific first, conflicts and problems."""
+    from heinzel.modules.system.layer._render import render_stack  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_stack(view)
+
 
 module = Module("layer", "Show the layer plugins installed and the stack you are in, general to specific.")
 module.service(LayerService)

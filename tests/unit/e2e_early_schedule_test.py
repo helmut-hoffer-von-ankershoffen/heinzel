@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.conftest import _spread_early_e2e
+from tests._e2e_schedule import _spread_early_e2e
 
 pytestmark = pytest.mark.unit
 

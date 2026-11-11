@@ -140,12 +140,61 @@ body,
   height: 100%;
 }
 
+/* The app never pans sideways on a phone: a touch drag or rubber band must not slide the layout and show a gap.
+   Wide content scrolls in its own overflow-x container (tables, code, tab rows). */
+html,
 body {
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
+/* The page colour belongs to <html>, and <body> stays transparent. index.html gives <html> the splash colour, so a
+   painted <body> would cover everything below the content layer: the audio aurora (fixed, -z-10) drew but was never
+   seen. */
+html {
   background: var(--color-background);
+}
+
+body {
+  background: transparent;
   color: var(--color-foreground);
   font-family: var(--font-sans);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbars app-wide: thin, a transparent track, and a thumb that shows only while the pointer or focus is inside the
+   scroll container (and while it scrolls under the pointer). Scrolling itself, keyboard and touch are untouched; nothing
+   is hidden with overflow. `:where` keeps the specificity at zero so a component can still set its own. */
+:where(*) {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+:where(*:hover, *:focus-within) {
+  scrollbar-color: color-mix(in srgb, var(--color-muted-foreground) 45%, transparent) transparent;
+}
+/* WebKit without the standard properties (they win in Chromium and current Safari, so this is only the fallback). */
+@supports not (scrollbar-width: thin) {
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+    background: transparent;
+  }
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    background-clip: content-box;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    transition: background-color 0.2s ease;
+  }
+  *:hover::-webkit-scrollbar-thumb,
+  *:focus-within::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--color-muted-foreground) 45%, transparent);
+  }
 }
 
 :focus-visible:not([data-focus-ring="parent"]) {
@@ -363,12 +412,27 @@ body {
   padding-left: max(1rem, var(--hz-safe-area-left, env(safe-area-inset-left, 0px)));
 }
 
+/* The shared search field needs its minimum before autofocus, regardless of input mode. It also preserves
+   larger UI tokens; text-ui beside a text colour is ambiguous to the utility class merger. */
+:root input.search-field-input {
+  font-size: max(16px, var(--text-ui));
+}
+
 /* Small form text makes iOS zoom the entire page on focus, stranding fixed controls off screen. */
 @media (pointer: coarse) {
   :root input,
   :root textarea,
   :root select {
     font-size: max(16px, 1em);
+  }
+}
+
+/* Pane actions need a 44px target on touch-capable devices and in phone-sized portrait or landscape windows.
+   A browser can report a fine pointer in those windows. Keep the minimum independent of theme spacing. */
+@media (any-pointer: coarse), (width < 640px), (width < 1024px) and (height < 480px) {
+  [data-pane-action] {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 
@@ -416,9 +480,6 @@ body {
   --workspace-composer-padding: 0.5rem;
   --workspace-input-height: 2.25rem;
   --workspace-chat-header-height: 2rem;
-  --workspace-cost-margin: 0px;
-  --workspace-cost-font: 10px;
-  --workspace-cost-leading: 14px;
 }
 @media (max-height: 400px) {
   .workspace-panel {
@@ -426,9 +487,6 @@ body {
     --workspace-composer-padding: 0.5rem;
     --workspace-input-height: 2.25rem;
     --workspace-chat-header-height: 2rem;
-    --workspace-cost-margin: 0px;
-    --workspace-cost-font: 10px;
-    --workspace-cost-leading: 14px;
   }
   .workspace-panel[data-placement="below"]:not([data-active="page"]) {
     top: 0;
@@ -451,8 +509,61 @@ body {
 .chat-panel-composer textarea {
   height: var(--workspace-input-height, auto);
 }
-.chat-panel-costs {
-  margin-top: var(--workspace-cost-margin, 0.375rem);
-  font-size: var(--workspace-cost-font, 0.75rem);
-  line-height: var(--workspace-cost-leading, 1rem);
+
+/* The desktop app's integrated title bar (macOS, design 2026-11-07): no native bar; the top line of the sidebar,
+   the main header and the side panel's tabs (or its chat header when it has no tabs) form one 44 px row in the
+   sidebar colour. The row drags the window; its controls do not. A browser never sets data-desktop-titlebar. */
+html[data-desktop-titlebar] .workspace-topbar,
+html[data-desktop-titlebar] [data-placement="beside"] > .workspace-tabs,
+html[data-desktop-titlebar] [data-placement="beside"]:not(:has(> .workspace-tabs)) .chat-panel-header {
+  height: var(--titlebar-height);
+  background-color: var(--color-sidebar);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+html[data-desktop-titlebar] [data-titlebar] {
+  user-select: none;
+  -webkit-app-region: drag;
+}
+/* Collapsed, the expand button overhangs the main column. The top bar moves aside (margin, not padding) so its later,
+   draggable box never covers the button: Electron applies app regions in document order, so a later drag rect would
+   take the button's no-drag rect back. The rail's row reaches over the gap instead. */
+html[data-desktop-titlebar] .workspace-topbar {
+  margin-left: var(--titlebar-main-start, 0px);
+}
+html[data-desktop-titlebar] [data-placement="beside"] > .workspace-tabs {
+  align-items: center;
+  padding-block: 0;
+}
+html[data-desktop-titlebar]
+  :is(
+    [data-titlebar],
+    .workspace-topbar,
+    [data-placement="beside"] > .workspace-tabs,
+    [data-placement="beside"]:not(:has(> .workspace-tabs)) .chat-panel-header
+  )
+  :is(a, button, input, select, textarea, [role="tab"], [role="menu"], [role="menuitem"], [tabindex]) {
+  -webkit-app-region: no-drag;
+}
+/* Electron applies drag regions over everything painted above them: a dialog, menu, popover or pane (data-pane: a
+   full-height overlay such as Notifications, which also starts under the row) claims its own box back, so its edge
+   stays clickable. */
+html[data-desktop-titlebar]
+  :is(dialog, [role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"], .viewport-popover, [data-pane]) {
+  -webkit-app-region: no-drag;
+}
+
+/* The right sidebar's resize handle reaches into the title bar row: it is a control, not a drag area. */
+html[data-desktop-titlebar] [data-sidebar-resizer] {
+  -webkit-app-region: no-drag;
+}
+
+/* While the right sidebar is dragged: no text selection, no pointer events lost to frames or the terminal canvas. */
+html[data-sidebar-resizing] {
+  cursor: col-resize;
+  user-select: none;
+  -webkit-user-select: none;
+}
+html[data-sidebar-resizing] :is(iframe, canvas, .xterm) {
+  pointer-events: none;
 }

@@ -2,10 +2,10 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 from heinzel import Check, Login
-from heinzel.kernel import How, Mode
+from heinzel.kernel import FlowState, How, Mode, SignInProgress, SignInStatus
 
 State = Literal["connected", "not-signed-in", "not-bound", "attention", "unknown"]
 """A connector's state from its offline checks (ADR 0055): signed in and serving something; its tool has no sign-in;
@@ -49,6 +49,9 @@ class Connector(BaseModel):
     connect: list[str] = Field(description="Command lines that sign its tool in, run by the person in a terminal.")
     bind: list[str] = Field(description="Command lines that make it serve the capabilities it doesn't serve yet.")
     testable: bool = Field(description="Whether it has a live test (`hz system connector test`).")
+    sign_in: bool = Field(
+        default=False, description="Whether hz runs its sign-in itself (`hz system connector connect`), no terminal."
+    )
 
 
 class AdapterCandidate(BaseModel):
@@ -91,3 +94,29 @@ class ConnectorTest(BaseModel):
     latency_ms: int = Field(description="How long the test took, in milliseconds.")
     login: Login | None = Field(description="Who the tool says it is signed in as, if it says.")
     checks: list[Check] = Field(description="The live checks: what was called and what came back.")
+
+
+class SignInFlow(BaseModel):
+    """A sign-in hz runs for the person through the vendor's tool; the consent click on the vendor's page is theirs."""
+
+    id: str = Field(description="What `hz system connector flow`, `cancel` and `open` take.")
+    connector: str = Field(description="Qualified name of the connector signing in.")
+    state: FlowState = Field(description="starting, waiting (for consent), succeeded, failed, cancelled, timed-out.")
+    grants: list[str] = Field(description="Every grant asked for: what the sign-in holds once it succeeds.")
+    progress: SignInProgress | None = Field(
+        default=None, description="The vendor's consent page, once its tool gave it; where it must be opened."
+    )
+    message: str = Field(default="", description="What happened, in plain words; what to do if it failed.")
+    account: str = Field(default="", description="Who is signed in, once it succeeded and the tool says.")
+    started_at: AwareDatetime = Field(description="When it started.")
+    ended_at: AwareDatetime | None = Field(default=None, description="When it ended; none while it runs.")
+
+
+class Access(BaseModel):
+    """A connector's sign-in as its own provider sees it: account, grants, and what can be done (ADR 0136)."""
+
+    name: str = Field(description="Qualified name of the module, as `hz system connector list` names it.")
+    title: str = Field(description="Its name for people, e.g. `Google`.")
+    status: SignInStatus = Field(description="Who is signed in, which grants hold, and whether the tool can run.")
+    flow: SignInFlow | None = Field(default=None, description="Its sign-in running now or ended last; none.")
+    message: str = Field(default="", description="What the request did, such as signing out; empty if nothing.")

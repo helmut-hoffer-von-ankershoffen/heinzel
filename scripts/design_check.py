@@ -188,7 +188,7 @@ def start_app(directory: Path) -> tuple[subprocess.Popen[str], str]:
         "BROWSER": "true",
     }
     process = subprocess.Popen(
-        ["uv", "run", "python", "-m", "heinzel", "ui", "--port", "0"],  # noqa: S607
+        ["uv", "run", "python", "-m", "heinzel", "ui", "serve", "--port", "0"],  # noqa: S607
         cwd=ROOT,
         env=env,
         stderr=subprocess.PIPE,

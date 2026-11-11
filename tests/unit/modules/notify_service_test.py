@@ -1,14 +1,19 @@
 """NotifyService (ADR 0041) with a fake clock and a fake notifier: recording, showing once, the daemon's pop-ups."""
 
+import io
+import json
+import logging
 import stat
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import Mock
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from heinzel import Check, Delivery, Module, NoticeKind, Notifications, Status
+from heinzel import Check, Delivery, Module, Notice, NoticeHelper, NoticeKind, Notifications, Status
+from heinzel.kernel._logging import TextFormatter
 from heinzel.modules.system.notify import NotifyService, NotifySettings
 from heinzel.modules.system.notify._macos import NotifierApp
 from heinzel.modules.system.notify._native import ALLOW, DENIED, HEINZEL, Native
@@ -95,6 +100,130 @@ def test_a_repeat_returns_the_earlier_notice_and_records_nothing(make, clock):
     assert len(service.recent()) == 1
     clock.now += timedelta(hours=24)
     assert draft(service) != first
+
+
+def test_helper_metadata_survives_reload_and_durable_deduplication_without_changing_delivery_policy(make, runner):
+    helper = NoticeHelper(name="Mira", hat="blue", reason="scheduled check-in")
+    service = make(working_hours=False)
+    arguments = {"route": "/heinzel?chat=example", "command": "hz heinzel sessions", "key": "helper-notice"}
+    assert service.emit_once(NoticeKind.HEINZEL, "Check in", "Ready", helper=helper, **arguments)
+    replacement = helper.model_copy(update={"name": "Renamed", "hat": "green"})
+    assert service.emit_once(NoticeKind.HEINZEL, "Changed", "Changed", helper=replacement, **arguments)
+    restarted = make(working_hours=False)
+    notice = restarted.recent()[0]
+    assert notice.helper == helper
+    assert notice.title == "Check in"
+    assert restarted.has_once("helper-notice") is True
+    assert restarted.post_native() == 1
+    assert runner.commands[-1][-2] == "Mira: Check in"
+    assert restarted.post_native() == 0
+    legacy = notice.model_dump()
+    legacy.pop("helper")
+    assert Notice.model_validate(legacy).helper is None
+
+
+def test_expiry_and_withdrawal_stop_a_stale_claim_and_keep_the_replay_key(make, clock):
+    service = make(working_hours=False)
+    arguments = {"route": "/", "command": "hz org agenda", "key": "calendar:fixture"}
+    assert service.emit_once(
+        NoticeKind.HEINZEL, "Meeting", "Soon", expires=clock.now + timedelta(minutes=5), **arguments
+    )
+    pending = service.due()[0]
+    restarted = make(working_hours=False)
+    assert restarted.withdraw(arguments["key"])
+    assert restarted.deliver([pending.id], Delivery.WEB) == []
+    assert restarted.emit_once(NoticeKind.HEINZEL, "Meeting", "Soon", **arguments)
+    assert restarted.due() == []
+    assert len(restarted.recent()) == 1
+
+    arguments["key"] = "calendar:another"
+    assert restarted.emit_once(
+        NoticeKind.HEINZEL, "Meeting", "Soon", expires=clock.now + timedelta(minutes=5), **arguments
+    )
+    pending = restarted.due()[0]
+    clock.now += timedelta(minutes=5)
+    assert restarted.due() == []
+    assert restarted.deliver([pending.id], Delivery.DAEMON) == []
+
+
+def test_expiring_receipts_compact_without_replaying_on_clock_rollback(make, settings, clock):
+    service = make(calendar=True, working_hours=False)
+    start = clock.now
+    args = {"route": "/", "command": "hz org agenda"}
+    assert service.emit_once(
+        NoticeKind.CALENDAR, "Meeting", "Soon", key="old", expires=start + timedelta(minutes=5), **args
+    )
+    clock.now += timedelta(minutes=6)
+    assert service.emit_once(
+        NoticeKind.CALENDAR, "Meeting", "Next", key="new", expires=clock.now + timedelta(minutes=5), **args
+    )
+    state = json.loads((settings.state_dir / "notify" / "notices.json").read_text())
+    assert len(state["expiring_keys"]) == 1
+    clock.now = start
+    assert make(calendar=True, working_hours=False).emit_once(
+        NoticeKind.CALENDAR, "Meeting", "Soon", key="old", expires=start + timedelta(minutes=5), **args
+    )
+    assert len(service.recent()) == 2
+    assert next(notice for notice in service.recent() if notice.key == "old").held == "expired"
+
+
+def test_missing_expiring_receipts_fail_closed(make, settings, clock):
+    service = make(calendar=True, working_hours=False)
+    args = {"route": "/", "command": "hz org agenda", "key": "calendar"}
+    assert service.emit_once(NoticeKind.CALENDAR, "Meeting", "Soon", expires=clock.now + timedelta(minutes=5), **args)
+    path = settings.state_dir / "notify" / "notices.json"
+    state = json.loads(path.read_text())
+    del state["expiring_keys"]
+    path.write_text(json.dumps(state))
+    assert not service.emit_once(
+        NoticeKind.CALENDAR, "Meeting", "Soon", expires=clock.now + timedelta(minutes=5), **args
+    )
+    assert service.store.integrity_problem() is not None
+
+
+def test_expiring_receipt_capacity_fails_closed(make, settings, clock):
+    from heinzel.modules.system.notify._store import MAX_EXPIRING_KEYS
+
+    service = make(calendar=True, working_hours=False)
+    args = {"route": "/", "command": "hz org agenda", "key": "first"}
+    expiry = clock.now + timedelta(minutes=5)
+    assert service.emit_once(NoticeKind.CALENDAR, "Meeting", "Soon", expires=expiry, **args)
+    path = settings.state_dir / "notify" / "notices.json"
+    state = json.loads(path.read_text())
+    state["expiring_keys"] = {f"{number:064x}": expiry.isoformat() for number in range(MAX_EXPIRING_KEYS)}
+    path.write_text(json.dumps(state))
+    args["key"] = "another"
+    assert not service.emit_once(NoticeKind.CALENDAR, "Meeting", "Soon", expires=expiry, **args)
+    assert len(service.recent()) == 1
+
+
+@pytest.mark.parametrize("sound", [False, True])
+def test_native_delivery_forwards_the_recorded_identity_and_selected_sound_setting(make, monkeypatch, sound):
+    service = make(working_hours=False, sound=sound)
+    notifier = Mock(spec=Native)
+    notifier.name = "fixture"
+    notifier.clicks = True
+    notifier.post.return_value = None
+    monkeypatch.setattr(service, "_notifier", notifier)
+    helper = NoticeHelper(name="Mira", hat="blue", reason="scheduled check-in")
+    notice = service.emit(
+        NoticeKind.HEINZEL,
+        "Check in",
+        "Ready",
+        route="/heinzel?chat=example",
+        command="hz heinzel sessions",
+        key="native-helper",
+        helper=helper,
+    )
+    assert notice is not None
+    assert service.post_native() == 1
+    assert notifier.post.call_args.kwargs == {
+        "url": f"http://127.0.0.1:8737/heinzel?chat=example&event={notice.id}",
+        "helper": helper,
+        "sound": sound,
+        "ident": notice.id,
+        "thread": notice.route,
+    }
 
 
 def test_a_kind_that_is_off_records_nothing(make):
@@ -325,6 +454,35 @@ def heinzel_service(  # noqa: PLR0913 - a test double with switches
         (app.path / "Contents" / "MacOS" / "notifier").write_bytes(b"old app")
     notifier = Native(HEINZEL, str(app.path), clicks=True, app=app)
     return NotifyService(settings, NotifySettings(), ORG, clock=clock, notifier=notifier)
+
+
+def test_native_notifier_warning_is_single_line_and_preserves_retry(settings, clock, tmp_path):
+    diagnostic = "failed:\t\x1b[31m\u202edetails " + "x" * 300 + " end marker"
+    service = heinzel_service(settings, clock, tmp_path, "authorized", posted=f"prior output\n{diagnostic}\n")
+    notice = draft(service)
+    assert notice is not None
+    output = io.StringIO()
+    handler = logging.StreamHandler(output)
+    handler.setFormatter(TextFormatter())
+    logger = logging.getLogger("heinzel.modules.system.notify._service")
+    logger.addHandler(handler)
+    try:
+        assert service.post_native() == 0
+    finally:
+        logger.removeHandler(handler)
+
+    text = output.getvalue()
+    prefix = f'notify.native.post outcome=error notice_id={notice.id} problem="'
+    assert text.removesuffix("\n").isprintable()
+    assert text.startswith(prefix)
+    assert text.endswith('"\n')
+    assert text.count("\n") == 1
+    problem = text[len(prefix) : -2]
+    assert problem.startswith("Heinzel Notifier: failed: [31mdetails ")
+    assert len(problem) == 280
+    assert "end marker" not in problem
+    assert service.store.native_problem() == f"Heinzel Notifier: {diagnostic}"
+    assert service.due() == [notice]
 
 
 @pytest.mark.macos_specific
@@ -657,6 +815,34 @@ def test_every_daemon_tick_ends_the_leftovers_and_leaves_a_notification_being_po
     assert ended == [7001, 7001]
 
 
+def test_disabled_native_notifications_never_maintain_the_desktop_app(settings, clock, tmp_path, monkeypatch):
+    service = leftover_service(settings, clock, tmp_path, [])
+    service.settings = NotifySettings(native=False)
+    app = service.notifier.app
+    assert app is not None
+
+    def reject_maintenance():
+        pytest.fail("disabled native notifications reached desktop maintenance")
+
+    for method in ("ensure", "clean", "unregister_strays"):
+        monkeypatch.setattr(app, method, reject_maintenance)
+    watched = []
+    service.watcher = lambda: watched.append(True) or 0
+    assert service.post_native() == 0
+    assert watched == [True]
+
+
+def test_disabled_native_notifications_never_discover_the_host_notifier(make, monkeypatch):
+    service = make(native=False)
+    service._notifier = None
+
+    def reject_discovery(_self):
+        pytest.fail("disabled native notifications discovered the desktop notifier")
+
+    monkeypatch.setattr(type(service), "notifier", property(reject_discovery))
+    assert service.post_native() == 0
+
+
 @pytest.mark.macos_specific
 def test_the_tick_makes_macos_forget_stray_copies_once_a_day(settings, clock, tmp_path):
     forgotten: list[str] = []
@@ -680,3 +866,262 @@ def test_the_tick_installs_a_missing_notifier_without_any_command(settings, cloc
     assert not service.notifier.app.path.exists()
     service.post_native()
     assert service.notifier.app.path.is_dir()  # an update, or a daemon installed first, heals on its next tick
+
+
+def _store_files(directory):
+
+    try:
+        root = directory.lstat()
+    except FileNotFoundError:
+        return None
+    result = {".": stat.S_IMODE(root.st_mode)}
+    if stat.S_ISLNK(root.st_mode):
+        result["link"] = directory.readlink()
+        return result
+    for path in directory.iterdir():
+        info = path.lstat()
+        content = path.read_bytes() if stat.S_ISREG(info.st_mode) else None
+        target = path.readlink() if stat.S_ISLNK(info.st_mode) else None
+        result[path.name] = (content, stat.S_IMODE(info.st_mode), info.st_ino, target)
+    return result
+
+
+@pytest.mark.parametrize("damage", ["legacy", "missing", "malformed", "invalid-keys", "deep"])
+def test_health_reports_durable_store_damage_without_writes_or_disclosure(make, monkeypatch, caplog, damage):
+    import json
+
+    from heinzel.modules.system.notify import _store
+
+    service = make(native=False)
+    private_content = "fixture-private-notice-content"
+    assert service.emit_once(
+        NoticeKind.HEINZEL, private_content, private_content, route="/heinzel", command="hz", key="private-slot"
+    )
+    path = service.store.path
+    notices = [notice.model_dump(mode="json") for notice in service.recent()]
+    if damage == "legacy":
+        path.write_text(json.dumps(notices), encoding="utf-8")
+    elif damage == "missing":
+        path.unlink()
+    elif damage == "malformed":
+        path.write_text('{"notices": "' + private_content, encoding="utf-8")
+    elif damage == "deep":
+        path.write_text("[" * 1500 + "]" * 1500, encoding="utf-8")
+    else:
+        path.write_text(json.dumps({"notices": notices, "durable_keys": 42}), encoding="utf-8")
+    before = _store_files(service.store.directory)
+
+    def no_write(*args, **kwargs):
+        pytest.fail("doctor must not write or acquire the notification writer lock")
+
+    monkeypatch.setattr(_store, "_write_private", no_write)
+    monkeypatch.setattr(service.store, "_locked", no_write)
+    caplog.clear()
+    checks = service.health()
+    assert len(checks) == 1
+    assert checks[0].name == "notification store"
+    assert checks[0].status is Status.DOWN
+    assert "cannot be verified" in checks[0].detail
+    assert "coherent trusted backup" in checks[0].fix
+    assert "Do not delete" in checks[0].fix
+    assert private_content not in repr(checks)
+    assert private_content not in caplog.text
+    assert caplog.text == ""
+    assert _store_files(service.store.directory) == before
+
+
+def test_health_does_not_hide_durable_integrity_failure_when_notifications_are_off(make):
+    service = make()
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    service.store.path.write_text("[]", encoding="utf-8")
+    disabled = make(enabled=False)
+    assert disabled.health()[0].status is Status.DOWN
+
+
+def test_health_accepts_valid_durable_store_without_changes(make):
+    service = make(native=False)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    before = _store_files(service.store.directory)
+    assert all(check.status is not Status.DOWN for check in service.health())
+    assert _store_files(service.store.directory) == before
+
+
+def test_health_leaves_uninitialized_and_valid_legacy_stores_unchanged(make):
+    service = make(native=False)
+    assert _store_files(service.store.directory) is None
+    assert all(check.status is not Status.DOWN for check in service.health())
+    assert _store_files(service.store.directory) is None
+    assert draft(service) is not None
+    assert not service.store._durable.exists()
+    before = _store_files(service.store.directory)
+    assert all(check.status is not Status.DOWN for check in service.health())
+    assert _store_files(service.store.directory) == before
+
+
+@pytest.mark.parametrize("unreadable", ["durable-notices", "notices.json"])
+def test_health_reports_unreadable_files_without_disclosing_error(make, monkeypatch, unreadable):
+    import os
+
+    from heinzel.modules.system.notify import _store
+
+    service = make(native=False)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    private_content = "fixture-private-path"
+    before = _store_files(service.store.directory)
+    original = os.open
+
+    def denied(path, *args, **kwargs):
+        if path == unreadable:
+            raise PermissionError(private_content)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(_store.os, "open", denied)
+    checks = service.health()
+    assert checks[0].status is Status.DOWN
+    assert private_content not in repr(checks)
+    assert _store_files(service.store.directory) == before
+
+
+@pytest.mark.parametrize(
+    "unsafe",
+    [
+        "dangling-marker",
+        "linked-marker",
+        "fifo-marker",
+        "linked-state",
+        "fifo-state",
+        "public-marker",
+        "public-state",
+        "hardlinked-marker",
+        "hardlinked-state",
+        "linked-directory",
+        "public-directory",
+        "unsafe-parent",
+    ],
+)
+def test_health_rejects_unsafe_paths_without_locking_or_changes(make, settings, monkeypatch, unsafe):
+    import os
+
+    from heinzel.modules.system.notify import _store
+
+    service = make(native=False)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    directory = service.store.directory
+    marker = service.store._durable
+    state = service.store.path
+    if unsafe == "linked-directory":
+        physical = directory.with_name("physical-notify")
+        directory.rename(physical)
+        directory.symlink_to(physical, target_is_directory=True)
+    elif unsafe == "public-directory":
+        directory.chmod(0o755)
+    elif unsafe == "unsafe-parent":
+        settings.state_dir.chmod(0o777)
+    else:
+        target = marker if "marker" in unsafe else state
+        if unsafe.startswith("public"):
+            target.chmod(0o644)
+        elif unsafe.startswith("hardlinked"):
+            os.link(target, target.with_name(target.name + ".linked"))
+        elif unsafe.startswith("fifo"):
+            target.unlink()
+            os.mkfifo(target, 0o600)
+        else:
+            physical = target.with_name(target.name + ".physical")
+            target.rename(physical)
+            target.symlink_to(physical if unsafe != "dangling-marker" else directory / "missing")
+    before = _store_files(directory)
+    parent_mode = stat.S_IMODE(settings.state_dir.stat().st_mode)
+
+    def no_write(*args, **kwargs):
+        pytest.fail("doctor must never write or acquire the notification writer lock")
+
+    monkeypatch.setattr(service.store, "_locked", no_write)
+    monkeypatch.setattr(_store, "_write_private", no_write)
+    checks = service.health()
+    assert checks[0].status is Status.DOWN
+    assert _store_files(directory) == before
+    assert stat.S_IMODE(settings.state_dir.stat().st_mode) == parent_mode
+
+
+@pytest.mark.parametrize("fields", [{}, {"notices": []}, {"durable_keys": []}])
+def test_missing_durable_fields_fail_closed_for_health_and_writes(make, fields):
+    import json
+
+    service = make(native=False)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    service.store.path.write_text(json.dumps(fields), encoding="utf-8")
+    before = service.store.path.read_bytes()
+    assert service.health()[0].status is Status.DOWN
+
+    def no_replay(notices):
+        pytest.fail("unproven replay evidence must not allow a notice mutation")
+
+    with pytest.raises(OSError, match="durable notification store"):
+        service.store.change_once(service._clock(), "new-slot", no_replay)
+    with pytest.raises(OSError, match="durable notification store"):
+        service.store.has_once("slot")
+    assert service.store.path.read_bytes() == before
+
+
+def test_oversized_health_verification_is_unavailable_without_a_new_write_limit(make, monkeypatch):
+    from heinzel.modules.system.notify import _store
+
+    service = make(native=False)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    before = _store_files(service.store.directory)
+    monkeypatch.setattr(_store, "MAX_HEALTH_BYTES", 16)
+    finding = service.health()[0]
+    assert finding.status is Status.DOWN
+    assert "verification is unavailable" in finding.detail
+    assert "health-check read limit" in finding.detail
+    assert service.store._read_state(strict=True).durable_keys
+    assert _store_files(service.store.directory) == before
+
+
+def test_health_reads_the_verified_descriptor_when_its_path_is_replaced(make, monkeypatch):
+    import os
+
+    from heinzel.modules.system.notify import _store
+
+    service = make(native=False)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    state = service.store.path
+    original_bytes = state.read_bytes()
+    original_inode = state.stat().st_ino
+    retained = state.with_name("retained-state")
+    actual_open, actual_fstat = os.open, os.fstat
+    opens = 0
+    replaced = False
+
+    def checked_open(path, flags, *args, **kwargs):
+        nonlocal opens
+        if path in {"durable-notices", "notices.json"}:
+            assert flags & os.O_NOFOLLOW
+            assert flags & os.O_NONBLOCK
+            assert isinstance(kwargs.get("dir_fd"), int)
+        if path == "notices.json":
+            opens += 1
+            assert opens == 1, "health must not reopen the pathname after verification"
+        return actual_open(path, flags, *args, **kwargs)
+
+    def replace_after_fstat(descriptor):
+        nonlocal replaced
+        info = actual_fstat(descriptor)
+        if info.st_ino == original_inode and not replaced:
+            state.rename(retained)
+            state.symlink_to(state.with_name("missing-state"))
+            replaced = True
+        return info
+
+    def no_path_read(*args, **kwargs):
+        pytest.fail("health must decode bytes from its verified descriptor, not read the pathname again")
+
+    monkeypatch.setattr(_store.os, "open", checked_open)
+    monkeypatch.setattr(_store.os, "fstat", replace_after_fstat)
+    monkeypatch.setattr(service.store, "_read_state", no_path_read)
+    assert all(check.status is not Status.DOWN for check in service.health())
+    assert replaced
+    assert opens == 1
+    assert retained.read_bytes() == original_bytes
+    assert stat.S_IMODE(retained.stat().st_mode) == 0o600

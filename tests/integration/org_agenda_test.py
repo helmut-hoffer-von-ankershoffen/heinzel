@@ -63,6 +63,7 @@ def test_without_a_calendar_the_agenda_says_what_to_run(make_kernel):
     assert agenda.status_code == 200
     assert agenda.json() | {"now": None} == {
         "now": None,
+        "timezone": agenda.json()["timezone"],
         "current": None,
         "next": None,
         "calendar": None,
@@ -84,3 +85,15 @@ def test_a_failing_calendar_degrades_to_its_message(make_kernel, monkeypatch):
     agenda = client(make_kernel, calendar="diary").get("/api/org/agenda", headers=AUTH)
     assert agenda.status_code == 200
     assert agenda.json()["problem"] == "Your diary sign-in expired; run `diary login`."
+
+
+def test_calendar_week_is_private_and_limited(make_kernel):
+    kernel = make_kernel(builtins=True)
+    assert "org_calendar" in {item.name for item in exposed(kernel, web.HEAD)}
+    assert "org_calendar" not in {item.name for item in exposed(kernel, api.HEAD)}
+    web_client = client(make_kernel, calendar="diary")
+    assert web_client.get("/api/org/calendar").status_code == 401
+    week = web_client.get("/api/org/calendar?offset=0", headers=AUTH)
+    assert week.status_code == 200
+    assert [event["title"] for event in week.json()["events"]] == ["Standup", "Review"]
+    assert web_client.get("/api/org/calendar?offset=53", headers=AUTH).status_code == 400

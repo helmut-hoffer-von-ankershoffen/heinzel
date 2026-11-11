@@ -2,7 +2,6 @@
 
 from rich.console import Group, RenderableType
 from rich.markup import escape
-from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
@@ -18,6 +17,8 @@ MARKS = {
 
 def render_installed(result: Installed) -> RenderableType:
     """The unit files, highlighted; with `--dry-run` that is all that happens."""
+    from rich.syntax import Syntax  # noqa: PLC0415 - only rendered service definitions need syntax highlighting
+
     parts: list[RenderableType] = []
     for path, content in result.files.items():
         parts.append(Text(f"# {path}", style="bold"))

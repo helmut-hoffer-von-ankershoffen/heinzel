@@ -75,3 +75,43 @@ test("reports an already-exited service when its exit was abnormal", async () =>
   );
   assert.equal(reports, 1);
 });
+
+test("refresh starts only after the lease closes with the fixed detached command", async () => {
+  const { refreshAfterQuit } = await import("../src/shutdown.js");
+  const gate = new EventEmitter();
+  gate.stdin = { end: () => {} };
+  const calls = [];
+  let unrefed = false;
+  const child = new EventEmitter();
+  child.unref = () => { unrefed = true; };
+  const result = refreshAfterQuit({ eligible: true, gate, executable: () => "/owned/hz", spawn: (...args) => { calls.push(args); return child; } });
+  assert.equal(calls.length, 0);
+  gate.emit("close");
+  assert.equal(await result, true);
+  assert.deepEqual(calls, [["/owned/hz", ["app", "refresh"], { detached: true, stdio: "ignore", shell: false }]]);
+  assert.equal(unrefed, true);
+});
+
+test("refresh is skipped without eligibility, verified executable, or lease release", async () => {
+  const { refreshAfterQuit } = await import("../src/shutdown.js");
+  const gate = new EventEmitter();
+  gate.stdin = { end: () => {} };
+  let calls = 0;
+  const spawn = () => { calls++; };
+  assert.equal(await refreshAfterQuit({ eligible: false, gate, executable: () => "/owned/hz", spawn }), false);
+  assert.equal(await refreshAfterQuit({ eligible: true, gate, executable: () => { throw new Error(); }, spawn }), false);
+  assert.equal(await refreshAfterQuit({ eligible: true, gate, executable: () => "/owned/hz", spawn, timeoutMs: 2 }), false);
+  assert.equal(calls, 0);
+});
+
+
+test("refresh eligibility excludes fixtures, signals and unclean or incomplete sessions", async () => {
+  const { shouldRefresh } = await import("../src/shutdown.js");
+  const healthy = { packaged: true, platform: "darwin", fixture: false, serviceStarted: true, unexpectedExit: false, signal: false, outcome: "graceful" };
+  assert.equal(shouldRefresh(healthy), true);
+  for (const change of [{ packaged: false }, { platform: "linux" }, { fixture: true }, { serviceStarted: false },
+    { unexpectedExit: true }, { signal: true }, { outcome: "forced" }, { outcome: "abnormal" },
+    { outcome: "already-exited" }, { outcome: "not-started" }]) {
+    assert.equal(shouldRefresh({ ...healthy, ...change }), false);
+  }
+});

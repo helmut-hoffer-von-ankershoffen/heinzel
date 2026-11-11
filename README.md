@@ -18,11 +18,11 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.svg">
-    <img src="docs/assets/hero-light.svg" alt="Heinzelmännchen: a small crowd of gnome-like helpers, old and young, walking along together" width="860">
+    <img src="docs/assets/hero-light.svg" alt="Heinzelmännchen: a small crowd of gnome-like Heinzels, old and young, walking along together" width="860">
   </picture>
 </p>
 
-**Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.**
+**Heinzelmännchen is an open-source crew of Heinzels that drafts your team's busywork and asks before anything leaves your machine.**
 Each Heinzelmännchen keeps one promise: the Friday report, the tracker update, the meeting brief. It reads your tools
 with *your* logins, drafts the work, and waits for your yes. Nothing is published, sent or spent without it. Like the
 [Heinzelmännchen of Cologne](https://en.wikipedia.org/wiki/Heinzelm%C3%A4nnchen), who finished the town's work at
@@ -34,8 +34,8 @@ source, and we are grateful: [thank you](#standing-on-the-shoulders-of-giants) t
 
 **Where it stands, honestly.** The foundation is released: the kernel, five heads (CLI, web app, MCP, REST and a
 background daemon), contracts that draft locally on request or on a schedule, a team repository, a graph of who keeps
-which promise, and plugins. A helper does not yet write into a shared document, no run has been proven unattended with a
-live provider, and helpers do not yet work with each other. Drafts are saved on your machine for you to edit
+which promise, and plugins. A Heinzel does not yet write into a shared document, no run has been proven unattended with a
+live provider, and Heinzels do not yet work with each other. Drafts are saved on your machine for you to edit
 ([roadmap](INTENT.md#where-we-are)).
 
 <picture>
@@ -71,7 +71,7 @@ can see what feeds the Friday report. [Explore the ACME team stack →](https://
 
 **Meet the Heinzelmännchen.** In the web app each one shows what it is up to: **working** on a draft, **thinking** it
 over, **waiting for you** to approve, **asleep** when there is nothing to do, **blocked** until you fix something,
-**done** with a happy smile. In `hz` a small one greets you, walks along during long work and marks a finished line.
+**done** with a happy smile. In `hz` the three of them greet you, walks along during long work and marks a finished line.
 They are garnish, never a replacement for words: `hz system config set hz.playful false` (or Settings → General) turns
 them all off, and they stay away from JSON, pipes, CI and `NO_COLOR` anyway.
 
@@ -88,6 +88,10 @@ them all off, and they stay away from JSON, pipes, CI and `NO_COLOR` anyway.
 
 You talk to them with **`hz`**, a small modulith: the kernel discovers *modules* and the *lets* they advertise — typed
 declarations of operations, services, settings and health checks — and *heads* expose them.
+
+Running `hz` without arguments in an interactive terminal shows a local, read-only overview of scheduled work,
+the web server and sharing observations. `hz --help` still lists commands; redirected use keeps the existing help
+output. Missing evidence is unknown, and sharing observations are historical rather than proof of reachability.
 
 ## Get started
 
@@ -119,8 +123,10 @@ It reuses uv when available, otherwise runs [Astral's official installer](https:
 It then runs the same app launcher. No administrator access or separate Python installation is needed.
 You can [inspect the script](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/install.sh) first.
 
-The first run installs the verified standard app with its default plugins and opens the workspace. Later runs open
-the installed app. Ctrl-C stops the foreground session; background operation stays optional.
+In a terminal, the first run installs the verified standard app with its default plugins, asks which background
+services (and, on Apple silicon Macs, the desktop app) to install, and opens Heinzelmännchen. Without a terminal it
+asks nothing, skips the desktop app (add `--yes` to install it) and opens the workspace in the foreground. Later runs
+open the installed app. **Ctrl-C** stops the foreground session; background operation stays optional.
 
 <details>
 <summary>Install details, updates and recovery</summary>
@@ -130,6 +136,8 @@ and ignores `UV_PYTHON` for that installation step. Remove system-only `UV_NO_MA
 `UV_PYTHON_PREFERENCE` environment settings before installing. If Python downloads are disabled, first install a
 compatible uv-managed Python. Refreshes keep the app's verified existing interpreter.
 On Linux, standard installation needs an accessible systemd user manager in your user session.
+When Git or the GitHub CLI is missing, the installer installs it with Homebrew on macOS if Homebrew is there, and
+explains the steps otherwise and on Linux; installing `gh` never signs you in (see [the install guide](docs/guides/install.md#tools-the-app-uses)).
 For a minimal core with no plugins use
 `uv tool install heinzel`. The installer selects the newest published standard app and verifies its artifacts;
 `hz system update` then moves core to the latest PyPI
@@ -155,7 +163,10 @@ skills:
 
 Other agents: `hz system agent install` copies the skills into the directories set in `[system.agent] skill_dirs`.
 
-**Uninstall** with `/hz-uninstall` from Claude Code, or:
+**Uninstall offline:** current verified standard installations support `hz system uninstall`. It keeps your data,
+configuration, agent skills and notifier. See [offline removal and recovery](docs/guides/install.md#uninstall-offline).
+
+For other installations, uninstall with `/hz-uninstall` from Claude Code, or:
 
 <!-- docs-test -->
 ```bash
@@ -172,9 +183,9 @@ Your configuration files stay; `hz system config show` lists them before you uni
 including expert commands and plugin commands. It runs no operation and leaves your expert-mode setting unchanged.
 The [CLI reference](docs/CLI_REFERENCE.md) is generated from the same executable command tree; CI checks for drift.
 
-<img src="docs/assets/terminal-art.png" alt="A terminal: the command hz prints a pixel-art Heinzelmännchen in a red hat beside the name, version and tagline; after adding the clock plugin, a small one marks the done line" width="560">
+<img src="docs/assets/terminal-art.png" alt="A terminal: the command hz prints the pixel-art swarm of three Heinzelmännchen above the name, version and tagline; after adding the clock plugin, a small one marks the done line" width="560">
 
-On a colour terminal `hz` greets you with a small Heinzelmännchen and a walking one keeps you company during long
+On a colour terminal `hz` greets you with the three Heinzels and a walking one keeps you company during long
 work. `hz system config set hz.playful false` (see [Configure](#configure)), `NO_COLOR`, CI, a pipe or `--json` keep
 the output plain.
 
@@ -196,7 +207,7 @@ hz system agent install               # install the skills for coding agents
 
 Every operation takes `--json` (or `--format json`; `HZ_OUTPUT_FORMAT=json` makes it the default) for scripts and
 agents; the long-running `serve` commands are the exception. Exit codes: `0` success, `1` an error with a readable message, `2` a usage error, `78` invalid
-configuration; `hz ui` exits `0` when Ctrl-C stops it, an interrupted `hz setup` `130`. All commands: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
+configuration; `hz ui serve` exits `0` when Ctrl-C stops it, an interrupted `hz setup` `130`. All commands: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
 `hz --help` lists the everyday commands; `hz system expert on` lists every command in help, shell completion and the
 web app, and `hz system expert off` goes back. Commands for experts run either way, and MCP and REST always offer
@@ -236,17 +247,42 @@ alongside its CPU, memory and load readings.
 
 Every module is a set of operations, and every operation is a `hz` command, an MCP tool (`hz system serve mcp`)
 and a REST endpoint (`hz system serve api`) at once. Coding agents use whichever suits them: the CLI with `--json`,
-or the MCP tools. People who'd rather click run `hz ui`: a web app on localhost, for this session only, with a
+or the MCP tools (over HTTP with a read or write token per agent, `hz system serve mcp-token create`). People who'd rather click run `hz ui open`: a web app on localhost with a
 navigation tree of settings, contracts, your team, inventory and the doctor's fixes, and a chat with your agent runner
 that says what it may cost before it runs. Modules can also advertise jobs that
 `hz system daemon install` runs in the background on a schedule, under launchd or systemd, with your
-rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)). Built in today:
+rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)).
+
+In **Settings → This computer → Web server**, choose **Restart web server** and confirm to restart the server
+connected to that window, keeping its profile and address. The page keeps your open work and reconnects automatically;
+it confirms success only after a replacement server answers. An unfinished installation change must complete or recover first.
+
+`hz ui` shows its command help. Use `hz ui serve` to run the web server in the foreground; **Ctrl-C** stops it.
+`hz ui open` opens the owned installed web service, or runs in the foreground when none is installed.
+
+For availability after login, run `hz ui install --port 8737`. No preview setting is required.
+`hz ui status` distinguishes a loaded service from a ready web server. `hz ui restart` keeps its session through a
+normal restart; `hz ui uninstall` removes only its web login service and keeps data and paired devices. Scheduled
+Heinzels and Tailscale sharing remain separate choices. An existing foreground server must be stopped before
+installing on its port. After an interrupted update, startup may refuse until supported recovery repairs it;
+status does not call that ready. The service retains the selected configuration files and storage roots. Put
+behavior settings in those files; installation refuses process-only `HZ_*` overrides. Reinstall to change profiles.
+
+In an interactive terminal, bare `uvx heinzel@latest` offers independent choices: the desktop app (Apple silicon Macs only), the
+scheduled daemon, web server after login and native notifier. Each defaults to **Yes** and runs only after the persistent standard app
+has been verified. First interactive setup asks for missing name, team name and genuinely required profile fields
+through normal configuration, preserving existing values. Setup is complete only when system health is green. Answer **No** to leave that choice unchanged. Help, explicit commands, machine-readable calls
+and noninteractive use never prompt or select services automatically; without a terminal the bare command still
+opens the workspace in the foreground, and `--yes` also installs the services and the desktop app. Native notification support and OS permission
+are reported separately; an installed notifier does not prove a visible notification.
+
+Built in today:
 
 <!-- modules:start -->
 - [`ai`](docs/MODULES.md#ai) — How hz reaches AI, and what it spends: tokens and cost per run.
 - [`ai.access`](docs/MODULES.md#aiaccess) — Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds.
 - [`graph`](docs/MODULES.md#graph) — Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the flow waits.
-- [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable helpers that draft your team's recurring work for your approval.
+- [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable Heinzels that draft your team's recurring work for your approval.
 - [`org`](docs/MODULES.md#org) — Your profile, and the team, org and company you work with.
 - [`report`](docs/MODULES.md#report) — Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`).
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
@@ -265,6 +301,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.notify`](docs/MODULES.md#systemnotify) — Pop up what deserves your attention: in the web app while it is open, else natively.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, enable, disable, list and scaffold plugins.
 - [`system.plugin.docs`](docs/MODULES.md#systemplugindocs) — Document installed plugins: what each brings, as a model and as Markdown pages.
+- [`system.prerequisite`](docs/MODULES.md#systemprerequisite) — Inspect and prepare the external tools modules need.
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.
 - [`system.runner.chat`](docs/MODULES.md#systemrunnerchat) — Chat with the agent runner about where you are; it acts through hz once you confirm.
 - [`system.skill`](docs/MODULES.md#systemskill) — List the skills plugins ship for AI, and hand chosen ones to Claude Code.
@@ -273,6 +310,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.theme`](docs/MODULES.md#systemtheme) — Pick how the web app looks: the built-in theme or one a plugin offers.
 - [`system.ui`](docs/MODULES.md#systemui) — List what modules add to the web app: status items, header actions and Today widgets.
 - [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
+- [`ui`](docs/MODULES.md#ui) — Open the web workspace or manage its optional persistent service.
 <!-- modules:end -->
 
 Details for each, in every head: [docs/MODULES.md](docs/MODULES.md). Plugins add their own modules.
@@ -312,14 +350,14 @@ core artifact:
 Company plugins live in their own `heinzel-*` repositories, scaffolded with `hz system plugin new`.
 
 Workflows are Markdown files, not code: a `<name>.prose.md` contract in your workflows directory (or your team's
-state repository) names the capabilities it reads, the inputs to fetch and the helper's limits, and its body says what
+state repository) names the capabilities it reads, the inputs to fetch and the Heinzel's limits, and its body says what
 the draft must achieve. Drafts are saved locally; nothing is published by itself.
 
 ```bash
 hz heinzel new weekly-digest             # a starter contract, valid as written, with comments; creates the directory
 hz heinzel check                         # every problem by file and line
 hz heinzel show weekly-digest            # what it requires, what is bound, whether it is ready, what to run next
-hz heinzel wake weekly-digest --dry-run   # the packet the helper would get; nothing is spent
+hz heinzel wake weekly-digest --dry-run   # the packet the Heinzel would get; nothing is spent
 hz heinzel wake weekly-digest             # draft it now; then `hz heinzel drafts`
 ```
 

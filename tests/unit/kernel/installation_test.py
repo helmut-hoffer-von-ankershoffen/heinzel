@@ -91,7 +91,7 @@ def test_other_environments(tmp_path):
 
 
 def test_requires_uv(tmp_path, monkeypatch):
-    monkeypatch.setattr("shutil.which", lambda _: None)
+    monkeypatch.setattr("shutil.which", lambda *_, **__: None)
     with pytest.raises(HeinzelError, match="uv is required"):
         _ = Installation(Progress(), prefix=tmp_path).uv
 
@@ -105,9 +105,11 @@ def test_run_reports_failures_with_output(tmp_path):
         installation.run(["uv"], "Broke.", "Doing")
 
 
-def test_hz_runs_a_fresh_interpreter(tmp_path, monkeypatch):
+@pytest.mark.parametrize("dont_write_bytecode", [False, True])
+def test_hz_runs_a_fresh_interpreter(tmp_path, monkeypatch, dont_write_bytecode):
     # The real interpreter start is in tests/integration/installation_test.py; here only what is started and how a
     # failure is reported.
+    monkeypatch.setattr(sys, "dont_write_bytecode", dont_write_bytecode)
     commands = []
 
     def answering(command, **kwargs):
@@ -120,9 +122,10 @@ def test_hz_runs_a_fresh_interpreter(tmp_path, monkeypatch):
     assert installation.hz("--version") == "hz 9.9.9\n"
     with pytest.raises(HeinzelError, match="failed after the change:\nboom"):
         installation.hz("no-such-command")
+    flags = ["-I", "-B"] if dont_write_bytecode else ["-I"]
     assert commands == [
-        [sys.executable, "-I", "-m", "heinzel", "--version"],
-        [sys.executable, "-I", "-m", "heinzel", "no-such-command"],
+        [sys.executable, *flags, "-m", "heinzel", "--version"],
+        [sys.executable, *flags, "-m", "heinzel", "no-such-command"],
     ]
 
 
@@ -1027,3 +1030,153 @@ def test_remove_transient_constraint_refuses_a_different_set(tmp_path):
         installation.remove_transient_tool_constraint(
             expected=installation.startup_fingerprint(), original=policy, added=("heinzel==0.9.7", "heinzel-a==1.0")
         )
+
+
+def test_preserved_tool_sources_require_a_matching_checkpoint(tmp_path, monkeypatch):
+    prefix, _ = _target_fixture(tmp_path)
+    installation = Installation(Progress(), prefix=prefix)
+    monkeypatch.setattr(
+        _installation._installed_metadata,
+        "preserved_wheel_constraints",
+        lambda *_: pytest.fail("Unverified metadata must not become an authority"),
+    )
+    assert installation.preserved_tool_wheel_constraints(["heinzel"]) == ()
+
+
+def test_preserved_tool_sources_refuse_generation_drift(tmp_path, monkeypatch):
+    prefix, _ = _target_fixture(tmp_path)
+    installation = Installation(Progress(), prefix=prefix)
+    installation.record_startup_state(expected=installation.startup_fingerprint())
+
+    def changed(*_args):
+        (prefix / "unexpected-change").write_text("changed")
+        return ()
+
+    monkeypatch.setattr(_installation._installed_metadata, "preserved_wheel_constraints", changed)
+    with pytest.raises(HeinzelError, match="changed while preserving"):
+        installation.preserved_tool_wheel_constraints(["heinzel"])
+
+
+@pytest.mark.parametrize("problem", ["hash", "path", "extra", "missing", "version"])
+def test_transient_wheel_constraint_removal_requires_exact_captured_policy(tmp_path, problem):
+    wheel = tmp_path / "heinzel-0.9.15-py3-none-any.whl"
+    source = f"heinzel @ {wheel.as_uri()}#sha256={'a' * 64}"
+    policy = ToolConstraintPolicy(present=False, entries=())
+    entry = f'{{name="heinzel", path="{wheel}"}}'
+    if problem == "path":
+        entry = entry.replace(str(wheel), str(tmp_path / "different.whl"))
+    if problem == "extra":
+        entry += ', {name="another", specifier="==1"}'
+    if problem == "missing":
+        entry = ""
+    if problem == "version":
+        entry = '{name="heinzel", specifier="==0.9.15"}'
+    if problem == "hash":
+        source = source.split("#", maxsplit=1)[0]
+    receipt = f"[tool]\nrequirements = [{{name='heinzel'}}]\nconstraints=[{entry}]\n".encode()
+    with pytest.raises(HeinzelError, match="constraints changed unexpectedly"):
+        _installation._remove_transient_constraint(receipt, policy, (source,))
+
+
+@pytest.mark.parametrize("options_match", [True, False])
+def test_transient_uv_options_are_removed_only_when_they_match_the_update(tmp_path, options_match):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    installation = Installation(Progress(), prefix=prefix)
+    policy = installation.capture_tool_constraint_policy()
+    before = receipt.read_bytes()
+    after = before + b'constraints = [{name = "heinzel", specifier = "==0.9.7"}]\n\n[tool.options]\noffline = true\n'
+    receipt.write_bytes(after)
+    expected = installation.startup_fingerprint()
+    options = {"offline": True} if options_match else {"offline": False}
+    if options_match:
+        projected = installation.remove_transient_tool_constraint(
+            expected=expected, original=policy, added="heinzel==0.9.7", options=options
+        )
+        assert receipt.read_bytes() == before.rstrip() + b"\n"
+        assert installation.startup_fingerprint() == projected != expected
+    else:
+        with pytest.raises(HeinzelError, match="constraints changed unexpectedly"):
+            installation.remove_transient_tool_constraint(
+                expected=expected, original=policy, added="heinzel==0.9.7", options=options
+            )
+        assert receipt.read_bytes() == after
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("local", "heinzel @ {uri}"),
+        ("https://example.invalid/heinzel-1.0.tar.gz", "heinzel @ https://example.invalid/heinzel-1.0.tar.gz"),
+        ("https://example.invalid/another-1.0.tar.gz", None),
+        ("https://example.invalid/heinzel.tar.gz", None),
+        ("https://example.invalid/heinzel.whl", None),
+    ],
+)
+def test_core_source_archive_identity_is_validated_before_uv(tmp_path, source, expected):
+    if source == "local":
+        path = tmp_path / "heinzel-1.0.tar.gz"
+        path.touch()
+        source = str(path)
+        expected = expected.format(uri=path.as_uri())
+    if expected is None:
+        with pytest.raises(HeinzelError, match="must install the heinzel distribution"):
+            _installation._core_requirement(source)
+    else:
+        assert _installation._core_requirement(source) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected", "error"),
+    [
+        ("heinzel>=1", "heinzel>=1", None),
+        ({"name": "heinzel", "marker": "python_version >= '3.14'"}, 'heinzel; python_version >= "3.14"', None),
+        ({"name": "heinzel", "url": "https://example.invalid/heinzel.whl", "specifier": "==1"}, None, ValueError),
+        (None, None, TypeError),
+    ],
+)
+def test_receipt_constraints_preserve_markers_and_refuse_ambiguous_policy(value, expected, error):
+    receipt = {"tool": {"constraints": [value]}}
+    if error:
+        with pytest.raises(error, match="constraint"):
+            _installation._constraints_from_receipt(receipt)
+    else:
+        assert _installation._constraints_from_receipt(receipt) == [expected]
+
+
+def test_receipt_restores_only_the_original_selected_plugin_source(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    installation = Installation(Progress(), prefix=prefix)
+    entrypoints = receipt.read_text().split("entrypoints =", 1)[1]
+    old = (RECEIPT + "entrypoints =" + entrypoints).encode()
+    installed = old.replace(b'/heinzel-old"', b'/heinzel-old?rev=1234abcd"')
+    receipt.write_bytes(installed)
+    expected = installation.startup_fingerprint()
+    prior_without_plugin = b'[tool]\nrequirements = [{name = "heinzel"}]\n'
+    with pytest.raises(HeinzelError, match="requirements couldn't be put back"):
+        installation.restore_receipt_requirements(
+            expected=expected, original=prior_without_plugin, names=["heinzel-old"]
+        )
+    assert receipt.read_bytes() == installed
+    projected = installation.restore_receipt_requirements(expected=expected, original=old, names=["heinzel-old"])
+    assert tomllib.loads(receipt.read_text()) == tomllib.loads(old.decode())
+    assert projected == installation.startup_fingerprint() != expected
+
+
+def test_receipt_retags_only_the_core_at_the_verified_commit(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    installation = Installation(Progress(), prefix=prefix)
+    tag = b"tag=v0.1.0"
+    rev = b"rev=1234abcd"
+    entrypoints = receipt.read_text().split("entrypoints =", 1)[1]
+    installed = (RECEIPT + "entrypoints =" + entrypoints).encode().replace(tag, rev)
+    receipt.write_bytes(installed)
+    expected = installation.startup_fingerprint()
+    with pytest.raises(HeinzelError, match="isn't the commit the release tag named"):
+        installation.name_core_by_tag(expected=expected, commit="deadbeef", tag="v0.1.0")
+    assert receipt.read_bytes() == installed
+    projected = installation.name_core_by_tag(expected=expected, commit="1234abcd", tag="v0.1.0")
+    assert tomllib.loads(receipt.read_text()) == tomllib.loads(installed.replace(rev, b"rev=v0.1.0").decode())
+    assert projected == installation.startup_fingerprint() != expected

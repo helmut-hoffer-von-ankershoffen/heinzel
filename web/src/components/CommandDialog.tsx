@@ -1,7 +1,8 @@
+import { SquareTerminal, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { runCommand } from "@/components/CommandActions";
 import { CopyCommand } from "@/components/common";
-import { Button } from "@/components/ui/button";
+import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
 
 /** What a contributed command button opens: the command to copy, and a button the person presses to run it. */
@@ -21,20 +22,22 @@ export function CommandDialog({ command, onClose }: Readonly<{ command: string; 
       <div className="mt-2">
         <CopyCommand command={command} />
       </div>
-      <div className="mt-3 flex justify-end gap-2">
-        <Button size="sm" variant="outline" autoFocus onClick={onClose}>
+      <PaneActions align="end" words="all">
+        <PaneAction key="close" icon={X} autoFocus onClick={onClose}>
           {t("op.close")}
-        </Button>
-        <Button
-          size="sm"
+        </PaneAction>
+        <PaneAction
+          key="run"
+          icon={SquareTerminal}
+          primary
           onClick={() => {
             runCommand(command);
             onClose();
           }}
         >
           {t("run.terminal")}
-        </Button>
-      </div>
+        </PaneAction>
+      </PaneActions>
     </div>,
     document.body,
   );

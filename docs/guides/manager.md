@@ -1,5 +1,5 @@
 ---
-description: Set up Heinzelmännchen for your team: install hz, connect your tools, create the team repository and get a first draft out every Friday.
+description: "Set up Heinzelmännchen for your team: install hz, connect your tools, create the team repository and get a first draft out every Friday."
 ---
 
 # Bootstrap your team
@@ -40,7 +40,7 @@ hz heinzel new weekly-report --team                      # the team's first cont
 
 ```bash
 hz heinzel check                                        # every problem by file and line
-hz heinzel wake team:weekly-report --dry-run            # what the helper would get; nothing is spent
+hz heinzel wake team:weekly-report --dry-run            # what the Heinzel would get; nothing is spent
 hz heinzel wake team:weekly-report                      # the first draft, a local file
 hz system doctor
 ```
@@ -262,7 +262,7 @@ missing parent or site or a cycle, each with its fix; `hz system config set team
 
 ## What's next
 
-- Rather click? `hz ui` opens a web app on localhost, for this session only.
+- Rather click? `hz ui serve` opens a web app on localhost, for this session only.
 - Every command takes `--json`, and `hz system serve mcp` gives coding agents the same operations as MCP tools.
 - By default `hz` lists only the everyday commands. `hz system expert on` lists the rest, such as `hz heinzel
   playbooks`, `discover` and `sent`, and `hz system plugin`, `config`, `daemon` and `layer`. They run either way.

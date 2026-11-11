@@ -8,6 +8,13 @@ import { captureInstallPrompt } from "@/pwa/install";
 import { registerServiceWorker } from "@/pwa/register";
 import { splash } from "@/splash/store";
 import "./index.css";
+// The offline page's retry (public/boot-retry.js), bundled here rather than as its own <script> in index.html: the
+// HTML's scripts are the frontend identity a verified update checks, and only hashed /assets/ files belong to it.
+import "../public/boot-retry.js";
+
+// If the app has not mounted after a while (hz went away while it started), retry with backoff and reload once hz
+// answers, like the offline page.
+(globalThis as { hzBootRetry?: { start: (mode: string) => void } }).hzBootRetry?.start("watch");
 
 applyTheme();
 captureInstallPrompt(); // before the browser fires it, so "Install app" can offer it later

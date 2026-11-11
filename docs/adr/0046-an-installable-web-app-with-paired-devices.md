@@ -6,7 +6,7 @@ decision-makers: maintainer
 amends: 0039, 0043
 amends-0039: a fixed port and paired devices
 amends-0043: notifications in the web app
-amended-by: 0058, 0078, 0084
+amended-by: 0058, 0078, 0084, 0117
 related: 0019, 0020, 0027, 0030
 implemented-by: 72
 ---

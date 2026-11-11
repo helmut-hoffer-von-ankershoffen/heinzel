@@ -21,6 +21,8 @@ async function decode(context: BaseAudioContext, url: string, limit: number): Pr
 
 export class Mixer {
   private readonly master: GainNode;
+  /** Listens to the whole mix after its fades, for the audio visualizer; it feeds nothing, so nothing is heard twice. */
+  readonly analyser: AnalyserNode;
   private readonly gains: { node: GainNode; layer: Layer }[] = [];
   private readonly sources: AudioBufferSourceNode[] = [];
   private readonly earcons = new Map<string, AudioBuffer>();
@@ -29,6 +31,10 @@ export class Mixer {
     this.master = context.createGain();
     this.master.gain.value = 0;
     this.master.connect(context.destination);
+    this.analyser = context.createAnalyser();
+    this.analyser.fftSize = 1024;
+    this.analyser.smoothingTimeConstant = 0.75;
+    this.master.connect(this.analyser);
   }
 
   /** Fetch, decode and start every layer looping, silent until `fade` raises the master gain. */

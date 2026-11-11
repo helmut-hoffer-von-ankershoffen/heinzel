@@ -29,7 +29,13 @@ function canonical(value: unknown): string {
 }
 
 /** Inspect a known private proposal; no provider or grant is inferred from its absence. */
-export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
+export function ConnectedReadReview({
+  sessionId,
+  conversationBusy = false,
+}: {
+  sessionId: string;
+  conversationBusy?: boolean;
+}) {
   const client = useQueryClient();
   const [params, setParams] = useSearchParams();
   const [selection, setSelection] = useState("");
@@ -142,7 +148,7 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
     client.setQueryData(chatKey(value.id), value);
   };
   const submit = async (suggested = false) => {
-    if (busy) return;
+    if (busy || conversationBusy) return;
     setBusy(true);
     let request = pendingProposal;
     if (suggested && !request) {
@@ -368,6 +374,7 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
             size="sm"
             disabled={
               busy ||
+              conversationBusy ||
               !!pendingProposal ||
               !options.data?.some(
                 (item) => item.capability === suggestion.data?.capability && item.method === suggestion.data?.method,
@@ -475,7 +482,7 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
           <Button
             type="button"
             size="sm"
-            disabled={busy || (!selection && !pendingProposal)}
+            disabled={busy || conversationBusy || (!selection && !pendingProposal)}
             onClick={() => void submit()}
           >
             {pendingProposal ? "Retry the same proposal" : "Prepare review"}
@@ -504,6 +511,7 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
       )}
       {review.isError && <p role="alert">The proposal or selected provider could not be verified.</p>}
       {chatId && chat.isError && <p role="alert">The saved review conversation could not be verified.</p>}
+      {conversationBusy && <p>Resolve the current reply before preparing access.</p>}
       {error && <p role="alert">The action could not be verified. Inspect the saved outcome before deciding again.</p>}
       {displayedProposal && <Terms proposal={displayedProposal} />}
       {state.data?.descriptor && (

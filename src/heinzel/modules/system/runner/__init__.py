@@ -11,11 +11,24 @@ from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import AgentResult, AgentRunner, Budget, Check, HeinzelError, Kernel, Module, Status, ToolProfile
+from heinzel import (
+    AgentResult,
+    AgentRunner,
+    Budget,
+    Check,
+    HeinzelError,
+    Homebrew,
+    Kernel,
+    ManualInstall,
+    Module,
+    Status,
+    ToolProfile,
+)
 from heinzel.kernel import CapabilityView, RunnerSnapshotProvider, UsageEntry, record_usage
 from heinzel.modules.system.runner._access import ClaudeCodeAccess
 from heinzel.modules.system.runner._claude import BIND_COMMAND_RUNNER, HOSTS, ClaudeCodeRunner, login_check
 from heinzel.modules.system.runner._claude import DOCS as CLAUDE_CODE_DOCS
+from heinzel.modules.system.runner._codex import DOCS as CODEX_DOCS
 from heinzel.modules.system.runner._codex import HOSTS as CODEX_HOSTS
 from heinzel.modules.system.runner._codex import NAME as CODEX
 from heinzel.modules.system.runner._codex import CodexAccess, CodexRunner
@@ -35,9 +48,39 @@ module.provides("agent-runner", modes={"read"}, hosts=CODEX_HOSTS, name=CODEX)(C
 module.provides("ai-access", modes={"read"}, hosts=CODEX_HOSTS, name=CODEX)(CodexAccess)
 
 
+def _claude_selected(capabilities: CapabilityView, settings: RunnerSettings) -> bool:
+    return capabilities.bound("agent-runner") == "claude-code" and settings.claude_executable == "claude"
+
+
+def _codex_selected(capabilities: CapabilityView, settings: RunnerSettings) -> bool:
+    return capabilities.bound("agent-runner") == CODEX and settings.codex_executable == "codex"
+
+
+# Only the selected runner's CLI is requested; the person signs in to it themselves (ADR 0112).
+module.prerequisite(
+    "claude",
+    title="Claude Code",
+    purpose="Runs the agent that answers in chat and works on your contracts, with your own Claude sign-in.",
+    when="feature",
+    needed=_claude_selected,
+    condition="The Claude Code runner is selected and its executable keeps the default name.",
+    macos=Homebrew("claude-code", cask=True),
+    linux=ManualInstall("Install Claude Code, then sign in with `claude`.", CLAUDE_CODE_DOCS),
+)
+module.prerequisite(
+    "codex",
+    title="Codex CLI",
+    purpose="Runs the agent that answers in chat and works on your contracts, with your own ChatGPT sign-in.",
+    when="feature",
+    needed=_codex_selected,
+    condition="The Codex runner is selected and its executable keeps the default name.",
+    macos=Homebrew("codex", cask=True),
+    linux=ManualInstall("Install the Codex CLI, then sign in with `codex login`.", CODEX_DOCS),
+)
+
 ASK_TIMEOUT = timedelta(minutes=3)
 ASK_PREAMBLE = (
-    "You answer in the chat of Heinzelmännchen (hz), open-source helpers for product teams. Answer briefly, in "
+    "You answer in the chat of Heinzelmännchen (hz), open-source Heinzels for product teams. Answer briefly, in "
     "Markdown. You can't run hz or change anything; when the user should run a command, name it. What follows is the "
     "conversation so far, or just a question; answer its last message.\n\n"
 )
@@ -47,7 +90,7 @@ PROMPT_LIMIT = 6000
 
 # A question spends money, within its cap: the CLI, MCP and the web head (behind its session token) get it, never the
 # unauthenticated REST head (ADR 0039).
-@module.operation(read_only=False, heads={"cli", "mcp", "web"}, requires=["agent-runner:read"])
+@module.operation(read_only=False, heads={"cli", "mcp", "web"}, requires=["agent-runner:read"], health_on_demand=True)
 def ask(
     runner: AgentRunner,
     kernel: Kernel,

@@ -1,0 +1,1 @@
+Heinzelmännchen 0.9.29 is already installed at <tmp>/system/Applications/Heinzelmaennchen.app. Nothing to do.

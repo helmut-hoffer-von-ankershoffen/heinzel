@@ -24,6 +24,7 @@ def hz(tmp_path_factory):
     env |= {"UV_TOOL_DIR": str(root / "tools"), "UV_TOOL_BIN_DIR": str(root / "bin"), "HZ_PLUGINS_ENABLED": "true"}
     for name in ("CONFIG_HOME", "DATA_DIR", "CACHE_DIR", "STATE_DIR", "LOG_DIR"):
         env[f"HZ_{name}"] = str(root / name.lower())
+    env["HZ_SYSTEM_DAEMON__UNIT_DIR"] = str(root / "units")
     env.pop("VIRTUAL_ENV", None)
     uv = shutil.which("uv")
     assert uv, "uv is not on PATH: https://docs.astral.sh/uv/"

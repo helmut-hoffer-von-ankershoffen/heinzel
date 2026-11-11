@@ -1,6 +1,6 @@
 ---
-title: Heinzelmännchen — helpers for good work
-description: Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.
+title: Heinzelmännchen — Heinzels for good work
+description: Heinzelmännchen is an open-source crew of Heinzels that drafts your team's busywork and asks before anything leaves your machine.
 template: home.html
 hide:
   - navigation
@@ -13,7 +13,7 @@ hide:
 
 # Less busywork.<br>More good work.
 
-<p class="hz-lead">Heinzelmännchen, or heinzels for short, are small AI helpers that draft the busywork nobody chose. They work with your own accounts. You approve everything.</p>
+<p class="hz-lead">Heinzels draft the busywork nobody chose. They work with your own accounts. You approve everything.</p>
 
 <div class="hz-actions" markdown>
 [Install Heinzelmännchen ↗](guides/install.md){ .hz-button }
@@ -23,7 +23,7 @@ hide:
 
 </div>
 <div class="hz-hero-art">
-<picture><source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg"><img src="assets/hero-light.svg" alt="A small crowd of Heinzelmännchen helpers walking together" width="1000" height="360"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg"><img src="assets/hero-light.svg" alt="A small crowd of Heinzels walking together" width="1000" height="360"></picture>
 <div class="hz-art-note"><span class="hz-dot"></span> A crew, not a console.</div>
 </div>
 </div>
@@ -32,16 +32,16 @@ hide:
 <h2 id="hz-trust-title">Open code. Visible checks.</h2>
 <p>Check the license, practices and analysis before you install.</p>
 <div class="hz-trust-links">
-<a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-44bb00" alt="MIT license" height="20" loading="lazy"></a>
-<a href="https://www.bestpractices.dev/en/projects/15863"><img src="https://img.shields.io/cii/level/15863?label=OpenSSF%20Best%20Practices" alt="OpenSSF Best Practices: view the project's criteria" height="20" loading="lazy"></a>
-<a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/helmut-hoffer-von-ankershoffen/heinzel/codeql.yml?branch=main&amp;label=CodeQL" alt="CodeQL analysis on main: view the workflow runs" height="20" loading="lazy"></a>
-<a href="https://sonarcloud.io/summary/new_code?id=helmut-hoffer-von-ankershoffen_heinzel"><img src="https://img.shields.io/sonar/quality_gate/helmut-hoffer-von-ankershoffen_heinzel?server=https://sonarcloud.io&amp;label=Quality%20Gate%20Status" alt="Quality gate: new core code" height="20" loading="lazy"></a>
-<a href="https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel"><img src="https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&amp;metric=security_rating" alt="Security rating: overall core code" height="20" loading="lazy"></a>
+<a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/LICENSE">MIT license</a>
+<a href="https://www.bestpractices.dev/en/projects/15863">OpenSSF criteria</a>
+<a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml?query=branch%3Amain">CodeQL runs</a>
+<a href="https://sonarcloud.io/summary/new_code?id=helmut-hoffer-von-ankershoffen_heinzel">New-code quality gate</a>
+<a href="https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel">Overall security rating</a>
 </div>
-<p class="hz-trust-note">The gate checks new code; the security rating covers all analyzed core code.</p>
+<p class="hz-trust-note">Open the linked sources for current results. The quality gate checks new code. The security rating covers all analyzed core code.</p>
 </section>
 
-<div class="hz-strip"><span>You keep the decisions.</span><span>Helpers do the drafting.</span><span>Your accounts, your machine.</span></div>
+<div class="hz-strip"><span>You keep the decisions.</span><span>Heinzels do the drafting.</span><span>Your accounts, your machine.</span></div>
 
 <section class="hz-section" markdown>
 <p class="hz-eyebrow">One foundation. Many ways in.</p>
@@ -54,7 +54,7 @@ hide:
 
 ### See the work, together.
 
-Each helper shows what it is doing, in words and with a face. When it waits for you, it says so.
+Each Heinzel shows what it is doing, in words and with a face. When it waits for you, it says so.
 
 [Take your first steps →](guides/first-steps.md)
 </div>
@@ -80,11 +80,11 @@ Plugins add operations, views and notifications. Themes add colors, art and soun
 </section>
 
 <section class="hz-section" markdown>
-<p class="hz-eyebrow">Meet your next few helpers</p>
+<p class="hz-eyebrow">Meet your next few Heinzels</p>
 
 ## Small jobs. A little time back.
 
-Imagined helpers. Real screens, made-up data. Select an image to zoom.
+Imagined Heinzels. Real screens, made-up data. Select an image to zoom.
 
 <!-- hz:home-gallery -->
 
@@ -107,9 +107,9 @@ Every entry shows its source, compatibility and exact revision.
 <section class="hz-section hz-manifesto" markdown>
 <p class="hz-eyebrow">The direction is human</p>
 
-## Let helpers do the drafting.<br>Let people make the decisions.
+## Let Heinzels do the drafting.<br>Let people make the decisions.
 
-The goal: a crew of durable helpers that take over any busywork you can automate, while people approve. Today you get the foundation: kernel, CLI, web, MCP and REST, local drafts on a schedule, and plugins. Helpers working together across a team are not built yet.
+The goal: a crew of durable Heinzels that take over any busywork you can automate, while people approve. Today you get the foundation: kernel, CLI, web, MCP and REST, local drafts on a schedule, and plugins. Heinzels working together across a team are not built yet.
 
 [Read the vision →](VISION.md) · [Inspect the decisions →](adr/README.md)
 </section>
@@ -147,14 +147,15 @@ they are out of date, so they can't drift.
 | You want to… | Read |
 | --- | --- |
 | **Get started**: bootstrap a team as its manager, or join one with the line your manager posted | [guides/manager.md](guides/manager.md) · [guides/joining.md](guides/joining.md) |
-| **Use** Heinzelmännchen: install, commands, configuration | [README](../README.md) · [MODULES](MODULES.md) *(generated)* · [CLI_REFERENCE](CLI_REFERENCE.md) *(generated)* · [CONFIGURATION](CONFIGURATION.md) *(generated)* |
+| **Use** Heinzelmännchen: install, commands, configuration | [README](../README.md) · [MODULES](MODULES.md) *(generated)* · [CLI_REFERENCE](CLI_REFERENCE.md) *(generated)* · [CONFIGURATION](CONFIGURATION.md) *(generated)* · [legacy daemon recovery](DAEMON_RECOVERY.md) |
 | **Your Heinzelmännchen**: the journey from nothing to a scheduled team contract, and the contract reference | [HEINZELMAENNCHEN](HEINZELMAENNCHEN.md) (was [WORKFLOWS](WORKFLOWS.md)) · [playbooks: your first contract from a plugin](PLAYBOOKS.md) |
+| **Draft release poems**: publish a bounded recurring workflow and approve its edited document link | [Release drafts](RELEASE_DRAFTS.md) |
 | **Work as a team**: create, join and add to the team repository | [TEAMS](TEAMS.md) |
 | **Build durable turns**: typed outcomes, checkpoints and offline engine tests | [DURABLE_TURNS](DURABLE_TURNS.md) |
 | **Build the desktop lifecycle foundation** | [Shared runtime authority](DESKTOP_RUNTIME_AUTHORITY.md) · [Production gates still open](DESKTOP_PRODUCTION_GATES.md) |
 | **Understand** why it exists and how it is built | [INTENT](../INTENT.md) · [ARCHITECTURE](ARCHITECTURE.md) · [decisions (ADRs)](adr/README.md) · research: [daemon head](research/daemon-head.md) · [workflow contracts](research/workflow-contracts.md) · [embedded workflows](research/embedded-workflows.md) · [inventory](research/inventory.md) · [people and org](research/people-and-org.md) · [onboarding](research/onboarding.md) · [plugin extraction opportunities](research/plugin-extraction-opportunities.md) |
 | **Pick a plugin**: the gallery, one page per plugin with what it brings in every head, its settings, themes and recordings | [Public plugin catalog](CATALOG.md), with immutable source revisions and theme previews · `hz system plugin search` discovers available plugins |
-| **Extend** it with modules and plugins | [Plugin extension guide](PLUGINS.md) · [README: Extend](../README.md#extend) · [ARCHITECTURE: Plugins](ARCHITECTURE.md#plugins) · [writing a playbook](PLAYBOOKS.md#writing-a-playbook) · [themes, and how to make a weather theme](THEMES.md) · [settings that need no explaining](SETTINGS_UX.md) · [screenshot playbook](SCREENSHOT_PLAYBOOK.md) · the template's AGENTS.md (`hz system plugin new`) |
+| **Extend** it with modules and plugins | [Plugin extension guide](PLUGINS.md) · [README: Extend](../README.md#extend) · [ARCHITECTURE: Plugins](ARCHITECTURE.md#plugins) · [writing a playbook](PLAYBOOKS.md#writing-a-playbook) · [themes, and how to make a weather theme](THEMES.md) · [settings that need no explaining](SETTINGS_UX.md) · [which settings need a restart](SETTINGS_RESTART.md) · [screenshot playbook](SCREENSHOT_PLAYBOOK.md) · the template's AGENTS.md (`hz system plugin new`) |
 | **Publish and verify a release** | [Publishing acceptance](PUBLISHING.md) |
 | **Contribute** to the core | [CONTRIBUTING](../CONTRIBUTING.md) · [CODING_STANDARDS](CODING_STANDARDS.md) · [Sonar security lessons](SONAR_SECURITY.md) · [docs style check](dev/DOCS_CHECK.md) · [durable session storage](SESSIONS.md) · [shipping small changes with a small model](SHIP_SMALL.md) · [CHANGELOG](../CHANGELOG.md) *(generated at release)* |
 | Check the **names, taglines and claims** | [BRANDING](BRANDING.md) |

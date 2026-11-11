@@ -7,25 +7,25 @@ This page fixes the names, taglines and claims of Heinzelmännchen. `tests/unit/
 - **Heinzelmännchen** is the product. Use it in prose, titles and the web app.
 - **`hz`** is the command. **`heinzel`** is the distribution on PyPI and the Python import.
 - **heinzelmaennchen** is the ASCII form for identifiers, bundle names and package slugs. Do not use any other ASCII spelling.
-- **a heinzel, heinzels** is the short form for one agent or several: "Adi is a heinzel who focuses on getting weekly team status reports drafted and approved." Lowercase in running text, capitalised at a sentence start. It is never the product name, so "Install Heinzel" is wrong.
-- **helper** stays the plain word where it reads better.
-- Never write that a named heinzel is an agent, an AI or a bot. Describe it by name and job.
+- **a Heinzel, Heinzels** names one product actor or several: "Adi is a Heinzel who drafts weekly team status reports for approval." Always capitalize Heinzel and Heinzels. It is never the product name, so "Install Heinzel" is wrong.
+- Reserve **helper** for technical functions and other non-product meanings.
+- Never write that a named Heinzel is an agent, an AI or a bot. Describe it by name and job.
 - **Heinzel Notifier** keeps its capital. It is the macOS notification app.
 
 ## Three sentences, each with a place
 
 - **Tagline:** "Less busywork. More good work." It is the hero on the Pages home and the opening of `PYPI.md`.
-- **Descriptor:** "helpers accelerating product teams". It is line 2 of the CLI banner and the web manifest description (ADR 0071).
-- **Description:** "Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine."
+- **Descriptor:** "Heinzels accelerating product teams". It is line 2 of the CLI banner and the web manifest description (ADR 0071).
+- **Description:** "Heinzelmännchen is an open-source crew of Heinzels that drafts your team's busywork and asks before anything leaves your machine."
 - The description is the one-liner for `README.md`, `PYPI.md`, the home page description, the plugin marketplace and the MCP server.
 - Where the field already names the project (`pyproject.toml`, `site_description`), drop the leading "Heinzelmännchen is".
 
 ## We do not claim what we have not shown
 
 - We do not yet say autonomous, automatically, while you sleep, sends, publishes, delivers, secure or reliable.
-- No run has been proven unattended with a live provider. No helper writes into a shared document.
+- No run has been proven unattended with a live provider. No Heinzel writes into a shared document.
 - A claim needs a receipt beside it: a test, a release note or a recording that shows it.
-- Helpers draft, and a person approves. Write "drafts" where the product does not yet do more.
+- Heinzels draft, and a person approves. Write "drafts" where the product does not yet do more.
 
 ## ACME is the fictional company
 
@@ -42,15 +42,16 @@ This page fixes the names, taglines and claims of Heinzelmännchen. `tests/unit/
 
 ## Terminal art is a garnish
 
-- The bust appears in bare `hz` and `hz --version`. The swarm appears in `hz setup`.
+- The three-Heinzel product mark appears in bare `hz`, `hz --version`, setup and the installer welcome.
 - A walking glyph shows during work, and a finish glyph shows when it ends.
 - `hz --help` has no art, by design.
 - Art is off with `--json`, `NO_COLOR`, `CI`, a dumb `TERM` or the playful setting turned off.
 
-## Marks come from one drawing
+## A team is the logo, one Heinzel is one voice
 
-- The swarm, `mark.svg`, is the site logo, favicon and theme logo.
-- The bust, `favicon.svg` and the app icons, is for the web app and the notifier.
+- Heinzelmännchen is a team of Heinzels working together for people ([design/README.md](../design/README.md)), so the product mark is plural: the swarm, `mark.svg`, is the site logo, the theme logo, the sidebar header and its rail, the GitHub Pages header, footer and favicon, and the CLI banner. Never one Heinzel as the logo.
+- One Heinzel stands for one voice: the chat button and the assistant in a conversation, a testimonial or quote, a named Heinzel on its page. Good: the chat button is a head; a quote shows the Heinzel who speaks. Bad: one bust beside the product name; the swarm as a chat avatar.
+- The bust, `favicon.svg` and the app icons, is the app's icon (the web app and the notifier), not the logo.
 - All of them derive from `web/src/components/heinzel.ts`. Regenerate them with `make icons`.
 
 ## Domains

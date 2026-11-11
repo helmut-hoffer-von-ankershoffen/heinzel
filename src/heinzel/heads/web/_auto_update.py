@@ -1,4 +1,4 @@
-"""Automatic updates: the `hz ui` server checks, warns every window, waits for idle and applies (ADR 0116).
+"""Automatic updates: the `hz ui serve` server checks, warns every window, waits for idle and applies (ADR 0116).
 
 The plan lives here, in the server, never in a browser: two windows show the same countdown, a reload shows what is
 left of it, and with no window open the update still applies on time. It is saved under the state folder, so a
@@ -15,7 +15,9 @@ import importlib.metadata
 import json
 import logging
 import os
+import platform
 import random
+import re
 import sys
 import threading
 import weakref
@@ -24,13 +26,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from subprocess import SubprocessError
 from typing import IO, Any, Literal, cast
 
 from fastapi import FastAPI, HTTPException, Response
-from packaging.version import Version
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Field
 
-from heinzel import __version__
+from heinzel import HeinzelError, __version__
 from heinzel.heads._stream import WORK
 from heinzel.kernel import (
     KERNEL_SECTION,
@@ -39,16 +42,20 @@ from heinzel.kernel import (
     Installation,
     Kernel,
     OperationLet,
+    PluginNews,
     PluginReleases,
     ReleaseCache,
     ReleaseSource,
     Settings,
 )
+from heinzel.kernel._logging import log_event
 
 log = logging.getLogger(__name__)
 
 CHECK_EVERY = timedelta(minutes=30)
 """How often the server asks for newer releases."""
+RECHECK_GAP = timedelta(seconds=10)
+"""The least time between two looks that people ask for."""
 JITTER = timedelta(minutes=5)
 """At most this much is added to each check at random, so many installations don't ask at the same second."""
 FIRST_CHECK = (timedelta(minutes=1), timedelta(minutes=5))
@@ -66,6 +73,8 @@ STEP_SECONDS = 1.0
 FILENAME = "auto-update.json"
 
 UPDATE_MODULE, UPDATE_OPERATION, RECOVER_OPERATION = "system", "apply-announced", "recover-announced"
+REPAIR_OPERATION = ("system.plugin", "repair")
+"""Installs the plugins an installed plugin requires but lacks; the updater asks it when nothing else is due."""
 
 type Phase = Literal["off", "idle", "waiting", "countdown", "applying"]
 
@@ -95,6 +104,14 @@ class Plan:
     """The commit the announced hz release's tag named when it was announced; checked once it is installed."""
     refused: dict[str, Any] | None = None
     """News that was installed but didn't start, and was put back: never applied again; newer news is."""
+    failed_on: str | None = None
+    """The hz version that was running when `message` reported a failure; another version makes it history."""
+    plugin_commits: dict[str, str] = field(default_factory=dict[str, str])
+    """For announced plugins pinned to a GitHub commit: the commit their release tag named when announced."""
+    followed: list[str] = field(default_factory=list[str])
+    """Plugins pinned to a GitHub commit whose release tags the last check could read: not updated by hand."""
+    held_plugins: list[str] = field(default_factory=list[str])
+    """One line per plugin release the last check held back, because another plugin can't move with it."""
 
     @property
     def pending(self) -> bool:
@@ -118,6 +135,10 @@ class Plan:
             "restarting_to": self.restarting_to,
             "refused": self.refused,
             "commit": self.commit,
+            "failed_on": self.failed_on,
+            "plugin_commits": self.plugin_commits,
+            "followed": self.followed,
+            "held_plugins": self.held_plugins,
         }
 
     @classmethod
@@ -145,6 +166,17 @@ class Plan:
             if isinstance(found_plugins, dict)
             else {}
         )
+
+        def texts(name: str) -> list[str]:
+            value: object = values.get(name)
+            return [str(item) for item in cast("list[object]", value)] if isinstance(value, list) else []
+
+        found_commits: object = values.get("plugin_commits")
+        commits = (
+            {str(k): str(v) for k, v in cast("dict[object, object]", found_commits).items()}
+            if isinstance(found_commits, dict)
+            else {}
+        )
         count = values.get("postponements")
         return cls(
             core=text("core"),
@@ -158,6 +190,10 @@ class Plan:
             restarting_to=text("restarting_to"),
             refused=_news(values.get("refused")),
             commit=text("commit"),
+            failed_on=text("failed_on"),
+            plugin_commits=commits,
+            followed=texts("followed"),
+            held_plugins=texts("held_plugins"),
         )
 
 
@@ -228,8 +264,9 @@ def postpone(plan: Plan, now: datetime) -> None:
     plan.postponements += 1
 
 
-def failed(plan: Plan, message: str, now: datetime) -> None:
-    """Keep the news, wait at least six hours, and say what happened once."""
+def failed(plan: Plan, message: str, now: datetime, running: str | None = None) -> None:
+    """Keep the news, wait at least six hours, and say what happened once, naming the version still `running`."""
+    plan.failed_on = running
     plan.applying = False
     plan.apply_at = None
     plan.restarting_to = None
@@ -239,8 +276,41 @@ def failed(plan: Plan, message: str, now: datetime) -> None:
 
 
 def done(plan: Plan, message: str) -> None:
-    """Forget what was pending after an update that worked, keeping only the message that says so."""
-    plan.__dict__.update(Plan(message=message).__dict__)
+    """Forget what was pending after an update that worked, keeping the message that says so and what is followed."""
+    plan.__dict__.update(Plan(message=message, followed=list(plan.followed)).__dict__)
+
+
+def settle(plan: Plan, running: str, now: datetime) -> None:
+    """At a server's start: forget what the installation already has, and a failure another version reported.
+
+    hz may have been updated by other means since (`hz system update`, the footer, another server): news of a release
+    that is not newer than `running` is done, and its failure, or one reported while another version ran, is history.
+    A failure without a recorded version is history once its news is, or no news is left: older state files didn't
+    record one.
+    """
+    if plan.applying or plan.restarting_to is not None:
+        return
+    done_news = plan.core is not None and _not_newer(plan.core, running)
+    if done_news:
+        plan.core, plan.commit = None, None
+        if not plan.plugins:
+            plan.window_at = plan.apply_at = None
+            plan.postponements = 0
+    stale = plan.failed_on is not None and plan.failed_on != running
+    legacy = plan.failed_on is None and (done_news or not plan.pending)  # older files; no news left to retry
+    if plan.retry_at is not None and (stale or legacy):
+        plan.retry_at = plan.message = plan.failed_on = None  # only a failure sets `retry_at`, with its message
+        if plan.pending:  # other news, e.g. a plugin, waits only for its own window again
+            plan.window_at = now
+    elif stale:
+        plan.failed_on = None
+
+
+def _not_newer(release: str, running: str) -> bool:
+    try:
+        return Version(release) <= Version(running)
+    except InvalidVersion:
+        return False
 
 
 def failure_message(running: str) -> str:
@@ -248,6 +318,19 @@ def failure_message(running: str) -> str:
     return (
         f"The automatic update didn't work, so hz {running} keeps running as before. It will try again in 6 hours; "
         "to update now, use Update in the footer."
+    )
+
+
+class PluginHold(BaseModel):
+    """One installed plugin that automatic updates leave alone, and why, in the words the Updates pane needs."""
+
+    name: str = Field(description="The plugin's distribution name.")
+    why: Literal["pinned", "source"] = Field(
+        description="pinned: someone holds it to one version; source: it is installed from git, a folder or a URL."
+    )
+    version: str | None = Field(default=None, description="The version a pinned plugin is held to.")
+    how: Literal["git", "folder", "link"] | None = Field(
+        default=None, description="Where a source plugin comes from: a git repository, a folder or a URL."
     )
 
 
@@ -271,7 +354,26 @@ class AutoUpdateStatus(BaseModel):
     )
     by_hand: list[str] = Field(
         default_factory=list[str],
-        description="Installed plugins from git, a folder or a URL, which only a person updates.",
+        description="Installed plugins from git, a folder or a URL, which only a person updates; not those pinned to "
+        "a GitHub commit whose repository tags their releases.",
+    )
+    plugins_held: list[str] = Field(
+        default_factory=list[str],
+        description="One line per plugin release held back because another plugin can't move with it.",
+    )
+    holds: list[PluginHold] = Field(
+        default_factory=list[PluginHold],
+        description="Every installed plugin automatic updates leave alone, with the reason; by_hand lists the "
+        "source installs among them.",
+    )
+    checked_at: datetime | None = Field(
+        default=None, description="When this server last looked for hz and plugin news; None before its first look."
+    )
+    core_checked: bool | None = Field(
+        default=None, description="Whether the last look at hz releases got an answer; None before the first look."
+    )
+    plugins_checked: bool | None = Field(
+        default=None, description="Whether the last look at plugin releases got an answer; None before the first look."
     )
     held: str | None = Field(
         default=None,
@@ -297,23 +399,32 @@ class Activity:
     def __init__(self) -> None:
         """Nothing running yet."""
         self._lock = threading.Lock()
-        self._running = 0
+        self._running: dict[str, int] = {}
 
-    def enter(self) -> None:
-        """One more request is running."""
+    def enter(self, what: str = "a request") -> None:
+        """One more request is running; `what` names it (`POST /api/...`) for the log."""
         with self._lock:
-            self._running += 1
+            self._running[what] = self._running.get(what, 0) + 1
 
-    def leave(self) -> None:
+    def leave(self, what: str = "a request") -> None:
         """One request finished."""
         with self._lock:
-            self._running = max(0, self._running - 1)
+            count = self._running.get(what, 0) - 1
+            if count > 0:
+                self._running[what] = count
+            else:
+                self._running.pop(what, None)
 
     @property
     def busy(self) -> bool:
         """Whether any is running."""
         with self._lock:
-            return self._running > 0
+            return bool(self._running)
+
+    def running(self) -> list[str]:
+        """What is running, by name, for the log."""
+        with self._lock:
+            return sorted(self._running)
 
 
 SOURCE_CHECKOUT = "Updates are managed by your source checkout."
@@ -394,6 +505,17 @@ def development_reason(
     return None
 
 
+def update_summary(plan: Plan) -> str:
+    """What a plan installs, in plain words, for the log."""
+    parts = [f"hz {plan.core}"] if plan.core else []
+    return ", ".join([*parts, *(f"{name} {version}" for name, version in plan.plugins.items())])
+
+
+def _canonical(name: str) -> str:
+    """A distribution's canonical name, without extras: `Heinzel_CRM[x]` is `heinzel-crm`."""
+    return re.sub(r"[-_.]+", "-", name.split("[", 1)[0]).lower()
+
+
 def _old_enough(published: datetime | None, hours: int, now: datetime) -> bool:
     """Whether a release published at `published` is at least `hours` old; an unknown time counts as too new."""
     if hours <= 0:
@@ -445,7 +567,7 @@ def _now() -> datetime:
 
 
 class AutoUpdater:
-    """Runs the plan in the `hz ui` server: checks, countdown, postpone, apply, and the outcome after a restart."""
+    """Run the web server update plan, retaining its countdown, deferral and restart outcome."""
 
     def __init__(  # noqa: PLR0913 - the seams tests replace and all by keyword
         self,
@@ -480,8 +602,14 @@ class AutoUpdater:
         self._path = folder / FILENAME
         self._plan_lock = folder / "auto-update.lock"
         self._apply_lock = folder / "auto-update-apply.lock"
+        self._held = False
+        """Automatic updates couldn't run at the last look; once they can, the next look checks at once."""
+        self._looked: tuple[datetime, bool, bool] | None = None
+        """When hz and the plugins were last asked for news, and whether each answered; this process only."""
+        self._waited: list[str] = []
+        """What held the countdown off at the last look, so the log says it once per change."""
         self._applying: IO[str] | None = None
-        """Held from the start of an apply until this process ends, so no other `hz ui` applies meanwhile."""
+        """Held from the start of an apply until this process ends, so no other `hz ui serve` applies meanwhile."""
         self.plan = self._read(fresh=True) or Plan()
         now = self._clock()
         self._next_check = now + self._between(*FIRST_CHECK)
@@ -492,7 +620,25 @@ class AutoUpdater:
                 if plan.restarting_to == version:
                     done(plan, f"hz is up to date: {version}, updated automatically.")
                 elif plan.restarting_to is not None:
-                    failed(plan, failure_message(version), now)
+                    failed(plan, failure_message(version), now, version)
+        with self._editing() as plan:
+            self._forget_installed_plugins(plan)
+            settle(plan, version, now)
+
+    def _forget_installed_plugins(self, plan: Plan) -> None:
+        """Drop plugin news the installation already has (another update installed it): no needless restart."""
+        if not plan.plugins or plan.applying or plan.restarting_to is not None:
+            return
+        try:
+            installed = self._kernel.resolve(Installation).installed_versions(list(plan.plugins))
+        except Exception:  # noqa: BLE001 - unreadable metadata keeps the news; the next check asks again
+            return
+        for name, version in list(plan.plugins.items()):
+            if name in installed and _not_newer(version, installed[name]):
+                del plan.plugins[name]
+        if not plan.pending:
+            plan.window_at = plan.apply_at = None
+            plan.postponements = 0
 
     # Settings and conditions ----------------------------------------------------------------------------------------
 
@@ -535,23 +681,57 @@ class AutoUpdater:
     def by_hand(self) -> list[str]:
         """Installed plugins from git, a folder or a URL: automatic updates leave them exactly as they are (ADR 0116).
 
-        hz and the plugins from PyPI update around them; a person updates these.
+        hz and the plugins from PyPI update around them; a person updates these. A plugin pinned to a GitHub commit
+        whose repository tags its releases updates by itself (ADR 0137), once a check could read those tags.
         """
+        followed = set(self.plan.followed)
         try:
-            return sorted(pin.name for pin in self._kernel.resolve(Installation).plugin_pins() if pin.kind != "index")
+            return sorted(
+                pin.name
+                for pin in self._kernel.resolve(Installation).plugin_pins()
+                if pin.kind != "index" and not (pin.kind == "commit" and _canonical(pin.name) in followed)
+            )
         except Exception:  # noqa: BLE001 - an unreadable receipt holds updates as well
             return ["the plugins (the uv receipt can't be read)"]
 
+    def holds(self) -> list[PluginHold]:
+        """Every installed plugin automatic updates leave alone: held to one version, or installed from a source."""
+        try:
+            pins = self._kernel.resolve(Installation).plugin_pins()
+        except Exception:  # noqa: BLE001 - an unreadable receipt holds updates as well
+            return []
+        # A commit pin whose repository tags its releases updates by itself (ADR 0137), as in `by_hand`.
+        followed = set(self.plan.followed)
+        holds: list[PluginHold] = []
+        for pin in pins:
+            name = pin.name
+            if pin.kind == "commit" and _canonical(name) in followed:
+                continue
+            if pin.kind == "index":
+                exact = (pin.ref or "").strip()
+                if exact.startswith("==") and "," not in exact and "*" not in exact:
+                    holds.append(PluginHold(name=name, why="pinned", version=exact[2:].strip()))
+            else:
+                how: Literal["git", "folder", "link"] = (
+                    "git" if pin.git is not None else "folder" if pin.kind == "local" else "link"
+                )
+                holds.append(PluginHold(name=name, why="source", how=how))
+        return sorted(holds, key=lambda hold: hold.name)
+
     def busy(self) -> bool:
         """Whether a chat answer, an install or a daemon job is running now."""
-        if self._activity.busy:
-            return True
+        return bool(self.waiting_for())
+
+    def waiting_for(self) -> list[str]:
+        """What holds off the countdown now, by name: requests that change state, or a daemon job."""
+        running = self._activity.running()
         if self._kernel.provides(DaemonAttestation):
             try:
-                return self._kernel.resolve(DaemonAttestation).job_running()
-            except Exception:  # noqa: BLE001 - an unknown daemon state must not block updates for good
-                return False
-        return False
+                if self._kernel.resolve(DaemonAttestation).job_running():
+                    running.append("a daemon job")
+            except Exception:
+                log.debug("the daemon's tick lock couldn't be read", exc_info=True)
+        return running
 
     # The loop --------------------------------------------------------------------------------------------------------
 
@@ -577,20 +757,80 @@ class AutoUpdater:
         """One look at the plan: check when due, open or cancel the countdown, apply when it ends."""
         now = self._clock()
         if self.reason() is not None:
+            self._held = True
             if self.plan.apply_at is not None:
                 with self._editing() as plan:
                     plan.apply_at = None
             return
-        if now >= self._next_check:
+        if self._held:  # just turned on (or update checks on again): look now, not at the next half hour
+            self._held = False
+            self._next_check = now
+        checking = now >= self._next_check
+        if checking:
             self._next_check = now + CHECK_EVERY + self._between(timedelta(0), JITTER)
             self.check(now)
-        busy = self.busy()
+        waiting = self.waiting_for()
+        if waiting != self._waited:  # what holds the countdown off, in the log once per change
+            self._waited = waiting
+            log.info("automatic update %s", f"waits for: {', '.join(waiting)}" if waiting else "waits for nothing")
         with self._editing() as plan:
-            due = step(plan, now, busy=busy)
+            counting = plan.apply_at
+            due = step(plan, now, busy=bool(waiting))
             if due:
                 plan.applying = True
+            elif plan.apply_at != counting:
+                log.info("automatic update countdown %s", "opened" if plan.apply_at else "held off")
         if due:
+            log.info("automatic update applies now: %s", update_summary(plan))
             self.apply()
+        elif checking and not waiting and not self.plan.core and not self.plan.plugins:
+            self._refresh_desktop()
+            self._repair_plugins()
+
+    def _repair_plugins(self) -> None:
+        """Install the plugins installed plugins require but lack (`system.plugin.repair`), then restart to load them.
+
+        Each missing plugin is tried once per version of the plugin that requires it; a failure leaves a notice that
+        disappears once the plugin is there. Nothing is signed in: System health names each sign-in step.
+        """
+        found = next(
+            (op for record, op in self._kernel.lets(OperationLet) if (record.qualname, op.name) == REPAIR_OPERATION),
+            None,
+        )
+        if found is None or not self._kernel.available(found.func):
+            return
+        try:
+            with self._kernel.resolve(CurrentUser).local("daemon"):
+                result = self._kernel.invoke(found, automatic=True)
+        except HeinzelError as exc:  # another change is running: the next check asks again
+            log_event(log, "update.auto.repair", outcome="skipped", reason=str(exc))
+            return
+        if getattr(result, "needs", None):
+            log_event(log, "update.auto.repair", outcome="ok", detail=getattr(result, "message", ""))
+        if getattr(result, "restart_required", False) and self._restart is not None:
+            try:
+                self._restart()
+            except Exception as exc:  # noqa: BLE001 - the plugins are installed; the next start loads them
+                log_event(log, "update.auto.repair_restart", level=logging.WARNING, outcome="error", error=str(exc))
+
+    def _refresh_desktop(self) -> None:
+        """Bring an already installed desktop shell up to this running stable Core."""
+        if platform.system() != "Darwin":
+            return
+        receipt = Path.home() / ".config/heinzel/desktop-installation.json"
+        if not os.path.lexists(receipt):
+            return
+        from heinzel.heads._desktop_installation import install_desktop  # noqa: PLC0415 - managed Mac app only
+
+        try:
+            entries = self._kernel.resolve(Installation).tool_entrypoints()
+            executable = next((entry for entry in entries if entry.name == "hz"), None)
+            if executable is not None:
+                status = install_desktop(self._version, executable, update_only=True)
+                if status in {"updated", "deferred"}:
+                    log.info("desktop automatic update: %s", status)
+        except (HeinzelError, OSError, SubprocessError) as exc:
+            log.warning("desktop automatic update could not finish: %s", exc)
 
     def check(self, now: datetime) -> None:
         """Ask for a newer stable hz and newer plugins old enough to install; what can't be asked stays as it was.
@@ -601,20 +841,36 @@ class AutoUpdater:
         once installed. hz and the plugins are asked apart: GitHub or PyPI failing for one keeps the other's news.
         """
         settings = self._read_settings()
+        core_ok = plugins_ok = True
         try:
             core, commit = self._check_core(settings, now)
         except Exception as exc:  # noqa: BLE001 - offline or rate-limited: keep what hz's last check found
             log.info("automatic update check of hz failed: %s", exc)
             core, commit = self.plan.core, self.plan.commit
+            core_ok = False
         try:
-            plugins = self._check_plugins(settings, now)
+            news = self._check_plugins(settings, now)
         except Exception as exc:  # noqa: BLE001 - the same for the plugins
             log.info("automatic update check of the plugins failed: %s", exc)
-            plugins = dict(self.plan.plugins)
+            news = None
+            plugins_ok = False
+        self._looked = (now, core_ok, plugins_ok)
+        plugins = dict(self.plan.plugins) if news is None else {n: r.version for n, r in news.releases.items()}
         with self._editing() as plan:
+            before = (plan.core, dict(plan.plugins))
             found(plan, core, plugins, now)
             if plan.core == core:
                 plan.commit = commit
+            if news is not None:
+                commits = {n: r.commit for n, r in news.releases.items() if r.commit is not None}
+                plan.plugin_commits = {n: c for n, c in commits.items() if n in plan.plugins}
+                plan.followed = list(news.followed)
+                if news.held != plan.held_plugins:
+                    for line in news.held:
+                        log.info("automatic update holds a plugin back: %s", line)
+                plan.held_plugins = list(news.held)
+            if (plan.core, plan.plugins) != before:
+                log.info("automatic update found: %s", update_summary(plan) or "nothing newer")
 
     def _check_core(self, settings: Settings, now: datetime) -> tuple[str | None, str | None]:
         """A newer stable hz old enough to install, and the commit its tag names for an installation from a tag."""
@@ -633,14 +889,14 @@ class AutoUpdater:
         facts = source.release_facts(str(version), TIMEOUT)
         return (None, None) if facts.prerelease else (str(version), facts.commit)
 
-    def _check_plugins(self, settings: Settings, now: datetime) -> dict[str, str]:
+    def _check_plugins(self, settings: Settings, now: datetime) -> PluginNews:
+        """Newer plugin releases old enough to install that can move with what they need, dependencies first."""
         if not self._kernel.provides(PluginReleases):
-            return {}
-        return {
-            name: release.version
-            for name, release in self._kernel.resolve(PluginReleases).newer_releases(TIMEOUT).items()
-            if _old_enough(release.uploaded_at, settings.auto_update_plugin_min_age_hours, now)
-        }
+            return PluginNews({})
+        hours = settings.auto_update_plugin_min_age_hours
+        return self._kernel.resolve(PluginReleases).announceable(
+            TIMEOUT, lambda release: _old_enough(release.uploaded_at, hours, now)
+        )
 
     def _from_tag(self) -> bool:
         """Whether hz is installed from a release tag (else from PyPI)."""
@@ -659,7 +915,7 @@ class AutoUpdater:
             self._applying = handle
             weakref.finalize(self, _unlock, handle)  # closed with this updater at the latest
         if self._applying is None:
-            # Another `hz ui` on this state folder applies now: it restarts with the news, this one waits.
+            # Another `hz ui serve` on this state folder applies now: it restarts with the news, this one waits.
             log.info("automatic update left to another server that is applying it")
             with self._editing() as plan:
                 plan.applying = False
@@ -667,7 +923,9 @@ class AutoUpdater:
                 plan.window_at = self._clock() + POSTPONE
             return
         news: dict[str, Any] = {"core": self.plan.core, "plugins": dict(self.plan.plugins), "commit": self.plan.commit}
-        if (moved := self._tag_moved(news)) is not None:
+        if commits := {n: c for n, c in self.plan.plugin_commits.items() if n in self.plan.plugins}:
+            news["plugin_commits"] = commits
+        if (moved := self._tag_moved(news) or self._plugin_tag_moved(news)) is not None:
             self._fail(moved)
             return
         try:
@@ -697,7 +955,7 @@ class AutoUpdater:
 
     def _fail(self, message: str) -> None:
         with self._editing() as plan:
-            failed(plan, message, self._clock())
+            failed(plan, message, self._clock(), self._version)
         _unlock(self._applying)
         self._applying = None
 
@@ -718,10 +976,27 @@ class AutoUpdater:
             f"hz {self._version} keeps running. It will look again in 6 hours."
         )
 
+    def _plugin_tag_moved(self, news: dict[str, Any]) -> str | None:
+        """Why a tagged plugin can't be trusted now: its tag names another commit than when announced, or is unasked."""
+        commits: dict[str, str] = news.get("plugin_commits") or {}
+        for name, commit in commits.items():
+            version = news["plugins"][name]
+            try:
+                now = self._kernel.resolve(PluginReleases).tag_commit(name, version, TIMEOUT)
+            except Exception as exc:  # noqa: BLE001 - offline: not now, and say so
+                log.info("automatic update: the tag of %s %s couldn't be asked: %s", name, version, exc)
+                return failure_message(self._version)
+            if now != commit:
+                return (
+                    f"The tag of {name} {version} names another commit than when it was announced, so nothing was "
+                    f"installed and hz {self._version} keeps running. It will look again in 6 hours."
+                )
+        return None
+
     def _recover(self) -> None:
         """Put back an update that a dead process left half done, before anything else (`system.recover-announced`).
 
-        Only while no other `hz ui` on this state folder applies one: its copy is in use.
+        Only while no other `hz ui serve` on this state folder applies one: its copy is in use.
         """
         handle = _try_lock(self._apply_lock)
         if handle is None:
@@ -742,10 +1017,14 @@ class AutoUpdater:
 
     def _update(self, news: dict[str, Any]) -> object:
         plugins = [f"{name}=={version}" for name, version in news["plugins"].items()]
+        tagged: dict[str, str] = news.get("plugin_commits") or {}
+        commits = [f"{name}@{commit}" for name, commit in tagged.items()]
         for record, operation in self._kernel.lets(OperationLet):
             if record.qualname == UPDATE_MODULE and operation.name == UPDATE_OPERATION:
                 with self._kernel.resolve(CurrentUser).local("daemon"):
-                    return self._kernel.invoke(operation, core=news["core"], plugins=plugins, commit=news["commit"])
+                    return self._kernel.invoke(
+                        operation, core=news["core"], plugins=plugins, commit=news["commit"], plugin_commits=commits
+                    )
         msg = "The system module is off, so hz can't update itself."
         raise RuntimeError(msg)
 
@@ -774,7 +1053,25 @@ class AutoUpdater:
                 development=self.development,
                 held=self.development or (reason if reason == CHECKS_OFF else None),
                 by_hand=[] if self.development is not None else self.by_hand(),
+                holds=[] if self.development is not None else self.holds(),
+                checked_at=self._looked[0] if self._looked else None,
+                core_checked=self._looked[1] if self._looked else None,
+                plugins_checked=self._looked[2] if self._looked else None,
+                plugins_held=[] if self.development is not None else list(plan.held_plugins),
             )
+
+    def recheck(self) -> AutoUpdateStatus:
+        """Look for news now because a person asked (the pane's retry button), at most once every ten seconds."""
+        now = self._clock()
+        if self._looked is not None and now - self._looked[0] < RECHECK_GAP:
+            return self.status()
+        if self.reason() is None:
+            self.check(now)
+        elif self.development is None and self._read_settings().update_check:
+            # Automatic updates can't run here, but the pane still shows when hz itself was last looked up.
+            ReleaseCache(self._kernel.settings.cache_dir).refresh(self._kernel.resolve(ReleaseSource), TIMEOUT)
+            self._looked = (now, ReleaseCache(self._kernel.settings.cache_dir).error is None, False)
+        return self.status()
 
     def postpone(self) -> AutoUpdateStatus:
         """Put the update off by an hour, for every window."""
@@ -801,7 +1098,7 @@ class AutoUpdater:
 
     @contextmanager
     def _editing(self) -> Generator[Plan]:
-        """The plan as the state file has it now, to change and save, under a lock every `hz ui` takes.
+        """The plan as the state file has it now, to change and save, under a lock every `hz ui serve` takes.
 
         Two servers on one state folder each change the latest plan, never their own older copy, so neither undoes
         the other's postpone, dismissal or news (no last writer wins). What only this process knows (that it applies
@@ -854,6 +1151,11 @@ def add_auto_update(app: FastAPI, updater: AutoUpdater | None) -> None:
         response.headers["Cache-Control"] = "no-store"
         return require().postpone()
 
+    @app.post(f"{AUTO_UPDATE_PATH}/check", tags=["web"], responses=refused)
+    def check_now(response: Response) -> AutoUpdateStatus:
+        response.headers["Cache-Control"] = "no-store"
+        return require().recheck()
+
     @app.post(f"{AUTO_UPDATE_PATH}/dismiss", tags=["web"], responses=refused)
     def dismiss_message(response: Response) -> AutoUpdateStatus:
         response.headers["Cache-Control"] = "no-store"
@@ -898,16 +1200,18 @@ async def as_work[R](activity: Activity, call_next: Callable[[R], Awaitable[Resp
     A streamed chat turn runs while its body streams, and its operation's thread can outlive the stream when the
     browser leaves; `WORK` lets the stream hold the activity for that thread as well.
     """
-    activity.enter()
-    token = WORK.set((activity.enter, activity.leave))
+    url = getattr(request, "url", None)
+    what = f"{getattr(request, 'method', 'POST')} {getattr(url, 'path', '')}".strip()
+    activity.enter(what)
+    token = WORK.set((lambda: activity.enter(what), lambda: activity.leave(what)))
     try:
         response = await call_next(request)
     except BaseException:
-        activity.leave()
+        activity.leave(what)
         raise
     finally:
         WORK.reset(token)
-    return held_until_sent(response, activity.leave)
+    return held_until_sent(response, lambda: activity.leave(what))
 
 
 def counts_as_work(method: str, path: str) -> bool:

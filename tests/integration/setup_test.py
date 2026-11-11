@@ -1,5 +1,6 @@
 """`hz setup` and `hz setup <module>` through the CLI head, answered on stdin as a person would (ADR 0032). Offline."""
 
+import json
 import tomllib
 
 import anyio
@@ -9,11 +10,26 @@ from mcp import Client
 from pydantic import Field
 from typer.testing import CliRunner
 
-from heinzel import Check, Config, ConfigEditor, CredentialLet, Credentials, Module, ModuleSettings, Prompter, Status
+from heinzel import (
+    Check,
+    Config,
+    ConfigEditor,
+    CredentialLet,
+    Credentials,
+    ManualInstall,
+    Module,
+    ModuleSettings,
+    PrerequisiteService,
+    Progress,
+    Prompter,
+    Status,
+)
 from heinzel.heads import api, mcp
 from heinzel.heads.cli import _setup, build
 from heinzel.kernel import ScriptedPrompter, user_config_dir
+from heinzel.modules.system.prerequisite._service import ToolPrerequisites
 from heinzel.testing import MemoryBackend
+from tests._prerequisite_machine import ready_everywhere
 
 pytestmark = pytest.mark.integration
 
@@ -195,6 +211,64 @@ def test_with_no_steps_setup_says_so(make_kernel):
     result = runner.invoke(build(make_kernel(builtins=True)), ["setup"])
     assert result.exit_code == 0
     assert "No module has a setup step." in result.output
+
+
+def tools_only() -> Module:
+    module = Module("tools", "Needs a tool and asks nothing.")
+    module.prerequisite(
+        "gizmo",
+        title="Gizmo",
+        purpose="Powers the tools.",
+        linux=ManualInstall("Install the gizmo with your package manager."),
+    )
+    return module
+
+
+def test_an_owner_without_a_step_shows_its_missing_tool_and_does_not_fail_the_run(make_kernel, terminal):
+    kernel = make_kernel(builtins=True, tools=tools_only())
+    kernel.bind(PrerequisiteService, ToolPrerequisites(kernel, Progress(), ready_everywhere("gizmo")))
+
+    result = runner.invoke(build(kernel), ["setup", "--json"])
+
+    assert result.exit_code == 0, result.output
+    steps = json.loads(result.stdout)["steps"]
+    assert steps == [
+        {
+            "module": "tools",
+            "required": False,
+            "outcome": "pending",
+            "detail": "gizmo: Install the gizmo with your package manager.",
+            "prerequisites": True,
+        }
+    ]
+
+
+def test_ready_tools_leave_setup_with_nothing_to_say_about_them(make_kernel, terminal):
+    kernel = make_kernel(builtins=True, tools=tools_only())
+    kernel.bind(PrerequisiteService, ToolPrerequisites(kernel, Progress(), ready_everywhere()))
+
+    result = runner.invoke(build(kernel), ["setup"])
+
+    assert result.exit_code == 0, result.output
+    assert "No module has a setup step." in result.output
+    assert "gizmo" not in result.output
+
+
+def test_json_without_any_step_or_missing_tool_is_empty(make_kernel, terminal):
+    kernel = make_kernel(builtins=True, tools=tools_only())
+    kernel.bind(PrerequisiteService, ToolPrerequisites(kernel, Progress(), ready_everywhere()))
+
+    result = runner.invoke(build(kernel), ["setup", "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"steps": [], "doctor": None}
+
+
+def test_setup_for_a_module_with_only_tools_points_to_the_check(make_kernel, terminal):
+    result = runner.invoke(build(make_kernel(builtins=True, tools=tools_only())), ["setup", "tools"])
+
+    assert result.exit_code == 2
+    assert "hz system prerequisite check --owner tools" in " ".join(result.stderr.replace("│", " ").split())
 
 
 def test_mcp_and_rest_expose_no_setup(kernel):

@@ -15,13 +15,35 @@ from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field
+from rich.console import RenderableType
 
 from heinzel import Check, Module, Status
 from heinzel.kernel import OrgContext
 from heinzel.modules.team._context import TeamContext
 from heinzel.modules.team._models import ROLES, Adopted, Manifest, Member, Roster, TeamPlan, TeamSettings, TeamShow
-from heinzel.modules.team._render import render_adopted, render_plan, render_show
 from heinzel.modules.team._service import TeamService
+
+
+def render_adopted(adopted: Adopted) -> RenderableType:
+    """What `adopt` recorded, and what is left to do."""
+    from heinzel.modules.team._render import render_adopted  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_adopted(adopted)
+
+
+def render_plan(plan: TeamPlan) -> RenderableType:
+    """Each step with a mark for done or still to do, the commands it runs, and what comes next."""
+    from heinzel.modules.team._render import render_plan  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_plan(plan)
+
+
+def render_show(show: TeamShow) -> RenderableType:
+    """The team, its checkout and its active members; without a team, only how to get one."""
+    from heinzel.modules.team._render import render_show  # noqa: PLC0415 - CLI presentation is loaded only when rendered
+
+    return render_show(show)
+
 
 module = Module(
     "team",

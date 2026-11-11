@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { useDurableDraft } from "@/chat/durableDraft";
@@ -47,10 +47,21 @@ function show(answers: Parameters<typeof mockApi>[0]) {
   return { ...api, ...view };
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+/** The reload hold re-checks on a 1 s interval; the tests step it instead of sleeping on a loaded machine. */
+function stepReloadChecks() {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  return (ms: number) => act(() => vi.advanceTimersByTime(ms));
+}
 
 describe("automatic updates", () => {
   it("shows the server's countdown with what will be installed and one Postpone button", async () => {
+    // A frozen clock: the countdown ticks from Date.now, so a slow render must not turn 30 s into 29 s.
+    vi.useFakeTimers({ toFake: ["Date"] });
     const { container } = show({ "/api/auto-update": base });
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog).toHaveTextContent("hz updates itself in 30 s");
@@ -113,24 +124,35 @@ describe("automatic updates", () => {
     const reload = vi.spyOn(updateTransport, "reload").mockImplementation(() => undefined);
     vi.spyOn(updateTransport, "clean").mockResolvedValue(undefined);
     let typing = true;
+    const step = stepReloadChecks();
     const release = registerReloadHold(() => typing);
     let version = "1.0.0";
     const client = queryClient();
     sessionStorage.setItem("hz.token", "test-token");
-    mockApi({ "/api/auto-update": () => ({ ...base, phase: "idle", version, seconds_left: null }) });
+    mockApi({
+      "/api/auto-update": () => ({
+        ...base,
+        phase: "idle",
+        version,
+        seconds_left: null,
+        message: `hz is up to date: ${version}.`,
+      }),
+    });
     render(
       <Providers client={client}>
         <AutoUpdate />
       </Providers>,
     );
-    await vi.waitFor(() => expect(client.getQueryData(["web", "auto-update", true])).toBeDefined());
+    // Query data arrives before React's scheduled notification; observe the original rendered version first.
+    await vi.waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("hz is up to date: 1.0.0."));
     version = "1.1.0";
     await act(() => client.refetchQueries({ queryKey: ["web", "auto-update"] }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Reload to finish the update.");
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Reload to finish the update."));
+    step(3000); // three checks while held
     expect(reload).not.toHaveBeenCalled(); // the unsent text stays
     typing = false; // sent, and the answer is done
-    await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 3000 });
+    step(1000);
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
     release();
   });
 
@@ -139,10 +161,19 @@ describe("automatic updates", () => {
     async (kind) => {
       const reload = vi.spyOn(updateTransport, "reload").mockImplementation(() => undefined);
       vi.spyOn(updateTransport, "clean").mockResolvedValue(undefined);
+      const step = stepReloadChecks();
       let version = "1.0.0";
       const client = queryClient();
       sessionStorage.setItem("hz.token", "test-token");
-      mockApi({ "/api/auto-update": () => ({ ...base, phase: "idle", version, seconds_left: null }) });
+      mockApi({
+        "/api/auto-update": () => ({
+          ...base,
+          phase: "idle",
+          version,
+          seconds_left: null,
+          message: `hz is up to date: ${version}.`,
+        }),
+      });
       render(
         <Providers client={client}>
           {kind === "update draft" ? <UpdateComposer /> : <DurableComposer />}
@@ -151,15 +182,17 @@ describe("automatic updates", () => {
       );
       const box = screen.getByRole("textbox", { name: "Message" });
       fireEvent.change(box, { target: { value: "Half a thought" } });
-      await vi.waitFor(() => expect(client.getQueryData(["web", "auto-update", true])).toBeDefined());
+      // The composer can render before AutoUpdate receives its first version.
+      await vi.waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("hz is up to date: 1.0.0."));
       version = "1.1.0"; // the server restarted on the new version
       await act(() => client.refetchQueries({ queryKey: ["web", "auto-update"] }));
-      expect(await screen.findByRole("status")).toHaveTextContent("Reload to finish the update.");
-      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Reload to finish the update."));
+      step(3000); // three checks while held
       expect(reload).not.toHaveBeenCalled();
       expect(box).toHaveValue("Half a thought");
       fireEvent.change(box, { target: { value: "" } }); // sent or cleared
-      await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 3000 });
+      step(1000);
+      await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
     },
   );
 

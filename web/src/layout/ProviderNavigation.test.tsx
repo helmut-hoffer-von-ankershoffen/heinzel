@@ -177,6 +177,40 @@ describe("navigation declared by any installed provider", () => {
     await expectAccessible(view.container);
   });
 
+  it("marks only the selected provider panel in expanded and compact navigation", async () => {
+    const clock = {
+      ...entry,
+      id: "harbor:clock",
+      title: "World Clock",
+      sidebar: { kind: "navigate" as const, path: "/?panel=clock" },
+    };
+    const conditions = {
+      ...entry,
+      title: "Local conditions",
+      sidebar: { kind: "navigate" as const, path: "/?panel=conditions" },
+    };
+    mockApi({ ...answers, "/api/system/ui/navigation": [clock, conditions] });
+    renderAt("/doctor?panel=conditions");
+
+    expect(await screen.findByRole("link", { name: "Local conditions" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "World Clock" })).not.toHaveAttribute("aria-current");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Collapse navigation" }));
+    expect(screen.getByRole("link", { name: "Local conditions" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "World Clock" })).not.toHaveAttribute("aria-current");
+  });
+
+  it.each([
+    ["/doctor?panel=conditions&view=probe", true],
+    ["/doctor?panel=chat", false],
+    ["/doctor?view=probe", false],
+  ] as const)("matches a concrete provider query target at %s", async (path, selected) => {
+    mockApi(answers);
+    renderAt(path);
+    const link = await screen.findByRole("link", { name: "Local conditions" });
+    if (selected) expect(link).toHaveAttribute("aria-current", "page");
+    else expect(link).not.toHaveAttribute("aria-current");
+  });
+
   it.each(["not installed", "disabled"])(
     "omits absent contributions when a provider is %s, even if old config remains",
     async (state) => {

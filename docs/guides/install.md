@@ -1,9 +1,9 @@
 ---
-title: Install Heinzelmännchen
-description: Install the standard Heinzelmännchen app, start the web workspace, and verify your first session.
+title: Install Heinzel
+description: Install the standard Heinzel app, start the web workspace, and verify your first session.
 ---
 
-# Your first Heinzelmännchen.
+# Install Heinzel.
 
 The standard app installs the core and the default Clock, Resource, Tailscale and theme plugins. It runs on
 **macOS and Linux**. Windows may work, but is not supported. You need no separate Python.
@@ -30,10 +30,30 @@ wget -qO- https://heinzel.team/install.sh | sh
 ```
 
 The first run picks the newest standard release, verifies its hashes, installs the default plugins and opens
-the workspace. Later runs open the installed app. On Linux you need a systemd user manager in your session.
+the workspace. Later interactive runs check the latest standard release and update an older verified app when
+the managed installation can safely change. If the release server cannot be reached, the launcher reports the
+installed version before opening it. The launcher also reports when it defers a newer release because the
+owned daemon is loaded or applying the standard profile would replace newer or explicitly selected plugins.
+
+On Linux you need a systemd user manager in your session.
 Tailscale sharing is opt-in; installing its plugin does not make your workspace public.
 
-Stop with **Ctrl-C**. Background operation is optional. Run `hz setup` to choose services and AI access.
+First interactive setup asks for missing name, team name and required profile details through normal configuration.
+Existing values are preserved. Setup is complete only when system health is green.
+
+The interactive launcher offers the scheduled daemon, web server after login and native notifier separately;
+each prompt defaults to **Yes**. Decline any choice with **No**. All selected installation runs in the verified
+persistent standard app. Noninteractive, help and machine-readable calls make no automatic service choices.
+Unsupported native notification platforms or desktops are reported; OS permission and visible delivery remain
+separate checks.
+
+If macOS has notifications turned off for Heinzel Notifier, open **System Settings → Notifications → Heinzel
+Notifier** and enable **Allow notifications**. Run `hz system notify install` to send a test notification, then
+run `uvx heinzel@latest` again to finish setup.
+
+`hz ui` displays help. Use `hz ui serve` for foreground serving, stopped with **Ctrl-C**, or `hz ui open` to open
+the installed service and otherwise serve in the foreground. `hz ui install` is available without a preview flag;
+`hz ui status`, `restart` and `uninstall` manage its owned service. Run `hz setup` to configure AI access.
 `hz system doctor` may report missing optional credentials; configure an integration before you rely on it.
 
 [Continue to your first session →](first-steps.md)
@@ -54,6 +74,20 @@ hz system channel --to stable --yes
 **Update channel** in Settings makes the same choice. It survives updates, and choosing a channel installs nothing
 until you update. Going back to stable never downgrades: edge stays installed until stable is as new, and then the next
 update moves you to stable. Your settings, plugins and data stay as they are.
+
+## Tools the app uses
+
+Git and the GitHub CLI (`gh`) are part of the standard app: they clone team repositories and plugin sources.
+On macOS the installer shows what is missing and installs it with [Homebrew](https://brew.sh); it does not install
+Homebrew itself: without it, the installer links to brew.sh and the app still installs.
+
+On Linux it prints the steps for your distribution and installs nothing. Add `--no-tools` to `hz-install` to only check. After you install
+a tool yourself, `hz system prerequisite check` tells you when everything is usable. Installing `gh` never signs you in:
+run `gh auth login` yourself.
+
+Features bring their own tools only when you choose them: the Claude Code or Codex command line for the agent runner
+you select, for example. `hz setup` shows what a step needs, asks before installing it on macOS, and leaves the
+program in place if you later remove a plugin. Each plugin's page lists its prerequisites.
 
 ## Building a plugin? Start with the SDK
 
@@ -87,6 +121,86 @@ The first `add` previews. Check the source and compatibility, then confirm. Some
 | A private plugin cannot be found | Run `gh auth login` using an account allowed to read its repository. |
 | You want exact command options | Use `hz --help` and the [CLI reference](../CLI_REFERENCE.md). |
 
+### Install or remove the desktop app
+
+`hz app install` installs the managed desktop app into your user Applications folder (`~/Applications`, not the system
+`/Applications`) and shows every step: resolving the release, downloading with size, speed and time remaining, checking
+the checksum and provenance, extracting, marking the download for macOS, installing and verifying the result. It ends with
+`Installed Heinzelmännchen X at <path>` and the next step. When the output is redirected the same steps print as plain lines
+on stderr and stdout keeps only the result. Ctrl-C cancels and leaves no half-installed app. If the release has no desktop app
+yet it says so; run `hz system update` or try again later. A stalled network is reported after 20 to 30 seconds per request
+(retried twice), and a second install waits at most two minutes for the first. `hz app uninstall` removes the app and keeps your profile.
+
 For updates, removal and platform details, see the tested instructions in the
 [repository README](../../README.md#install). The desktop lifecycle has
 [explicit production gates](../DESKTOP_PRODUCTION_GATES.md); the local web command above is the starting path.
+
+### Notification history needs recovery
+
+If `hz system doctor` reports **notification store: down**, hz cannot safely read the durable record of notices
+already queued. Some integrity failures block notification writes to avoid repeating a notice whose result is uncertain.
+Reinstalling the native notifier does not repair this history. Doctor leaves the existing state unchanged.
+
+For a read-only, bounded check, doctor verifies at most 4 MiB of notification state and rejects linked, nonregular,
+public or inaccessible store paths. Larger histories report verification unavailable; this does not prove corruption
+and does not impose a new limit on durable writes. Preserve the full history for review rather than trimming keys.
+
+Preserve the existing notification store and its `durable-notices` marker. Recovery requires a coherent, trusted
+backup of the same profile: the notification state must include both its notices and complete durable replay-key set,
+with the corresponding marker. A legacy list of notices alone is insufficient; display history is bounded and cannot
+reconstruct missing replay keys. Do not delete the marker, reset the store or convert a legacy list to an empty-key
+record to silence the warning.
+
+Before any restoration, stop writers using that profile through their supported controls and ensure they use the
+current hz version. Have the backup and restoration procedure reviewed before changing the preserved state, then run
+`hz system doctor` again before resuming notification delivery. If no coherent backup is available, keep the store
+unchanged and ask for recovery help.
+
+One shape has a supported recovery when no backup exists: doctor says *a legacy notice list replaced its replay
+keys*. A writer from before durable notices replaced the key-bearing state with a plain list, so the lost keys cannot
+come back from this store. `hz system notify recover` reports what it found and changes nothing. With `--apply` it
+archives every original file under the state directory's `notify-recovery` with its SHA-256, mode and time, writes a
+`receipt.json`, keeps the old notices without popping them up again, and starts a new replay-key set taken only from
+those notices' own keys. Any other damage is refused untouched and exits 1.
+
+Run it after updating hz, so no writer from before durable notices is still running. The receipt names the new state's SHA-256; the recovery completed when
+`notices.json` has that digest. A Heinzel's interrupted delivery from before the overwrite stays uncertain or
+abandoned, as it already was, and recovery itself posts nothing. One check-in slot per session may be recorded once
+more if its notice was recorded right before a crash and the legacy writer then dropped it.
+
+
+On first interactive setup, provide your real name, team and required profile details. Existing values are kept.
+Choose **Set up AI later** to use Heinzel without an AI account; this saves an explicit unconfigured choice for uses
+that run only when asked. Existing provider selections are kept.
+
+Asking or sending a chat still requires configured
+access, and an active scheduled Heinzel still reports missing capabilities. Setup finishes only after actual system
+health is up. A bare noninteractive first use with missing required profile details returns an incomplete result
+without prompting or opening the app.
+
+When upgrading an existing installation, an old explicit foreground vector such as `hz ui --port 0 --no-browser` forwards to
+the same serving implementation with a deprecation hint. New scripts and applications use `hz ui serve`; bare
+`hz ui` remains group help and never starts a listener.
+
+## Uninstall offline
+
+For a verified standard installation, run `hz system uninstall`.
+It needs no network or running web UI. Your logged-in user service manager must be available: it stops only the installation's verified owned web, daemon and calendar-reminder jobs across all recorded profiles, then removes its uv tool
+and command scripts. Your data, configuration, agent skills, notifier and private recovery history stay.
+
+Core installs an exact pinned uv dependency. Removal authenticates its native bytes and stages a private copy before
+stopping any service; it never executes uv from PATH. A missing artifact, changed SDK, foreign service or
+unsupported installation refuses before unsafe removal. Unmarked SDK and desktop runtime installations use their
+own local installer. No purge or network bootstrap runs as part of this command.
+
+If removal is interrupted, follow the concrete offline recovery command printed by the failure. Its private script
+uses the already installed external Python and retained verified remover, so it remains usable after the command's
+SDK is gone. Keep its journal and integration files until recovery reports completion.
+
+
+Older owned web launchers remain inspectable after an upgrade. Run `hz ui status` to find the current port, then use
+`hz ui install --port 8738` with that value in place of 8738, or restart the ready owned service, to update its launcher
+before loading current code. An interrupted update prints the exact install or uninstall command to retry; retain its
+journal and recovery fences until that
+operation completes. Offline uninstall retains compatible fences for older shells through verified SDK removal and
+integration cleanup, and its copied recovery remains usable after the SDK is gone.

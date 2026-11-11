@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import runpy
 import stat
 import subprocess
 import sys
@@ -21,6 +22,30 @@ pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
 
+
+def test_installed_browser_service_journey_keeps_cold_starts_out_of_browser_shards():
+    recipe = "show-browser-allocation:\n\t@printf '%s\\n' '$(E2E_WEB)' '$(E2E_WEB_1)' '$(E2E_WEB_2)'"
+    result = subprocess.run(
+        ["make", "--no-print-directory", "-f", "Makefile", "-f", "-", "show-browser-allocation"],
+        cwd=REPO,
+        input=recipe + "\n",
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=3,
+    )
+    browser, first, second = [set(line.split()) for line in result.stdout.splitlines()]
+    journey = "tests/e2e/ui_service_browser_test.py"
+    assert journey not in browser
+    assert journey not in first | second
+    assert "tests/e2e/ui_service_test.py" not in browser
+    assert first.isdisjoint(second)
+    assert first | second == browser
+    # The mounted UI sweep already contains roughly half the observed browser phase time.
+    assert first == {"tests/e2e/web_ui_test.py"}
+    assert second == browser - first
+
+
 _SANDBOX_SCRIPT = REPO / "desktop" / "ci" / "restore_linux_sandbox.py"
 _SANDBOX_SPEC = importlib.util.spec_from_file_location("electron_linux_sandbox", _SANDBOX_SCRIPT)
 assert _SANDBOX_SPEC is not None
@@ -34,6 +59,24 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
+        "python3 -I scripts/release_candidate.py": "records release source",
+        "python3 -I scripts/focused_plan.py": "routes exact source to a reviewed focused plan or a full candidate",
+        'if [ "$GITHUB_REPOSITORY" != helmut-hoffer-von-ankershoffen/heinzel ]': (
+            "restricts scheduled maintenance to canonical main"
+        ),
+        "uv run --no-build --frozen --script scripts/focused_coverage.py": "runs and measures reviewed test selectors",
+        "required=(admission changes lint": "requires every owning focused job",
+        "sudo sed -i ": "uses the primary signed Ubuntu archive for focused browser runtime setup",
+        "uv run --frozen --no-sync --no-build python scripts/ci_node.py": (
+            "exports the already installed locked runtime through GitHub's step-local GITHUB_PATH setup contract"
+        ),
+        "sudo sed -i 's|http://azure\\.archive\\.ubuntu\\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "
+        "/etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources": (
+            "selects the same signed primary Ubuntu archive as Docs before browser dependency installation"
+        ),
+        "uv run --no-build --script scripts/main_batch.py": "read-only bounded admission of an explicit main batch",
+        "echo 'The validated aggregate base": "records that the final run consumed the aggregate base",
+        'echo "Integration CI is recorded': "links the intermediate admission to its exact final run",
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
             "the secret must be configured in this repo"
         ),
@@ -44,9 +87,22 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --no-build coverage report --format=total": "hands the measured total to the merge gate",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
+        'gh run cancel "$RUN_ID"': "a failed cheap check cancels the rest of its own pull request run",
     },
     "merge-gate.yml": {
         "uv run --no-build --frozen --script scripts/merge_gate.py": "judges by public APIs, from the base branch",
+        "uv run --no-build --frozen --script scripts/focused_gate.py": "verifies protected focused evidence",
+        '[[ "$PR_HEAD_SHA" =~': "finds the open pull request whose finished CI the gates judge",
+        "for check in merge-gate coverage-floor": "reports the gates as check runs on the pull request's head",
+        "for check in MERGE_GATE COVERAGE_FLOOR": "completes both check runs, failing closed",
+    },
+    "focused-job.yml": {
+        '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
+        "uv run --no-build --quiet --script scripts/focused_job.py": "validates and runs one dispatched test selection",
+    },
+    "acceptance-sharded.yml": {
+        "uv python install 3.13": "the isolated acceptance study interpreter",
+        '"$(uv python find 3.13)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
     },
     "acceptance.yml": {
         "uv python install 3.13": "the interpreter the harness runs on",
@@ -55,21 +111,33 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ),
     },
     "docs.yml": {
+        "sudo sed -i ": "selects the primary signed Ubuntu archive before browser dependency installation",
         "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
         "uv run --quiet --frozen --no-build --group docs playwright install-deps": (
             "Chromium's system libraries, from the runner"
         ),
     },
     "publish.yml": {
+        'node desktop/ci/release-macos.mjs "$TAG"': "archives the built app and emits its release identity",
+        'archive="heinzel-desktop-': "checks the transferred desktop assets before signing them",
         'test "v$(uv version --short)" = "$TAG"': "refuses a tag that doesn't match the project version",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py": (
-            "scans the tagged tree with the term list from the secret"
+        '[[ "$TAG" =~': "binds the exact core tag, checkout, caller source and main ancestry before tooling",
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py checkout": (
+            "verifies the reviewed release source before producing its signed artifact manifest"
+        ),
+        "uv run --no-project --frozen --no-build --python 3.14 python -I scripts/acceptance/run_acceptance.py "
+        "--check-foreground-ui": "checks the Core version contract without running acceptance",
+        'if [ "$GITHUB_REPOSITORY" = helmut-hoffer-von-ankershoffen/heinzel ]; then': (
+            "requires core's configured confidential terms while preserving the shared plugin publisher"
         ),
         'name="$(uv version': "exports the release's CycloneDX bill of materials",
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/release_notes.py": (
             "writes the release notes"
         ),
         'cp "$BUNDLE"': "attaches the provenance attestation and creates the GitHub release",
+        'gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" -f event_type=core-release-published': (
+            "requests a separate Pages build using the producer's existing repository token"
+        ),
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
         "unzip -l ": "asserts that the released wheel ships Heinzel Notifier",
@@ -94,16 +162,12 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "pypi.yml": {
         'passed="$(gh run list': "refuses an upload without passing acceptance once promotion is active",
-        '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before build tooling",
-        "gh api ": "verifies the published GitHub release and exports its exact source commit",
+        '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before verification tooling",
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
             "requires the configured release term list"
         ),
-        "tar -czf notifier.tar.gz": "preserves the notifier executable bits and signature across runners",
-        "tar -xzf notifier.tar.gz": "restores the notifier from the same validated tag",
-        "uv build --package heinzel": "builds only the registered core project, never unpublished workspace plugins",
-        "uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py artifacts": (
-            "checks core metadata and complete packaged payloads"
+        'version="${TAG#v}"\ngh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release-artifacts': (
+            "verifies the original GitHub distributions and their producer, provenance, hashes and complete payloads"
         ),
         "python3 - <<'PY'": "rechecks hashes without checking out or running project code in the OIDC job",
     },
@@ -186,7 +250,7 @@ def test_workflows_run_checks_through_make(workflow):
     assert not_through_make(workflow) == [], "run these through a make target, or add them to NOT_MAKE with a reason"
 
 
-def test_every_main_commit_gets_its_own_ci_run_while_pull_requests_cancel_superseded_runs():
+def test_every_main_commit_and_release_pr_run_completes_while_other_pull_requests_cancel_superseded_runs():
     concurrency = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["concurrency"]
 
     def group(ref: str, sha: str) -> str:
@@ -197,7 +261,9 @@ def test_every_main_commit_gets_its_own_ci_run_while_pull_requests_cancel_supers
 
     assert group("refs/heads/main", "a") != group("refs/heads/main", "b")
     assert group("refs/pull/1/merge", "a") == group("refs/pull/1/merge", "b")
-    assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
+    assert concurrency["cancel-in-progress"] == (
+        "${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }}"
+    )
 
 
 def test_source_plugin_audits_receive_authoritative_repository_visibility():
@@ -210,16 +276,27 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
     workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
     jobs = workflow["jobs"]
     assert "lint" in jobs["ci-ok"]["needs"]
-    assert any(step.get("run") == "make managed-backend-setup managed-backend-check" for step in jobs["lint"]["steps"])
-    runs = [step.get("run") for step in jobs["lint"]["steps"]]
-    assert runs.index("make managed-backend-setup managed-backend-check") < runs.index("make typecheck")
+    runs = {step["run"]: step.get("if") for step in jobs["lint"]["steps"] if "run" in step}
+    assert list(runs).index("make managed-backend-setup") < list(runs).index("make typecheck")
+    assert runs["make managed-backend-static"] == "needs.changes.outputs.full_release != 'true'"
+    assert runs["make managed-backend-check"] == "needs.changes.outputs.full_release == 'true'"
     for name in ("Makefile", ".github/workflows/ci.yml.jinja"):
         assert "managed-backend" not in (REPO / "template" / name).read_text()
 
 
-@pytest.mark.parametrize("event", ["pull_request", "push"])
+def test_core_lint_does_not_export_an_empty_github_token_to_zizmor():
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    job = workflow["jobs"]["lint"]
+    [lint] = [step for step in job["steps"] if step.get("run") == "make lint"]
+    for scope in (workflow, job, lint):
+        assert {"GH_TOKEN", "GITHUB_TOKEN"}.isdisjoint(scope.get("env", {}))
+
+
+@pytest.mark.parametrize(("event", "batch_base"), [("pull_request", False), ("push", False), ("push", True)])
 @pytest.mark.parametrize("path", ["plugins/heinzel-unforeseen/src/plugin.py", "src/heinzel/kernel/public.py"])
-def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(tmp_path, monkeypatch, event, path):
+def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
+    tmp_path, monkeypatch, event, path, batch_base
+):
     workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
     jobs = workflow["jobs"]
     foreign_index = tmp_path / "foreign-index"
@@ -245,16 +322,25 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(tmp_
     output = tmp_path / "outputs"
     script = jobs["changes"]["steps"][-1]["run"]
     subprocess.run(
-        ["bash", "-euo", "pipefail", "-c", script], cwd=tmp_path,
-        env={**environment, "BASE": base, "EVENT": event, "GITHUB_OUTPUT": str(output)}, check=True, timeout=30,
-    )  # fmt: skip
+        ["bash", "-euo", "pipefail", "-c", script],
+        cwd=tmp_path,
+        env={
+            **environment,
+            "BASE": base,
+            "BATCH_BASE": base if batch_base else "",
+            "EVENT": event,
+            "GITHUB_OUTPUT": str(output),
+        },
+        check=True,
+        timeout=30,
+    )
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert not foreign_index.exists()
     plugin_only = path.startswith("plugins/")
-    assert values["core"] == str(not plugin_only).lower()
+    assert values["core"] == str(batch_base or not plugin_only).lower()
     assert values["plugins"] == str(plugin_only).lower()
-    assert values["contracts"] == str(not plugin_only).lower()
-    if plugin_only:
+    assert values["contracts"] == str(batch_base or not plugin_only).lower()
+    if plugin_only and not batch_base:
         assert values["notifier"] == values["electron"] == "false"
     for name in ("lint", "setup", "audit", "test", "coverage", "perf", "e2e", "build", "core-wheel"):
         assert "needs.changes.outputs.core == 'true'" in jobs[name]["if"]
@@ -625,10 +711,29 @@ def test_every_not_make_exemption_is_used():
     assert stale == [], "remove stale NOT_MAKE entries"
 
 
-def test_release_docs_only_publish_existing_recordings_even_when_the_caller_was_a_push():
+def test_release_docs_follow_the_successful_producer_without_recording_or_delaying_it():
     release = yaml.safe_load((REPO / ".github/workflows/release-tag.yml").read_text(encoding="utf-8"))
     docs = yaml.safe_load((REPO / ".github/workflows/docs.yml").read_text(encoding="utf-8"))
-    assert release["jobs"]["docs"].get("with", {}).get("site_only") is True
+    assert set(release["jobs"]) == {"tag", "publish"}
+    assert docs[True]["repository_dispatch"] == {"types": ["core-release-published"]}
+    publish = yaml.safe_load((REPO / ".github/workflows/publish.yml").read_text(encoding="utf-8"))
+    release_step, dispatch = publish["jobs"]["publish"]["steps"][-2:]
+    assert 'gh release create "$TAG"' in release_step["run"]
+    assert dispatch["timeout-minutes"] == 1
+    assert dispatch["if"] == "github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'"
+    assert (
+        dispatch["run"]
+        == 'gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" -f event_type=core-release-published'
+    )
+    site = docs["jobs"]["site"]
+    assert " ".join(site["if"].split()) == (
+        "github.event_name != 'repository_dispatch' || "
+        "(github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && "
+        "github.ref == 'refs/heads/main' && "
+        "github.event.sender.login == 'github-actions[bot]')"
+    )
+    assert site["steps"][0]["with"]["ref"] == "${{ github.event_name == 'pull_request' && github.sha || 'main' }}"
+    assert docs["jobs"]["pages"]["needs"] == "site"
     assert docs[True]["workflow_call"]["inputs"]["site_only"]["default"] is False
     assert docs["jobs"]["record"]["if"] == (
         "inputs.site_only != true && inputs.record == true && github.event_name != 'pull_request'"
@@ -638,7 +743,7 @@ def test_release_docs_only_publish_existing_recordings_even_when_the_caller_was_
 # A script named by path needs its executable bit, which copier drops when it follows the template's symlinks into a
 # plugin's scripts/. Through an interpreter, a script runs without it.
 SCRIPT = re.compile(r"(?<![\w/.-])(?:\./)?scripts/[\w.-]+\.(?:sh|py)\b")
-INTERPRETER = re.compile(r"(?:\bbash|\bpython3?|\buv run(?: -[\w-]+)*(?: --script| python3?))\s+$")
+INTERPRETER = re.compile(r"(?:\bbash|\bpython3?(?: -I)?|\buv run(?: -[\w-]+)*(?: --script| python3?))\s+$")
 
 
 def scripts_run_by_path(run: str) -> list[str]:
@@ -812,15 +917,18 @@ def test_the_release_keeps_changelog_introductions():
         )
     )
     assert save < regenerate < restore < commit < notes
+    expand = script.index(
+        'uv run --frozen --no-sync --no-build python scripts/changelog_combines.py CHANGELOG.md --version "$next"'
+    )
+    assert restore < expand < commit, "combine entries become their members' entries before the release commit"
     assert '--intro "${INTRO:-}"' in script
     release = yaml.safe_load((REPO / ".github" / "workflows" / "prepare-release.yml").read_text(encoding="utf-8"))
     assert "intro" in release[True]["workflow_dispatch"]["inputs"]  # YAML 1.1 reads the key `on` as True
     step = next(s for s in release["jobs"]["pull-request"]["steps"] if "release.sh" in s.get("run", ""))
     assert not any("gh pr merge" in s.get("run", "") for s in release["jobs"]["pull-request"]["steps"])
     assert step["env"]["INTRO"] == "${{ inputs.intro }}"
-    assert (
-        REPO / "template" / "scripts" / "changelog_intros.py.jinja"
-    ).resolve() == REPO / "scripts" / "changelog_intros.py"
+    for name in ("changelog_intros", "changelog_combines"):
+        assert (REPO / "template" / "scripts" / f"{name}.py.jinja").resolve() == REPO / "scripts" / f"{name}.py"
 
 
 def test_pushing_runs_check_fast_through_a_hook():
@@ -863,6 +971,52 @@ def test_claude_review_skips_events_sent_by_bots():
         "github.event.pull_request.head.repo.full_name == github.repository",
     ):
         assert clause in condition
+
+
+def test_core_keeps_tested_pull_request_heads_while_plugins_keep_branch_updates():
+    workflow = yaml.safe_load((REPO / ".github/workflows/update-prs.yml").read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["update"]["steps"]
+    branch_updates = [step for step in steps if "gh pr update-branch" in step.get("run", "")]
+
+    assert len(branch_updates) == 1
+    assert branch_updates[0].get("if") == "github.repository != 'helmut-hoffer-von-ankershoffen/heinzel'"
+    assert "select(.autoMergeRequest != null and (.isCrossRepository | not))" in branch_updates[0]["run"]
+    assert "actions/runs/$run/approve" in branch_updates[0]["run"]
+
+
+def test_closed_code_scanning_threads_are_still_resolved_in_core():
+    workflow = yaml.safe_load((REPO / ".github/workflows/update-prs.yml").read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["update"]["steps"]
+    cleanup = [step for step in steps if "resolveReviewThread" in step.get("run", "")]
+
+    assert len(cleanup) == 1
+    assert "if" not in cleanup[0]
+    assert '[ "$state" != open ] || continue' in cleanup[0]["run"]
+
+
+def test_template_installed_cli_uses_its_own_daemon_unit_directory(tmp_path, tmp_path_factory, monkeypatch):
+    source = REPO / "template/tests/e2e/install_test.py.jinja"
+    namespace = runpy.run_path(str(source))
+    inherited_units = tmp_path / "user-units"
+    monkeypatch.setenv("HZ_SYSTEM_DAEMON__UNIT_DIR", str(inherited_units))
+    monkeypatch.setenv("PLUGIN_TEST_WHEEL", str(tmp_path / "plugin.whl"))
+    monkeypatch.setattr("shutil.which", lambda _name, **_: "/isolated/uv")
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs["env"]))
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    cli = namespace["hz"].__wrapped__(tmp_path_factory)
+    cli("system", "plugin", "remove", "example", "--json")
+
+    assert len(calls) == 3
+    root = Path(calls[0][1]["UV_TOOL_DIR"]).parent
+    for _command, env in calls:
+        units = env.get("HZ_SYSTEM_DAEMON__UNIT_DIR")
+        assert units == str(root / "units")
+        assert units != str(inherited_units)
 
 
 def test_claude_review_prefers_the_api_key():
@@ -932,29 +1086,58 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
             assert need in jobs, f"{name} needs {need}"
     assert jobs["setup"]["strategy"]["matrix"]["os"] == ["ubuntu-24.04", "macos-latest"]
     assert "if" not in jobs["build"]
+    assert jobs["e2e"]["strategy"]["matrix"]["os"] == ["ubuntu-24.04", "macos-latest"]
+    assert '"os":"macos-latest","python":"3.15"' in jobs["test"]["strategy"]["matrix"]["include"]
 
 
-def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes():
+def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = False) -> list[dict]:
+    expression = re.fullmatch(r"\$\{\{ fromJSON\((.*)\) \}\}", matrix["include"].strip())
+    assert expression
+    context = {
+        "github.event_name": event,
+        "needs.changes.outputs.macos_full": str(full).lower(),
+        "needs.changes.outputs.full_release": str(release).lower(),
+    }
+    for branch in expression[1].split(" || "):
+        value = None
+        for term in branch.split(" && "):
+            literal = re.fullmatch(r"'([^']*)'", term)
+            if literal:
+                value = literal[1]
+            else:
+                condition = re.fullmatch(r"([a-z_.]+) (==|!=) '([^']*)'", term)
+                assert condition, term
+                equal = context[condition[1]] == condition[3]
+                value = equal if condition[2] == "==" else not equal
+            if not value:
+                break
+        if value:
+            return json.loads(value)
+    message = "No matrix branch matched"
+    raise AssertionError(message)
+
+
+@pytest.mark.parametrize(
+    ("event", "full", "pythons"),
+    [
+        ("pull_request", False, []),
+        ("pull_request", True, []),
+        ("push", False, ["3.12", "3.13", "3.14", "3.15"]),
+        ("push", True, ["3.12", "3.13", "3.14", "3.15"]),
+        ("schedule", False, ["3.12", "3.13", "3.14", "3.15"]),
+        ("schedule", True, ["3.12", "3.13", "3.14", "3.15"]),
+        ("workflow_dispatch", False, ["3.12", "3.13", "3.14", "3.15"]),
+        ("workflow_dispatch", True, ["3.12", "3.13", "3.14", "3.15"]),
+    ],
+)
+def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full, pythons):
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
-    include = jobs["test"]["strategy"]["matrix"]["include"]
-    pull_request, schedule, otherwise = (
-        json.loads(cells)
-        for cells in re.fullmatch(
-            r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && '(.*)' "
-            r"\|\| github\.event_name == 'schedule' && '(.*)' \|\| '(.*)'\) \}\}",
-            include.strip(),
-        ).groups()
-    )
-    for cells, pythons in (
-        (pull_request, ["3.15"]),
-        (schedule, ["3.12", "3.13", "3.14", "3.15"]),
-        (otherwise, ["3.12", "3.15"]),
-    ):
-        assert cells == [
-            {"os": "macos-latest", "python": python, "levels": level}
-            for python in pythons
-            for level in ("unit", "integration")
-        ]
+    cells = _macos_include(jobs["test"]["strategy"]["matrix"], event, full)
+    assert cells == [
+        {"os": "macos-latest", "python": python, "levels": level}
+        for python in pythons
+        for level in ("unit", "integration")
+    ]
     recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-parallel:", 1)[1].split("\n\n", 1)[0]
     assert "-m '($(TEST_LEVELS)) and not perf'" in recipe
     assert "--session-timeout=420" in recipe  # each shard has the cap the whole suite had
@@ -981,8 +1164,8 @@ def test_linux_electron_sandbox_target_configures_only_the_packaged_helper():
     assert 'python3 desktop/ci/restore_linux_sandbox.py "$$electron_root"' not in recipe
 
 
-@pytest.mark.parametrize("fail", [False, True])
-def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, fail):
+@pytest.mark.parametrize("failure", [None, "sync", "wheel"])
+def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, failure):
     """A failed build cannot start pytest; the suite still performs its own candidate build."""
     tool_dir = tmp_path / "bin"
     tool_dir.mkdir()
@@ -994,8 +1177,9 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
             uv,
             (
                 '#!/bin/sh\nprintf "build:%s\\n" "$*" >> "$TRACE"\n'
+                'case "$*" in *"scripts/build.py sync") test "$FAIL_PREP" != sync;; *)\n'
                 'for last do :; done\nprintf "dir:%s\\n" "$last" >> "$TRACE"\n'
-                'test "$FAIL_PREP" != 1\n'
+                'test "$FAIL_PREP" != wheel;; esac\n'
             ),
         ),
         (steps, '#!/bin/sh\nprintf "suite:%s\\n" "$@" >> "$TRACE"\n'),
@@ -1012,7 +1196,7 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
         "PATH": f"{tool_dir}:/usr/bin:/bin",
         "TMPDIR": str(tmp_path),
         "TRACE": str(trace),
-        "FAIL_PREP": "1" if fail else "0",
+        "FAIL_PREP": failure or "",
     }
     result = subprocess.run(
         ["make", "--no-print-directory", "test-e2e", f"STEPS={steps}"],
@@ -1024,14 +1208,16 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
         check=False,
     )
     lines = trace.read_text().splitlines()
-    assert lines[0].startswith("build:build --quiet --wheel --out-dir ")
-    assert lines[1].startswith("dir:")
-    directory = Path(lines[1].removeprefix("dir:"))
-    assert directory.is_relative_to(tmp_path)
-    assert not directory.exists()
-    assert (result.returncode == 0) is not fail
-    assert any(line.startswith("suite:e2e-readme=uv run pytest ") for line in lines) is not fail
-    if not fail:
+    assert lines[0] == "build:run --quiet --script scripts/build.py sync"
+    if failure != "sync":
+        assert lines[1].startswith("build:run --quiet --script scripts/build.py --quiet --wheel --out-dir ")
+        assert lines[2].startswith("dir:")
+        directory = Path(lines[2].removeprefix("dir:"))
+        assert directory.is_relative_to(tmp_path)
+        assert not directory.exists()
+    assert (result.returncode == 0) is (failure is None)
+    assert any(line.startswith("suite:e2e-readme=uv run pytest ") for line in lines) is (failure is None)
+    if failure is None:
         [first] = [line for line in lines if line.startswith("suite:e2e-readme=")]
         [second] = [line for line in lines if line.startswith("suite:e2e=")]
         node = "tests/e2e/docs_test.py::test_readme_instructions"
@@ -1088,29 +1274,48 @@ def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
         check=False,
     )
     commands = trace.read_text().splitlines()
-    assert commands[0].startswith("build ")
-    assert len(commands) == (2 if first_fails else 3)
-    assert "--deselect=" not in commands[1]
+    assert commands[0] == "run --quiet --script scripts/build.py sync"
+    assert commands[1].startswith("run --quiet --script scripts/build.py --quiet --wheel ")
+    assert len(commands) == (3 if first_fails else 4)
+    assert "--deselect=" not in commands[2]
     if not first_fails:
-        assert "--deselect=tests/e2e/docs_test.py::test_readme_instructions" in commands[2]
+        assert "--deselect=tests/e2e/docs_test.py::test_readme_instructions" in commands[3]
     assert (result.returncode != 0) is first_fails
 
 
-def _changes_outputs(tmp_path, event: str, changed: str) -> set[str]:
+@pytest.fixture(scope="module")
+def ci_paths(tmp_path_factory):
+    """One immutable workflow/script fixture per worker; every case still executes it with distinct data."""
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
     script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
-    stubs = tmp_path / "bin"
+    directory = tmp_path_factory.mktemp("ci-paths")
+    stubs = directory / "bin"
     stubs.mkdir()
     git = stubs / "git"
-    git.write_text(f"#!/bin/sh\nprintf '{changed}'\n")
+    git.write_text('#!/bin/sh\nprintf "%s" "$CHANGED_PATHS"\nexit "$DIFF_EXIT"\n')
     git.chmod(0o700)
-    (tmp_path / "desktop").mkdir()
-    (tmp_path / "desktop" / "package.json").write_text("{}")
+    (directory / "desktop").mkdir()
+    (directory / "desktop" / "package.json").write_text("{}")
+    return script, directory
+
+
+def _changes_outputs(  # noqa: PLR0913 - independent changed-path, event and release-selection fixture inputs
+    tmp_path, ci_paths, event: str, changed: str, git_exit: int = 0, *, release: bool = False
+) -> set[str]:
+    script, directory = ci_paths
     output = tmp_path / "output"
     subprocess.run(
         ["bash", "-c", script],
-        env={"PATH": f"{stubs}:/usr/bin:/bin", "EVENT": event, "BASE": "base", "GITHUB_OUTPUT": str(output)},
-        cwd=tmp_path,
+        env={
+            "PATH": f"{directory / 'bin'}:/usr/bin:/bin",
+            "EVENT": event,
+            "FULL_RELEASE": str(release).lower(),
+            "BASE": "base",
+            "GITHUB_OUTPUT": str(output),
+            "CHANGED_PATHS": changed,
+            "DIFF_EXIT": str(git_exit),
+        },
+        cwd=directory,
         check=True,
         timeout=4,
     )
@@ -1130,8 +1335,73 @@ def _changes_outputs(tmp_path, event: str, changed: str) -> set[str]:
         ("schedule", "docs/guides/install.md\n", "true"),
     ],
 )
-def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed, core):
-    assert f"core={core}" in _changes_outputs(tmp_path, event, changed)
+def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, ci_paths, event, changed, core):
+    assert f"core={core}" in _changes_outputs(tmp_path, ci_paths, event, changed)
+
+
+@pytest.mark.parametrize(
+    ("path", "full"),
+    [
+        ("src/heinzel/modules/team/_render.py\n", "false"),
+        ("web/src/components/Footer.tsx\n", "false"),
+        ("scripts/main_batch.py\nscripts/sync_template.py\ntests/unit/main_batch_test.py\n", "false"),
+        ("src/heinzel/kernel/_exposure.py\n", "false"),
+        ("src/heinzel/kernel/_contributions.py\n", "false"),
+        ("src/heinzel/heads/_tool_install.py\n", "true"),
+        ("src/heinzel/heads/web/__init__.py\n", "true"),
+        ("src/heinzel/kernel/_session_io.py\n", "true"),
+        ("src/heinzel/kernel/_new_platform_boundary.py\n", "true"),
+        ("src/heinzel/modules/system/config/_reveal.py\n", "true"),
+        ("src/heinzel/modules/system/state/_service.py\n", "true"),
+        ("scripts/acceptance/run_acceptance.py\n", "true"),
+        ("scripts/web_build.py\n", "true"),
+        ("scripts/new_tool.py\n", "true"),
+        ("template/Makefile\n", "true"),
+        ("template/pyproject.toml.jinja\n", "true"),
+        ("web/pnpm-lock.yaml\n", "true"),
+        ("web/e2e/daemon-install.mjs\n", "true"),
+        ("web/package.json\n", "true"),
+        ("web/tsconfig.json\n", "true"),
+        ("web/src/components/Footer.tsx\nweb/pnpm-lock.yaml\n", "true"),
+        (".github/workflows/ci.yml\nweb/package.json\n", "true"),
+        ("src/heinzel/heads/web/_supervision.py\n", "true"),
+        ("src/heinzel/kernel/_installation_mutations.py\n", "true"),
+        ("src/heinzel/modules/ui/_service.py\n", "true"),
+        ("scripts/notifier.py\n", "true"),
+        ("scripts/tools.toml\n", "true"),
+        ("pyproject.toml\n", "true"),
+        ("uv.lock\n", "true"),
+        ("web/src/components/Footer.tsx\nuv.lock\n", "true"),
+        ("src/heinzel/modules/system/daemon/_service.py\n", "true"),
+        ("src/heinzel/modules/system/runner/chat/_policy.py\n", "true"),
+        ("src/heinzel/modules/system/notify/macos/app.swift\n", "true"),
+        ("desktop/src/main.js\n", "true"),
+        ("scripts/install.sh\n", "true"),
+        ("src/heinzel/modules/system/update/_update.py\n", "true"),
+        ("tests/e2e/uninstall_test.py\n", "true"),
+        (".github/workflows/ci.yml\n", "false"),
+        ("Makefile\n", "true"),
+        ("new/unclassified/path.py\n", "true"),
+        ("src/heinzel/modules/team/_render.py\ndesktop/src/main.js\n", "true"),
+        ("", "true"),
+    ],
+)
+def test_macos_native_jobs_are_retained_for_platform_and_unknown_paths(tmp_path, ci_paths, path, full):
+    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", path)
+    assert f"macos_full={full}" in outputs
+    if full == "true":
+        assert "electron=true" in outputs
+
+
+@pytest.mark.parametrize("event", ["push", "schedule", "workflow_dispatch"])
+@pytest.mark.parametrize("changed", [".github/workflows/ci.yml\n", "web/src/Footer.tsx\n", "", "new/path.py\n"])
+def test_non_pr_runs_retain_native_macos_jobs_for_every_scope(tmp_path, ci_paths, event, changed):
+    assert "macos_full=true" in _changes_outputs(tmp_path, ci_paths, event, changed)
+
+
+def test_failed_diff_with_partial_output_still_runs_full_macos(tmp_path, ci_paths):
+    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", "src/heinzel/modules/team/_render.py\n", git_exit=1)
+    assert {"macos_full=true", "electron=true", "core=true"} <= outputs
 
 
 @pytest.mark.parametrize(
@@ -1143,14 +1413,16 @@ def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed,
         ("push", "scripts/sync_template.py\n", "true"),
         ("push", ".github/workflows/ci.yml\n", "true"),
         ("push", "", "true"),  # a diff git could not compute
-        ("pull_request", "src/heinzel/__init__.py\n", "false"),
+        ("pull_request", "src/heinzel/__init__.py\n", "true"),
         ("pull_request", "desktop/src/main.js\n", "true"),
         ("schedule", "src/heinzel/__init__.py\n", "true"),
         ("workflow_dispatch", "src/heinzel/__init__.py\n", "true"),
     ],
 )
-def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispatch(tmp_path, event, changed, electron):
-    assert f"electron={electron}" in _changes_outputs(tmp_path, event, changed)
+def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispatch(
+    tmp_path, ci_paths, event, changed, electron
+):
+    assert f"electron={electron}" in _changes_outputs(tmp_path, ci_paths, event, changed)
 
 
 def test_the_test_matrix_keeps_the_whole_output_of_a_failure():
@@ -1174,8 +1446,8 @@ SITE_ONLY_PATHS = [
 
 
 @pytest.mark.parametrize("path", SITE_ONLY_PATHS)
-def test_a_site_pull_request_skips_the_app_jobs(tmp_path, path):
-    outputs = _changes_outputs(tmp_path, "pull_request", f"{path}\n")
+def test_a_site_pull_request_skips_the_app_jobs(tmp_path, ci_paths, path):
+    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", f"{path}\n")
     assert "site_only=true" in outputs
     assert "electron=false" in outputs
 
@@ -1195,17 +1467,22 @@ def test_a_site_pull_request_skips_the_app_jobs(tmp_path, path):
         ("workflow_dispatch", "docs/TEAMS.md\n"),
     ],
 )
-def test_everything_else_runs_the_app_jobs(tmp_path, event, changed):
-    assert "site_only=false" in _changes_outputs(tmp_path, event, changed)
+def test_everything_else_runs_the_app_jobs(tmp_path, ci_paths, event, changed):
+    assert "site_only=false" in _changes_outputs(tmp_path, ci_paths, event, changed)
 
 
 def test_site_only_skips_exactly_the_app_test_jobs_and_ci_ok_waits_for_site_tests():
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
     for name in ("test", "coverage", "perf", "e2e"):
-        assert jobs[name]["if"] == "needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'"
+        assert jobs[name]["if"] == (
+            "needs.changes.outputs.full_release == 'true' && "
+            "(needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true')"
+        )
     for name in ("lint", "build"):
         assert "site_only" not in jobs[name]["if"]
-    assert jobs["site-tests"]["if"] == "needs.changes.outputs.site_only == 'true'"
+    assert jobs["site-tests"]["if"] == (
+        "needs.changes.outputs.full_release == 'true' && (needs.changes.outputs.site_only == 'true')"
+    )
     assert "site-tests" in jobs["ci-ok"]["needs"]
 
 
@@ -1243,11 +1520,340 @@ def test_macos_specific_tests_are_a_required_serial_job_on_macos():
     assert any(step.get("run") == "make test-macos-specific" for step in job["steps"])
 
 
-def test_macos_cells_are_temporarily_non_blocking_and_linux_cells_still_block():
-    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
-    for name in ("setup", "test", "e2e", "electron"):
-        assert jobs[name]["continue-on-error"] == "${{ startsWith(matrix.os, 'macos') }}", name
-    steps = jobs["ci-ok"]["steps"]
-    script = next(step["run"] for step in steps if "RESULTS" in step.get("env", {}))
-    assert "success | skipped) ;;" in script  # a masked macOS failure reports success; anything else still fails
+@pytest.mark.parametrize(
+    ("name", "target"), [("macos-specific", "test-macos-specific"), ("macos-smoke", "test-macos-smoke")]
+)
+def test_native_face_compile_has_a_required_serial_job_with_a_real_notifier_build(name, target):
+    jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8"))["jobs"]
+    job = jobs[name]
+    assert job["runs-on"] == "macos-latest"
+    assert name in jobs["ci-ok"]["needs"]
+    assert not job.get("continue-on-error", False)
+    commands = [step["run"] for step in job["steps"] if "run" in step]
+    assert commands.index("make notifier") < commands.index(f"make {target}")
+    makefile = (REPO / "Makefile").read_text(encoding="utf-8")
+    recipe = makefile.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
+    assert "-m macos_specific" in recipe
+    assert " -n " not in recipe
+    assert "test-e2e: e2e-prepare" in makefile
+
+
+def _ci_jobs() -> dict:
+    return yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+
+
+@pytest.mark.parametrize(
+    ("event", "candidate", "selected"),
+    [
+        ("schedule", False, {"maintenance"}),
+        ("pull_request", False, {"release", "focused", "paths"}),
+        ("push", False, {"release", "focused", "paths"}),
+        ("workflow_dispatch", False, {"release", "focused", "paths"}),
+        ("pull_request", True, {"release", "paths"}),
+        ("workflow_dispatch", True, {"release", "paths"}),
+    ],
+)
+def test_changed_paths_event_policy(event, candidate, selected):
+    changes = _ci_jobs()["changes"]
+    nonscheduled = "github.event_name != 'schedule'"
+    conditions = {
+        "github.event_name == 'schedule'": event == "schedule",
+        nonscheduled: event != "schedule",
+        nonscheduled + " && steps.release.outputs.full_release != 'true'": event != "schedule" and not candidate,
+    }
+    assert {step["id"] for step in changes["steps"] if "id" in step and conditions[step["if"]]} == selected
+    assert all(step["if"] == nonscheduled for step in changes["steps"] if "uses" in step)
+    assert changes["outputs"]["scheduled_maintenance"] == "${{ steps.maintenance.outputs.selected }}"
+    assert changes["outputs"]["full_release"] == "${{ steps.release.outputs.full_release }}"
+    assert changes["outputs"]["focused_mode"] == "${{ steps.focused.outputs.focused_mode }}"
+
+
+@pytest.mark.parametrize(
+    ("repository", "ref", "selected"),
+    [
+        ("helmut-hoffer-von-ankershoffen/heinzel", "refs/heads/main", True),
+        ("someone/heinzel", "refs/heads/main", False),
+        ("helmut-hoffer-von-ankershoffen/heinzel", "refs/heads/other", False),
+    ],
+)
+def test_scheduled_maintenance_selects_only_canonical_main(tmp_path, repository, ref, selected):
+    step = next(step for step in _ci_jobs()["changes"]["steps"] if step.get("id") == "maintenance")
+    output = tmp_path / "output"
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={"GITHUB_REPOSITORY": repository, "GITHUB_REF": ref, "GITHUB_OUTPUT": str(output)},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=4,
+    )
+    assert (result.returncode == 0) is selected
+    if selected:
+        assert output.read_text() == "selected=true\n"
+    else:
+        assert not output.exists()
+
+
+SCHEDULED_REQUIRED = ("admission", "changes", "lint", "secrets", "audit", "quarantine-registry")
+
+
+def test_scheduled_jobs_keep_maintenance_separate_from_full_and_focused_tests():
+    jobs = _ci_jobs()
+    assert set(SCHEDULED_REQUIRED) <= set(jobs["ci-ok"]["needs"])
+    for name in ("lint", "audit"):
+        assert jobs[name]["needs"] == "changes"
+        assert "needs.changes.outputs.scheduled_maintenance == 'true'" in jobs[name]["if"]
+    for name, job in jobs.items():
+        if name in (*SCHEDULED_REQUIRED, "ci-ok"):
+            continue
+        condition = job["if"]
+        assert condition.startswith(
+            (
+                "needs.changes.outputs.full_release == 'true'",
+                "${{ !cancelled() && needs.changes.outputs.full_release == 'true'",
+                "github.event_name == 'pull_request'",
+                "failure() && github.event_name == 'pull_request'",
+                "github.event_name == 'push' &&",
+                "needs.changes.outputs.focused_mode != ''",
+                "${{ !cancelled() && needs.local-plugin-plan.outputs.selected == 'True'",
+                "needs.consumer-plan.outputs.selected == 'True'",
+            )
+        ), name
+    assert "scheduled_maintenance" not in _template_sync_module().ci_workflow()
+
+
+@pytest.mark.parametrize(
+    ("job", "outcome", "maintenance", "error"),
+    [
+        (None, "success", "true", ""),
+        (None, "success", "", "Scheduled maintenance was not selected"),
+        *(
+            (job, outcome, "true", f"Required schedule workload job did not pass: {job}")
+            for job in SCHEDULED_REQUIRED
+            for outcome in ("failure", "cancelled", "skipped")
+        ),
+    ],
+)
+def test_scheduled_aggregate_requires_every_maintenance_job(job, outcome, maintenance, error):
+    jobs = _ci_jobs()
+    step = next(step for step in jobs["ci-ok"]["steps"] if "EVENT" in step.get("env", {}))
+    assert step["if"] == "github.event_name == 'schedule' || needs.changes.outputs.focused_mode != ''"
+    results = {
+        name: {"result": "success" if name in SCHEDULED_REQUIRED else "skipped"} for name in jobs["ci-ok"]["needs"]
+    }
+    if job is not None:
+        results[job]["result"] = outcome
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={
+            "PATH": os.environ["PATH"],
+            "EVENT": "schedule",
+            "SCHEDULED_MAINTENANCE": maintenance,
+            "RESULTS": json.dumps(results),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=4,
+    )
+    assert result.returncode == bool(error)
+    assert error in result.stdout
+
+
+def _oses(value: str | list[str], event: str, *, macos_full: bool = False, release: bool = False) -> list[str]:
+    """The matrix values for an event, from a plain list or a pull-request conditional."""
+    if isinstance(value, list):
+        return value
+    match = re.fullmatch(
+        r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && "
+        r"(?P<native>needs\.changes\.outputs\.macos_full != 'true' && )?"
+        r"(?P<release>needs\.changes\.outputs\.full_release != 'true' && )?'(?P<pr>.*)' "
+        r"\|\| '(?P<full>.*)'\) \}\}",
+        value,
+    )
+    assert match, value
+    pr_lane = (
+        event == "pull_request" and (not match["native"] or not macos_full) and (not match["release"] or not release)
+    )
+    return json.loads(match["pr"] if pr_lane else match["full"])
+
+
+def _runs_on_pull_request(job: dict) -> bool:
+    return "github.event_name != 'pull_request'" not in str(job.get("if", ""))
+
+
+def test_every_scheduled_macos_job_blocks_ci_ok():
+    jobs = _ci_jobs()
+    for workflow_jobs in (jobs, _generated_plugin_ci()["jobs"]):
+        for name, job in workflow_jobs.items():
+            assert job.get("continue-on-error", False) is False, name
+            for step in job.get("steps", []):
+                assert step.get("continue-on-error", False) is False, name
+    for name in ("setup", "test", "e2e", "notifier", "macos-specific", "macos-smoke", "electron"):
+        assert name in jobs["ci-ok"]["needs"], name
+    script = next(step["run"] for step in jobs["ci-ok"]["steps"] if "RESULTS" in step.get("env", {}))
+    assert "success | skipped) ;;" in script
     assert "continue-on-error" not in jobs["ci-ok"]
+    for name in ("setup", "e2e", "electron"):
+        assert "needs.changes.outputs.macos_full != 'true'" in jobs[name]["strategy"]["matrix"]["os"]
+    assert "needs.changes.outputs.macos_full" not in jobs["test"]["strategy"]["matrix"]["include"]
+
+
+def test_macos_workload_is_reviewed_focused_or_the_unchanged_candidate_matrix():
+    jobs = _ci_jobs()
+    candidate_only = "needs.changes.outputs.full_release == 'true'"
+    for name in ("setup", "test", "e2e", "notifier", "macos-specific", "macos-smoke", "electron", "quarantine"):
+        assert jobs[name]["if"].startswith(candidate_only)
+    assert jobs["focused-tests"]["if"] == "needs.changes.outputs.focused_mode != ''"
+    assert "fromJSON(needs.changes.outputs.focused_matrix" in jobs["focused-tests"]["strategy"]["matrix"]
+    assert "focused-tests" in jobs["ci-ok"]["needs"]
+    assert "quarantine" not in jobs["ci-ok"]["needs"]
+    assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], "workflow_dispatch") == [
+        "ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest",
+    ]  # fmt: skip
+    smoke = jobs["macos-smoke"]
+    assert (smoke["name"], smoke["runs-on"]) == ("macOS smoke", "macos-latest")
+    assert smoke["timeout-minutes"] <= 10
+    assert "needs.changes.outputs.full_release != 'true'" in smoke["if"]
+    runs = {step.get("run"): step.get("if") for step in smoke["steps"] if "run" in step}
+    assert runs["make test-macos-smoke"] is None
+    assert runs["make notifier"] is None  # the macos_specific real-launch tests must not skip
+    assert any(step.get("with", {}).get("name") == "notifier" for step in smoke["steps"])
+    build = jobs["build"]
+    assert {"macos-smoke", "notifier"} <= set(build["needs"])
+    assert "needs.macos-smoke.result != 'failure'" in build["if"]
+    wheel_check = next(step for step in build["steps"] if step.get("name") == "Check the wheel ships Heinzel Notifier")
+    assert "needs.macos-smoke.result == 'success'" in wheel_check["if"]
+    recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-macos-smoke:", 1)[1].split("\n\n", 1)[0]
+    assert "uv run hz --version" in recipe
+    assert "-m macos_specific" in recipe
+    assert " -n " not in recipe
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push", "schedule", "workflow_dispatch"])
+@pytest.mark.parametrize("macos_full", [False, True])
+def test_native_macos_matrices_follow_scope_only_on_pull_requests(event, macos_full):
+    jobs = _ci_jobs()
+    native = event != "pull_request" or macos_full
+    assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], event, macos_full=macos_full) == (
+        ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest"] if native else ["ubuntu-24.04", "ubuntu-24.04-arm"]
+    )
+    for name in ("e2e", "electron"):
+        assert _oses(jobs[name]["strategy"]["matrix"]["os"], event, macos_full=macos_full) == (
+            ["ubuntu-24.04", "macos-latest"] if native else ["ubuntu-24.04"]
+        )
+
+
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [
+        ("pull_request", ["3.12", "3.15"]),
+        ("push", ["3.12", "3.13", "3.14", "3.15"]),
+        ("schedule", ["3.12", "3.13", "3.14", "3.15"]),
+        ("workflow_dispatch", ["3.12", "3.13", "3.14", "3.15"]),
+    ],
+)
+def test_a_pull_request_tests_python_oldest_and_newest_and_main_every_supported_python(event, expected):
+    test = _ci_jobs()["test"]
+    assert _oses(test["strategy"]["matrix"]["python"], event) == expected
+    probe = next(step for step in test["steps"] if step.get("run") == "make linux-user-manager-proof")
+    assert probe["if"] == (  # a cell every pull request runs, once
+        "matrix.os == 'ubuntu-24.04' && matrix.python == '3.12' && matrix.levels == 'unit'"
+    )
+    assert test["strategy"]["matrix"]["levels"] == ["unit", "integration"]  # Linux shards by level under the cap
+
+
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [
+        ("pull_request", ["3.15"]),
+        ("push", ["3.12", "3.13", "3.14", "3.15"]),
+        ("schedule", ["3.12", "3.13", "3.14", "3.15"]),
+        ("workflow_dispatch", ["3.12", "3.13", "3.14", "3.15"]),
+    ],
+)
+def test_plugin_macos_matrix_preserves_its_existing_python_coverage(event, expected):
+    cells = _macos_include(_generated_plugin_ci()["jobs"]["test"]["strategy"]["matrix"], event, full=False)
+    assert cells == [
+        {"os": "macos-latest", "python": version, "levels": level}
+        for version in expected
+        for level in ("unit", "integration")
+    ]
+
+
+def test_a_failed_cheap_check_cancels_the_rest_of_a_pull_request_run():
+    jobs = _ci_jobs()
+    for cheap in ("dependency-review", "commits", "lint", "secrets", "setup", "audit"):
+        stop = jobs[f"stop-after-{cheap}"]
+        assert stop["if"] == (
+            "failure() && github.event_name == 'pull_request' && "
+            "github.event.pull_request.head.repo.full_name == github.repository"
+        )
+        assert stop["needs"] == [cheap]
+        assert stop["permissions"] == {"actions": "write"}
+        assert any(step.get("run") == 'gh run cancel "$RUN_ID" --repo "$REPOSITORY"' for step in stop["steps"])
+    for expensive in ("test", "e2e", "coverage", "electron", "macos-smoke"):
+        assert "lint" not in str(jobs[expensive].get("needs", "")), expensive  # they start in parallel, not after
+
+
+def test_release_acceptance_can_pin_public_artifacts_and_correlate_its_run():
+    """A coordinator can keep public-path evidence tied to one release after main moves."""
+    workflow = yaml.safe_load((REPO / ".github/workflows/acceptance.yml").read_text())
+    events = workflow.get("on", workflow.get(True))
+    for trigger in ("workflow_dispatch", "workflow_call"):
+        for name in ("expected_wheel_sha256", "expected_profile_sha256", "release_attempt"):
+            assert events[trigger]["inputs"][name]["default"] == ""
+    job = workflow["jobs"]["acceptance"]
+    command = next(step["run"] for step in job["steps"] if step.get("name") == "Run the acceptance harness")
+    for flag, variable in (
+        ("--accept-wheel-sha256", "EXPECTED_WHEEL_SHA256"),
+        ("--accept-profile-sha256", "EXPECTED_PROFILE_SHA256"),
+    ):
+        assert f'{flag} "${variable}"' in command
+        assert variable in job["env"]
+    assert "inputs.release_attempt" in workflow["run-name"]
+    assert workflow["permissions"] == {}
+    assert job["permissions"] == {"contents": "read"}
+
+
+@pytest.mark.parametrize(
+    "changed", ["CHANGELOG.md\npyproject.toml\n", "docs/guides/install.md\n", "plugins/example/file.py\n"]
+)
+def test_release_candidates_force_the_whole_existing_matrix_for_every_changed_scope(tmp_path, ci_paths, changed):
+    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", changed, release=True)
+    assert {
+        "macos_full=true",
+        "site_only=false",
+        "core=true",
+        "notifier=true",
+        "contracts=true",
+        "electron=true",
+    } <= outputs
+    jobs = _ci_jobs()
+    assert _oses(jobs["test"]["strategy"]["matrix"]["python"], "pull_request", release=True) == [
+        "3.12",
+        "3.13",
+        "3.14",
+        "3.15",
+    ]
+    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "pull_request", full=True, release=True)) == 8
+    assert _oses(jobs["e2e"]["strategy"]["matrix"]["os"], "pull_request", macos_full=True) == [
+        "ubuntu-24.04",
+        "macos-latest",
+    ]
+    assert jobs["e2e"]["strategy"]["matrix"]["suite"] == ["cli", "supervised", "web-1", "web-2"]
+    assert "needs.changes.outputs.full_release == 'true'" in jobs["notifier"]["if"]
+    assert "needs.changes.outputs.full_release == 'true'" in jobs["macos-specific"]["if"]
+    assert "needs.changes.outputs.full_release != 'true'" in jobs["macos-smoke"]["if"]
+    assert "release-candidate-source" in jobs["ci-ok"]["needs"]
+
+
+def test_release_candidate_source_and_selector_never_reach_plugin_templates():
+    generated = _template_sync_module().ci_workflow()
+    assert "release_candidate.py" not in generated
+    assert "release-candidate-source" not in generated
+    assert "full_release" not in generated
+    assert (
+        "github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true'"
+        in (_ci_jobs()["test"]["strategy"]["matrix"]["python"])
+    )

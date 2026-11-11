@@ -39,7 +39,17 @@ const source = createServer((request, response) => {
     response.end();
   } else {
     response.writeHead(200, { "content-type": "text/html" });
-    response.end("<!doctype html><title>Isolated fixture</title><p>ready</p>");
+    response.end(`<!doctype html><title>Isolated fixture</title><p>ready</p>
+      <a id="capture" data-hz-public-media target="_blank" rel="noreferrer noopener" href="https://raw.githubusercontent.com/fictional-lab/harbor/${"a".repeat(40)}/docs/ui.png">Full-size capture</a>
+      <a id="sound" data-hz-public-media target="_blank" rel="noreferrer noopener" href="https://www.youtube.com/watch?v=abcdefghijk">Soundscape</a>
+      <a id="failed" data-hz-public-media target="_blank" rel="noreferrer noopener" href="https://www.youtube.com/watch?v=abcdefghijl">Unavailable opener</a>
+      <a id="unsafe" data-hz-public-media target="_blank" href="http://127.0.0.1:${target.address().port}/target">Refused target</a>
+      <a id="unmarked" target="_blank" href="http://127.0.0.1:${target.address().port}/target">Unmarked popup</a>
+      <output id="result"></output><script>
+        for (const link of document.querySelectorAll('a')) link.addEventListener('hz-public-media-result', (event) => {
+          if (event.detail === false) document.querySelector('#result').textContent = 'refused';
+        });
+      </script>`);
   }
 });
 await Promise.all([listen(target), listen(source)]);
@@ -50,7 +60,7 @@ try {
   assert.equal(initialRedirectHits, 1, "The initial redirect was not exercised.");
   assert.equal(subsequentRedirectHits, 1, "The page redirect was not exercised.");
   assert.equal(lifecycleHits, 2, "Both launches must verify lifecycle first.");
-  console.log("Electron blocked page navigation, same-origin redirect, and initial authenticated redirect before the target request.");
+  console.log("Electron handed off trusted public media, refused scripted/unsafe opening, and blocked page navigation, redirects and popups before the target request.");
 } finally {
   await Promise.all([close(source), close(target)]);
 }
@@ -63,13 +73,14 @@ async function run(redirectOnStart) {
     const dirs = ["bin", "home", "config", "data", "state", "cache", "logs", "tmp", "electron-profile", "electron-session", "electron-logs"];
     await Promise.all(dirs.map((name) => mkdir(join(root, name), { mode: 0o700 })));
     const cli = join(root, "bin", "hz");
-    await writeFile(cli, `#!${process.execPath}\nif (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["ui","--port","0","--no-browser"])) process.exit(64);\nprocess.stdout.write(process.env.HZ_TEST_URL + "\\n");\nprocess.on("SIGINT", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`, { mode: 0o700 });
+    await writeFile(cli, `#!${process.execPath}\nif (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["ui","serve","--port","0","--no-browser"])) process.exit(64);\nprocess.stdout.write(process.env.HZ_TEST_URL + "\\n");\nprocess.on("SIGINT", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`, { mode: 0o700 });
     const env = {
       PATH: `${join(root, "bin")}${delimiter}/usr/bin:/bin:/usr/sbin:/sbin`, HOME: join(root, "home"), TMPDIR: join(root, "tmp"),
       USER: process.env.USER || "", LOGNAME: process.env.LOGNAME || "", LANG: "en_US.UTF-8",
       XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"), XDG_STATE_HOME: join(root, "state"), XDG_CACHE_HOME: join(root, "cache"),
       HZ_CONFIG_HOME: join(root, "config"), HZ_DATA_DIR: join(root, "data"), HZ_STATE_DIR: join(root, "state"), HZ_CACHE_DIR: join(root, "cache"), HZ_LOG_DIR: join(root, "logs"),
       HZ_NATIVE_TEST_ROOT: root, HZ_NATIVE_TEST_CONTROLLER_GATE: "1", HZ_TEST_URL: `http://127.0.0.1:${source.address().port}/#token=${token}`,
+      HZ_NATIVE_TEST_PUBLIC_MEDIA: "1",
       ...(process.env.DISPLAY ? { DISPLAY: process.env.DISPLAY } : {}), ...(process.env.XAUTHORITY ? { XAUTHORITY: process.env.XAUTHORITY } : {}),
     };
     launchAttempted = true;
@@ -93,6 +104,29 @@ async function run(redirectOnStart) {
     } else {
       const page = await app.firstWindow({ timeout: 30_000 });
       await page.locator("p").waitFor();
+      assert.deepEqual(await page.evaluate(() => Object.keys(window.heinzelDesktop)), [
+        "workspaceAudio", "titlebar", "browser", "lifecycle", "onFullscreen",
+      ]);
+      await page.evaluate(() => document.querySelector("#sound").click());
+      assert.equal(await readFile(join(root, "public-media"), "utf8").catch(() => ""), "", "A scripted click reached the OS opener.");
+      await page.locator("#capture").click();
+      await page.locator("#sound").focus();
+      await page.keyboard.press("Enter");
+      await page.locator("#failed").click();
+      await page.locator("#result").filter({ hasText: "refused" }).waitFor();
+      const handedOff = (await readFile(join(root, "public-media"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+      assert.deepEqual(handedOff, [
+        `https://raw.githubusercontent.com/fictional-lab/harbor/${"a".repeat(40)}/docs/ui.png`,
+        "https://www.youtube.com/watch?v=abcdefghijk", "https://www.youtube.com/watch?v=abcdefghijl",
+      ]);
+      await page.locator("#result").evaluate((element) => { element.textContent = ""; });
+      await page.locator("#unsafe").click();
+      await page.locator("#result").filter({ hasText: "refused" }).waitFor();
+      assert.equal((await readFile(join(root, "public-media"), "utf8")).trim().split("\n").length, 3);
+      await page.locator("#unmarked").click();
+      await page.evaluate((url) => { window.open(url, "_blank"); }, `http://127.0.0.1:${target.address().port}/target`);
+      assert.equal(app.windows().length, 1, "A denied popup created another native window.");
+      assert.equal((await readFile(join(root, "public-media"), "utf8")).trim().split("\n").length, 3);
       await app.evaluate(({ BrowserWindow }) => {
         const contents = BrowserWindow.getAllWindows()[0].webContents;
         globalThis.navigationEvents = [];
@@ -113,6 +147,9 @@ async function run(redirectOnStart) {
       await withTimeout(exited, 15_000, "Electron did not exit after closing its window.");
       stopped = true;
     }
+    const ownedPid = Number(await readFile(join(root, "owned-pid"), "utf8"));
+    assert.equal(processExists(ownedPid), false, "Electron left its owned service running.");
+    assert.deepEqual(JSON.parse(await readFile(join(root, "owned-exit"), "utf8")), { code: 0, signal: null });
     const paths = JSON.parse(await readFile(join(root, "electron-paths"), "utf8"));
     assert.deepEqual(paths, {
       userData: join(root, "electron-profile"),
@@ -120,6 +157,7 @@ async function run(redirectOnStart) {
     });
   } catch (error) {
     primary = error;
+    console.error(`Electron navigation requests: ${JSON.stringify({ initialRedirectHits, subsequentRedirectHits, lifecycleHits, targetRequests })}`);
     console.error(`Electron phases:\n${await readFile(join(root, "phases"), "utf8").catch(() => "none")}`);
     throw error;
   } finally {

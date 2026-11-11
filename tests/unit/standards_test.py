@@ -70,6 +70,25 @@ def test_every_subprocess_call_has_a_timeout(path):
     assert calls_without_timeout(python_source(path)) == [], f"add timeout= or `# {EXEMPT}`"
 
 
+SYSTEM_BINARY = re.compile(r"""\bcopy(?:file|2|)\(\s*["'](?:/usr)?/s?bin/""")
+"""A test that copies a macOS system binary to run it: launch constraints kill the copy and macOS shows a "damaged
+app" dialog on the person's screen. Link to it instead; the binary then runs where it lives."""
+
+
+def test_finds_copied_system_binaries():
+    assert SYSTEM_BINARY.search('shutil.copyfile("/bin/sleep", target)')
+    assert SYSTEM_BINARY.search("shutil.copy2('/usr/bin/true', target)")
+    assert not SYSTEM_BINARY.search('target.symlink_to("/bin/sleep")')
+
+
+@pytest.mark.parametrize("path", sorted(REPO.glob("tests/**/*.py")), ids=lambda p: str(p.relative_to(REPO)))
+def test_tests_never_copy_a_system_binary(path):
+    """Copies of platform binaries are killed by macOS with a dialog on the desktop; link to the original."""
+    if path == Path(__file__).resolve():
+        return
+    assert not SYSTEM_BINARY.search(path.read_text(encoding="utf-8")), "link to the system binary instead of copying it"
+
+
 def repository_files() -> list[str]:
     """Paths of the files git tracks or would track (not ignored ones), relative to the repository."""
     listed = subprocess.run(
@@ -87,6 +106,14 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    "scripts/acme_setup_e2e.py": "proves the core plugin catalog installs a company plugin with its required plugins",
+    "scripts/ci_node.py": "selects Node for core's Python unit lanes; independent plugins own their CI runtime setup",
+    "scripts/ubuntu_browser_mirror.mk": "runs the Core browser CI mirror helper; plugin workflows omit that setup",
+    "scripts/ubuntu_browser_mirror.py": "validates Ubuntu sources for Core browser CI; plugins own their browser setup",
+    "scripts/build.py": "prepares the core web hook and controller build group; plugin builds have no core assets",
+    "scripts/release_candidate.py": "verifies full Core release-candidate CI source and exact job inventory",
+    "scripts/main_batch.py": "validates only the core repository merge queue; plugin CI has no batch admissions",
+    "scripts/quarantine.py": "reads core's tests/quarantine.toml for its non-blocking lane; plugin CI has no registry",
     "scripts/merge_gate.py": "judges a public repo's SonarCloud project; a new plugin has none until it is set up",
     "scripts/merge_gate.py.lock": "the lock of scripts/merge_gate.py, which plugins don't get by default",
     ".github/workflows/merge-gate.yml": "runs scripts/merge_gate.py, which plugins don't get by default",
@@ -138,6 +165,18 @@ CORE_ONLY = {  # path: why plugins don't get it
     ".github/workflows/acceptance.yml": "installs the published core with the public commands on hosted runners",
     "scripts/acceptance/README.md": "documents the core's public installer acceptance harness",
     "scripts/acceptance/run_acceptance.py": "public installer acceptance of the published core; plugins have none",
+    "scripts/prepare_release_ui.py": "checks the Core app CLI for its acceptance harness; plugins have neither",
+    ".github/workflows/focused-job.yml": "dispatched diagnostic of one core test selection on one hosted runner",
+    "scripts/focused_job.py": "validates and runs the core focused-job workflow's selection; plugins have none",
+    "scripts/affected.py": "maps affected Core production, test and browser paths for scope review",
+    "scripts/ci_workload.py": "plans Core focused scopes and canonical full release candidates",
+    "scripts/focused_plan.py": "resolves the Core's administrator-reviewed focused workflow selection",
+    "scripts/focused_coverage.py": "produces and validates Core scoped coverage evidence",
+    "scripts/focused_coverage.py.lock": "pins the Core scoped coverage producer environment",
+    "scripts/focused_gate.py": "verifies exact Core focused workflow results from a protected checkout",
+    "scripts/focused_gate.py.lock": "pins the Core scoped coverage judge environment",
+    ".github/workflows/acceptance-sharded.yml": "manual hosted-VM acceptance study, separate from release acceptance",
+    "scripts/acceptance/reduce.py": "fails closed on incomplete or mixed acceptance study shards",
     "scripts/acceptance/summary.py": "summarizes the acceptance harness's result.json for a job summary",
     "scripts/acceptance/vendor/artifact_provenance.py": "hash-pinned reviewed copy the acceptance harness loads",
     "scripts/acceptance/vendor/guardian.py": "hash-pinned reviewed copy the acceptance harness loads",
@@ -223,6 +262,10 @@ NOT_SETTINGS = {  # names or prefixes that aren't settings of Heinzelmännchen's
 }
 
 
+# The optional host queue reads these exact variables outside this repository.
+HOST_GATE_ENV_READS = {"HZ_GATE_HELD", "HZ_GATE_LIGHT"}
+
+
 def env_names(text: str) -> set[str]:
     """Every HZ_* name in a text."""
     return set(ENV_NAME.findall(text))
@@ -252,6 +295,7 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
         for key in type(settings).model_fields
     }
     code = [path for path in repository_files() if path.endswith(CODE_SUFFIXES)]
+    known |= HOST_GATE_ENV_READS
     known |= {name for path in code for name in env_reads((REPO / path).read_text(encoding="utf-8"))}
     used = {
         (name, path)

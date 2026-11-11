@@ -28,6 +28,7 @@ class CapabilityService:
                 hosts=list(use.hosts) or ([UNKNOWN_HOSTS] if use.adapter else []),
                 problem=use.problem,
                 optional=use.optional,
+                health_on_demand=use.health_on_demand,
             )
             for use in self.capabilities.matrix()
         ]
@@ -62,13 +63,25 @@ class CapabilityService:
         """Whether `use` is optional and unmet only because nothing is bound: no finding, unlike a broken binding."""
         return use.optional and use.problem is not None and self.capabilities.bound(use.capability) is None
 
+    def deferred(self, use: CapabilityUse) -> bool:
+        """Only declared on-demand, unpinned operation uses can be neutral while explicitly off."""
+        return (
+            use.kind == "operation"
+            and use.health_on_demand
+            and use.problem is not None
+            and self.capabilities.binding(use.capability) == (None, "off")
+        )
+
+    def _unmet_label(self, use: CapabilityUse) -> str:
+        if self.deferred(use):
+            return "on-demand: not configured"
+        return "optional: not connected" if self.unconnected(use) else "unmet"
+
     def matrix(self) -> dict[str, str]:
         """Where data can go, one entry per requirement: `requester → need` to `adapter → hosts`, or the problem."""
         return {
             f"{use.requester} → {use.requirement}": (
-                f"{'optional: not connected' if self.unconnected(use) else 'unmet'}: {use.problem}"
-                if use.problem
-                else f"{use.adapter} → {', '.join(use.hosts)}"
+                f"{self._unmet_label(use)}: {use.problem}" if use.problem else f"{use.adapter} → {', '.join(use.hosts)}"
             )
             for use in self.uses()
         }
@@ -100,6 +113,8 @@ class CapabilityService:
             name = f"{use.requirement} for {use.requester}"
             if use.problem is None:
                 checks.append(Check(name=name, status=Status.UP, detail=f"served by {use.adapter}"))
+            elif self.deferred(use):
+                checks.append(Check(name=name, status=Status.UP, detail="on-demand: intentionally not configured"))
             elif self.unconnected(use):
                 detail = f"optional: not connected; to use it: {self.capabilities.command(use.capability)}"
                 checks.append(Check(name=name, status=Status.UP, detail=detail))

@@ -44,6 +44,10 @@ class CapabilityUse(BaseModel):
         default=False, description="Whether the requester does without it when it is unmet, so that is no finding."
     )
 
+    health_on_demand: bool = Field(
+        default=False, description="Health-only explicit deferral; the execution requirement remains mandatory."
+    )
+
 
 class CapabilityReport(BaseModel):
     """Capabilities, adapters and the matrix of who reads and writes what, through which adapter and hosts."""
