@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from heinzel import __version__
 from heinzel.kernel import HeinzelError, Installation, Kernel, ReleaseCache
+from heinzel.kernel._logging import log_event
 
 _log = logging.getLogger(__name__)
 MAX_FILES = 128
@@ -178,7 +179,7 @@ def _installed_core(installation: Installation) -> str | None:
         installed = installation.installed_core_version()
         differs = Version(installed) != Version(__version__)
     except (HeinzelError, InvalidVersion, OSError) as exc:
-        _log.info("web_update_installed_core_unverified error=%s", type(exc).__name__)
+        log_event(_log, "web.update.installed_core", outcome="unverified", error=type(exc).__name__)
         return None
     return installed if differs else None
 

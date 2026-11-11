@@ -1247,7 +1247,7 @@ const en = {
   "updates.installedDateUnknown": "Installation date unavailable.",
   "updates.failed": "The update could not be verified. Inspect the installation before trying again.",
   "updates.verify": "Verify update again",
-  "updates.installedNotLoaded": "Heinzel {version} is installed but this app still runs {running}",
+  "updates.installedNotLoaded": "Heinzel {version} is installed; the app runs {running}",
   "updates.loadingInstalled": "Restarting to load Heinzel {version}\u2026",
   "updates.loadInstalled": "Load Heinzel {version}",
   "updates.loadInstalledLater": "It restarts by itself once nothing is open or running here.",

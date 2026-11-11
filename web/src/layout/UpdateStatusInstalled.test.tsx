@@ -44,7 +44,7 @@ it("waits while work is open and offers loading it by hand instead of a refused 
   renderAt("/");
   const icon = await screen.findByRole("button", { name: /Updates available/ });
   await userEvent.setup().click(icon);
-  expect(await screen.findByText("Heinzel 0.2.0 is installed but this app still runs 0.1.0")).toBeInTheDocument();
+  expect(await screen.findByText("Heinzel 0.2.0 is installed; the app runs 0.1.0")).toBeInTheDocument();
   expect(screen.getByText("It restarts by itself once nothing is open or running here.")).toBeInTheDocument();
   expect(loadInstalledCore).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "Update now" })).not.toBeInTheDocument();
