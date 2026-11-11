@@ -785,9 +785,9 @@ def test_hosts_that_cant_be_read_are_unknown_and_the_problem_repeats_no_value(ma
 
 def test_reading_hosts_logs_no_value_and_no_message(make_kernel, caplog):
     acme_hosts(make_kernel, failing, api_url="https://s3cret@acme.invalid")
-    assert [record.getMessage() for record in caplog.records] == [
-        "Reading the hosts of adapter acme:documents through failing failed: RuntimeError"
-    ]
+    (event,) = caplog.records
+    assert event.event == "kernel.hosts.read_failed"
+    assert (event.adapter, event.source, event.error) == ("acme:documents", "failing", "RuntimeError")
     assert not any(record.exc_info for record in caplog.records)
 
 

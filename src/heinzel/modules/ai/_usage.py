@@ -17,6 +17,7 @@ from typing import ClassVar, Literal
 from pydantic import BaseModel, Field, ValidationError
 
 from heinzel import Config, ModuleSettings, Settings, UsageEntry, UsageLog
+from heinzel.kernel._logging import log_event
 from heinzel.modules.ai.access._models import Bindings
 
 logger = logging.getLogger(__name__)
@@ -120,7 +121,7 @@ class UsageLedger(UsageLog):
             if self.path.stat().st_size > LIMIT:
                 self._prune()
         except Exception as exc:  # noqa: BLE001 - recording never fails the run it records
-            logger.warning("Recording AI usage failed: %s", type(exc).__name__)
+            log_event(logger, "ai.usage.record_failed", level=logging.WARNING, error=type(exc).__name__)
 
     def _prune(self) -> None:
         cutoff = datetime.now(UTC) - KEEP

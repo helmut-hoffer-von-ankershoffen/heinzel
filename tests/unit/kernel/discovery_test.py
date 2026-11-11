@@ -97,3 +97,11 @@ def test_no_core_repository_without_core_metadata(monkeypatch):
 
     monkeypatch.setattr(_discovery, "distribution", missing)
     assert _discovery.core_repository() is None
+
+
+def test_a_skipped_plugin_logs_an_event_with_its_name_and_problem(monkeypatch, caplog):
+    entry_points = [FakeEntryPoint("bad", error=ImportError("missing"))]
+    monkeypatch.setattr(_discovery, "entry_points", lambda group: entry_points)
+    _discovery.discover()
+    (event,) = [r for r in caplog.records if getattr(r, "event", "") == "kernel.discovery.skipped"]
+    assert (event.plugin, event.problem) == ("bad", "ImportError: missing")

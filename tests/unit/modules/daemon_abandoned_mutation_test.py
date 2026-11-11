@@ -288,3 +288,13 @@ def test_linux_boot_evidence_is_unknown_when_kernel_read_fails(monkeypatch):
 
     monkeypatch.setattr(abandoned, "_read", unavailable)
     assert abandoned.host_boot("linux") == (None, None)
+
+
+def test_archiving_a_marker_logs_one_event_with_the_reason_and_receipt(service, host, caplog):
+    marker = _legacy(service)
+    host.reboot(marker)
+    service.tick()
+    (event,) = [r for r in caplog.records if getattr(r, "event", "") == "daemon.mutation.archived"]
+    (receipt,) = _receipts(service)
+    assert event.reason == receipt["evidence"]
+    assert event.receipt.endswith(".receipt.json")

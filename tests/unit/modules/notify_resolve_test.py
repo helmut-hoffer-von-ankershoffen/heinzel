@@ -602,3 +602,19 @@ def test_conflicting_check_names_do_not_resolve_notice(service, make_kernel):
     service.problems = lambda: doctor_problems(kernel)
     assert doctor(service, ["sample: network"])
     assert service.resolve() == 0
+
+
+def test_a_capability_that_raises_a_bug_logs_an_event_and_answers_nothing(caplog):
+    from types import SimpleNamespace
+
+    operation = SimpleNamespace(name="now", read_only=True, func=object())
+    kernel = SimpleNamespace(
+        lets=lambda kind: [(SimpleNamespace(qualname="weather"), operation)],
+        available=lambda func: True,
+        invoke=lambda found: (_ for _ in ()).throw(RuntimeError("secret detail")),
+    )
+    probe = _resolve.kernel_probe(kernel)  # type: ignore[arg-type]
+    assert probe(CapabilityState(operation="weather:now", field="state", equals="clear")) is None
+    (event,) = [r for r in caplog.records if getattr(r, "event", "") == "notify.condition.failed"]
+    assert event.operation == "weather:now"
+    assert event.exc_info is not None
