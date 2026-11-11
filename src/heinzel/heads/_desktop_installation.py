@@ -160,7 +160,7 @@ class _Move:
 def _check_platform() -> None:
     if sys.platform != "darwin" or platform.machine() != "arm64":
         msg = "Managed desktop installation requires an Apple silicon Mac."
-        raise DesktopInstallationError(msg)
+        raise DesktopInstallationError(msg, say.needs_apple_silicon())
 
 
 def system_applications_usable(path: Path | None = None) -> bool:
@@ -845,7 +845,7 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
         or not os.access(executable, os.X_OK)
     ):
         msg = "Desktop installation requires a stable release and an absolute, executable hz path."
-        raise DesktopInstallationError(msg)
+        raise DesktopInstallationError(msg, say.needs_stable_hz())
     if existing and existing.release == version and existing.executable == str(executable):
         return "current"
     if existing and _in_use(bundle):
@@ -953,7 +953,7 @@ def doctor_desktop(*, fix: bool = False, home: Path | None = None) -> tuple[Seal
     with _locked_config(home) as config:
         if not _recover_before_use(home, config):
             msg = "Quit Heinzelmännchen before checking the desktop app."
-            raise DesktopInstallationError(msg)
+            raise DesktopInstallationError(msg, say.app_running(home / "Applications", command="doctor"))
         bundle, record = _locate(home, config)
         if record is None:
             return None, []
@@ -962,7 +962,7 @@ def doctor_desktop(*, fix: bool = False, home: Path | None = None) -> tuple[Seal
             with _desktop_use(config) as locked:
                 if not locked or _in_use(bundle):
                     msg = "Quit Heinzelmännchen before repairing the desktop app."
-                    raise DesktopInstallationError(msg)
+                    raise DesktopInstallationError(msg, say.app_running(bundle.parent, command="doctor --fix"))
                 if ensure_sealed(bundle):
                     repairs.append("Sealed the installed app with a local ad-hoc signature.")
                 if clear_our_quarantine(bundle):

@@ -30,17 +30,13 @@ ERRORS = {"DesktopInstallationError", "LeftoverInstallError", "_conflict"}
 # Messages without a Problem, written before the rule. The recovery rewrite gives each a Problem; this list only
 # shrinks, never grows: a message that is fixed or gone must leave it (the last test fails until it does).
 LEGACY = {
-    "Managed desktop installation requires an Apple silicon Mac.",
     "The desktop installer cannot safely use {applications}.",
     "The desktop installer cannot safely use {path}.",
     "The desktop installer could not establish a safe installation lock.",
     "The desktop app is not at {bundle} after installation.",
     "The verified archive does not contain the expected Apple silicon desktop bundle.",
     "The desktop bundle or its metadata is present without a matching ownership receipt.",
-    "Desktop installation requires a stable release and an absolute, executable hz path.",
     "The desktop installation metadata exceeds the allowed size.",
-    "Quit Heinzelmännchen before checking the desktop app.",
-    "Quit Heinzelmännchen before repairing the desktop app.",
 }
 
 

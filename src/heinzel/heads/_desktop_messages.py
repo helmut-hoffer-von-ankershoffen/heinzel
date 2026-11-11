@@ -107,6 +107,22 @@ def untrusted_record(path: Path) -> Problem:
     )
 
 
+def needs_apple_silicon() -> Problem:
+    """The desktop app is built for Apple silicon Macs only."""
+    return Problem(
+        "The Heinzelmännchen desktop app needs a Mac with Apple silicon (M1 or newer).",
+        "Run hz ui open instead to use Heinzel in your browser.",
+    )
+
+
+def needs_stable_hz() -> Problem:
+    """The installer only places a released hz and needs to find where it runs."""
+    return Problem(
+        "The desktop app can only be installed by a released hz that can be found on this Mac.",
+        "Install a released hz, then run hz app install again.",
+    )
+
+
 def busy() -> Problem:
     """Another install holds the installer, or a leftover file name is taken."""
     return Problem("Another hz app install seems to be running.", "Wait for it, or run hz app install --details.")
