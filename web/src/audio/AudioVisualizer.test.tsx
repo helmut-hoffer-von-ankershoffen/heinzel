@@ -1,13 +1,20 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AudioVisualizer, spectrumLevel } from "./AudioVisualizer";
-import { captureAudio, captureMicrophone } from "./capture";
+import { captureAudio, captureMicrophone, systemAudioAvailable } from "./capture";
 import { publishOwnAudio } from "./own";
-import { reloadSettings, setMaster, setShown } from "./viz/settings";
+import { reloadSettings, setMaster, setStyle } from "./viz/settings";
+import { setVizStage } from "./viz/stage";
 
 vi.mock("./capture", () => ({
   captureAudio: vi.fn(),
   captureMicrophone: vi.fn(() => new Promise(() => undefined)),
+  systemAudioAvailable: vi.fn(async () => false),
+  hasDesktopAudio: vi.fn(
+    () =>
+      typeof (globalThis as { heinzelDesktop?: { systemAudio?: unknown } }).heinzelDesktop?.systemAudio === "function",
+  ),
 }));
 
 const stop = vi.fn();
@@ -29,7 +36,11 @@ const listening = {
 } as unknown as Awaited<ReturnType<typeof captureMicrophone>>;
 
 const realMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+const realSecure = Object.getOwnPropertyDescriptor(globalThis, "isSecureContext");
 beforeEach(() => {
+  vi.mocked(systemAudioAvailable).mockResolvedValue(false);
+  // A secure page (https or localhost), where browsers offer the microphone at all.
+  Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: true });
   // A browser that offers tab sharing; the capture itself is mocked above.
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
@@ -38,20 +49,141 @@ beforeEach(() => {
 });
 
 const open = () => fireEvent.click(screen.getByRole("button", { name: /^Audio (visualizer|sharing|request)/ }));
+const pane = () => within(screen.getByRole("region", { name: "Audio visualizer controls" }));
 const source = (name: string) =>
   within(screen.getByRole("radiogroup", { name: "Listen to" })).getByRole("radio", { name });
 
 afterEach(() => {
+  if (realSecure) Object.defineProperty(globalThis, "isSecureContext", realSecure);
+  else delete (globalThis as { isSecureContext?: boolean }).isSecureContext;
   if (realMediaDevices) Object.defineProperty(navigator, "mediaDevices", realMediaDevices);
   else delete (navigator as { mediaDevices?: MediaDevices }).mediaDevices;
   vi.clearAllMocks();
   localStorage.clear();
   sessionStorage.clear();
+  act(() => setVizStage(null));
   reloadSettings();
   act(() => publishOwnAudio({ mode: "none" }));
 });
 
 describe("AudioVisualizer", () => {
+  it.each([
+    ["Microphone", "the microphone"],
+    ["Shared audio", "shared audio"],
+  ])("discloses active %s when every style is off", async (choice, description) => {
+    if (choice === "Microphone") vi.mocked(captureMicrophone).mockResolvedValueOnce(listening);
+    else vi.mocked(captureAudio).mockResolvedValueOnce(captured);
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(source(choice));
+    await waitFor(() => expect(source(choice)).toHaveAttribute("aria-checked", "true"));
+    act(() => {
+      for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(`Listening to ${description}`);
+    expect(screen.getByRole("button", { name: /^Audio sharing active/ })).toBeVisible();
+  });
+
+  it("discloses system capture when every style is off", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    vi.mocked(captureAudio).mockResolvedValueOnce({ ...captured, label: "System audio" });
+    try {
+      render(<AudioVisualizer />);
+      open();
+      fireEvent.click(await waitFor(() => pane().getByRole("button", { name: "Use system audio" })));
+      await waitFor(() => expect(pane().getByRole("button", { name: "Stop listening" })).toBeVisible());
+      act(() => {
+        for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
+      });
+      expect(screen.getByRole("status")).toHaveTextContent("Listening to system audio");
+      expect(screen.getByRole("button", { name: /^Audio sharing active/ })).toBeVisible();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("discloses a pending request with all styles off and keeps Off available by keyboard", async () => {
+    const user = userEvent.setup();
+    vi.mocked(captureAudio).mockImplementationOnce(() => new Promise(() => undefined));
+    render(<AudioVisualizer />);
+    open();
+    act(() => {
+      for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
+    });
+    fireEvent.click(source("Shared audio"));
+    const signal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
+    expect(screen.getByRole("status")).toHaveTextContent("Waiting for the browser to allow shared audio");
+    expect(source("Shared audio")).toHaveAttribute("aria-disabled", "true");
+    expect(source("Microphone")).toHaveAttribute("aria-disabled", "true");
+    expect(source("Off")).not.toHaveAttribute("aria-disabled");
+    fireEvent.click(source("Microphone"));
+    expect(captureMicrophone).not.toHaveBeenCalled();
+    source("Shared audio").focus();
+    fireEvent.keyDown(source("Shared audio"), { key: "ArrowRight" });
+    expect(source("Off")).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(signal?.aborted).toBe(true);
+    expect(source("Off")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Nothing shown: every style is off.");
+  });
+
+  it("discloses pending microphone capture when all styles are off", () => {
+    vi.mocked(captureMicrophone).mockImplementationOnce(() => new Promise(() => undefined));
+    render(<AudioVisualizer />);
+    open();
+    act(() => {
+      for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
+    });
+    fireEvent.click(source("Microphone"));
+    expect(screen.getByRole("status")).toHaveTextContent("Waiting for the browser to allow microphone");
+    expect(source("Microphone")).toHaveAttribute("aria-disabled", "true");
+    expect(source("Off")).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("discloses pending system capture when all styles are off and allows cancellation", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    vi.mocked(captureAudio).mockImplementationOnce(() => new Promise(() => undefined));
+    try {
+      render(<AudioVisualizer />);
+      open();
+      act(() => {
+        for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
+      });
+      fireEvent.click(await waitFor(() => pane().getByRole("button", { name: "Use system audio" })));
+      const signal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
+      expect(screen.getByRole("status")).toHaveTextContent("Waiting for the browser to allow system audio");
+      fireEvent.click(pane().getByRole("button", { name: "Stop listening" }));
+      expect(signal?.aborted).toBe(true);
+      expect(screen.getByRole("status")).toHaveTextContent("Nothing shown: every style is off.");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps the active microphone disclosed during and after a refused switch", async () => {
+    vi.mocked(captureMicrophone).mockResolvedValueOnce(listening);
+    let reject: (error: Error) => void = () => {};
+    vi.mocked(captureAudio).mockImplementationOnce(
+      () =>
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(source("Microphone"));
+    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    act(() => {
+      for (const style of ["spectrum", "aurora", "halo", "swarm"] as const) setStyle(style, false);
+    });
+    fireEvent.click(source("Shared audio"));
+    expect(screen.getByRole("status")).toHaveTextContent("Listening to the microphone; waiting for shared audio");
+    await act(async () => reject(new DOMException("Denied", "NotAllowedError")));
+    expect(screen.getByRole("status")).toHaveTextContent("Still listening to the microphone");
+    expect(micStop).not.toHaveBeenCalled();
+  });
   it("paints a full-window, click-through aurora from the real analyser and sleeps when the sound stops", async () => {
     let loud = true;
     vi.mocked(captureAudio).mockResolvedValue({
@@ -142,13 +274,16 @@ describe("AudioVisualizer", () => {
     expect(captureMicrophone).not.toHaveBeenCalled();
     expect(screen.getByTestId("audio-aurora")).toBeInTheDocument();
     // Show is one choice: Aurora alone drops the rail and keeps the aurora layer, Spectrum alone the reverse.
-    act(() => setShown("aurora"));
+    act(() => setStyle("spectrum", false));
     expect(screen.queryByRole("img", { name: "Shared audio spectrum" })).not.toBeInTheDocument();
     expect(screen.getByTestId("audio-aurora")).toBeInTheDocument();
-    act(() => setShown("spectrum"));
+    act(() => {
+      setStyle("spectrum", true);
+      setStyle("aurora", false);
+    });
     expect(screen.getByRole("img", { name: "Shared audio spectrum" })).toBeInTheDocument();
     expect(screen.queryByTestId("audio-aurora")).not.toBeInTheDocument();
-    act(() => setShown("both"));
+    act(() => setStyle("aurora", true));
     // The master switch hides every style but keeps its trigger, reading Off, so it can be turned on again here.
     act(() => setMaster(false));
     expect(screen.queryByRole("img", { name: "Shared audio spectrum" })).not.toBeInTheDocument();
@@ -209,6 +344,185 @@ describe("AudioVisualizer", () => {
     }
   });
 
+  it("never offers System audio in a browser or where the desktop app cannot loop it back", async () => {
+    render(<AudioVisualizer />);
+    open();
+    expect(systemAudioAvailable).not.toHaveBeenCalled();
+    const group = within(screen.getByRole("radiogroup", { name: "Listen to" }));
+    expect(group.getAllByRole("radio").map((radio) => radio.textContent)).toEqual([
+      "Off",
+      "Microphone",
+      "Shared audio",
+    ]);
+    expect(screen.queryByRole("button", { name: /system audio|Try again/i })).not.toBeInTheDocument();
+    cleanup();
+
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+    try {
+      render(<AudioVisualizer />);
+      open();
+      // Unknown until the desktop app answers: no source choice flashes in, then the usual ones appear.
+      expect(screen.queryByRole("radiogroup", { name: "Listen to" })).not.toBeInTheDocument();
+      await waitFor(() => expect(source("Workspace audio")).toBeVisible());
+      expect(
+        within(screen.getByRole("radiogroup", { name: "Listen to" }))
+          .getAllByRole("radio")
+          .map((radio) => radio.textContent),
+      ).toEqual(["Off", "Microphone", "Workspace audio"]);
+      expect(screen.queryByRole("button", { name: /system audio/i })).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("makes system audio the only source where the desktop app loops it back, and captures it on click", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    vi.mocked(captureAudio).mockResolvedValueOnce({ ...captured, label: "System audio" });
+    try {
+      render(<AudioVisualizer />);
+      act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+      open();
+      const use = await waitFor(() => pane().getByRole("button", { name: "Use system audio" }));
+      expect(screen.queryByRole("radiogroup", { name: "Listen to" })).not.toBeInTheDocument();
+      for (const name of ["Off", "Microphone", "Workspace audio", "Shared audio"])
+        expect(screen.queryByRole("radio", { name })).not.toBeInTheDocument();
+      const prompt = within(screen.getByRole("complementary", { name: "Let Heinzel see the music" }));
+      expect(prompt.getAllByRole("button").map((button) => button.textContent)).toEqual([
+        "Use system audio",
+        "Not now",
+      ]);
+      expect(screen.getByRole("switch")).toBeInTheDocument();
+      fireEvent.click(use);
+      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("system audio"));
+      expect(captureAudio).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal), true);
+      expect(captureMicrophone).not.toHaveBeenCalled();
+      expect(localStorage.getItem("hz.audio.source")).toBe("system");
+      expect(screen.queryByRole("button", { name: "Use system audio" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("complementary", { name: "Let Heinzel see the music" })).not.toBeInTheDocument();
+      fireEvent.click(pane().getByRole("button", { name: "Stop listening" }));
+      expect(stop).toHaveBeenCalledOnce();
+      expect(localStorage.getItem("hz.audio.source")).toBe("off");
+      expect(pane().getByRole("button", { name: "Use system audio" })).toBeVisible();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("lets system audio be stopped while permission is pending", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    vi.mocked(captureAudio).mockImplementationOnce(() => new Promise(() => undefined));
+    try {
+      render(<AudioVisualizer />);
+      open();
+      fireEvent.click(await waitFor(() => pane().getByRole("button", { name: "Use system audio" })));
+      const signal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
+      fireEvent.click(pane().getByRole("button", { name: "Stop listening" }));
+      expect(signal?.aborted).toBe(true);
+      expect(pane().getByRole("button", { name: "Use system audio" })).toBeVisible();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("never lets a stored microphone choice override system audio on the desktop", async () => {
+    localStorage.setItem("hz.audio.source", "mic");
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    const realPermissions = Object.getOwnPropertyDescriptor(navigator, "permissions");
+    const query = vi.fn(async () => ({ state: "granted" }));
+    Object.defineProperty(navigator, "permissions", { configurable: true, value: { query } });
+    try {
+      render(<AudioVisualizer />);
+      act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+      open();
+      await waitFor(() => pane().getByRole("button", { name: "Use system audio" }));
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+      expect(captureMicrophone).not.toHaveBeenCalled();
+      expect(query).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "Use microphone" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("radio", { name: "Microphone" })).not.toBeInTheDocument();
+      expect(localStorage.getItem("hz.audio.source")).toBe("mic");
+    } finally {
+      if (realPermissions) Object.defineProperty(navigator, "permissions", realPermissions);
+      else delete (navigator as { permissions?: Permissions }).permissions;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("when system audio cannot work here, offers the other sources with one line instead of a dead-end retry", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    vi.mocked(captureAudio).mockRejectedValueOnce(new DOMException("Not supported", "NotSupportedError"));
+    try {
+      render(<AudioVisualizer />);
+      open();
+      fireEvent.click(await waitFor(() => pane().getByRole("button", { name: "Use system audio" })));
+      await waitFor(() => expect(pane().getByRole("radiogroup", { name: "Listen to" })).toBeInTheDocument());
+      expect(pane().getByText(/System audio does not work on this computer/)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Use system audio|Try again/ })).not.toBeInTheDocument();
+      expect(sessionStorage.getItem("hz.audio.nosystem")).toBe("1");
+    } finally {
+      sessionStorage.removeItem("hz.audio.nosystem");
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("does not resume a remembered microphone after system audio fails, including after remount", async () => {
+    localStorage.setItem("hz.audio.source", "mic");
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    vi.mocked(captureAudio).mockRejectedValueOnce(new DOMException("Not supported", "NotSupportedError"));
+    vi.mocked(captureMicrophone).mockResolvedValue(listening);
+    const realPermissions = Object.getOwnPropertyDescriptor(navigator, "permissions");
+    const query = vi.fn(async () => ({ state: "granted" }));
+    Object.defineProperty(navigator, "permissions", { configurable: true, value: { query } });
+    try {
+      act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+      const view = render(<AudioVisualizer />);
+      open();
+      fireEvent.click(await waitFor(() => pane().getByRole("button", { name: "Use system audio" })));
+      await waitFor(() => expect(pane().getByRole("radiogroup", { name: "Listen to" })).toBeInTheDocument());
+      expect(captureMicrophone).not.toHaveBeenCalled();
+      expect(query).not.toHaveBeenCalled();
+      view.unmount();
+      render(<AudioVisualizer />);
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+      expect(captureMicrophone).not.toHaveBeenCalled();
+      expect(query).not.toHaveBeenCalled();
+      open();
+      fireEvent.click(source("Microphone"));
+      await waitFor(() => expect(captureMicrophone).toHaveBeenCalledOnce());
+    } finally {
+      if (realPermissions) Object.defineProperty(navigator, "permissions", realPermissions);
+      else delete (navigator as { permissions?: Permissions }).permissions;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("after a declined system audio prompt shows one plain line and Try again, never the other choices", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+    vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+    vi.mocked(captureAudio)
+      .mockRejectedValueOnce(new DOMException("Denied", "NotAllowedError"))
+      .mockResolvedValueOnce({ ...captured, label: "System audio" });
+    try {
+      render(<AudioVisualizer />);
+      open();
+      fireEvent.click(await waitFor(() => pane().getByRole("button", { name: "Use system audio" })));
+      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("System audio was not allowed."));
+      expect(screen.queryByRole("radiogroup", { name: "Listen to" })).not.toBeInTheDocument();
+      expect(captureMicrophone).not.toHaveBeenCalled();
+      fireEvent.click(pane().getByRole("button", { name: "Try again" }));
+      await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("system audio"));
+      expect(captureAudio).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(captureAudio).mock.calls.every((call) => call[1] === true)).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("reports permission failures and cancels an in-flight picker when disabled", async () => {
     vi.mocked(captureAudio).mockRejectedValueOnce(new DOMException("Denied", "NotAllowedError"));
     render(<AudioVisualizer />);
@@ -230,20 +544,55 @@ describe("AudioVisualizer", () => {
     expect(signal?.aborted).toBe(true);
   });
 
-  it("fills the chosen segment of each choice, and only that one", () => {
+  it("shows each style as its own checkbox chip, the on ones filled and checked, and the source as one choice", () => {
+    act(() => setVizStage({ element: document.createElement("div"), playful: true }));
     render(<AudioVisualizer />);
     open();
-    const show = within(screen.getByRole("radiogroup", { name: "Show" }));
-    expect(show.getByRole("radio", { name: "Both" })).toHaveAttribute("aria-checked", "true");
-    expect(show.getByRole("radio", { name: "Both" })).toHaveClass("bg-primary", "text-primary-foreground");
-    for (const name of ["Spectrum", "Aurora"]) {
-      expect(show.getByRole("radio", { name })).toHaveAttribute("aria-checked", "false");
-      expect(show.getByRole("radio", { name })).not.toHaveClass("bg-primary");
+    const show = within(screen.getByRole("group", { name: "Show" }));
+    for (const name of ["Spectrum", "Aurora", "Halo", "Swarm"]) {
+      expect(show.getByRole("checkbox", { name })).toBeChecked();
+      expect(show.getByRole("checkbox", { name }).closest("label")).toHaveClass(
+        "bg-primary",
+        "text-primary-foreground",
+      );
     }
-    fireEvent.click(show.getByRole("radio", { name: "Aurora" }));
-    expect(show.getByRole("radio", { name: "Aurora" })).toHaveAttribute("aria-checked", "true");
-    expect(show.getByRole("radio", { name: "Both" })).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(show.getByRole("checkbox", { name: "Halo" }));
+    expect(show.getByRole("checkbox", { name: "Halo" })).not.toBeChecked();
+    expect(show.getByRole("checkbox", { name: "Halo" }).closest("label")).not.toHaveClass("bg-primary");
+    expect(show.getByRole("checkbox", { name: "Swarm" })).toBeChecked();
     expect(document.querySelectorAll("[aria-pressed]")).toHaveLength(0);
+    // Every style off is allowed; the status line says so.
+    for (const name of ["Spectrum", "Aurora", "Swarm"]) fireEvent.click(show.getByRole("checkbox", { name }));
+    expect(screen.getByRole("status")).toHaveTextContent("Nothing shown: every style is off.");
+    // The source is exclusive: radios.
+    expect(source("Off")).toHaveAttribute("aria-checked", "true");
+    expect(within(screen.getByRole("radiogroup", { name: "Listen to" })).queryAllByRole("checkbox")).toHaveLength(0);
+  });
+
+  it("stands the Halo and the Swarm in the sidebar stage, only while the Heinzels play along", () => {
+    const analyser = {
+      frequencyBinCount: 16,
+      getByteFrequencyData: vi.fn(),
+      disconnect: vi.fn(),
+    } as unknown as AnalyserNode;
+    const element = document.createElement("div");
+    document.body.append(element);
+    try {
+      act(() => publishOwnAudio({ mode: "analysed", analyser, label: "Rain" }));
+      act(() => setVizStage({ element, playful: true }));
+      render(<AudioVisualizer />);
+      expect(element.querySelector("[data-testid=audio-halo]")).not.toBeNull();
+      expect(element.querySelector("[data-testid=audio-swarm]")).not.toBeNull();
+      expect(element.querySelectorAll("[data-swarm-figure]")).toHaveLength(3);
+      act(() => setStyle("halo", false));
+      expect(element.querySelector("[data-testid=audio-halo]")).toBeNull();
+      expect(element.querySelector("[data-testid=audio-swarm]")).not.toBeNull();
+      act(() => setVizStage({ element, playful: false }));
+      expect(element.querySelector("[data-testid=audio-swarm]")).toBeNull();
+    } finally {
+      act(() => setVizStage(null));
+      element.remove();
+    }
   });
 
   it("switches from the microphone to shared audio in one step, stopping the microphone only once sharing runs", async () => {
@@ -254,9 +603,11 @@ describe("AudioVisualizer", () => {
     open();
     fireEvent.click(source("Microphone"));
     await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    const microphoneSignal = vi.mocked(captureMicrophone).mock.calls.at(-1)?.[0];
     expect(source("Shared audio")).not.toHaveAttribute("aria-disabled");
     fireEvent.click(source("Shared audio"));
     expect(captureAudio).toHaveBeenCalledOnce();
+    expect(microphoneSignal?.aborted).toBe(false);
     expect(micStop).not.toHaveBeenCalled();
     await act(async () => grant(captured));
     expect(micStop).toHaveBeenCalledOnce();
@@ -281,6 +632,68 @@ describe("AudioVisualizer", () => {
     expect(source("Microphone")).toHaveAttribute("aria-checked", "true");
   });
 
+  it("lets Off stop the microphone and cancel a pending source switch", async () => {
+    vi.mocked(captureMicrophone).mockResolvedValueOnce(listening);
+    vi.mocked(captureAudio).mockImplementationOnce(() => new Promise(() => undefined));
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(source("Microphone"));
+    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    fireEvent.click(source("Shared audio"));
+    const signal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
+    expect(source("Off")).not.toHaveAttribute("aria-disabled");
+    fireEvent.click(source("Off"));
+    expect(signal?.aborted).toBe(true);
+    expect(micStop).toHaveBeenCalledOnce();
+    expect(source("Off")).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("keeps a replacement request alive when the old source ends", async () => {
+    const track = new EventTarget();
+    const addListener = vi.spyOn(track, "addEventListener");
+    Object.assign(track, { readyState: "live" });
+    vi.mocked(captureMicrophone).mockResolvedValueOnce({
+      ...listening,
+      stream: { getTracks: () => [track], getAudioTracks: () => [track] },
+    } as unknown as typeof listening);
+    let grant: (value: typeof captured) => void = () => undefined;
+    vi.mocked(captureAudio).mockImplementationOnce(() => new Promise((resolve) => (grant = resolve)));
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(source("Microphone"));
+    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    const staleEnded = addListener.mock.calls.find(([event]) => event === "ended")?.[1] as EventListener;
+    fireEvent.click(source("Shared audio"));
+    const replacementSignal = vi.mocked(captureAudio).mock.calls.at(-1)?.[0];
+    act(() => track.dispatchEvent(new Event("ended")));
+    expect(replacementSignal?.aborted).toBe(false);
+    await act(async () => grant(captured));
+    expect(source("Shared audio")).toHaveAttribute("aria-checked", "true");
+    act(() => staleEnded(new Event("ended")));
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it("does not restart an ended microphone when replacement sharing is unsupported", async () => {
+    const track = new EventTarget();
+    Object.assign(track, { readyState: "live" });
+    vi.mocked(captureMicrophone).mockResolvedValueOnce({
+      ...listening,
+      stream: { getTracks: () => [track], getAudioTracks: () => [track] },
+    } as unknown as typeof listening);
+    let reject: (error: Error) => void = () => undefined;
+    vi.mocked(captureAudio).mockImplementationOnce(() => new Promise((_, fail) => (reject = fail)));
+    render(<AudioVisualizer />);
+    open();
+    fireEvent.click(source("Microphone"));
+    await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+    fireEvent.click(source("Shared audio"));
+    act(() => track.dispatchEvent(new Event("ended")));
+    await act(async () => reject(new DOMException("Not supported", "NotSupportedError")));
+    expect(captureMicrophone).toHaveBeenCalledOnce();
+    expect(source("Off")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText("Shared audio is not offered by this browser.")).toBeVisible();
+  });
+
   it("stops the microphone with Off, remembers Off, and never restarts it by itself", async () => {
     localStorage.setItem("hz.audio.source", "mic");
     const realPermissions = Object.getOwnPropertyDescriptor(navigator, "permissions");
@@ -303,6 +716,57 @@ describe("AudioVisualizer", () => {
       await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
       expect(captureMicrophone).toHaveBeenCalledOnce();
       expect(screen.queryByRole("complementary", { name: "Let Heinzel see the music" })).not.toBeInTheDocument();
+    } finally {
+      if (realPermissions) Object.defineProperty(navigator, "permissions", realPermissions);
+      else delete (navigator as { permissions?: Permissions }).permissions;
+    }
+  });
+
+  it("does not resume a remembered microphone while visualisation is switched off", async () => {
+    localStorage.setItem("hz.audio.source", "mic");
+    const realPermissions = Object.getOwnPropertyDescriptor(navigator, "permissions");
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: { query: vi.fn(async () => ({ state: "granted" })) },
+    });
+    try {
+      act(() => setMaster(false));
+      vi.mocked(captureMicrophone).mockResolvedValue(listening);
+      render(<AudioVisualizer />);
+      act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+      expect(captureMicrophone).not.toHaveBeenCalled();
+      act(() => setMaster(true));
+      await waitFor(() => expect(captureMicrophone).toHaveBeenCalledOnce());
+    } finally {
+      if (realPermissions) Object.defineProperty(navigator, "permissions", realPermissions);
+      else delete (navigator as { permissions?: Permissions }).permissions;
+    }
+  });
+
+  it("does not restart a manually started microphone after its track ends", async () => {
+    const realPermissions = Object.getOwnPropertyDescriptor(navigator, "permissions");
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: { query: vi.fn(async () => ({ state: "granted" })) },
+    });
+    const track = new EventTarget();
+    Object.assign(track, { readyState: "live" });
+    const microphone = {
+      ...listening,
+      stream: { getTracks: () => [track], getAudioTracks: () => [track] },
+    } as unknown as typeof listening;
+    try {
+      vi.mocked(captureMicrophone).mockResolvedValue(microphone);
+      render(<AudioVisualizer />);
+      act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+      open();
+      fireEvent.click(source("Microphone"));
+      await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
+      act(() => track.dispatchEvent(new Event("ended")));
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+      expect(captureMicrophone).toHaveBeenCalledOnce();
+      expect(source("Off")).toHaveAttribute("aria-checked", "true");
     } finally {
       if (realPermissions) Object.defineProperty(navigator, "permissions", realPermissions);
       else delete (navigator as { permissions?: Permissions }).permissions;
@@ -369,5 +833,73 @@ describe("AudioVisualizer", () => {
     await waitFor(() => expect(source("Microphone")).toHaveAttribute("aria-checked", "true"));
     expect(screen.queryByText(/Audio sharing is unavailable/)).not.toBeInTheDocument();
     expect(screen.queryByText("Retry")).not.toBeInTheDocument();
+  });
+
+  it("shows no microphone choice without getUserMedia or outside a secure context", () => {
+    Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: false });
+    render(<AudioVisualizer />);
+    open();
+    const group = within(screen.getByRole("radiogroup", { name: "Listen to" }));
+    expect(group.getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["Off", "Shared audio"]);
+    expect(
+      screen.getByText("Nothing is recorded or uploaded. Sharing a tab shows your browser's sharing bar."),
+    ).toBeVisible();
+    cleanup();
+    Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: true });
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getDisplayMedia: vi.fn() } });
+    render(<AudioVisualizer />);
+    open();
+    expect(
+      within(screen.getByRole("radiogroup", { name: "Listen to" }))
+        .getAllByRole("radio")
+        .map((radio) => radio.textContent),
+    ).toEqual(["Off", "Shared audio"]);
+    expect(
+      screen.getByText("Nothing is recorded or uploaded. Sharing a tab shows your browser's sharing bar."),
+    ).toBeVisible();
+  });
+
+  it("shows no Listen to group when this browser can take no source, and says so", () => {
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: {} });
+    render(<AudioVisualizer />);
+    act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+    expect(screen.queryByRole("complementary", { name: "Let Heinzel see the music" })).not.toBeInTheDocument();
+    open();
+    expect(screen.queryByRole("radiogroup", { name: "Listen to" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("cannot be seen in this browser");
+    expect(
+      screen.getByText("Nothing is recorded or uploaded. This browser shows Heinzel's own sound only."),
+    ).toBeVisible();
+  });
+
+  it("shows only the styles this page can draw: no Halo or Swarm without the sidebar stage, none without a canvas", () => {
+    render(<AudioVisualizer />);
+    open();
+    const names = () =>
+      within(screen.getByRole("group", { name: "Show" }))
+        .getAllByRole("checkbox")
+        .map((box) => box.closest("label")?.textContent);
+    // No sidebar stage here (or playful off): the Heinzel styles cannot stand anywhere.
+    expect(names()).toEqual(["Spectrum", "Aurora"]);
+    cleanup();
+    const element = document.createElement("div");
+    act(() => setVizStage({ element, playful: true }));
+    try {
+      render(<AudioVisualizer />);
+      open();
+      expect(names()).toEqual(["Spectrum", "Aurora", "Halo", "Swarm"]);
+    } finally {
+      act(() => setVizStage(null));
+    }
+    cleanup();
+    const getContext = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "getContext");
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", { configurable: true, value: undefined });
+    try {
+      render(<AudioVisualizer />);
+      open();
+      expect(screen.queryByRole("group", { name: "Show" })).not.toBeInTheDocument();
+    } finally {
+      if (getContext) Object.defineProperty(HTMLCanvasElement.prototype, "getContext", getContext);
+    }
   });
 });
